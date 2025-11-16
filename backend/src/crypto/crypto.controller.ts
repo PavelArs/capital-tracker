@@ -8,22 +8,41 @@ import {
   UseGuards,
   Request,
   Patch,
+  ForbiddenException,
 } from '@nestjs/common';
 import { CryptoService } from './crypto.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SubscriptionGuard } from '../auth/guards/subscription.guard';
+import { SubscriptionsService } from '../subscriptions/subscriptions.service';
+import { SubscriptionType } from '../entities/subscription.entity';
+import { CryptoType } from '../entities/crypto-wallet.entity';
 import { CryptoPricesService, CryptoPrices } from './crypto-prices.service';
 
 @Controller('crypto')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, SubscriptionGuard)
 export class CryptoController {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly cryptoPricesService: CryptoPricesService,
+    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   @Post()
-  create(@Request() req, @Body() createDto: CreateCryptoWalletDto) {
+  async create(@Request() req, @Body() createDto: CreateCryptoWalletDto) {
+    // Check if user has PRO subscription for additional blockchains
+    const allowedFreeTypes = [CryptoType.BITCOIN, CryptoType.ETHEREUM];
+    if (!allowedFreeTypes.includes(createDto.type)) {
+      const hasProAccess = await this.subscriptionsService.checkFeatureAccess(
+        req.user.userId,
+        SubscriptionType.PRO,
+      );
+      if (!hasProAccess) {
+        throw new ForbiddenException(
+          'Additional blockchains require PRO subscription',
+        );
+      }
+    }
     return this.cryptoService.create(req.user.userId, createDto);
   }
 

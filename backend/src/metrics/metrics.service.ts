@@ -163,6 +163,10 @@ export class MetricsService {
   ): Promise<number> {
     let total = 0;
 
+    if (wallets.length === 0) {
+      return 0;
+    }
+
     for (const wallet of wallets) {
       let valueUSD = 0;
       
@@ -171,48 +175,90 @@ export class MetricsService {
           // Get ETH price
           const ethPrice = await this.cryptoPricesService.getPrice('ETH');
           const ethBalance = parseFloat(wallet.balance.toString());
-          valueUSD += ethBalance * ethPrice;
+          
+          const ethValue = ethBalance * ethPrice;
+          console.log(`Wallet ${wallet.id} (${wallet.address}): ETH balance=${ethBalance}, ETH price=$${ethPrice}, ETH value=$${ethValue}`);
+          
+          if (ethPrice === 0) {
+            console.warn(`ETH price is 0 for wallet ${wallet.id}. Balance: ${ethBalance}`);
+          }
+          
+          valueUSD += ethValue;
 
           // Add token values
           if (wallet.tokens && Array.isArray(wallet.tokens)) {
+            console.log(`Wallet ${wallet.id}: Found ${wallet.tokens.length} tokens`);
+            
             // Get all token contract addresses
             const tokenAddresses = wallet.tokens
               .map(token => token.contractAddress)
               .filter(addr => addr);
 
             if (tokenAddresses.length > 0) {
+              console.log(`Wallet ${wallet.id}: Fetching prices for ${tokenAddresses.length} tokens: ${tokenAddresses.join(', ')}`);
               const tokenPrices = await this.cryptoPricesService.getBulkTokenPrices(tokenAddresses);
+              console.log(`Wallet ${wallet.id}: Received token prices:`, tokenPrices);
               
               for (const token of wallet.tokens) {
                 if (token.contractAddress && token.balance) {
                   const tokenPrice = tokenPrices[token.contractAddress.toLowerCase()] || 0;
                   const tokenBalance = parseFloat(token.balance.toString());
-                  valueUSD += tokenBalance * tokenPrice;
+                  const tokenValue = tokenBalance * tokenPrice;
+                  
+                  console.log(`Token ${token.symbol} (${token.contractAddress}): balance=${tokenBalance}, price=$${tokenPrice}, value=$${tokenValue}`);
+                  
+                  if (tokenPrice === 0 && tokenBalance > 0) {
+                    console.warn(`Token ${token.symbol} (${token.contractAddress}) price is 0. Balance: ${tokenBalance}`);
+                  }
+                  
+                  valueUSD += tokenValue;
                 }
               }
+            } else {
+              console.log(`Wallet ${wallet.id}: No token contract addresses found`);
             }
+          } else {
+            console.log(`Wallet ${wallet.id}: No tokens found`);
           }
         } else if (wallet.type === 'bitcoin') {
           // Get BTC price
           const btcPrice = await this.cryptoPricesService.getPrice('BTC');
           const btcBalance = parseFloat(wallet.balance.toString());
-          valueUSD += btcBalance * btcPrice;
+          const btcValue = btcBalance * btcPrice;
+          
+          console.log(`Wallet ${wallet.id} (${wallet.address}): BTC balance=${btcBalance}, BTC price=$${btcPrice}, BTC value=$${btcValue}`);
+          
+          if (btcPrice === 0) {
+            console.warn(`BTC price is 0 for wallet ${wallet.id}. Balance: ${btcBalance}`);
+          }
+          
+          valueUSD += btcValue;
         }
+
+        console.log(`Wallet ${wallet.id}: Total valueUSD before conversion: $${valueUSD}`);
 
         // Convert to target currency if needed
         if (targetCurrency !== 'USD' && valueUSD > 0) {
           try {
-            valueUSD = await this.currenciesService.convert(valueUSD, 'USD', targetCurrency);
+            const convertedValue = await this.currenciesService.convert(valueUSD, 'USD', targetCurrency);
+            console.log(`Wallet ${wallet.id}: Converted $${valueUSD} USD to ${targetCurrency}: ${convertedValue}`);
+            valueUSD = convertedValue;
           } catch (error) {
             console.error(`Error converting crypto value to ${targetCurrency}:`, error.message);
           }
         }
 
+        console.log(`Wallet ${wallet.id}: Final valueUSD: $${valueUSD}`);
         total += valueUSD;
       } catch (error) {
         console.error(`Error calculating value for wallet ${wallet.id}:`, error.message);
+        console.error(error);
         // Continue with other wallets even if one fails
       }
+    }
+
+    if (total === 0 && wallets.length > 0) {
+      console.warn(`Total crypto value is 0 for ${wallets.length} wallet(s). This might indicate price fetching issues.`);
     }
 
     return total;

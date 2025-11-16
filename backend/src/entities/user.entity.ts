@@ -4,7 +4,10 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  OneToMany,
 } from 'typeorm';
+import { Subscription, SubscriptionType } from './subscription.entity';
+import { Capital } from './capital.entity';
 
 @Entity('users')
 export class User {
@@ -22,6 +25,19 @@ export class User {
 
   @Column({ nullable: true })
   lastName: string;
+
+  @Column({
+    type: 'enum',
+    enum: SubscriptionType,
+    default: SubscriptionType.FREE,
+  })
+  subscriptionType: SubscriptionType;
+
+  @OneToMany(() => Subscription, (subscription) => subscription.user)
+  subscriptions: Subscription[];
+
+  @OneToMany(() => Capital, (capital) => capital.user)
+  capitals: Capital[];
 
   @CreateDateColumn()
   createdAt: Date;

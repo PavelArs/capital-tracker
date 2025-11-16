@@ -4,6 +4,7 @@ import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entities/user.entity';
+import { Subscription, SubscriptionType, SubscriptionStatus } from '../entities/subscription.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -12,6 +13,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(Subscription)
+    private subscriptionRepository: Repository<Subscription>,
     private jwtService: JwtService,
   ) {}
 
@@ -30,9 +33,20 @@ export class AuthService {
       password: hashedPassword,
       firstName: registerDto.firstName,
       lastName: registerDto.lastName,
+      subscriptionType: SubscriptionType.FREE,
     });
 
     const savedUser = await this.userRepository.save(user);
+
+    // Create free subscription
+    const subscription = this.subscriptionRepository.create({
+      userId: savedUser.id,
+      type: SubscriptionType.FREE,
+      status: SubscriptionStatus.ACTIVE,
+      startDate: new Date(),
+    });
+    await this.subscriptionRepository.save(subscription);
+
     const { password, ...result } = savedUser;
 
     return {

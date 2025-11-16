@@ -17,6 +17,7 @@ import Assets from "./pages/Assets";
 import Liabilities from "./pages/Liabilities";
 import Crypto from "./pages/Crypto";
 import Settings from "./pages/Settings";
+import Subscriptions from "./pages/Subscriptions";
 import Layout from "./components/Layout";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -58,6 +59,7 @@ function AppRoutes() {
         <Route path="liabilities" element={<Liabilities />} />
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="subscriptions" element={<Subscriptions />} />
       </Route>
     </Routes>
   );

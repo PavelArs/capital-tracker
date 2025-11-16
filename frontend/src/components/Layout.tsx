@@ -1,6 +1,7 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
+import SubscriptionBadge from './SubscriptionBadge';
 import './Layout.css';
 
 export default function Layout() {
@@ -25,7 +26,12 @@ export default function Layout() {
           <Link to="/settings">{t('navigation.settings')}</Link>
         </div>
         <div className="nav-user">
-          <span>{user?.email}</span>
+          <div className="nav-user-info">
+            <span className="nav-user-email">{user?.email}</span>
+            {user?.subscriptionType && (
+              <SubscriptionBadge type={user.subscriptionType} />
+            )}
+          </div>
           <button onClick={handleLogout}>{t('auth.logout')}</button>
         </div>
       </nav>

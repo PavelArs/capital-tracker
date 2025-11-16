@@ -10,6 +10,12 @@ import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { CryptoModule } from './crypto/crypto.module';
 import { CurrenciesModule } from './currencies/currencies.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { IntegrationsModule } from './integrations/integrations.module';
+import { DefiModule } from './defi/defi.module';
+import { AiRecommendationsModule } from './ai-recommendations/ai-recommendations.module';
+import { CapitalsModule } from './capitals/capitals.module';
+import { ReportsModule } from './reports/reports.module';
 import { TypeOrmConfigService } from './config/typeorm.config';
 
 @Module({
@@ -27,6 +33,12 @@ import { TypeOrmConfigService } from './config/typeorm.config';
     CryptoModule,
     CurrenciesModule,
     MetricsModule,
+    SubscriptionsModule,
+    IntegrationsModule,
+    DefiModule,
+    AiRecommendationsModule,
+    CapitalsModule,
+    ReportsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

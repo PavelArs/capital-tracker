@@ -46,7 +46,13 @@
   gap: 1rem;
 }
 
-.nav-user span {
+.nav-user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.nav-user-email {
   color: var(--text-color);
 }
 

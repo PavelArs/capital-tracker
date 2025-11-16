@@ -24,6 +24,7 @@ export class CryptoPricesService {
   private isUpdatingCrypto = false;
   private isUpdatingTokens = false;
   private lastRateLimitError: Date | null = null;
+  private updatePromise: Promise<void> | null = null;
 
   constructor() {
     // Initialize on startup
@@ -77,56 +78,68 @@ export class CryptoPricesService {
 
   @Cron('*/15 * * * *') // Every 15 minutes
   async updatePrices() {
-    // Prevent concurrent updates
-    if (this.isUpdatingCrypto) {
-      return;
+    // If update is already in progress, return the existing promise
+    if (this.updatePromise) {
+      return this.updatePromise;
     }
 
     // If we recently hit rate limit, skip update and use cache
     if (this.lastRateLimitError && 
         Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
       console.log('Skipping price update due to recent rate limit error. Using cache.');
-      return;
+      return Promise.resolve();
     }
 
     this.isUpdatingCrypto = true;
-    try {
-      // Using CoinGecko API (free tier, no key required)
-      const response = await this.makeApiRequestWithRetry(() =>
-        axios.get(
-          'https://api.coingecko.com/api/v3/simple/price',
-          {
-            params: {
-              ids: 'bitcoin,ethereum',
-              vs_currencies: 'usd',
+    this.updatePromise = (async () => {
+      try {
+        // Using CoinGecko API (free tier, no key required)
+        const response = await this.makeApiRequestWithRetry(() =>
+          axios.get(
+            'https://api.coingecko.com/api/v3/simple/price',
+            {
+              params: {
+                ids: 'bitcoin,ethereum',
+                vs_currencies: 'usd',
+              },
+              timeout: 10000,
             },
-            timeout: 10000,
-          },
-        )
-      );
+          )
+        );
 
-      if (response.data) {
-        const now = new Date();
-        if (response.data.bitcoin) {
-          this.prices['BTC'] = {
-            usd: response.data.bitcoin.usd,
-            lastUpdated: now,
-          };
+        if (response.data) {
+          const now = new Date();
+          if (response.data.bitcoin) {
+            this.prices['BTC'] = {
+              usd: response.data.bitcoin.usd,
+              lastUpdated: now,
+            };
+            console.log(`Updated BTC price: $${response.data.bitcoin.usd}`);
+          } else {
+            console.warn('BTC price not found in API response');
+          }
+          if (response.data.ethereum) {
+            this.prices['ETH'] = {
+              usd: response.data.ethereum.usd,
+              lastUpdated: now,
+            };
+            console.log(`Updated ETH price: $${response.data.ethereum.usd}`);
+          } else {
+            console.warn('ETH price not found in API response');
+          }
+        } else {
+          console.warn('Empty response from CoinGecko API');
         }
-        if (response.data.ethereum) {
-          this.prices['ETH'] = {
-            usd: response.data.ethereum.usd,
-            lastUpdated: now,
-          };
-        }
-        console.log('Updated crypto prices:', this.prices);
+      } catch (error: any) {
+        console.error('Error updating crypto prices:', error.message);
+        // Don't clear cache on error - use existing cached values
+      } finally {
+        this.isUpdatingCrypto = false;
+        this.updatePromise = null;
       }
-    } catch (error: any) {
-      console.error('Error updating crypto prices:', error.message);
-      // Don't clear cache on error - use existing cached values
-    } finally {
-      this.isUpdatingCrypto = false;
-    }
+    })();
+
+    return this.updatePromise;
   }
 
   async getPrice(symbol: string): Promise<number> {
@@ -142,12 +155,21 @@ export class CryptoPricesService {
       }
     }
 
-    // Only update if cache is very old and we're not already updating
-    if (!this.isUpdatingCrypto && (!cached || Date.now() - cached.lastUpdated.getTime() > 30 * 60 * 1000)) {
-      // Don't await - return cached value immediately
-      this.updatePrices().catch(err => {
-        console.error('Background price update failed:', err.message);
-      });
+    // If cache is empty or very old, try to update synchronously first
+    if (!cached || Date.now() - cached.lastUpdated.getTime() > 30 * 60 * 1000) {
+      // Wait for update (either start new one or wait for existing)
+      try {
+        await this.updatePrices();
+        // Return updated price
+        const updatedPrice = this.prices[upperSymbol]?.usd || 0;
+        if (updatedPrice > 0) {
+          return updatedPrice;
+        }
+        // If still 0, fall through to return cached value
+      } catch (error) {
+        console.error('Error updating prices synchronously:', error.message);
+        // Fall through to return cached value if update fails
+      }
     }
 
     // Return cached price (even if expired) as fallback
@@ -219,16 +241,21 @@ export class CryptoPricesService {
 
     for (const address of normalizedAddresses) {
       const cached = this.tokenPrices.get(address);
-      if (cached && this.isCacheValid(cached.lastUpdated)) {
-        // Use cached value
-        result[address] = cached.usd || 0;
-      } else {
-        // Need to fetch
-        addressesToFetch.push(address);
-        // Use expired cache if available as fallback
-        if (cached) {
+      if (cached) {
+        const age = Date.now() - cached.lastUpdated.getTime();
+        // Use cache if valid OR if expired but less than 30 minutes old (grace period)
+        if (this.isCacheValid(cached.lastUpdated) || age < 30 * 60 * 1000) {
+          // Use cached value
+          result[address] = cached.usd || 0;
+        } else {
+          // Need to fetch - cache is too old
+          addressesToFetch.push(address);
+          // Use expired cache as fallback
           result[address] = cached.usd || 0;
         }
+      } else {
+        // No cache - need to fetch
+        addressesToFetch.push(address);
       }
     }
 
