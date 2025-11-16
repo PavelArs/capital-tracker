@@ -1018,113 +1018,8 @@ export default function Assets() {
           )}
       </div>
 
-      {getFilteredAssets().length > 0 && chartData && (
-        <div className="chart-container">
-          <h2>
-            {t('assets.assetDistribution')}
-            {viewMode === "single" && (
-              <span className="currency-badge"> ({selectedCurrency})</span>
-            )}
-          </h2>
-          <Pie
-            data={chartData}
-            options={{
-              plugins: {
-                tooltip: {
-                  callbacks: {
-                    label: function (context) {
-                      const label = context.label || "";
-                      let currency = "";
-                      let percentage = "";
-                      let displayValue = 0;
-
-                      // Extract percentage from label
-                      // Format in "all" mode with groupBy="name": "Asset Name (Category) (CURRENCY) (XX.X%)"
-                      // Format in "all" mode with groupBy="category": "Category (CURRENCY) (XX.X%)"
-                      // Format in "single" mode with groupBy="name": "Asset Name (Category) (XX.X%)"
-                      // Format in "single" mode with groupBy="category": "Category (XX.X%)"
-                      const labelMatch = label.match(/^(.+?)\s*\(([\d.]+)%\)$/);
-                      let cleanLabel = labelMatch ? labelMatch[1] : label;
-                      const labelPercentage = labelMatch ? labelMatch[2] : null;
-
-                      // Get the original value (not USD) for display
-                      // Use dataIndex to get the correct key from _keys array
-                      if (chartData?._keys && chartData?._originalTotals) {
-                        const key = chartData._keys[context.dataIndex];
-                        displayValue = chartData._originalTotals[key] || 0;
-                      } else {
-                        // Fallback to parsed value if original totals not available
-                        displayValue = context.parsed || 0;
-                      }
-
-                      if (viewMode === "single") {
-                        currency = selectedCurrency;
-                        // Use percentage from label (already calculated)
-                        if (labelPercentage) {
-                          percentage = ` (${labelPercentage}%)`;
-                        } else {
-                          // Fallback: calculate percentage from chart data
-                          if (chartData?._usdTotals && chartData?._totalUSD) {
-                            const key = chartData._keys[context.dataIndex];
-                            const usdValue = chartData._usdTotals[key] || 0;
-                            const pct =
-                              chartData._totalUSD > 0
-                                ? (usdValue / chartData._totalUSD) * 100
-                                : 0;
-                            percentage = ` (${pct.toFixed(1)}%)`;
-                          }
-                        }
-                      } else {
-                        // Extract currency from label if in "all" mode
-                        // Format: "Asset Name (Category) (CURRENCY) (XX.X%)"
-                        // Find the currency code - it's the last group in parentheses before the percentage
-                        // Match all groups in parentheses and take the last one that looks like a currency code
-                        const parenthesesMatches =
-                          cleanLabel.match(/\(([^)]+)\)/g);
-                        if (
-                          parenthesesMatches &&
-                          parenthesesMatches.length > 0
-                        ) {
-                          // Get the last match (should be currency code)
-                          const lastMatch =
-                            parenthesesMatches[parenthesesMatches.length - 1];
-                          const currencyCandidate = lastMatch.replace(
-                            /[()]/g,
-                            ""
-                          );
-                          // Check if it's a currency code (3+ uppercase letters/numbers like BTC, ETH, USDT)
-                          if (/^[A-Z0-9]{3,}$/.test(currencyCandidate)) {
-                            currency = currencyCandidate;
-                            // Remove currency from cleanLabel for cleaner display
-                            cleanLabel = cleanLabel.replace(
-                              /\s*\([A-Z0-9]{3,}\)\s*$/,
-                              ""
-                            );
-                          }
-                        }
-                        // Use percentage from label
-                        if (labelPercentage) {
-                          percentage = ` (${labelPercentage}%)`;
-                        }
-                      }
-
-                      return `${cleanLabel}: ${displayValue.toLocaleString(
-                        undefined,
-                        {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        }
-                      )} ${currency}${percentage}`;
-                    },
-                  },
-                },
-              },
-            }}
-          />
-        </div>
-      )}
-
-      <div className="assets-list">
+      <div className="assets-content-wrapper">
+        <div className="assets-list">
         <h2>
           {activeTab === "stock"
             ? t('assets.stockAssets')
@@ -1132,32 +1027,23 @@ export default function Assets() {
             ? t('assets.flowAssets')
             : t('assets.allAssets')}
         </h2>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('common.name')}</th>
-              <th>{t('common.type')}</th>
-              <th>{t('common.category')}</th>
-              <th>{t('common.amount')}</th>
-              <th>{t('common.currency')}</th>
-              <th>{t('common.date')}</th>
-              <th>{t('common.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {getFilteredAssets().map((asset) => (
-              <tr key={asset.id}>
-                <td>{asset.name}</td>
-                <td>
+        <div className="assets-cards-list">
+          {getFilteredAssets().map((asset) => (
+            <div key={asset.id} className="asset-item">
+              <div className="asset-item-left">
+                <div className="asset-item-name">{asset.name}</div>
+                <div className="asset-item-meta">
                   <span className={`asset-type-badge ${asset.assetType}`}>
                     {asset.assetType === "stock" ? t('assets.stockAssets') : t('assets.flowAssets')}
                   </span>
-                </td>
-                <td>{asset.category}</td>
-                <td>{parseFloat(asset.amount).toLocaleString()}</td>
-                <td>{asset.currency?.code || asset.currency || "USD"}</td>
-                <td>{new Date(asset.date).toLocaleDateString()}</td>
-                <td>
+                  <span className="asset-item-category">{asset.category}</span>
+                </div>
+              </div>
+              <div className="asset-item-right">
+                <div className="asset-item-amount">
+                  {parseFloat(asset.amount).toLocaleString()} {asset.currency?.code || asset.currency || "USD"}
+                </div>
+                <div className="asset-item-actions">
                   <button
                     className="edit-btn"
                     onClick={(e) => {
@@ -1166,8 +1052,10 @@ export default function Assets() {
                       console.log("Edit button clicked for asset:", asset.id);
                       handleEdit(asset);
                     }}
+                    title={t('common.edit')}
+                    aria-label={t('common.edit')}
                   >
-                    {t('common.edit')}
+                    <span className="icon-edit">✏️</span>
                   </button>
                   <button
                     className="delete-btn"
@@ -1176,14 +1064,123 @@ export default function Assets() {
                       e.stopPropagation();
                       handleDelete(asset.id);
                     }}
+                    title={t('common.delete')}
+                    aria-label={t('common.delete')}
                   >
-                    {t('common.delete')}
+                    <span className="icon-delete">🗑️</span>
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        </div>
+
+        {getFilteredAssets().length > 0 && chartData && (
+          <div className="chart-container">
+            <h2>
+              {t('assets.assetDistribution')}
+              {viewMode === "single" && (
+                <span className="currency-badge"> ({selectedCurrency})</span>
+              )}
+            </h2>
+            <Pie
+              data={chartData}
+              options={{
+                plugins: {
+                  tooltip: {
+                    callbacks: {
+                      label: function (context) {
+                        const label = context.label || "";
+                        let currency = "";
+                        let percentage = "";
+                        let displayValue = 0;
+
+                        // Extract percentage from label
+                        // Format in "all" mode with groupBy="name": "Asset Name (Category) (CURRENCY) (XX.X%)"
+                        // Format in "all" mode with groupBy="category": "Category (CURRENCY) (XX.X%)"
+                        // Format in "single" mode with groupBy="name": "Asset Name (Category) (XX.X%)"
+                        // Format in "single" mode with groupBy="category": "Category (XX.X%)"
+                        const labelMatch = label.match(/^(.+?)\s*\(([\d.]+)%\)$/);
+                        let cleanLabel = labelMatch ? labelMatch[1] : label;
+                        const labelPercentage = labelMatch ? labelMatch[2] : null;
+
+                        // Get the original value (not USD) for display
+                        // Use dataIndex to get the correct key from _keys array
+                        if (chartData?._keys && chartData?._originalTotals) {
+                          const key = chartData._keys[context.dataIndex];
+                          displayValue = chartData._originalTotals[key] || 0;
+                        } else {
+                          // Fallback to parsed value if original totals not available
+                          displayValue = context.parsed || 0;
+                        }
+
+                        if (viewMode === "single") {
+                          currency = selectedCurrency;
+                          // Use percentage from label (already calculated)
+                          if (labelPercentage) {
+                            percentage = ` (${labelPercentage}%)`;
+                          } else {
+                            // Fallback: calculate percentage from chart data
+                            if (chartData?._usdTotals && chartData?._totalUSD) {
+                              const key = chartData._keys[context.dataIndex];
+                              const usdValue = chartData._usdTotals[key] || 0;
+                              const pct =
+                                chartData._totalUSD > 0
+                                  ? (usdValue / chartData._totalUSD) * 100
+                                  : 0;
+                              percentage = ` (${pct.toFixed(1)}%)`;
+                            }
+                          }
+                        } else {
+                          // Extract currency from label if in "all" mode
+                          // Format: "Asset Name (Category) (CURRENCY) (XX.X%)"
+                          // Find the currency code - it's the last group in parentheses before the percentage
+                          // Match all groups in parentheses and take the last one that looks like a currency code
+                          const parenthesesMatches =
+                            cleanLabel.match(/\(([^)]+)\)/g);
+                          if (
+                            parenthesesMatches &&
+                            parenthesesMatches.length > 0
+                          ) {
+                            // Get the last match (should be currency code)
+                            const lastMatch =
+                              parenthesesMatches[parenthesesMatches.length - 1];
+                            const currencyCandidate = lastMatch.replace(
+                              /[()]/g,
+                              ""
+                            );
+                            // Check if it's a currency code (3+ uppercase letters/numbers like BTC, ETH, USDT)
+                            if (/^[A-Z0-9]{3,}$/.test(currencyCandidate)) {
+                              currency = currencyCandidate;
+                              // Remove currency from cleanLabel for cleaner display
+                              cleanLabel = cleanLabel.replace(
+                                /\s*\([A-Z0-9]{3,}\)\s*$/,
+                                ""
+                              );
+                            }
+                          }
+                          // Use percentage from label
+                          if (labelPercentage) {
+                            percentage = ` (${labelPercentage}%)`;
+                          }
+                        }
+
+                        return `${cleanLabel}: ${displayValue.toLocaleString(
+                          undefined,
+                          {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          }
+                        )} ${currency}${percentage}`;
+                      },
+                    },
+                  },
+                },
+              }}
+          />
+        </div>
+        )}
       </div>
     </div>
   );

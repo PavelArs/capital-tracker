@@ -390,38 +390,17 @@ export default function Liabilities() {
         </div>
       )}
 
-      {liabilities.length > 0 && (
-        <div className="chart-container">
-          <h2>{t('liabilities.liabilityDistribution')}</h2>
-          <Pie data={chartData} />
-        </div>
-      )}
-
-      <div className="liabilities-list">
+      <div className="liabilities-content-wrapper">
+        <div className="liabilities-list">
         <h2>{t('liabilities.allLiabilities')}</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>{t('common.name')}</th>
-              <th>{t('common.category')}</th>
-              <th>{t('common.amount')}</th>
-              <th>{t('common.currency')}</th>
-              <th>{t('common.date')}</th>
-              <th>{t('liabilities.frequency')}</th>
-              <th>{t('liabilities.deadline')}</th>
-              <th>{t('common.actions')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {liabilities.map((liability) => (
-              <tr key={liability.id}>
-                <td>{liability.name}</td>
-                <td>{liability.category}</td>
-                <td>{parseFloat(liability.amount).toLocaleString()}</td>
-                <td>{liability.currency?.code || liability.currency || 'USD'}</td>
-                <td>{new Date(liability.date).toLocaleDateString()}</td>
-                <td>
-                  {liability.frequency ? (
+        <div className="liabilities-cards-list">
+          {liabilities.map((liability) => (
+            <div key={liability.id} className="liability-item">
+              <div className="liability-item-left">
+                <div className="liability-item-name">{liability.name}</div>
+                <div className="liability-item-meta">
+                  <span className="liability-item-category">{liability.category}</span>
+                  {liability.frequency && (
                     <span className="frequency-badge">
                       {liability.frequency === 'daily' && t('liabilities.frequencies.daily')}
                       {liability.frequency === 'weekly' && t('liabilities.frequencies.weekly')}
@@ -429,20 +408,19 @@ export default function Liabilities() {
                       {liability.frequency === 'quarterly' && t('liabilities.frequencies.quarterly')}
                       {liability.frequency === 'yearly' && t('liabilities.frequencies.yearly')}
                     </span>
-                  ) : (
-                    <span className="text-muted">-</span>
                   )}
-                </td>
-                <td>
-                  {liability.deadline ? (
+                  {liability.deadline && (
                     <span className={new Date(liability.deadline) < new Date() ? 'deadline-overdue' : 'deadline-date'}>
                       {new Date(liability.deadline).toLocaleDateString()}
                     </span>
-                  ) : (
-                    <span className="text-muted">-</span>
                   )}
-                </td>
-                <td>
+                </div>
+              </div>
+              <div className="liability-item-right">
+                <div className="liability-item-amount">
+                  {parseFloat(liability.amount).toLocaleString()} {liability.currency?.code || liability.currency || 'USD'}
+                </div>
+                <div className="liability-item-actions">
                   <button
                     className="edit-btn"
                     onClick={(e) => {
@@ -451,8 +429,10 @@ export default function Liabilities() {
                       console.log("Edit button clicked for liability:", liability.id);
                       handleEdit(liability);
                     }}
+                    title={t('common.edit')}
+                    aria-label={t('common.edit')}
                   >
-                    {t('common.edit')}
+                    <span className="icon-edit">✏️</span>
                   </button>
                   <button
                     className="delete-btn"
@@ -461,14 +441,24 @@ export default function Liabilities() {
                       e.stopPropagation();
                       handleDelete(liability.id);
                     }}
+                    title={t('common.delete')}
+                    aria-label={t('common.delete')}
                   >
-                    {t('common.delete')}
+                    <span className="icon-delete">🗑️</span>
                   </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        </div>
+
+        {liabilities.length > 0 && (
+          <div className="chart-container">
+            <h2>{t('liabilities.liabilityDistribution')}</h2>
+            <Pie data={chartData} />
+          </div>
+        )}
       </div>
     </div>
   );
