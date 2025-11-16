@@ -155,17 +155,31 @@ export class CryptoUpdateService {
         c => c.contractAddress && c.contractAddress.startsWith('0x')
       );
 
-      const tokens: any[] = [];
+      if (tokenCurrencies.length === 0) {
+        return [];
+      }
 
-      // Get token balances directly by contract address
-      for (const currency of tokenCurrencies) {
+      // Fetch all token balances in parallel for better performance
+      const balancePromises = tokenCurrencies.map(async (currency) => {
         try {
           const balance = await this.getERC20TokenBalance(
             normalizedAddress,
             currency.contractAddress
           );
-          
-          if (balance > 0) {
+          return { currency, balance };
+        } catch (error) {
+          console.error(`Error fetching balance for token ${currency.code} (${currency.contractAddress}):`, error.message);
+          return { currency, balance: 0 };
+        }
+      });
+
+      const balanceResults = await Promise.all(balancePromises);
+      const tokens: any[] = [];
+
+      // Process only tokens with non-zero balance
+      for (const { currency, balance } of balanceResults) {
+        if (balance > 0) {
+          try {
             // Get token decimals (default to 18 if not available)
             const decimals = await this.getTokenDecimals(currency.contractAddress) || 18;
             const formattedBalance = balance / Math.pow(10, decimals);
@@ -177,10 +191,10 @@ export class CryptoUpdateService {
               contractAddress: currency.contractAddress.toLowerCase(),
               decimals: decimals,
             });
+          } catch (error) {
+            console.error(`Error getting decimals for token ${currency.code}:`, error.message);
+            // Skip this token if we can't get decimals
           }
-        } catch (error) {
-          console.error(`Error fetching balance for token ${currency.code} (${currency.contractAddress}):`, error.message);
-          // Continue with other tokens
         }
       }
 

@@ -247,8 +247,13 @@
   transition: opacity 0.2s;
 }
 
-.update-btn:hover {
+.update-btn:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+.update-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .delete-btn {
@@ -263,8 +268,13 @@
   transition: opacity 0.2s;
 }
 
-.delete-btn:hover {
+.delete-btn:hover:not(:disabled) {
   opacity: 0.9;
+}
+
+.delete-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .wallet-tokens {

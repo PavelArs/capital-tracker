@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Inject, forwardRef } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import axios from "axios";
+import { CryptoPricesService } from "../crypto/crypto-prices.service";
 
 @Injectable()
 export class CurrencyUpdateService {
@@ -9,7 +10,10 @@ export class CurrencyUpdateService {
   private lastUpdate: Date;
   private lastCryptoUpdate: Date;
 
-  constructor() {
+  constructor(
+    @Inject(forwardRef(() => CryptoPricesService))
+    private cryptoPricesService: CryptoPricesService,
+  ) {
     // Initialize on startup
     this.updateExchangeRates();
     this.updateCryptoRates();
@@ -29,32 +33,28 @@ export class CurrencyUpdateService {
     }
   }
 
-  @Cron(CronExpression.EVERY_10_MINUTES)
+  @Cron('*/15 * * * *') // Every 15 minutes
   async updateCryptoRates() {
     try {
-      // Get crypto prices in USD from CoinGecko
-      const response = await axios.get(
-        "https://api.coingecko.com/api/v3/simple/price",
-        {
-          params: {
-            ids: "bitcoin,ethereum,tether",
-            vs_currencies: "usd",
-          },
-          timeout: 10000,
-        }
-      );
+      // Use CryptoPricesService instead of direct CoinGecko API calls
+      // This uses cached prices and reduces API requests
+      const btcPrice = await this.cryptoPricesService.getPrice('BTC');
+      const ethPrice = await this.cryptoPricesService.getPrice('ETH');
+      
+      // USDT is typically 1 USD, but we can try to get it from token prices if needed
+      // For now, default to 1
+      const usdtPrice = 1;
 
-      if (response.data) {
-        this.cryptoRates = {
-          BTC: response.data.bitcoin?.usd || 0,
-          ETH: response.data.ethereum?.usd || 0,
-          USDT: response.data.tether?.usd || 1,
-        };
-        this.lastCryptoUpdate = new Date();
-        console.log("Updated crypto rates:", this.cryptoRates);
-      }
+      this.cryptoRates = {
+        BTC: btcPrice || 0,
+        ETH: ethPrice || 0,
+        USDT: usdtPrice,
+      };
+      this.lastCryptoUpdate = new Date();
+      console.log("Updated crypto rates from cache:", this.cryptoRates);
     } catch (error) {
       console.error("Error updating crypto rates:", error.message);
+      // Keep existing rates on error
     }
   }
 

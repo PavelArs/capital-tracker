@@ -16,6 +16,7 @@ export default function Crypto() {
   const [showForm, setShowForm] = useState(false);
   const [cryptoPrices, setCryptoPrices] = useState<CryptoPrice>({});
   const [tokenPrices, setTokenPrices] = useState<{ [address: string]: number }>({});
+  const [updatingWalletId, setUpdatingWalletId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     type: 'ethereum',
     address: '',
@@ -35,12 +36,11 @@ export default function Crypto() {
 
   const fetchCryptoPrices = async () => {
     try {
-      const response = await axios.get(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd'
-      );
+      // Use backend endpoint instead of direct CoinGecko API call
+      const response = await axios.get('/crypto/prices');
       const prices: CryptoPrice = {
-        ETH: { usd: response.data.ethereum?.usd || 0 },
-        BTC: { usd: response.data.bitcoin?.usd || 0 },
+        ETH: { usd: response.data.ETH?.usd || 0 },
+        BTC: { usd: response.data.BTC?.usd || 0 },
       };
       setCryptoPrices(prices);
     } catch (error) {
@@ -76,7 +76,13 @@ export default function Crypto() {
   const fetchWallets = async () => {
     try {
       const response = await axios.get('/crypto');
-      setWallets(response.data);
+      // Sort wallets by creation date to maintain consistent order
+      const sortedWallets = [...response.data].sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0).getTime();
+        const dateB = new Date(b.createdAt || 0).getTime();
+        return dateA - dateB; // Oldest first
+      });
+      setWallets(sortedWallets);
     } catch (error) {
       console.error('Error fetching wallets:', error);
     } finally {
@@ -117,13 +123,43 @@ export default function Crypto() {
   };
 
   const handleUpdateBalance = async (id: string) => {
+    setUpdatingWalletId(id);
     try {
-      await axios.patch(`/crypto/${id}/update-balance`);
-      fetchWallets();
-      fetchCryptoPrices(); // Update prices as well
-      // Token prices will be fetched automatically via useEffect when wallets update
+      // Update only the specific wallet
+      const response = await axios.patch(`/crypto/${id}/update-balance`);
+      const updatedWallet = response.data;
+      
+      // Update only the specific wallet in the list without reordering
+      setWallets(prevWallets => {
+        return prevWallets.map(wallet => 
+          wallet.id === id ? updatedWallet : wallet
+        );
+      });
+      
+      // Fetch token prices if this is an Ethereum wallet with tokens
+      if (updatedWallet.type === 'ethereum' && updatedWallet.tokens && Array.isArray(updatedWallet.tokens)) {
+        const contractAddresses = updatedWallet.tokens
+          .map((token: any) => token.contractAddress)
+          .filter((addr: string) => addr);
+        
+        if (contractAddresses.length > 0) {
+          try {
+            const tokenPricesResponse = await axios.post('/crypto/token-prices', {
+              contractAddresses: contractAddresses.map((addr: string) => addr.toLowerCase()),
+            });
+            setTokenPrices(prevPrices => ({
+              ...prevPrices,
+              ...tokenPricesResponse.data,
+            }));
+          } catch (error) {
+            console.error('Error fetching token prices:', error);
+          }
+        }
+      }
     } catch (error) {
       console.error('Error updating balance:', error);
+    } finally {
+      setUpdatingWalletId(null);
     }
   };
 
@@ -270,12 +306,16 @@ export default function Crypto() {
                   <button
                     className="update-btn"
                     onClick={() => handleUpdateBalance(wallet.id)}
+                    disabled={updatingWalletId === wallet.id}
                   >
-                    {t('crypto.updateBalance')}
+                    {updatingWalletId === wallet.id 
+                      ? t('common.loading') || 'Loading...' 
+                      : t('crypto.updateBalance')}
                   </button>
                   <button
                     className="delete-btn"
                     onClick={() => handleDelete(wallet.id)}
+                    disabled={updatingWalletId === wallet.id}
                   >
                     {t('common.delete')}
                   </button>
