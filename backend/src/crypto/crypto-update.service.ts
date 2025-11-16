@@ -4,12 +4,14 @@ import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import axios from 'axios';
 import { CryptoWallet, CryptoType } from '../entities/crypto-wallet.entity';
+import { CurrenciesService } from '../currencies/currencies.service';
 
 @Injectable()
 export class CryptoUpdateService {
   constructor(
     @InjectRepository(CryptoWallet)
     private cryptoWalletRepository: Repository<CryptoWallet>,
+    private currenciesService: CurrenciesService,
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -141,49 +143,160 @@ export class CryptoUpdateService {
   }
 
   private async getEthereumTokens(address: string): Promise<any[]> {
-    // Normalize address - remove 0x prefix for Ethplorer
-    const normalizedAddress = address.startsWith('0x') ? address.slice(2) : address;
+    // Normalize address - ensure it has 0x prefix
+    const normalizedAddress = address.startsWith('0x') ? address : `0x${address}`;
     
     try {
-      // Using Ethplorer API (free tier, no key required for basic info)
-      const response = await axios.get(
-        `https://api.ethplorer.io/getAddressInfo/${normalizedAddress}?apiKey=freekey`,
-        { timeout: 10000 },
+      // Get list of active currencies from settings with contract addresses
+      const currencies = await this.currenciesService.findAll();
+      
+      // Filter currencies that have contract addresses (ERC-20 tokens)
+      const tokenCurrencies = currencies.filter(
+        c => c.contractAddress && c.contractAddress.startsWith('0x')
       );
 
       const tokens: any[] = [];
 
-      if (response.data && response.data.tokens) {
-        for (const token of response.data.tokens) {
-          if (token.tokenInfo && parseFloat(token.balance || '0') > 0) {
-            const decimals = parseInt(token.tokenInfo.decimals || '18', 10);
-            const balance = parseFloat(token.balance || '0') / Math.pow(10, decimals);
+      // Get token balances directly by contract address
+      for (const currency of tokenCurrencies) {
+        try {
+          const balance = await this.getERC20TokenBalance(
+            normalizedAddress,
+            currency.contractAddress
+          );
+          
+          if (balance > 0) {
+            // Get token decimals (default to 18 if not available)
+            const decimals = await this.getTokenDecimals(currency.contractAddress) || 18;
+            const formattedBalance = balance / Math.pow(10, decimals);
             
             tokens.push({
-              symbol: token.tokenInfo.symbol || 'UNKNOWN',
-              name: token.tokenInfo.name || 'Unknown Token',
-              balance: balance,
-              contractAddress: token.tokenInfo.address,
+              symbol: currency.code,
+              name: currency.name,
+              balance: formattedBalance,
+              contractAddress: currency.contractAddress.toLowerCase(),
               decimals: decimals,
             });
           }
+        } catch (error) {
+          console.error(`Error fetching balance for token ${currency.code} (${currency.contractAddress}):`, error.message);
+          // Continue with other tokens
         }
       }
 
       return tokens;
     } catch (error) {
       console.error('Error fetching Ethereum tokens:', error.message);
-      
-      // Fallback: try Etherscan API for token balances (limited without API key)
+      return [];
+    }
+  }
+
+  private async getERC20TokenBalance(walletAddress: string, contractAddress: string): Promise<number> {
+    // ERC-20 balanceOf function signature: balanceOf(address) -> uint256
+    // Function selector: 0x70a08231
+    const functionSelector = '0x70a08231';
+    
+    // Pad wallet address to 32 bytes (64 hex chars)
+    const paddedAddress = walletAddress.toLowerCase().slice(2).padStart(64, '0');
+    const data = functionSelector + paddedAddress;
+    
+    const normalizedContractAddress = contractAddress.startsWith('0x') 
+      ? contractAddress.toLowerCase() 
+      : `0x${contractAddress.toLowerCase()}`;
+
+    // Try multiple endpoints for reliability
+    const endpoints = [
+      { url: 'https://eth.llamarpc.com', type: 'rpc' },
+      { url: 'https://rpc.ankr.com/eth', type: 'rpc' },
+      { url: 'https://ethereum.publicnode.com', type: 'rpc' },
+    ];
+
+    for (const endpoint of endpoints) {
       try {
-        // Note: Etherscan free tier has very limited token support
-        // For production, you'd need an API key
-        return [];
-      } catch (e) {
-        console.error('Error fetching tokens from fallback:', e.message);
-        return [];
+        if (endpoint.type === 'rpc') {
+          const response = await axios.post(
+            endpoint.url,
+            {
+              jsonrpc: '2.0',
+              method: 'eth_call',
+              params: [
+                {
+                  to: normalizedContractAddress,
+                  data: data,
+                },
+                'latest',
+              ],
+              id: 1,
+            },
+            { timeout: 10000 },
+          );
+
+          if (response.data && response.data.result && response.data.result !== '0x') {
+            // Parse hex result to number
+            const balanceHex = response.data.result;
+            if (balanceHex === '0x' || balanceHex === '0x0') {
+              return 0;
+            }
+            const balanceWei = BigInt(balanceHex);
+            return Number(balanceWei);
+          }
+        }
+      } catch (error) {
+        console.log(`Failed to get token balance from ${endpoint.url}, trying next...`);
+        continue;
       }
     }
+
+    return 0;
+  }
+
+  private async getTokenDecimals(contractAddress: string): Promise<number | null> {
+    // ERC-20 decimals() function signature: decimals() -> uint8
+    // Function selector: 0x313ce567
+    const functionSelector = '0x313ce567';
+    
+    const normalizedContractAddress = contractAddress.startsWith('0x') 
+      ? contractAddress.toLowerCase() 
+      : `0x${contractAddress.toLowerCase()}`;
+
+    const endpoints = [
+      { url: 'https://eth.llamarpc.com', type: 'rpc' },
+      { url: 'https://rpc.ankr.com/eth', type: 'rpc' },
+      { url: 'https://ethereum.publicnode.com', type: 'rpc' },
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        if (endpoint.type === 'rpc') {
+          const response = await axios.post(
+            endpoint.url,
+            {
+              jsonrpc: '2.0',
+              method: 'eth_call',
+              params: [
+                {
+                  to: normalizedContractAddress,
+                  data: functionSelector,
+                },
+                'latest',
+              ],
+              id: 1,
+            },
+            { timeout: 10000 },
+          );
+
+          if (response.data && response.data.result && response.data.result !== '0x') {
+            const decimalsHex = response.data.result;
+            const decimals = parseInt(decimalsHex, 16);
+            return decimals;
+          }
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+
+    return null; // Return null if decimals cannot be fetched
   }
 }
 

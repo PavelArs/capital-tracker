@@ -37,6 +37,11 @@ export class CryptoController {
     return this.cryptoPricesService.getAllPrices();
   }
 
+  @Post('token-prices')
+  async getTokenPrices(@Body() body: { contractAddresses: string[] }) {
+    return this.cryptoPricesService.getBulkTokenPrices(body.contractAddresses);
+  }
+
   @Get(':id')
   findOne(@Request() req, @Param('id') id: string) {
     return this.cryptoService.findOne(id, req.user.userId);

@@ -290,14 +290,20 @@
 
 .token-item {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border-color);
 }
 
 .token-item:last-child {
   border-bottom: none;
+}
+
+.token-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
 }
 
 .token-symbol {
@@ -308,6 +314,17 @@
 .token-balance {
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.token-value {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.token-usd {
+  color: var(--success-color);
+  font-size: 0.85rem;
+  font-weight: 500;
 }
 
 .last-updated {

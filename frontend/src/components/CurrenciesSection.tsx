@@ -11,6 +11,7 @@ interface Currency {
   type: "fiat" | "crypto" | "stablecoin";
   isActive: boolean;
   isDefault: boolean;
+  contractAddress?: string;
 }
 
 export default function CurrenciesSection() {
@@ -25,6 +26,7 @@ export default function CurrenciesSection() {
     symbol: "",
     type: "fiat" as "fiat" | "crypto" | "stablecoin",
     isActive: true,
+    contractAddress: "",
   });
 
   useEffect(() => {
@@ -45,10 +47,16 @@ export default function CurrenciesSection() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Prepare data: remove contractAddress if empty
+      const dataToSend = { ...formData };
+      if (!dataToSend.contractAddress || dataToSend.contractAddress.trim() === '') {
+        delete dataToSend.contractAddress;
+      }
+      
       if (editingId) {
-        await axios.patch(`/currencies/${editingId}`, formData);
+        await axios.patch(`/currencies/${editingId}`, dataToSend);
       } else {
-        await axios.post("/currencies", formData);
+        await axios.post("/currencies", dataToSend);
       }
       setShowForm(false);
       setEditingId(null);
@@ -58,6 +66,7 @@ export default function CurrenciesSection() {
         symbol: "",
         type: "fiat",
         isActive: true,
+        contractAddress: "",
       });
       fetchCurrencies();
     } catch (error) {
@@ -73,6 +82,7 @@ export default function CurrenciesSection() {
       symbol: currency.symbol,
       type: currency.type,
       isActive: currency.isActive,
+      contractAddress: currency.contractAddress || "",
     });
     setShowForm(true);
   };
@@ -97,6 +107,7 @@ export default function CurrenciesSection() {
       symbol: "",
       type: "fiat",
       isActive: true,
+      contractAddress: "",
     });
   };
 
@@ -199,6 +210,25 @@ export default function CurrenciesSection() {
               </label>
             </div>
 
+            {(formData.type === "crypto" || formData.type === "stablecoin") && (
+              <div className="form-group">
+                <label>Contract Address (Ethereum ERC-20)</label>
+                <input
+                  type="text"
+                  value={formData.contractAddress}
+                  onChange={(e) =>
+                    setFormData({ ...formData, contractAddress: e.target.value })
+                  }
+                  placeholder="0x..."
+                  pattern="^0x[a-fA-F0-9]{40}$"
+                  title="Ethereum contract address (0x followed by 40 hex characters)"
+                />
+                <small className="form-hint">
+                  Ethereum contract address for ERC-20 tokens (e.g., USDT: 0xdAC17F958D2ee523a2206206994597C13D831ec7)
+                </small>
+              </div>
+            )}
+
             <div className="form-actions">
               <button type="submit" className="btn-primary">
                 {editingId ? t('common.update') : t('common.create')}
@@ -272,6 +302,7 @@ export default function CurrenciesSection() {
                   <th>{t('currencies.code')}</th>
                   <th>{t('common.name')}</th>
                   <th>{t('currencies.symbol')}</th>
+                  <th>Contract Address</th>
                   <th>{t('currencies.status')}</th>
                   <th>{t('common.actions')}</th>
                 </tr>
@@ -282,6 +313,15 @@ export default function CurrenciesSection() {
                     <td className="currency-code">{currency.code}</td>
                     <td>{currency.name}</td>
                     <td className="currency-symbol">{currency.symbol}</td>
+                    <td className="contract-address">
+                      {currency.contractAddress ? (
+                        <span title={currency.contractAddress}>
+                          {currency.contractAddress.slice(0, 10)}...{currency.contractAddress.slice(-8)}
+                        </span>
+                      ) : (
+                        <span className="no-contract">-</span>
+                      )}
+                    </td>
                     <td>
                       <span
                         className={`status-badge ${
@@ -323,6 +363,7 @@ export default function CurrenciesSection() {
                   <th>{t('currencies.code')}</th>
                   <th>{t('common.name')}</th>
                   <th>{t('currencies.symbol')}</th>
+                  <th>Contract Address</th>
                   <th>{t('currencies.status')}</th>
                   <th>{t('common.actions')}</th>
                 </tr>
@@ -333,6 +374,15 @@ export default function CurrenciesSection() {
                     <td className="currency-code">{currency.code}</td>
                     <td>{currency.name}</td>
                     <td className="currency-symbol">{currency.symbol}</td>
+                    <td className="contract-address">
+                      {currency.contractAddress ? (
+                        <span title={currency.contractAddress}>
+                          {currency.contractAddress.slice(0, 10)}...{currency.contractAddress.slice(-8)}
+                        </span>
+                      ) : (
+                        <span className="no-contract">-</span>
+                      )}
+                    </td>
                     <td>
                       <span
                         className={`status-badge ${

@@ -164,6 +164,28 @@
   font-size: 1.2rem;
 }
 
+.contract-address {
+  font-family: monospace;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.contract-address span {
+  cursor: help;
+}
+
+.no-contract {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.form-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
 .status-badge {
   padding: 0.25rem 0.5rem;
   border-radius: 4px;

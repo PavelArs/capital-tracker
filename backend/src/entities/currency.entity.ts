@@ -39,6 +39,9 @@ export class Currency {
   @Column({ default: false })
   isDefault: boolean;
 
+  @Column({ nullable: true, length: 42 })
+  contractAddress: string; // Ethereum contract address for ERC-20 tokens (e.g., USDT: 0xdAC17F958D2ee523a2206206994597C13D831ec7)
+
   @CreateDateColumn()
   createdAt: Date;
 

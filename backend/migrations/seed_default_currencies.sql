@@ -4,6 +4,17 @@
 
 BEGIN;
 
+-- Add contractAddress column if it doesn't exist (for ERC-20 token contract addresses)
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'currencies' AND column_name = 'contractAddress'
+  ) THEN
+    ALTER TABLE currencies ADD COLUMN "contractAddress" VARCHAR(42);
+  END IF;
+END $$;
+
 -- Create currency_type_enum if it doesn't exist (TypeORM may create currencies_type_enum)
 DO $$
 BEGIN
@@ -80,12 +91,17 @@ BEGIN
   -- USDT - Tether
   IF NOT EXISTS (SELECT 1 FROM currencies WHERE code = 'USDT') THEN
     IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'currencies_type_enum') THEN
-      INSERT INTO currencies (id, code, name, symbol, type, "isActive", "isDefault", "createdAt", "updatedAt")
-      VALUES (gen_random_uuid(), 'USDT', 'Tether', '₮', 'stablecoin'::currencies_type_enum, true, false, NOW(), NOW());
+      INSERT INTO currencies (id, code, name, symbol, type, "isActive", "isDefault", "contractAddress", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), 'USDT', 'Tether', '₮', 'stablecoin'::currencies_type_enum, true, false, '0xdAC17F958D2ee523a2206206994597C13D831ec7', NOW(), NOW());
     ELSE
-      INSERT INTO currencies (id, code, name, symbol, type, "isActive", "isDefault", "createdAt", "updatedAt")
-      VALUES (gen_random_uuid(), 'USDT', 'Tether', '₮', 'stablecoin'::currency_type_enum, true, false, NOW(), NOW());
+      INSERT INTO currencies (id, code, name, symbol, type, "isActive", "isDefault", "contractAddress", "createdAt", "updatedAt")
+      VALUES (gen_random_uuid(), 'USDT', 'Tether', '₮', 'stablecoin'::currency_type_enum, true, false, '0xdAC17F958D2ee523a2206206994597C13D831ec7', NOW(), NOW());
     END IF;
+  ELSE
+    -- Update existing USDT with contract address if it doesn't have one
+    UPDATE currencies 
+    SET "contractAddress" = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+    WHERE code = 'USDT' AND ("contractAddress" IS NULL OR "contractAddress" = '');
   END IF;
 END $$;
 

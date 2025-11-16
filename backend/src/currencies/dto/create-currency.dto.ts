@@ -22,5 +22,9 @@ export class CreateCurrencyDto {
   @IsBoolean()
   @IsOptional()
   isDefault?: boolean;
+
+  @IsString()
+  @IsOptional()
+  contractAddress?: string; // Ethereum contract address for ERC-20 tokens
 }
 

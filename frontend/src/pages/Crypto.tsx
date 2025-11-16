@@ -15,6 +15,7 @@ export default function Crypto() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [cryptoPrices, setCryptoPrices] = useState<CryptoPrice>({});
+  const [tokenPrices, setTokenPrices] = useState<{ [address: string]: number }>({});
   const [formData, setFormData] = useState({
     type: 'ethereum',
     address: '',
@@ -24,6 +25,13 @@ export default function Crypto() {
     fetchWallets();
     fetchCryptoPrices();
   }, []);
+
+  useEffect(() => {
+    // Fetch token prices when wallets are loaded
+    if (wallets.length > 0) {
+      fetchTokenPrices();
+    }
+  }, [wallets]);
 
   const fetchCryptoPrices = async () => {
     try {
@@ -37,6 +45,31 @@ export default function Crypto() {
       setCryptoPrices(prices);
     } catch (error) {
       console.error('Error fetching crypto prices:', error);
+    }
+  };
+
+  const fetchTokenPrices = async () => {
+    try {
+      // Collect all token contract addresses from Ethereum wallets
+      const contractAddresses: string[] = [];
+      wallets.forEach((wallet) => {
+        if (wallet.type === 'ethereum' && wallet.tokens && Array.isArray(wallet.tokens)) {
+          wallet.tokens.forEach((token: any) => {
+            if (token.contractAddress && !contractAddresses.includes(token.contractAddress.toLowerCase())) {
+              contractAddresses.push(token.contractAddress.toLowerCase());
+            }
+          });
+        }
+      });
+
+      if (contractAddresses.length > 0) {
+        const response = await axios.post('/crypto/token-prices', {
+          contractAddresses,
+        });
+        setTokenPrices(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching token prices:', error);
     }
   };
 
@@ -88,6 +121,7 @@ export default function Crypto() {
       await axios.patch(`/crypto/${id}/update-balance`);
       fetchWallets();
       fetchCryptoPrices(); // Update prices as well
+      // Token prices will be fetched automatically via useEffect when wallets update
     } catch (error) {
       console.error('Error updating balance:', error);
     }
@@ -103,8 +137,13 @@ export default function Crypto() {
     
     // Add token values (for Ethereum only)
     if (wallet.type === 'ethereum' && wallet.tokens && Array.isArray(wallet.tokens)) {
-      // Note: Token prices would need to be fetched from an API
-      // For now, we'll just show them without USD value
+      wallet.tokens.forEach((token: any) => {
+        if (token.contractAddress) {
+          const tokenPrice = tokenPrices[token.contractAddress.toLowerCase()] || 0;
+          const tokenBalance = parseFloat(token.balance.toString());
+          totalValue += tokenBalance * tokenPrice;
+        }
+      });
     }
     
     return totalValue;
@@ -198,14 +237,32 @@ export default function Crypto() {
                   <div className="wallet-tokens">
                     <p className="tokens-label">{t('crypto.tokens')}</p>
                     <ul className="tokens-list">
-                      {wallet.tokens.map((token: any, index: number) => (
-                        <li key={index} className="token-item">
-                          <span className="token-symbol">{token.symbol}</span>
-                          <span className="token-balance">
-                            {parseFloat(token.balance.toString()).toFixed(4)}
-                          </span>
-                        </li>
-                      ))}
+                      {wallet.tokens.map((token: any, index: number) => {
+                        const tokenPrice = token.contractAddress 
+                          ? tokenPrices[token.contractAddress.toLowerCase()] || 0 
+                          : 0;
+                        const tokenValueUSD = tokenPrice * parseFloat(token.balance.toString());
+                        return (
+                          <li key={index} className="token-item">
+                            <div className="token-info">
+                              <span className="token-symbol">{token.symbol}</span>
+                              <span className="token-balance">
+                                {parseFloat(token.balance.toString()).toFixed(4)}
+                              </span>
+                            </div>
+                            {tokenPrice > 0 && (
+                              <div className="token-value">
+                                <span className="token-usd">
+                                  ≈ ${tokenValueUSD.toLocaleString('en-US', {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })} USD
+                                </span>
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
