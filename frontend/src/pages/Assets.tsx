@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Pie } from "react-chartjs-2";
@@ -16,6 +17,7 @@ interface Currency {
 }
 
 export default function Assets() {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -272,7 +274,7 @@ export default function Assets() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this asset?")) {
+    if (window.confirm(t('assets.deleteConfirm'))) {
       try {
         await axios.delete(`/assets/${id}`);
         fetchAssets();
@@ -654,13 +656,13 @@ export default function Assets() {
   }, [assets, viewMode, selectedCurrency, convertAmount, getFilteredAssets]);
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">{t('common.loading')}</div>;
   }
 
   return (
     <div className="assets-page">
       <div className="page-header">
-        <h1>Assets</h1>
+        <h1>{t('assets.title')}</h1>
         <button
           onClick={() => {
             if (showForm) {
@@ -670,7 +672,7 @@ export default function Assets() {
             }
           }}
         >
-          {showForm ? "Cancel" : "Add Asset"}
+          {showForm ? t('common.cancel') : t('assets.addAsset')}
         </button>
       </div>
 
@@ -683,7 +685,7 @@ export default function Assets() {
             setActiveTab("overview");
           }}
         >
-          Overview
+          {t('assets.overview')}
         </button>
         <button
           className={`sub-nav-btn ${activeTab === "stock" ? "active" : ""}`}
@@ -692,7 +694,7 @@ export default function Assets() {
             setActiveTab("stock");
           }}
         >
-          Stock Assets
+          {t('assets.stockAssets')}
         </button>
         <button
           className={`sub-nav-btn ${activeTab === "flow" ? "active" : ""}`}
@@ -701,7 +703,7 @@ export default function Assets() {
             setActiveTab("flow");
           }}
         >
-          Flow Assets
+          {t('assets.flowAssets')}
         </button>
       </div>
 
@@ -709,7 +711,7 @@ export default function Assets() {
         <div className="modal-overlay" onClick={handleCancel}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingId ? "Edit Asset" : "Add New Asset"}</h2>
+              <h2>{editingId ? t('assets.editAsset') : t('assets.addNewAsset')}</h2>
               <button className="modal-close" onClick={handleCancel}>
                 ×
               </button>
@@ -717,7 +719,7 @@ export default function Assets() {
             <form onSubmit={handleSubmit} className="asset-form">
               <div className="form-row">
                 <div className="form-group">
-                  <label>Name</label>
+                  <label>{t('common.name')}</label>
                   <input
                     type="text"
                     value={formData.name}
@@ -728,7 +730,7 @@ export default function Assets() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Asset Type</label>
+                  <label>{t('assets.assetType')}</label>
                   <select
                     value={formData.assetType}
                     onChange={(e) => {
@@ -747,12 +749,12 @@ export default function Assets() {
                     }}
                     required
                   >
-                    <option value="stock">Stock (Балансовые активы)</option>
-                    <option value="flow">Flow (Потоковые доходы)</option>
+                    <option value="stock">{t('assets.stockType')}</option>
+                    <option value="flow">{t('assets.flowType')}</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Category</label>
+                  <label>{t('common.category')}</label>
                   <select
                     value={formData.category}
                     onChange={(e) => {
@@ -779,29 +781,29 @@ export default function Assets() {
                   >
                     {formData.assetType === "stock" ? (
                       <>
-                        <option value="real_estate">Real Estate</option>
-                        <option value="investments">Investments</option>
-                        <option value="savings">Savings</option>
-                        <option value="crypto">Crypto</option>
-                        <option value="vehicle">Vehicle</option>
-                        <option value="equipment">Equipment</option>
-                        <option value="other">Other</option>
+                        <option value="real_estate">{t('assets.categories.realEstate')}</option>
+                        <option value="investments">{t('assets.categories.investments')}</option>
+                        <option value="savings">{t('assets.categories.savings')}</option>
+                        <option value="crypto">{t('assets.categories.crypto')}</option>
+                        <option value="vehicle">{t('assets.categories.vehicle')}</option>
+                        <option value="equipment">{t('assets.categories.equipment')}</option>
+                        <option value="other">{t('assets.categories.other')}</option>
                       </>
                     ) : (
                       <>
-                        <option value="salary">Salary</option>
-                        <option value="dividends">Dividends</option>
-                        <option value="freelance">Freelance</option>
-                        <option value="rent_income">Rent Income</option>
-                        <option value="pension">Pension</option>
-                        <option value="other">Other</option>
+                        <option value="salary">{t('assets.categories.salary')}</option>
+                        <option value="dividends">{t('assets.categories.dividends')}</option>
+                        <option value="freelance">{t('assets.categories.freelance')}</option>
+                        <option value="rent_income">{t('assets.categories.rentIncome')}</option>
+                        <option value="pension">{t('assets.categories.pension')}</option>
+                        <option value="other">{t('assets.categories.other')}</option>
                       </>
                     )}
                   </select>
                 </div>
                 {formData.assetType === "flow" && (
                   <div className="form-group">
-                    <label>Income Type</label>
+                    <label>{t('assets.incomeType')}</label>
                     <select
                       value={formData.incomeType}
                       onChange={(e) =>
@@ -813,16 +815,16 @@ export default function Assets() {
                       required
                     >
                       <option value="active">
-                        Active (требует активной работы)
+                        {t('assets.activeIncome')}
                       </option>
-                      <option value="passive">Passive (пассивный доход)</option>
+                      <option value="passive">{t('assets.passiveIncome')}</option>
                     </select>
                   </div>
                 )}
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Amount</label>
+                  <label>{t('common.amount')}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -834,7 +836,7 @@ export default function Assets() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Currency</label>
+                  <label>{t('common.currency')}</label>
                   <select
                     value={formData.currencyId}
                     onChange={(e) =>
@@ -850,7 +852,7 @@ export default function Assets() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>Date</label>
+                  <label>{t('common.date')}</label>
                   <input
                     type="date"
                     value={formData.date}
@@ -862,7 +864,7 @@ export default function Assets() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Description</label>
+                <label>{t('common.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) =>
@@ -872,14 +874,14 @@ export default function Assets() {
               </div>
               <div className="form-actions">
                 <button type="submit">
-                  {editingId ? "Update Asset" : "Create Asset"}
+                  {editingId ? t('assets.updateAsset') : t('assets.createAsset')}
                 </button>
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="cancel-btn"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </div>
             </form>
@@ -889,38 +891,38 @@ export default function Assets() {
 
       <div className="view-controls">
         <div className="view-mode-switch">
-          <label>View Mode:</label>
+          <label>{t('assets.viewMode')}</label>
           <button
             className={`mode-btn ${viewMode === "single" ? "active" : ""}`}
             onClick={() => setViewMode("single")}
           >
-            Single Currency
+            {t('assets.singleCurrency')}
           </button>
           <button
             className={`mode-btn ${viewMode === "all" ? "active" : ""}`}
             onClick={() => setViewMode("all")}
           >
-            All Currencies
+            {t('assets.allCurrencies')}
           </button>
         </div>
         <div className="group-by-switch">
-          <label>Group By:</label>
+          <label>{t('assets.groupBy')}</label>
           <button
             className={`mode-btn ${groupBy === "name" ? "active" : ""}`}
             onClick={() => setGroupBy("name")}
           >
-            By Name
+            {t('assets.byName')}
           </button>
           <button
             className={`mode-btn ${groupBy === "category" ? "active" : ""}`}
             onClick={() => setGroupBy("category")}
           >
-            By Category
+            {t('assets.byCategory')}
           </button>
         </div>
         {viewMode === "single" && (
           <div className="currency-selector">
-            <label>Display Currency:</label>
+            <label>{t('assets.displayCurrency')}</label>
             <select
               value={selectedCurrency}
               onChange={(e) => setSelectedCurrency(e.target.value)}
@@ -939,7 +941,7 @@ export default function Assets() {
                 {(activeTab === "overview" || activeTab === "stock") &&
                   totalAmount.stock.length > 0 && (
                     <div className="total-amount stock-total">
-                      <span className="total-label">Stock Assets:</span>
+                      <span className="total-label">{t('assets.stockAssetsTotal')}</span>
                       <span className="total-value">
                         {totalAmount.stock[0].amount.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -952,7 +954,7 @@ export default function Assets() {
                 {(activeTab === "overview" || activeTab === "flow") &&
                   totalAmount.flow.length > 0 && (
                     <div className="total-amount flow-total">
-                      <span className="total-label">Flow Income:</span>
+                      <span className="total-label">{t('assets.flowIncomeTotal')}</span>
                       <span className="total-value">
                         {totalAmount.flow[0].amount.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -1019,7 +1021,7 @@ export default function Assets() {
       {getFilteredAssets().length > 0 && chartData && (
         <div className="chart-container">
           <h2>
-            Asset Distribution
+            {t('assets.assetDistribution')}
             {viewMode === "single" && (
               <span className="currency-badge"> ({selectedCurrency})</span>
             )}
@@ -1125,21 +1127,21 @@ export default function Assets() {
       <div className="assets-list">
         <h2>
           {activeTab === "stock"
-            ? "Stock Assets"
+            ? t('assets.stockAssets')
             : activeTab === "flow"
-            ? "Flow Assets"
-            : "All Assets"}
+            ? t('assets.flowAssets')
+            : t('assets.allAssets')}
         </h2>
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Type</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>Currency</th>
-              <th>Date</th>
-              <th>Actions</th>
+              <th>{t('common.name')}</th>
+              <th>{t('common.type')}</th>
+              <th>{t('common.category')}</th>
+              <th>{t('common.amount')}</th>
+              <th>{t('common.currency')}</th>
+              <th>{t('common.date')}</th>
+              <th>{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1148,7 +1150,7 @@ export default function Assets() {
                 <td>{asset.name}</td>
                 <td>
                   <span className={`asset-type-badge ${asset.assetType}`}>
-                    {asset.assetType === "stock" ? "Stock" : "Flow"}
+                    {asset.assetType === "stock" ? t('assets.stockAssets') : t('assets.flowAssets')}
                   </span>
                 </td>
                 <td>{asset.category}</td>
@@ -1165,7 +1167,7 @@ export default function Assets() {
                       handleEdit(asset);
                     }}
                   >
-                    Edit
+                    {t('common.edit')}
                   </button>
                   <button
                     className="delete-btn"
@@ -1175,7 +1177,7 @@ export default function Assets() {
                       handleDelete(asset.id);
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </td>
               </tr>

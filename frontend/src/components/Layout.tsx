@@ -1,10 +1,12 @@
 import { Outlet, Link, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import './Layout.css';
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const handleLogout = () => {
     logout();
@@ -16,15 +18,15 @@ export default function Layout() {
       <nav className="navbar">
         <div className="nav-brand">Capital Tracker</div>
         <div className="nav-links">
-          <Link to="/">Dashboard</Link>
-          <Link to="/assets">Assets</Link>
-          <Link to="/liabilities">Liabilities</Link>
-          <Link to="/crypto">Crypto</Link>
-          <Link to="/currencies">Currencies</Link>
+          <Link to="/">{t('navigation.dashboard')}</Link>
+          <Link to="/assets">{t('navigation.assets')}</Link>
+          <Link to="/liabilities">{t('navigation.liabilities')}</Link>
+          <Link to="/crypto">{t('navigation.crypto')}</Link>
+          <Link to="/settings">{t('navigation.settings')}</Link>
         </div>
         <div className="nav-user">
           <span>{user?.email}</span>
-          <button onClick={handleLogout}>Logout</button>
+          <button onClick={handleLogout}>{t('auth.logout')}</button>
         </div>
       </nav>
       <main className="main-content">

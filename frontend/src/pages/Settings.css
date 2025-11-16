@@ -1,0 +1,125 @@
+.settings-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.settings-header {
+  margin-bottom: 2rem;
+}
+
+.settings-header h1 {
+  color: var(--text-color);
+  margin: 0;
+}
+
+.settings-container {
+  display: flex;
+  gap: 2rem;
+}
+
+.settings-sidebar {
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-nav-btn {
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  font-size: 1rem;
+}
+
+.settings-nav-btn:hover {
+  background-color: var(--bg-secondary);
+  border-color: var(--primary-color);
+}
+
+.settings-nav-btn.active {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.settings-content {
+  flex: 1;
+  background-color: var(--bg-color);
+  padding: 2rem;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px var(--shadow);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.settings-section h2 {
+  color: var(--text-color);
+  margin-top: 0;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--border-color);
+}
+
+.settings-group {
+  margin-bottom: 2rem;
+}
+
+.settings-group h3 {
+  color: var(--text-color);
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.settings-description {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.settings-control {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.settings-control .language-switcher,
+.settings-control .theme-switcher {
+  min-width: 150px;
+}
+
+.currencies-section {
+  width: 100%;
+}
+
+.currencies-section .currencies-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.currencies-section .currencies-header h2 {
+  margin: 0;
+  color: var(--text-color);
+}
+
+@media (max-width: 768px) {
+  .settings-container {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    flex-direction: row;
+    overflow-x: auto;
+    min-width: auto;
+  }
+
+  .settings-nav-btn {
+    white-space: nowrap;
+  }
+}
+

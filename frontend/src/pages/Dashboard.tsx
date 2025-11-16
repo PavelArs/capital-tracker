@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import axios from "axios";
 import { Line } from "react-chartjs-2";
 import {
@@ -13,36 +14,6 @@ import {
 } from "chart.js";
 import "./Dashboard.css";
 
-// Helper function to format category names
-const formatCategoryName = (category: string): string => {
-  const categoryMap: Record<string, string> = {
-    // Stock assets
-    real_estate: "Real Estate",
-    investments: "Investments",
-    savings: "Savings",
-    crypto: "Crypto",
-    vehicle: "Vehicle",
-    equipment: "Equipment",
-    // Flow assets
-    salary: "Salary",
-    dividends: "Dividends",
-    freelance: "Freelance",
-    rent_income: "Rent Income",
-    pension: "Pension",
-    // Liabilities
-    subscriptions: "Subscriptions",
-    regular_expenses: "Regular Expenses",
-    loans: "Loans",
-    mortgage: "Mortgage",
-    credit_card: "Credit Card",
-    other: "Other",
-  };
-  return (
-    categoryMap[category] ||
-    category.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
-  );
-};
-
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -54,10 +25,41 @@ ChartJS.register(
 );
 
 export default function Dashboard() {
+  const { t } = useTranslation();
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState("USD");
+
+  // Helper function to format category names
+  const formatCategoryName = (category: string): string => {
+    const categoryMap: Record<string, string> = {
+      // Stock assets
+      real_estate: t('assets.categories.realEstate'),
+      investments: t('assets.categories.investments'),
+      savings: t('assets.categories.savings'),
+      crypto: t('assets.categories.crypto'),
+      vehicle: t('assets.categories.vehicle'),
+      equipment: t('assets.categories.equipment'),
+      // Flow assets
+      salary: t('assets.categories.salary'),
+      dividends: t('assets.categories.dividends'),
+      freelance: t('assets.categories.freelance'),
+      rent_income: t('assets.categories.rentIncome'),
+      pension: t('assets.categories.pension'),
+      // Liabilities
+      subscriptions: t('liabilities.categories.subscriptions'),
+      regular_expenses: t('liabilities.categories.regularExpenses'),
+      loans: t('liabilities.categories.loans'),
+      mortgage: t('liabilities.categories.mortgage'),
+      credit_card: t('liabilities.categories.creditCard'),
+      other: t('assets.categories.other'),
+    };
+    return (
+      categoryMap[category] ||
+      category.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+    );
+  };
 
   useEffect(() => {
     fetchMetrics();
@@ -92,21 +94,21 @@ export default function Dashboard() {
     labels: history.map((h) => h.date),
     datasets: [
       {
-        label: "Net Worth",
+        label: t('dashboard.netWorth'),
         data: history.map((h) => h.netWorth),
         borderColor: "rgb(75, 192, 192)",
         backgroundColor: "rgba(75, 192, 192, 0.2)",
         tension: 0.1,
       },
       {
-        label: "Total Assets",
+        label: t('dashboard.stockAssets'),
         data: history.map((h) => h.totalAssets),
         borderColor: "rgb(54, 162, 235)",
         backgroundColor: "rgba(54, 162, 235, 0.2)",
         tension: 0.1,
       },
       {
-        label: "Total Liabilities",
+        label: t('dashboard.totalLiabilities'),
         data: history.map((h) => h.totalLiabilities),
         borderColor: "rgb(255, 99, 132)",
         backgroundColor: "rgba(255, 99, 132, 0.2)",
@@ -116,15 +118,15 @@ export default function Dashboard() {
   };
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">{t('common.loading')}</div>;
   }
 
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h1>Dashboard</h1>
+        <h1>{t('dashboard.title')}</h1>
         <div className="currency-selector">
-          <label>Currency:</label>
+          <label>{t('common.currency')}:</label>
           <select
             value={currency}
             onChange={(e) => setCurrency(e.target.value)}
@@ -139,47 +141,47 @@ export default function Dashboard() {
         <>
           <div className="metrics-grid">
             <div className="metric-card">
-              <h3>Net Worth</h3>
+              <h3>{t('dashboard.netWorth')}</h3>
               <p className="metric-value">
                 {metrics.netWorth?.toLocaleString(undefined, {
                   style: "currency",
                   currency: metrics.currency || "USD",
                 })}
               </p>
-              <p className="metric-description">Stock Assets - Liabilities</p>
+              <p className="metric-description">{t('dashboard.netWorthDescription')}</p>
             </div>
             <div className="metric-card stock-assets">
-              <h3>Stock Assets</h3>
+              <h3>{t('dashboard.stockAssets')}</h3>
               <p className="metric-value">
                 {metrics.totalStockAssets?.toLocaleString(undefined, {
                   style: "currency",
                   currency: metrics.currency || "USD",
                 })}
               </p>
-              <p className="metric-description">Balance sheet assets</p>
+              <p className="metric-description">{t('dashboard.stockAssetsDescription')}</p>
             </div>
             <div className="metric-card flow-income">
-              <h3>Flow Income</h3>
+              <h3>{t('dashboard.flowIncome')}</h3>
               <p className="metric-value">
                 {metrics.totalFlowIncome?.toLocaleString(undefined, {
                   style: "currency",
                   currency: metrics.currency || "USD",
                 })}
               </p>
-              <p className="metric-description">Regular income streams</p>
+              <p className="metric-description">{t('dashboard.flowIncomeDescription')}</p>
             </div>
             <div className="metric-card">
-              <h3>Crypto Value</h3>
+              <h3>{t('dashboard.cryptoValue')}</h3>
               <p className="metric-value">
                 {metrics.cryptoValue?.toLocaleString(undefined, {
                   style: "currency",
                   currency: metrics.currency || "USD",
                 })}
               </p>
-              <p className="metric-description">Included in Stock Assets</p>
+              <p className="metric-description">{t('dashboard.cryptoValueDescription')}</p>
             </div>
             <div className="metric-card">
-              <h3>Total Liabilities</h3>
+              <h3>{t('dashboard.totalLiabilities')}</h3>
               <p className="metric-value">
                 {metrics.totalLiabilities?.toLocaleString(undefined, {
                   style: "currency",
@@ -188,7 +190,7 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="metric-card">
-              <h3>Monthly Expenses</h3>
+              <h3>{t('dashboard.monthlyExpenses')}</h3>
               <p className="metric-value">
                 {metrics.monthlyExpenses?.toLocaleString(undefined, {
                   style: "currency",
@@ -198,45 +200,45 @@ export default function Dashboard() {
             </div>
             {metrics.runway && (
               <div className="metric-card">
-                <h3>Runway</h3>
+                <h3>{t('dashboard.runway')}</h3>
                 <p className="metric-value">
-                  {metrics.runway.toFixed(1)} months
+                  {metrics.runway.toFixed(1)} {t('dashboard.months')}
                 </p>
-                <p className="metric-description">Based on Net Worth</p>
+                <p className="metric-description">{t('dashboard.runwayDescription')}</p>
               </div>
             )}
             {metrics.totalActiveIncome !== undefined && (
               <div className="metric-card">
-                <h3>Active Income</h3>
+                <h3>{t('dashboard.activeIncome')}</h3>
                 <p className="metric-value">
                   {metrics.totalActiveIncome?.toLocaleString(undefined, {
                     style: "currency",
                     currency: metrics.currency || "USD",
                   })}
                 </p>
-                <p className="metric-description">Requires active work</p>
+                <p className="metric-description">{t('dashboard.activeIncomeDescription')}</p>
               </div>
             )}
             {metrics.totalPassiveIncome !== undefined && (
               <div className="metric-card">
-                <h3>Passive Income</h3>
+                <h3>{t('dashboard.passiveIncome')}</h3>
                 <p className="metric-value">
                   {metrics.totalPassiveIncome?.toLocaleString(undefined, {
                     style: "currency",
                     currency: metrics.currency || "USD",
                   })}
                 </p>
-                <p className="metric-description">Passive income sources</p>
+                <p className="metric-description">{t('dashboard.passiveIncomeDescription')}</p>
               </div>
             )}
             {metrics.flRatio !== null && metrics.flRatio !== undefined && (
               <div className="metric-card">
-                <h3>FL-Ratio</h3>
+                <h3>{t('dashboard.flRatio')}</h3>
                 <p className="metric-value">
                   {(metrics.flRatio * 100).toFixed(2)}%
                 </p>
                 <p className="metric-description">
-                  Passive Income Coverage (Passive Income / Monthly Expenses)
+                  {t('dashboard.flRatioDescription')}
                 </p>
               </div>
             )}
@@ -244,7 +246,7 @@ export default function Dashboard() {
 
           {history.length > 0 && (
             <div className="chart-container">
-              <h2>Capital History (30 days)</h2>
+              <h2>{t('dashboard.capitalHistory')}</h2>
               <Line data={chartData} />
             </div>
           )}
@@ -252,7 +254,7 @@ export default function Dashboard() {
           {metrics && (
             <div className="distribution-container">
               <div className="distribution-card">
-                <h2>Stock Assets Distribution</h2>
+                <h2>{t('dashboard.stockAssetsDistribution')}</h2>
                 {Object.keys(metrics.stockAssetDistribution || {}).length >
                 0 ? (
                   <ul>
@@ -270,11 +272,11 @@ export default function Dashboard() {
                     )}
                   </ul>
                 ) : (
-                  <p className="no-data">No stock assets data available</p>
+                  <p className="no-data">{t('dashboard.noStockAssetsData')}</p>
                 )}
               </div>
               <div className="distribution-card">
-                <h2>Flow Income Distribution</h2>
+                <h2>{t('dashboard.flowIncomeDistribution')}</h2>
                 {Object.keys(metrics.flowIncomeDistribution || {}).length >
                 0 ? (
                   <ul>
@@ -292,11 +294,11 @@ export default function Dashboard() {
                     )}
                   </ul>
                 ) : (
-                  <p className="no-data">No flow income data available</p>
+                  <p className="no-data">{t('dashboard.noFlowIncomeData')}</p>
                 )}
               </div>
               <div className="distribution-card">
-                <h2>Liability Distribution</h2>
+                <h2>{t('dashboard.liabilityDistribution')}</h2>
                 {Object.keys(metrics.liabilityDistribution || {}).length > 0 ? (
                   <ul>
                     {Object.entries(metrics.liabilityDistribution || {}).map(
@@ -313,7 +315,7 @@ export default function Dashboard() {
                     )}
                   </ul>
                 ) : (
-                  <p className="no-data">No liabilities data available</p>
+                  <p className="no-data">{t('dashboard.noLiabilitiesData')}</p>
                 )}
               </div>
             </div>

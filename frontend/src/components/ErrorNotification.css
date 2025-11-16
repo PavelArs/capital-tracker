@@ -20,30 +20,32 @@
 }
 
 .error-notification-content {
-  background-color: #fee;
-  border: 1px solid #fcc;
+  background-color: var(--error-color);
+  border: 1px solid var(--error-color);
   border-radius: 8px;
   padding: 1rem 1.5rem;
   display: flex;
   align-items: center;
   gap: 1rem;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px var(--shadow);
   cursor: pointer;
-  transition: background-color 0.2s;
+  transition: opacity 0.2s, box-shadow 0.2s;
 }
 
 .error-notification-content:hover {
-  background-color: #fdd;
+  opacity: 0.9;
+  box-shadow: 0 4px 8px var(--shadow-hover);
 }
 
 .error-icon {
   font-size: 1.5rem;
   flex-shrink: 0;
+  color: white;
 }
 
 .error-message {
   flex: 1;
-  color: #c33;
+  color: white;
   font-weight: 500;
   word-wrap: break-word;
 }
@@ -51,7 +53,7 @@
 .error-close {
   background: none;
   border: none;
-  color: #c33;
+  color: white;
   font-size: 1.5rem;
   cursor: pointer;
   padding: 0;
@@ -61,10 +63,10 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: color 0.2s;
+  transition: opacity 0.2s;
 }
 
 .error-close:hover {
-  color: #a00;
+  opacity: 0.8;
 }
 

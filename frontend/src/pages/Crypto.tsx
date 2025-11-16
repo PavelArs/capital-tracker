@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import './Crypto.css';
 
@@ -9,6 +10,7 @@ interface CryptoPrice {
 }
 
 export default function Crypto() {
+  const { t } = useTranslation();
   const [wallets, setWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -61,8 +63,17 @@ export default function Crypto() {
     }
   };
 
+  const handleCancel = () => {
+    setShowForm(false);
+    setFormData({ type: 'ethereum', address: '' });
+  };
+
+  const getAddressPlaceholder = () => {
+    return formData.type === 'bitcoin' ? 'bc1... or 1... or 3...' : '0x...';
+  };
+
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this wallet?')) {
+    if (window.confirm(t('crypto.deleteConfirm'))) {
       try {
         await axios.delete(`/crypto/${id}`);
         fetchWallets();
@@ -100,49 +111,66 @@ export default function Crypto() {
   };
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">{t('common.loading')}</div>;
   }
 
   return (
     <div className="crypto-page">
       <div className="page-header">
-        <h1>Crypto Wallets</h1>
-        <button onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancel' : 'Add Wallet'}
+        <h1>{t('crypto.title')}</h1>
+        <button onClick={() => setShowForm(true)}>
+          {t('crypto.addWallet')}
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="crypto-form">
-          <div className="form-group">
-            <label>Type</label>
-            <select
-              value={formData.type}
-              onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-              required
-            >
-              <option value="ethereum">Ethereum</option>
-              <option value="bitcoin">Bitcoin</option>
-            </select>
+        <div className="modal-overlay" onClick={handleCancel}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>{t('crypto.addWallet')}</h2>
+              <button className="modal-close" onClick={handleCancel}>
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="crypto-form">
+              <div className="form-group">
+                <label>{t('crypto.walletType')}</label>
+                <select
+                  value={formData.type}
+                  onChange={(e) => setFormData({ ...formData, type: e.target.value, address: '' })}
+                  required
+                >
+                  <option value="ethereum">Ethereum</option>
+                  <option value="bitcoin">Bitcoin</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>{t('crypto.address')}</label>
+                <input
+                  type="text"
+                  value={formData.address}
+                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                  placeholder={getAddressPlaceholder()}
+                  required
+                />
+              </div>
+              <div className="form-actions">
+                <button type="submit" className="btn-primary">
+                  {t('crypto.addWallet')}
+                </button>
+                <button type="button" onClick={handleCancel} className="btn-secondary">
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="form-group">
-            <label>Address</label>
-            <input
-              type="text"
-              value={formData.address}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder="0x..."
-              required
-            />
-          </div>
-          <button type="submit">Add Wallet</button>
-        </form>
+        </div>
       )}
 
       <div className="wallets-list">
-        <h2>Your Wallets</h2>
+        <h2>{t('crypto.yourWallets')}</h2>
         {wallets.length === 0 ? (
-          <p>No wallets added yet.</p>
+          <p>{t('crypto.noWallets')}</p>
         ) : (
           <div className="wallets-grid">
             {wallets.map((wallet) => (
@@ -152,7 +180,7 @@ export default function Crypto() {
                   <span className="wallet-address">{wallet.address}</span>
                 </div>
                 <div className="wallet-balance">
-                  <p className="balance-label">Balance</p>
+                  <p className="balance-label">{t('crypto.balance')}</p>
                   <p className="balance-value">
                     {parseFloat(wallet.balance.toString()).toFixed(8)}{' '}
                     {wallet.type === 'ethereum' ? 'ETH' : 'BTC'}
@@ -168,7 +196,7 @@ export default function Crypto() {
                 </div>
                 {wallet.type === 'ethereum' && wallet.tokens && Array.isArray(wallet.tokens) && wallet.tokens.length > 0 && (
                   <div className="wallet-tokens">
-                    <p className="tokens-label">Tokens:</p>
+                    <p className="tokens-label">{t('crypto.tokens')}</p>
                     <ul className="tokens-list">
                       {wallet.tokens.map((token: any, index: number) => (
                         <li key={index} className="token-item">
@@ -186,18 +214,18 @@ export default function Crypto() {
                     className="update-btn"
                     onClick={() => handleUpdateBalance(wallet.id)}
                   >
-                    Update Balance
+                    {t('crypto.updateBalance')}
                   </button>
                   <button
                     className="delete-btn"
                     onClick={() => handleDelete(wallet.id)}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </div>
                 {wallet.lastUpdated && (
                   <p className="last-updated">
-                    Last updated: {new Date(wallet.lastUpdated).toLocaleString()}
+                    {t('crypto.lastUpdated')} {new Date(wallet.lastUpdated).toLocaleString()}
                   </p>
                 )}
               </div>

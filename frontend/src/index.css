@@ -1,3 +1,41 @@
+:root {
+  /* Light theme (default) */
+  --bg-color: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #e8e8e8;
+  --text-color: #333333;
+  --text-secondary: #666666;
+  --text-muted: #999999;
+  --border-color: #dddddd;
+  --primary-color: #4a90e2;
+  --primary-color-light: rgba(74, 144, 226, 0.1);
+  --primary-color-dark: #357abd;
+  --error-color: #e74c3c;
+  --success-color: #27ae60;
+  --warning-color: #f39c12;
+  --shadow: rgba(0, 0, 0, 0.1);
+  --shadow-hover: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] {
+  /* Dark theme */
+  --bg-color: #1a1a1a;
+  --bg-secondary: #2c2c2c;
+  --bg-tertiary: #3a3a3a;
+  --text-color: #e0e0e0;
+  --text-secondary: #b0b0b0;
+  --text-muted: #808080;
+  --border-color: #404040;
+  --primary-color: #5ba3f5;
+  --primary-color-light: rgba(91, 163, 245, 0.2);
+  --primary-color-dark: #4a90e2;
+  --error-color: #ff6b6b;
+  --success-color: #51cf66;
+  --warning-color: #ffd43b;
+  --shadow: rgba(0, 0, 0, 0.3);
+  --shadow-hover: rgba(0, 0, 0, 0.4);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -10,7 +48,9 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
+  background-color: var(--bg-secondary);
+  color: var(--text-color);
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 code {
@@ -20,5 +60,80 @@ code {
 
 #root {
   min-height: 100vh;
+}
+
+/* Общие стили для форм */
+input, textarea, select {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--primary-color-light);
+}
+
+/* Общие стили для кнопок */
+button {
+  transition: opacity 0.2s, background-color 0.2s;
+}
+
+button:hover {
+  opacity: 0.9;
+}
+
+/* Общие стили для таблиц */
+table {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  border-collapse: collapse;
+}
+
+th {
+  background-color: var(--bg-tertiary);
+  color: var(--text-color);
+  border-bottom: 2px solid var(--border-color);
+}
+
+td {
+  border-bottom: 1px solid var(--border-color);
+}
+
+tr:hover {
+  background-color: var(--bg-secondary);
+}
+
+/* Общие стили для модальных окон */
+.modal-overlay {
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  box-shadow: 0 4px 6px var(--shadow);
+}
+
+/* Общие стили для карточек */
+.card, .page-header, .chart-container {
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  box-shadow: 0 2px 4px var(--shadow);
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* Общие утилиты */
+.no-data {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem;
+  font-style: italic;
+}
+
+.text-muted {
+  color: var(--text-muted);
 }
 

@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './utils/axiosConfig'; // Initialize axios interceptors
+import './i18n/config'; // Initialize i18n
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

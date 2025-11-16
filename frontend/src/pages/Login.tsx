@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
@@ -9,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const { login, user, loading } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!loading && user) {
@@ -23,12 +25,12 @@ export default function Login() {
       await login(email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed');
+      setError(err.response?.data?.message || t('auth.loginFailed'));
     }
   };
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>;
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>{t('common.loading')}</div>;
   }
 
   if (user) {
@@ -38,11 +40,11 @@ export default function Login() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1>Login</h1>
+        <h1>{t('auth.login')}</h1>
         {error && <div className="error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label>{t('common.email')}</label>
             <input
               type="email"
               value={email}
@@ -51,7 +53,7 @@ export default function Login() {
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>{t('common.password')}</label>
             <input
               type="password"
               value={password}
@@ -59,10 +61,10 @@ export default function Login() {
               required
             />
           </div>
-          <button type="submit">Login</button>
+          <button type="submit">{t('auth.login')}</button>
         </form>
         <p>
-          Don't have an account? <Link to="/register">Register</Link>
+          {t('auth.dontHaveAccount')} <Link to="/register">{t('auth.register')}</Link>
         </p>
       </div>
     </div>

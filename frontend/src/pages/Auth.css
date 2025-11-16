@@ -3,22 +3,24 @@
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-color-dark) 100%);
+  transition: background 0.3s ease;
 }
 
 .auth-card {
-  background: white;
+  background: var(--bg-color);
   padding: 2rem;
   border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 4px 6px var(--shadow);
   width: 100%;
   max-width: 400px;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .auth-card h1 {
   margin-bottom: 1.5rem;
   text-align: center;
-  color: #2c3e50;
+  color: var(--text-color);
 }
 
 .form-group {
@@ -28,60 +30,67 @@
 .form-group label {
   display: block;
   margin-bottom: 0.5rem;
-  color: #555;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 .form-group input {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   font-size: 1rem;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  transition: border-color 0.2s, background-color 0.2s;
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #667eea;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px var(--primary-color-light);
 }
 
 .auth-card button {
   width: 100%;
   padding: 0.75rem;
-  background-color: #667eea;
+  background-color: var(--primary-color);
   color: white;
   border: none;
   border-radius: 4px;
   font-size: 1rem;
   cursor: pointer;
   margin-top: 1rem;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, opacity 0.2s;
 }
 
 .auth-card button:hover {
-  background-color: #5568d3;
+  opacity: 0.9;
 }
 
 .error {
-  background-color: #fee;
-  color: #c33;
+  background-color: var(--error-color);
+  color: white;
   padding: 0.75rem;
   border-radius: 4px;
   margin-bottom: 1rem;
+  opacity: 0.9;
 }
 
 .auth-card p {
   text-align: center;
   margin-top: 1rem;
-  color: #555;
+  color: var(--text-secondary);
 }
 
 .auth-card a {
-  color: #667eea;
+  color: var(--primary-color);
   text-decoration: none;
+  transition: opacity 0.2s;
 }
 
 .auth-card a:hover {
+  opacity: 0.8;
   text-decoration: underline;
 }
 

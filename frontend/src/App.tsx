@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ErrorProvider, useError } from "./contexts/ErrorContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import { setErrorHandler } from "./utils/axiosConfig";
 import ErrorNotification from "./components/ErrorNotification";
 import Login from "./pages/Login";
@@ -15,7 +16,7 @@ import Dashboard from "./pages/Dashboard";
 import Assets from "./pages/Assets";
 import Liabilities from "./pages/Liabilities";
 import Crypto from "./pages/Crypto";
-import Currencies from "./pages/Currencies";
+import Settings from "./pages/Settings";
 import Layout from "./components/Layout";
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -56,7 +57,7 @@ function AppRoutes() {
         <Route path="assets/*" element={<Assets />} />
         <Route path="liabilities" element={<Liabilities />} />
         <Route path="crypto" element={<Crypto />} />
-        <Route path="currencies" element={<Currencies />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   );
@@ -82,11 +83,13 @@ function AppContent() {
 
 function App() {
   return (
-    <ErrorProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </ErrorProvider>
+    <ThemeProvider>
+      <ErrorProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ErrorProvider>
+    </ThemeProvider>
   );
 }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
-import "./Currencies.css";
+import "./CurrenciesSection.css";
 
 interface Currency {
   id: string;
@@ -13,7 +13,7 @@ interface Currency {
   isDefault: boolean;
 }
 
-export default function Currencies() {
+export default function CurrenciesSection() {
   const { t } = useTranslation();
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,9 +111,9 @@ export default function Currencies() {
   };
 
   return (
-    <div className="currencies-page">
+    <div className="currencies-section">
       <div className="currencies-header">
-        <h1>{t('currencies.title')}</h1>
+        <h2>{t('currencies.title')}</h2>
         <div className="currencies-actions">
           <button onClick={() => setShowForm(true)} className="btn-add">
             {t('currencies.addCurrency')}
@@ -124,7 +124,7 @@ export default function Currencies() {
       {showForm && (
         <div className="currency-form-container">
           <form onSubmit={handleSubmit} className="currency-form">
-            <h2>{editingId ? t('currencies.editCurrency') : t('currencies.addNewCurrency')}</h2>
+            <h3>{editingId ? t('currencies.editCurrency') : t('currencies.addNewCurrency')}</h3>
             
             <div className="form-group">
               <label>{t('currencies.code')} *</label>
@@ -213,7 +213,7 @@ export default function Currencies() {
 
       <div className="currencies-list">
         <div className="currency-group">
-          <h2>{t('currencies.fiatCurrencies')} ({groupedCurrencies.fiat.length})</h2>
+          <h3>{t('currencies.fiatCurrencies')} ({groupedCurrencies.fiat.length})</h3>
           <div className="currency-table">
             <table>
               <thead>
@@ -264,7 +264,7 @@ export default function Currencies() {
         </div>
 
         <div className="currency-group">
-          <h2>{t('currencies.cryptocurrencies')} ({groupedCurrencies.crypto.length})</h2>
+          <h3>{t('currencies.cryptocurrencies')} ({groupedCurrencies.crypto.length})</h3>
           <div className="currency-table">
             <table>
               <thead>
@@ -315,7 +315,7 @@ export default function Currencies() {
         </div>
 
         <div className="currency-group">
-          <h2>{t('currencies.stablecoins')} ({groupedCurrencies.stablecoin.length})</h2>
+          <h3>{t('currencies.stablecoins')} ({groupedCurrencies.stablecoin.length})</h3>
           <div className="currency-table">
             <table>
               <thead>

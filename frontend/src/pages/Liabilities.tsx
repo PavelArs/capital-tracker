@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import { Pie } from 'react-chartjs-2';
 import {
@@ -20,6 +21,7 @@ interface Currency {
 }
 
 export default function Liabilities() {
+  const { t } = useTranslation();
   const [liabilities, setLiabilities] = useState<any[]>([]);
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
@@ -201,7 +203,7 @@ export default function Liabilities() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this liability?')) {
+    if (window.confirm(t('liabilities.deleteConfirm'))) {
       try {
         await axios.delete(`/liabilities/${id}`);
         fetchLiabilities();
@@ -239,13 +241,13 @@ export default function Liabilities() {
   };
 
   if (loading) {
-    return <div className="loading">Loading...</div>;
+    return <div className="loading">{t('common.loading')}</div>;
   }
 
   return (
     <div className="liabilities-page">
       <div className="page-header">
-        <h1>Liabilities</h1>
+        <h1>{t('liabilities.title')}</h1>
         <button onClick={() => {
           if (showForm) {
             handleCancel();
@@ -253,7 +255,7 @@ export default function Liabilities() {
             setShowForm(true);
           }
         }}>
-          {showForm ? 'Cancel' : 'Add Liability'}
+          {showForm ? t('common.cancel') : t('liabilities.addLiability')}
         </button>
       </div>
 
@@ -261,13 +263,13 @@ export default function Liabilities() {
         <div className="modal-overlay" onClick={handleCancel}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingId ? 'Edit Liability' : 'Add New Liability'}</h2>
+              <h2>{editingId ? t('liabilities.editLiability') : t('liabilities.addNewLiability')}</h2>
               <button className="modal-close" onClick={handleCancel}>×</button>
             </div>
             <form onSubmit={handleSubmit} className="liability-form">
           <div className="form-row">
             <div className="form-group">
-              <label>Name</label>
+              <label>{t('common.name')}</label>
               <input
                 type="text"
                 value={formData.name}
@@ -276,7 +278,7 @@ export default function Liabilities() {
               />
             </div>
             <div className="form-group">
-              <label>Category</label>
+              <label>{t('common.category')}</label>
               <select
                 value={formData.category}
                 onChange={(e) => {
@@ -294,18 +296,18 @@ export default function Liabilities() {
                 }}
                 required
               >
-                <option value="subscriptions">Subscriptions</option>
-                <option value="regular_expenses">Regular Expenses</option>
-                <option value="loans">Loans</option>
-                <option value="mortgage">Mortgage</option>
-                <option value="credit_card">Credit Card</option>
-                <option value="other">Other</option>
+                <option value="subscriptions">{t('liabilities.categories.subscriptions')}</option>
+                <option value="regular_expenses">{t('liabilities.categories.regularExpenses')}</option>
+                <option value="loans">{t('liabilities.categories.loans')}</option>
+                <option value="mortgage">{t('liabilities.categories.mortgage')}</option>
+                <option value="credit_card">{t('liabilities.categories.creditCard')}</option>
+                <option value="other">{t('liabilities.categories.other')}</option>
               </select>
             </div>
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Amount</label>
+              <label>{t('common.amount')}</label>
               <input
                 type="number"
                 step="0.01"
@@ -315,7 +317,7 @@ export default function Liabilities() {
               />
             </div>
             <div className="form-group">
-              <label>Currency</label>
+              <label>{t('common.currency')}</label>
               <select
                 value={formData.currencyId}
                 onChange={(e) =>
@@ -331,7 +333,7 @@ export default function Liabilities() {
               </select>
             </div>
             <div className="form-group">
-              <label>Date</label>
+              <label>{t('common.date')}</label>
               <input
                 type="date"
                 value={formData.date}
@@ -344,24 +346,24 @@ export default function Liabilities() {
             {/* Show frequency for regular categories */}
             {(['subscriptions', 'regular_expenses'].includes(formData.category)) && (
               <div className="form-group">
-                <label>Frequency</label>
+                <label>{t('liabilities.frequency')}</label>
                 <select
                   value={formData.frequency || 'monthly'}
                   onChange={(e) => setFormData({ ...formData, frequency: e.target.value as any })}
                   required
                 >
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                  <option value="quarterly">Quarterly</option>
-                  <option value="yearly">Yearly</option>
+                  <option value="daily">{t('liabilities.frequencies.daily')}</option>
+                  <option value="weekly">{t('liabilities.frequencies.weekly')}</option>
+                  <option value="monthly">{t('liabilities.frequencies.monthly')}</option>
+                  <option value="quarterly">{t('liabilities.frequencies.quarterly')}</option>
+                  <option value="yearly">{t('liabilities.frequencies.yearly')}</option>
                 </select>
               </div>
             )}
             {/* Show deadline for non-regular categories */}
             {(['loans', 'mortgage', 'credit_card', 'other'].includes(formData.category)) && (
               <div className="form-group">
-                <label>Deadline</label>
+                <label>{t('liabilities.deadline')}</label>
                 <input
                   type="date"
                   value={formData.deadline}
@@ -371,16 +373,16 @@ export default function Liabilities() {
             )}
           </div>
           <div className="form-group">
-            <label>Description</label>
+            <label>{t('common.description')}</label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             />
           </div>
               <div className="form-actions">
-                <button type="submit">{editingId ? 'Update Liability' : 'Create Liability'}</button>
+                <button type="submit">{editingId ? t('liabilities.updateLiability') : t('liabilities.createLiability')}</button>
                 <button type="button" onClick={handleCancel} className="cancel-btn">
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </div>
             </form>
@@ -390,24 +392,24 @@ export default function Liabilities() {
 
       {liabilities.length > 0 && (
         <div className="chart-container">
-          <h2>Liability Distribution</h2>
+          <h2>{t('liabilities.liabilityDistribution')}</h2>
           <Pie data={chartData} />
         </div>
       )}
 
       <div className="liabilities-list">
-        <h2>All Liabilities</h2>
+        <h2>{t('liabilities.allLiabilities')}</h2>
         <table>
           <thead>
             <tr>
-              <th>Name</th>
-              <th>Category</th>
-              <th>Amount</th>
-              <th>Currency</th>
-              <th>Date</th>
-              <th>Frequency</th>
-              <th>Deadline</th>
-              <th>Actions</th>
+              <th>{t('common.name')}</th>
+              <th>{t('common.category')}</th>
+              <th>{t('common.amount')}</th>
+              <th>{t('common.currency')}</th>
+              <th>{t('common.date')}</th>
+              <th>{t('liabilities.frequency')}</th>
+              <th>{t('liabilities.deadline')}</th>
+              <th>{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -421,11 +423,11 @@ export default function Liabilities() {
                 <td>
                   {liability.frequency ? (
                     <span className="frequency-badge">
-                      {liability.frequency === 'daily' && 'Daily'}
-                      {liability.frequency === 'weekly' && 'Weekly'}
-                      {liability.frequency === 'monthly' && 'Monthly'}
-                      {liability.frequency === 'quarterly' && 'Quarterly'}
-                      {liability.frequency === 'yearly' && 'Yearly'}
+                      {liability.frequency === 'daily' && t('liabilities.frequencies.daily')}
+                      {liability.frequency === 'weekly' && t('liabilities.frequencies.weekly')}
+                      {liability.frequency === 'monthly' && t('liabilities.frequencies.monthly')}
+                      {liability.frequency === 'quarterly' && t('liabilities.frequencies.quarterly')}
+                      {liability.frequency === 'yearly' && t('liabilities.frequencies.yearly')}
                     </span>
                   ) : (
                     <span className="text-muted">-</span>
@@ -450,7 +452,7 @@ export default function Liabilities() {
                       handleEdit(liability);
                     }}
                   >
-                    Edit
+                    {t('common.edit')}
                   </button>
                   <button
                     className="delete-btn"
@@ -460,7 +462,7 @@ export default function Liabilities() {
                       handleDelete(liability.id);
                     }}
                   >
-                    Delete
+                    {t('common.delete')}
                   </button>
                 </td>
               </tr>

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
@@ -11,6 +12,7 @@ export default function Register() {
   const [error, setError] = useState('');
   const { register, user, loading } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (!loading && user) {
@@ -25,12 +27,12 @@ export default function Register() {
       await register(email, password, firstName, lastName);
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(err.response?.data?.message || t('auth.registrationFailed'));
     }
   };
 
   if (loading) {
-    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Loading...</div>;
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>{t('common.loading')}</div>;
   }
 
   if (user) {
@@ -40,11 +42,11 @@ export default function Register() {
   return (
     <div className="auth-container">
       <div className="auth-card">
-        <h1>Register</h1>
+        <h1>{t('auth.register')}</h1>
         {error && <div className="error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Email</label>
+            <label>{t('common.email')}</label>
             <input
               type="email"
               value={email}
@@ -53,7 +55,7 @@ export default function Register() {
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>{t('common.password')}</label>
             <input
               type="password"
               value={password}
@@ -63,7 +65,7 @@ export default function Register() {
             />
           </div>
           <div className="form-group">
-            <label>First Name (optional)</label>
+            <label>{t('auth.firstName')}</label>
             <input
               type="text"
               value={firstName}
@@ -71,17 +73,17 @@ export default function Register() {
             />
           </div>
           <div className="form-group">
-            <label>Last Name (optional)</label>
+            <label>{t('auth.lastName')}</label>
             <input
               type="text"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
             />
           </div>
-          <button type="submit">Register</button>
+          <button type="submit">{t('auth.register')}</button>
         </form>
         <p>
-          Already have an account? <Link to="/login">Login</Link>
+          {t('auth.alreadyHaveAccount')} <Link to="/login">{t('auth.login')}</Link>
         </p>
       </div>
     </div>
