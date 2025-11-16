@@ -3,22 +3,27 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 .dashboard h1 {
   margin: 0;
   color: var(--text-color);
+  font-size: clamp(1.5rem, 4vw, 2.5rem);
 }
 
 .currency-selector {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .currency-selector label {
   color: var(--text-secondary);
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .currency-selector select {
@@ -29,7 +34,16 @@
   cursor: pointer;
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition: border-color 0.2s, background-color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+  min-width: 100px;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+.currency-selector select option {
+  background-color: var(--bg-color);
+  color: var(--text-color);
 }
 
 .currency-selector select:focus {
@@ -148,5 +162,99 @@
 .category-percentage {
   font-weight: bold;
   color: var(--text-color);
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .currency-selector {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .metrics-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .metric-card {
+    padding: 1rem;
+  }
+
+  .metric-value {
+    font-size: 1.5rem;
+  }
+
+  .chart-container {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    overflow-x: auto;
+  }
+
+  .chart-container h2 {
+    font-size: 1.25rem;
+  }
+
+  .distribution-container {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+
+  .distribution-card {
+    padding: 1rem;
+  }
+
+  .distribution-card h2 {
+    font-size: 1.25rem;
+  }
+
+  .distribution-card li {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .category-name {
+    word-break: break-word;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .category-percentage {
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-header {
+    margin-bottom: 1rem;
+  }
+
+  .metrics-grid {
+    gap: 0.75rem;
+  }
+
+  .metric-card {
+    padding: 0.75rem;
+  }
+
+  .metric-value {
+    font-size: 1.25rem;
+  }
+
+  .metric-description {
+    font-size: 0.75rem;
+  }
+
+  .chart-container {
+    padding: 0.75rem;
+  }
+
+  .distribution-card {
+    padding: 0.75rem;
+  }
 }
 

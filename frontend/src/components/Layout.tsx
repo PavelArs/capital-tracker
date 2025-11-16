@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,24 +9,73 @@ export default function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const navLinksRef = useRef<HTMLDivElement>(null);
+  const navUserRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
     navigate('/login');
   };
 
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+  };
+
+  useEffect(() => {
+    if (mobileMenuOpen && navLinksRef.current && navUserRef.current) {
+      const updateNavUserPosition = () => {
+        requestAnimationFrame(() => {
+          const navLinksHeight = navLinksRef.current?.offsetHeight || 0;
+          if (navUserRef.current && navLinksHeight > 0) {
+            navUserRef.current.style.top = `calc(100% + ${navLinksHeight}px)`;
+          }
+        });
+      };
+
+      // Update position after a short delay to ensure nav-links is fully rendered
+      setTimeout(updateNavUserPosition, 50);
+      
+      // Update after transition completes
+      const handleTransitionEnd = () => {
+        updateNavUserPosition();
+      };
+      
+      navLinksRef.current.addEventListener('transitionend', handleTransitionEnd);
+      
+      // Also update on window resize
+      window.addEventListener('resize', updateNavUserPosition);
+      
+      return () => {
+        window.removeEventListener('resize', updateNavUserPosition);
+        navLinksRef.current?.removeEventListener('transitionend', handleTransitionEnd);
+      };
+    } else if (navUserRef.current) {
+      navUserRef.current.style.top = '';
+    }
+  }, [mobileMenuOpen]);
+
   return (
     <div className="layout">
       <nav className="navbar">
         <div className="nav-brand">Capital Tracker</div>
-        <div className="nav-links">
-          <Link to="/">{t('navigation.dashboard')}</Link>
-          <Link to="/assets">{t('navigation.assets')}</Link>
-          <Link to="/liabilities">{t('navigation.liabilities')}</Link>
-          <Link to="/crypto">{t('navigation.crypto')}</Link>
-          <Link to="/settings">{t('navigation.settings')}</Link>
+        <button className="mobile-menu-toggle" onClick={toggleMobileMenu} aria-label="Toggle menu">
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
+        <div ref={navLinksRef} className={`nav-links ${mobileMenuOpen ? 'open' : ''}`}>
+          <Link to="/" onClick={closeMobileMenu}>{t('navigation.dashboard')}</Link>
+          <Link to="/assets" onClick={closeMobileMenu}>{t('navigation.assets')}</Link>
+          <Link to="/liabilities" onClick={closeMobileMenu}>{t('navigation.liabilities')}</Link>
+          <Link to="/crypto" onClick={closeMobileMenu}>{t('navigation.crypto')}</Link>
+          <Link to="/settings" onClick={closeMobileMenu}>{t('navigation.settings')}</Link>
         </div>
-        <div className="nav-user">
+        <div ref={navUserRef} className={`nav-user ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="nav-user-info">
             <span className="nav-user-email">{user?.email}</span>
             {user?.subscriptionType && (

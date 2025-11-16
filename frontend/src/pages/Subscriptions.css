@@ -2,6 +2,7 @@
   max-width: 1200px;
   margin: 0 auto;
   padding: 2rem;
+  box-sizing: border-box;
 }
 
 .subscriptions-header {
@@ -10,18 +11,21 @@
 }
 
 .subscriptions-header h1 {
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 5vw, 2.5rem);
   margin-bottom: 1rem;
   color: var(--text-color);
+  word-break: break-word;
 }
 
 .subscriptions-header p {
-  font-size: 1.1rem;
+  font-size: clamp(0.9rem, 2vw, 1.1rem);
   color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
+  word-break: break-word;
 }
 
 .subscriptions-grid {
@@ -40,6 +44,8 @@
   transition: all 0.3s ease;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .subscription-card:hover {
@@ -126,6 +132,12 @@
   gap: 0.75rem;
   color: var(--text-color);
   border-bottom: 1px solid var(--border-color);
+  word-break: break-word;
+}
+
+.subscription-features li span:not(.feature-icon) {
+  flex: 1;
+  min-width: 0;
 }
 
 .subscription-features li:last-child {
@@ -241,16 +253,122 @@
 }
 
 @media (max-width: 768px) {
-  .subscriptions-grid {
-    grid-template-columns: 1fr;
+  .subscriptions-page {
+    padding: 1rem;
+  }
+
+  .subscriptions-header {
+    margin-bottom: 2rem;
   }
 
   .subscriptions-header h1 {
-    font-size: 2rem;
+    font-size: 1.75rem;
+  }
+
+  .subscriptions-header p {
+    font-size: 0.95rem;
+    flex-direction: column;
+  }
+
+  .subscriptions-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .subscription-card {
+    padding: 1.5rem;
+  }
+
+  .subscription-header h2 {
+    font-size: 1.5rem;
   }
 
   .price-amount {
-    font-size: 2.5rem;
+    font-size: 2rem;
+  }
+
+  .price-period {
+    font-size: 0.9rem;
+  }
+
+  .subscription-features li {
+    font-size: 0.9rem;
+    padding: 0.5rem 0;
+  }
+
+  .subscription-info {
+    padding: 1rem;
+  }
+
+  .info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .info-grid div {
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 480px) {
+  .subscriptions-page {
+    padding: 0.75rem;
+  }
+
+  .subscriptions-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .subscriptions-header h1 {
+    font-size: 1.5rem;
+  }
+
+  .subscriptions-grid {
+    gap: 1rem;
+  }
+
+  .subscription-card {
+    padding: 1rem;
+  }
+
+  .popular-badge,
+  .current-badge {
+    font-size: 0.75rem;
+    padding: 0.3rem 0.75rem;
+    top: -10px;
+  }
+
+  .subscription-header {
+    padding-bottom: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .subscription-header h2 {
+    font-size: 1.25rem;
+  }
+
+  .price-amount {
+    font-size: 1.75rem;
+  }
+
+  .subscription-features {
+    margin-bottom: 1.5rem;
+  }
+
+  .subscription-features li {
+    font-size: 0.85rem;
+  }
+
+  .btn-upgrade,
+  .btn-downgrade,
+  .btn-current,
+  .btn-cancel,
+  .btn-disabled {
+    padding: 0.75rem;
+    font-size: 0.9rem;
+  }
+
+  .subscription-info {
+    padding: 0.75rem;
   }
 }
 

@@ -68,12 +68,24 @@ input, textarea, select {
   color: var(--text-color);
   border: 1px solid var(--border-color);
   transition: border-color 0.2s, background-color 0.2s;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
 }
 
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px var(--primary-color-light);
+}
+
+input, select {
+  min-height: 2.5rem;
+}
+
+textarea {
+  min-height: 80px;
+  resize: vertical;
 }
 
 /* Общие стили для кнопок */
@@ -131,9 +143,76 @@ tr:hover {
   text-align: center;
   padding: 2rem;
   font-style: italic;
+  word-break: break-word;
 }
 
 .text-muted {
   color: var(--text-muted);
+}
+
+/* Общие responsive стили */
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Предотвращение переполнения текста */
+h1, h2, h3, h4, h5, h6 {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+p, span, div, li, td, th {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Улучшение скролла на мобильных */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Улучшение читаемости на маленьких экранах */
+  p, li, span {
+    line-height: 1.6;
+  }
+
+  h1 {
+    font-size: clamp(1.5rem, 6vw, 2.5rem);
+  }
+
+  h2 {
+    font-size: clamp(1.25rem, 5vw, 2rem);
+  }
+
+  h3 {
+    font-size: clamp(1.1rem, 4vw, 1.5rem);
+  }
+}
+
+/* Улучшение для очень маленьких экранов */
+@media (max-width: 480px) {
+  body {
+    font-size: 14px;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+
+  h2 {
+    font-size: 1.25rem;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+  }
 }
 
