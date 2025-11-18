@@ -1,0 +1,71 @@
+name: Build and Deploy to Yandex Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: cr.yandex
+  BACKEND_IMAGE: capital-tracker-backend
+  FRONTEND_IMAGE: capital-tracker-frontend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Configure Yandex Cloud CLI
+        uses: yandex-cloud/yc-setup-action@v1
+        with:
+          yc-token: ${{ secrets.YC_TOKEN }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+
+      - name: Login to Yandex Container Registry
+        run: |
+          yc container registry configure-docker
+          echo "${{ secrets.YC_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.BACKEND_IMAGE }}:latest
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=registry,ref=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.BACKEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.BACKEND_IMAGE }}:buildcache,mode=max
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.FRONTEND_IMAGE }}:latest
+            cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          build-args: |
+            VITE_API_URL=${{ secrets.VITE_API_URL }}
+          cache-from: type=registry,ref=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.FRONTEND_IMAGE }}:buildcache
+          cache-to: type=registry,ref=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.FRONTEND_IMAGE }}:buildcache,mode=max
+
+      - name: Deploy to Yandex Cloud VM
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.YC_VM_HOST }}
+          username: ${{ secrets.YC_VM_USER }}
+          key: ${{ secrets.YC_VM_SSH_KEY }}
+          script: |
+            cd /opt/capital-tracker
+            export BACKEND_IMAGE=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.BACKEND_IMAGE }}:latest
+            export FRONTEND_IMAGE=cr.yandex/${{ secrets.YC_REGISTRY_ID }}/${{ env.FRONTEND_IMAGE }}:latest
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml up -d
+            docker system prune -f
