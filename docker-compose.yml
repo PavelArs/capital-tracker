@@ -31,7 +31,7 @@ services:
       DB_NAME: capital_tracker
       JWT_SECRET: your-secret-key-change-in-production
       PORT: 3000
-      NODE_ENV: production
+      NODE_ENV: development
       FRONTEND_URL: http://localhost:3001
     ports:
       - "3000:3000"
