@@ -26,10 +26,10 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ env.YC_REGISTRY }}"
-          echo "${{ env.REGISTRY_ID }}"
-          echo "${{ env.BACKEND_IMAGE }}"
-          echo "${{ env.FRONTEND_IMAGE }}"
+          echo "${{ vars.YC_REGISTRY }}"
+          echo "${{ vars.REGISTRY_ID }}"
+          echo "${{ vars.BACKEND_IMAGE }}"
+          echo "${{ vars.FRONTEND_IMAGE }}"
           echo "${{ secrets.YC_TOKEN }}" | docker login --username oauth --password-stdin cr.yandex
 
       - name: Build and push backend image
