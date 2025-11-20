@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  YC_REGISTRY: registry.yandexcloud.net
-  BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
-  FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
+  YC_REGISTRY: cr.yandex
+  BACKEND_IMAGE: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
+  FRONTEND_IMAGE: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
 
 jobs:
   build-and-push:
