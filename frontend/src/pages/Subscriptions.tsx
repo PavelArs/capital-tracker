@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useAuth } from '../contexts/AuthContext';
 import { useError } from '../contexts/ErrorContext';
 import axios from 'axios';
@@ -17,7 +16,7 @@ interface SubscriptionPlan {
 export default function Subscriptions() {
   const { user, refreshUser } = useAuth();
   const { showError } = useError();
-  const { t } = useTranslation();
+  // const { t } = useTranslation(); // Removed unused translation hook
   const [loading, setLoading] = useState(false);
   const [currentSubscription, setCurrentSubscription] = useState<any>(null);
 
@@ -108,9 +107,10 @@ export default function Subscriptions() {
     },
   ];
 
-  const getCurrentPlan = () => {
-    return plans.find((plan) => plan.type === user?.subscriptionType) || plans[0];
-  };
+  // Removed unused getCurrentPlan function
+  // const getCurrentPlan = () => {
+  //   return plans.find((plan) => plan.type === user?.subscriptionType) || plans[0];
+  // };
 
   const canUpgrade = (planType: SubscriptionType) => {
     const currentType = user?.subscriptionType || 'free';

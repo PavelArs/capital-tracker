@@ -48,7 +48,7 @@ export default function CurrenciesSection() {
     e.preventDefault();
     try {
       // Prepare data: remove contractAddress if empty
-      const dataToSend = { ...formData };
+      const dataToSend: Partial<typeof formData> = { ...formData };
       if (!dataToSend.contractAddress || dataToSend.contractAddress.trim() === '') {
         delete dataToSend.contractAddress;
       }
