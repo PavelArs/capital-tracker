@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
 
 env:
-  YC_REGISTRY: cr.yandex
-  BACKEND_IMAGE: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
-  FRONTEND_IMAGE: cr.yandex/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
+  YC_REGISTRY: registry.yandexcloud.net
+  BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
+  FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
 
 jobs:
   build-and-push:
@@ -25,7 +25,7 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ secrets.YC_TOKEN }}" | docker login --username oauth --password-stdin cr.yandex
+          echo "${{ secrets.YC_TOKEN }}" | docker login --username oauth --password-stdin registry.yandexcloud.net
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
@@ -82,7 +82,7 @@ jobs:
             cd /opt/capital-tracker
             
             # Login to Yandex Container Registry
-            echo "$YC_TOKEN" | docker login --username iam --password-stdin cr.yandex || true
+            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net || true
             
             # Pull latest images
             docker-compose -f docker-compose.prod.yml pull || docker compose -f docker-compose.prod.yml pull
