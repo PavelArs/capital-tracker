@@ -26,7 +26,7 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ secrets.YC_TOKEN }}" | docker login --username iam --password-stdin cr.yandex
+          echo "${{ secrets.YC_TOKEN }}" | docker login --username oauth --password-stdin cr.yandex
 
       - name: Build and push backend image
         uses: docker/build-push-action@v5
