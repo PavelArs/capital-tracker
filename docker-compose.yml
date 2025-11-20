@@ -61,16 +61,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    command: >
-      sh -c "
-        echo 'Running migrations...' &&
-        for f in migrations/*.sql; do
-          echo \"Running migration: \$f\" &&
-          PGPASSWORD=\$DB_PASSWORD psql -h \$DB_HOST -U \$DB_USERNAME -d \$DB_NAME -f \"\$f\" || echo \"Warning: \$f failed (might be already applied)\";
-        done &&
-        echo 'Starting application...' &&
-        node dist/main.js
-      "
 
   frontend:
     image: ${FRONTEND_IMAGE:-capital-tracker-frontend:local}
@@ -91,15 +81,14 @@ services:
       test:
         [
           "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost/health",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:80/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
 volumes:
   postgres_data:
