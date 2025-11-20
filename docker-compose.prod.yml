@@ -20,7 +20,7 @@ services:
       - capital-tracker-network
 
   backend:
-    image: ${BACKEND_IMAGE:-cr.yandex/${REGISTRY_ID}/capital-tracker-backend:latest}
+    image: ${BACKEND_IMAGE:-registry.yandexcloud.net/${REGISTRY_ID}/capital-tracker-backend:latest}
     container_name: capital_tracker_backend
     restart: unless-stopped
     environment:
@@ -59,7 +59,7 @@ services:
       "
 
   frontend:
-    image: ${FRONTEND_IMAGE:-cr.yandex/${REGISTRY_ID}/capital-tracker-frontend:latest}
+    image: ${FRONTEND_IMAGE:-registry.yandexcloud.net/${REGISTRY_ID}/capital-tracker-frontend:latest}
     container_name: capital_tracker_frontend
     restart: unless-stopped
     ports:
