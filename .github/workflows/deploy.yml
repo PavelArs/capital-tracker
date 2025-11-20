@@ -69,9 +69,9 @@ jobs:
         run: |
           ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Copy docker-compose.prod.yml to VM
+      - name: Copy docker-compose.yml to VM
         run: |
-          scp -o StrictHostKeyChecking=no docker-compose.prod.yml ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }}:/opt/capital-tracker/docker-compose.prod.yml
+          scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }}:/opt/capital-tracker/docker-compose.yml
 
       - name: Deploy application
         env:
@@ -85,19 +85,19 @@ jobs:
             echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net || true
             
             # Pull latest images
-            docker-compose -f docker-compose.prod.yml pull || docker compose -f docker-compose.prod.yml pull
+            docker compose pull || docker-compose pull
             
             # Stop and remove old containers
-            docker-compose -f docker-compose.prod.yml down || docker compose -f docker-compose.prod.yml down || true
+            docker compose down || docker-compose down || true
             
             # Start new containers
-            docker-compose -f docker-compose.prod.yml up -d || docker compose -f docker-compose.prod.yml up -d
+            docker compose up -d || docker-compose up -d
             
             # Clean up old images
             docker image prune -f
             
             # Show status
-            docker-compose -f docker-compose.prod.yml ps || docker compose -f docker-compose.prod.yml ps
+            docker compose ps || docker-compose ps
           EOF
 
       - name: Health check
@@ -105,7 +105,7 @@ jobs:
           sleep 10
           ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
             cd /opt/capital-tracker
-            docker-compose -f docker-compose.prod.yml ps || docker compose -f docker-compose.prod.yml ps
+            docker compose ps || docker-compose ps
             echo "Checking backend health..."
             curl -f http://localhost:3000/health || exit 1
             echo "Backend is healthy!"

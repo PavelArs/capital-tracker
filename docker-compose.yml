@@ -4,55 +4,107 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: capital_tracker_db
+    restart: ${RESTART_POLICY:-no}
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: capital_tracker
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-capital_tracker}
     ports:
-      - "5432:5432"
+      - "${DB_PORT_MAPPING:-5432:5432}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - capital-tracker-network
 
   backend:
+    image: ${BACKEND_IMAGE:-capital-tracker-backend:local}
     build:
       context: ./backend
       dockerfile: Dockerfile
     container_name: capital_tracker_backend
+    restart: ${RESTART_POLICY:-no}
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: capital_tracker
-      JWT_SECRET: your-secret-key-change-in-production
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-capital_tracker}
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
       PORT: 3000
-      NODE_ENV: development
-      FRONTEND_URL: http://localhost:3001
+      NODE_ENV: ${NODE_ENV:-development}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT_MAPPING:-3000:3000}"
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - capital-tracker-network
     volumes:
-      - ./backend:/app
-      - /app/node_modules
+      # Only mount source code in development
+      - ${BACKEND_SOURCE_VOLUME:-./backend:/app}
+      - ${BACKEND_NODE_MODULES_VOLUME:-/app/node_modules}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    command: >
+      sh -c "
+        echo 'Running migrations...' &&
+        for f in migrations/*.sql; do
+          echo \"Running migration: \$f\" &&
+          PGPASSWORD=\$DB_PASSWORD psql -h \$DB_HOST -U \$DB_USERNAME -d \$DB_NAME -f \"\$f\" || echo \"Warning: \$f failed (might be already applied)\";
+        done &&
+        echo 'Starting application...' &&
+        node dist/main.js
+      "
 
   frontend:
+    image: ${FRONTEND_IMAGE:-capital-tracker-frontend:local}
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: http://localhost:3000
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
     container_name: capital_tracker_frontend
+    restart: ${RESTART_POLICY:-no}
     ports:
-      - "3001:80"
+      - "${FRONTEND_PORT_MAPPING:-3001:80}"
     depends_on:
       - backend
+    networks:
+      - capital-tracker-network
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "http://localhost/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   postgres_data:
+    driver: local
+
+networks:
+  capital-tracker-network:
+    driver: bridge
