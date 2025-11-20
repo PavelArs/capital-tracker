@@ -8,9 +8,8 @@ on:
 
 env:
   YC_REGISTRY: registry.yandexcloud.net
-  REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
-  BACKEND_IMAGE: ${{ vars.YC_REGISTRY }}/${{ vars.REGISTRY_ID }}/capital-tracker-backend
-  FRONTEND_IMAGE: ${{ vars.YC_REGISTRY }}/${{ vars.REGISTRY_ID }}/capital-tracker-frontend
+  BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
+  FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
 
 jobs:
   build-and-push:
@@ -26,10 +25,6 @@ jobs:
 
       - name: Login to Yandex Container Registry
         run: |
-          echo "${{ vars.YC_REGISTRY }}"
-          echo "${{ vars.REGISTRY_ID }}"
-          echo "${{ vars.BACKEND_IMAGE }}"
-          echo "${{ vars.FRONTEND_IMAGE }}"
           echo "${{ secrets.YC_TOKEN }}" | docker login --username oauth --password-stdin cr.yandex
 
       - name: Build and push backend image
@@ -38,6 +33,7 @@ jobs:
           context: ./backend
           push: true
           tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
             ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           cache-from: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.BACKEND_IMAGE }}:buildcache,mode=max
