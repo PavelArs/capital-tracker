@@ -9,8 +9,8 @@ on:
 env:
   YC_REGISTRY: registry.yandexcloud.net
   REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
-  BACKEND_IMAGE: ${{ env.YC_REGISTRY }}/${{ env.REGISTRY_ID }}/capital-tracker-backend
-  FRONTEND_IMAGE: ${{ env.YC_REGISTRY }}/${{ env.REGISTRY_ID }}/capital-tracker-frontend
+  BACKEND_IMAGE: ${{ vars.YC_REGISTRY }}/${{ vars.REGISTRY_ID }}/capital-tracker-backend
+  FRONTEND_IMAGE: ${{ vars.YC_REGISTRY }}/${{ vars.REGISTRY_ID }}/capital-tracker-frontend
 
 jobs:
   build-and-push:
