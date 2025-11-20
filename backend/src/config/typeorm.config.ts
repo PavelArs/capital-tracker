@@ -15,10 +15,10 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       password: this.configService.get("DB_PASSWORD", "postgres"),
       database: this.configService.get("DB_NAME", "capital_tracker"),
       entities: [__dirname + "/../**/*.entity{.ts,.js}"],
-      synchronize: this.configService.get("NODE_ENV") !== "production",
+      synchronize: false, // Always false - use migrations instead
       logging: this.configService.get("NODE_ENV") === "development",
-      migrations: [__dirname + "/../migrations/*.{.ts,.js}"],
-      migrationsRun: false,
+      migrations: [__dirname + "/../migrations/*{.ts,.js}"],
+      migrationsRun: true, // Run migrations automatically on startup
     };
   }
 }
