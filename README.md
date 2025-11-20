@@ -83,7 +83,12 @@
 │   │   └── contexts/   # React контексты
 │   ├── Dockerfile
 │   └── package.json
-├── docker-compose.yml   # Docker Compose конфигурация
+├── docker-compose.yml         # Единый Docker Compose для dev и prod
+├── env.local.example          # Шаблон .env для локальной разработки
+├── env.production.example     # Шаблон .env для production
+├── QUICK_START.md            # Быстрый старт
+├── DOCKER_SETUP.md           # Полная документация по Docker
+├── DEPLOYMENT.md             # Деплой на Yandex Cloud
 └── README.md
 ```
 
@@ -119,32 +124,44 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Вариант 2: Запуск с Docker
+### Вариант 2: Запуск с Docker (Рекомендуется)
 
 1. Клонируйте репозиторий:
 
 ```bash
 git clone <repository-url>
-cd project
+cd capital-tracker
 ```
 
-2. Запустите приложение:
+2. Создайте `.env` файл из шаблона:
 
 ```bash
-docker-compose up -d
+cp env.local.example .env
 ```
 
-3. Приложение будет доступно:
+3. Запустите приложение:
+
+```bash
+docker compose up -d
+```
+
+4. Приложение будет доступно:
 
    - Frontend: http://localhost:3001
    - Backend API: http://localhost:3000
    - PostgreSQL: localhost:5432
 
-4. Остановка:
+5. Остановка:
 
 ```bash
-docker-compose down
+docker compose down
 ```
+
+**📖 Подробная документация:**
+
+- [QUICK_START.md](QUICK_START.md) - Быстрый старт и troubleshooting
+- [DOCKER_SETUP.md](DOCKER_SETUP.md) - Полная документация по Docker
+- [DEPLOYMENT.md](DEPLOYMENT.md) - Деплой на Yandex Cloud
 
 ### Вариант 3: Локальная разработка (ручная установка)
 
@@ -303,6 +320,31 @@ npm run dev
 ### Подробнее о типах активов
 
 См. файл [STOCK_FLOW_ASSETS.md](STOCK_FLOW_ASSETS.md) для детальной информации о концепции разделения активов на Stock и Flow.
+
+### Миграции БД
+
+Проект использует TypeORM для управления миграциями базы данных:
+
+- **Автоматический запуск**: Миграции выполняются автоматически при старте приложения (через `migrationsRun: true`)
+- **Seed данные**: Начальные данные (валюты) вставляются через миграции
+
+#### Команды для работы с миграциями:
+
+```bash
+# В контейнере Docker
+docker compose exec backend sh
+
+# Генерация новой миграции на основе изменений в Entity
+npm run migration:generate -- src/migrations/MigrationName
+
+# Запуск миграций вручную (не требуется, т.к. выполняются автоматически)
+npm run migration:run
+
+# Откат последней миграции
+npm run migration:revert
+```
+
+**Примечание**: После изменения Entity файлов генерируйте новые миграции, не полагайтесь на `synchronize: true` в production.
 
 ## Безопасность
 
