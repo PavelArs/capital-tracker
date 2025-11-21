@@ -3,15 +3,12 @@ import {
   Get,
   Post,
   Body,
-  Patch,
-  Param,
-  Delete,
   Query,
   UseGuards,
+  Req,
 } from "@nestjs/common";
 import { CurrenciesService } from "./currencies.service";
-import { CreateCurrencyDto } from "./dto/create-currency.dto";
-import { UpdateCurrencyDto } from "./dto/update-currency.dto";
+import { ToggleCurrencyDto } from "./dto/toggle-currency.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 
 @Controller("currencies")
@@ -19,14 +16,10 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 export class CurrenciesController {
   constructor(private readonly currenciesService: CurrenciesService) {}
 
-  @Post()
-  create(@Body() createCurrencyDto: CreateCurrencyDto) {
-    return this.currenciesService.create(createCurrencyDto);
-  }
-
   @Get("list")
-  findAll() {
-    return this.currenciesService.findAll();
+  findAll(@Req() req) {
+    const userId = req.user?.userId;
+    return this.currenciesService.findAll(userId);
   }
 
   @Get("rates")
@@ -43,26 +36,43 @@ export class CurrenciesController {
     return this.currenciesService.convert(parseFloat(amount), from, to);
   }
 
-  @Get(":id")
-  findOne(@Param("id") id: string) {
-    return this.currenciesService.findOne(id);
-  }
-
-  @Patch(":id")
-  update(
-    @Param("id") id: string,
-    @Body() updateCurrencyDto: UpdateCurrencyDto
-  ) {
-    return this.currenciesService.update(id, updateCurrencyDto);
-  }
-
-  @Delete(":id")
-  remove(@Param("id") id: string) {
-    return this.currenciesService.remove(id);
+  // Получить список скрытых валют пользователя
+  @Get("hidden")
+  async getHiddenCurrencies(@Req() req) {
+    const userId = req.user.userId;
+    return this.currenciesService.getHiddenCurrencies(userId);
   }
 
   @Get()
   getAllCurrencies() {
     return this.currenciesService.getAllCurrencies();
+  }
+
+  // Скрыть системную валюту для пользователя
+  @Post("hide")
+  async hideCurrency(@Req() req, @Body() toggleDto: ToggleCurrencyDto) {
+    const userId = req.user.userId;
+    await this.currenciesService.hideCurrency(userId, toggleDto.currencyId);
+    return { message: "Currency hidden successfully" };
+  }
+
+  // Показать системную валюту для пользователя
+  @Post("show")
+  async showCurrency(@Req() req, @Body() toggleDto: ToggleCurrencyDto) {
+    const userId = req.user.userId;
+    await this.currenciesService.showCurrency(userId, toggleDto.currencyId);
+    return { message: "Currency shown successfully" };
+  }
+
+  // Переключить видимость валюты (универсальный эндпоинт)
+  @Post("toggle")
+  async toggleCurrency(@Req() req, @Body() toggleDto: ToggleCurrencyDto) {
+    const userId = req.user.userId;
+    if (toggleDto.isHidden) {
+      await this.currenciesService.hideCurrency(userId, toggleDto.currencyId);
+    } else {
+      await this.currenciesService.showCurrency(userId, toggleDto.currencyId);
+    }
+    return { message: "Currency visibility toggled successfully" };
   }
 }

@@ -247,6 +247,170 @@ curl -X GET "http://localhost:3000/currencies/convert?amount=100&from=USD&to=EUR
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
+### Получить список валют
+
+Получает список всех активных валют с учетом предпочтений пользователя (скрытые системные валюты не показываются).
+
+```bash
+curl -X GET http://localhost:3000/currencies/list \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Ответ:
+
+```json
+[
+  {
+    "id": "uuid",
+    "code": "USD",
+    "name": "US Dollar",
+    "symbol": "$",
+    "type": "fiat",
+    "isActive": true,
+    "isDefault": true,
+    "isSystem": true,
+    "contractAddress": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+### Скрыть системную валюту
+
+Скрывает системную валюту для текущего пользователя. Системные валюты нельзя удалить, но можно скрыть для себя.
+
+```bash
+curl -X POST http://localhost:3000/currencies/hide \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currencyId": "uuid-валюты",
+    "isHidden": true
+  }'
+```
+
+Ответ:
+
+```json
+{
+  "message": "Currency hidden successfully"
+}
+```
+
+### Показать системную валюту
+
+Показывает ранее скрытую системную валюту для текущего пользователя.
+
+```bash
+curl -X POST http://localhost:3000/currencies/show \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currencyId": "uuid-валюты",
+    "isHidden": false
+  }'
+```
+
+Ответ:
+
+```json
+{
+  "message": "Currency shown successfully"
+}
+```
+
+### Переключить видимость валюты
+
+Универсальный эндпоинт для переключения видимости валюты.
+
+```bash
+curl -X POST http://localhost:3000/currencies/toggle \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "currencyId": "uuid-валюты",
+    "isHidden": true
+  }'
+```
+
+Ответ:
+
+```json
+{
+  "message": "Currency visibility toggled successfully"
+}
+```
+
+### Получить скрытые валюты
+
+Получает список всех валют, скрытых текущим пользователем.
+
+```bash
+curl -X GET http://localhost:3000/currencies/hidden \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+Ответ:
+
+```json
+[
+  {
+    "id": "uuid",
+    "code": "RUB",
+    "name": "Russian Ruble",
+    "symbol": "₽",
+    "type": "fiat",
+    "isActive": true,
+    "isDefault": false,
+    "isSystem": true,
+    "contractAddress": null,
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-01T00:00:00.000Z"
+  }
+]
+```
+
+### Создать пользовательскую валюту
+
+Создает новую пользовательскую валюту (не системную).
+
+```bash
+curl -X POST http://localhost:3000/currencies \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "code": "MYCOIN",
+    "name": "My Custom Coin",
+    "symbol": "MC",
+    "type": "crypto",
+    "contractAddress": "0x..."
+  }'
+```
+
+### Обновить валюту
+
+Обновляет пользовательскую валюту. **Системные валюты нельзя редактировать**.
+
+```bash
+curl -X PATCH http://localhost:3000/currencies/uuid-валюты \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Name",
+    "isActive": false
+  }'
+```
+
+### Удалить валюту
+
+Удаляет пользовательскую валюту. **Системные валюты нельзя удалить** - используйте функцию скрытия вместо этого.
+
+```bash
+curl -X DELETE http://localhost:3000/currencies/uuid-валюты \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
 ## Метрики
 
 ### Получить метрики

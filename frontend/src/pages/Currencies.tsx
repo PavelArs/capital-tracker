@@ -11,24 +11,21 @@ interface Currency {
   type: "fiat" | "crypto" | "stablecoin";
   isActive: boolean;
   isDefault: boolean;
+  isSystem: boolean;
 }
+
+type TabType = "active" | "hidden";
 
 export default function Currencies() {
   const { t } = useTranslation();
   const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [hiddenCurrencies, setHiddenCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({
-    code: "",
-    name: "",
-    symbol: "",
-    type: "fiat" as "fiat" | "crypto" | "stablecoin",
-    isActive: true,
-  });
+  const [activeTab, setActiveTab] = useState<TabType>("active");
 
   useEffect(() => {
     fetchCurrencies();
+    fetchHiddenCurrencies();
   }, []);
 
   const fetchCurrencies = async () => {
@@ -42,62 +39,30 @@ export default function Currencies() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const fetchHiddenCurrencies = async () => {
     try {
-      if (editingId) {
-        await axios.patch(`/currencies/${editingId}`, formData);
-      } else {
-        await axios.post("/currencies", formData);
-      }
-      setShowForm(false);
-      setEditingId(null);
-      setFormData({
-        code: "",
-        name: "",
-        symbol: "",
-        type: "fiat",
-        isActive: true,
-      });
-      fetchCurrencies();
+      const response = await axios.get("/currencies/hidden");
+      setHiddenCurrencies(response.data);
     } catch (error) {
-      console.error("Error saving currency:", error);
+      console.error("Error fetching hidden currencies:", error);
     }
   };
 
-  const handleEdit = (currency: Currency) => {
-    setEditingId(currency.id);
-    setFormData({
-      code: currency.code,
-      name: currency.name,
-      symbol: currency.symbol,
-      type: currency.type,
-      isActive: currency.isActive,
-    });
-    setShowForm(true);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (window.confirm(t('currencies.deleteConfirm'))) {
-      try {
-        await axios.delete(`/currencies/${id}`);
-        fetchCurrencies();
-      } catch (error) {
-        console.error("Error deleting currency:", error);
-      }
+  const handleToggle = async (currencyId: string, isCurrentlyHidden: boolean) => {
+    try {
+      const endpoint = isCurrentlyHidden ? "/currencies/show" : "/currencies/hide";
+      await axios.post(endpoint, {
+        currencyId,
+        isHidden: !isCurrentlyHidden,
+      });
+      
+      // Refresh both lists
+      await fetchCurrencies();
+      await fetchHiddenCurrencies();
+    } catch (error) {
+      console.error("Error toggling currency:", error);
+      alert(t('currencies.toggleError'));
     }
-  };
-
-  const handleCancel = () => {
-    setShowForm(false);
-    setEditingId(null);
-    setFormData({
-      code: "",
-      name: "",
-      symbol: "",
-      type: "fiat",
-      isActive: true,
-    });
   };
 
   if (loading) {
@@ -110,262 +75,124 @@ export default function Currencies() {
     stablecoin: currencies.filter((c) => c.type === "stablecoin"),
   };
 
+  const groupedHidden = {
+    fiat: hiddenCurrencies.filter((c) => c.type === "fiat"),
+    crypto: hiddenCurrencies.filter((c) => c.type === "crypto"),
+    stablecoin: hiddenCurrencies.filter((c) => c.type === "stablecoin"),
+  };
+
+  const renderCurrencyTable = (currenciesList: Currency[], isHidden: boolean = false) => {
+    if (currenciesList.length === 0) {
+      return <p className="no-data">{t('currencies.noData')}</p>;
+    }
+
+    return (
+      <table>
+        <thead>
+          <tr>
+            <th>{t('currencies.code')}</th>
+            <th>{t('common.name')}</th>
+            <th>{t('currencies.symbol')}</th>
+            <th>{t('currencies.status')}</th>
+            <th>{t('common.actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {currenciesList.map((currency) => (
+            <tr key={currency.id}>
+              <td className="currency-code">{currency.code}</td>
+              <td>{currency.name}</td>
+              <td className="currency-symbol">{currency.symbol}</td>
+              <td>
+                <span
+                  className={`status-badge ${
+                    currency.isActive ? "active" : "inactive"
+                  }`}
+                >
+                  {currency.isActive ? t('currencies.active') : t('currencies.inactive')}
+                </span>
+              </td>
+              <td>
+                <button
+                  onClick={() => handleToggle(currency.id, isHidden)}
+                  className={isHidden ? "btn-show" : "btn-hide"}
+                  title={isHidden ? t('currencies.show') : t('currencies.hide')}
+                >
+                  {isHidden ? "👁️ " + t('currencies.show') : "🚫 " + t('currencies.hide')}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
+  const displayedCurrencies = activeTab === "active" ? groupedCurrencies : groupedHidden;
+  const isHiddenTab = activeTab === "hidden";
+
   return (
     <div className="currencies-page">
       <div className="currencies-header">
-        <h1>{t('currencies.title')}</h1>
-        <div className="currencies-actions">
-          <button onClick={() => setShowForm(true)} className="btn-add">
-            {t('currencies.addCurrency')}
-          </button>
+        <div>
+          <h1>{t('currencies.title')}</h1>
+          <p className="currencies-description">
+            {t('currencies.description')}
+          </p>
         </div>
       </div>
 
-      {showForm && (
-        <div className="currency-form-container">
-          <form onSubmit={handleSubmit} className="currency-form">
-            <h2>{editingId ? t('currencies.editCurrency') : t('currencies.addNewCurrency')}</h2>
-            
-            <div className="form-group">
-              <label>{t('currencies.code')} *</label>
-              <input
-                type="text"
-                value={formData.code}
-                onChange={(e) =>
-                  setFormData({ ...formData, code: e.target.value.toUpperCase() })
-                }
-                placeholder="USD, EUR, BTC"
-                maxLength={10}
-                required
-                disabled={!!editingId}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>{t('common.name')} *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
-                }
-                placeholder="US Dollar"
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>{t('currencies.symbol')} *</label>
-              <input
-                type="text"
-                value={formData.symbol}
-                onChange={(e) =>
-                  setFormData({ ...formData, symbol: e.target.value })
-                }
-                placeholder="$"
-                maxLength={10}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label>{t('common.type')} *</label>
-              <select
-                value={formData.type}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    type: e.target.value as "fiat" | "crypto" | "stablecoin",
-                  })
-                }
-                required
-              >
-                <option value="fiat">{t('currencies.types.fiat')}</option>
-                <option value="crypto">{t('currencies.types.crypto')}</option>
-                <option value="stablecoin">{t('currencies.types.stablecoin')}</option>
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={formData.isActive}
-                  onChange={(e) =>
-                    setFormData({ ...formData, isActive: e.target.checked })
-                  }
-                />
-                {t('currencies.active')}
-              </label>
-            </div>
-
-            <div className="form-actions">
-              <button type="submit" className="btn-primary">
-                {editingId ? t('common.update') : t('common.create')}
-              </button>
-              <button type="button" onClick={handleCancel} className="btn-secondary">
-                {t('common.cancel')}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <div className="tabs-container">
+        <button
+          className={`tab-button ${activeTab === "active" ? "active" : ""}`}
+          onClick={() => setActiveTab("active")}
+        >
+          👁️ {t('currencies.activeCurrencies')} ({currencies.length})
+        </button>
+        <button
+          className={`tab-button ${activeTab === "hidden" ? "active" : ""}`}
+          onClick={() => setActiveTab("hidden")}
+        >
+          🚫 {t('currencies.hiddenCurrencies')} ({hiddenCurrencies.length})
+        </button>
+      </div>
 
       <div className="currencies-list">
-        <div className="currency-group">
-          <h2>{t('currencies.fiatCurrencies')} ({groupedCurrencies.fiat.length})</h2>
-          <div className="currency-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('currencies.code')}</th>
-                  <th>{t('common.name')}</th>
-                  <th>{t('currencies.symbol')}</th>
-                  <th>{t('currencies.status')}</th>
-                  <th>{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedCurrencies.fiat.map((currency) => (
-                  <tr key={currency.id}>
-                    <td className="currency-code">{currency.code}</td>
-                    <td>{currency.name}</td>
-                    <td className="currency-symbol">{currency.symbol}</td>
-                    <td>
-                      <span
-                        className={`status-badge ${
-                          currency.isActive ? "active" : "inactive"
-                        }`}
-                      >
-                        {currency.isActive ? t('currencies.active') : t('currencies.inactive')}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleEdit(currency)}
-                        className="btn-edit"
-                      >
-                        {t('common.edit')}
-                      </button>
-                      {!currency.isDefault && (
-                        <button
-                          onClick={() => handleDelete(currency.id)}
-                          className="btn-delete"
-                        >
-                          {t('common.delete')}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {displayedCurrencies.fiat.length > 0 && (
+          <div className="currency-group">
+            <h2>{t('currencies.fiatCurrencies')} ({displayedCurrencies.fiat.length})</h2>
+            <div className="currency-table">
+              {renderCurrencyTable(displayedCurrencies.fiat, isHiddenTab)}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="currency-group">
-          <h2>{t('currencies.cryptocurrencies')} ({groupedCurrencies.crypto.length})</h2>
-          <div className="currency-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('currencies.code')}</th>
-                  <th>{t('common.name')}</th>
-                  <th>{t('currencies.symbol')}</th>
-                  <th>{t('currencies.status')}</th>
-                  <th>{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedCurrencies.crypto.map((currency) => (
-                  <tr key={currency.id}>
-                    <td className="currency-code">{currency.code}</td>
-                    <td>{currency.name}</td>
-                    <td className="currency-symbol">{currency.symbol}</td>
-                    <td>
-                      <span
-                        className={`status-badge ${
-                          currency.isActive ? "active" : "inactive"
-                        }`}
-                      >
-                        {currency.isActive ? t('currencies.active') : t('currencies.inactive')}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleEdit(currency)}
-                        className="btn-edit"
-                      >
-                        {t('common.edit')}
-                      </button>
-                      {!currency.isDefault && (
-                        <button
-                          onClick={() => handleDelete(currency.id)}
-                          className="btn-delete"
-                        >
-                          {t('common.delete')}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {displayedCurrencies.crypto.length > 0 && (
+          <div className="currency-group">
+            <h2>{t('currencies.cryptocurrencies')} ({displayedCurrencies.crypto.length})</h2>
+            <div className="currency-table">
+              {renderCurrencyTable(displayedCurrencies.crypto, isHiddenTab)}
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="currency-group">
-          <h2>{t('currencies.stablecoins')} ({groupedCurrencies.stablecoin.length})</h2>
-          <div className="currency-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>{t('currencies.code')}</th>
-                  <th>{t('common.name')}</th>
-                  <th>{t('currencies.symbol')}</th>
-                  <th>{t('currencies.status')}</th>
-                  <th>{t('common.actions')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedCurrencies.stablecoin.map((currency) => (
-                  <tr key={currency.id}>
-                    <td className="currency-code">{currency.code}</td>
-                    <td>{currency.name}</td>
-                    <td className="currency-symbol">{currency.symbol}</td>
-                    <td>
-                      <span
-                        className={`status-badge ${
-                          currency.isActive ? "active" : "inactive"
-                        }`}
-                      >
-                        {currency.isActive ? t('currencies.active') : t('currencies.inactive')}
-                      </span>
-                    </td>
-                    <td>
-                      <button
-                        onClick={() => handleEdit(currency)}
-                        className="btn-edit"
-                      >
-                        {t('common.edit')}
-                      </button>
-                      {!currency.isDefault && (
-                        <button
-                          onClick={() => handleDelete(currency.id)}
-                          className="btn-delete"
-                        >
-                          {t('common.delete')}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {displayedCurrencies.stablecoin.length > 0 && (
+          <div className="currency-group">
+            <h2>{t('currencies.stablecoins')} ({displayedCurrencies.stablecoin.length})</h2>
+            <div className="currency-table">
+              {renderCurrencyTable(displayedCurrencies.stablecoin, isHiddenTab)}
+            </div>
           </div>
-        </div>
+        )}
+
+        {displayedCurrencies.fiat.length === 0 && 
+         displayedCurrencies.crypto.length === 0 && 
+         displayedCurrencies.stablecoin.length === 0 && (
+          <div className="empty-state">
+            <p>{isHiddenTab ? t('currencies.noHiddenCurrencies') : t('currencies.noCurrencies')}</p>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
