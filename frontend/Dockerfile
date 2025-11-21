@@ -21,6 +21,7 @@ RUN npm install -g serve
 
 # Copy built files
 COPY --from=builder /app/dist ./dist
+COPY serve.json ./dist/serve.json
 
 EXPOSE 80
 
