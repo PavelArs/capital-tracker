@@ -1,37 +1,46 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { CurrencyUpdateService } from "./currency-update.service";
 import { Currency, CurrencyType } from "../entities/currency.entity";
-import { CreateCurrencyDto } from "./dto/create-currency.dto";
-import { UpdateCurrencyDto } from "./dto/update-currency.dto";
+import { UserCurrencyPreference } from "../entities/UserCurrencyPreference.entity";
 
 @Injectable()
 export class CurrenciesService {
   constructor(
     @InjectRepository(Currency)
     private currencyRepository: Repository<Currency>,
+    @InjectRepository(UserCurrencyPreference)
+    private userCurrencyPreferenceRepository: Repository<UserCurrencyPreference>,
     private currencyUpdateService: CurrencyUpdateService
   ) {}
 
-  async create(createCurrencyDto: CreateCurrencyDto): Promise<Currency> {
-    const currency = this.currencyRepository.create(createCurrencyDto);
-    return this.currencyRepository.save(currency);
-  }
-
-  async findAll(): Promise<Currency[]> {
-    return this.currencyRepository.find({
+  // Получить все валюты с учетом предпочтений пользователя
+  async findAll(userId?: string): Promise<Currency[]> {
+    const currencies = await this.currencyRepository.find({
       where: { isActive: true },
       order: { code: "ASC" },
     });
-  }
 
-  async findOne(id: string): Promise<Currency> {
-    const currency = await this.currencyRepository.findOne({ where: { id } });
-    if (!currency) {
-      throw new NotFoundException(`Currency with ID ${id} not found`);
+    if (!userId) {
+      return currencies;
     }
-    return currency;
+
+    // Получаем скрытые валюты пользователя
+    const hiddenPreferences = await this.userCurrencyPreferenceRepository.find({
+      where: { userId, isHidden: true },
+    });
+
+    const hiddenCurrencyIds = new Set(
+      hiddenPreferences.map((pref) => pref.currencyId)
+    );
+
+    // Фильтруем валюты, исключая скрытые
+    return currencies.filter((currency) => !hiddenCurrencyIds.has(currency.id));
   }
 
   async findByCode(code: string): Promise<Currency> {
@@ -40,20 +49,6 @@ export class CurrenciesService {
       throw new NotFoundException(`Currency with code ${code} not found`);
     }
     return currency;
-  }
-
-  async update(
-    id: string,
-    updateCurrencyDto: UpdateCurrencyDto
-  ): Promise<Currency> {
-    const currency = await this.findOne(id);
-    Object.assign(currency, updateCurrencyDto);
-    return this.currencyRepository.save(currency);
-  }
-
-  async remove(id: string): Promise<void> {
-    const currency = await this.findOne(id);
-    await this.currencyRepository.remove(currency);
   }
 
   async getExchangeRates(baseCurrency: string = "USD") {
@@ -97,5 +92,71 @@ export class CurrenciesService {
   async getAllCurrencies() {
     const rates = await this.getExchangeRates();
     return Object.keys(rates);
+  }
+
+  // Скрыть валюту для пользователя
+  async hideCurrency(userId: string, currencyId: string): Promise<void> {
+    // Проверяем, что валюта существует
+    const currency = await this.currencyRepository.findOne({
+      where: { id: currencyId },
+    });
+
+    if (!currency) {
+      throw new NotFoundException(`Currency with ID ${currencyId} not found`);
+    }
+
+    if (!currency.isSystem) {
+      throw new BadRequestException("Only system currencies can be hidden.");
+    }
+
+    // Проверяем, есть ли уже предпочтение
+    let preference = await this.userCurrencyPreferenceRepository.findOne({
+      where: { userId, currencyId },
+    });
+
+    if (preference) {
+      preference.isHidden = true;
+    } else {
+      preference = this.userCurrencyPreferenceRepository.create({
+        userId,
+        currencyId,
+        isHidden: true,
+      });
+    }
+
+    await this.userCurrencyPreferenceRepository.save(preference);
+  }
+
+  // Показать валюту для пользователя
+  async showCurrency(userId: string, currencyId: string): Promise<void> {
+    const preference = await this.userCurrencyPreferenceRepository.findOne({
+      where: { userId, currencyId },
+    });
+
+    if (preference) {
+      preference.isHidden = false;
+      await this.userCurrencyPreferenceRepository.save(preference);
+    }
+  }
+
+  // Получить список скрытых валют пользователя
+  async getHiddenCurrencies(userId: string): Promise<Currency[]> {
+    const preferences = await this.userCurrencyPreferenceRepository.find({
+      where: { userId, isHidden: true },
+    });
+
+    if (preferences.length === 0) {
+      return [];
+    }
+
+    const currencyIds = preferences.map((pref) => pref.currencyId);
+
+    // Загружаем валюты отдельным запросом
+    const currencies = await this.currencyRepository
+      .createQueryBuilder("currency")
+      .whereInIds(currencyIds)
+      .getMany();
+
+    return currencies;
   }
 }
