@@ -5,19 +5,21 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
-} from 'typeorm';
-import { Subscription, SubscriptionType } from './subscription.entity';
-import { Capital } from './capital.entity';
+} from "typeorm";
+import { Exclude } from "class-transformer";
+import { Subscription, SubscriptionType } from "./subscription.entity";
+import { Capital } from "./capital.entity";
 
-@Entity('users')
+@Entity("users")
 export class User {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column({ unique: true })
   email: string;
 
   @Column()
+  @Exclude()
   password: string;
 
   @Column({ nullable: true })
@@ -27,7 +29,7 @@ export class User {
   lastName: string;
 
   @Column({
-    type: 'enum',
+    type: "enum",
     enum: SubscriptionType,
     default: SubscriptionType.FREE,
   })
@@ -45,4 +47,3 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-
