@@ -34,4 +34,16 @@ export class AuthController {
   async getProfile(@Request() req) {
     return this.authService.getProfile(req.user.userId);
   }
+
+  @Post("invitation-code/generate")
+  @UseGuards(JwtAuthGuard)
+  async generateInvitationCode(@Request() req) {
+    return this.authService.generateInvitationCode(req.user.userId);
+  }
+
+  @Get("invitation-code")
+  @UseGuards(JwtAuthGuard)
+  async getMyInvitationCode(@Request() req) {
+    return this.authService.getMyInvitationCode(req.user.userId);
+  }
 }

@@ -18,7 +18,8 @@
     "type": "Тип",
     "category": "Категория",
     "yes": "Да",
-    "no": "Нет"
+    "no": "Нет",
+    "copy": "Копировать"
   },
   "auth": {
     "login": "Вход",
@@ -29,7 +30,9 @@
     "dontHaveAccount": "Нет аккаунта?",
     "alreadyHaveAccount": "Уже есть аккаунт?",
     "firstName": "Имя (необязательно)",
-    "lastName": "Фамилия (необязательно)"
+    "lastName": "Фамилия (необязательно)",
+    "invitationCode": "Код-приглашение",
+    "invitationCodePlaceholder": "Введите код-приглашение"
   },
   "navigation": {
     "dashboard": "Панель управления",
@@ -197,7 +200,14 @@
     "language": "Язык",
     "languageDescription": "Выберите предпочитаемый язык интерфейса",
     "theme": "Тема",
-    "themeDescription": "Выберите предпочитаемую цветовую тему"
+    "themeDescription": "Выберите предпочитаемую цветовую тему",
+    "invitationCode": "Код-приглашение",
+    "yourInvitationCode": "Ваш код-приглашение",
+    "invitationCodeDescription": "Вы можете создать один код-приглашение для приглашения нового пользователя. Каждый код можно использовать только один раз.",
+    "noInvitationCode": "У вас пока нет кода-приглашения.",
+    "generateInvitationCode": "Создать код-приглашение",
+    "invitationCodeGenerateError": "Не удалось создать код-приглашение. Возможно, у вас уже есть активный код.",
+    "codeActive": "Активен - Готов к использованию",
+    "codeUsed": "Использован"
   }
 }
-

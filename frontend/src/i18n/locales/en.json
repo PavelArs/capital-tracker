@@ -18,7 +18,8 @@
     "type": "Type",
     "category": "Category",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "copy": "Copy"
   },
   "auth": {
     "login": "Login",
@@ -29,7 +30,9 @@
     "dontHaveAccount": "Don't have an account?",
     "alreadyHaveAccount": "Already have an account?",
     "firstName": "First Name (optional)",
-    "lastName": "Last Name (optional)"
+    "lastName": "Last Name (optional)",
+    "invitationCode": "Invitation Code",
+    "invitationCodePlaceholder": "Enter invitation code"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -197,7 +200,14 @@
     "language": "Language",
     "languageDescription": "Choose your preferred language for the interface",
     "theme": "Theme",
-    "themeDescription": "Choose your preferred color theme"
+    "themeDescription": "Choose your preferred color theme",
+    "invitationCode": "Invitation Code",
+    "yourInvitationCode": "Your Invitation Code",
+    "invitationCodeDescription": "You can generate one invitation code to invite a new user. Each code can only be used once.",
+    "noInvitationCode": "You don't have an invitation code yet.",
+    "generateInvitationCode": "Generate Invitation Code",
+    "invitationCodeGenerateError": "Failed to generate invitation code. You may already have an active code.",
+    "codeActive": "Active - Ready to use",
+    "codeUsed": "Used"
   }
 }
-

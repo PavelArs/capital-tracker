@@ -11,14 +11,24 @@ interface User {
   subscriptionType?: SubscriptionType;
 }
 
+interface InvitationCode {
+  id: string;
+  code: string;
+  isUsed: boolean;
+  usedAt: Date | null;
+  createdAt: Date;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, firstName?: string, lastName?: string) => Promise<void>;
+  register: (email: string, password: string, firstName?: string, lastName?: string, invitationCode?: string) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
+  generateInvitationCode: () => Promise<InvitationCode>;
+  getMyInvitationCode: () => Promise<InvitationCode | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -69,12 +79,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
   };
 
-  const register = async (email: string, password: string, firstName?: string, lastName?: string) => {
+  const register = async (email: string, password: string, firstName?: string, lastName?: string, invitationCode?: string) => {
     const response = await axios.post('/auth/register', {
       email,
       password,
       firstName,
       lastName,
+      invitationCode,
     });
     const { access_token, ...userData } = response.data;
     setToken(access_token);
@@ -99,8 +110,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const generateInvitationCode = async (): Promise<InvitationCode> => {
+    const response = await axios.post('/auth/invitation-code/generate');
+    return response.data;
+  };
+
+  const getMyInvitationCode = async (): Promise<InvitationCode | null> => {
+    try {
+      const response = await axios.get('/auth/invitation-code');
+      return response.data;
+    } catch (error) {
+      return null;
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, loading, login, register, logout, refreshUser, generateInvitationCode, getMyInvitationCode }}>
       {children}
     </AuthContext.Provider>
   );

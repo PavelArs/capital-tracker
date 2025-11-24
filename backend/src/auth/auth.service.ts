@@ -1,12 +1,14 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { User } from '../entities/user.entity';
 import { Subscription, SubscriptionType, SubscriptionStatus } from '../entities/subscription.entity';
+import { InvitationCode } from '../entities/invitation-code.entity';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -15,10 +17,25 @@ export class AuthService {
     private userRepository: Repository<User>,
     @InjectRepository(Subscription)
     private subscriptionRepository: Repository<Subscription>,
+    @InjectRepository(InvitationCode)
+    private invitationCodeRepository: Repository<InvitationCode>,
     private jwtService: JwtService,
   ) {}
 
   async register(registerDto: RegisterDto) {
+    // Verify invitation code
+    const invitationCode = await this.invitationCodeRepository.findOne({
+      where: { code: registerDto.invitationCode },
+    });
+
+    if (!invitationCode) {
+      throw new BadRequestException('Invalid invitation code');
+    }
+
+    if (invitationCode.isUsed) {
+      throw new BadRequestException('Invitation code has already been used');
+    }
+
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
     });
@@ -37,6 +54,12 @@ export class AuthService {
     });
 
     const savedUser = await this.userRepository.save(user);
+
+    // Mark invitation code as used
+    invitationCode.isUsed = true;
+    invitationCode.usedByUserId = savedUser.id;
+    invitationCode.usedAt = new Date();
+    await this.invitationCodeRepository.save(invitationCode);
 
     // Create free subscription
     const subscription = this.subscriptionRepository.create({
@@ -78,6 +101,44 @@ export class AuthService {
     }
     const { password, ...result } = user;
     return result;
+  }
+
+  async generateInvitationCode(userId: string): Promise<InvitationCode> {
+    // Check if user already has an invitation code
+    const existingCode = await this.invitationCodeRepository.findOne({
+      where: { createdByUserId: userId, isUsed: false },
+    });
+
+    if (existingCode) {
+      throw new BadRequestException('You already have an active invitation code');
+    }
+
+    // Generate unique code
+    let code: string;
+    let isUnique = false;
+    
+    while (!isUnique) {
+      code = randomBytes(4).toString('hex').toUpperCase();
+      const existing = await this.invitationCodeRepository.findOne({
+        where: { code },
+      });
+      if (!existing) {
+        isUnique = true;
+      }
+    }
+
+    const invitationCode = this.invitationCodeRepository.create({
+      code,
+      createdByUserId: userId,
+    });
+
+    return await this.invitationCodeRepository.save(invitationCode);
+  }
+
+  async getMyInvitationCode(userId: string): Promise<InvitationCode | null> {
+    return await this.invitationCodeRepository.findOne({
+      where: { createdByUserId: userId },
+    });
   }
 }
 
