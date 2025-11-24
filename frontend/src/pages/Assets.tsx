@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
@@ -64,6 +64,16 @@ export default function Assets() {
     description: "",
   });
 
+  // Exchange rate caching
+  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+  const [exchangeRateCache, setExchangeRateCache] = useState<
+    Record<string, { rate: number; timestamp: number }>
+  >({});
+  const exchangeRateCacheRef = useRef<
+    Record<string, { rate: number; timestamp: number }>
+  >({});
+  const pendingRequestsRef = useRef<Record<string, Promise<number>>>({});
+
   // Update active tab when location changes
   useEffect(() => {
     const tab = getActiveTab();
@@ -81,6 +91,19 @@ export default function Assets() {
     fetchCurrencies();
     fetchAssets();
   }, []);
+
+  // Sync exchange rate cache with ref for synchronous access
+  useEffect(() => {
+    exchangeRateCacheRef.current = exchangeRateCache;
+  }, [exchangeRateCache]);
+
+  // Clear cache when selected currency changes
+  useEffect(() => {
+    console.log("🔄 Currency changed, clearing exchange rate cache");
+    setExchangeRateCache({});
+    exchangeRateCacheRef.current = {};
+    pendingRequestsRef.current = {};
+  }, [selectedCurrency]);
 
   useEffect(() => {
     // Set default currencyId when currencies are loaded
@@ -100,16 +123,20 @@ export default function Assets() {
       if (response.data && response.data.length > 0) {
         setCurrencies(response.data);
         console.log("✅ Loaded currencies from API:", response.data.length);
-        
+
         // Update formData.currencyId if needed
         setFormData((prev) => {
           // Check if current currencyId is valid
-          const currentIsValid = response.data.some((c: Currency) => c.id === prev.currencyId);
+          const currentIsValid = response.data.some(
+            (c: Currency) => c.id === prev.currencyId
+          );
           if (currentIsValid) {
             return prev; // Keep current value
           }
           // Set to USD or first currency
-          const usdCurrency = response.data.find((c: Currency) => c.code === "USD");
+          const usdCurrency = response.data.find(
+            (c: Currency) => c.code === "USD"
+          );
           return {
             ...prev,
             currencyId: usdCurrency?.id || response.data[0]?.id || "1",
@@ -164,7 +191,12 @@ export default function Assets() {
         description: formData.description,
       };
 
-      console.log("Submitting asset with currency:", currencyCode, "from currencyId:", currencyIdToUse);
+      console.log(
+        "Submitting asset with currency:",
+        currencyCode,
+        "from currencyId:",
+        currencyIdToUse
+      );
 
       // Add incomeType only for flow assets
       if (formData.assetType === "flow" && formData.incomeType) {
@@ -298,7 +330,7 @@ export default function Assets() {
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm(t('assets.deleteConfirm'))) {
+    if (window.confirm(t("assets.deleteConfirm"))) {
       try {
         await axios.delete(`/assets/${id}`);
         fetchAssets();
@@ -307,6 +339,78 @@ export default function Assets() {
       }
     }
   };
+
+  // Get exchange rate with caching
+  const getExchangeRate = useCallback(
+    async (fromCurrency: string, toCurrency: string): Promise<number> => {
+      if (fromCurrency === toCurrency) {
+        return 1;
+      }
+
+      const cacheKey = `${fromCurrency}-${toCurrency}`;
+      const now = Date.now();
+
+      // Check cache (synchronous access via ref)
+      const cached = exchangeRateCacheRef.current[cacheKey];
+      if (cached && now - cached.timestamp < CACHE_TTL) {
+        console.log(
+          `💾 Using cached rate ${fromCurrency}→${toCurrency}: ${cached.rate}`
+        );
+        return cached.rate;
+      }
+
+      // Check if request is already pending
+      if (cacheKey in pendingRequestsRef.current) {
+        console.log(
+          `⏳ Waiting for pending request ${fromCurrency}→${toCurrency}`
+        );
+        return pendingRequestsRef.current[cacheKey];
+      }
+
+      // Create new request
+      const requestPromise = (async () => {
+        try {
+          console.log(`↓ Fetching exchange rate ${fromCurrency}→${toCurrency}`);
+          const response = await axios.get("/currencies/convert", {
+            params: { amount: 1, from: fromCurrency, to: toCurrency },
+          });
+          const rate =
+            typeof response.data === "number"
+              ? response.data
+              : parseFloat(response.data);
+
+          // Cache the rate
+          const cacheEntry = { rate, timestamp: Date.now() };
+          exchangeRateCacheRef.current[cacheKey] = cacheEntry;
+          setExchangeRateCache((prev) => ({ ...prev, [cacheKey]: cacheEntry }));
+
+          console.log(`✅ Cached rate ${fromCurrency}→${toCurrency}: ${rate}`);
+          return rate;
+        } catch (error) {
+          console.error(
+            `Error fetching exchange rate ${fromCurrency}→${toCurrency}:`,
+            error
+          );
+
+          // Fallback to expired cache if available
+          if (cached) {
+            console.log(
+              `⚠️ Using expired cache for ${fromCurrency}→${toCurrency}`
+            );
+            return cached.rate;
+          }
+
+          return 1; // Fallback to 1:1 rate
+        } finally {
+          delete pendingRequestsRef.current[cacheKey];
+        }
+      })();
+
+      pendingRequestsRef.current[cacheKey] = requestPromise;
+      return requestPromise;
+    },
+    [CACHE_TTL]
+  );
 
   const convertAmount = useCallback(
     async (
@@ -317,23 +421,20 @@ export default function Assets() {
       if (fromCurrency === toCurrency) {
         return amount;
       }
+
       try {
-        const response = await axios.get("/currencies/convert", {
-          params: { amount, from: fromCurrency, to: toCurrency },
-        });
+        const rate = await getExchangeRate(fromCurrency, toCurrency);
+        const result = amount * rate;
         console.log(
-          `Convert ${amount} ${fromCurrency} to ${toCurrency}:`,
-          response.data
+          `💱 Convert ${amount} ${fromCurrency} to ${toCurrency}: ${result}`
         );
-        return typeof response.data === "number"
-          ? response.data
-          : parseFloat(response.data);
+        return result;
       } catch (error) {
         console.error("Error converting currency:", error);
         return amount;
       }
     },
-    []
+    [getExchangeRate]
   );
 
   // Filter assets based on active tab
@@ -680,13 +781,13 @@ export default function Assets() {
   }, [assets, viewMode, selectedCurrency, convertAmount, getFilteredAssets]);
 
   if (loading) {
-    return <div className="loading">{t('common.loading')}</div>;
+    return <div className="loading">{t("common.loading")}</div>;
   }
 
   return (
     <div className="assets-page">
       <div className="page-header">
-        <h1>{t('assets.title')}</h1>
+        <h1>{t("assets.title")}</h1>
         <button
           onClick={() => {
             if (showForm) {
@@ -695,14 +796,18 @@ export default function Assets() {
               // Ensure currencyId is set before showing form
               if (!formData.currencyId && currencies.length > 0) {
                 const usdCurrency = currencies.find((c) => c.code === "USD");
-                const defaultCurrencyId = usdCurrency?.id || currencies[0]?.id || "";
-                setFormData((prev) => ({ ...prev, currencyId: defaultCurrencyId }));
+                const defaultCurrencyId =
+                  usdCurrency?.id || currencies[0]?.id || "";
+                setFormData((prev) => ({
+                  ...prev,
+                  currencyId: defaultCurrencyId,
+                }));
               }
               setShowForm(true);
             }
           }}
         >
-          {showForm ? t('common.cancel') : t('assets.addAsset')}
+          {showForm ? t("common.cancel") : t("assets.addAsset")}
         </button>
       </div>
 
@@ -715,7 +820,7 @@ export default function Assets() {
             setActiveTab("overview");
           }}
         >
-          {t('assets.overview')}
+          {t("assets.overview")}
         </button>
         <button
           className={`sub-nav-btn ${activeTab === "stock" ? "active" : ""}`}
@@ -724,7 +829,7 @@ export default function Assets() {
             setActiveTab("stock");
           }}
         >
-          {t('assets.stockAssets')}
+          {t("assets.stockAssets")}
         </button>
         <button
           className={`sub-nav-btn ${activeTab === "flow" ? "active" : ""}`}
@@ -733,7 +838,7 @@ export default function Assets() {
             setActiveTab("flow");
           }}
         >
-          {t('assets.flowAssets')}
+          {t("assets.flowAssets")}
         </button>
       </div>
 
@@ -741,7 +846,9 @@ export default function Assets() {
         <div className="modal-overlay" onClick={handleCancel}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>{editingId ? t('assets.editAsset') : t('assets.addNewAsset')}</h2>
+              <h2>
+                {editingId ? t("assets.editAsset") : t("assets.addNewAsset")}
+              </h2>
               <button className="modal-close" onClick={handleCancel}>
                 ×
               </button>
@@ -749,7 +856,7 @@ export default function Assets() {
             <form onSubmit={handleSubmit} className="asset-form">
               <div className="form-row">
                 <div className="form-group">
-                  <label>{t('common.name')}</label>
+                  <label>{t("common.name")}</label>
                   <input
                     type="text"
                     value={formData.name}
@@ -760,7 +867,7 @@ export default function Assets() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>{t('assets.assetType')}</label>
+                  <label>{t("assets.assetType")}</label>
                   <select
                     value={formData.assetType}
                     onChange={(e) => {
@@ -779,12 +886,12 @@ export default function Assets() {
                     }}
                     required
                   >
-                    <option value="stock">{t('assets.stockType')}</option>
-                    <option value="flow">{t('assets.flowType')}</option>
+                    <option value="stock">{t("assets.stockType")}</option>
+                    <option value="flow">{t("assets.flowType")}</option>
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>{t('common.category')}</label>
+                  <label>{t("common.category")}</label>
                   <select
                     value={formData.category}
                     onChange={(e) => {
@@ -811,29 +918,55 @@ export default function Assets() {
                   >
                     {formData.assetType === "stock" ? (
                       <>
-                        <option value="real_estate">{t('assets.categories.realEstate')}</option>
-                        <option value="investments">{t('assets.categories.investments')}</option>
-                        <option value="savings">{t('assets.categories.savings')}</option>
-                        <option value="crypto">{t('assets.categories.crypto')}</option>
-                        <option value="vehicle">{t('assets.categories.vehicle')}</option>
-                        <option value="equipment">{t('assets.categories.equipment')}</option>
-                        <option value="other">{t('assets.categories.other')}</option>
+                        <option value="real_estate">
+                          {t("assets.categories.realEstate")}
+                        </option>
+                        <option value="investments">
+                          {t("assets.categories.investments")}
+                        </option>
+                        <option value="savings">
+                          {t("assets.categories.savings")}
+                        </option>
+                        <option value="crypto">
+                          {t("assets.categories.crypto")}
+                        </option>
+                        <option value="vehicle">
+                          {t("assets.categories.vehicle")}
+                        </option>
+                        <option value="equipment">
+                          {t("assets.categories.equipment")}
+                        </option>
+                        <option value="other">
+                          {t("assets.categories.other")}
+                        </option>
                       </>
                     ) : (
                       <>
-                        <option value="salary">{t('assets.categories.salary')}</option>
-                        <option value="dividends">{t('assets.categories.dividends')}</option>
-                        <option value="freelance">{t('assets.categories.freelance')}</option>
-                        <option value="rent_income">{t('assets.categories.rentIncome')}</option>
-                        <option value="pension">{t('assets.categories.pension')}</option>
-                        <option value="other">{t('assets.categories.other')}</option>
+                        <option value="salary">
+                          {t("assets.categories.salary")}
+                        </option>
+                        <option value="dividends">
+                          {t("assets.categories.dividends")}
+                        </option>
+                        <option value="freelance">
+                          {t("assets.categories.freelance")}
+                        </option>
+                        <option value="rent_income">
+                          {t("assets.categories.rentIncome")}
+                        </option>
+                        <option value="pension">
+                          {t("assets.categories.pension")}
+                        </option>
+                        <option value="other">
+                          {t("assets.categories.other")}
+                        </option>
                       </>
                     )}
                   </select>
                 </div>
                 {formData.assetType === "flow" && (
                   <div className="form-group">
-                    <label>{t('assets.incomeType')}</label>
+                    <label>{t("assets.incomeType")}</label>
                     <select
                       value={formData.incomeType}
                       onChange={(e) =>
@@ -844,17 +977,17 @@ export default function Assets() {
                       }
                       required
                     >
-                      <option value="active">
-                        {t('assets.activeIncome')}
+                      <option value="active">{t("assets.activeIncome")}</option>
+                      <option value="passive">
+                        {t("assets.passiveIncome")}
                       </option>
-                      <option value="passive">{t('assets.passiveIncome')}</option>
                     </select>
                   </div>
                 )}
               </div>
               <div className="form-row">
                 <div className="form-group">
-                  <label>{t('common.amount')}</label>
+                  <label>{t("common.amount")}</label>
                   <input
                     type="number"
                     step="0.01"
@@ -866,7 +999,7 @@ export default function Assets() {
                   />
                 </div>
                 <div className="form-group">
-                  <label>{t('common.currency')}</label>
+                  <label>{t("common.currency")}</label>
                   <select
                     value={formData.currencyId}
                     onChange={(e) =>
@@ -882,7 +1015,7 @@ export default function Assets() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label>{t('common.date')}</label>
+                  <label>{t("common.date")}</label>
                   <input
                     type="date"
                     value={formData.date}
@@ -894,7 +1027,7 @@ export default function Assets() {
                 </div>
               </div>
               <div className="form-group">
-                <label>{t('common.description')}</label>
+                <label>{t("common.description")}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) =>
@@ -904,14 +1037,16 @@ export default function Assets() {
               </div>
               <div className="form-actions">
                 <button type="submit">
-                  {editingId ? t('assets.updateAsset') : t('assets.createAsset')}
+                  {editingId
+                    ? t("assets.updateAsset")
+                    : t("assets.createAsset")}
                 </button>
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="cancel-btn"
                 >
-                  {t('common.cancel')}
+                  {t("common.cancel")}
                 </button>
               </div>
             </form>
@@ -921,38 +1056,38 @@ export default function Assets() {
 
       <div className="view-controls">
         <div className="view-mode-switch">
-          <label>{t('assets.viewMode')}</label>
+          <label>{t("assets.viewMode")}</label>
           <button
             className={`mode-btn ${viewMode === "single" ? "active" : ""}`}
             onClick={() => setViewMode("single")}
           >
-            {t('assets.singleCurrency')}
+            {t("assets.singleCurrency")}
           </button>
           <button
             className={`mode-btn ${viewMode === "all" ? "active" : ""}`}
             onClick={() => setViewMode("all")}
           >
-            {t('assets.allCurrencies')}
+            {t("assets.allCurrencies")}
           </button>
         </div>
         <div className="group-by-switch">
-          <label>{t('assets.groupBy')}</label>
+          <label>{t("assets.groupBy")}</label>
           <button
             className={`mode-btn ${groupBy === "name" ? "active" : ""}`}
             onClick={() => setGroupBy("name")}
           >
-            {t('assets.byName')}
+            {t("assets.byName")}
           </button>
           <button
             className={`mode-btn ${groupBy === "category" ? "active" : ""}`}
             onClick={() => setGroupBy("category")}
           >
-            {t('assets.byCategory')}
+            {t("assets.byCategory")}
           </button>
         </div>
         {viewMode === "single" && (
           <div className="currency-selector">
-            <label>{t('assets.displayCurrency')}</label>
+            <label>{t("assets.displayCurrency")}</label>
             <select
               value={selectedCurrency}
               onChange={(e) => setSelectedCurrency(e.target.value)}
@@ -971,7 +1106,9 @@ export default function Assets() {
                 {(activeTab === "overview" || activeTab === "stock") &&
                   totalAmount.stock.length > 0 && (
                     <div className="total-amount stock-total">
-                      <span className="total-label">{t('assets.stockAssetsTotal')}</span>
+                      <span className="total-label">
+                        {t("assets.stockAssetsTotal")}
+                      </span>
                       <span className="total-value">
                         {totalAmount.stock[0].amount.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -984,7 +1121,9 @@ export default function Assets() {
                 {(activeTab === "overview" || activeTab === "flow") &&
                   totalAmount.flow.length > 0 && (
                     <div className="total-amount flow-total">
-                      <span className="total-label">{t('assets.flowIncomeTotal')}</span>
+                      <span className="total-label">
+                        {t("assets.flowIncomeTotal")}
+                      </span>
                       <span className="total-value">
                         {totalAmount.flow[0].amount.toLocaleString(undefined, {
                           minimumFractionDigits: 2,
@@ -1050,66 +1189,71 @@ export default function Assets() {
 
       <div className="assets-content-wrapper">
         <div className="assets-list">
-        <h2>
-          {activeTab === "stock"
-            ? t('assets.stockAssets')
-            : activeTab === "flow"
-            ? t('assets.flowAssets')
-            : t('assets.allAssets')}
-        </h2>
-        <div className="assets-cards-list">
-          {getFilteredAssets().map((asset) => (
-            <div key={asset.id} className="asset-item">
-              <div className="asset-item-left">
-                <div className="asset-item-name">{asset.name}</div>
-                <div className="asset-item-meta">
-                  <span className={`asset-type-badge ${asset.assetType}`}>
-                    {asset.assetType === "stock" ? t('assets.stockAssets') : t('assets.flowAssets')}
-                  </span>
-                  <span className="asset-item-category">{asset.category}</span>
+          <h2>
+            {activeTab === "stock"
+              ? t("assets.stockAssets")
+              : activeTab === "flow"
+              ? t("assets.flowAssets")
+              : t("assets.allAssets")}
+          </h2>
+          <div className="assets-cards-list">
+            {getFilteredAssets().map((asset) => (
+              <div key={asset.id} className="asset-item">
+                <div className="asset-item-left">
+                  <div className="asset-item-name">{asset.name}</div>
+                  <div className="asset-item-meta">
+                    <span className={`asset-type-badge ${asset.assetType}`}>
+                      {asset.assetType === "stock"
+                        ? t("assets.stockAssets")
+                        : t("assets.flowAssets")}
+                    </span>
+                    <span className="asset-item-category">
+                      {asset.category}
+                    </span>
+                  </div>
+                </div>
+                <div className="asset-item-right">
+                  <div className="asset-item-amount">
+                    {parseFloat(asset.amount).toLocaleString()}{" "}
+                    {asset.currency?.code || asset.currency || "USD"}
+                  </div>
+                  <div className="asset-item-actions">
+                    <button
+                      className="edit-btn"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log("Edit button clicked for asset:", asset.id);
+                        handleEdit(asset);
+                      }}
+                      title={t("common.edit")}
+                      aria-label={t("common.edit")}
+                    >
+                      <span className="icon-edit">✏️</span>
+                    </button>
+                    <button
+                      className="delete-btn"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDelete(asset.id);
+                      }}
+                      title={t("common.delete")}
+                      aria-label={t("common.delete")}
+                    >
+                      <span className="icon-delete">🗑️</span>
+                    </button>
+                  </div>
                 </div>
               </div>
-              <div className="asset-item-right">
-                <div className="asset-item-amount">
-                  {parseFloat(asset.amount).toLocaleString()} {asset.currency?.code || asset.currency || "USD"}
-                </div>
-                <div className="asset-item-actions">
-                  <button
-                    className="edit-btn"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      console.log("Edit button clicked for asset:", asset.id);
-                      handleEdit(asset);
-                    }}
-                    title={t('common.edit')}
-                    aria-label={t('common.edit')}
-                  >
-                    <span className="icon-edit">✏️</span>
-                  </button>
-                  <button
-                    className="delete-btn"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDelete(asset.id);
-                    }}
-                    title={t('common.delete')}
-                    aria-label={t('common.delete')}
-                  >
-                    <span className="icon-delete">🗑️</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
         </div>
 
         {getFilteredAssets().length > 0 && chartData && (
           <div className="chart-container">
             <h2>
-              {t('assets.assetDistribution')}
+              {t("assets.assetDistribution")}
               {viewMode === "single" && (
                 <span className="currency-badge"> ({selectedCurrency})</span>
               )}
@@ -1131,9 +1275,13 @@ export default function Assets() {
                         // Format in "all" mode with groupBy="category": "Category (CURRENCY) (XX.X%)"
                         // Format in "single" mode with groupBy="name": "Asset Name (Category) (XX.X%)"
                         // Format in "single" mode with groupBy="category": "Category (XX.X%)"
-                        const labelMatch = label.match(/^(.+?)\s*\(([\d.]+)%\)$/);
+                        const labelMatch = label.match(
+                          /^(.+?)\s*\(([\d.]+)%\)$/
+                        );
                         let cleanLabel = labelMatch ? labelMatch[1] : label;
-                        const labelPercentage = labelMatch ? labelMatch[2] : null;
+                        const labelPercentage = labelMatch
+                          ? labelMatch[2]
+                          : null;
 
                         // Get the original value (not USD) for display
                         // Use dataIndex to get the correct key from _keys array
@@ -1208,8 +1356,8 @@ export default function Assets() {
                   },
                 },
               }}
-          />
-        </div>
+            />
+          </div>
         )}
       </div>
     </div>

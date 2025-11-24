@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
 import { Line } from "react-chartjs-2";
@@ -30,6 +30,9 @@ export default function Dashboard() {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [currency, setCurrency] = useState("USD");
+  
+  // Track active requests to prevent duplicates
+  const fetchingRef = useRef({ metrics: false, history: false });
 
   // Helper function to format category names
   const formatCategoryName = (category: string): string => {
@@ -61,13 +64,16 @@ export default function Dashboard() {
     );
   };
 
-  useEffect(() => {
-    fetchMetrics();
-    fetchHistory();
-  }, [currency]);
-
-  const fetchMetrics = async () => {
+  const fetchMetrics = useCallback(async () => {
+    // Prevent duplicate requests
+    if (fetchingRef.current.metrics) {
+      console.log("⏳ Metrics request already in progress, skipping");
+      return;
+    }
+    
     try {
+      fetchingRef.current.metrics = true;
+      console.log("↓ Fetching metrics for currency:", currency);
       const response = await axios.get("/metrics", {
         params: { currency },
       });
@@ -76,19 +82,35 @@ export default function Dashboard() {
       console.error("Error fetching metrics:", error);
     } finally {
       setLoading(false);
+      fetchingRef.current.metrics = false;
     }
-  };
+  }, [currency]);
 
-  const fetchHistory = async () => {
+  const fetchHistory = useCallback(async () => {
+    // Prevent duplicate requests
+    if (fetchingRef.current.history) {
+      console.log("⏳ History request already in progress, skipping");
+      return;
+    }
+    
     try {
+      fetchingRef.current.history = true;
+      console.log("↓ Fetching history for currency:", currency);
       const response = await axios.get("/metrics/history", {
         params: { currency, days: 30 },
       });
       setHistory(response.data);
     } catch (error) {
       console.error("Error fetching history:", error);
+    } finally {
+      fetchingRef.current.history = false;
     }
-  };
+  }, [currency]);
+
+  useEffect(() => {
+    fetchMetrics();
+    fetchHistory();
+  }, [fetchMetrics, fetchHistory]);
 
   const chartData = {
     labels: history.map((h) => h.date),
