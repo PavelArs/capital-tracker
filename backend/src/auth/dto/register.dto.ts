@@ -15,5 +15,8 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   lastName?: string;
+
+  @IsString()
+  invitationCode: string;
 }
 

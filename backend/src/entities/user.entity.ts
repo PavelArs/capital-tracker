@@ -5,10 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  OneToOne,
 } from "typeorm";
 import { Exclude } from "class-transformer";
 import { Subscription, SubscriptionType } from "./subscription.entity";
 import { Capital } from "./capital.entity";
+import { InvitationCode } from "./invitation-code.entity";
 
 @Entity("users")
 export class User {
@@ -40,6 +42,12 @@ export class User {
 
   @OneToMany(() => Capital, (capital) => capital.user)
   capitals: Capital[];
+
+  @OneToMany(() => InvitationCode, (invitationCode) => invitationCode.createdBy)
+  generatedInvitationCodes: InvitationCode[];
+
+  @OneToOne(() => InvitationCode, (invitationCode) => invitationCode.usedBy)
+  usedInvitationCode: InvitationCode;
 
   @CreateDateColumn()
   createdAt: Date;

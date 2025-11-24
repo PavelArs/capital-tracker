@@ -9,6 +9,7 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
+  const [invitationCode, setInvitationCode] = useState('');
   const [error, setError] = useState('');
   const { register, user, loading } = useAuth();
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ export default function Register() {
     e.preventDefault();
     setError('');
     try {
-      await register(email, password, firstName, lastName);
+      await register(email, password, firstName, lastName, invitationCode);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.message || t('auth.registrationFailed'));
@@ -45,6 +46,16 @@ export default function Register() {
         <h1>{t('auth.register')}</h1>
         {error && <div className="error">{error}</div>}
         <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label>{t('auth.invitationCode')}</label>
+            <input
+              type="text"
+              value={invitationCode}
+              onChange={(e) => setInvitationCode(e.target.value.toUpperCase())}
+              required
+              placeholder={t('auth.invitationCodePlaceholder')}
+            />
+          </div>
           <div className="form-group">
             <label>{t('common.email')}</label>
             <input
