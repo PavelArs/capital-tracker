@@ -23,7 +23,15 @@ interface Currency {
 export default function Liabilities() {
   const { t } = useTranslation();
   const [liabilities, setLiabilities] = useState<any[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([
+    // Default currencies - will be replaced if API succeeds
+    { id: "1", code: "USD", name: "US Dollar", symbol: "$", type: "fiat" },
+    { id: "2", code: "EUR", name: "Euro", symbol: "€", type: "fiat" },
+    { id: "3", code: "RUB", name: "Russian Ruble", symbol: "₽", type: "fiat" },
+    { id: "4", code: "BTC", name: "Bitcoin", symbol: "₿", type: "crypto" },
+    { id: "5", code: "ETH", name: "Ethereum", symbol: "Ξ", type: "crypto" },
+    { id: "6", code: "USDT", name: "Tether", symbol: "₮", type: "stablecoin" },
+  ]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -31,7 +39,7 @@ export default function Liabilities() {
     name: '',
     category: 'subscriptions',
     amount: '',
-    currencyId: '',
+    currencyId: '1', // Default to USD (id: "1")
     date: new Date().toISOString().split('T')[0],
     description: '',
     frequency: 'monthly' as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | '',
@@ -53,16 +61,38 @@ export default function Liabilities() {
         setFormData((prev) => ({ ...prev, currencyId: currencies[0].id }));
       }
     }
-  }, [currencies]);
+  }, [currencies, formData.currencyId]);
 
   const fetchCurrencies = async () => {
     try {
       const response = await axios.get('/currencies/list');
       if (response.data && response.data.length > 0) {
         setCurrencies(response.data);
+        console.log("✅ Loaded currencies from API:", response.data.length);
+        
+        // Update formData.currencyId if needed
+        setFormData((prev) => {
+          // Check if current currencyId is valid
+          const currentIsValid = response.data.some((c: Currency) => c.id === prev.currencyId);
+          if (currentIsValid) {
+            return prev; // Keep current value
+          }
+          // Set to USD or first currency
+          const usdCurrency = response.data.find((c: Currency) => c.code === 'USD');
+          return {
+            ...prev,
+            currencyId: usdCurrency?.id || response.data[0]?.id || '1',
+          };
+        });
+      } else {
+        console.log("⚠️ API returned empty list, keeping default currencies");
       }
-    } catch (error) {
-      console.error('Error fetching currencies:', error);
+    } catch (error: any) {
+      console.log(
+        "⚠️ Could not load currencies from API, using defaults:",
+        error?.message || "Unknown error"
+      );
+      // Keep default currencies that were set in useState
     }
   };
 
@@ -80,8 +110,15 @@ export default function Liabilities() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Ensure currencyId is set
+      let currencyIdToUse = formData.currencyId;
+      if (!currencyIdToUse && currencies.length > 0) {
+        const usdCurrency = currencies.find((c) => c.code === 'USD');
+        currencyIdToUse = usdCurrency?.id || currencies[0]?.id || '';
+      }
+
       // Find currency code from currencyId
-      const selectedCurrencyObj = currencies.find((c) => c.id === formData.currencyId);
+      const selectedCurrencyObj = currencies.find((c) => c.id === currencyIdToUse);
       const currencyCode = selectedCurrencyObj?.code || 'USD';
 
       const payload: any = {
@@ -92,6 +129,8 @@ export default function Liabilities() {
         date: formData.date,
         description: formData.description,
       };
+
+      console.log("Submitting liability with currency:", currencyCode, "from currencyId:", currencyIdToUse);
 
       // Add frequency for regular categories
       const regularCategories = ['subscriptions', 'regular_expenses'];
@@ -252,6 +291,12 @@ export default function Liabilities() {
           if (showForm) {
             handleCancel();
           } else {
+            // Ensure currencyId is set before showing form
+            if (!formData.currencyId && currencies.length > 0) {
+              const usdCurrency = currencies.find((c) => c.code === 'USD');
+              const defaultCurrencyId = usdCurrency?.id || currencies[0]?.id || '';
+              setFormData((prev) => ({ ...prev, currencyId: defaultCurrencyId }));
+            }
             setShowForm(true);
           }
         }}>

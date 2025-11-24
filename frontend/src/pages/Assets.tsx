@@ -59,7 +59,7 @@ export default function Assets() {
     category: "investments",
     incomeType: "" as "active" | "passive" | "",
     amount: "",
-    currencyId: "",
+    currencyId: "1", // Default to USD (id: "1")
     date: new Date().toISOString().split("T")[0],
     description: "",
   });
@@ -92,7 +92,7 @@ export default function Assets() {
         setFormData((prev) => ({ ...prev, currencyId: currencies[0].id }));
       }
     }
-  }, [currencies]);
+  }, [currencies, formData.currencyId]);
 
   const fetchCurrencies = async () => {
     try {
@@ -100,6 +100,21 @@ export default function Assets() {
       if (response.data && response.data.length > 0) {
         setCurrencies(response.data);
         console.log("✅ Loaded currencies from API:", response.data.length);
+        
+        // Update formData.currencyId if needed
+        setFormData((prev) => {
+          // Check if current currencyId is valid
+          const currentIsValid = response.data.some((c: Currency) => c.id === prev.currencyId);
+          if (currentIsValid) {
+            return prev; // Keep current value
+          }
+          // Set to USD or first currency
+          const usdCurrency = response.data.find((c: Currency) => c.code === "USD");
+          return {
+            ...prev,
+            currencyId: usdCurrency?.id || response.data[0]?.id || "1",
+          };
+        });
       } else {
         console.log("⚠️ API returned empty list, keeping default currencies");
       }
@@ -126,9 +141,16 @@ export default function Assets() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Ensure currencyId is set
+      let currencyIdToUse = formData.currencyId;
+      if (!currencyIdToUse && currencies.length > 0) {
+        const usdCurrency = currencies.find((c) => c.code === "USD");
+        currencyIdToUse = usdCurrency?.id || currencies[0]?.id || "";
+      }
+
       // Find currency code from currencyId
       const selectedCurrencyObj = currencies.find(
-        (c) => c.id === formData.currencyId
+        (c) => c.id === currencyIdToUse
       );
       const currencyCode = selectedCurrencyObj?.code || "USD";
 
@@ -141,6 +163,8 @@ export default function Assets() {
         date: formData.date,
         description: formData.description,
       };
+
+      console.log("Submitting asset with currency:", currencyCode, "from currencyId:", currencyIdToUse);
 
       // Add incomeType only for flow assets
       if (formData.assetType === "flow" && formData.incomeType) {
@@ -668,6 +692,12 @@ export default function Assets() {
             if (showForm) {
               handleCancel();
             } else {
+              // Ensure currencyId is set before showing form
+              if (!formData.currencyId && currencies.length > 0) {
+                const usdCurrency = currencies.find((c) => c.code === "USD");
+                const defaultCurrencyId = usdCurrency?.id || currencies[0]?.id || "";
+                setFormData((prev) => ({ ...prev, currencyId: defaultCurrencyId }));
+              }
               setShowForm(true);
             }
           }}

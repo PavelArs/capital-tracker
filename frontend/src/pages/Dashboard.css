@@ -1,3 +1,9 @@
+.dashboard {
+  position: relative;
+  width: 100%;
+  overflow: visible;
+}
+
 .dashboard-header {
   display: flex;
   justify-content: space-between;
@@ -56,6 +62,7 @@
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
   gap: 1.5rem;
   margin-top: 2rem;
+  position: static;
 }
 
 .metric-card {
@@ -107,7 +114,7 @@
   color: var(--text-muted);
 }
 
-.chart-container {
+.dashboard .chart-container {
   background: var(--bg-color);
   padding: 2rem;
   border-radius: 8px;
@@ -115,9 +122,14 @@
   margin-bottom: 2rem;
   margin-top: 2rem;
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  position: static !important;
+  top: auto !important;
+  isolation: isolate;
+  clear: both;
+  display: block;
 }
 
-.chart-container h2 {
+.dashboard .chart-container h2 {
   margin-bottom: 1rem;
   color: var(--text-color);
 }
@@ -127,6 +139,8 @@
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 2rem;
   margin-top: 2rem;
+  position: static;
+  clear: both;
 }
 
 .distribution-card {
@@ -135,6 +149,7 @@
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
   transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  position: static;
 }
 
 .distribution-card h2 {
@@ -189,14 +204,22 @@
     font-size: 1.5rem;
   }
 
-  .chart-container {
+  .dashboard .chart-container {
     padding: 1rem;
     margin-bottom: 1rem;
-    overflow-x: auto;
+    overflow-x: visible;
+    overflow-y: visible;
+    position: static !important;
+    min-height: 300px;
   }
 
-  .chart-container h2 {
-    font-size: 1.25rem;
+  .dashboard .chart-container h2 {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .dashboard .chart-container canvas {
+    max-height: 350px !important;
   }
 
   .distribution-container {
@@ -249,12 +272,23 @@
     font-size: 0.75rem;
   }
 
-  .chart-container {
-    padding: 0.75rem;
+  .dashboard .chart-container {
+    padding: 0.5rem;
+    position: static !important;
+    min-height: 250px;
+    margin-bottom: 1rem;
+  }
+
+  .dashboard .chart-container h2 {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .dashboard .chart-container canvas {
+    max-height: 300px !important;
   }
 
   .distribution-card {
     padding: 0.75rem;
   }
 }
-
