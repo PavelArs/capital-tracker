@@ -19,7 +19,13 @@
     "category": "Category",
     "yes": "Yes",
     "no": "No",
-    "copy": "Copy"
+    "copy": "Copy",
+    "error": "Error",
+    "retry": "Retry",
+    "errorLoading": "Failed to load data. Please try again.",
+    "errorSaving": "Failed to save. Please try again.",
+    "errorDeleting": "Failed to delete. Please try again.",
+    "saving": "Saving..."
   },
   "auth": {
     "login": "Login",

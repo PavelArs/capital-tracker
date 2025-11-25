@@ -4,6 +4,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import axios from "axios";
 import { Pie } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
+import AssetsSkeleton from "../components/AssetsSkeleton";
+import ErrorMessage from "../components/ErrorMessage";
+import LoadingButton from "../components/LoadingButton";
 import "./Assets.css";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -44,8 +47,11 @@ export default function Assets() {
     { id: "6", code: "USDT", name: "Tether", symbol: "₮", type: "stablecoin" },
   ]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"single" | "all">("single");
   const [selectedCurrency, setSelectedCurrency] = useState("USD");
   const [groupBy, setGroupBy] = useState<"name" | "category">("name");
@@ -156,10 +162,12 @@ export default function Assets() {
 
   const fetchAssets = async () => {
     try {
+      setError(null);
       const response = await axios.get("/assets");
       setAssets(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching assets:", error);
+      setError(error.response?.data?.message || t("common.errorLoading"));
     } finally {
       setLoading(false);
     }
@@ -167,6 +175,7 @@ export default function Assets() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       // Ensure currencyId is set
       let currencyIdToUse = formData.currencyId;
@@ -224,8 +233,11 @@ export default function Assets() {
         description: "",
       });
       fetchAssets();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving asset:", error);
+      alert(error.response?.data?.message || t("common.errorSaving"));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -331,11 +343,15 @@ export default function Assets() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm(t("assets.deleteConfirm"))) {
+      setDeletingId(id);
       try {
         await axios.delete(`/assets/${id}`);
         fetchAssets();
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error deleting asset:", error);
+        alert(error.response?.data?.message || t("common.errorDeleting"));
+      } finally {
+        setDeletingId(null);
       }
     }
   };
@@ -780,8 +796,26 @@ export default function Assets() {
     calculateTotalAmount();
   }, [assets, viewMode, selectedCurrency, convertAmount, getFilteredAssets]);
 
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchAssets();
+  };
+
   if (loading) {
-    return <div className="loading">{t("common.loading")}</div>;
+    return <AssetsSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage
+        type="page"
+        title={t("common.error")}
+        message={error}
+        onRetry={handleRetry}
+        retryText={t("common.retry")}
+      />
+    );
   }
 
   return (
@@ -1036,15 +1070,20 @@ export default function Assets() {
                 />
               </div>
               <div className="form-actions">
-                <button type="submit">
+                <LoadingButton
+                  type="submit"
+                  loading={submitting}
+                  loadingText={t("common.saving")}
+                >
                   {editingId
                     ? t("assets.updateAsset")
                     : t("assets.createAsset")}
-                </button>
+                </LoadingButton>
                 <button
                   type="button"
                   onClick={handleCancel}
                   className="cancel-btn"
+                  disabled={submitting}
                 >
                   {t("common.cancel")}
                 </button>
@@ -1228,10 +1267,11 @@ export default function Assets() {
                       }}
                       title={t("common.edit")}
                       aria-label={t("common.edit")}
+                      disabled={deletingId === asset.id}
                     >
                       <span className="icon-edit">✏️</span>
                     </button>
-                    <button
+                    <LoadingButton
                       className="delete-btn"
                       onClick={(e) => {
                         e.preventDefault();
@@ -1240,9 +1280,11 @@ export default function Assets() {
                       }}
                       title={t("common.delete")}
                       aria-label={t("common.delete")}
+                      loading={deletingId === asset.id}
+                      variant="danger"
                     >
                       <span className="icon-delete">🗑️</span>
-                    </button>
+                    </LoadingButton>
                   </div>
                 </div>
               </div>
