@@ -16,11 +16,11 @@ CURRENT_SHA=$(git rev-parse HEAD)
 CURRENT_SHA_SHORT=$(git rev-parse --short HEAD)
 
 # Get the previous deployment tag or commit
-# Try to find the last deployment tag
-PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+# Try to find the last deployment tag (tags starting with "deploy-")
+PREVIOUS_TAG=$(git tag -l "deploy-*" --sort=-creatordate | head -n 1)
 
 if [ -z "$PREVIOUS_TAG" ]; then
-    # If no tags exist, try to get commits from last 10 commits, or use first commit
+    # If no deployment tags exist, try to get commits from last 10 commits, or use first commit
     # Check if we have enough history
     COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
     

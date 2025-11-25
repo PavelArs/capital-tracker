@@ -55,6 +55,8 @@ jobs:
     name: Deploy to VM
     needs: build-and-push
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # Required to push tags
 
     steps:
       - name: Checkout code
@@ -123,10 +125,16 @@ jobs:
 
       - name: Tag Successful Deployment
         if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Configure git to use the GitHub token for authentication
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          
           git tag -a "$DEPLOY_TAG" -m "Deployment at $(date '+%Y-%m-%d %H:%M:%S UTC')"
           git push origin "$DEPLOY_TAG"
 
