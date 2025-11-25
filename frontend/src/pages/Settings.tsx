@@ -18,7 +18,7 @@ interface InvitationCode {
 
 export default function Settings() {
   const { t } = useTranslation();
-  const { generateInvitationCode, getMyInvitationCode } = useAuth();
+  const { user, generateInvitationCode, getMyInvitationCode } = useAuth();
   const [activeSection, setActiveSection] = useState<
     "general" | "currencies" | "invitation"
   >("general");
@@ -28,6 +28,8 @@ export default function Settings() {
   const [loadingCode, setLoadingCode] = useState(false);
   const [generatingCode, setGeneratingCode] = useState(false);
   const [error, setError] = useState("");
+
+  const isFreeUser = user?.subscriptionType === 'free';
 
   useEffect(() => {
     if (activeSection === "invitation") {
@@ -143,6 +145,25 @@ export default function Settings() {
                   {t("settings.invitationCodeDescription")}
                 </p>
 
+                {isFreeUser && (
+                  <div
+                    className="info-box"
+                    style={{
+                      marginBottom: "1rem",
+                      padding: "1rem",
+                      backgroundColor: "var(--primary-color-light, #e3f2fd)",
+                      color: "var(--text-color)",
+                      borderRadius: "8px",
+                      border: "1px solid var(--primary-color, #2196F3)",
+                    }}
+                  >
+                    <strong>🎁 {t("settings.proFeature")}</strong>
+                    <p style={{ marginTop: "0.5rem", marginBottom: "0" }}>
+                      {t("settings.invitationCodeProOnly")}
+                    </p>
+                  </div>
+                )}
+
                 {error && (
                   <div
                     className="error"
@@ -158,14 +179,14 @@ export default function Settings() {
                   </div>
                 )}
 
-                {loadingCode ? (
+                {!isFreeUser && loadingCode ? (
                   <div>
                     <Skeleton width="100%" height="48px" variant="rounded" />
                     <div style={{ marginTop: "1rem" }}>
                       <Skeleton width="150px" height="24px" />
                     </div>
                   </div>
-                ) : invitationCode ? (
+                ) : !isFreeUser && invitationCode ? (
                   <div>
                     <div className="invitation-code-display">
                       <div className="code-box">
@@ -202,7 +223,7 @@ export default function Settings() {
                       )}
                     </div>
                   </div>
-                ) : (
+                ) : !isFreeUser ? (
                   <div>
                     <p
                       style={{
@@ -221,7 +242,7 @@ export default function Settings() {
                       {t("settings.generateInvitationCode")}
                     </LoadingButton>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           )}

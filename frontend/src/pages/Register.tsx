@@ -11,6 +11,7 @@ export default function Register() {
   const [lastName, setLastName] = useState('');
   const [invitationCode, setInvitationCode] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
   const { register, user, loading } = useAuth();
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -24,9 +25,11 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess(false);
     try {
       await register(email, password, firstName, lastName, invitationCode);
-      navigate('/');
+      setSuccess(true);
+      // Don't navigate - show success message instead
     } catch (err: any) {
       setError(err.response?.data?.message || t('auth.registrationFailed'));
     }
@@ -45,7 +48,20 @@ export default function Register() {
       <div className="auth-card">
         <h1>{t('auth.register')}</h1>
         {error && <div className="error">{error}</div>}
-        <form onSubmit={handleSubmit}>
+        {success && (
+          <>
+            <div className="success-message">
+              <p>{t('auth.registrationSuccess')}</p>
+              <p style={{ fontSize: '14px', marginTop: '10px' }}>
+                {t('auth.checkEmailToVerify')}
+              </p>
+            </div>
+            <p style={{ marginTop: '15px', fontSize: '14px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              {t('auth.didntReceiveEmail')} <Link to="/resend-verification">{t('auth.resendVerificationLink')}</Link>
+            </p>
+          </>
+        )}
+        {!success && <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>{t('auth.invitationCode')}</label>
             <input
@@ -92,8 +108,8 @@ export default function Register() {
             />
           </div>
           <button type="submit">{t('auth.register')}</button>
-        </form>
-        <p>
+        </form>}
+        <p style={{ marginTop: '20px' }}>
           {t('auth.alreadyHaveAccount')} <Link to="/login">{t('auth.login')}</Link>
         </p>
       </div>

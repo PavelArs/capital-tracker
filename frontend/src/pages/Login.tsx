@@ -25,9 +25,14 @@ export default function Login() {
       await login(email, password);
       navigate('/');
     } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.loginFailed'));
+      const errorMessage = err.response?.data?.message || t('auth.loginFailed');
+      setError(errorMessage);
     }
   };
+
+  // Check if error is email verification related
+  const isEmailVerificationError = error.toLowerCase().includes('verify') || error.toLowerCase().includes('верифиц');
+
 
   if (loading) {
     return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>{t('common.loading')}</div>;
@@ -41,7 +46,18 @@ export default function Login() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.login')}</h1>
-        {error && <div className="error">{error}</div>}
+        {error && (
+          <div className="error">
+            {error}
+            {isEmailVerificationError && (
+              <div style={{ marginTop: '10px', fontSize: '14px' }}>
+                <Link to="/resend-verification" style={{ color: 'white', textDecoration: 'underline' }}>
+                  {t('auth.resendVerificationLink')}
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label>{t('common.email')}</label>
@@ -60,6 +76,11 @@ export default function Login() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+          </div>
+          <div style={{ textAlign: 'right', marginBottom: '10px' }}>
+            <Link to="/forgot-password" style={{ fontSize: '14px' }}>
+              {t('auth.forgotPassword')}
+            </Link>
           </div>
           <button type="submit">{t('auth.login')}</button>
         </form>
