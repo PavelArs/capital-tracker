@@ -36,6 +36,10 @@ services:
       PORT: 3000
       NODE_ENV: ${NODE_ENV:-development}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
+      SMTP_HOST: ${SMTP_HOST:-smtp.yandex.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-your-production-email@yandex.ru}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-your-production-app-password}
     ports:
       - "${BACKEND_PORT_MAPPING:-3000:3000}"
     depends_on:
