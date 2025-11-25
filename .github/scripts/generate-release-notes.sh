@@ -20,9 +20,22 @@ CURRENT_SHA_SHORT=$(git rev-parse --short HEAD)
 PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
 
 if [ -z "$PREVIOUS_TAG" ]; then
-    # If no tags exist, get commits from last 10 commits
-    PREVIOUS_SHA=$(git rev-parse HEAD~10 2>/dev/null || git rev-list --max-parents=0 HEAD)
-    echo -e "${YELLOW}No previous deployment tag found. Using last 10 commits.${NC}" >&2
+    # If no tags exist, try to get commits from last 10 commits, or use first commit
+    # Check if we have enough history
+    COMMIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "0")
+    
+    if [ "$COMMIT_COUNT" -gt "10" ]; then
+        PREVIOUS_SHA=$(git rev-parse HEAD~10)
+        echo -e "${YELLOW}No previous deployment tag found. Using last 10 commits.${NC}" >&2
+    elif [ "$COMMIT_COUNT" -gt "1" ]; then
+        # Use the first commit in the repo
+        PREVIOUS_SHA=$(git rev-list --max-parents=0 HEAD)
+        echo -e "${YELLOW}No previous deployment tag found. Using all $COMMIT_COUNT commits.${NC}" >&2
+    else
+        # Only one commit, show just this one
+        PREVIOUS_SHA="HEAD"
+        echo -e "${YELLOW}Only one commit in history. Showing current commit only.${NC}" >&2
+    fi
 else
     PREVIOUS_SHA=$(git rev-list -n 1 $PREVIOUS_TAG)
     echo -e "${GREEN}Found previous deployment: $PREVIOUS_TAG${NC}" >&2
