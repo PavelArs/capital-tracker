@@ -121,6 +121,15 @@ jobs:
           .github/scripts/generate-release-notes.sh > release_notes.txt
           echo "success=true" >> $GITHUB_OUTPUT
 
+      - name: Tag Successful Deployment
+        if: success()
+        run: |
+          DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$DEPLOY_TAG" -m "Deployment at $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          git push origin "$DEPLOY_TAG"
+
       - name: Send Telegram Notification
         if: always()
         env:
