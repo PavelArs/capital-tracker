@@ -4,6 +4,8 @@
 
 ### Регистрация
 
+При успешной регистрации автоматически отправляется приветственное email.
+
 ```bash
 curl -X POST http://localhost:3000/auth/register \
   -H "Content-Type: application/json" \
@@ -11,9 +13,16 @@ curl -X POST http://localhost:3000/auth/register \
     "email": "user@example.com",
     "password": "password123",
     "firstName": "John",
-    "lastName": "Doe"
+    "lastName": "Doe",
+    "invitationCode": "ABCD1234"
   }'
 ```
+
+**Примечание**:
+
+- `invitationCode` обязателен для регистрации
+- После регистрации отправляется приветственное письмо
+- Сбой отправки email не блокирует регистрацию
 
 ### Вход
 
@@ -61,6 +70,55 @@ curl -X GET http://localhost:3000/auth/me \
 ```
 
 Этот endpoint используется для восстановления сессии пользователя при перезагрузке страницы.
+
+### Забыли пароль (Forgot Password)
+
+Отправляет email с ссылкой для восстановления пароля (токен действителен 1 час).
+
+```bash
+curl -X POST http://localhost:3000/auth/forgot-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "user@example.com"
+  }'
+```
+
+Ответ:
+
+```json
+{
+  "message": "If an account with that email exists, a password reset link has been sent."
+}
+```
+
+**Примечание**: По соображениям безопасности, ответ не раскрывает, существует ли указанный email в системе.
+
+### Сброс пароля (Reset Password)
+
+Сбрасывает пароль используя токен из email (токен действителен 1 час).
+
+```bash
+curl -X POST http://localhost:3000/auth/reset-password \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "token-from-email-link",
+    "newPassword": "newSecurePassword123"
+  }'
+```
+
+Ответ:
+
+```json
+{
+  "message": "Password has been reset successfully"
+}
+```
+
+После успешного сброса пароля:
+
+1. Пользователю отправляется подтверждающее email
+2. Токен сброса удаляется из базы данных
+3. Пользователь может войти с новым паролем
 
 ## Активы
 

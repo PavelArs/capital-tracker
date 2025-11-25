@@ -80,18 +80,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (email: string, password: string, firstName?: string, lastName?: string, invitationCode?: string) => {
-    const response = await axios.post('/auth/register', {
+    // Registration now requires email verification before login
+    // So we don't set token or user here, just make the request
+    await axios.post('/auth/register', {
       email,
       password,
       firstName,
       lastName,
       invitationCode,
     });
-    const { access_token, ...userData } = response.data;
-    setToken(access_token);
-    setUser(userData);
-    localStorage.setItem('token', access_token);
-    axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    // User must verify email before they can login
+    // Response contains message about checking email
   };
 
   const logout = () => {
