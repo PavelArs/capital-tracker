@@ -161,13 +161,6 @@ docker compose up -d
 docker compose down
 ```
 
-**📖 Подробная документация:**
-
-- [QUICK_START.md](QUICK_START.md) - Быстрый старт и troubleshooting
-- [DOCKER_SETUP.md](DOCKER_SETUP.md) - Полная документация по Docker
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Деплой на Yandex Cloud
-- [EMAIL_SETUP.md](EMAIL_SETUP.md) - Настройка email уведомлений (приветственные письма, восстановление пароля)
-
 ### Вариант 3: Локальная разработка (ручная установка)
 
 #### Backend
@@ -247,7 +240,7 @@ chmod +x install.sh
 4. Создайте файл `.env` (опционально, если нужен другой API URL):
 
 ```bash
-cp .env.example .env
+cp .env.local.example .env
 # Отредактируйте .env если нужно изменить API URL
 ```
 

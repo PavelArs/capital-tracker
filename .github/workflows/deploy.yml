@@ -110,3 +110,53 @@ jobs:
             curl -f http://localhost:3000/health || exit 1
             echo "Backend is healthy!"
           EOF
+
+      - name: Generate Release Notes
+        id: release_notes
+        if: success()
+        run: |
+          chmod +x .github/scripts/generate-release-notes.sh
+          .github/scripts/generate-release-notes.sh > release_notes.txt
+          echo "success=true" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram Notification
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Check if Telegram secrets are configured
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "ℹ️ Telegram secrets not configured, skipping notification"
+            exit 0
+          fi
+
+          # Determine deployment status
+          if [ "${{ job.status }}" == "success" ] && [ "${{ steps.release_notes.outputs.success }}" == "true" ]; then
+            # Send release notes for successful deployment
+            MESSAGE=$(cat release_notes.txt)
+          else
+            # Send failure notification
+            DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
+            COMMIT_SHORT=${GITHUB_SHA:0:7}
+            MESSAGE=$(cat <<EOF
+          ❌ **Capital Tracker Deployment FAILED**
+
+          📅 **Date:** ${DEPLOY_DATE}
+          🔖 **Commit:** \`${COMMIT_SHORT}\`
+          🔗 **Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+          **Status:** Deployment or health check failed. Please review the logs.
+          EOF
+          )
+          fi
+
+          # Send message to Telegram using a temp file to avoid escaping issues
+          PAYLOAD=$(jq -n \
+            --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" > /dev/null || echo "⚠️ Failed to send Telegram notification"
