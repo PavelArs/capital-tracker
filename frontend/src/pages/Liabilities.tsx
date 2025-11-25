@@ -8,6 +8,9 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
+import AssetsSkeleton from '../components/AssetsSkeleton';
+import ErrorMessage from '../components/ErrorMessage';
+import LoadingButton from '../components/LoadingButton';
 import './Liabilities.css';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -33,8 +36,11 @@ export default function Liabilities() {
     { id: "6", code: "USDT", name: "Tether", symbol: "₮", type: "stablecoin" },
   ]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     category: 'subscriptions',
@@ -98,10 +104,12 @@ export default function Liabilities() {
 
   const fetchLiabilities = async () => {
     try {
+      setError(null);
       const response = await axios.get('/liabilities');
       setLiabilities(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching liabilities:', error);
+      setError(error.response?.data?.message || t('common.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -109,6 +117,7 @@ export default function Liabilities() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       // Ensure currencyId is set
       let currencyIdToUse = formData.currencyId;
@@ -169,8 +178,11 @@ export default function Liabilities() {
         deadline: '',
       });
       fetchLiabilities();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving liability:', error);
+      alert(error.response?.data?.message || t('common.errorSaving'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -243,11 +255,15 @@ export default function Liabilities() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm(t('liabilities.deleteConfirm'))) {
+      setDeletingId(id);
       try {
         await axios.delete(`/liabilities/${id}`);
         fetchLiabilities();
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error deleting liability:', error);
+        alert(error.response?.data?.message || t('common.errorDeleting'));
+      } finally {
+        setDeletingId(null);
       }
     }
   };
@@ -279,8 +295,26 @@ export default function Liabilities() {
     ],
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchLiabilities();
+  };
+
   if (loading) {
-    return <div className="loading">{t('common.loading')}</div>;
+    return <AssetsSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage
+        type="page"
+        title={t('common.error')}
+        message={error}
+        onRetry={handleRetry}
+        retryText={t('common.retry')}
+      />
+    );
   }
 
   return (
@@ -425,8 +459,19 @@ export default function Liabilities() {
             />
           </div>
               <div className="form-actions">
-                <button type="submit">{editingId ? t('liabilities.updateLiability') : t('liabilities.createLiability')}</button>
-                <button type="button" onClick={handleCancel} className="cancel-btn">
+                <LoadingButton
+                  type="submit"
+                  loading={submitting}
+                  loadingText={t('common.saving')}
+                >
+                  {editingId ? t('liabilities.updateLiability') : t('liabilities.createLiability')}
+                </LoadingButton>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="cancel-btn"
+                  disabled={submitting}
+                >
                   {t('common.cancel')}
                 </button>
               </div>
@@ -476,10 +521,11 @@ export default function Liabilities() {
                     }}
                     title={t('common.edit')}
                     aria-label={t('common.edit')}
+                    disabled={deletingId === liability.id}
                   >
                     <span className="icon-edit">✏️</span>
                   </button>
-                  <button
+                  <LoadingButton
                     className="delete-btn"
                     onClick={(e) => {
                       e.preventDefault();
@@ -488,9 +534,11 @@ export default function Liabilities() {
                     }}
                     title={t('common.delete')}
                     aria-label={t('common.delete')}
+                    loading={deletingId === liability.id}
+                    variant="danger"
                   >
                     <span className="icon-delete">🗑️</span>
-                  </button>
+                  </LoadingButton>
                 </div>
               </div>
             </div>

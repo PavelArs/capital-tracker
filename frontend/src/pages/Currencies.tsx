@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import axios from "axios";
+import CurrenciesSkeleton from "../components/CurrenciesSkeleton";
+import ErrorMessage from "../components/ErrorMessage";
+import LoadingButton from "../components/LoadingButton";
 import "./Currencies.css";
 
 interface Currency {
@@ -21,7 +24,9 @@ export default function Currencies() {
   const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [hiddenCurrencies, setHiddenCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>("active");
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCurrencies();
@@ -30,10 +35,12 @@ export default function Currencies() {
 
   const fetchCurrencies = async () => {
     try {
+      setError(null);
       const response = await axios.get("/currencies/list");
       setCurrencies(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching currencies:", error);
+      setError(error.response?.data?.message || t('common.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -49,6 +56,7 @@ export default function Currencies() {
   };
 
   const handleToggle = async (currencyId: string, isCurrentlyHidden: boolean) => {
+    setTogglingId(currencyId);
     try {
       const endpoint = isCurrentlyHidden ? "/currencies/show" : "/currencies/hide";
       await axios.post(endpoint, {
@@ -59,14 +67,35 @@ export default function Currencies() {
       // Refresh both lists
       await fetchCurrencies();
       await fetchHiddenCurrencies();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error toggling currency:", error);
-      alert(t('currencies.toggleError'));
+      alert(error.response?.data?.message || t('currencies.toggleError'));
+    } finally {
+      setTogglingId(null);
     }
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchCurrencies();
+    fetchHiddenCurrencies();
+  };
+
   if (loading) {
-    return <div className="loading">{t('common.loading')}</div>;
+    return <CurrenciesSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage
+        type="page"
+        title={t('common.error')}
+        message={error}
+        onRetry={handleRetry}
+        retryText={t('common.retry')}
+      />
+    );
   }
 
   const groupedCurrencies = {
@@ -113,13 +142,14 @@ export default function Currencies() {
                 </span>
               </td>
               <td>
-                <button
+                <LoadingButton
                   onClick={() => handleToggle(currency.id, isHidden)}
                   className={isHidden ? "btn-show" : "btn-hide"}
                   title={isHidden ? t('currencies.show') : t('currencies.hide')}
+                  loading={togglingId === currency.id}
                 >
                   {isHidden ? "👁️ " + t('currencies.show') : "🚫 " + t('currencies.hide')}
-                </button>
+                </LoadingButton>
               </td>
             </tr>
           ))}

@@ -4,6 +4,8 @@ import { useAuth } from "../contexts/AuthContext";
 import LanguageSwitcher from "../components/LanguageSwitcher";
 import ThemeSwitcher from "../components/ThemeSwitcher";
 import CurrenciesSection from "../components/CurrenciesSection";
+import LoadingButton from "../components/LoadingButton";
+import Skeleton from "../components/Skeleton";
 import "./Settings.css";
 
 interface InvitationCode {
@@ -157,7 +159,12 @@ export default function Settings() {
                 )}
 
                 {loadingCode ? (
-                  <div>{t("common.loading")}...</div>
+                  <div>
+                    <Skeleton width="100%" height="48px" variant="rounded" />
+                    <div style={{ marginTop: "1rem" }}>
+                      <Skeleton width="150px" height="24px" />
+                    </div>
+                  </div>
                 ) : invitationCode ? (
                   <div>
                     <div className="invitation-code-display">
@@ -205,15 +212,14 @@ export default function Settings() {
                     >
                       {t("settings.noInvitationCode")}
                     </p>
-                    <button
+                    <LoadingButton
                       className="generate-btn"
                       onClick={handleGenerateCode}
-                      disabled={generatingCode}
+                      loading={generatingCode}
+                      loadingText={t("common.loading")}
                     >
-                      {generatingCode
-                        ? t("common.loading")
-                        : t("settings.generateInvitationCode")}
-                    </button>
+                      {t("settings.generateInvitationCode")}
+                    </LoadingButton>
                   </div>
                 )}
               </div>

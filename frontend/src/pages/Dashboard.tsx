@@ -12,6 +12,8 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
+import DashboardSkeleton from "../components/DashboardSkeleton";
+import ErrorMessage from "../components/ErrorMessage";
 import "./Dashboard.css";
 
 ChartJS.register(
@@ -29,8 +31,9 @@ export default function Dashboard() {
   const [metrics, setMetrics] = useState<any>(null);
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState("USD");
-  
+
   // Track active requests to prevent duplicates
   const fetchingRef = useRef({ metrics: false, history: false });
 
@@ -70,21 +73,23 @@ export default function Dashboard() {
       console.log("⏳ Metrics request already in progress, skipping");
       return;
     }
-    
+
     try {
       fetchingRef.current.metrics = true;
+      setError(null);
       console.log("↓ Fetching metrics for currency:", currency);
       const response = await axios.get("/metrics", {
         params: { currency },
       });
       setMetrics(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching metrics:", error);
+      setError(error.response?.data?.message || t("common.errorLoading"));
     } finally {
       setLoading(false);
       fetchingRef.current.metrics = false;
     }
-  }, [currency]);
+  }, [currency, t]);
 
   const fetchHistory = useCallback(async () => {
     // Prevent duplicate requests
@@ -92,7 +97,7 @@ export default function Dashboard() {
       console.log("⏳ History request already in progress, skipping");
       return;
     }
-    
+
     try {
       fetchingRef.current.history = true;
       console.log("↓ Fetching history for currency:", currency);
@@ -100,8 +105,9 @@ export default function Dashboard() {
         params: { currency, days: 30 },
       });
       setHistory(response.data);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching history:", error);
+      // Don't set error for history as it's not critical
     } finally {
       fetchingRef.current.history = false;
     }
@@ -204,8 +210,27 @@ export default function Dashboard() {
     },
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchMetrics();
+    fetchHistory();
+  };
+
   if (loading) {
-    return <div className="loading">{t("common.loading")}</div>;
+    return <DashboardSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage
+        type="page"
+        title={t("common.error")}
+        message={error}
+        onRetry={handleRetry}
+        retryText={t("common.retry")}
+      />
+    );
   }
 
   return (

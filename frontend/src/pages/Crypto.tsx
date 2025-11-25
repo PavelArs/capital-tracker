@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
+import CryptoSkeleton from '../components/CryptoSkeleton';
+import ErrorMessage from '../components/ErrorMessage';
+import LoadingButton from '../components/LoadingButton';
 import './Crypto.css';
 
 interface CryptoPrice {
@@ -13,10 +16,13 @@ export default function Crypto() {
   const { t } = useTranslation();
   const [wallets, setWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [cryptoPrices, setCryptoPrices] = useState<CryptoPrice>({});
   const [tokenPrices, setTokenPrices] = useState<{ [address: string]: number }>({});
   const [updatingWalletId, setUpdatingWalletId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     type: 'ethereum',
     address: '',
@@ -75,6 +81,7 @@ export default function Crypto() {
 
   const fetchWallets = async () => {
     try {
+      setError(null);
       const response = await axios.get('/crypto');
       // Sort wallets by creation date to maintain consistent order
       const sortedWallets = [...response.data].sort((a, b) => {
@@ -83,8 +90,9 @@ export default function Crypto() {
         return dateA - dateB; // Oldest first
       });
       setWallets(sortedWallets);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching wallets:', error);
+      setError(error.response?.data?.message || t('common.errorLoading'));
     } finally {
       setLoading(false);
     }
@@ -92,13 +100,17 @@ export default function Crypto() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSubmitting(true);
     try {
       await axios.post('/crypto', formData);
       setShowForm(false);
       setFormData({ type: 'ethereum', address: '' });
       fetchWallets();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating wallet:', error);
+      alert(error.response?.data?.message || t('common.errorSaving'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -113,11 +125,15 @@ export default function Crypto() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm(t('crypto.deleteConfirm'))) {
+      setDeletingId(id);
       try {
         await axios.delete(`/crypto/${id}`);
         fetchWallets();
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error deleting wallet:', error);
+        alert(error.response?.data?.message || t('common.errorDeleting'));
+      } finally {
+        setDeletingId(null);
       }
     }
   };
@@ -185,8 +201,26 @@ export default function Crypto() {
     return totalValue;
   };
 
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    fetchWallets();
+  };
+
   if (loading) {
-    return <div className="loading">{t('common.loading')}</div>;
+    return <CryptoSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <ErrorMessage
+        type="page"
+        title={t('common.error')}
+        message={error}
+        onRetry={handleRetry}
+        retryText={t('common.retry')}
+      />
+    );
   }
 
   return (
@@ -230,10 +264,20 @@ export default function Crypto() {
                 />
               </div>
               <div className="form-actions">
-                <button type="submit" className="btn-primary">
+                <LoadingButton
+                  type="submit"
+                  className="btn-primary"
+                  loading={submitting}
+                  loadingText={t('common.saving')}
+                >
                   {t('crypto.addWallet')}
-                </button>
-                <button type="button" onClick={handleCancel} className="btn-secondary">
+                </LoadingButton>
+                <button
+                  type="button"
+                  onClick={handleCancel}
+                  className="btn-secondary"
+                  disabled={submitting}
+                >
                   {t('common.cancel')}
                 </button>
               </div>
@@ -303,22 +347,24 @@ export default function Crypto() {
                   </div>
                 )}
                 <div className="wallet-actions">
-                  <button
+                  <LoadingButton
                     className="update-btn"
                     onClick={() => handleUpdateBalance(wallet.id)}
-                    disabled={updatingWalletId === wallet.id}
+                    loading={updatingWalletId === wallet.id}
+                    loadingText={t('common.loading')}
+                    disabled={deletingId === wallet.id}
                   >
-                    {updatingWalletId === wallet.id 
-                      ? t('common.loading') || 'Loading...' 
-                      : t('crypto.updateBalance')}
-                  </button>
-                  <button
+                    {t('crypto.updateBalance')}
+                  </LoadingButton>
+                  <LoadingButton
                     className="delete-btn"
                     onClick={() => handleDelete(wallet.id)}
+                    loading={deletingId === wallet.id}
                     disabled={updatingWalletId === wallet.id}
+                    variant="danger"
                   >
                     {t('common.delete')}
-                  </button>
+                  </LoadingButton>
                 </div>
                 {wallet.lastUpdated && (
                   <p className="last-updated">

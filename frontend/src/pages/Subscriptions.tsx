@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useError } from '../contexts/ErrorContext';
 import axios from 'axios';
 import SubscriptionBadge, { SubscriptionType } from '../components/SubscriptionBadge';
+import LoadingButton from '../components/LoadingButton';
 import './Subscriptions.css';
 
 interface SubscriptionPlan {
@@ -170,31 +171,35 @@ export default function Subscriptions() {
                       Текущий план
                     </button>
                     {plan.type !== 'free' && (
-                      <button
+                      <LoadingButton
                         className="btn-cancel"
                         onClick={handleCancel}
-                        disabled={loading}
+                        loading={loading}
+                        loadingText="Обработка..."
+                        variant="danger"
                       >
                         Отменить подписку
-                      </button>
+                      </LoadingButton>
                     )}
                   </>
                 ) : canUpgradePlan ? (
-                  <button
+                  <LoadingButton
                     className="btn-upgrade"
                     onClick={() => handleUpgrade(plan.type)}
-                    disabled={loading}
+                    loading={loading}
+                    loadingText="Обработка..."
                   >
-                    {loading ? 'Обработка...' : 'Обновить'}
-                  </button>
+                    Обновить
+                  </LoadingButton>
                 ) : canDowngradePlan ? (
-                  <button
+                  <LoadingButton
                     className="btn-downgrade"
                     onClick={() => handleUpgrade(plan.type)}
-                    disabled={loading}
+                    loading={loading}
+                    loadingText="Обработка..."
                   >
-                    {loading ? 'Обработка...' : 'Перейти на этот план'}
-                  </button>
+                    Перейти на этот план
+                  </LoadingButton>
                 ) : (
                   <button className="btn-disabled" disabled>
                     Недоступно
