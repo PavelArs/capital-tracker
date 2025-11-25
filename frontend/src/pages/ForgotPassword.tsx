@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import axios from 'axios';
 import './Auth.css';
@@ -11,7 +11,19 @@ export default function ForgotPassword() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
   const { t } = useTranslation();
+
+  // Auto-redirect after success
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        navigate('/login');
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [success, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +52,9 @@ export default function ForgotPassword() {
             <p>{t('auth.resetLinkSent')}</p>
             <p style={{ fontSize: '14px', marginTop: '10px' }}>
               {t('auth.checkYourEmail')}
+            </p>
+            <p style={{ fontSize: '14px', marginTop: '10px', opacity: 0.8 }}>
+              {t('auth.redirectingToLogin')}
             </p>
           </div>
         ) : (

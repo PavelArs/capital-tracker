@@ -22,6 +22,17 @@ export default function Register() {
     }
   }, [user, loading, navigate]);
 
+  // Auto-redirect after successful registration
+  useEffect(() => {
+    if (success) {
+      const timer = setTimeout(() => {
+        navigate('/login');
+      }, 3000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [success, navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -29,7 +40,7 @@ export default function Register() {
     try {
       await register(email, password, firstName, lastName, invitationCode);
       setSuccess(true);
-      // Don't navigate - show success message instead
+      // Auto-redirect after 3 seconds
     } catch (err: any) {
       setError(err.response?.data?.message || t('auth.registrationFailed'));
     }
@@ -54,6 +65,9 @@ export default function Register() {
               <p>{t('auth.registrationSuccess')}</p>
               <p style={{ fontSize: '14px', marginTop: '10px' }}>
                 {t('auth.checkEmailToVerify')}
+              </p>
+              <p style={{ fontSize: '14px', marginTop: '10px', opacity: 0.8 }}>
+                {t('auth.redirectingToLogin')}
               </p>
             </div>
             <p style={{ marginTop: '15px', fontSize: '14px', textAlign: 'center', color: 'var(--text-secondary)' }}>
