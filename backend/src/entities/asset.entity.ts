@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from "typeorm";
 import { User } from "./user.entity";
+import { Currency } from "./currency.entity";
 
 export enum AssetType {
   STOCK = "stock", // Балансовые активы (имеют стоимость сейчас)
@@ -74,11 +75,15 @@ export class Asset {
   })
   incomeType: IncomeType | null; // Только для FLOW активов: active или passive
 
-  @Column("decimal", { precision: 15, scale: 2 })
+  @Column("decimal", { precision: 20, scale: 8 })
   amount: number;
 
-  @Column({ length: 3, default: "USD" })
-  currency: string;
+  @ManyToOne(() => Currency)
+  @JoinColumn({ name: "currencyId" })
+  currency: Currency;
+
+  @Column()
+  currencyId: string;
 
   @Column({ type: "date" })
   date: Date;

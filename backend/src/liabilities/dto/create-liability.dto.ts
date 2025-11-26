@@ -1,6 +1,17 @@
-import { IsString, IsEnum, IsNumber, IsDateString, IsOptional } from 'class-validator';
-import { Type } from 'class-transformer';
-import { LiabilityCategory, LiabilityFrequency } from '../../entities/liability.entity';
+import {
+  IsString,
+  IsEnum,
+  IsNumber,
+  IsDateString,
+  IsOptional,
+  IsUUID,
+  IsPositive,
+} from "class-validator";
+import { Type } from "class-transformer";
+import {
+  LiabilityCategory,
+  LiabilityFrequency,
+} from "../../entities/liability.entity";
 
 export class CreateLiabilityDto {
   @IsString()
@@ -10,11 +21,12 @@ export class CreateLiabilityDto {
   category: LiabilityCategory;
 
   @IsNumber()
+  @IsPositive()
   @Type(() => Number)
   amount: number;
 
-  @IsString()
-  currency: string;
+  @IsUUID()
+  currencyId: string;
 
   @IsDateString()
   date: string;
@@ -31,4 +43,3 @@ export class CreateLiabilityDto {
   @IsDateString()
   deadline?: string | null;
 }
-

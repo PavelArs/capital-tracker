@@ -7,6 +7,7 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend } from "chart.js";
 import AssetsSkeleton from "../components/AssetsSkeleton";
 import ErrorMessage from "../components/ErrorMessage";
 import LoadingButton from "../components/LoadingButton";
+import { formatAmount } from "../utils/formatters";
 import "./Assets.css";
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -184,28 +185,17 @@ export default function Assets() {
         currencyIdToUse = usdCurrency?.id || currencies[0]?.id || "";
       }
 
-      // Find currency code from currencyId
-      const selectedCurrencyObj = currencies.find(
-        (c) => c.id === currencyIdToUse
-      );
-      const currencyCode = selectedCurrencyObj?.code || "USD";
-
       const payload: any = {
         name: formData.name,
         assetType: formData.assetType,
         category: formData.category,
         amount: parseFloat(formData.amount),
-        currency: currencyCode,
+        currencyId: currencyIdToUse,
         date: formData.date,
         description: formData.description,
       };
 
-      console.log(
-        "Submitting asset with currency:",
-        currencyCode,
-        "from currencyId:",
-        currencyIdToUse
-      );
+      console.log("Submitting asset with currencyId:", currencyIdToUse);
 
       // Add incomeType only for flow assets
       if (formData.assetType === "flow" && formData.incomeType) {
@@ -1024,7 +1014,8 @@ export default function Assets() {
                   <label>{t("common.amount")}</label>
                   <input
                     type="number"
-                    step="0.01"
+                    step="any"
+                    min="0"
                     value={formData.amount}
                     onChange={(e) =>
                       setFormData({ ...formData, amount: e.target.value })
@@ -1149,10 +1140,10 @@ export default function Assets() {
                         {t("assets.stockAssetsTotal")}
                       </span>
                       <span className="total-value">
-                        {totalAmount.stock[0].amount.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
+                        {formatAmount(
+                          totalAmount.stock[0].amount,
+                          totalAmount.stock[0].currency
+                        )}{" "}
                         {totalAmount.stock[0].currency}
                       </span>
                     </div>
@@ -1164,10 +1155,10 @@ export default function Assets() {
                         {t("assets.flowIncomeTotal")}
                       </span>
                       <span className="total-value">
-                        {totalAmount.flow[0].amount.toLocaleString(undefined, {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}{" "}
+                        {formatAmount(
+                          totalAmount.flow[0].amount,
+                          totalAmount.flow[0].currency
+                        )}{" "}
                         {totalAmount.flow[0].currency}
                       </span>
                     </div>
@@ -1192,10 +1183,7 @@ export default function Assets() {
                           key={index}
                           className="total-amount-item stock-item"
                         >
-                          {item.amount.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}{" "}
+                          {formatAmount(item.amount, item.currency)}{" "}
                           {item.currency}
                         </span>
                       ))}
@@ -1212,10 +1200,7 @@ export default function Assets() {
                           key={index}
                           className="total-amount-item flow-item"
                         >
-                          {item.amount.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          })}{" "}
+                          {formatAmount(item.amount, item.currency)}{" "}
                           {item.currency}
                         </span>
                       ))}
@@ -1253,7 +1238,10 @@ export default function Assets() {
                 </div>
                 <div className="asset-item-right">
                   <div className="asset-item-amount">
-                    {parseFloat(asset.amount).toLocaleString()}{" "}
+                    {formatAmount(
+                      parseFloat(asset.amount),
+                      asset.currency?.code || asset.currency
+                    )}{" "}
                     {asset.currency?.code || asset.currency || "USD"}
                   </div>
                   <div className="asset-item-actions">
@@ -1386,12 +1374,9 @@ export default function Assets() {
                           }
                         }
 
-                        return `${cleanLabel}: ${displayValue.toLocaleString(
-                          undefined,
-                          {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }
+                        return `${cleanLabel}: ${formatAmount(
+                          displayValue,
+                          currency
                         )} ${currency}${percentage}`;
                       },
                     },

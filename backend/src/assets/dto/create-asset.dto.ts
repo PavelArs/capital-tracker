@@ -5,9 +5,15 @@ import {
   IsDateString,
   IsOptional,
   ValidateIf,
+  IsUUID,
+  IsPositive,
 } from "class-validator";
 import { Type } from "class-transformer";
-import { AssetCategory, AssetType, IncomeType } from "../../entities/asset.entity";
+import {
+  AssetCategory,
+  AssetType,
+  IncomeType,
+} from "../../entities/asset.entity";
 
 export class CreateAssetDto {
   @IsString()
@@ -25,11 +31,12 @@ export class CreateAssetDto {
   incomeType?: IncomeType; // Обязательно для FLOW активов
 
   @IsNumber()
+  @IsPositive()
   @Type(() => Number)
   amount: number;
 
-  @IsString()
-  currency: string;
+  @IsUUID()
+  currencyId: string;
 
   @IsDateString()
   date: string;
