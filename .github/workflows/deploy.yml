@@ -10,6 +10,9 @@ env:
   YC_REGISTRY: registry.yandexcloud.net
   BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
   FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
+  HEALTH_CHECK_TIMEOUT: 180 # seconds
+  HEALTH_CHECK_INTERVAL: 10 # seconds
+  HEALTH_CHECK_RETRIES: 3
 
 jobs:
   build-and-push:
@@ -56,13 +59,13 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # Required to push tags
+      contents: write # Required to push tags
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Fetch all history for release notes generation
+          fetch-depth: 0 # Fetch all history for release notes generation
 
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -73,11 +76,84 @@ jobs:
         run: |
           ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Get current running versions (for rollback)
+        id: get-versions
+        run: |
+          CURRENT_BACKEND=$(ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+            "docker inspect capital-tracker-backend-1 --format='{{.Config.Image}}' 2>/dev/null || \
+             docker inspect capital_tracker_backend --format='{{.Config.Image}}' 2>/dev/null || \
+             echo 'none'")
+          CURRENT_FRONTEND=$(ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+            "docker inspect capital-tracker-frontend-1 --format='{{.Config.Image}}' 2>/dev/null || \
+             docker inspect capital_tracker_frontend --format='{{.Config.Image}}' 2>/dev/null || \
+             echo 'none'")
+
+          echo "current-backend=$CURRENT_BACKEND" >> $GITHUB_OUTPUT
+          echo "current-frontend=$CURRENT_FRONTEND" >> $GITHUB_OUTPUT
+
+          echo "📦 Current Backend: $CURRENT_BACKEND"
+          echo "📦 Current Frontend: $CURRENT_FRONTEND"
+
+      - name: Create Database Backup
+        id: backup-db
+        run: |
+          BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BACKUP_FILENAME="capital-tracker-backup-${BACKUP_TIMESTAMP}.sql.gz"
+
+          echo "💾 Creating database backup: $BACKUP_FILENAME"
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+            set -e
+            cd /opt/capital-tracker
+            
+            # Create backups directory if not exists
+            mkdir -p backups
+            
+            # Get database credentials from environment or .env
+            DB_NAME=\$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
+            DB_USER=\$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
+            DB_PASSWORD=\$(grep DB_PASSWORD .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
+            
+            # Get postgres container name
+            POSTGRES_CONTAINER=\$(docker compose ps -q postgres || docker-compose ps -q postgres)
+            
+            if [ -z "\$POSTGRES_CONTAINER" ]; then
+              echo "⚠️  Postgres container not found, trying alternative names..."
+              POSTGRES_CONTAINER=\$(docker ps -q -f name=capital_tracker_db || docker ps -q -f name=capital-tracker-postgres)
+            fi
+            
+            if [ -z "\$POSTGRES_CONTAINER" ]; then
+              echo "❌ Postgres container not found!"
+              exit 1
+            fi
+            
+            echo "📦 Creating backup from container: \$POSTGRES_CONTAINER"
+            
+            # Create backup using pg_dump
+            docker exec \$POSTGRES_CONTAINER pg_dump -U \$DB_USER -d \$DB_NAME | gzip > backups/$BACKUP_FILENAME
+            
+            BACKUP_SIZE=\$(du -h backups/$BACKUP_FILENAME | cut -f1)
+            echo "✅ Backup created: $BACKUP_FILENAME (Size: \$BACKUP_SIZE)"
+            
+            # Keep only last 10 backups (sorted by date)
+            cd backups
+            ls -t capital-tracker-backup-*.sql.gz | tail -n +11 | xargs -r rm
+            echo "🧹 Cleaned up old backups (keeping last 10)"
+            
+            # List current backups
+            echo "📋 Available backups:"
+            ls -lh capital-tracker-backup-*.sql.gz | tail -5
+          EOF
+
+          echo "backup-filename=$BACKUP_FILENAME" >> $GITHUB_OUTPUT
+          echo "backup-timestamp=$BACKUP_TIMESTAMP" >> $GITHUB_OUTPUT
+
       - name: Copy docker-compose.yml to VM
         run: |
           scp -o StrictHostKeyChecking=no docker-compose.yml ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }}:/opt/capital-tracker/docker-compose.yml
 
       - name: Deploy application
+        id: deploy
         env:
           YC_TOKEN: ${{ secrets.YC_TOKEN }}
         run: |
@@ -104,16 +180,179 @@ jobs:
             docker compose ps || docker-compose ps
           EOF
 
-      - name: Health check
+      - name: Wait for services to start
         run: |
-          sleep 10
+          echo "⏳ Waiting for services to initialize (30 seconds)..."
+          sleep 30
+
+      - name: Health Check with Retry
+        id: health-check
+        run: |
+          MAX_ATTEMPTS=$(( ${{ env.HEALTH_CHECK_TIMEOUT }} / ${{ env.HEALTH_CHECK_INTERVAL }} ))
+          ATTEMPT=0
+          SUCCESS=false
+
+          echo "🏥 Starting health checks"
+          echo "⏱️  Timeout: ${{ env.HEALTH_CHECK_TIMEOUT }}s, Interval: ${{ env.HEALTH_CHECK_INTERVAL }}s"
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            
+            # Check health via SSH
+            if ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+              "curl -f http://localhost:3000/health" 2>/dev/null; then
+              echo "✅ Health check PASSED"
+              SUCCESS=true
+              break
+            else
+              echo "⚠️  Health check failed"
+              if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+                echo "Retrying in ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+                sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+              fi
+            fi
+          done
+
+          if [ "$SUCCESS" = false ]; then
+            echo "❌ Health check FAILED after $MAX_ATTEMPTS attempts"
+            echo "health-status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "health-status=passed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run smoke tests
+        if: steps.health-check.outputs.health-status == 'passed'
+        run: |
+          echo "🧪 Running smoke tests..."
+
+          # Test backend health endpoint
           ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
             cd /opt/capital-tracker
+            
+            # Check containers are running
             docker compose ps || docker-compose ps
-            echo "Checking backend health..."
+            
+            # Test health endpoint
+            echo "Testing /health endpoint..."
             curl -f http://localhost:3000/health || exit 1
-            echo "Backend is healthy!"
+            
+            # Test currencies list endpoint (should work without auth)
+            echo "Testing /currencies/list endpoint..."
+            RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:3000/currencies/list)
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Currencies API: HTTP $HTTP_CODE"
+            else
+              echo "❌ Currencies API failed: HTTP $HTTP_CODE"
+              exit 1
+            fi
+            
+            # Check frontend is accessible
+            echo "Testing frontend..."
+            curl -f http://localhost:3001/ > /dev/null || exit 1
+            
+            echo "✅ All smoke tests passed"
           EOF
+
+      - name: Rollback on failure
+        if: failure() && steps.get-versions.outputs.current-backend != 'none'
+        env:
+          YC_TOKEN: ${{ secrets.YC_TOKEN }}
+        run: |
+          echo "🔄 INITIATING ROLLBACK..."
+          echo "Rolling back to previous versions:"
+          echo "Backend: ${{ steps.get-versions.outputs.current-backend }}"
+          echo "Frontend: ${{ steps.get-versions.outputs.current-frontend }}"
+          echo "Database backup: ${{ steps.backup-db.outputs.backup-filename }}"
+
+          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+            set -e
+            cd /opt/capital-tracker
+            
+            # Login to registry
+            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net || true
+            
+            # Pull previous images
+            docker pull ${{ steps.get-versions.outputs.current-backend }} || true
+            docker pull ${{ steps.get-versions.outputs.current-frontend }} || true
+            
+            # Tag them as latest for docker-compose
+            docker tag ${{ steps.get-versions.outputs.current-backend }} ${{ env.BACKEND_IMAGE }}:latest || true
+            docker tag ${{ steps.get-versions.outputs.current-frontend }} ${{ env.FRONTEND_IMAGE }}:latest || true
+            
+            # Restore database backup
+            echo "💾 Restoring database from backup..."
+            BACKUP_FILE="backups/${{ steps.backup-db.outputs.backup-filename }}"
+            
+            if [ -f "\$BACKUP_FILE" ]; then
+              # Get database credentials
+              DB_NAME=\$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
+              DB_USER=\$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
+              
+              # Get postgres container
+              POSTGRES_CONTAINER=\$(docker compose ps -q postgres || docker-compose ps -q postgres || docker ps -q -f name=capital_tracker_db)
+              
+              if [ -n "\$POSTGRES_CONTAINER" ]; then
+                # Terminate existing connections
+                docker exec \$POSTGRES_CONTAINER psql -U \$DB_USER -d postgres -c \
+                  "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '\$DB_NAME' AND pid <> pg_backend_pid();" || true
+                
+                # Drop and recreate database
+                docker exec \$POSTGRES_CONTAINER psql -U \$DB_USER -d postgres -c "DROP DATABASE IF EXISTS \$DB_NAME;" || true
+                docker exec \$POSTGRES_CONTAINER psql -U \$DB_USER -d postgres -c "CREATE DATABASE \$DB_NAME;"
+                
+                # Restore from backup
+                gunzip -c "\$BACKUP_FILE" | docker exec -i \$POSTGRES_CONTAINER psql -U \$DB_USER -d \$DB_NAME
+                
+                echo "✅ Database restored from backup"
+              else
+                echo "⚠️  Postgres container not found, skipping database restore"
+              fi
+            else
+              echo "⚠️  Backup file not found: \$BACKUP_FILE"
+            fi
+            
+            # Restart with previous versions
+            docker compose down || docker-compose down || true
+            docker compose up -d || docker-compose up -d
+            
+            echo "⏳ Waiting for rollback to complete..."
+            sleep 20
+          EOF
+
+          # Verify rollback health
+          ROLLBACK_ATTEMPTS=0
+          ROLLBACK_MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
+          ROLLBACK_SUCCESS=false
+
+          while [ $ROLLBACK_ATTEMPTS -lt $ROLLBACK_MAX_ATTEMPTS ]; do
+            ROLLBACK_ATTEMPTS=$((ROLLBACK_ATTEMPTS + 1))
+            echo "Verifying rollback health (attempt $ROLLBACK_ATTEMPTS/$ROLLBACK_MAX_ATTEMPTS)..."
+            
+            if ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+              "curl -f http://localhost:3000/health" 2>/dev/null; then
+              echo "✅ Rollback successful - service is healthy"
+              ROLLBACK_SUCCESS=true
+              break
+            else
+              echo "⚠️  Rollback health check failed"
+              if [ $ROLLBACK_ATTEMPTS -lt $ROLLBACK_MAX_ATTEMPTS ]; then
+                sleep 10
+              fi
+            fi
+          done
+
+          if [ "$ROLLBACK_SUCCESS" = false ]; then
+            echo "❌ Rollback completed but health check failed"
+            echo "⚠️  MANUAL INTERVENTION REQUIRED!"
+            echo "📝 Container logs:"
+            ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+              "cd /opt/capital-tracker && docker compose logs --tail=50 backend || docker-compose logs --tail=50 backend"
+            exit 1
+          fi
 
       - name: Generate Release Notes
         id: release_notes
@@ -131,12 +370,30 @@ jobs:
           DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
+
           # Configure git to use the GitHub token for authentication
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-          
+
           git tag -a "$DEPLOY_TAG" -m "Deployment at $(date '+%Y-%m-%d %H:%M:%S UTC')"
           git push origin "$DEPLOY_TAG"
+
+      - name: Cleanup old images and backups
+        if: success()
+        run: |
+          echo "🧹 Cleaning up old Docker images and backups..."
+          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
+            # Keep only last 3 versions of images
+            docker image prune -a -f --filter "until=72h" || true
+            
+            # Verify backup count (keep last 10)
+            cd /opt/capital-tracker/backups 2>/dev/null || exit 0
+            BACKUP_COUNT=$(ls -1 capital-tracker-backup-*.sql.gz 2>/dev/null | wc -l)
+            echo "📊 Total backups: $BACKUP_COUNT"
+            
+            # Keep only last 10 backups
+            ls -t capital-tracker-backup-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm
+            echo "✅ Cleanup complete"
+          EOF
 
       - name: Send Telegram Notification
         if: always()
@@ -154,28 +411,53 @@ jobs:
           if [ "${{ job.status }}" == "success" ] && [ "${{ steps.release_notes.outputs.success }}" == "true" ]; then
             # Send release notes for successful deployment
             MESSAGE=$(cat release_notes.txt)
+            
+            # Add backup info to success message
+            if [ -n "${{ steps.backup-db.outputs.backup-filename }}" ]; then
+              BACKUP_INFO=$(cat <<'BACKUP_EOF'
+
+          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}`
+          📊 **Backup Location:** `/opt/capital-tracker/backups/`
+          BACKUP_EOF
+              )
+              MESSAGE="${MESSAGE}${BACKUP_INFO}"
+            fi
           else
-            # Send failure notification
+            # Send failure notification with rollback info
             DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
             COMMIT_SHORT=${GITHUB_SHA:0:7}
+            
+            if [ "${{ steps.get-versions.outputs.current-backend }}" != "none" ]; then
+              ROLLBACK_INFO=$(cat <<'ROLLBACK_EOF'
+
+          🔄 **Automatic Rollback:** Attempted
+          📦 **Previous Version:** `${{ steps.get-versions.outputs.current-backend }}`
+          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}`
+          📍 **Backup Location:** `/opt/capital-tracker/backups/`
+          ROLLBACK_EOF
+              )
+            else
+              ROLLBACK_INFO=$(cat <<'ROLLBACK_EOF'
+
+          ⚠️ **No previous version to rollback**
+          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}` (preserved)
+          ROLLBACK_EOF
+              )
+            fi
+            
             MESSAGE=$(cat <<EOF
           ❌ **Capital Tracker Deployment FAILED**
 
           📅 **Date:** ${DEPLOY_DATE}
           🔖 **Commit:** \`${COMMIT_SHORT}\`
           🔗 **Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          ${ROLLBACK_INFO}
 
-          **Status:** Deployment or health check failed. Please review the logs.
+          **Status:** Deployment or health check failed. Database backup created. Please review the logs and verify service status.
           EOF
-          )
+            )
           fi
 
-          # Send message to Telegram using a temp file to avoid escaping issues
-          PAYLOAD=$(jq -n \
-            --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')
-
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" > /dev/null || echo "⚠️ Failed to send Telegram notification"
+          # Send message to Telegram
+          PAYLOAD=$(jq -n --arg chat_id "$TELEGRAM_CHAT_ID" --arg text "$MESSAGE" '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" -H "Content-Type: application/json" -d "$PAYLOAD" > /dev/null || echo "⚠️ Failed to send Telegram notification"
