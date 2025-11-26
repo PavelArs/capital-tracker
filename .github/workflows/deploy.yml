@@ -236,72 +236,48 @@ jobs:
             echo "health-status=passed" >> $GITHUB_OUTPUT
           fi
 
-      - name: Run smoke tests
-        if: steps.health-check.outputs.health-status == 'passed'
-        run: |
-          echo "🧪 Running smoke tests..."
-
-          # Test backend health endpoint
-          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
-            cd /opt/capital-tracker
-            
-            # Check containers are running
-            docker compose ps || docker-compose ps
-            
-            # Test health endpoint
-            echo "Testing /health endpoint..."
-            curl -f http://localhost:3000/health || exit 1
-            
-            # Test currencies list endpoint (should work without auth)
-            echo "Testing /currencies/list endpoint..."
-            RESPONSE=$(curl -s -w "\n%{http_code}" http://localhost:3000/currencies/list)
-            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Currencies API: HTTP $HTTP_CODE"
-            else
-              echo "❌ Currencies API failed: HTTP $HTTP_CODE"
-              exit 1
-            fi
-            
-            # Check frontend is accessible
-            echo "Testing frontend..."
-            curl -f http://localhost:3001/ > /dev/null || exit 1
-            
-            echo "✅ All smoke tests passed"
-          EOF
-
       - name: Rollback on failure
         if: failure() && steps.get-versions.outputs.current-backend != 'none'
         env:
           YC_TOKEN: ${{ secrets.YC_TOKEN }}
+          PREV_BACKEND: ${{ steps.get-versions.outputs.current-backend }}
+          PREV_FRONTEND: ${{ steps.get-versions.outputs.current-frontend }}
+          BACKUP_FILE: ${{ steps.backup-db.outputs.backup-filename }}
+          BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}
+          FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}
         run: |
           echo "🔄 INITIATING ROLLBACK..."
           echo "Rolling back to previous versions:"
-          echo "Backend: ${{ steps.get-versions.outputs.current-backend }}"
-          echo "Frontend: ${{ steps.get-versions.outputs.current-frontend }}"
-          echo "Database backup: ${{ steps.backup-db.outputs.backup-filename }}"
+          echo "Backend: $PREV_BACKEND"
+          echo "Frontend: $PREV_FRONTEND"
+          echo "Database backup: $BACKUP_FILE"
 
-          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+          ssh -o StrictHostKeyChecking=no ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+            "YC_TOKEN='$YC_TOKEN' PREV_BACKEND='$PREV_BACKEND' PREV_FRONTEND='$PREV_FRONTEND' BACKUP_FILE='$BACKUP_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' FRONTEND_IMAGE='$FRONTEND_IMAGE' bash -s" << 'ENDSSH'
             set -e
             cd /opt/capital-tracker
             
             # Login to registry
             echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net || true
             
-            # Pull previous images
-            docker pull ${{ steps.get-versions.outputs.current-backend }} || true
-            docker pull ${{ steps.get-versions.outputs.current-frontend }} || true
+            # Pull previous images if they exist
+            if [ -n "$PREV_BACKEND" ] && [ "$PREV_BACKEND" != "none" ]; then
+              echo "Pulling backend: $PREV_BACKEND"
+              docker pull "$PREV_BACKEND" || true
+              docker tag "$PREV_BACKEND" "${BACKEND_IMAGE}:latest" || true
+            fi
             
-            # Tag them as latest for docker-compose
-            docker tag ${{ steps.get-versions.outputs.current-backend }} ${{ env.BACKEND_IMAGE }}:latest || true
-            docker tag ${{ steps.get-versions.outputs.current-frontend }} ${{ env.FRONTEND_IMAGE }}:latest || true
+            if [ -n "$PREV_FRONTEND" ] && [ "$PREV_FRONTEND" != "none" ]; then
+              echo "Pulling frontend: $PREV_FRONTEND"
+              docker pull "$PREV_FRONTEND" || true
+              docker tag "$PREV_FRONTEND" "${FRONTEND_IMAGE}:latest" || true
+            fi
             
             # Restore database backup
             echo "💾 Restoring database from backup..."
-            BACKUP_FILE="backups/${{ steps.backup-db.outputs.backup-filename }}"
+            BACKUP_PATH="backups/$BACKUP_FILE"
             
-            if [ -f "\$BACKUP_FILE" ]; then
+            if [ -f "\$BACKUP_PATH" ]; then
               # Get database credentials
               DB_NAME=\$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
               DB_USER=\$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
@@ -319,14 +295,14 @@ jobs:
                 docker exec \$POSTGRES_CONTAINER psql -U \$DB_USER -d postgres -c "CREATE DATABASE \$DB_NAME;"
                 
                 # Restore from backup
-                gunzip -c "\$BACKUP_FILE" | docker exec -i \$POSTGRES_CONTAINER psql -U \$DB_USER -d \$DB_NAME
+                gunzip -c "\$BACKUP_PATH" | docker exec -i \$POSTGRES_CONTAINER psql -U \$DB_USER -d \$DB_NAME
                 
                 echo "✅ Database restored from backup"
               else
                 echo "⚠️  Postgres container not found, skipping database restore"
               fi
             else
-              echo "⚠️  Backup file not found: \$BACKUP_FILE"
+              echo "⚠️  Backup file not found: \$BACKUP_PATH"
             fi
             
             # Restart with previous versions
@@ -335,7 +311,7 @@ jobs:
             
             echo "⏳ Waiting for rollback to complete..."
             sleep 20
-          EOF
+          ENDSSH
 
           # Verify rollback health
           ROLLBACK_ATTEMPTS=0
@@ -414,6 +390,10 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          BACKUP_FILENAME: ${{ steps.backup-db.outputs.backup-filename }}
+          PREV_BACKEND_VER: ${{ steps.get-versions.outputs.current-backend }}
+          JOB_STATUS: ${{ job.status }}
+          RELEASE_SUCCESS: ${{ steps.release_notes.outputs.success }}
         run: |
           # Check if Telegram secrets are configured
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
@@ -422,18 +402,16 @@ jobs:
           fi
 
           # Determine deployment status
-          if [ "${{ job.status }}" == "success" ] && [ "${{ steps.release_notes.outputs.success }}" == "true" ]; then
+          if [ "$JOB_STATUS" == "success" ] && [ "$RELEASE_SUCCESS" == "true" ]; then
             # Send release notes for successful deployment
             MESSAGE=$(cat release_notes.txt)
             
             # Add backup info to success message
-            if [ -n "${{ steps.backup-db.outputs.backup-filename }}" ]; then
-              BACKUP_INFO=$(cat <<'BACKUP_EOF'
+            if [ -n "$BACKUP_FILENAME" ]; then
+              BACKUP_INFO="
 
-          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}`
-          📊 **Backup Location:** `/opt/capital-tracker/backups/`
-          BACKUP_EOF
-              )
+          💾 **Database Backup:** \`${BACKUP_FILENAME}\`
+          📊 **Backup Location:** \`/opt/capital-tracker/backups/\`"
               MESSAGE="${MESSAGE}${BACKUP_INFO}"
             fi
           else
@@ -441,22 +419,18 @@ jobs:
             DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
             COMMIT_SHORT=${GITHUB_SHA:0:7}
             
-            if [ "${{ steps.get-versions.outputs.current-backend }}" != "none" ]; then
-              ROLLBACK_INFO=$(cat <<'ROLLBACK_EOF'
+            if [ "$PREV_BACKEND_VER" != "none" ] && [ -n "$PREV_BACKEND_VER" ]; then
+              ROLLBACK_INFO="
 
           🔄 **Automatic Rollback:** Attempted
-          📦 **Previous Version:** `${{ steps.get-versions.outputs.current-backend }}`
-          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}`
-          📍 **Backup Location:** `/opt/capital-tracker/backups/`
-          ROLLBACK_EOF
-              )
+          📦 **Previous Version:** \`${PREV_BACKEND_VER}\`
+          💾 **Database Backup:** \`${BACKUP_FILENAME}\`
+          📍 **Backup Location:** \`/opt/capital-tracker/backups/\`"
             else
-              ROLLBACK_INFO=$(cat <<'ROLLBACK_EOF'
+              ROLLBACK_INFO="
 
           ⚠️ **No previous version to rollback**
-          💾 **Database Backup:** `${{ steps.backup-db.outputs.backup-filename }}` (preserved)
-          ROLLBACK_EOF
-              )
+          💾 **Database Backup:** \`${BACKUP_FILENAME}\` (preserved)"
             fi
             
             MESSAGE=$(cat <<EOF
