@@ -88,8 +88,15 @@ jobs:
              docker inspect capital_tracker_frontend --format='{{.Config.Image}}' 2>/dev/null || \
              echo 'none'")
 
-          echo "current-backend=$CURRENT_BACKEND" >> $GITHUB_OUTPUT
-          echo "current-frontend=$CURRENT_FRONTEND" >> $GITHUB_OUTPUT
+          # Use EOF delimiter for safe output with special characters
+          {
+            echo "current-backend<<EOF"
+            echo "$CURRENT_BACKEND"
+            echo "EOF"
+            echo "current-frontend<<EOF"
+            echo "$CURRENT_FRONTEND"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
           echo "📦 Current Backend: $CURRENT_BACKEND"
           echo "📦 Current Frontend: $CURRENT_FRONTEND"
@@ -145,8 +152,15 @@ jobs:
             ls -lh capital-tracker-backup-*.sql.gz | tail -5
           EOF
 
-          echo "backup-filename=$BACKUP_FILENAME" >> $GITHUB_OUTPUT
-          echo "backup-timestamp=$BACKUP_TIMESTAMP" >> $GITHUB_OUTPUT
+          # Use EOF delimiter for safe output
+          {
+            echo "backup-filename<<EOF"
+            echo "$BACKUP_FILENAME"
+            echo "EOF"
+            echo "backup-timestamp<<EOF"
+            echo "$BACKUP_TIMESTAMP"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Copy docker-compose.yml to VM
         run: |
