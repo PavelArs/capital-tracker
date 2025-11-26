@@ -8,6 +8,7 @@ import {
   JoinColumn,
 } from "typeorm";
 import { User } from "./user.entity";
+import { Currency } from "./currency.entity";
 
 export enum LiabilityCategory {
   SUBSCRIPTIONS = "subscriptions",
@@ -47,11 +48,15 @@ export class Liability {
   })
   category: LiabilityCategory;
 
-  @Column("decimal", { precision: 15, scale: 2 })
+  @Column("decimal", { precision: 20, scale: 8 })
   amount: number;
 
-  @Column({ length: 3, default: "USD" })
-  currency: string;
+  @ManyToOne(() => Currency)
+  @JoinColumn({ name: "currencyId" })
+  currency: Currency;
+
+  @Column()
+  currencyId: string;
 
   @Column({ type: "date" })
   date: Date;

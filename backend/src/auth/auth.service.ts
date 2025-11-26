@@ -40,6 +40,8 @@ export class AuthService {
     const nodeEnv = process.env.NODE_ENV || "development";
     const isDevelopment = nodeEnv === "development";
     const devInvitationCode = process.env.DEV_INVITATION_CODE || "DEV2024";
+    const skipEmailVerification =
+      process.env.SKIP_EMAIL_VERIFICATION === "true" || isDevelopment;
 
     // Check if using dev invitation code (only works in development)
     const isDevCode =
@@ -83,9 +85,14 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Generate email verification token
-    const verificationToken = randomBytes(32).toString("hex");
-    const hashedVerificationToken = await bcrypt.hash(verificationToken, 10);
+    // Generate email verification token (only if not skipping verification)
+    let verificationToken: string | null = null;
+    let hashedVerificationToken: string | null = null;
+
+    if (!skipEmailVerification) {
+      verificationToken = randomBytes(32).toString("hex");
+      hashedVerificationToken = await bcrypt.hash(verificationToken, 10);
+    }
 
     const user = this.userRepository.create({
       email: registerDto.email,
@@ -93,7 +100,7 @@ export class AuthService {
       firstName: registerDto.firstName,
       lastName: registerDto.lastName,
       subscriptionType: SubscriptionType.FREE,
-      emailVerified: false,
+      emailVerified: skipEmailVerification, // Skip verification in dev mode
       emailVerificationToken: hashedVerificationToken,
     });
 
@@ -116,14 +123,33 @@ export class AuthService {
     });
     await this.subscriptionRepository.save(subscription);
 
-    // Send email verification
-    await this.emailService.sendEmailVerification(
-      savedUser.email,
-      savedUser.firstName,
-      verificationToken
-    );
+    // Send email verification (only if not skipping and token exists)
+    if (!skipEmailVerification && verificationToken) {
+      try {
+        await this.emailService.sendEmailVerification(
+          savedUser.email,
+          savedUser.firstName,
+          verificationToken
+        );
+      } catch (error) {
+        console.error("Failed to send verification email:", error);
+        // Don't fail registration if email fails
+      }
+    }
 
     const { password, ...result } = savedUser;
+
+    // Return access token in dev mode with skip verification
+    if (skipEmailVerification) {
+      return {
+        ...result,
+        access_token: this.jwtService.sign({
+          sub: savedUser.id,
+          email: savedUser.email,
+        }),
+        message: "Registration successful. You can now log in.",
+      };
+    }
 
     return {
       ...result,
@@ -133,10 +159,15 @@ export class AuthService {
   }
 
   async validateUser(email: string, password: string): Promise<any> {
+    const nodeEnv = process.env.NODE_ENV || "development";
+    const isDevelopment = nodeEnv === "development";
+    const skipEmailVerification =
+      process.env.SKIP_EMAIL_VERIFICATION === "true" || isDevelopment;
+
     const user = await this.userRepository.findOne({ where: { email } });
     if (user && (await bcrypt.compare(password, user.password))) {
-      // Check if email is verified
-      if (!user.emailVerified) {
+      // Check if email is verified (skip in dev mode)
+      if (!skipEmailVerification && !user.emailVerified) {
         throw new UnauthorizedException(
           "Please verify your email before logging in. Check your inbox for the verification link."
         );
