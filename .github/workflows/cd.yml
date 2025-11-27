@@ -62,12 +62,12 @@ jobs:
 
           # Get the latest version tag
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-          
+
           if [ -z "$LATEST_TAG" ]; then
             LATEST_TAG="v0.0.0"
             echo "No previous version found, starting from v0.0.0"
           fi
-          
+
           echo "previous_version=$LATEST_TAG" >> $GITHUB_OUTPUT
           echo "📦 Previous version: $LATEST_TAG"
 
@@ -79,7 +79,7 @@ jobs:
 
           # Determine bump type
           BUMP_TYPE="${{ github.event.inputs.version_bump || 'auto' }}"
-          
+
           if [ "$BUMP_TYPE" == "auto" ]; then
             # Auto-detect from commit messages since last tag
             if [ "$LATEST_TAG" != "v0.0.0" ]; then
@@ -121,7 +121,7 @@ jobs:
         id: changelog
         run: |
           LATEST_TAG="${{ steps.version.outputs.previous_version }}"
-          
+
           if [ "$LATEST_TAG" != "v0.0.0" ] && git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
             COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"• %s \`%h\`" 2>/dev/null | head -20)
             COMMIT_COUNT=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "0")
@@ -132,13 +132,13 @@ jobs:
 
           # Escape for GitHub output
           CHANGELOG=$(echo "$COMMITS" | head -15)
-          
+
           {
             echo "changelog<<CHANGELOG_EOF"
             echo "$CHANGELOG"
             echo "CHANGELOG_EOF"
           } >> $GITHUB_OUTPUT
-          
+
           echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
 
   # ============================================
@@ -148,7 +148,7 @@ jobs:
     name: Build Docker Images
     runs-on: ubuntu-latest
     needs: version
-    
+
     strategy:
       matrix:
         include:
@@ -359,7 +359,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.version.outputs.version }}"
-          
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
@@ -370,9 +370,9 @@ jobs:
           Backend: ${{ env.BACKEND_IMAGE }}:$VERSION
           Frontend: ${{ env.FRONTEND_IMAGE }}:$VERSION
           Commit: ${{ needs.version.outputs.commit_short }}"
-          
+
           git push origin "$VERSION"
-          
+
           echo "✅ Created tag: $VERSION"
 
   # ============================================
@@ -521,44 +521,46 @@ jobs:
           BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
           PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
           PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
-          BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}
-          FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}
+          BACKEND_IMG: ${{ env.BACKEND_IMAGE }}
+          FRONTEND_IMG: ${{ env.FRONTEND_IMAGE }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          SHA: ${{ github.sha }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "ℹ️ Telegram secrets not configured, skipping notification"
+            echo "Telegram secrets not configured, skipping notification"
             exit 0
           fi
 
           DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
-          REPO_URL="https://github.com/${{ github.repository }}"
+          REPO_URL="https://github.com/${REPO}"
 
           if [ "$DEPLOY_STATUS" == "success" ]; then
-            # Success message
-            MESSAGE="🚀 *Capital Tracker Deployment*
-
-📅 *Date:* ${DEPLOY_DATE}
-🏷️ *Version:* \`${VERSION}\`
-🔖 *Commit:* \`${COMMIT_SHORT}\`
-📝 *Changes:* ${COMMIT_COUNT} commit(s)
-
-📦 *Docker Images:*
-• Backend: \`${BACKEND_IMAGE}:${VERSION}\`
-• Frontend: \`${FRONTEND_IMAGE}:${VERSION}\`
-
-${CHANGELOG}
-
----
-🔗 *Links:*
-• [Full Changelog](${REPO_URL}/compare/${PREV_VERSION}...${VERSION})
-• [Commit Details](${REPO_URL}/commit/${{ github.sha }})
-
-💾 *Backup:* \`${BACKUP_FILENAME}\`
-📍 *Backup Location:* \`/opt/capital-tracker/backups/\`
-
-✅ *Status:* Deployed and health check passed"
-
+            {
+              echo "🚀 *Capital Tracker Deployment*"
+              echo ""
+              echo "📅 *Date:* ${DEPLOY_DATE}"
+              echo "🏷️ *Version:* \`${VERSION}\`"
+              echo "🔖 *Commit:* \`${COMMIT_SHORT}\`"
+              echo "📝 *Changes:* ${COMMIT_COUNT} commit(s)"
+              echo ""
+              echo "📦 *Docker Images:*"
+              echo "• Backend: \`${BACKEND_IMG}:${VERSION}\`"
+              echo "• Frontend: \`${FRONTEND_IMG}:${VERSION}\`"
+              echo ""
+              echo "${CHANGELOG}"
+              echo ""
+              echo "---"
+              echo "🔗 *Links:*"
+              echo "• [Full Changelog](${REPO_URL}/compare/${PREV_VERSION}...${VERSION})"
+              echo "• [Commit Details](${REPO_URL}/commit/${SHA})"
+              echo ""
+              echo "💾 *Backup:* \`${BACKUP_FILENAME}\`"
+              echo "📍 *Backup Location:* \`/opt/capital-tracker/backups/\`"
+              echo ""
+              echo "✅ *Status:* Deployed and health check passed"
+            } > /tmp/message.txt
           else
-            # Failure message
             if [ "$ROLLBACK_STATUS" == "success" ]; then
               ROLLBACK_MSG="🔄 *Automatic Rollback:* Completed successfully"
             elif [ "$ROLLBACK_STATUS" == "failure" ]; then
@@ -567,24 +569,27 @@ ${CHANGELOG}
               ROLLBACK_MSG="🔄 *Automatic Rollback:* Attempted"
             fi
 
-            MESSAGE="❌ *Capital Tracker Deployment FAILED*
-
-📅 *Date:* ${DEPLOY_DATE}
-🏷️ *Version:* \`${VERSION}\` (attempted)
-🔖 *Commit:* \`${COMMIT_SHORT}\`
-🔗 *Workflow:* [View Details](${REPO_URL}/actions/runs/${{ github.run_id }})
-
-${ROLLBACK_MSG}
-📦 *Previous Backend:* \`${PREV_BACKEND}\`
-📦 *Previous Frontend:* \`${PREV_FRONTEND}\`
-
-💾 *Database Backup:* \`${BACKUP_FILENAME}\`
-📍 *Backup Location:* \`/opt/capital-tracker/backups/\`
-
-*Status:* Deployment or health check failed. Database backup created. Please review the logs and verify service status."
+            {
+              echo "❌ *Capital Tracker Deployment FAILED*"
+              echo ""
+              echo "📅 *Date:* ${DEPLOY_DATE}"
+              echo "🏷️ *Version:* \`${VERSION}\` (attempted)"
+              echo "🔖 *Commit:* \`${COMMIT_SHORT}\`"
+              echo "🔗 *Workflow:* [View Details](${REPO_URL}/actions/runs/${RUN_ID})"
+              echo ""
+              echo "${ROLLBACK_MSG}"
+              echo "📦 *Previous Backend:* \`${PREV_BACKEND}\`"
+              echo "📦 *Previous Frontend:* \`${PREV_FRONTEND}\`"
+              echo ""
+              echo "💾 *Database Backup:* \`${BACKUP_FILENAME}\`"
+              echo "📍 *Backup Location:* \`/opt/capital-tracker/backups/\`"
+              echo ""
+              echo "*Status:* Deployment or health check failed. Database backup created. Please review the logs and verify service status."
+            } > /tmp/message.txt
           fi
 
-          # Send to Telegram
+          MESSAGE=$(cat /tmp/message.txt)
+
           PAYLOAD=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
             --arg text "$MESSAGE" \
@@ -592,4 +597,4 @@ ${ROLLBACK_MSG}
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD" || echo "⚠️ Failed to send Telegram notification"
+            -d "$PAYLOAD" || echo "Failed to send Telegram notification"
