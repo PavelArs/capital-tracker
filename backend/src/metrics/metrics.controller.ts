@@ -1,6 +1,7 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { MetricsService } from './metrics.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('metrics')
 @UseGuards(JwtAuthGuard)
@@ -8,21 +9,20 @@ export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
   @Get()
-  getMetrics(@Request() req, @Query('currency') currency?: string) {
-    return this.metricsService.getMetrics(req.user.userId, currency || 'USD');
+  getMetrics(@CurrentUser() user: JwtPayload, @Query('currency') currency?: string) {
+    return this.metricsService.getMetrics(user.userId, currency || 'USD');
   }
 
   @Get('history')
   getCapitalHistory(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Query('days') days?: string,
     @Query('currency') currency?: string,
   ) {
     return this.metricsService.getCapitalHistory(
-      req.user.userId,
-      days ? parseInt(days) : 30,
+      user.userId,
+      days ? parseInt(days, 10) : 30,
       currency || 'USD',
     );
   }
 }
-

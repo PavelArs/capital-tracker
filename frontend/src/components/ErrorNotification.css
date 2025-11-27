@@ -29,7 +29,9 @@
   gap: 1rem;
   box-shadow: 0 4px 6px var(--shadow);
   cursor: pointer;
-  transition: opacity 0.2s, box-shadow 0.2s;
+  transition:
+    opacity 0.2s,
+    box-shadow 0.2s;
 }
 
 .error-notification-content:hover {
@@ -69,4 +71,3 @@
 .error-close:hover {
   opacity: 0.8;
 }
-

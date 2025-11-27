@@ -17,7 +17,7 @@
   --shadow-hover: rgba(0, 0, 0, 0.15);
 }
 
-[data-theme="dark"] {
+[data-theme='dark'] {
   /* Dark theme */
   --bg-color: #1a1a1a;
   --bg-secondary: #2c2c2c;
@@ -43,19 +43,20 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell',
+    'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-secondary);
   color: var(--text-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
 }
 
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
 }
 
 #root {
@@ -63,23 +64,30 @@ code {
 }
 
 /* Общие стили для форм */
-input, textarea, select {
+input,
+textarea,
+select {
   background-color: var(--bg-color);
   color: var(--text-color);
   border: 1px solid var(--border-color);
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   outline: none;
   border-color: var(--primary-color);
   box-shadow: 0 0 0 2px var(--primary-color-light);
 }
 
-input, select {
+input,
+select {
   min-height: 2.5rem;
 }
 
@@ -90,7 +98,9 @@ textarea {
 
 /* Общие стили для кнопок */
 button {
-  transition: opacity 0.2s, background-color 0.2s;
+  transition:
+    opacity 0.2s,
+    background-color 0.2s;
 }
 
 button:hover {
@@ -130,11 +140,15 @@ tr:hover {
 }
 
 /* Общие стили для карточек */
-.card, .page-header, .chart-container {
+.card,
+.page-header,
+.chart-container {
   background-color: var(--bg-color);
   color: var(--text-color);
   box-shadow: 0 2px 4px var(--shadow);
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 /* Общие утилиты */
@@ -151,19 +165,31 @@ tr:hover {
 }
 
 /* Общие responsive стили */
-img, video, iframe {
+img,
+video,
+iframe {
   max-width: 100%;
   height: auto;
 }
 
 /* Предотвращение переполнения текста */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   word-wrap: break-word;
   overflow-wrap: break-word;
   hyphens: auto;
 }
 
-p, span, div, li, td, th {
+p,
+span,
+div,
+li,
+td,
+th {
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -180,7 +206,9 @@ p, span, div, li, td, th {
   }
 
   /* Улучшение читаемости на маленьких экранах */
-  p, li, span {
+  p,
+  li,
+  span {
     line-height: 1.6;
   }
 
@@ -215,4 +243,3 @@ p, span, div, li, td, th {
     font-size: 1.1rem;
   }
 }
-

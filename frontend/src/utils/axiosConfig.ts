@@ -20,11 +20,11 @@ axios.interceptors.response.use(
       // Server responded with error status
       const status = error.response.status;
       const data = error.response.data;
-      
+
       if (status >= 400 && errorHandler) {
         // Extract error message
         let errorMessage = 'An error occurred';
-        
+
         if (data?.message) {
           errorMessage = data.message;
         } else if (typeof data === 'string') {
@@ -53,7 +53,7 @@ axios.interceptors.response.use(
               errorMessage = `Error ${status}: ${error.response.statusText || 'Unknown error'}`;
           }
         }
-        
+
         errorHandler(errorMessage);
       }
     } else if (error.request) {
@@ -67,10 +67,9 @@ axios.interceptors.response.use(
         errorHandler(error.message || 'An unexpected error occurred');
       }
     }
-    
+
     return Promise.reject(error);
   }
 );
 
 export default axios;
-

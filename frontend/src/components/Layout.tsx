@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAuth } from '../contexts/AuthContext';
-import SubscriptionBadge from './SubscriptionBadge';
+import { useAuth } from '@contexts/AuthContext';
+import SubscriptionBadge from '@components/SubscriptionBadge';
 import './Layout.css';
 
 export default function Layout() {
@@ -13,18 +13,18 @@ export default function Layout() {
   const navLinksRef = useRef<HTMLDivElement>(null);
   const navUserRef = useRef<HTMLDivElement>(null);
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(() => {
     logout();
     navigate('/login');
-  };
+  }, [logout, navigate]);
 
-  const toggleMobileMenu = () => {
-    setMobileMenuOpen(!mobileMenuOpen);
-  };
+  const toggleMobileMenu = useCallback(() => {
+    setMobileMenuOpen((prev) => !prev);
+  }, []);
 
-  const closeMobileMenu = () => {
+  const closeMobileMenu = useCallback(() => {
     setMobileMenuOpen(false);
-  };
+  }, []);
 
   useEffect(() => {
     if (mobileMenuOpen && navLinksRef.current && navUserRef.current) {
@@ -38,21 +38,23 @@ export default function Layout() {
       };
 
       // Update position after a short delay to ensure nav-links is fully rendered
-      setTimeout(updateNavUserPosition, 50);
-      
+      const timeoutId = setTimeout(updateNavUserPosition, 50);
+
       // Update after transition completes
       const handleTransitionEnd = () => {
         updateNavUserPosition();
       };
-      
-      navLinksRef.current.addEventListener('transitionend', handleTransitionEnd);
-      
+
+      const navLinksElement = navLinksRef.current;
+      navLinksElement.addEventListener('transitionend', handleTransitionEnd);
+
       // Also update on window resize
       window.addEventListener('resize', updateNavUserPosition);
-      
+
       return () => {
+        clearTimeout(timeoutId);
         window.removeEventListener('resize', updateNavUserPosition);
-        navLinksRef.current?.removeEventListener('transitionend', handleTransitionEnd);
+        navLinksElement?.removeEventListener('transitionend', handleTransitionEnd);
       };
     } else if (navUserRef.current) {
       navUserRef.current.style.top = '';
@@ -63,32 +65,48 @@ export default function Layout() {
     <div className="layout">
       <nav className="navbar">
         <div className="nav-brand">Capital Tracker</div>
-        <button className="mobile-menu-toggle" onClick={toggleMobileMenu} aria-label="Toggle menu">
-          <span></span>
-          <span></span>
-          <span></span>
+
+        <button
+          className="mobile-menu-toggle"
+          onClick={toggleMobileMenu}
+          aria-label="Toggle menu"
+          aria-expanded={mobileMenuOpen}
+        >
+          <span />
+          <span />
+          <span />
         </button>
+
         <div ref={navLinksRef} className={`nav-links ${mobileMenuOpen ? 'open' : ''}`}>
-          <Link to="/" onClick={closeMobileMenu}>{t('navigation.dashboard')}</Link>
-          <Link to="/assets" onClick={closeMobileMenu}>{t('navigation.assets')}</Link>
-          <Link to="/liabilities" onClick={closeMobileMenu}>{t('navigation.liabilities')}</Link>
-          <Link to="/crypto" onClick={closeMobileMenu}>{t('navigation.crypto')}</Link>
-          <Link to="/settings" onClick={closeMobileMenu}>{t('navigation.settings')}</Link>
+          <Link to="/" onClick={closeMobileMenu}>
+            {t('navigation.dashboard')}
+          </Link>
+          <Link to="/assets" onClick={closeMobileMenu}>
+            {t('navigation.assets')}
+          </Link>
+          <Link to="/liabilities" onClick={closeMobileMenu}>
+            {t('navigation.liabilities')}
+          </Link>
+          <Link to="/crypto" onClick={closeMobileMenu}>
+            {t('navigation.crypto')}
+          </Link>
+          <Link to="/settings" onClick={closeMobileMenu}>
+            {t('navigation.settings')}
+          </Link>
         </div>
+
         <div ref={navUserRef} className={`nav-user ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="nav-user-info">
             <span className="nav-user-email">{user?.email}</span>
-            {user?.subscriptionType && (
-              <SubscriptionBadge type={user.subscriptionType} />
-            )}
+            {user?.subscriptionType && <SubscriptionBadge type={user.subscriptionType} />}
           </div>
           <button onClick={handleLogout}>{t('auth.logout')}</button>
         </div>
       </nav>
+
       <main className="main-content">
         <Outlet />
       </main>
     </div>
   );
 }
-

@@ -17,4 +17,3 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
   exports: [IntegrationsService],
 })
 export class IntegrationsModule {}
-

@@ -7,13 +7,9 @@ import { User } from '../entities/user.entity';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([DeFiPosition, User]),
-    SubscriptionsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([DeFiPosition, User]), SubscriptionsModule],
   controllers: [DefiController],
   providers: [DefiService],
   exports: [DefiService],
 })
 export class DefiModule {}
-

@@ -12,4 +12,3 @@ import { User } from '../entities/user.entity';
   exports: [SubscriptionsService],
 })
 export class SubscriptionsModule {}
-

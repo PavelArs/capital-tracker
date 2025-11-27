@@ -11,4 +11,3 @@ import { Asset } from '../entities/asset.entity';
   exports: [AssetsService],
 })
 export class AssetsModule {}
-

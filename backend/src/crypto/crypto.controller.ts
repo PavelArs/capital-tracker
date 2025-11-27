@@ -6,9 +6,10 @@ import {
   Param,
   Delete,
   UseGuards,
-  Request,
   Patch,
   ForbiddenException,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { CryptoService } from './crypto.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
@@ -18,6 +19,7 @@ import { SubscriptionsService } from '../subscriptions/subscriptions.service';
 import { SubscriptionType } from '../entities/subscription.entity';
 import { CryptoType } from '../entities/crypto-wallet.entity';
 import { CryptoPricesService, CryptoPrices } from './crypto-prices.service';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('crypto')
 @UseGuards(JwtAuthGuard, SubscriptionGuard)
@@ -29,26 +31,25 @@ export class CryptoController {
   ) {}
 
   @Post()
-  async create(@Request() req, @Body() createDto: CreateCryptoWalletDto) {
+  @HttpCode(HttpStatus.CREATED)
+  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateCryptoWalletDto) {
     // Check if user has PRO subscription for additional blockchains
     const allowedFreeTypes = [CryptoType.BITCOIN, CryptoType.ETHEREUM];
     if (!allowedFreeTypes.includes(createDto.type)) {
       const hasProAccess = await this.subscriptionsService.checkFeatureAccess(
-        req.user.userId,
+        user.userId,
         SubscriptionType.PRO,
       );
       if (!hasProAccess) {
-        throw new ForbiddenException(
-          'Additional blockchains require PRO subscription',
-        );
+        throw new ForbiddenException('Additional blockchains require PRO subscription');
       }
     }
-    return this.cryptoService.create(req.user.userId, createDto);
+    return this.cryptoService.create(user.userId, createDto);
   }
 
   @Get()
-  findAll(@Request() req) {
-    return this.cryptoService.findAll(req.user.userId);
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.cryptoService.findAll(user.userId);
   }
 
   @Get('prices')
@@ -57,23 +58,24 @@ export class CryptoController {
   }
 
   @Post('token-prices')
+  @HttpCode(HttpStatus.OK)
   async getTokenPrices(@Body() body: { contractAddresses: string[] }) {
     return this.cryptoPricesService.getBulkTokenPrices(body.contractAddresses);
   }
 
   @Get(':id')
-  findOne(@Request() req, @Param('id') id: string) {
-    return this.cryptoService.findOne(id, req.user.userId);
+  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.cryptoService.findOne(id, user.userId);
   }
 
   @Patch(':id/update-balance')
-  updateBalance(@Request() req, @Param('id') id: string) {
-    return this.cryptoService.updateBalance(id, req.user.userId);
+  updateBalance(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.cryptoService.updateBalance(id, user.userId);
   }
 
   @Delete(':id')
-  remove(@Request() req, @Param('id') id: string) {
-    return this.cryptoService.remove(id, req.user.userId);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.cryptoService.remove(id, user.userId);
   }
 }
-

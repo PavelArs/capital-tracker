@@ -8,4 +8,3 @@ export class UpdateAiRecommendationDto extends PartialType(CreateAiRecommendatio
   @IsEnum(RecommendationStatus)
   status?: RecommendationStatus;
 }
-

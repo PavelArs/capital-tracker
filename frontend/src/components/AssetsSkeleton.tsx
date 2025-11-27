@@ -56,6 +56,3 @@ export const AssetsSkeleton: React.FC = () => {
 };
 
 export default AssetsSkeleton;
-
-
-

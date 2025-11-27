@@ -16,4 +16,3 @@ export class CreateBrokerIntegrationDto {
   @IsObject()
   config?: any;
 }
-

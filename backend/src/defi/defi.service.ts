@@ -60,4 +60,3 @@ export class DefiService {
     return this.defiPositionRepository.save(position);
   }
 }
-

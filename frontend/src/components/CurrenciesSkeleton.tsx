@@ -1,6 +1,6 @@
-import React from "react";
-import Skeleton from "./Skeleton";
-import "./CurrenciesSkeleton.css";
+import React from 'react';
+import Skeleton from './Skeleton';
+import './CurrenciesSkeleton.css';
 
 export const CurrenciesSkeleton: React.FC = () => {
   return (
@@ -8,11 +8,7 @@ export const CurrenciesSkeleton: React.FC = () => {
       <div className="currencies-header-skeleton">
         <div>
           <Skeleton width="200px" height="36px" />
-          <Skeleton
-            width="300px"
-            height="20px"
-            style={{ marginTop: "0.5rem" }}
-          />
+          <Skeleton width="300px" height="20px" style={{ marginTop: '0.5rem' }} />
         </div>
       </div>
 

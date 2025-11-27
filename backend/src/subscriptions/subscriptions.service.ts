@@ -1,7 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Subscription, SubscriptionType, SubscriptionStatus } from '../entities/subscription.entity';
+import {
+  Subscription,
+  SubscriptionType,
+  SubscriptionStatus,
+} from '../entities/subscription.entity';
 import { User } from '../entities/user.entity';
 
 @Injectable()
@@ -31,10 +35,7 @@ export class SubscriptionsService {
     return user.subscriptionType;
   }
 
-  async upgradeSubscription(
-    userId: string,
-    newType: SubscriptionType,
-  ): Promise<Subscription> {
+  async upgradeSubscription(userId: string, newType: SubscriptionType): Promise<Subscription> {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -90,12 +91,9 @@ export class SubscriptionsService {
     }
   }
 
-  async checkFeatureAccess(
-    userId: string,
-    requiredType: SubscriptionType,
-  ): Promise<boolean> {
+  async checkFeatureAccess(userId: string, requiredType: SubscriptionType): Promise<boolean> {
     const userType = await this.getUserSubscriptionType(userId);
-    
+
     const typeHierarchy = {
       [SubscriptionType.FREE]: 0,
       [SubscriptionType.PRO]: 1,
@@ -105,4 +103,3 @@ export class SubscriptionsService {
     return typeHierarchy[userType] >= typeHierarchy[requiredType];
   }
 }
-

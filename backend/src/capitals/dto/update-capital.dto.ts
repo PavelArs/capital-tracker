@@ -7,4 +7,3 @@ export class UpdateCapitalDto extends PartialType(CreateCapitalDto) {
   @IsBoolean()
   isActive?: boolean;
 }
-

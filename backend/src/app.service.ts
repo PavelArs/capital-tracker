@@ -6,4 +6,3 @@ export class AppService {
     return 'Capital Tracker API is running!';
   }
 }
-

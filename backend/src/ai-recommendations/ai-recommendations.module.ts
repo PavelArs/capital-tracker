@@ -7,13 +7,9 @@ import { User } from '../entities/user.entity';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([AiRecommendation, User]),
-    SubscriptionsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([AiRecommendation, User]), SubscriptionsModule],
   controllers: [AiRecommendationsController],
   providers: [AiRecommendationsService],
   exports: [AiRecommendationsService],
 })
 export class AiRecommendationsModule {}
-

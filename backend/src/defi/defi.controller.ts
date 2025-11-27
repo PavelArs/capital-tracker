@@ -7,7 +7,8 @@ import {
   Body,
   Param,
   UseGuards,
-  Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionGuard, RequireSubscription } from '../auth/guards/subscription.guard';
@@ -15,51 +16,54 @@ import { SubscriptionType } from '../entities/subscription.entity';
 import { DefiService } from './defi.service';
 import { CreateDeFiPositionDto } from './dto/create-defi-position.dto';
 import { UpdateDeFiPositionDto } from './dto/update-defi-position.dto';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('defi')
 @UseGuards(JwtAuthGuard, SubscriptionGuard)
 export class DefiController {
-  constructor(private defiService: DefiService) {}
+  constructor(private readonly defiService: DefiService) {}
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
-  async create(@Request() req, @Body() createDto: CreateDeFiPositionDto) {
-    return this.defiService.create(req.user.userId, createDto);
+  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateDeFiPositionDto) {
+    return this.defiService.create(user.userId, createDto);
   }
 
   @Get()
   @RequireSubscription(SubscriptionType.PRO)
-  async findAll(@Request() req) {
-    return this.defiService.findAll(req.user.userId);
+  async findAll(@CurrentUser() user: JwtPayload) {
+    return this.defiService.findAll(user.userId);
   }
 
   @Get(':id')
   @RequireSubscription(SubscriptionType.PRO)
-  async findOne(@Request() req, @Param('id') id: string) {
-    return this.defiService.findOne(id, req.user.userId);
+  async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.defiService.findOne(id, user.userId);
   }
 
   @Put(':id')
   @RequireSubscription(SubscriptionType.PRO)
   async update(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() updateDto: UpdateDeFiPositionDto,
   ) {
-    return this.defiService.update(id, req.user.userId, updateDto);
+    return this.defiService.update(id, user.userId, updateDto);
   }
 
   @Post(':id/sync')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async syncPosition(@Request() req, @Param('id') id: string) {
-    return this.defiService.syncPosition(id, req.user.userId);
+  async syncPosition(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.defiService.syncPosition(id, user.userId);
   }
 
   @Delete(':id')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async remove(@Request() req, @Param('id') id: string) {
-    await this.defiService.remove(id, req.user.userId);
+  async remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.defiService.remove(id, user.userId);
     return { message: 'DeFi position deleted successfully' };
   }
 }
-

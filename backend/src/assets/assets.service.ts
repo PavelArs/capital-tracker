@@ -1,56 +1,70 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { Asset } from "../entities/asset.entity";
-import { CreateAssetDto } from "./dto/create-asset.dto";
-import { UpdateAssetDto } from "./dto/update-asset.dto";
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { PinoLogger } from 'nestjs-pino';
+import { Asset } from '../entities/asset.entity';
+import { CreateAssetDto } from './dto/create-asset.dto';
+import { UpdateAssetDto } from './dto/update-asset.dto';
+import { AssetNotFoundException } from '../shared/exceptions';
 
 @Injectable()
 export class AssetsService {
   constructor(
     @InjectRepository(Asset)
-    private assetRepository: Repository<Asset>
-  ) {}
+    private readonly assetRepository: Repository<Asset>,
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(AssetsService.name);
+  }
 
   async create(userId: string, createAssetDto: CreateAssetDto): Promise<Asset> {
+    this.logger.info({ userId, assetName: createAssetDto.name }, 'Creating asset');
+
     const asset = this.assetRepository.create({
       ...createAssetDto,
       userId,
     });
-    return this.assetRepository.save(asset);
+
+    const savedAsset = await this.assetRepository.save(asset);
+    this.logger.info({ assetId: savedAsset.id }, 'Asset created successfully');
+
+    return savedAsset;
   }
 
   async findAll(userId: string): Promise<Asset[]> {
     return this.assetRepository.find({
       where: { userId },
-      relations: ["currency"],
-      order: { date: "DESC" },
+      relations: ['currency'],
+      order: { date: 'DESC' },
     });
   }
 
   async findOne(id: string, userId: string): Promise<Asset> {
     const asset = await this.assetRepository.findOne({
       where: { id, userId },
-      relations: ["currency"],
+      relations: ['currency'],
     });
+
     if (!asset) {
-      throw new NotFoundException(`Asset with ID ${id} not found`);
+      throw new AssetNotFoundException(id);
     }
+
     return asset;
   }
 
-  async update(
-    id: string,
-    userId: string,
-    updateAssetDto: UpdateAssetDto
-  ): Promise<Asset> {
+  async update(id: string, userId: string, updateAssetDto: UpdateAssetDto): Promise<Asset> {
     const asset = await this.findOne(id, userId);
+
     Object.assign(asset, updateAssetDto);
-    return this.assetRepository.save(asset);
+    const updatedAsset = await this.assetRepository.save(asset);
+
+    this.logger.info({ assetId: id }, 'Asset updated successfully');
+    return updatedAsset;
   }
 
   async remove(id: string, userId: string): Promise<void> {
     const asset = await this.findOne(id, userId);
     await this.assetRepository.remove(asset);
+    this.logger.info({ assetId: id }, 'Asset removed successfully');
   }
 }

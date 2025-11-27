@@ -6,64 +6,64 @@ import {
   UpdateDateColumn,
   OneToMany,
   OneToOne,
-} from "typeorm";
-import { Exclude } from "class-transformer";
-import { Subscription, SubscriptionType } from "./subscription.entity";
-import { Capital } from "./capital.entity";
-import { InvitationCode } from "./invitation-code.entity";
+} from 'typeorm';
+import { Exclude } from 'class-transformer';
+import { Subscription, SubscriptionType } from './subscription.entity';
+import { Capital } from './capital.entity';
+import { InvitationCode } from './invitation-code.entity';
 
-@Entity("users")
+@Entity('users')
 export class User {
-  @PrimaryGeneratedColumn("uuid")
-  id: string;
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
 
   @Column({ unique: true })
-  email: string;
+  email!: string;
 
   @Column()
   @Exclude()
-  password: string;
+  password!: string;
 
-  @Column({ nullable: true })
-  firstName: string;
+  @Column({ nullable: true, type: 'varchar' })
+  firstName!: string | null;
 
-  @Column({ nullable: true })
-  lastName: string;
+  @Column({ nullable: true, type: 'varchar' })
+  lastName!: string | null;
 
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: SubscriptionType,
     default: SubscriptionType.FREE,
   })
-  subscriptionType: SubscriptionType;
+  subscriptionType!: SubscriptionType;
 
   @Column({ default: false })
-  emailVerified: boolean;
+  emailVerified!: boolean;
 
-  @Column({ nullable: true })
-  emailVerificationToken: string;
+  @Column({ nullable: true, type: 'varchar' })
+  emailVerificationToken!: string | null;
 
-  @Column({ nullable: true })
-  resetPasswordToken: string;
+  @Column({ nullable: true, type: 'varchar' })
+  resetPasswordToken!: string | null;
 
-  @Column({ nullable: true })
-  resetPasswordExpires: Date;
+  @Column({ nullable: true, type: 'timestamp' })
+  resetPasswordExpires!: Date | null;
 
   @OneToMany(() => Subscription, (subscription) => subscription.user)
-  subscriptions: Subscription[];
+  subscriptions!: Subscription[];
 
   @OneToMany(() => Capital, (capital) => capital.user)
-  capitals: Capital[];
+  capitals!: Capital[];
 
   @OneToMany(() => InvitationCode, (invitationCode) => invitationCode.createdBy)
-  generatedInvitationCodes: InvitationCode[];
+  generatedInvitationCodes!: InvitationCode[];
 
   @OneToOne(() => InvitationCode, (invitationCode) => invitationCode.usedBy)
-  usedInvitationCode: InvitationCode;
+  usedInvitationCode!: InvitationCode;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }

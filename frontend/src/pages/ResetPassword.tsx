@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
+import { authApi } from '@api';
 import './Auth.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const MIN_PASSWORD_LENGTH = 6;
+const REDIRECT_DELAY = 2000;
 
 export default function ResetPassword() {
   const [searchParams] = useSearchParams();
@@ -24,39 +25,51 @@ export default function ResetPassword() {
     }
   }, [token, t]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
 
-    if (password.length < 6) {
-      setError(t('auth.passwordTooShort'));
-      return;
-    }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        setError(t('auth.passwordTooShort'));
+        return;
+      }
 
-    if (password !== confirmPassword) {
-      setError(t('auth.passwordsDoNotMatch'));
-      return;
-    }
+      if (password !== confirmPassword) {
+        setError(t('auth.passwordsDoNotMatch'));
+        return;
+      }
 
-    setLoading(true);
+      if (!token) {
+        setError(t('auth.invalidResetToken'));
+        return;
+      }
 
-    try {
-      await axios.post(`${API_URL}/auth/reset-password`, {
-        token,
-        newPassword: password,
-      });
-      setSuccess(true);
-      
-      // Redirect to login after 2 seconds
-      setTimeout(() => {
-        navigate('/login');
-      }, 2000);
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.resetPasswordFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
+      setLoading(true);
+
+      try {
+        await authApi.resetPassword(token, password);
+        setSuccess(true);
+
+        setTimeout(() => {
+          navigate('/login');
+        }, REDIRECT_DELAY);
+      } catch (err: any) {
+        setError(err.response?.data?.message || t('auth.resetPasswordFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [password, confirmPassword, token, navigate, t]
+  );
+
+  const handlePasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setPassword(e.target.value);
+  }, []);
+
+  const handleConfirmPasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setConfirmPassword(e.target.value);
+  }, []);
 
   if (!token) {
     return (
@@ -64,7 +77,7 @@ export default function ResetPassword() {
         <div className="auth-card">
           <h1>{t('auth.resetPassword')}</h1>
           <div className="error">{t('auth.invalidResetToken')}</div>
-          <p style={{ marginTop: '20px' }}>
+          <p className="auth-switch">
             <Link to="/forgot-password">{t('auth.requestNewLink')}</Link>
           </p>
         </div>
@@ -76,38 +89,40 @@ export default function ResetPassword() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.resetPassword')}</h1>
-        
+
         {success ? (
           <div className="success-message">
             <p>{t('auth.passwordResetSuccess')}</p>
-            <p style={{ fontSize: '14px', marginTop: '10px' }}>
-              {t('auth.redirectingToLogin')}
-            </p>
+            <p className="success-subtitle">{t('auth.redirectingToLogin')}</p>
           </div>
         ) : (
           <>
             {error && <div className="error">{error}</div>}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>{t('auth.newPassword')}</label>
+                <label htmlFor="password">{t('auth.newPassword')}</label>
                 <input
+                  id="password"
                   type="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={handlePasswordChange}
                   required
-                  minLength={6}
+                  minLength={MIN_PASSWORD_LENGTH}
                   disabled={loading}
+                  autoComplete="new-password"
                 />
               </div>
               <div className="form-group">
-                <label>{t('auth.confirmPassword')}</label>
+                <label htmlFor="confirmPassword">{t('auth.confirmPassword')}</label>
                 <input
+                  id="confirmPassword"
                   type="password"
                   value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  onChange={handleConfirmPasswordChange}
                   required
-                  minLength={6}
+                  minLength={MIN_PASSWORD_LENGTH}
                   disabled={loading}
+                  autoComplete="new-password"
                 />
               </div>
               <button type="submit" disabled={loading}>
@@ -116,12 +131,11 @@ export default function ResetPassword() {
             </form>
           </>
         )}
-        
-        <p style={{ marginTop: '20px' }}>
+
+        <p className="auth-switch">
           <Link to="/login">{t('auth.backToLogin')}</Link>
         </p>
       </div>
     </div>
   );
 }
-

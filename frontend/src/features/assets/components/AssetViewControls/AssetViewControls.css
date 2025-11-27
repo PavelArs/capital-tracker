@@ -1,0 +1,96 @@
+.asset-view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-secondary, #f8fafc);
+  border-radius: 12px;
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.asset-view-controls__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.asset-view-controls__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+}
+
+.asset-view-controls__buttons {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--bg-card, #fff);
+  padding: 0.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.asset-view-controls__btn {
+  padding: 0.5rem 0.875rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-secondary, #64748b);
+  transition: all 0.2s;
+}
+
+.asset-view-controls__btn:hover:not(.active) {
+  background: var(--bg-hover, #f1f5f9);
+  color: var(--text-primary, #1e293b);
+}
+
+.asset-view-controls__btn.active {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+
+.asset-view-controls__select {
+  padding: 0.5rem 2rem 0.5rem 0.75rem;
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  background: var(--bg-card, #fff);
+  color: var(--text-primary, #1e293b);
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+}
+
+.asset-view-controls__select:focus {
+  outline: none;
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+@media (max-width: 640px) {
+  .asset-view-controls {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .asset-view-controls__group {
+    width: 100%;
+  }
+
+  .asset-view-controls__buttons {
+    width: 100%;
+  }
+
+  .asset-view-controls__btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .asset-view-controls__select {
+    width: 100%;
+  }
+}

@@ -9,14 +9,9 @@ import { CurrenciesModule } from '../currencies/currencies.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([CryptoWallet]),
-    CurrenciesModule,
-    SubscriptionsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([CryptoWallet]), CurrenciesModule, SubscriptionsModule],
   controllers: [CryptoController],
   providers: [CryptoService, CryptoUpdateService, CryptoPricesService],
   exports: [CryptoService, CryptoUpdateService, CryptoPricesService],
 })
 export class CryptoModule {}
-

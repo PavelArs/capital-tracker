@@ -17,17 +17,7 @@ export const formatAmount = (amount: number, currencyCode?: string): string => {
   // For crypto currencies or very small amounts, show more decimal places
   const isCrypto =
     currencyCode &&
-    [
-      "BTC",
-      "ETH",
-      "USDT",
-      "USDC",
-      "BNB",
-      "SOL",
-      "ADA",
-      "DOT",
-      "MATIC",
-    ].includes(currencyCode);
+    ['BTC', 'ETH', 'USDT', 'USDC', 'BNB', 'SOL', 'ADA', 'DOT', 'MATIC'].includes(currencyCode);
 
   if (isCrypto || absAmount < 1) {
     // For very small amounts or crypto, use dynamic minimum decimals to avoid showing 0.00
@@ -36,7 +26,7 @@ export const formatAmount = (amount: number, currencyCode?: string): string => {
     if (absAmount > 0 && absAmount < 0.01) {
       // For very small numbers, find first non-zero digit
       const str = absAmount.toString();
-      const decimalPart = str.split(".")[1] || "";
+      const decimalPart = str.split('.')[1] || '';
       const firstNonZero = decimalPart.search(/[1-9]/);
       if (firstNonZero >= 0) {
         minDecimals = Math.min(firstNonZero + 2, 8); // Show at least 2 digits after first significant digit

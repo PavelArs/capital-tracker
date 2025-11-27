@@ -59,4 +59,3 @@ export class CryptoWallet {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

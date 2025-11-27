@@ -1,9 +1,7 @@
-import { MigrationInterface, QueryRunner } from "typeorm";
+import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddEmailVerificationAndResetFields1763900000000
-  implements MigrationInterface
-{
-  name = "AddEmailVerificationAndResetFields1763900000000";
+export class AddEmailVerificationAndResetFields1763900000000 implements MigrationInterface {
+  name = 'AddEmailVerificationAndResetFields1763900000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     // Add columns one by one with IF NOT EXISTS check

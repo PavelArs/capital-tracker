@@ -13,9 +13,10 @@ export default function ErrorNotification() {
       <div className="error-notification-content">
         <span className="error-icon">⚠️</span>
         <span className="error-message">{error}</span>
-        <button className="error-close" onClick={clearError}>×</button>
+        <button className="error-close" onClick={clearError}>
+          ×
+        </button>
       </div>
     </div>
   );
 }
-

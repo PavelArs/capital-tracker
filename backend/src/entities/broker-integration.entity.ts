@@ -70,4 +70,3 @@ export class BrokerIntegration {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

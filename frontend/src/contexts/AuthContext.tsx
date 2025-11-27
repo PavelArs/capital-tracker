@@ -1,23 +1,9 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import axios from "axios";
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { api, authApi } from '@api';
+import type { User, InvitationCode, SubscriptionType } from '@shared/types';
 
-export type SubscriptionType = "free" | "pro" | "enterprise";
-
-interface User {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  subscriptionType?: SubscriptionType;
-}
-
-interface InvitationCode {
-  id: string;
-  code: string;
-  isUsed: boolean;
-  usedAt: Date | null;
-  createdAt: Date;
-}
+// Re-export types for backward compatibility
+export type { SubscriptionType };
 
 interface AuthContextType {
   user: User | null;
@@ -39,29 +25,36 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const TOKEN_KEY = 'token';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
+  const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState<boolean>(true);
+
+  // Update axios default headers when token changes
+  useEffect(() => {
+    if (token) {
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete api.defaults.headers.common['Authorization'];
+    }
+  }, [token]);
 
   // Restore user from token on mount
   useEffect(() => {
     const restoreUser = async () => {
-      const savedToken = localStorage.getItem("token");
+      const savedToken = localStorage.getItem(TOKEN_KEY);
       if (savedToken) {
         try {
-          axios.defaults.headers.common[
-            "Authorization"
-          ] = `Bearer ${savedToken}`;
-          const response = await axios.get("/auth/me");
-          setUser(response.data);
+          api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+          const userData = await authApi.getCurrentUser();
+          setUser(userData);
           setToken(savedToken);
-        } catch (error) {
+        } catch {
           // Token is invalid, remove it
-          localStorage.removeItem("token");
-          delete axios.defaults.headers.common["Authorization"];
+          localStorage.removeItem(TOKEN_KEY);
+          delete api.defaults.headers.common['Authorization'];
           setToken(null);
           setUser(null);
         }
@@ -72,104 +65,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     restoreUser();
   }, []);
 
-  useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    } else {
-      delete axios.defaults.headers.common["Authorization"];
-    }
-  }, [token]);
-
-  const login = async (email: string, password: string) => {
-    const response = await axios.post("/auth/login", { email, password });
-    const { access_token, user: userData } = response.data;
+  const login = useCallback(async (email: string, password: string) => {
+    const response = await authApi.login({ email, password });
+    const { access_token, user: userData } = response;
     setToken(access_token);
     setUser(userData);
-    localStorage.setItem("token", access_token);
-    axios.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-  };
+    localStorage.setItem(TOKEN_KEY, access_token);
+    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+  }, []);
 
-  const register = async (
-    email: string,
-    password: string,
-    firstName?: string,
-    lastName?: string,
-    invitationCode?: string
-  ) => {
-    const response = await axios.post("/auth/register", {
-      email,
-      password,
-      firstName,
-      lastName,
-      invitationCode,
-    });
+  const register = useCallback(
+    async (
+      email: string,
+      password: string,
+      firstName?: string,
+      lastName?: string,
+      invitationCode?: string
+    ) => {
+      const response = await authApi.register({
+        email,
+        password,
+        firstName,
+        lastName,
+        invitationCode: invitationCode || '',
+      });
 
-    // In development mode with skip email verification, access_token is returned
-    // In production mode, user must verify email before login
-    if (response.data.access_token) {
-      const { access_token, ...userData } = response.data;
-      setToken(access_token);
-      setUser(userData);
-      localStorage.setItem("token", access_token);
-      axios.defaults.headers.common["Authorization"] = `Bearer ${access_token}`;
-    }
-    // If no access_token, user must verify email before they can login
-    // Response contains message about checking email
-  };
+      // In development mode with skip email verification, access_token is returned
+      // In production mode, user must verify email before login
+      if (response.access_token) {
+        const { access_token } = response;
+        setToken(access_token);
+        // Fetch the full user profile to get all fields including subscriptionType
+        api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+        const fullUser = await authApi.getCurrentUser();
+        setUser(fullUser);
+        localStorage.setItem(TOKEN_KEY, access_token);
+      }
+      // If no access_token, user must verify email before they can login
+      // Response contains message about checking email
+    },
+    []
+  );
 
-  const logout = () => {
+  const logout = useCallback(() => {
     setToken(null);
     setUser(null);
-    localStorage.removeItem("token");
-    delete axios.defaults.headers.common["Authorization"];
-  };
+    localStorage.removeItem(TOKEN_KEY);
+    delete api.defaults.headers.common['Authorization'];
+  }, []);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     try {
-      const response = await axios.get("/auth/me");
-      setUser(response.data);
+      const userData = await authApi.getCurrentUser();
+      setUser(userData);
     } catch (error) {
-      console.error("Failed to refresh user:", error);
+      console.error('Failed to refresh user:', error);
     }
+  }, []);
+
+  const generateInvitationCode = useCallback(async (): Promise<InvitationCode> => {
+    return authApi.generateInvitationCode();
+  }, []);
+
+  const getMyInvitationCode = useCallback(async (): Promise<InvitationCode | null> => {
+    return authApi.getMyInvitationCode();
+  }, []);
+
+  const value: AuthContextType = {
+    user,
+    token,
+    loading,
+    login,
+    register,
+    logout,
+    refreshUser,
+    generateInvitationCode,
+    getMyInvitationCode,
   };
 
-  const generateInvitationCode = async (): Promise<InvitationCode> => {
-    const response = await axios.post("/auth/invitation-code/generate");
-    return response.data;
-  };
-
-  const getMyInvitationCode = async (): Promise<InvitationCode | null> => {
-    try {
-      const response = await axios.get("/auth/invitation-code");
-      return response.data;
-    } catch (error) {
-      return null;
-    }
-  };
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        loading,
-        login,
-        register,
-        logout,
-        refreshUser,
-        generateInvitationCode,
-        getMyInvitationCode,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
+    throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
 }

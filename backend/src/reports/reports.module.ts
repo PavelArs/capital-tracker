@@ -19,4 +19,3 @@ import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
   exports: [ReportsService],
 })
 export class ReportsModule {}
-
