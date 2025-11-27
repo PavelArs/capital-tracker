@@ -19,6 +19,23 @@ services:
     networks:
       - capital-tracker-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: capital_tracker_redis
+    restart: ${RESTART_POLICY:-no}
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT_MAPPING:-6379:6379}"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - capital-tracker-network
+
   backend:
     image: ${BACKEND_IMAGE:-capital-tracker-backend:local}
     build:
@@ -40,10 +57,14 @@ services:
       SMTP_PORT: ${SMTP_PORT:-465}
       SMTP_USER: ${SMTP_USER:-your-production-email@yandex.ru}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-your-production-app-password}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
     ports:
       - "${BACKEND_PORT_MAPPING:-3000:3000}"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - capital-tracker-network
@@ -94,6 +115,8 @@ services:
 
 volumes:
   postgres_data:
+    driver: local
+  redis_data:
     driver: local
 
 networks:

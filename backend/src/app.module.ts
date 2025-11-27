@@ -20,6 +20,7 @@ import { AiRecommendationsModule } from './ai-recommendations/ai-recommendations
 import { CapitalsModule } from './capitals/capitals.module';
 import { ReportsModule } from './reports/reports.module';
 import { HealthModule } from './health/health.module';
+import { RedisCacheModule } from './cache/cache.module';
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { validateEnvironment } from './config/env.validation';
 import { GlobalExceptionFilter } from './shared/filters';
@@ -69,6 +70,7 @@ import { GlobalExceptionFilter } from './shared/filters';
       useClass: TypeOrmConfigService,
     }),
     ScheduleModule.forRoot(),
+    RedisCacheModule,
     AuthModule,
     AssetsModule,
     LiabilitiesModule,
