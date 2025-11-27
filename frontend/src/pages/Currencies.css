@@ -82,7 +82,7 @@
   color: #555;
 }
 
-.form-group input[type="text"],
+.form-group input[type='text'],
 .form-group select {
   width: 100%;
   padding: 0.75rem;
@@ -91,7 +91,7 @@
   font-size: 1rem;
 }
 
-.form-group input[type="checkbox"] {
+.form-group input[type='checkbox'] {
   margin-right: 0.5rem;
 }
 

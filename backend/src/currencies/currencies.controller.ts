@@ -29,11 +29,7 @@ export class CurrenciesController {
   }
 
   @Get('convert')
-  convert(
-    @Query('amount') amount: string,
-    @Query('from') from: string,
-    @Query('to') to: string,
-  ) {
+  convert(@Query('amount') amount: string, @Query('from') from: string, @Query('to') to: string) {
     return this.currenciesService.convert(parseFloat(amount), from, to);
   }
 
@@ -49,30 +45,21 @@ export class CurrenciesController {
 
   @Post('hide')
   @HttpCode(HttpStatus.OK)
-  async hideCurrency(
-    @CurrentUser() user: JwtPayload,
-    @Body() toggleDto: ToggleCurrencyDto,
-  ) {
+  async hideCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
     await this.currenciesService.hideCurrency(user.userId, toggleDto.currencyId);
     return { message: 'Currency hidden successfully' };
   }
 
   @Post('show')
   @HttpCode(HttpStatus.OK)
-  async showCurrency(
-    @CurrentUser() user: JwtPayload,
-    @Body() toggleDto: ToggleCurrencyDto,
-  ) {
+  async showCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
     await this.currenciesService.showCurrency(user.userId, toggleDto.currencyId);
     return { message: 'Currency shown successfully' };
   }
 
   @Post('toggle')
   @HttpCode(HttpStatus.OK)
-  async toggleCurrency(
-    @CurrentUser() user: JwtPayload,
-    @Body() toggleDto: ToggleCurrencyDto,
-  ) {
+  async toggleCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
     if (toggleDto.isHidden) {
       await this.currenciesService.hideCurrency(user.userId, toggleDto.currencyId);
     } else {

@@ -14,7 +14,9 @@
   box-shadow: 0 4px 6px var(--shadow);
   width: 100%;
   max-width: 400px;
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .auth-card h1 {
@@ -42,7 +44,9 @@
   font-size: 1rem;
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
 }
 
 .form-group input:focus {
@@ -61,7 +65,9 @@
   font-size: 1rem;
   cursor: pointer;
   margin-top: 1rem;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition:
+    background-color 0.2s,
+    opacity 0.2s;
 }
 
 .auth-card button:hover {
@@ -146,4 +152,3 @@
     font-size: 16px; /* Prevents zoom on iOS */
   }
 }
-

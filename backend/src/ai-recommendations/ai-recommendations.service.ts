@@ -55,7 +55,7 @@ export class AiRecommendationsService {
     await this.aiRecommendationRepository.remove(recommendation);
   }
 
-  async generateRecommendations(userId: string): Promise<AiRecommendation[]> {
+  async generateRecommendations(_userId: string): Promise<AiRecommendation[]> {
     // TODO: Implement actual AI recommendation generation
     // This would integrate with an AI service to analyze user's capital and generate recommendations
     return [];

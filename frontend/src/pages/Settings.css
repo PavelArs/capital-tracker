@@ -32,7 +32,10 @@
   border-radius: 4px;
   cursor: pointer;
   text-align: left;
-  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    border-color 0.2s,
+    color 0.2s;
   font-size: 1rem;
 }
 
@@ -53,7 +56,9 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .settings-section h2 {

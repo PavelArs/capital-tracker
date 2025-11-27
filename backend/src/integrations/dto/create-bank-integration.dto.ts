@@ -16,4 +16,3 @@ export class CreateBankIntegrationDto {
   @IsObject()
   config?: any;
 }
-

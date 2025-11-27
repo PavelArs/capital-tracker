@@ -15,7 +15,10 @@
   align-items: center;
   box-shadow: 0 2px 4px var(--shadow);
   border-bottom: 1px solid var(--border-color);
-  transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.3s ease;
   position: relative;
   flex-wrap: wrap;
   gap: 1rem;
@@ -57,7 +60,9 @@
 .nav-links a {
   color: var(--text-color);
   text-decoration: none;
-  transition: opacity 0.2s, color 0.2s;
+  transition:
+    opacity 0.2s,
+    color 0.2s;
   white-space: nowrap;
   padding: 0.25rem 0;
 }
@@ -96,7 +101,9 @@
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
+  transition:
+    background-color 0.2s,
+    opacity 0.2s;
   white-space: nowrap;
   font-size: 0.9rem;
 }
@@ -113,7 +120,9 @@
   margin: 0 auto;
   background-color: var(--bg-secondary);
   color: var(--text-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
   box-sizing: border-box;
 }
 
@@ -178,7 +187,10 @@
     max-height: 0;
     overflow: hidden;
     opacity: 0;
-    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
+    transition:
+      max-height 0.3s ease,
+      padding 0.3s ease,
+      opacity 0.3s ease;
     z-index: 1000;
     pointer-events: none;
   }
@@ -215,7 +227,11 @@
     max-height: 0;
     overflow: hidden;
     opacity: 0;
-    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease, top 0.3s ease;
+    transition:
+      max-height 0.3s ease,
+      padding 0.3s ease,
+      opacity 0.3s ease,
+      top 0.3s ease;
     z-index: 999;
     margin-top: 0;
     pointer-events: none;
@@ -275,4 +291,3 @@
     padding: 0.75rem;
   }
 }
-

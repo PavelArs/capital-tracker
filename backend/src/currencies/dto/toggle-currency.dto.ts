@@ -9,4 +9,3 @@ export class ToggleCurrencyDto {
   @IsNotEmpty()
   isHidden: boolean;
 }
-

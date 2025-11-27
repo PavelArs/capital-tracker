@@ -26,10 +26,7 @@ export class DefiController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
-  async create(
-    @CurrentUser() user: JwtPayload,
-    @Body() createDto: CreateDeFiPositionDto,
-  ) {
+  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateDeFiPositionDto) {
     return this.defiService.create(user.userId, createDto);
   }
 

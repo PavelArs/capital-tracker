@@ -46,13 +46,16 @@ export class CryptoUpdateService {
     try {
       // Get ETH balance
       const ethBalance = await this.getEthereumBalance(wallet.address);
-      
+
       // Get ERC-20 tokens
       let tokens: any[] = [];
       try {
         tokens = await this.getEthereumTokens(wallet.address);
       } catch (tokenError) {
-        console.error('Error fetching tokens (continuing with ETH balance only):', tokenError.message);
+        console.error(
+          'Error fetching tokens (continuing with ETH balance only):',
+          tokenError.message,
+        );
         // Continue even if tokens fail - at least we have ETH balance
       }
 
@@ -60,7 +63,7 @@ export class CryptoUpdateService {
       wallet.tokens = tokens;
       wallet.lastUpdated = new Date();
       await this.cryptoWalletRepository.save(wallet);
-      
+
       console.log(`Updated wallet ${wallet.address}: ${ethBalance} ETH, ${tokens.length} tokens`);
     } catch (error) {
       console.error(`Error updating Ethereum wallet ${wallet.address}:`, error.message);
@@ -71,11 +74,10 @@ export class CryptoUpdateService {
   private async updateBitcoinWallet(wallet: CryptoWallet) {
     try {
       // Using Blockstream API (public, no key required)
-      const response = await axios.get(
-        `https://blockstream.info/api/address/${wallet.address}`,
-      );
-      
-      const balance = response.data.chain_stats.funded_txo_sum - response.data.chain_stats.spent_txo_sum;
+      const response = await axios.get(`https://blockstream.info/api/address/${wallet.address}`);
+
+      const balance =
+        response.data.chain_stats.funded_txo_sum - response.data.chain_stats.spent_txo_sum;
       wallet.balance = balance / 100000000; // Convert satoshi to BTC
       wallet.lastUpdated = new Date();
       await this.cryptoWalletRepository.save(wallet);
@@ -87,7 +89,7 @@ export class CryptoUpdateService {
   private async getEthereumBalance(address: string): Promise<number> {
     // Normalize address - ensure it has 0x prefix
     const normalizedAddress = address.startsWith('0x') ? address : `0x${address}`;
-    
+
     // Try multiple endpoints for reliability
     const endpoints = [
       // Public RPC endpoints
@@ -138,21 +140,23 @@ export class CryptoUpdateService {
       console.error('Error fetching ETH balance from Etherscan:', e.message);
     }
 
-    console.error(`Failed to fetch ETH balance for address ${normalizedAddress} from all endpoints`);
+    console.error(
+      `Failed to fetch ETH balance for address ${normalizedAddress} from all endpoints`,
+    );
     return 0; // Return 0 instead of throwing to allow wallet creation even if balance fetch fails
   }
 
   private async getEthereumTokens(address: string): Promise<any[]> {
     // Normalize address - ensure it has 0x prefix
     const normalizedAddress = address.startsWith('0x') ? address : `0x${address}`;
-    
+
     try {
       // Get list of active currencies from settings with contract addresses
       const currencies = await this.currenciesService.findAll();
-      
+
       // Filter currencies that have contract addresses (ERC-20 tokens)
       const tokenCurrencies = currencies.filter(
-        c => c.contractAddress && c.contractAddress.startsWith('0x')
+        (c) => c.contractAddress && c.contractAddress.startsWith('0x'),
       );
 
       if (tokenCurrencies.length === 0) {
@@ -164,11 +168,14 @@ export class CryptoUpdateService {
         try {
           const balance = await this.getERC20TokenBalance(
             normalizedAddress,
-            currency.contractAddress
+            currency.contractAddress,
           );
           return { currency, balance };
         } catch (error) {
-          console.error(`Error fetching balance for token ${currency.code} (${currency.contractAddress}):`, error.message);
+          console.error(
+            `Error fetching balance for token ${currency.code} (${currency.contractAddress}):`,
+            error.message,
+          );
           return { currency, balance: 0 };
         }
       });
@@ -181,9 +188,9 @@ export class CryptoUpdateService {
         if (balance > 0) {
           try {
             // Get token decimals (default to 18 if not available)
-            const decimals = await this.getTokenDecimals(currency.contractAddress) || 18;
+            const decimals = (await this.getTokenDecimals(currency.contractAddress)) || 18;
             const formattedBalance = balance / Math.pow(10, decimals);
-            
+
             tokens.push({
               symbol: currency.code,
               name: currency.name,
@@ -205,17 +212,20 @@ export class CryptoUpdateService {
     }
   }
 
-  private async getERC20TokenBalance(walletAddress: string, contractAddress: string): Promise<number> {
+  private async getERC20TokenBalance(
+    walletAddress: string,
+    contractAddress: string,
+  ): Promise<number> {
     // ERC-20 balanceOf function signature: balanceOf(address) -> uint256
     // Function selector: 0x70a08231
     const functionSelector = '0x70a08231';
-    
+
     // Pad wallet address to 32 bytes (64 hex chars)
     const paddedAddress = walletAddress.toLowerCase().slice(2).padStart(64, '0');
     const data = functionSelector + paddedAddress;
-    
-    const normalizedContractAddress = contractAddress.startsWith('0x') 
-      ? contractAddress.toLowerCase() 
+
+    const normalizedContractAddress = contractAddress.startsWith('0x')
+      ? contractAddress.toLowerCase()
       : `0x${contractAddress.toLowerCase()}`;
 
     // Try multiple endpoints for reliability
@@ -268,9 +278,9 @@ export class CryptoUpdateService {
     // ERC-20 decimals() function signature: decimals() -> uint8
     // Function selector: 0x313ce567
     const functionSelector = '0x313ce567';
-    
-    const normalizedContractAddress = contractAddress.startsWith('0x') 
-      ? contractAddress.toLowerCase() 
+
+    const normalizedContractAddress = contractAddress.startsWith('0x')
+      ? contractAddress.toLowerCase()
       : `0x${contractAddress.toLowerCase()}`;
 
     const endpoints = [
@@ -313,4 +323,3 @@ export class CryptoUpdateService {
     return null; // Return null if decimals cannot be fetched
   }
 }
-

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import axios from 'axios';
 
 export interface CryptoPrices {
@@ -36,12 +36,12 @@ export class CryptoPricesService {
   }
 
   private async sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private async makeApiRequestWithRetry<T>(
     requestFn: () => Promise<T>,
-    retries: number = this.MAX_RETRIES
+    retries: number = this.MAX_RETRIES,
   ): Promise<T> {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -51,16 +51,18 @@ export class CryptoPricesService {
         return result;
       } catch (error: any) {
         const isRateLimit = error.response?.status === 429;
-        
+
         if (isRateLimit) {
           this.lastRateLimitError = new Date();
           const retryAfter = error.response?.headers['retry-after'];
-          const delay = retryAfter 
-            ? parseInt(retryAfter) * 1000 
+          const delay = retryAfter
+            ? parseInt(retryAfter) * 1000
             : this.RETRY_DELAY_MS * Math.pow(2, attempt); // Exponential backoff
-          
+
           if (attempt < retries) {
-            console.warn(`Rate limit hit (429). Retrying after ${delay}ms (attempt ${attempt + 1}/${retries + 1})`);
+            console.warn(
+              `Rate limit hit (429). Retrying after ${delay}ms (attempt ${attempt + 1}/${retries + 1})`,
+            );
             await this.sleep(delay);
             continue;
           } else {
@@ -68,7 +70,7 @@ export class CryptoPricesService {
             throw error;
           }
         }
-        
+
         // For non-rate-limit errors, throw immediately
         throw error;
       }
@@ -84,8 +86,7 @@ export class CryptoPricesService {
     }
 
     // If we recently hit rate limit, skip update and use cache
-    if (this.lastRateLimitError && 
-        Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
+    if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
       console.log('Skipping price update due to recent rate limit error. Using cache.');
       return Promise.resolve();
     }
@@ -95,16 +96,13 @@ export class CryptoPricesService {
       try {
         // Using CoinGecko API (free tier, no key required)
         const response = await this.makeApiRequestWithRetry(() =>
-          axios.get(
-            'https://api.coingecko.com/api/v3/simple/price',
-            {
-              params: {
-                ids: 'bitcoin,ethereum',
-                vs_currencies: 'usd',
-              },
-              timeout: 10000,
+          axios.get('https://api.coingecko.com/api/v3/simple/price', {
+            params: {
+              ids: 'bitcoin,ethereum',
+              vs_currencies: 'usd',
             },
-          )
+            timeout: 10000,
+          }),
         );
 
         if (response.data) {
@@ -145,7 +143,7 @@ export class CryptoPricesService {
   async getPrice(symbol: string): Promise<number> {
     const upperSymbol = symbol.toUpperCase();
     const cached = this.prices[upperSymbol];
-    
+
     // Return cached price if valid (even if slightly expired to avoid rate limits)
     if (cached) {
       const age = Date.now() - cached.lastUpdated.getTime();
@@ -189,8 +187,7 @@ export class CryptoPricesService {
     }
 
     // If we recently hit rate limit, return cached value even if expired
-    if (this.lastRateLimitError && 
-        Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
+    if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
       console.log('Using cached token price due to recent rate limit error');
       return cached?.usd || 0;
     }
@@ -198,16 +195,13 @@ export class CryptoPricesService {
     // If cache is invalid or missing, fetch from API
     try {
       const response = await this.makeApiRequestWithRetry(() =>
-        axios.get(
-          `https://api.coingecko.com/api/v3/simple/token_price/ethereum`,
-          {
-            params: {
-              contract_addresses: normalizedAddress,
-              vs_currencies: 'usd',
-            },
-            timeout: 10000,
+        axios.get(`https://api.coingecko.com/api/v3/simple/token_price/ethereum`, {
+          params: {
+            contract_addresses: normalizedAddress,
+            vs_currencies: 'usd',
           },
-        )
+          timeout: 10000,
+        }),
       );
 
       const price = response.data[normalizedAddress]?.usd || 0;
@@ -233,8 +227,8 @@ export class CryptoPricesService {
     }
 
     // Normalize addresses
-    const normalizedAddresses = contractAddresses.map(addr => addr.toLowerCase());
-    
+    const normalizedAddresses = contractAddresses.map((addr) => addr.toLowerCase());
+
     // Check which addresses need to be fetched
     const addressesToFetch: string[] = [];
     const result: { [address: string]: number } = {};
@@ -271,8 +265,7 @@ export class CryptoPricesService {
     }
 
     // If we recently hit rate limit, return cached values
-    if (this.lastRateLimitError && 
-        Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
+    if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
       console.log('Using cached token prices due to recent rate limit error');
       return result;
     }
@@ -282,25 +275,22 @@ export class CryptoPricesService {
       // Fetch missing prices in bulk
       const addressesToFetchStr = addressesToFetch.join(',');
       const response = await this.makeApiRequestWithRetry(() =>
-        axios.get(
-          `https://api.coingecko.com/api/v3/simple/token_price/ethereum`,
-          {
-            params: {
-              contract_addresses: addressesToFetchStr,
-              vs_currencies: 'usd',
-            },
-            timeout: 10000,
+        axios.get(`https://api.coingecko.com/api/v3/simple/token_price/ethereum`, {
+          params: {
+            contract_addresses: addressesToFetchStr,
+            vs_currencies: 'usd',
           },
-        )
+          timeout: 10000,
+        }),
       );
 
       const now = new Date();
-      
+
       // Update cache and result with fetched prices
       for (const address of addressesToFetch) {
         const price = response.data[address]?.usd || 0;
         result[address] = price;
-        
+
         // Update cache
         this.tokenPrices.set(address, {
           usd: price,
@@ -361,4 +351,3 @@ export class CryptoPricesService {
     };
   }
 }
-

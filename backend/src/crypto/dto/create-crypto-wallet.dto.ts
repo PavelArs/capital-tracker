@@ -8,4 +8,3 @@ export class CreateCryptoWalletDto {
   @IsString()
   address: string;
 }
-

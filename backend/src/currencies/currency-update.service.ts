@@ -1,7 +1,7 @@
-import { Injectable, Inject, forwardRef } from "@nestjs/common";
-import { Cron, CronExpression } from "@nestjs/schedule";
-import axios from "axios";
-import { CryptoPricesService } from "../crypto/crypto-prices.service";
+import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import axios from 'axios';
+import { CryptoPricesService } from '../crypto/crypto-prices.service';
 
 @Injectable()
 export class CurrencyUpdateService {
@@ -23,13 +23,11 @@ export class CurrencyUpdateService {
   async updateExchangeRates() {
     try {
       // Using ExchangeRate-API (free tier, no key required for basic usage)
-      const response = await axios.get(
-        "https://api.exchangerate-api.com/v4/latest/USD"
-      );
+      const response = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
       this.exchangeRates = response.data.rates;
       this.lastUpdate = new Date();
     } catch (error) {
-      console.error("Error updating exchange rates:", error.message);
+      console.error('Error updating exchange rates:', error.message);
     }
   }
 
@@ -40,7 +38,7 @@ export class CurrencyUpdateService {
       // This uses cached prices and reduces API requests
       const btcPrice = await this.cryptoPricesService.getPrice('BTC');
       const ethPrice = await this.cryptoPricesService.getPrice('ETH');
-      
+
       // USDT is typically 1 USD, but we can try to get it from token prices if needed
       // For now, default to 1
       const usdtPrice = 1;
@@ -51,24 +49,19 @@ export class CurrencyUpdateService {
         USDT: usdtPrice,
       };
       this.lastCryptoUpdate = new Date();
-      console.log("Updated crypto rates from cache:", this.cryptoRates);
+      console.log('Updated crypto rates from cache:', this.cryptoRates);
     } catch (error) {
-      console.error("Error updating crypto rates:", error.message);
+      console.error('Error updating crypto rates:', error.message);
       // Keep existing rates on error
     }
   }
 
-  async getExchangeRates(
-    baseCurrency: string = "USD"
-  ): Promise<Record<string, number>> {
+  async getExchangeRates(baseCurrency: string = 'USD'): Promise<Record<string, number>> {
     // Update if rates are old or empty
     if (!this.lastUpdate || Date.now() - this.lastUpdate.getTime() > 3600000) {
       await this.updateExchangeRates();
     }
-    if (
-      !this.lastCryptoUpdate ||
-      Date.now() - this.lastCryptoUpdate.getTime() > 600000
-    ) {
+    if (!this.lastCryptoUpdate || Date.now() - this.lastCryptoUpdate.getTime() > 600000) {
       await this.updateCryptoRates();
     }
 
@@ -89,7 +82,7 @@ export class CurrencyUpdateService {
       }
     }
 
-    if (baseCurrency === "USD") {
+    if (baseCurrency === 'USD') {
       return normalizedRates;
     }
 
