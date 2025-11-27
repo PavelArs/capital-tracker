@@ -44,25 +44,17 @@ export class MetricsService {
     );
 
     // Calculate Stock assets (балансовые активы - идут в net worth)
-    const totalStockAssets = await this.calculateTotal(stockAssets, targetCurrency, 'asset');
+    const totalStockAssets = await this.calculateTotal(stockAssets, targetCurrency);
 
     // Calculate Flow assets (потоковые доходы - идут в cash flow)
-    const totalFlowIncome = await this.calculateTotal(flowAssets, targetCurrency, 'asset');
+    const totalFlowIncome = await this.calculateTotal(flowAssets, targetCurrency);
 
     // Calculate Active and Passive income separately
-    const totalActiveIncome = await this.calculateTotal(
-      activeIncomeAssets,
-      targetCurrency,
-      'asset',
-    );
-    const totalPassiveIncome = await this.calculateTotal(
-      passiveIncomeAssets,
-      targetCurrency,
-      'asset',
-    );
+    const totalActiveIncome = await this.calculateTotal(activeIncomeAssets, targetCurrency);
+    const totalPassiveIncome = await this.calculateTotal(passiveIncomeAssets, targetCurrency);
 
     // Calculate liabilities
-    const totalLiabilities = await this.calculateTotal(liabilities, targetCurrency, 'liability');
+    const totalLiabilities = await this.calculateTotal(liabilities, targetCurrency);
 
     // Add crypto to stock assets (crypto is always stock)
     const cryptoValue = await this.calculateCryptoValue(cryptoWallets, targetCurrency);
@@ -152,8 +144,8 @@ export class MetricsService {
         .andWhere('liability.date <= :date', { date })
         .getMany();
 
-      const totalAssets = await this.calculateTotal(assets, targetCurrency, 'asset');
-      const totalLiabilities = await this.calculateTotal(liabilities, targetCurrency, 'liability');
+      const totalAssets = await this.calculateTotal(assets, targetCurrency);
+      const totalLiabilities = await this.calculateTotal(liabilities, targetCurrency);
       const netWorth = totalAssets - totalLiabilities;
 
       history.push({
