@@ -11,18 +11,22 @@ on:
         required: false
         default: false
         type: boolean
-      force_deploy:
-        description: "Force deploy without waiting for CI"
+      version_bump:
+        description: "Version bump type (auto, major, minor, patch)"
         required: false
-        default: false
-        type: boolean
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - major
+          - minor
+          - patch
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "22"
   YC_REGISTRY: registry.yandexcloud.net
   BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
   FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
@@ -32,25 +36,110 @@ env:
 
 jobs:
   # ============================================
-  # Pre-deployment Checks
+  # Version Calculation
   # ============================================
-  pre-check:
-    name: Pre-deployment Checks
+  version:
+    name: Calculate Version
     runs-on: ubuntu-latest
     outputs:
-      should_deploy: ${{ steps.check.outputs.should_deploy }}
+      version: ${{ steps.version.outputs.version }}
+      previous_version: ${{ steps.version.outputs.previous_version }}
+      commit_short: ${{ steps.version.outputs.commit_short }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+      commit_count: ${{ steps.changelog.outputs.commit_count }}
 
     steps:
-      - name: Check deployment conditions
-        id: check
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate semantic version
+        id: version
         run: |
-          if [[ "${{ github.event.inputs.force_deploy }}" == "true" ]]; then
-            echo "⚡ Force deploy enabled, skipping CI check"
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
-          else
-            echo "✅ Proceeding with deployment"
-            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          COMMIT_SHORT=${GITHUB_SHA:0:7}
+          echo "commit_short=$COMMIT_SHORT" >> $GITHUB_OUTPUT
+
+          # Get the latest version tag
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          
+          if [ -z "$LATEST_TAG" ]; then
+            LATEST_TAG="v0.0.0"
+            echo "No previous version found, starting from v0.0.0"
           fi
+          
+          echo "previous_version=$LATEST_TAG" >> $GITHUB_OUTPUT
+          echo "📦 Previous version: $LATEST_TAG"
+
+          # Parse version components
+          VERSION=${LATEST_TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3)
+
+          # Determine bump type
+          BUMP_TYPE="${{ github.event.inputs.version_bump || 'auto' }}"
+          
+          if [ "$BUMP_TYPE" == "auto" ]; then
+            # Auto-detect from commit messages since last tag
+            if [ "$LATEST_TAG" != "v0.0.0" ]; then
+              COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || echo "")
+            else
+              COMMITS=$(git log --pretty=format:"%s" -20 2>/dev/null || echo "")
+            fi
+            
+            if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?!:|BREAKING CHANGE"; then
+              BUMP_TYPE="major"
+            elif echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?:"; then
+              BUMP_TYPE="minor"
+            else
+              BUMP_TYPE="patch"
+            fi
+          fi
+
+          # Calculate new version
+          case $BUMP_TYPE in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "🚀 New version: $NEW_VERSION (bump: $BUMP_TYPE)"
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          LATEST_TAG="${{ steps.version.outputs.previous_version }}"
+          
+          if [ "$LATEST_TAG" != "v0.0.0" ] && git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
+            COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"• %s \`%h\`" 2>/dev/null | head -20)
+            COMMIT_COUNT=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "0")
+          else
+            COMMITS=$(git log --pretty=format:"• %s \`%h\`" -20 2>/dev/null)
+            COMMIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo "0")
+          fi
+
+          # Escape for GitHub output
+          CHANGELOG=$(echo "$COMMITS" | head -15)
+          
+          {
+            echo "changelog<<CHANGELOG_EOF"
+            echo "$CHANGELOG"
+            echo "CHANGELOG_EOF"
+          } >> $GITHUB_OUTPUT
+          
+          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
 
   # ============================================
   # Build Docker Images
@@ -58,9 +147,8 @@ jobs:
   build:
     name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: pre-check
-    if: needs.pre-check.outputs.should_deploy == 'true'
-
+    needs: version
+    
     strategy:
       matrix:
         include:
@@ -68,6 +156,10 @@ jobs:
             context: ./backend
           - service: frontend
             context: ./frontend
+
+    outputs:
+      backend_image: ${{ steps.output.outputs.backend_image }}
+      frontend_image: ${{ steps.output.outputs.frontend_image }}
 
     steps:
       - name: Checkout code
@@ -83,25 +175,25 @@ jobs:
           username: oauth
           password: ${{ secrets.YC_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest
-
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.context }}
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: |
+            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.version }}
+            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.commit_short }}
+            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:latest
           build-args: ${{ matrix.service == 'frontend' && format('VITE_API_URL={0}', secrets.VITE_API_URL) || '' }}
           cache-from: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache
           cache-to: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache,mode=max
           provenance: false
+
+      - name: Set output
+        id: output
+        run: |
+          IMAGE="${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.version }}"
+          echo "${{ matrix.service }}_image=$IMAGE" >> $GITHUB_OUTPUT
 
   # ============================================
   # Deploy to Production
@@ -109,7 +201,7 @@ jobs:
   deploy:
     name: Deploy to VM
     runs-on: ubuntu-latest
-    needs: build
+    needs: [version, build]
     permissions:
       contents: write
 
@@ -117,6 +209,7 @@ jobs:
       backup_filename: ${{ steps.backup-db.outputs.backup-filename }}
       previous_backend: ${{ steps.get-versions.outputs.current-backend }}
       previous_frontend: ${{ steps.get-versions.outputs.current-frontend }}
+      deployed_version: ${{ needs.version.outputs.version }}
 
     steps:
       - name: Checkout code
@@ -229,8 +322,8 @@ jobs:
 
       - name: Wait for services to initialize
         run: |
-          echo "⏳ Waiting 30 seconds for services to initialize..."
-          sleep 30
+          echo "⏳ Waiting 10 seconds for services to initialize..."
+          sleep 10
 
       - name: Health check
         id: health-check
@@ -260,25 +353,27 @@ jobs:
           echo "health-status=failed" >> $GITHUB_OUTPUT
           exit 1
 
-      - name: Generate release notes
-        id: release_notes
-        if: success()
-        run: |
-          chmod +x .github/scripts/generate-release-notes.sh
-          .github/scripts/generate-release-notes.sh > release_notes.txt
-          echo "success=true" >> $GITHUB_OUTPUT
-
-      - name: Tag successful deployment
+      - name: Create version tags
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
+          VERSION="${{ needs.version.outputs.version }}"
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-          git tag -a "$DEPLOY_TAG" -m "Deployment at $(date '+%Y-%m-%d %H:%M:%S UTC')"
-          git push origin "$DEPLOY_TAG"
+
+          # Create version tag
+          git tag -a "$VERSION" -m "Release $VERSION
+
+          Backend: ${{ env.BACKEND_IMAGE }}:$VERSION
+          Frontend: ${{ env.FRONTEND_IMAGE }}:$VERSION
+          Commit: ${{ needs.version.outputs.commit_short }}"
+          
+          git push origin "$VERSION"
+          
+          echo "✅ Created tag: $VERSION"
 
   # ============================================
   # Rollback on Failure
@@ -286,8 +381,11 @@ jobs:
   rollback:
     name: Rollback on Failure
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [version, deploy]
     if: failure() && needs.deploy.outputs.previous_backend != 'none'
+
+    outputs:
+      rollback_status: ${{ steps.rollback-health.outputs.status }}
 
     steps:
       - name: Setup SSH
@@ -305,7 +403,6 @@ jobs:
           YC_TOKEN: ${{ secrets.YC_TOKEN }}
           PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
           PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
-          BACKUP_FILE: ${{ needs.deploy.outputs.backup_filename }}
         run: |
           echo "🔄 INITIATING ROLLBACK..."
           echo "Backend: $PREV_BACKEND"
@@ -337,6 +434,7 @@ jobs:
           EOF
 
       - name: Verify rollback health
+        id: rollback-health
         run: |
           ATTEMPTS=0
           MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
@@ -347,6 +445,7 @@ jobs:
 
             if ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
               echo "✅ Rollback successful - service is healthy"
+              echo "status=success" >> $GITHUB_OUTPUT
               exit 0
             fi
 
@@ -356,6 +455,7 @@ jobs:
           done
 
           echo "❌ Rollback health check failed - manual intervention required!"
+          echo "status=failed" >> $GITHUB_OUTPUT
           exit 1
 
   # ============================================
@@ -398,65 +498,98 @@ jobs:
   notify:
     name: Send Notifications
     runs-on: ubuntu-latest
-    needs: [deploy, rollback]
-    if: always()
+    needs: [version, deploy, rollback]
+    if: always() && (needs.deploy.result == 'success' || needs.deploy.result == 'failure')
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Prepare notification message
-        id: message
-        env:
-          DEPLOY_STATUS: ${{ needs.deploy.result }}
-          ROLLBACK_STATUS: ${{ needs.rollback.result }}
-          BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
-        run: |
-          DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
-          COMMIT_SHORT=${GITHUB_SHA:0:7}
-
-          if [ "$DEPLOY_STATUS" == "success" ]; then
-            if [ -f release_notes.txt ]; then
-              MESSAGE=$(cat release_notes.txt)
-            else
-              MESSAGE="✅ **Capital Tracker Deployment Successful**
-
-          📅 **Date:** ${DEPLOY_DATE}
-          🔖 **Commit:** \`${COMMIT_SHORT}\`
-          💾 **Backup:** \`${BACKUP_FILENAME}\`"
-            fi
-          else
-            if [ "$ROLLBACK_STATUS" == "success" ]; then
-              STATUS_MSG="🔄 Automatic rollback completed successfully"
-            else
-              STATUS_MSG="⚠️ Manual intervention may be required"
-            fi
-
-            MESSAGE="❌ **Capital Tracker Deployment FAILED**
-
-          📅 **Date:** ${DEPLOY_DATE}
-          🔖 **Commit:** \`${COMMIT_SHORT}\`
-          🔗 **Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          💾 **Backup:** \`${BACKUP_FILENAME}\`
-
-          ${STATUS_MSG}"
-          fi
-
-          echo "message<<EOF" >> $GITHUB_OUTPUT
-          echo "$MESSAGE" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+        with:
+          fetch-depth: 0
 
       - name: Send Telegram notification
-        if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEPLOY_STATUS: ${{ needs.deploy.result }}
+          ROLLBACK_STATUS: ${{ needs.rollback.result }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PREV_VERSION: ${{ needs.version.outputs.previous_version }}
+          COMMIT_SHORT: ${{ needs.version.outputs.commit_short }}
+          COMMIT_COUNT: ${{ needs.version.outputs.commit_count }}
+          CHANGELOG: ${{ needs.version.outputs.changelog }}
+          BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
+          PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
+          PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
+          BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}
+          FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}
         run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "ℹ️ Telegram secrets not configured, skipping notification"
+            exit 0
+          fi
+
+          DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
+          REPO_URL="https://github.com/${{ github.repository }}"
+
+          if [ "$DEPLOY_STATUS" == "success" ]; then
+            # Success message
+            MESSAGE="🚀 *Capital Tracker Deployment*
+
+📅 *Date:* ${DEPLOY_DATE}
+🏷️ *Version:* \`${VERSION}\`
+🔖 *Commit:* \`${COMMIT_SHORT}\`
+📝 *Changes:* ${COMMIT_COUNT} commit(s)
+
+📦 *Docker Images:*
+• Backend: \`${BACKEND_IMAGE}:${VERSION}\`
+• Frontend: \`${FRONTEND_IMAGE}:${VERSION}\`
+
+${CHANGELOG}
+
+---
+🔗 *Links:*
+• [Full Changelog](${REPO_URL}/compare/${PREV_VERSION}...${VERSION})
+• [Commit Details](${REPO_URL}/commit/${{ github.sha }})
+
+💾 *Backup:* \`${BACKUP_FILENAME}\`
+📍 *Backup Location:* \`/opt/capital-tracker/backups/\`
+
+✅ *Status:* Deployed and health check passed"
+
+          else
+            # Failure message
+            if [ "$ROLLBACK_STATUS" == "success" ]; then
+              ROLLBACK_MSG="🔄 *Automatic Rollback:* Completed successfully"
+            elif [ "$ROLLBACK_STATUS" == "failure" ]; then
+              ROLLBACK_MSG="⚠️ *Automatic Rollback:* Failed - manual intervention required!"
+            else
+              ROLLBACK_MSG="🔄 *Automatic Rollback:* Attempted"
+            fi
+
+            MESSAGE="❌ *Capital Tracker Deployment FAILED*
+
+📅 *Date:* ${DEPLOY_DATE}
+🏷️ *Version:* \`${VERSION}\` (attempted)
+🔖 *Commit:* \`${COMMIT_SHORT}\`
+🔗 *Workflow:* [View Details](${REPO_URL}/actions/runs/${{ github.run_id }})
+
+${ROLLBACK_MSG}
+📦 *Previous Backend:* \`${PREV_BACKEND}\`
+📦 *Previous Frontend:* \`${PREV_FRONTEND}\`
+
+💾 *Database Backup:* \`${BACKUP_FILENAME}\`
+📍 *Backup Location:* \`/opt/capital-tracker/backups/\`
+
+*Status:* Deployment or health check failed. Database backup created. Please review the logs and verify service status."
+          fi
+
+          # Send to Telegram
           PAYLOAD=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "${{ steps.message.outputs.message }}" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')
+            --arg text "$MESSAGE" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}')
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
-            -d "$PAYLOAD" > /dev/null || echo "⚠️ Failed to send Telegram notification"
+            -d "$PAYLOAD" || echo "⚠️ Failed to send Telegram notification"

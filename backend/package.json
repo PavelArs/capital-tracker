@@ -2,7 +2,6 @@
   "name": "capital-tracker-backend",
   "version": "1.0.0",
   "description": "Backend for personal capital tracking application",
-  "author": "",
   "private": true,
   "license": "MIT",
   "scripts": {
