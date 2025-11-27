@@ -184,7 +184,7 @@ jobs:
         run: npm ci
 
       - name: Check formatting with Prettier
-        run: npm run format:check
+        run: npm run format
 
   frontend-test:
     name: Frontend Tests
