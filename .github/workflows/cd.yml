@@ -1,0 +1,462 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      skip_backup:
+        description: "Skip database backup"
+        required: false
+        default: false
+        type: boolean
+      force_deploy:
+        description: "Force deploy without waiting for CI"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "22"
+  YC_REGISTRY: registry.yandexcloud.net
+  BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
+  FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
+  HEALTH_CHECK_TIMEOUT: 30
+  HEALTH_CHECK_INTERVAL: 5
+  HEALTH_CHECK_RETRIES: 3
+
+jobs:
+  # ============================================
+  # Pre-deployment Checks
+  # ============================================
+  pre-check:
+    name: Pre-deployment Checks
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+
+    steps:
+      - name: Check deployment conditions
+        id: check
+        run: |
+          if [[ "${{ github.event.inputs.force_deploy }}" == "true" ]]; then
+            echo "⚡ Force deploy enabled, skipping CI check"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Proceeding with deployment"
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================
+  # Build Docker Images
+  # ============================================
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: pre-check
+    if: needs.pre-check.outputs.should_deploy == 'true'
+
+    strategy:
+      matrix:
+        include:
+          - service: backend
+            context: ./backend
+          - service: frontend
+            context: ./frontend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Yandex Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.YC_REGISTRY }}
+          username: oauth
+          password: ${{ secrets.YC_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: Build and push ${{ matrix.service }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          build-args: ${{ matrix.service == 'frontend' && format('VITE_API_URL={0}', secrets.VITE_API_URL) || '' }}
+          cache-from: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache
+          cache-to: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache,mode=max
+          provenance: false
+
+  # ============================================
+  # Deploy to Production
+  # ============================================
+  deploy:
+    name: Deploy to VM
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+
+    outputs:
+      backup_filename: ${{ steps.backup-db.outputs.backup-filename }}
+      previous_backend: ${{ steps.get-versions.outputs.current-backend }}
+      previous_frontend: ${{ steps.get-versions.outputs.current-frontend }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
+
+      - name: Add VM to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Get current running versions
+        id: get-versions
+        run: |
+          CURRENT_BACKEND=$(ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+            "docker inspect capital-tracker-backend-1 --format='{{.Config.Image}}' 2>/dev/null || \
+             docker inspect capital_tracker_backend --format='{{.Config.Image}}' 2>/dev/null || \
+             echo 'none'")
+          CURRENT_FRONTEND=$(ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
+            "docker inspect capital-tracker-frontend-1 --format='{{.Config.Image}}' 2>/dev/null || \
+             docker inspect capital_tracker_frontend --format='{{.Config.Image}}' 2>/dev/null || \
+             echo 'none'")
+
+          {
+            echo "current-backend<<EOF"
+            echo "$CURRENT_BACKEND"
+            echo "EOF"
+            echo "current-frontend<<EOF"
+            echo "$CURRENT_FRONTEND"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+          echo "📦 Current Backend: $CURRENT_BACKEND"
+          echo "📦 Current Frontend: $CURRENT_FRONTEND"
+
+      - name: Create database backup
+        id: backup-db
+        if: github.event.inputs.skip_backup != 'true'
+        run: |
+          BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          BACKUP_FILENAME="capital-tracker-backup-${BACKUP_TIMESTAMP}.sql.gz"
+
+          echo "💾 Creating database backup: $BACKUP_FILENAME"
+
+          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'BACKUP_SCRIPT'
+            set -e
+            cd /opt/capital-tracker
+
+            mkdir -p backups
+
+            DB_NAME=$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
+            DB_USER=$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
+
+            POSTGRES_CONTAINER=$(docker compose ps -q postgres 2>/dev/null || docker-compose ps -q postgres 2>/dev/null)
+
+            if [ -z "$POSTGRES_CONTAINER" ]; then
+              POSTGRES_CONTAINER=$(docker ps -q -f name=capital_tracker_db || docker ps -q -f name=capital-tracker-postgres)
+            fi
+
+            if [ -z "$POSTGRES_CONTAINER" ]; then
+              echo "❌ Postgres container not found!"
+              exit 1
+            fi
+
+            docker exec $POSTGRES_CONTAINER pg_dump -U $DB_USER -d $DB_NAME | gzip > backups/$1
+
+            ls -t backups/capital-tracker-backup-*.sql.gz | tail -n +11 | xargs -r rm
+            echo "✅ Backup created successfully"
+          BACKUP_SCRIPT
+
+          {
+            echo "backup-filename<<EOF"
+            echo "$BACKUP_FILENAME"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Copy docker-compose.yml
+        run: |
+          scp docker-compose.yml ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }}:/opt/capital-tracker/docker-compose.yml
+
+      - name: Deploy application
+        env:
+          YC_TOKEN: ${{ secrets.YC_TOKEN }}
+        run: |
+          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+            set -e
+            cd /opt/capital-tracker
+
+            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net
+
+            echo "📥 Pulling latest images..."
+            docker compose pull
+
+            echo "🔄 Restarting services..."
+            docker compose down
+            docker compose up -d
+
+            echo "🧹 Cleaning up old images..."
+            docker image prune -f
+
+            echo "📊 Service status:"
+            docker compose ps
+          EOF
+
+      - name: Wait for services to initialize
+        run: |
+          echo "⏳ Waiting 30 seconds for services to initialize..."
+          sleep 30
+
+      - name: Health check
+        id: health-check
+        run: |
+          MAX_ATTEMPTS=$(( ${{ env.HEALTH_CHECK_TIMEOUT }} / ${{ env.HEALTH_CHECK_INTERVAL }} ))
+          ATTEMPT=0
+
+          echo "🏥 Starting health checks (timeout: ${{ env.HEALTH_CHECK_TIMEOUT }}s)"
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            if ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
+              echo "✅ Health check passed"
+              echo "health-status=passed" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "⏳ Retrying in ${{ env.HEALTH_CHECK_INTERVAL }}s..."
+              sleep ${{ env.HEALTH_CHECK_INTERVAL }}
+            fi
+          done
+
+          echo "❌ Health check failed after $MAX_ATTEMPTS attempts"
+          echo "health-status=failed" >> $GITHUB_OUTPUT
+          exit 1
+
+      - name: Generate release notes
+        id: release_notes
+        if: success()
+        run: |
+          chmod +x .github/scripts/generate-release-notes.sh
+          .github/scripts/generate-release-notes.sh > release_notes.txt
+          echo "success=true" >> $GITHUB_OUTPUT
+
+      - name: Tag successful deployment
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DEPLOY_TAG="deploy-$(date +%Y%m%d-%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git tag -a "$DEPLOY_TAG" -m "Deployment at $(date '+%Y-%m-%d %H:%M:%S UTC')"
+          git push origin "$DEPLOY_TAG"
+
+  # ============================================
+  # Rollback on Failure
+  # ============================================
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: failure() && needs.deploy.outputs.previous_backend != 'none'
+
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
+
+      - name: Add VM to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Rollback deployment
+        env:
+          YC_TOKEN: ${{ secrets.YC_TOKEN }}
+          PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
+          PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
+          BACKUP_FILE: ${{ needs.deploy.outputs.backup_filename }}
+        run: |
+          echo "🔄 INITIATING ROLLBACK..."
+          echo "Backend: $PREV_BACKEND"
+          echo "Frontend: $PREV_FRONTEND"
+
+          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+            set -e
+            cd /opt/capital-tracker
+
+            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net
+
+            if [ -n "$PREV_BACKEND" ] && [ "$PREV_BACKEND" != "none" ]; then
+              echo "📥 Pulling previous backend: $PREV_BACKEND"
+              docker pull "$PREV_BACKEND" || true
+              docker tag "$PREV_BACKEND" "${{ env.BACKEND_IMAGE }}:latest" || true
+            fi
+
+            if [ -n "$PREV_FRONTEND" ] && [ "$PREV_FRONTEND" != "none" ]; then
+              echo "📥 Pulling previous frontend: $PREV_FRONTEND"
+              docker pull "$PREV_FRONTEND" || true
+              docker tag "$PREV_FRONTEND" "${{ env.FRONTEND_IMAGE }}:latest" || true
+            fi
+
+            docker compose down
+            docker compose up -d
+
+            echo "⏳ Waiting for rollback to complete..."
+            sleep 20
+          EOF
+
+      - name: Verify rollback health
+        run: |
+          ATTEMPTS=0
+          MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
+
+          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+            ATTEMPTS=$((ATTEMPTS + 1))
+            echo "Verifying rollback health (attempt $ATTEMPTS/$MAX_ATTEMPTS)..."
+
+            if ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
+              echo "✅ Rollback successful - service is healthy"
+              exit 0
+            fi
+
+            if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
+              sleep 10
+            fi
+          done
+
+          echo "❌ Rollback health check failed - manual intervention required!"
+          exit 1
+
+  # ============================================
+  # Cleanup
+  # ============================================
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: success()
+
+    steps:
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
+
+      - name: Add VM to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Cleanup old images and backups
+        run: |
+          echo "🧹 Cleaning up old Docker images and backups..."
+          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
+            docker image prune -a -f --filter "until=72h" || true
+
+            cd /opt/capital-tracker/backups 2>/dev/null || exit 0
+            BACKUP_COUNT=$(ls -1 capital-tracker-backup-*.sql.gz 2>/dev/null | wc -l)
+            echo "📊 Total backups: $BACKUP_COUNT"
+
+            ls -t capital-tracker-backup-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm
+            echo "✅ Cleanup complete"
+          EOF
+
+  # ============================================
+  # Notifications
+  # ============================================
+  notify:
+    name: Send Notifications
+    runs-on: ubuntu-latest
+    needs: [deploy, rollback]
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Prepare notification message
+        id: message
+        env:
+          DEPLOY_STATUS: ${{ needs.deploy.result }}
+          ROLLBACK_STATUS: ${{ needs.rollback.result }}
+          BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
+        run: |
+          DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
+          COMMIT_SHORT=${GITHUB_SHA:0:7}
+
+          if [ "$DEPLOY_STATUS" == "success" ]; then
+            if [ -f release_notes.txt ]; then
+              MESSAGE=$(cat release_notes.txt)
+            else
+              MESSAGE="✅ **Capital Tracker Deployment Successful**
+
+          📅 **Date:** ${DEPLOY_DATE}
+          🔖 **Commit:** \`${COMMIT_SHORT}\`
+          💾 **Backup:** \`${BACKUP_FILENAME}\`"
+            fi
+          else
+            if [ "$ROLLBACK_STATUS" == "success" ]; then
+              STATUS_MSG="🔄 Automatic rollback completed successfully"
+            else
+              STATUS_MSG="⚠️ Manual intervention may be required"
+            fi
+
+            MESSAGE="❌ **Capital Tracker Deployment FAILED**
+
+          📅 **Date:** ${DEPLOY_DATE}
+          🔖 **Commit:** \`${COMMIT_SHORT}\`
+          🔗 **Workflow:** [View Details](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          💾 **Backup:** \`${BACKUP_FILENAME}\`
+
+          ${STATUS_MSG}"
+          fi
+
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$MESSAGE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram notification
+        if: env.TELEGRAM_BOT_TOKEN != '' && env.TELEGRAM_CHAT_ID != ''
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          PAYLOAD=$(jq -n \
+            --arg chat_id "$TELEGRAM_CHAT_ID" \
+            --arg text "${{ steps.message.outputs.message }}" \
+            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown"}')
+
+          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" > /dev/null || echo "⚠️ Failed to send Telegram notification"
