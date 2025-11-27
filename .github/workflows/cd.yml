@@ -535,56 +535,60 @@ jobs:
           DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
           REPO_URL="https://github.com/${REPO}"
 
+          # Escape Markdown special characters in changelog
+          SAFE_CHANGELOG=$(echo "$CHANGELOG" | sed 's/`//g' | sed 's/\*/•/g' | sed 's/_/-/g' | head -15)
+
           if [ "$DEPLOY_STATUS" == "success" ]; then
             {
-              echo "🚀 *Capital Tracker Deployment*"
+              echo "🚀 <b>Capital Tracker Deployment</b>"
               echo ""
-              echo "📅 *Date:* ${DEPLOY_DATE}"
-              echo "🏷️ *Version:* \`${VERSION}\`"
-              echo "🔖 *Commit:* \`${COMMIT_SHORT}\`"
-              echo "📝 *Changes:* ${COMMIT_COUNT} commit(s)"
+              echo "📅 <b>Date:</b> ${DEPLOY_DATE}"
+              echo "🏷️ <b>Version:</b> <code>${VERSION}</code>"
+              echo "🔖 <b>Commit:</b> <code>${COMMIT_SHORT}</code>"
+              echo "📝 <b>Changes:</b> ${COMMIT_COUNT} commit(s)"
               echo ""
-              echo "📦 *Docker Images:*"
-              echo "• Backend: \`${BACKEND_IMG}:${VERSION}\`"
-              echo "• Frontend: \`${FRONTEND_IMG}:${VERSION}\`"
+              echo "📦 <b>Docker Images:</b>"
+              echo "• Backend: <code>${BACKEND_IMG}:${VERSION}</code>"
+              echo "• Frontend: <code>${FRONTEND_IMG}:${VERSION}</code>"
               echo ""
-              echo "${CHANGELOG}"
+              echo "<b>Recent Changes:</b>"
+              echo "${SAFE_CHANGELOG}"
               echo ""
               echo "---"
-              echo "🔗 *Links:*"
-              echo "• [Full Changelog](${REPO_URL}/compare/${PREV_VERSION}...${VERSION})"
-              echo "• [Commit Details](${REPO_URL}/commit/${SHA})"
+              echo "🔗 <b>Links:</b>"
+              echo "• <a href=\"${REPO_URL}/compare/${PREV_VERSION}...${VERSION}\">Full Changelog</a>"
+              echo "• <a href=\"${REPO_URL}/commit/${SHA}\">Commit Details</a>"
               echo ""
-              echo "💾 *Backup:* \`${BACKUP_FILENAME}\`"
-              echo "📍 *Backup Location:* \`/opt/capital-tracker/backups/\`"
+              echo "💾 <b>Backup:</b> <code>${BACKUP_FILENAME}</code>"
+              echo "📍 <b>Location:</b> /opt/capital-tracker/backups/"
               echo ""
-              echo "✅ *Status:* Deployed and health check passed"
+              echo "✅ <b>Status:</b> Deployed and health check passed"
             } > /tmp/message.txt
           else
             if [ "$ROLLBACK_STATUS" == "success" ]; then
-              ROLLBACK_MSG="🔄 *Automatic Rollback:* Completed successfully"
+              ROLLBACK_MSG="🔄 <b>Automatic Rollback:</b> Completed successfully"
             elif [ "$ROLLBACK_STATUS" == "failure" ]; then
-              ROLLBACK_MSG="⚠️ *Automatic Rollback:* Failed - manual intervention required!"
+              ROLLBACK_MSG="⚠️ <b>Automatic Rollback:</b> Failed - manual intervention required!"
             else
-              ROLLBACK_MSG="🔄 *Automatic Rollback:* Attempted"
+              ROLLBACK_MSG="🔄 <b>Automatic Rollback:</b> Attempted"
             fi
 
             {
-              echo "❌ *Capital Tracker Deployment FAILED*"
+              echo "❌ <b>Capital Tracker Deployment FAILED</b>"
               echo ""
-              echo "📅 *Date:* ${DEPLOY_DATE}"
-              echo "🏷️ *Version:* \`${VERSION}\` (attempted)"
-              echo "🔖 *Commit:* \`${COMMIT_SHORT}\`"
-              echo "🔗 *Workflow:* [View Details](${REPO_URL}/actions/runs/${RUN_ID})"
+              echo "📅 <b>Date:</b> ${DEPLOY_DATE}"
+              echo "🏷️ <b>Version:</b> <code>${VERSION}</code> (attempted)"
+              echo "🔖 <b>Commit:</b> <code>${COMMIT_SHORT}</code>"
+              echo "🔗 <b>Workflow:</b> <a href=\"${REPO_URL}/actions/runs/${RUN_ID}\">View Details</a>"
               echo ""
               echo "${ROLLBACK_MSG}"
-              echo "📦 *Previous Backend:* \`${PREV_BACKEND}\`"
-              echo "📦 *Previous Frontend:* \`${PREV_FRONTEND}\`"
+              echo "📦 <b>Previous Backend:</b> <code>${PREV_BACKEND}</code>"
+              echo "📦 <b>Previous Frontend:</b> <code>${PREV_FRONTEND}</code>"
               echo ""
-              echo "💾 *Database Backup:* \`${BACKUP_FILENAME}\`"
-              echo "📍 *Backup Location:* \`/opt/capital-tracker/backups/\`"
+              echo "💾 <b>Database Backup:</b> <code>${BACKUP_FILENAME}</code>"
+              echo "📍 <b>Location:</b> /opt/capital-tracker/backups/"
               echo ""
-              echo "*Status:* Deployment or health check failed. Database backup created. Please review the logs and verify service status."
+              echo "<b>Status:</b> Deployment or health check failed. Database backup created. Please review the logs and verify service status."
             } > /tmp/message.txt
           fi
 
@@ -593,7 +597,7 @@ jobs:
           PAYLOAD=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
             --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "Markdown", disable_web_page_preview: true}')
+            '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
 
           curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -H "Content-Type: application/json" \
