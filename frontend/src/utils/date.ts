@@ -1,4 +1,12 @@
-import { format, parseISO, isValid, formatDistance, formatRelative, isToday, isYesterday } from 'date-fns';
+import {
+  format,
+  parseISO,
+  isValid,
+  formatDistance,
+  formatRelative,
+  isToday,
+  isYesterday,
+} from 'date-fns';
 import { ru, enUS } from 'date-fns/locale';
 
 type SupportedLocale = 'ru' | 'en';
@@ -50,10 +58,7 @@ export const formatDate = (
  * @example
  * formatDateTime('2024-01-15T14:30:00') // '15.01.2024 14:30'
  */
-export const formatDateTime = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const formatDateTime = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   return formatDate(date, 'dd.MM.yyyy HH:mm', locale);
 };
 
@@ -63,10 +68,7 @@ export const formatDateTime = (
  * @example
  * formatShortDate('2024-01-15') // '15 Jan'
  */
-export const formatShortDate = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const formatShortDate = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   return formatDate(date, 'dd MMM', locale);
 };
 
@@ -76,10 +78,7 @@ export const formatShortDate = (
  * @example
  * formatLongDate('2024-01-15') // 'January 15, 2024'
  */
-export const formatLongDate = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const formatLongDate = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   return formatDate(date, 'MMMM dd, yyyy', locale);
 };
 
@@ -89,10 +88,7 @@ export const formatLongDate = (
  * @example
  * timeAgo(new Date(Date.now() - 3600000)) // '1 hour ago'
  */
-export const timeAgo = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const timeAgo = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   const parsedDate = parseDate(date);
   if (!isValid(parsedDate)) {
     return '';
@@ -109,10 +105,7 @@ export const timeAgo = (
  * @example
  * relativeDate(new Date(Date.now() - 86400000)) // 'yesterday at 2:30 PM'
  */
-export const relativeDate = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const relativeDate = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   const parsedDate = parseDate(date);
   if (!isValid(parsedDate)) {
     return '';
@@ -129,10 +122,7 @@ export const relativeDate = (
  * smartDate(lastWeek) // 'Jan 8'
  * smartDate(lastYear) // 'Jan 15, 2023'
  */
-export const smartDate = (
-  date: string | Date,
-  locale: SupportedLocale = 'en'
-): string => {
+export const smartDate = (date: string | Date, locale: SupportedLocale = 'en'): string => {
   const parsedDate = parseDate(date);
   if (!isValid(parsedDate)) {
     return '';
@@ -177,4 +167,3 @@ export const isValidDate = (date: string | Date): boolean => {
   const parsedDate = parseDate(date);
   return isValid(parsedDate);
 };
-

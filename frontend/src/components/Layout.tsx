@@ -39,18 +39,18 @@ export default function Layout() {
 
       // Update position after a short delay to ensure nav-links is fully rendered
       const timeoutId = setTimeout(updateNavUserPosition, 50);
-      
+
       // Update after transition completes
       const handleTransitionEnd = () => {
         updateNavUserPosition();
       };
-      
+
       const navLinksElement = navLinksRef.current;
       navLinksElement.addEventListener('transitionend', handleTransitionEnd);
-      
+
       // Also update on window resize
       window.addEventListener('resize', updateNavUserPosition);
-      
+
       return () => {
         clearTimeout(timeoutId);
         window.removeEventListener('resize', updateNavUserPosition);
@@ -65,7 +65,7 @@ export default function Layout() {
     <div className="layout">
       <nav className="navbar">
         <div className="nav-brand">Capital Tracker</div>
-        
+
         <button
           className="mobile-menu-toggle"
           onClick={toggleMobileMenu}
@@ -98,9 +98,7 @@ export default function Layout() {
         <div ref={navUserRef} className={`nav-user ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="nav-user-info">
             <span className="nav-user-email">{user?.email}</span>
-            {user?.subscriptionType && (
-              <SubscriptionBadge type={user.subscriptionType} />
-            )}
+            {user?.subscriptionType && <SubscriptionBadge type={user.subscriptionType} />}
           </div>
           <button onClick={handleLogout}>{t('auth.logout')}</button>
         </div>

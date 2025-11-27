@@ -13,4 +13,3 @@ export type {
 
 // Constants
 export { WALLET_TYPES, ADDRESS_PLACEHOLDERS, getInitialFormData } from './constants';
-

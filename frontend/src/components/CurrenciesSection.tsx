@@ -44,33 +44,42 @@ export default function CurrenciesSection() {
     fetchHiddenCurrencies();
   }, [fetchCurrencies, fetchHiddenCurrencies]);
 
-  const handleToggle = useCallback(async (currencyId: string, isCurrentlyHidden: boolean) => {
-    try {
-      if (isCurrentlyHidden) {
-        await currenciesApi.show(currencyId);
-      } else {
-        await currenciesApi.hide(currencyId);
+  const handleToggle = useCallback(
+    async (currencyId: string, isCurrentlyHidden: boolean) => {
+      try {
+        if (isCurrentlyHidden) {
+          await currenciesApi.show(currencyId);
+        } else {
+          await currenciesApi.hide(currencyId);
+        }
+
+        // Refresh both lists
+        await Promise.all([fetchCurrencies(), fetchHiddenCurrencies()]);
+      } catch (error) {
+        console.error('Error toggling currency:', error);
+        alert(t('currencies.toggleError'));
       }
-      
-      // Refresh both lists
-      await Promise.all([fetchCurrencies(), fetchHiddenCurrencies()]);
-    } catch (error) {
-      console.error('Error toggling currency:', error);
-      alert(t('currencies.toggleError'));
-    }
-  }, [fetchCurrencies, fetchHiddenCurrencies, t]);
+    },
+    [fetchCurrencies, fetchHiddenCurrencies, t]
+  );
 
-  const groupedCurrencies = useMemo<GroupedCurrencies>(() => ({
-    fiat: currencies.filter((c) => c.type === 'fiat'),
-    crypto: currencies.filter((c) => c.type === 'crypto'),
-    stablecoin: currencies.filter((c) => c.type === 'stablecoin'),
-  }), [currencies]);
+  const groupedCurrencies = useMemo<GroupedCurrencies>(
+    () => ({
+      fiat: currencies.filter((c) => c.type === 'fiat'),
+      crypto: currencies.filter((c) => c.type === 'crypto'),
+      stablecoin: currencies.filter((c) => c.type === 'stablecoin'),
+    }),
+    [currencies]
+  );
 
-  const groupedHidden = useMemo<GroupedCurrencies>(() => ({
-    fiat: hiddenCurrencies.filter((c) => c.type === 'fiat'),
-    crypto: hiddenCurrencies.filter((c) => c.type === 'crypto'),
-    stablecoin: hiddenCurrencies.filter((c) => c.type === 'stablecoin'),
-  }), [hiddenCurrencies]);
+  const groupedHidden = useMemo<GroupedCurrencies>(
+    () => ({
+      fiat: hiddenCurrencies.filter((c) => c.type === 'fiat'),
+      crypto: hiddenCurrencies.filter((c) => c.type === 'crypto'),
+      stablecoin: hiddenCurrencies.filter((c) => c.type === 'stablecoin'),
+    }),
+    [hiddenCurrencies]
+  );
 
   const renderCurrencyTable = useCallback(
     (currenciesList: Currency[], showContract: boolean = false, isHidden: boolean = false) => {
@@ -202,9 +211,7 @@ export default function CurrenciesSection() {
 
         {totalDisplayed === 0 && (
           <div className="empty-state">
-            <p>
-              {isHiddenTab ? t('currencies.noHiddenCurrencies') : t('currencies.noCurrencies')}
-            </p>
+            <p>{isHiddenTab ? t('currencies.noHiddenCurrencies') : t('currencies.noCurrencies')}</p>
           </div>
         )}
       </div>

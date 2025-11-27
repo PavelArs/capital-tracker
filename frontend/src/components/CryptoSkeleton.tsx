@@ -36,6 +36,3 @@ export const CryptoSkeleton: React.FC = () => {
 };
 
 export default CryptoSkeleton;
-
-
-

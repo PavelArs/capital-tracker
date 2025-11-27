@@ -36,4 +36,3 @@ export interface LiabilityCardProps {
   onDelete: (id: string) => void;
   isDeleting: boolean;
 }
-

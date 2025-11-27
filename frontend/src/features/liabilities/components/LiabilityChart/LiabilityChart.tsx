@@ -69,4 +69,3 @@ export const LiabilityChart = memo(function LiabilityChart({ liabilities }: Liab
     </div>
   );
 });
-

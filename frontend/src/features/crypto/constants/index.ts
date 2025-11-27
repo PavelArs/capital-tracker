@@ -14,4 +14,3 @@ export const getInitialFormData = (): WalletFormData => ({
   type: 'ethereum',
   address: '',
 });
-

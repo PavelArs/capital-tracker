@@ -1,2 +1,1 @@
 export { WalletList } from './WalletList';
-

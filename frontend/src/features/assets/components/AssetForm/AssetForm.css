@@ -35,7 +35,9 @@
   font-size: 0.9375rem;
   background: var(--bg-input, #fff);
   color: var(--text-primary, #1e293b);
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .asset-form .form-group input:focus,
@@ -93,4 +95,3 @@
     width: 100%;
   }
 }
-

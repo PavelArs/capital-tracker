@@ -50,8 +50,7 @@ export const AssetChart = memo(function AssetChart({
                 } else if (chartData?._usdTotals && chartData?._totalUSD) {
                   const key = chartData._keys[context.dataIndex];
                   const usdValue = chartData._usdTotals[key] || 0;
-                  const pct =
-                    chartData._totalUSD > 0 ? (usdValue / chartData._totalUSD) * 100 : 0;
+                  const pct = chartData._totalUSD > 0 ? (usdValue / chartData._totalUSD) * 100 : 0;
                   percentage = ` (${pct.toFixed(1)}%)`;
                 }
               } else {
@@ -108,4 +107,3 @@ export const AssetChart = memo(function AssetChart({
     </div>
   );
 });
-

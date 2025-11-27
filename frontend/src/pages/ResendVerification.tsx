@@ -25,22 +25,25 @@ export default function ResendVerification() {
     }
   }, [success, navigate]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess(false);
-    setLoading(true);
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setSuccess(false);
+      setLoading(true);
 
-    try {
-      await authApi.resendVerification(email);
-      setSuccess(true);
-      setEmail('');
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.resendVerificationFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [email, t]);
+      try {
+        await authApi.resendVerification(email);
+        setSuccess(true);
+        setEmail('');
+      } catch (err: any) {
+        setError(err.response?.data?.message || t('auth.resendVerificationFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [email, t]
+  );
 
   const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
@@ -50,7 +53,7 @@ export default function ResendVerification() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.resendVerification')}</h1>
-        
+
         {success ? (
           <div className="success-message">
             <p>{t('auth.verificationEmailSent')}</p>
@@ -80,7 +83,7 @@ export default function ResendVerification() {
             </form>
           </>
         )}
-        
+
         <p className="auth-switch">
           <Link to="/login">{t('auth.backToLogin')}</Link>
         </p>

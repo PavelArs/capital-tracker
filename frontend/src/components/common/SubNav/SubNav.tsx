@@ -28,4 +28,3 @@ export function SubNav({ items, activeKey, onSelect, className = '' }: SubNavPro
     </nav>
   );
 }
-

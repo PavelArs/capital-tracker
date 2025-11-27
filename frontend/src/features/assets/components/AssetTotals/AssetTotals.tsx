@@ -81,4 +81,3 @@ export const AssetTotals = memo(function AssetTotals({
     </div>
   );
 });
-

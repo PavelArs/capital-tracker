@@ -2,12 +2,60 @@ import type { Currency } from '@shared/types';
 import type { LiabilityFormData, CategoryOption } from '../types';
 
 export const DEFAULT_CURRENCIES: Currency[] = [
-  { id: '1', code: 'USD', name: 'US Dollar', symbol: '$', type: 'fiat', exchangeRateToUSD: 1, isSystem: true },
-  { id: '2', code: 'EUR', name: 'Euro', symbol: '€', type: 'fiat', exchangeRateToUSD: 1.08, isSystem: true },
-  { id: '3', code: 'RUB', name: 'Russian Ruble', symbol: '₽', type: 'fiat', exchangeRateToUSD: 0.011, isSystem: true },
-  { id: '4', code: 'BTC', name: 'Bitcoin', symbol: '₿', type: 'crypto', exchangeRateToUSD: 60000, isSystem: true },
-  { id: '5', code: 'ETH', name: 'Ethereum', symbol: 'Ξ', type: 'crypto', exchangeRateToUSD: 3000, isSystem: true },
-  { id: '6', code: 'USDT', name: 'Tether', symbol: '₮', type: 'stablecoin', exchangeRateToUSD: 1, isSystem: true },
+  {
+    id: '1',
+    code: 'USD',
+    name: 'US Dollar',
+    symbol: '$',
+    type: 'fiat',
+    exchangeRateToUSD: 1,
+    isSystem: true,
+  },
+  {
+    id: '2',
+    code: 'EUR',
+    name: 'Euro',
+    symbol: '€',
+    type: 'fiat',
+    exchangeRateToUSD: 1.08,
+    isSystem: true,
+  },
+  {
+    id: '3',
+    code: 'RUB',
+    name: 'Russian Ruble',
+    symbol: '₽',
+    type: 'fiat',
+    exchangeRateToUSD: 0.011,
+    isSystem: true,
+  },
+  {
+    id: '4',
+    code: 'BTC',
+    name: 'Bitcoin',
+    symbol: '₿',
+    type: 'crypto',
+    exchangeRateToUSD: 60000,
+    isSystem: true,
+  },
+  {
+    id: '5',
+    code: 'ETH',
+    name: 'Ethereum',
+    symbol: 'Ξ',
+    type: 'crypto',
+    exchangeRateToUSD: 3000,
+    isSystem: true,
+  },
+  {
+    id: '6',
+    code: 'USDT',
+    name: 'Tether',
+    symbol: '₮',
+    type: 'stablecoin',
+    exchangeRateToUSD: 1,
+    isSystem: true,
+  },
 ];
 
 export const LIABILITY_CATEGORIES: CategoryOption[] = [
@@ -30,14 +78,7 @@ export const FREQUENCY_OPTIONS: CategoryOption[] = [
   { value: 'yearly', labelKey: 'liabilities.frequencies.yearly' },
 ];
 
-export const CHART_COLORS = [
-  '#FF6384',
-  '#36A2EB',
-  '#FFCE56',
-  '#4BC0C0',
-  '#9966FF',
-  '#FF9F40',
-];
+export const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40'];
 
 export const getInitialFormData = (currencyId: string): LiabilityFormData => ({
   name: '',
@@ -49,4 +90,3 @@ export const getInitialFormData = (currencyId: string): LiabilityFormData => ({
   frequency: 'monthly',
   deadline: '',
 });
-

@@ -82,4 +82,3 @@ export const AssetViewControls = memo(function AssetViewControls({
     </div>
   );
 });
-

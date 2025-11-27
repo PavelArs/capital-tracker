@@ -91,24 +91,27 @@ export default function Subscriptions() {
     fetchCurrentSubscription();
   }, [fetchCurrentSubscription]);
 
-  const handleUpgrade = useCallback(async (type: SubscriptionType) => {
-    if (loading) return;
-    
-    setLoading(true);
-    try {
-      await api.post('/subscriptions/upgrade', { type });
-      await refreshUser();
-      await fetchCurrentSubscription();
-    } catch (error: any) {
-      showError(error.response?.data?.message || 'Failed to upgrade subscription');
-    } finally {
-      setLoading(false);
-    }
-  }, [loading, refreshUser, fetchCurrentSubscription, showError]);
+  const handleUpgrade = useCallback(
+    async (type: SubscriptionType) => {
+      if (loading) return;
+
+      setLoading(true);
+      try {
+        await api.post('/subscriptions/upgrade', { type });
+        await refreshUser();
+        await fetchCurrentSubscription();
+      } catch (error: any) {
+        showError(error.response?.data?.message || 'Failed to upgrade subscription');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [loading, refreshUser, fetchCurrentSubscription, showError]
+  );
 
   const handleCancel = useCallback(async () => {
     if (loading || !confirm('Are you sure you want to cancel your subscription?')) return;
-    
+
     setLoading(true);
     try {
       await api.post('/subscriptions/cancel');
@@ -121,15 +124,21 @@ export default function Subscriptions() {
     }
   }, [loading, refreshUser, fetchCurrentSubscription, showError]);
 
-  const canUpgrade = useCallback((planType: SubscriptionType) => {
-    const currentType = user?.subscriptionType || 'free';
-    return SUBSCRIPTION_HIERARCHY[planType] > SUBSCRIPTION_HIERARCHY[currentType];
-  }, [user?.subscriptionType]);
+  const canUpgrade = useCallback(
+    (planType: SubscriptionType) => {
+      const currentType = user?.subscriptionType || 'free';
+      return SUBSCRIPTION_HIERARCHY[planType] > SUBSCRIPTION_HIERARCHY[currentType];
+    },
+    [user?.subscriptionType]
+  );
 
-  const canDowngrade = useCallback((planType: SubscriptionType) => {
-    const currentType = user?.subscriptionType || 'free';
-    return SUBSCRIPTION_HIERARCHY[planType] < SUBSCRIPTION_HIERARCHY[currentType];
-  }, [user?.subscriptionType]);
+  const canDowngrade = useCallback(
+    (planType: SubscriptionType) => {
+      const currentType = user?.subscriptionType || 'free';
+      return SUBSCRIPTION_HIERARCHY[planType] < SUBSCRIPTION_HIERARCHY[currentType];
+    },
+    [user?.subscriptionType]
+  );
 
   const userSubscriptionType = user?.subscriptionType || 'free';
 

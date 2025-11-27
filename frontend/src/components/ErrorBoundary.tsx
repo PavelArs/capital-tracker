@@ -1,5 +1,5 @@
-import { Component, ErrorInfo, type ReactNode } from "react";
-import { logger } from "../utils/logger";
+import { Component, ErrorInfo, type ReactNode } from 'react';
+import { logger } from '../utils/logger';
 
 interface Props {
   children: ReactNode;
@@ -20,7 +20,7 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    logger.error("Uncaught error:", error, errorInfo);
+    logger.error('Uncaught error:', error, errorInfo);
   }
 
   public render() {
@@ -28,9 +28,7 @@ class ErrorBoundary extends Component<Props, State> {
       return (
         this.props.fallback || (
           <div className="p-4 text-center">
-            <h1 className="text-2xl font-bold text-red-600">
-              Something went wrong.
-            </h1>
+            <h1 className="text-2xl font-bold text-red-600">Something went wrong.</h1>
             <p className="text-gray-600">Please try refreshing the page.</p>
           </div>
         )

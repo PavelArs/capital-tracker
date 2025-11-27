@@ -32,7 +32,7 @@ export default function VerifyEmail() {
       try {
         await authApi.verifyEmail(token);
         setSuccess(true);
-        
+
         setTimeout(() => {
           navigate('/login');
         }, REDIRECT_DELAY);
@@ -62,7 +62,7 @@ export default function VerifyEmail() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.emailVerification')}</h1>
-        
+
         {success ? (
           <div className="success-message">
             <p>{t('auth.emailVerifiedSuccess')}</p>

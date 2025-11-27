@@ -53,4 +53,3 @@ export const WalletList = memo(function WalletList({
     </div>
   );
 });
-

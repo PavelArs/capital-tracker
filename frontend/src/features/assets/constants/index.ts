@@ -2,12 +2,60 @@ import type { Currency } from '@shared/types';
 import type { AssetFormData, CategoryOption } from '../types';
 
 export const DEFAULT_CURRENCIES: Currency[] = [
-  { id: '1', code: 'USD', name: 'US Dollar', symbol: '$', type: 'fiat', exchangeRateToUSD: 1, isSystem: true },
-  { id: '2', code: 'EUR', name: 'Euro', symbol: '€', type: 'fiat', exchangeRateToUSD: 1.08, isSystem: true },
-  { id: '3', code: 'RUB', name: 'Russian Ruble', symbol: '₽', type: 'fiat', exchangeRateToUSD: 0.011, isSystem: true },
-  { id: '4', code: 'BTC', name: 'Bitcoin', symbol: '₿', type: 'crypto', exchangeRateToUSD: 60000, isSystem: true },
-  { id: '5', code: 'ETH', name: 'Ethereum', symbol: 'Ξ', type: 'crypto', exchangeRateToUSD: 3000, isSystem: true },
-  { id: '6', code: 'USDT', name: 'Tether', symbol: '₮', type: 'stablecoin', exchangeRateToUSD: 1, isSystem: true },
+  {
+    id: '1',
+    code: 'USD',
+    name: 'US Dollar',
+    symbol: '$',
+    type: 'fiat',
+    exchangeRateToUSD: 1,
+    isSystem: true,
+  },
+  {
+    id: '2',
+    code: 'EUR',
+    name: 'Euro',
+    symbol: '€',
+    type: 'fiat',
+    exchangeRateToUSD: 1.08,
+    isSystem: true,
+  },
+  {
+    id: '3',
+    code: 'RUB',
+    name: 'Russian Ruble',
+    symbol: '₽',
+    type: 'fiat',
+    exchangeRateToUSD: 0.011,
+    isSystem: true,
+  },
+  {
+    id: '4',
+    code: 'BTC',
+    name: 'Bitcoin',
+    symbol: '₿',
+    type: 'crypto',
+    exchangeRateToUSD: 60000,
+    isSystem: true,
+  },
+  {
+    id: '5',
+    code: 'ETH',
+    name: 'Ethereum',
+    symbol: 'Ξ',
+    type: 'crypto',
+    exchangeRateToUSD: 3000,
+    isSystem: true,
+  },
+  {
+    id: '6',
+    code: 'USDT',
+    name: 'Tether',
+    symbol: '₮',
+    type: 'stablecoin',
+    exchangeRateToUSD: 1,
+    isSystem: true,
+  },
 ];
 
 export const CACHE_TTL = 5 * 60 * 1000; // 5 minutes

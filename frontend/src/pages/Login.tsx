@@ -19,21 +19,24 @@ export default function Login() {
     }
   }, [user, loading, navigate]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setIsSubmitting(true);
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setIsSubmitting(true);
 
-    try {
-      await login(email, password);
-      navigate('/');
-    } catch (err: any) {
-      const errorMessage = err.response?.data?.message || t('auth.loginFailed');
-      setError(errorMessage);
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [email, password, login, navigate, t]);
+      try {
+        await login(email, password);
+        navigate('/');
+      } catch (err: any) {
+        const errorMessage = err.response?.data?.message || t('auth.loginFailed');
+        setError(errorMessage);
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [email, password, login, navigate, t]
+  );
 
   const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
@@ -48,11 +51,7 @@ export default function Login() {
     error.toLowerCase().includes('verify') || error.toLowerCase().includes('верифиц');
 
   if (loading) {
-    return (
-      <div className="loading-container">
-        {t('common.loading')}
-      </div>
-    );
+    return <div className="loading-container">{t('common.loading')}</div>;
   }
 
   if (user) {
@@ -69,9 +68,7 @@ export default function Login() {
             {error}
             {isEmailVerificationError && (
               <div className="verification-link">
-                <Link to="/resend-verification">
-                  {t('auth.resendVerificationLink')}
-                </Link>
+                <Link to="/resend-verification">{t('auth.resendVerificationLink')}</Link>
               </div>
             )}
           </div>

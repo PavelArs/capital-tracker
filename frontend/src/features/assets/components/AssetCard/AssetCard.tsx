@@ -65,4 +65,3 @@ export const AssetCard = memo(function AssetCard({
     </div>
   );
 });
-

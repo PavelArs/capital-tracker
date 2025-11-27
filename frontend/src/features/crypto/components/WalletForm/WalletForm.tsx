@@ -17,10 +17,7 @@ export function WalletForm({
 }: WalletFormProps) {
   const { t } = useTranslation();
 
-  const addressPlaceholder = useMemo(
-    () => ADDRESS_PLACEHOLDERS[formData.type],
-    [formData.type]
-  );
+  const addressPlaceholder = useMemo(() => ADDRESS_PLACEHOLDERS[formData.type], [formData.type]);
 
   return (
     <Modal
@@ -75,4 +72,3 @@ export function WalletForm({
     </Modal>
   );
 }
-

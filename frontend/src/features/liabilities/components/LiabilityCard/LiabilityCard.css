@@ -6,11 +6,15 @@
   background: var(--bg-card, #fff);
   border-radius: 12px;
   border: 1px solid var(--border-color, #e2e8f0);
-  transition: box-shadow 0.2s, transform 0.2s;
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s;
 }
 
 .liability-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
   transform: translateY(-1px);
 }
 
@@ -132,4 +136,3 @@
     justify-content: space-between;
   }
 }
-

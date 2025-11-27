@@ -37,4 +37,3 @@ export {
   CHART_COLORS,
   getInitialFormData,
 } from './constants';
-

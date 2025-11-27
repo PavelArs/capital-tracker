@@ -133,10 +133,9 @@ describe('useApi', () => {
       const mockData = [{ id: 1 }];
       const fetcher = vi.fn().mockResolvedValue(mockData);
 
-      const { result, rerender } = renderHook(
-        ({ dep }) => useApi(fetcher, [dep]),
-        { initialProps: { dep: 1 } }
-      );
+      const { result, rerender } = renderHook(({ dep }) => useApi(fetcher, [dep]), {
+        initialProps: { dep: 1 },
+      });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
@@ -307,4 +306,3 @@ describe('useMutation', () => {
     });
   });
 });
-

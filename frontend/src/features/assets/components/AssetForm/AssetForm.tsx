@@ -2,7 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@components/common';
 import LoadingButton from '@components/LoadingButton';
 import type { AssetFormProps, IncomeType } from '../../types';
-import { STOCK_CATEGORIES, FLOW_CATEGORIES, ACTIVE_INCOME_CATEGORIES, PASSIVE_INCOME_CATEGORIES } from '../../constants';
+import {
+  STOCK_CATEGORIES,
+  FLOW_CATEGORIES,
+  ACTIVE_INCOME_CATEGORIES,
+  PASSIVE_INCOME_CATEGORIES,
+} from '../../constants';
 import './AssetForm.css';
 
 export function AssetForm({
@@ -171,4 +176,3 @@ export function AssetForm({
     </Modal>
   );
 }
-

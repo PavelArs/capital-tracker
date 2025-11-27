@@ -34,32 +34,31 @@ export default function Register() {
     }
   }, [success, navigate]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess(false);
-    setIsSubmitting(true);
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setSuccess(false);
+      setIsSubmitting(true);
 
-    try {
-      await register(email, password, firstName, lastName, invitationCode);
-      setSuccess(true);
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.registrationFailed'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [email, password, firstName, lastName, invitationCode, register, t]);
+      try {
+        await register(email, password, firstName, lastName, invitationCode);
+        setSuccess(true);
+      } catch (err: any) {
+        setError(err.response?.data?.message || t('auth.registrationFailed'));
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [email, password, firstName, lastName, invitationCode, register, t]
+  );
 
   const handleInvitationCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInvitationCode(e.target.value.toUpperCase());
   }, []);
 
   if (loading) {
-    return (
-      <div className="loading-container">
-        {t('common.loading')}
-      </div>
-    );
+    return <div className="loading-container">{t('common.loading')}</div>;
   }
 
   if (user) {

@@ -56,9 +56,7 @@ export const WalletCard = memo(function WalletCard({
         <p className="wallet-card__balance-value">
           {balance.toFixed(8)} {symbol}
         </p>
-        {price > 0 && (
-          <p className="wallet-card__balance-usd">≈ ${formatUSD(walletValue)} USD</p>
-        )}
+        {price > 0 && <p className="wallet-card__balance-usd">≈ ${formatUSD(walletValue)} USD</p>}
       </div>
 
       {wallet.type === 'ethereum' &&
@@ -79,9 +77,7 @@ export const WalletCard = memo(function WalletCard({
                   <li key={index} className="wallet-card__token">
                     <div className="wallet-card__token-info">
                       <span className="wallet-card__token-symbol">{token.symbol}</span>
-                      <span className="wallet-card__token-balance">
-                        {tokenBalance.toFixed(4)}
-                      </span>
+                      <span className="wallet-card__token-balance">{tokenBalance.toFixed(4)}</span>
                     </div>
                     {tokenPrice > 0 && (
                       <span className="wallet-card__token-usd">
@@ -124,4 +120,3 @@ export const WalletCard = memo(function WalletCard({
     </div>
   );
 });
-

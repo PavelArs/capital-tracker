@@ -5,11 +5,7 @@ import type { CryptoWallet, CryptoToken } from '@shared/types';
 import { PageHeader } from '@components/common';
 import CryptoSkeleton from '@components/CryptoSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
-import {
-  WalletForm,
-  WalletList,
-  getInitialFormData,
-} from '@features/crypto';
+import { WalletForm, WalletList, getInitialFormData } from '@features/crypto';
 import type { WalletFormData, WalletType, CryptoPrice, TokenPrices } from '@features/crypto';
 import './Crypto.css';
 
@@ -32,8 +28,10 @@ export default function Crypto() {
     try {
       const prices = await cryptoApi.getPrices();
       // Handle both formats: { BTC: { usd: number } } and { BTC: number }
-      const btcPrice = typeof prices.BTC === 'object' ? (prices.BTC as { usd: number }).usd : prices.BTC;
-      const ethPrice = typeof prices.ETH === 'object' ? (prices.ETH as { usd: number }).usd : prices.ETH;
+      const btcPrice =
+        typeof prices.BTC === 'object' ? (prices.BTC as { usd: number }).usd : prices.BTC;
+      const ethPrice =
+        typeof prices.ETH === 'object' ? (prices.ETH as { usd: number }).usd : prices.ETH;
       setCryptoPrices({
         ETH: { usd: ethPrice || 0 },
         BTC: { usd: btcPrice || 0 },
@@ -49,7 +47,10 @@ export default function Crypto() {
       wallets.forEach((wallet) => {
         if (wallet.type === 'ethereum' && wallet.tokens && Array.isArray(wallet.tokens)) {
           wallet.tokens.forEach((token: CryptoToken) => {
-            if (token.contractAddress && !contractAddresses.includes(token.contractAddress.toLowerCase())) {
+            if (
+              token.contractAddress &&
+              !contractAddresses.includes(token.contractAddress.toLowerCase())
+            ) {
               contractAddresses.push(token.contractAddress.toLowerCase());
             }
           });
@@ -148,40 +149,41 @@ export default function Crypto() {
     [fetchWallets, t]
   );
 
-  const handleUpdateBalance = useCallback(
-    async (id: string) => {
-      setUpdatingWalletId(id);
-      try {
-        const updatedWallet = await cryptoApi.updateBalance(id);
+  const handleUpdateBalance = useCallback(async (id: string) => {
+    setUpdatingWalletId(id);
+    try {
+      const updatedWallet = await cryptoApi.updateBalance(id);
 
-        setWallets((prevWallets) =>
-          prevWallets.map((wallet) => (wallet.id === id ? updatedWallet : wallet))
-        );
+      setWallets((prevWallets) =>
+        prevWallets.map((wallet) => (wallet.id === id ? updatedWallet : wallet))
+      );
 
-        if (updatedWallet.type === 'ethereum' && updatedWallet.tokens && Array.isArray(updatedWallet.tokens)) {
-          const contractAddresses = updatedWallet.tokens
-            .map((token: CryptoToken) => token.contractAddress)
-            .filter((addr: string | undefined): addr is string => !!addr);
+      if (
+        updatedWallet.type === 'ethereum' &&
+        updatedWallet.tokens &&
+        Array.isArray(updatedWallet.tokens)
+      ) {
+        const contractAddresses = updatedWallet.tokens
+          .map((token: CryptoToken) => token.contractAddress)
+          .filter((addr: string | undefined): addr is string => !!addr);
 
-          if (contractAddresses.length > 0) {
-            try {
-              const prices = await cryptoApi.getTokenPrices(
-                contractAddresses.map((addr: string) => addr.toLowerCase())
-              );
-              setTokenPrices((prevPrices) => ({ ...prevPrices, ...prices }));
-            } catch {
-              console.error('Error fetching token prices');
-            }
+        if (contractAddresses.length > 0) {
+          try {
+            const prices = await cryptoApi.getTokenPrices(
+              contractAddresses.map((addr: string) => addr.toLowerCase())
+            );
+            setTokenPrices((prevPrices) => ({ ...prevPrices, ...prices }));
+          } catch {
+            console.error('Error fetching token prices');
           }
         }
-      } catch {
-        console.error('Error updating balance');
-      } finally {
-        setUpdatingWalletId(null);
       }
-    },
-    []
-  );
+    } catch {
+      console.error('Error updating balance');
+    } finally {
+      setUpdatingWalletId(null);
+    }
+  }, []);
 
   const handleRetry = useCallback(() => {
     setLoading(true);

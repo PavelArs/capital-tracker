@@ -25,40 +25,43 @@ export default function ResetPassword() {
     }
   }, [token, t]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
 
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      setError(t('auth.passwordTooShort'));
-      return;
-    }
+      if (password.length < MIN_PASSWORD_LENGTH) {
+        setError(t('auth.passwordTooShort'));
+        return;
+      }
 
-    if (password !== confirmPassword) {
-      setError(t('auth.passwordsDoNotMatch'));
-      return;
-    }
+      if (password !== confirmPassword) {
+        setError(t('auth.passwordsDoNotMatch'));
+        return;
+      }
 
-    if (!token) {
-      setError(t('auth.invalidResetToken'));
-      return;
-    }
+      if (!token) {
+        setError(t('auth.invalidResetToken'));
+        return;
+      }
 
-    setLoading(true);
+      setLoading(true);
 
-    try {
-      await authApi.resetPassword(token, password);
-      setSuccess(true);
-      
-      setTimeout(() => {
-        navigate('/login');
-      }, REDIRECT_DELAY);
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.resetPasswordFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [password, confirmPassword, token, navigate, t]);
+      try {
+        await authApi.resetPassword(token, password);
+        setSuccess(true);
+
+        setTimeout(() => {
+          navigate('/login');
+        }, REDIRECT_DELAY);
+      } catch (err: any) {
+        setError(err.response?.data?.message || t('auth.resetPasswordFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [password, confirmPassword, token, navigate, t]
+  );
 
   const handlePasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setPassword(e.target.value);
@@ -86,7 +89,7 @@ export default function ResetPassword() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.resetPassword')}</h1>
-        
+
         {success ? (
           <div className="success-message">
             <p>{t('auth.passwordResetSuccess')}</p>
@@ -128,7 +131,7 @@ export default function ResetPassword() {
             </form>
           </>
         )}
-        
+
         <p className="auth-switch">
           <Link to="/login">{t('auth.backToLogin')}</Link>
         </p>

@@ -37,4 +37,3 @@ export interface WalletCardProps {
   isUpdating: boolean;
   isDeleting: boolean;
 }
-

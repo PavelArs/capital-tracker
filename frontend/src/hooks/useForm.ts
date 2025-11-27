@@ -15,7 +15,9 @@ interface UseFormResult<T extends Record<string, unknown>> {
   submitting: boolean;
   isValid: boolean;
   handleChange: (name: keyof T, value: unknown) => void;
-  handleInputChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => void;
+  handleInputChange: (
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => void;
   handleBlur: (name: keyof T) => void;
   handleSubmit: (e: FormEvent) => Promise<void>;
   setFieldValue: (name: keyof T, value: unknown) => void;
@@ -140,4 +142,3 @@ export function useForm<T extends Record<string, unknown>>({
     resetField,
   };
 }
-

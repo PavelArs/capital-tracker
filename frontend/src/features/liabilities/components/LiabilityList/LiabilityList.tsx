@@ -43,4 +43,3 @@ export const LiabilityList = memo(function LiabilityList({
     </div>
   );
 });
-

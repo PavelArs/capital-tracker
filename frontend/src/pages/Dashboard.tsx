@@ -17,15 +17,7 @@ import DashboardSkeleton from '@components/DashboardSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
 import './Dashboard.css';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 const CURRENCY_OPTIONS = ['USD', 'EUR', 'RUB'] as const;
 
@@ -41,34 +33,37 @@ export default function Dashboard() {
   const fetchingRef = useRef({ metrics: false, history: false });
 
   // Helper function to format category names
-  const formatCategoryName = useCallback((category: string): string => {
-    const categoryMap: Record<string, string> = {
-      // Stock assets
-      real_estate: t('assets.categories.realEstate'),
-      investments: t('assets.categories.investments'),
-      savings: t('assets.categories.savings'),
-      crypto: t('assets.categories.crypto'),
-      vehicle: t('assets.categories.vehicle'),
-      equipment: t('assets.categories.equipment'),
-      // Flow assets
-      salary: t('assets.categories.salary'),
-      dividends: t('assets.categories.dividends'),
-      freelance: t('assets.categories.freelance'),
-      rent_income: t('assets.categories.rentIncome'),
-      pension: t('assets.categories.pension'),
-      // Liabilities
-      subscriptions: t('liabilities.categories.subscriptions'),
-      regular_expenses: t('liabilities.categories.regularExpenses'),
-      loans: t('liabilities.categories.loans'),
-      mortgage: t('liabilities.categories.mortgage'),
-      credit_card: t('liabilities.categories.creditCard'),
-      other: t('assets.categories.other'),
-    };
-    return (
-      categoryMap[category] ||
-      category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
-    );
-  }, [t]);
+  const formatCategoryName = useCallback(
+    (category: string): string => {
+      const categoryMap: Record<string, string> = {
+        // Stock assets
+        real_estate: t('assets.categories.realEstate'),
+        investments: t('assets.categories.investments'),
+        savings: t('assets.categories.savings'),
+        crypto: t('assets.categories.crypto'),
+        vehicle: t('assets.categories.vehicle'),
+        equipment: t('assets.categories.equipment'),
+        // Flow assets
+        salary: t('assets.categories.salary'),
+        dividends: t('assets.categories.dividends'),
+        freelance: t('assets.categories.freelance'),
+        rent_income: t('assets.categories.rentIncome'),
+        pension: t('assets.categories.pension'),
+        // Liabilities
+        subscriptions: t('liabilities.categories.subscriptions'),
+        regular_expenses: t('liabilities.categories.regularExpenses'),
+        loans: t('liabilities.categories.loans'),
+        mortgage: t('liabilities.categories.mortgage'),
+        credit_card: t('liabilities.categories.creditCard'),
+        other: t('assets.categories.other'),
+      };
+      return (
+        categoryMap[category] ||
+        category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+      );
+    },
+    [t]
+  );
 
   const fetchMetrics = useCallback(async () => {
     // Prevent duplicate requests
@@ -113,32 +108,35 @@ export default function Dashboard() {
     fetchHistory();
   }, [fetchMetrics, fetchHistory]);
 
-  const chartData = useMemo(() => ({
-    labels: history.map((h) => h.date),
-    datasets: [
-      {
-        label: t('dashboard.netWorth'),
-        data: history.map((h) => h.netWorth),
-        borderColor: 'rgb(75, 192, 192)',
-        backgroundColor: 'rgba(75, 192, 192, 0.2)',
-        tension: 0.1,
-      },
-      {
-        label: t('dashboard.stockAssets'),
-        data: history.map((h) => h.totalAssets),
-        borderColor: 'rgb(54, 162, 235)',
-        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-        tension: 0.1,
-      },
-      {
-        label: t('dashboard.totalLiabilities'),
-        data: history.map((h) => h.totalLiabilities),
-        borderColor: 'rgb(255, 99, 132)',
-        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-        tension: 0.1,
-      },
-    ],
-  }), [history, t]);
+  const chartData = useMemo(
+    () => ({
+      labels: history.map((h) => h.date),
+      datasets: [
+        {
+          label: t('dashboard.netWorth'),
+          data: history.map((h) => h.netWorth),
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          tension: 0.1,
+        },
+        {
+          label: t('dashboard.stockAssets'),
+          data: history.map((h) => h.totalAssets),
+          borderColor: 'rgb(54, 162, 235)',
+          backgroundColor: 'rgba(54, 162, 235, 0.2)',
+          tension: 0.1,
+        },
+        {
+          label: t('dashboard.totalLiabilities'),
+          data: history.map((h) => h.totalLiabilities),
+          borderColor: 'rgb(255, 99, 132)',
+          backgroundColor: 'rgba(255, 99, 132, 0.2)',
+          tension: 0.1,
+        },
+      ],
+    }),
+    [history, t]
+  );
 
   const chartOptions = useMemo(() => {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -151,7 +149,7 @@ export default function Dashboard() {
       plugins: {
         legend: {
           display: true,
-          position: isMobile ? 'bottom' as const : 'top' as const,
+          position: isMobile ? ('bottom' as const) : ('top' as const),
           labels: {
             boxWidth: isMobile ? 12 : 40,
             padding: isMobile ? 8 : 10,
@@ -248,11 +246,7 @@ export default function Dashboard() {
         <h1>{t('dashboard.title')}</h1>
         <div className="currency-selector">
           <label htmlFor="currency-select">{t('common.currency')}:</label>
-          <select
-            id="currency-select"
-            value={currency}
-            onChange={handleCurrencyChange}
-          >
+          <select id="currency-select" value={currency} onChange={handleCurrencyChange}>
             {CURRENCY_OPTIONS.map((curr) => (
               <option key={curr} value={curr}>
                 {curr}
@@ -267,12 +261,8 @@ export default function Dashboard() {
           <div className="metrics-grid">
             <div className="metric-card">
               <h3>{t('dashboard.netWorth')}</h3>
-              <p className="metric-value">
-                {formatCurrency(metrics.netWorth, displayCurrency)}
-              </p>
-              <p className="metric-description">
-                {t('dashboard.netWorthDescription')}
-              </p>
+              <p className="metric-value">{formatCurrency(metrics.netWorth, displayCurrency)}</p>
+              <p className="metric-description">{t('dashboard.netWorthDescription')}</p>
             </div>
 
             <div className="metric-card stock-assets">
@@ -280,9 +270,7 @@ export default function Dashboard() {
               <p className="metric-value">
                 {formatCurrency(metrics.totalStockAssets, displayCurrency)}
               </p>
-              <p className="metric-description">
-                {t('dashboard.stockAssetsDescription')}
-              </p>
+              <p className="metric-description">{t('dashboard.stockAssetsDescription')}</p>
             </div>
 
             <div className="metric-card flow-income">
@@ -290,19 +278,13 @@ export default function Dashboard() {
               <p className="metric-value">
                 {formatCurrency(metrics.totalFlowIncome, displayCurrency)}
               </p>
-              <p className="metric-description">
-                {t('dashboard.flowIncomeDescription')}
-              </p>
+              <p className="metric-description">{t('dashboard.flowIncomeDescription')}</p>
             </div>
 
             <div className="metric-card">
               <h3>{t('dashboard.cryptoValue')}</h3>
-              <p className="metric-value">
-                {formatCurrency(metrics.cryptoValue, displayCurrency)}
-              </p>
-              <p className="metric-description">
-                {t('dashboard.cryptoValueDescription')}
-              </p>
+              <p className="metric-value">{formatCurrency(metrics.cryptoValue, displayCurrency)}</p>
+              <p className="metric-description">{t('dashboard.cryptoValueDescription')}</p>
             </div>
 
             <div className="metric-card">
@@ -325,9 +307,7 @@ export default function Dashboard() {
                 <p className="metric-value">
                   {metrics.runway.toFixed(1)} {t('dashboard.months')}
                 </p>
-                <p className="metric-description">
-                  {t('dashboard.runwayDescription')}
-                </p>
+                <p className="metric-description">{t('dashboard.runwayDescription')}</p>
               </div>
             )}
 
@@ -337,9 +317,7 @@ export default function Dashboard() {
                 <p className="metric-value">
                   {formatCurrency(metrics.totalActiveIncome, displayCurrency)}
                 </p>
-                <p className="metric-description">
-                  {t('dashboard.activeIncomeDescription')}
-                </p>
+                <p className="metric-description">{t('dashboard.activeIncomeDescription')}</p>
               </div>
             )}
 
@@ -349,21 +327,15 @@ export default function Dashboard() {
                 <p className="metric-value">
                   {formatCurrency(metrics.totalPassiveIncome, displayCurrency)}
                 </p>
-                <p className="metric-description">
-                  {t('dashboard.passiveIncomeDescription')}
-                </p>
+                <p className="metric-description">{t('dashboard.passiveIncomeDescription')}</p>
               </div>
             )}
 
             {metrics.flRatio !== null && metrics.flRatio !== undefined && (
               <div className="metric-card">
                 <h3>{t('dashboard.flRatio')}</h3>
-                <p className="metric-value">
-                  {(metrics.flRatio * 100).toFixed(2)}%
-                </p>
-                <p className="metric-description">
-                  {t('dashboard.flRatioDescription')}
-                </p>
+                <p className="metric-value">{(metrics.flRatio * 100).toFixed(2)}%</p>
+                <p className="metric-description">{t('dashboard.flRatioDescription')}</p>
               </div>
             )}
           </div>
@@ -383,9 +355,7 @@ export default function Dashboard() {
                   {Object.entries(metrics.stockAssetDistribution || {}).map(
                     ([category, percentage]) => (
                       <li key={category}>
-                        <span className="category-name">
-                          {formatCategoryName(category)}:
-                        </span>
+                        <span className="category-name">{formatCategoryName(category)}:</span>
                         <span className="category-percentage">
                           {(percentage as number).toFixed(2)}%
                         </span>
@@ -405,9 +375,7 @@ export default function Dashboard() {
                   {Object.entries(metrics.flowIncomeDistribution || {}).map(
                     ([category, percentage]) => (
                       <li key={category}>
-                        <span className="category-name">
-                          {formatCategoryName(category)}:
-                        </span>
+                        <span className="category-name">{formatCategoryName(category)}:</span>
                         <span className="category-percentage">
                           {(percentage as number).toFixed(2)}%
                         </span>
@@ -427,9 +395,7 @@ export default function Dashboard() {
                   {Object.entries(metrics.liabilityDistribution || {}).map(
                     ([category, percentage]) => (
                       <li key={category}>
-                        <span className="category-name">
-                          {formatCategoryName(category)}:
-                        </span>
+                        <span className="category-name">{formatCategoryName(category)}:</span>
                         <span className="category-percentage">
                           {(percentage as number).toFixed(2)}%
                         </span>

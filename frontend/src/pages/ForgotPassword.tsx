@@ -23,22 +23,25 @@ export default function ForgotPassword() {
     }
   }, [success, navigate]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccess(false);
-    setLoading(true);
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
+      setSuccess(false);
+      setLoading(true);
 
-    try {
-      await authApi.forgotPassword(email);
-      setSuccess(true);
-      setEmail('');
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('auth.forgotPasswordFailed'));
-    } finally {
-      setLoading(false);
-    }
-  }, [email, t]);
+      try {
+        await authApi.forgotPassword(email);
+        setSuccess(true);
+        setEmail('');
+      } catch (err: any) {
+        setError(err.response?.data?.message || t('auth.forgotPasswordFailed'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [email, t]
+  );
 
   const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setEmail(e.target.value);
@@ -48,7 +51,7 @@ export default function ForgotPassword() {
     <div className="auth-container">
       <div className="auth-card">
         <h1>{t('auth.forgotPassword')}</h1>
-        
+
         {success ? (
           <div className="success-message">
             <p>{t('auth.resetLinkSent')}</p>
@@ -78,7 +81,7 @@ export default function ForgotPassword() {
             </form>
           </>
         )}
-        
+
         <p className="auth-switch">
           <Link to="/login">{t('auth.backToLogin')}</Link>
         </p>

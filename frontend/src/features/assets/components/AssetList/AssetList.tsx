@@ -52,4 +52,3 @@ export const AssetList = memo(function AssetList({
     </div>
   );
 });
-

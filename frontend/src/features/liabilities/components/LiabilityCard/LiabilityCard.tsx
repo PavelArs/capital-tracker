@@ -18,9 +18,10 @@ export const LiabilityCard = memo(function LiabilityCard({
 }: LiabilityCardProps) {
   const { t } = useTranslation();
 
-  const currencyCode = typeof liability.currency === 'object' && liability.currency !== null
-    ? (liability.currency as { code?: string }).code || 'USD'
-    : String(liability.currency || 'USD');
+  const currencyCode =
+    typeof liability.currency === 'object' && liability.currency !== null
+      ? (liability.currency as { code?: string }).code || 'USD'
+      : String(liability.currency || 'USD');
   const amount = parseFloat(String(liability.amount));
 
   const extLiability = liability as unknown as ExtendedLiability;
@@ -82,4 +83,3 @@ export const LiabilityCard = memo(function LiabilityCard({
     </div>
   );
 });
-

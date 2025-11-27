@@ -2,7 +2,12 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@components/common';
 import LoadingButton from '@components/LoadingButton';
 import type { LiabilityFormProps, FrequencyType } from '../../types';
-import { LIABILITY_CATEGORIES, FREQUENCY_OPTIONS, REGULAR_CATEGORIES, NON_REGULAR_CATEGORIES } from '../../constants';
+import {
+  LIABILITY_CATEGORIES,
+  FREQUENCY_OPTIONS,
+  REGULAR_CATEGORIES,
+  NON_REGULAR_CATEGORIES,
+} from '../../constants';
 import './LiabilityForm.css';
 
 export function LiabilityForm({
@@ -27,7 +32,7 @@ export function LiabilityForm({
     setFormData((prev) => ({
       ...prev,
       category,
-      frequency: isRegular ? (prev.frequency || 'monthly') : '',
+      frequency: isRegular ? prev.frequency || 'monthly' : '',
       deadline: isNonRegular ? prev.deadline || '' : '',
     }));
   };
@@ -167,4 +172,3 @@ export function LiabilityForm({
     </Modal>
   );
 }
-
