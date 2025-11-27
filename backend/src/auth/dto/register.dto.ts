@@ -1,22 +1,34 @@
-import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class RegisterDto {
-  @IsEmail()
-  email: string;
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @Transform(({ value }: { value: string }) => value?.toLowerCase().trim())
+  email!: string;
 
-  @IsString()
-  @MinLength(6)
-  password: string;
+  @IsString({ message: 'Password must be a string' })
+  @MinLength(6, { message: 'Password must be at least 6 characters long' })
+  @MaxLength(100, { message: 'Password must not exceed 100 characters' })
+  @Matches(/^(?=.*[a-zA-Z])(?=.*\d)/, {
+    message: 'Password must contain at least one letter and one number',
+  })
+  password!: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'First name must be a string' })
+  @MinLength(1, { message: 'First name must not be empty' })
+  @MaxLength(50, { message: 'First name must not exceed 50 characters' })
+  @Transform(({ value }: { value: string }) => value?.trim())
   firstName?: string;
 
   @IsOptional()
-  @IsString()
+  @IsString({ message: 'Last name must be a string' })
+  @MinLength(1, { message: 'Last name must not be empty' })
+  @MaxLength(50, { message: 'Last name must not exceed 50 characters' })
+  @Transform(({ value }: { value: string }) => value?.trim())
   lastName?: string;
 
-  @IsString()
-  invitationCode: string;
+  @IsString({ message: 'Invitation code must be a string' })
+  @Transform(({ value }: { value: string }) => value?.trim().toUpperCase())
+  invitationCode!: string;
 }
-

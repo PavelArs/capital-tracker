@@ -7,7 +7,8 @@ import {
   Body,
   Param,
   UseGuards,
-  Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionGuard, RequireSubscription } from '../auth/guards/subscription.guard';
@@ -15,51 +16,54 @@ import { SubscriptionType } from '../entities/subscription.entity';
 import { AiRecommendationsService } from './ai-recommendations.service';
 import { CreateAiRecommendationDto } from './dto/create-ai-recommendation.dto';
 import { UpdateAiRecommendationDto } from './dto/update-ai-recommendation.dto';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('ai-recommendations')
 @UseGuards(JwtAuthGuard, SubscriptionGuard)
 export class AiRecommendationsController {
-  constructor(private aiRecommendationsService: AiRecommendationsService) {}
+  constructor(private readonly aiRecommendationsService: AiRecommendationsService) {}
 
   @Post()
+  @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
-  async create(@Request() req, @Body() createDto: CreateAiRecommendationDto) {
-    return this.aiRecommendationsService.create(req.user.userId, createDto);
+  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateAiRecommendationDto) {
+    return this.aiRecommendationsService.create(user.userId, createDto);
   }
 
   @Get()
   @RequireSubscription(SubscriptionType.PRO)
-  async findAll(@Request() req) {
-    return this.aiRecommendationsService.findAll(req.user.userId);
+  async findAll(@CurrentUser() user: JwtPayload) {
+    return this.aiRecommendationsService.findAll(user.userId);
   }
 
   @Post('generate')
+  @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
-  async generateRecommendations(@Request() req) {
-    return this.aiRecommendationsService.generateRecommendations(req.user.userId);
+  async generateRecommendations(@CurrentUser() user: JwtPayload) {
+    return this.aiRecommendationsService.generateRecommendations(user.userId);
   }
 
   @Get(':id')
   @RequireSubscription(SubscriptionType.PRO)
-  async findOne(@Request() req, @Param('id') id: string) {
-    return this.aiRecommendationsService.findOne(id, req.user.userId);
+  async findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.aiRecommendationsService.findOne(id, user.userId);
   }
 
   @Put(':id')
   @RequireSubscription(SubscriptionType.PRO)
   async update(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() updateDto: UpdateAiRecommendationDto,
   ) {
-    return this.aiRecommendationsService.update(id, req.user.userId, updateDto);
+    return this.aiRecommendationsService.update(id, user.userId, updateDto);
   }
 
   @Delete(':id')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async remove(@Request() req, @Param('id') id: string) {
-    await this.aiRecommendationsService.remove(id, req.user.userId);
+  async remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    await this.aiRecommendationsService.remove(id, user.userId);
     return { message: 'AI recommendation deleted successfully' };
   }
 }
-

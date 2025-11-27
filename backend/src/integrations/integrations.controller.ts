@@ -7,7 +7,8 @@ import {
   Body,
   Param,
   UseGuards,
-  Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { SubscriptionGuard, RequireSubscription } from '../auth/guards/subscription.guard';
@@ -15,114 +16,124 @@ import { SubscriptionType } from '../entities/subscription.entity';
 import { IntegrationsService } from './integrations.service';
 import { CreateBrokerIntegrationDto } from './dto/create-broker-integration.dto';
 import { CreateBankIntegrationDto } from './dto/create-bank-integration.dto';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('integrations')
 @UseGuards(JwtAuthGuard, SubscriptionGuard)
 export class IntegrationsController {
-  constructor(private integrationsService: IntegrationsService) {}
+  constructor(private readonly integrationsService: IntegrationsService) {}
 
   // Broker Integrations
   @Post('brokers')
+  @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
   async createBrokerIntegration(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Body() createDto: CreateBrokerIntegrationDto,
   ) {
-    return this.integrationsService.createBrokerIntegration(
-      req.user.userId,
-      createDto,
-    );
+    return this.integrationsService.createBrokerIntegration(user.userId, createDto);
   }
 
   @Get('brokers')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBrokerIntegrations(@Request() req) {
-    return this.integrationsService.getBrokerIntegrations(req.user.userId);
+  async getBrokerIntegrations(@CurrentUser() user: JwtPayload) {
+    return this.integrationsService.getBrokerIntegrations(user.userId);
   }
 
   @Get('brokers/:id')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBrokerIntegration(@Request() req, @Param('id') id: string) {
-    return this.integrationsService.getBrokerIntegration(id, req.user.userId);
+  async getBrokerIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.integrationsService.getBrokerIntegration(id, user.userId);
   }
 
   @Put('brokers/:id')
   @RequireSubscription(SubscriptionType.PRO)
   async updateBrokerIntegration(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() updateData: any,
+    @Body() updateData: Record<string, unknown>,
   ) {
-    return this.integrationsService.updateBrokerIntegration(
-      id,
-      req.user.userId,
-      updateData,
-    );
+    return this.integrationsService.updateBrokerIntegration(id, user.userId, updateData);
   }
 
   @Post('brokers/:id/sync')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async syncBrokerIntegration(@Request() req, @Param('id') id: string) {
-    return this.integrationsService.syncBrokerIntegration(id, req.user.userId);
+  async syncBrokerIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.integrationsService.syncBrokerIntegration(id, user.userId);
   }
 
   @Delete('brokers/:id')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async deleteBrokerIntegration(@Request() req, @Param('id') id: string) {
-    await this.integrationsService.deleteBrokerIntegration(id, req.user.userId);
+  async deleteBrokerIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    await this.integrationsService.deleteBrokerIntegration(id, user.userId);
     return { message: 'Broker integration deleted successfully' };
   }
 
   // Bank Integrations
   @Post('banks')
+  @HttpCode(HttpStatus.CREATED)
   @RequireSubscription(SubscriptionType.PRO)
   async createBankIntegration(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Body() createDto: CreateBankIntegrationDto,
   ) {
-    return this.integrationsService.createBankIntegration(
-      req.user.userId,
-      createDto,
-    );
+    return this.integrationsService.createBankIntegration(user.userId, createDto);
   }
 
   @Get('banks')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBankIntegrations(@Request() req) {
-    return this.integrationsService.getBankIntegrations(req.user.userId);
+  async getBankIntegrations(@CurrentUser() user: JwtPayload) {
+    return this.integrationsService.getBankIntegrations(user.userId);
   }
 
   @Get('banks/:id')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBankIntegration(@Request() req, @Param('id') id: string) {
-    return this.integrationsService.getBankIntegration(id, req.user.userId);
+  async getBankIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.integrationsService.getBankIntegration(id, user.userId);
   }
 
   @Put('banks/:id')
   @RequireSubscription(SubscriptionType.PRO)
   async updateBankIntegration(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
-    @Body() updateData: any,
+    @Body() updateData: Record<string, unknown>,
   ) {
-    return this.integrationsService.updateBankIntegration(
-      id,
-      req.user.userId,
-      updateData,
-    );
+    return this.integrationsService.updateBankIntegration(id, user.userId, updateData);
   }
 
   @Post('banks/:id/sync')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async syncBankIntegration(@Request() req, @Param('id') id: string) {
-    return this.integrationsService.syncBankIntegration(id, req.user.userId);
+  async syncBankIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    return this.integrationsService.syncBankIntegration(id, user.userId);
   }
 
   @Delete('banks/:id')
+  @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async deleteBankIntegration(@Request() req, @Param('id') id: string) {
-    await this.integrationsService.deleteBankIntegration(id, req.user.userId);
+  async deleteBankIntegration(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') id: string,
+  ) {
+    await this.integrationsService.deleteBankIntegration(id, user.userId);
     return { message: 'Bank integration deleted successfully' };
   }
 }
-

@@ -7,12 +7,14 @@ import {
   Param,
   Delete,
   UseGuards,
-  Request,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser, JwtPayload } from '../shared/decorators';
 
 @Controller('assets')
 @UseGuards(JwtAuthGuard)
@@ -20,32 +22,33 @@ export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 
   @Post()
-  create(@Request() req, @Body() createAssetDto: CreateAssetDto) {
-    return this.assetsService.create(req.user.userId, createAssetDto);
+  @HttpCode(HttpStatus.CREATED)
+  create(@CurrentUser() user: JwtPayload, @Body() createAssetDto: CreateAssetDto) {
+    return this.assetsService.create(user.userId, createAssetDto);
   }
 
   @Get()
-  findAll(@Request() req) {
-    return this.assetsService.findAll(req.user.userId);
+  findAll(@CurrentUser() user: JwtPayload) {
+    return this.assetsService.findAll(user.userId);
   }
 
   @Get(':id')
-  findOne(@Request() req, @Param('id') id: string) {
-    return this.assetsService.findOne(id, req.user.userId);
+  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.assetsService.findOne(id, user.userId);
   }
 
   @Patch(':id')
   update(
-    @Request() req,
+    @CurrentUser() user: JwtPayload,
     @Param('id') id: string,
     @Body() updateAssetDto: UpdateAssetDto,
   ) {
-    return this.assetsService.update(id, req.user.userId, updateAssetDto);
+    return this.assetsService.update(id, user.userId, updateAssetDto);
   }
 
   @Delete(':id')
-  remove(@Request() req, @Param('id') id: string) {
-    return this.assetsService.remove(id, req.user.userId);
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+    return this.assetsService.remove(id, user.userId);
   }
 }
-

@@ -12,10 +12,7 @@ export class AiRecommendationsService {
     private aiRecommendationRepository: Repository<AiRecommendation>,
   ) {}
 
-  async create(
-    userId: string,
-    createDto: CreateAiRecommendationDto,
-  ): Promise<AiRecommendation> {
+  async create(userId: string, createDto: CreateAiRecommendationDto): Promise<AiRecommendation> {
     const recommendation = this.aiRecommendationRepository.create({
       ...createDto,
       userId,
@@ -64,4 +61,3 @@ export class AiRecommendationsService {
     return [];
   }
 }
-
