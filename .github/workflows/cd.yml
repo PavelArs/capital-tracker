@@ -167,7 +167,7 @@ jobs:
 
           echo "💾 Creating database backup: $BACKUP_FILENAME"
 
-          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'BACKUP_SCRIPT'
+          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "BACKUP_FILENAME=$BACKUP_FILENAME bash -s" << 'BACKUP_SCRIPT'
             set -e
             cd /opt/capital-tracker
 
@@ -187,7 +187,7 @@ jobs:
               exit 1
             fi
 
-            docker exec $POSTGRES_CONTAINER pg_dump -U $DB_USER -d $DB_NAME | gzip > backups/$1
+            docker exec $POSTGRES_CONTAINER pg_dump -U $DB_USER -d $DB_NAME | gzip > "backups/$BACKUP_FILENAME"
 
             ls -t backups/capital-tracker-backup-*.sql.gz | tail -n +11 | xargs -r rm
             echo "✅ Backup created successfully"
