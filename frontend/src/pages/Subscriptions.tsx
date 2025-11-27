@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
-import { useError } from '../contexts/ErrorContext';
-import axios from 'axios';
-import SubscriptionBadge, { SubscriptionType } from '../components/SubscriptionBadge';
-import LoadingButton from '../components/LoadingButton';
+import { useState, useEffect, useCallback } from 'react';
+import { useAuth } from '@contexts/AuthContext';
+import { useError } from '@contexts/ErrorContext';
+import { api } from '@api';
+import type { SubscriptionType } from '@shared/types';
+import SubscriptionBadge from '@components/SubscriptionBadge';
+import LoadingButton from '@components/LoadingButton';
 import './Subscriptions.css';
 
 interface SubscriptionPlan {
@@ -14,20 +15,69 @@ interface SubscriptionPlan {
   popular?: boolean;
 }
 
+interface CurrentSubscription {
+  type: SubscriptionType;
+  status: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+const SUBSCRIPTION_HIERARCHY: Record<SubscriptionType, number> = {
+  free: 0,
+  pro: 1,
+  enterprise: 2,
+};
+
+const PLANS: SubscriptionPlan[] = [
+  {
+    type: 'free',
+    name: 'Free',
+    price: '$0',
+    features: [
+      'Базовые активы и обязательства',
+      'Bitcoin и Ethereum кошельки',
+      'Базовая аналитика',
+      'Отслеживание капитала',
+    ],
+  },
+  {
+    type: 'pro',
+    name: 'Pro',
+    price: '$29',
+    popular: true,
+    features: [
+      'Все возможности Free',
+      'Интеграции с брокерами',
+      'Интеграции с банками',
+      'Дополнительные блокчейны (Polygon, BSC, Solana и др.)',
+      'DeFi интеграции (Uniswap, Aave, Compound и др.)',
+      'AI рекомендации по капиталу',
+      'Отслеживание liquidity pools и staking',
+    ],
+  },
+  {
+    type: 'enterprise',
+    name: 'Enterprise',
+    price: '$99',
+    features: [
+      'Все возможности Pro',
+      'Множественные капиталы',
+      'Формирование отчетов (PDF, Excel, CSV)',
+      'Приоритетная поддержка',
+      'Кастомные интеграции',
+    ],
+  },
+];
+
 export default function Subscriptions() {
   const { user, refreshUser } = useAuth();
   const { showError } = useError();
-  // const { t } = useTranslation(); // Removed unused translation hook
   const [loading, setLoading] = useState(false);
-  const [currentSubscription, setCurrentSubscription] = useState<any>(null);
+  const [currentSubscription, setCurrentSubscription] = useState<CurrentSubscription | null>(null);
 
-  useEffect(() => {
-    fetchCurrentSubscription();
-  }, []);
-
-  const fetchCurrentSubscription = async () => {
+  const fetchCurrentSubscription = useCallback(async () => {
     try {
-      const response = await axios.get('/subscriptions/current');
+      const response = await api.get<CurrentSubscription>('/subscriptions/current');
       setCurrentSubscription(response.data);
     } catch (error: any) {
       // Ignore 404 - user might not have a subscription record yet
@@ -35,106 +85,66 @@ export default function Subscriptions() {
         console.error('Failed to fetch subscription:', error);
       }
     }
-  };
+  }, []);
 
-  const handleUpgrade = async (type: SubscriptionType) => {
+  useEffect(() => {
+    fetchCurrentSubscription();
+  }, [fetchCurrentSubscription]);
+
+  const handleUpgrade = useCallback(async (type: SubscriptionType) => {
     if (loading) return;
     
     setLoading(true);
     try {
-      await axios.post('/subscriptions/upgrade', { type });
+      await api.post('/subscriptions/upgrade', { type });
       await refreshUser();
       await fetchCurrentSubscription();
-      setLoading(false);
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to upgrade subscription');
+    } finally {
       setLoading(false);
     }
-  };
+  }, [loading, refreshUser, fetchCurrentSubscription, showError]);
 
-  const handleCancel = async () => {
+  const handleCancel = useCallback(async () => {
     if (loading || !confirm('Are you sure you want to cancel your subscription?')) return;
     
     setLoading(true);
     try {
-      await axios.post('/subscriptions/cancel');
+      await api.post('/subscriptions/cancel');
       await refreshUser();
       await fetchCurrentSubscription();
-      setLoading(false);
     } catch (error: any) {
       showError(error.response?.data?.message || 'Failed to cancel subscription');
+    } finally {
       setLoading(false);
     }
-  };
+  }, [loading, refreshUser, fetchCurrentSubscription, showError]);
 
-  const plans: SubscriptionPlan[] = [
-    {
-      type: 'free',
-      name: 'Free',
-      price: '$0',
-      features: [
-        'Базовые активы и обязательства',
-        'Bitcoin и Ethereum кошельки',
-        'Базовая аналитика',
-        'Отслеживание капитала',
-      ],
-    },
-    {
-      type: 'pro',
-      name: 'Pro',
-      price: '$29',
-      popular: true,
-      features: [
-        'Все возможности Free',
-        'Интеграции с брокерами',
-        'Интеграции с банками',
-        'Дополнительные блокчейны (Polygon, BSC, Solana и др.)',
-        'DeFi интеграции (Uniswap, Aave, Compound и др.)',
-        'AI рекомендации по капиталу',
-        'Отслеживание liquidity pools и staking',
-      ],
-    },
-    {
-      type: 'enterprise',
-      name: 'Enterprise',
-      price: '$99',
-      features: [
-        'Все возможности Pro',
-        'Множественные капиталы',
-        'Формирование отчетов (PDF, Excel, CSV)',
-        'Приоритетная поддержка',
-        'Кастомные интеграции',
-      ],
-    },
-  ];
-
-  // Removed unused getCurrentPlan function
-  // const getCurrentPlan = () => {
-  //   return plans.find((plan) => plan.type === user?.subscriptionType) || plans[0];
-  // };
-
-  const canUpgrade = (planType: SubscriptionType) => {
+  const canUpgrade = useCallback((planType: SubscriptionType) => {
     const currentType = user?.subscriptionType || 'free';
-    const hierarchy = { free: 0, pro: 1, enterprise: 2 };
-    return hierarchy[planType] > hierarchy[currentType as SubscriptionType];
-  };
+    return SUBSCRIPTION_HIERARCHY[planType] > SUBSCRIPTION_HIERARCHY[currentType];
+  }, [user?.subscriptionType]);
 
-  const canDowngrade = (planType: SubscriptionType) => {
+  const canDowngrade = useCallback((planType: SubscriptionType) => {
     const currentType = user?.subscriptionType || 'free';
-    const hierarchy = { free: 0, pro: 1, enterprise: 2 };
-    return hierarchy[planType] < hierarchy[currentType as SubscriptionType];
-  };
+    return SUBSCRIPTION_HIERARCHY[planType] < SUBSCRIPTION_HIERARCHY[currentType];
+  }, [user?.subscriptionType]);
+
+  const userSubscriptionType = user?.subscriptionType || 'free';
 
   return (
     <div className="subscriptions-page">
       <div className="subscriptions-header">
         <h1>Выберите подписку</h1>
-        <p>Текущая подписка: <SubscriptionBadge type={user?.subscriptionType || 'free'} /></p>
+        <p>
+          Текущая подписка: <SubscriptionBadge type={userSubscriptionType} />
+        </p>
       </div>
 
       <div className="subscriptions-grid">
-        {plans.map((plan) => {
-          const isCurrent = plan.type === user?.subscriptionType;
+        {PLANS.map((plan) => {
+          const isCurrent = plan.type === userSubscriptionType;
           const canUpgradePlan = canUpgrade(plan.type);
           const canDowngradePlan = canDowngrade(plan.type);
 
@@ -239,4 +249,3 @@ export default function Subscriptions() {
     </div>
   );
 }
-

@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { useTranslation } from "react-i18next";
-import axios from "axios";
-import { Line } from "react-chartjs-2";
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -11,10 +10,12 @@ import {
   Title,
   Tooltip,
   Legend,
-} from "chart.js";
-import DashboardSkeleton from "../components/DashboardSkeleton";
-import ErrorMessage from "../components/ErrorMessage";
-import "./Dashboard.css";
+} from 'chart.js';
+import { metricsApi } from '@api';
+import type { Metrics, MetricsHistory } from '@shared/types';
+import DashboardSkeleton from '@components/DashboardSkeleton';
+import ErrorMessage from '@components/ErrorMessage';
+import './Dashboard.css';
 
 ChartJS.register(
   CategoryScale,
@@ -26,65 +27,63 @@ ChartJS.register(
   Legend
 );
 
+const CURRENCY_OPTIONS = ['USD', 'EUR', 'RUB'] as const;
+
 export default function Dashboard() {
   const { t } = useTranslation();
-  const [metrics, setMetrics] = useState<any>(null);
-  const [history, setHistory] = useState<any[]>([]);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
+  const [history, setHistory] = useState<MetricsHistory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [currency, setCurrency] = useState("USD");
+  const [currency, setCurrency] = useState<string>('USD');
 
   // Track active requests to prevent duplicates
   const fetchingRef = useRef({ metrics: false, history: false });
 
   // Helper function to format category names
-  const formatCategoryName = (category: string): string => {
+  const formatCategoryName = useCallback((category: string): string => {
     const categoryMap: Record<string, string> = {
       // Stock assets
-      real_estate: t("assets.categories.realEstate"),
-      investments: t("assets.categories.investments"),
-      savings: t("assets.categories.savings"),
-      crypto: t("assets.categories.crypto"),
-      vehicle: t("assets.categories.vehicle"),
-      equipment: t("assets.categories.equipment"),
+      real_estate: t('assets.categories.realEstate'),
+      investments: t('assets.categories.investments'),
+      savings: t('assets.categories.savings'),
+      crypto: t('assets.categories.crypto'),
+      vehicle: t('assets.categories.vehicle'),
+      equipment: t('assets.categories.equipment'),
       // Flow assets
-      salary: t("assets.categories.salary"),
-      dividends: t("assets.categories.dividends"),
-      freelance: t("assets.categories.freelance"),
-      rent_income: t("assets.categories.rentIncome"),
-      pension: t("assets.categories.pension"),
+      salary: t('assets.categories.salary'),
+      dividends: t('assets.categories.dividends'),
+      freelance: t('assets.categories.freelance'),
+      rent_income: t('assets.categories.rentIncome'),
+      pension: t('assets.categories.pension'),
       // Liabilities
-      subscriptions: t("liabilities.categories.subscriptions"),
-      regular_expenses: t("liabilities.categories.regularExpenses"),
-      loans: t("liabilities.categories.loans"),
-      mortgage: t("liabilities.categories.mortgage"),
-      credit_card: t("liabilities.categories.creditCard"),
-      other: t("assets.categories.other"),
+      subscriptions: t('liabilities.categories.subscriptions'),
+      regular_expenses: t('liabilities.categories.regularExpenses'),
+      loans: t('liabilities.categories.loans'),
+      mortgage: t('liabilities.categories.mortgage'),
+      credit_card: t('liabilities.categories.creditCard'),
+      other: t('assets.categories.other'),
     };
     return (
       categoryMap[category] ||
-      category.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())
+      category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
     );
-  };
+  }, [t]);
 
   const fetchMetrics = useCallback(async () => {
     // Prevent duplicate requests
     if (fetchingRef.current.metrics) {
-      console.log("⏳ Metrics request already in progress, skipping");
       return;
     }
 
     try {
       fetchingRef.current.metrics = true;
       setError(null);
-      console.log("↓ Fetching metrics for currency:", currency);
-      const response = await axios.get("/metrics", {
-        params: { currency },
-      });
-      setMetrics(response.data);
-    } catch (error: any) {
-      console.error("Error fetching metrics:", error);
-      setError(error.response?.data?.message || t("common.errorLoading"));
+      const data = await metricsApi.getMetrics(currency);
+      setMetrics(data);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : t('common.errorLoading');
+      setError(errorMessage);
     } finally {
       setLoading(false);
       fetchingRef.current.metrics = false;
@@ -94,19 +93,15 @@ export default function Dashboard() {
   const fetchHistory = useCallback(async () => {
     // Prevent duplicate requests
     if (fetchingRef.current.history) {
-      console.log("⏳ History request already in progress, skipping");
       return;
     }
 
     try {
       fetchingRef.current.history = true;
-      console.log("↓ Fetching history for currency:", currency);
-      const response = await axios.get("/metrics/history", {
-        params: { currency, days: 30 },
-      });
-      setHistory(response.data);
-    } catch (error: any) {
-      console.error("Error fetching history:", error);
+      const data = await metricsApi.getHistory(currency, 30);
+      setHistory(data);
+    } catch (err) {
+      console.error('Error fetching history:', err);
       // Don't set error for history as it's not critical
     } finally {
       fetchingRef.current.history = false;
@@ -118,104 +113,116 @@ export default function Dashboard() {
     fetchHistory();
   }, [fetchMetrics, fetchHistory]);
 
-  const chartData = {
+  const chartData = useMemo(() => ({
     labels: history.map((h) => h.date),
     datasets: [
       {
-        label: t("dashboard.netWorth"),
+        label: t('dashboard.netWorth'),
         data: history.map((h) => h.netWorth),
-        borderColor: "rgb(75, 192, 192)",
-        backgroundColor: "rgba(75, 192, 192, 0.2)",
+        borderColor: 'rgb(75, 192, 192)',
+        backgroundColor: 'rgba(75, 192, 192, 0.2)',
         tension: 0.1,
       },
       {
-        label: t("dashboard.stockAssets"),
+        label: t('dashboard.stockAssets'),
         data: history.map((h) => h.totalAssets),
-        borderColor: "rgb(54, 162, 235)",
-        backgroundColor: "rgba(54, 162, 235, 0.2)",
+        borderColor: 'rgb(54, 162, 235)',
+        backgroundColor: 'rgba(54, 162, 235, 0.2)',
         tension: 0.1,
       },
       {
-        label: t("dashboard.totalLiabilities"),
+        label: t('dashboard.totalLiabilities'),
         data: history.map((h) => h.totalLiabilities),
-        borderColor: "rgb(255, 99, 132)",
-        backgroundColor: "rgba(255, 99, 132, 0.2)",
+        borderColor: 'rgb(255, 99, 132)',
+        backgroundColor: 'rgba(255, 99, 132, 0.2)',
         tension: 0.1,
       },
     ],
-  };
+  }), [history, t]);
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: true,
-    aspectRatio: window.innerWidth < 768 ? 1.2 : 2,
-    plugins: {
-      legend: {
-        display: true,
-        position:
-          window.innerWidth < 768 ? ("bottom" as const) : ("top" as const),
-        labels: {
-          boxWidth: window.innerWidth < 768 ? 12 : 40,
-          padding: window.innerWidth < 768 ? 8 : 10,
-          font: {
-            size:
-              window.innerWidth < 480 ? 10 : window.innerWidth < 768 ? 11 : 12,
-          },
-        },
-      },
-      tooltip: {
-        mode: "index" as const,
-        intersect: false,
-        bodyFont: {
-          size: window.innerWidth < 768 ? 11 : 12,
-        },
-        titleFont: {
-          size: window.innerWidth < 768 ? 12 : 13,
-        },
-      },
-    },
-    scales: {
-      x: {
-        ticks: {
-          maxRotation: window.innerWidth < 768 ? 45 : 0,
-          minRotation: window.innerWidth < 768 ? 45 : 0,
-          font: {
-            size:
-              window.innerWidth < 480 ? 9 : window.innerWidth < 768 ? 10 : 11,
-          },
-          maxTicksLimit:
-            window.innerWidth < 480 ? 6 : window.innerWidth < 768 ? 8 : 10,
-        },
-        grid: {
-          display: window.innerWidth >= 768,
-        },
-      },
-      y: {
-        ticks: {
-          font: {
-            size:
-              window.innerWidth < 480 ? 9 : window.innerWidth < 768 ? 10 : 11,
-          },
-          maxTicksLimit: window.innerWidth < 768 ? 6 : 8,
-        },
-        grid: {
+  const chartOptions = useMemo(() => {
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+    const isSmallMobile = typeof window !== 'undefined' && window.innerWidth < 480;
+
+    return {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: isMobile ? 1.2 : 2,
+      plugins: {
+        legend: {
           display: true,
+          position: isMobile ? 'bottom' as const : 'top' as const,
+          labels: {
+            boxWidth: isMobile ? 12 : 40,
+            padding: isMobile ? 8 : 10,
+            font: {
+              size: isSmallMobile ? 10 : isMobile ? 11 : 12,
+            },
+          },
+        },
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          bodyFont: {
+            size: isMobile ? 11 : 12,
+          },
+          titleFont: {
+            size: isMobile ? 12 : 13,
+          },
         },
       },
-    },
-    interaction: {
-      mode: "nearest" as const,
-      axis: "x" as const,
-      intersect: false,
-    },
-  };
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: isMobile ? 45 : 0,
+            minRotation: isMobile ? 45 : 0,
+            font: {
+              size: isSmallMobile ? 9 : isMobile ? 10 : 11,
+            },
+            maxTicksLimit: isSmallMobile ? 6 : isMobile ? 8 : 10,
+          },
+          grid: {
+            display: !isMobile,
+          },
+        },
+        y: {
+          ticks: {
+            font: {
+              size: isSmallMobile ? 9 : isMobile ? 10 : 11,
+            },
+            maxTicksLimit: isMobile ? 6 : 8,
+          },
+          grid: {
+            display: true,
+          },
+        },
+      },
+      interaction: {
+        mode: 'nearest' as const,
+        axis: 'x' as const,
+        intersect: false,
+      },
+    };
+  }, []);
 
-  const handleRetry = () => {
+  const handleRetry = useCallback(() => {
     setLoading(true);
     setError(null);
     fetchMetrics();
     fetchHistory();
-  };
+  }, [fetchMetrics, fetchHistory]);
+
+  const handleCurrencyChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setCurrency(e.target.value);
+  }, []);
+
+  const formatCurrency = useCallback((value: number | undefined, currencyCode: string) => {
+    if (value === undefined) return '-';
+    return value.toLocaleString(undefined, {
+      style: 'currency',
+      currency: currencyCode,
+    });
+  }, []);
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -225,146 +232,137 @@ export default function Dashboard() {
     return (
       <ErrorMessage
         type="page"
-        title={t("common.error")}
+        title={t('common.error')}
         message={error}
         onRetry={handleRetry}
-        retryText={t("common.retry")}
+        retryText={t('common.retry')}
       />
     );
   }
 
+  const displayCurrency = metrics?.currency || 'USD';
+
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h1>{t("dashboard.title")}</h1>
+        <h1>{t('dashboard.title')}</h1>
         <div className="currency-selector">
-          <label>{t("common.currency")}:</label>
+          <label htmlFor="currency-select">{t('common.currency')}:</label>
           <select
+            id="currency-select"
             value={currency}
-            onChange={(e) => setCurrency(e.target.value)}
+            onChange={handleCurrencyChange}
           >
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="RUB">RUB</option>
+            {CURRENCY_OPTIONS.map((curr) => (
+              <option key={curr} value={curr}>
+                {curr}
+              </option>
+            ))}
           </select>
         </div>
       </div>
+
       {metrics && (
         <>
           <div className="metrics-grid">
             <div className="metric-card">
-              <h3>{t("dashboard.netWorth")}</h3>
+              <h3>{t('dashboard.netWorth')}</h3>
               <p className="metric-value">
-                {metrics.netWorth?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.netWorth, displayCurrency)}
               </p>
               <p className="metric-description">
-                {t("dashboard.netWorthDescription")}
+                {t('dashboard.netWorthDescription')}
               </p>
             </div>
+
             <div className="metric-card stock-assets">
-              <h3>{t("dashboard.stockAssets")}</h3>
+              <h3>{t('dashboard.stockAssets')}</h3>
               <p className="metric-value">
-                {metrics.totalStockAssets?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.totalStockAssets, displayCurrency)}
               </p>
               <p className="metric-description">
-                {t("dashboard.stockAssetsDescription")}
+                {t('dashboard.stockAssetsDescription')}
               </p>
             </div>
+
             <div className="metric-card flow-income">
-              <h3>{t("dashboard.flowIncome")}</h3>
+              <h3>{t('dashboard.flowIncome')}</h3>
               <p className="metric-value">
-                {metrics.totalFlowIncome?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.totalFlowIncome, displayCurrency)}
               </p>
               <p className="metric-description">
-                {t("dashboard.flowIncomeDescription")}
+                {t('dashboard.flowIncomeDescription')}
               </p>
             </div>
+
             <div className="metric-card">
-              <h3>{t("dashboard.cryptoValue")}</h3>
+              <h3>{t('dashboard.cryptoValue')}</h3>
               <p className="metric-value">
-                {metrics.cryptoValue?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.cryptoValue, displayCurrency)}
               </p>
               <p className="metric-description">
-                {t("dashboard.cryptoValueDescription")}
+                {t('dashboard.cryptoValueDescription')}
               </p>
             </div>
+
             <div className="metric-card">
-              <h3>{t("dashboard.totalLiabilities")}</h3>
+              <h3>{t('dashboard.totalLiabilities')}</h3>
               <p className="metric-value">
-                {metrics.totalLiabilities?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.totalLiabilities, displayCurrency)}
               </p>
             </div>
+
             <div className="metric-card">
-              <h3>{t("dashboard.monthlyExpenses")}</h3>
+              <h3>{t('dashboard.monthlyExpenses')}</h3>
               <p className="metric-value">
-                {metrics.monthlyExpenses?.toLocaleString(undefined, {
-                  style: "currency",
-                  currency: metrics.currency || "USD",
-                })}
+                {formatCurrency(metrics.monthlyExpenses, displayCurrency)}
               </p>
             </div>
-            {metrics.runway && (
+
+            {metrics.runway !== undefined && metrics.runway !== null && (
               <div className="metric-card">
-                <h3>{t("dashboard.runway")}</h3>
+                <h3>{t('dashboard.runway')}</h3>
                 <p className="metric-value">
-                  {metrics.runway.toFixed(1)} {t("dashboard.months")}
+                  {metrics.runway.toFixed(1)} {t('dashboard.months')}
                 </p>
                 <p className="metric-description">
-                  {t("dashboard.runwayDescription")}
+                  {t('dashboard.runwayDescription')}
                 </p>
               </div>
             )}
+
             {metrics.totalActiveIncome !== undefined && (
               <div className="metric-card">
-                <h3>{t("dashboard.activeIncome")}</h3>
+                <h3>{t('dashboard.activeIncome')}</h3>
                 <p className="metric-value">
-                  {metrics.totalActiveIncome?.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: metrics.currency || "USD",
-                  })}
+                  {formatCurrency(metrics.totalActiveIncome, displayCurrency)}
                 </p>
                 <p className="metric-description">
-                  {t("dashboard.activeIncomeDescription")}
+                  {t('dashboard.activeIncomeDescription')}
                 </p>
               </div>
             )}
+
             {metrics.totalPassiveIncome !== undefined && (
               <div className="metric-card">
-                <h3>{t("dashboard.passiveIncome")}</h3>
+                <h3>{t('dashboard.passiveIncome')}</h3>
                 <p className="metric-value">
-                  {metrics.totalPassiveIncome?.toLocaleString(undefined, {
-                    style: "currency",
-                    currency: metrics.currency || "USD",
-                  })}
+                  {formatCurrency(metrics.totalPassiveIncome, displayCurrency)}
                 </p>
                 <p className="metric-description">
-                  {t("dashboard.passiveIncomeDescription")}
+                  {t('dashboard.passiveIncomeDescription')}
                 </p>
               </div>
             )}
+
             {metrics.flRatio !== null && metrics.flRatio !== undefined && (
               <div className="metric-card">
-                <h3>{t("dashboard.flRatio")}</h3>
+                <h3>{t('dashboard.flRatio')}</h3>
                 <p className="metric-value">
                   {(metrics.flRatio * 100).toFixed(2)}%
                 </p>
                 <p className="metric-description">
-                  {t("dashboard.flRatioDescription")}
+                  {t('dashboard.flRatioDescription')}
                 </p>
               </div>
             )}
@@ -372,80 +370,78 @@ export default function Dashboard() {
 
           {history.length > 0 && (
             <div className="chart-container">
-              <h2>{t("dashboard.capitalHistory")}</h2>
+              <h2>{t('dashboard.capitalHistory')}</h2>
               <Line data={chartData} options={chartOptions} />
             </div>
           )}
 
-          {metrics && (
-            <div className="distribution-container">
-              <div className="distribution-card">
-                <h2>{t("dashboard.stockAssetsDistribution")}</h2>
-                {Object.keys(metrics.stockAssetDistribution || {}).length >
-                0 ? (
-                  <ul>
-                    {Object.entries(metrics.stockAssetDistribution || {}).map(
-                      ([category, percentage]: [string, any]) => (
-                        <li key={category}>
-                          <span className="category-name">
-                            {formatCategoryName(category)}:
-                          </span>
-                          <span className="category-percentage">
-                            {percentage.toFixed(2)}%
-                          </span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                ) : (
-                  <p className="no-data">{t("dashboard.noStockAssetsData")}</p>
-                )}
-              </div>
-              <div className="distribution-card">
-                <h2>{t("dashboard.flowIncomeDistribution")}</h2>
-                {Object.keys(metrics.flowIncomeDistribution || {}).length >
-                0 ? (
-                  <ul>
-                    {Object.entries(metrics.flowIncomeDistribution || {}).map(
-                      ([category, percentage]: [string, any]) => (
-                        <li key={category}>
-                          <span className="category-name">
-                            {formatCategoryName(category)}:
-                          </span>
-                          <span className="category-percentage">
-                            {percentage.toFixed(2)}%
-                          </span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                ) : (
-                  <p className="no-data">{t("dashboard.noFlowIncomeData")}</p>
-                )}
-              </div>
-              <div className="distribution-card">
-                <h2>{t("dashboard.liabilityDistribution")}</h2>
-                {Object.keys(metrics.liabilityDistribution || {}).length > 0 ? (
-                  <ul>
-                    {Object.entries(metrics.liabilityDistribution || {}).map(
-                      ([category, percentage]: [string, any]) => (
-                        <li key={category}>
-                          <span className="category-name">
-                            {formatCategoryName(category)}:
-                          </span>
-                          <span className="category-percentage">
-                            {percentage.toFixed(2)}%
-                          </span>
-                        </li>
-                      )
-                    )}
-                  </ul>
-                ) : (
-                  <p className="no-data">{t("dashboard.noLiabilitiesData")}</p>
-                )}
-              </div>
+          <div className="distribution-container">
+            <div className="distribution-card">
+              <h2>{t('dashboard.stockAssetsDistribution')}</h2>
+              {Object.keys(metrics.stockAssetDistribution || {}).length > 0 ? (
+                <ul>
+                  {Object.entries(metrics.stockAssetDistribution || {}).map(
+                    ([category, percentage]) => (
+                      <li key={category}>
+                        <span className="category-name">
+                          {formatCategoryName(category)}:
+                        </span>
+                        <span className="category-percentage">
+                          {(percentage as number).toFixed(2)}%
+                        </span>
+                      </li>
+                    )
+                  )}
+                </ul>
+              ) : (
+                <p className="no-data">{t('dashboard.noStockAssetsData')}</p>
+              )}
             </div>
-          )}
+
+            <div className="distribution-card">
+              <h2>{t('dashboard.flowIncomeDistribution')}</h2>
+              {Object.keys(metrics.flowIncomeDistribution || {}).length > 0 ? (
+                <ul>
+                  {Object.entries(metrics.flowIncomeDistribution || {}).map(
+                    ([category, percentage]) => (
+                      <li key={category}>
+                        <span className="category-name">
+                          {formatCategoryName(category)}:
+                        </span>
+                        <span className="category-percentage">
+                          {(percentage as number).toFixed(2)}%
+                        </span>
+                      </li>
+                    )
+                  )}
+                </ul>
+              ) : (
+                <p className="no-data">{t('dashboard.noFlowIncomeData')}</p>
+              )}
+            </div>
+
+            <div className="distribution-card">
+              <h2>{t('dashboard.liabilityDistribution')}</h2>
+              {Object.keys(metrics.liabilityDistribution || {}).length > 0 ? (
+                <ul>
+                  {Object.entries(metrics.liabilityDistribution || {}).map(
+                    ([category, percentage]) => (
+                      <li key={category}>
+                        <span className="category-name">
+                          {formatCategoryName(category)}:
+                        </span>
+                        <span className="category-percentage">
+                          {(percentage as number).toFixed(2)}%
+                        </span>
+                      </li>
+                    )
+                  )}
+                </ul>
+              ) : (
+                <p className="no-data">{t('dashboard.noLiabilitiesData')}</p>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>

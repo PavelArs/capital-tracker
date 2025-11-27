@@ -1,10 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
+import { authApi } from '@api';
 import './Auth.css';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState('');
@@ -25,14 +23,14 @@ export default function ForgotPassword() {
     }
   }, [success, navigate]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setSuccess(false);
     setLoading(true);
 
     try {
-      await axios.post(`${API_URL}/auth/forgot-password`, { email });
+      await authApi.forgotPassword(email);
       setSuccess(true);
       setEmail('');
     } catch (err: any) {
@@ -40,7 +38,11 @@ export default function ForgotPassword() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [email, t]);
+
+  const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setEmail(e.target.value);
+  }, []);
 
   return (
     <div className="auth-container">
@@ -50,28 +52,24 @@ export default function ForgotPassword() {
         {success ? (
           <div className="success-message">
             <p>{t('auth.resetLinkSent')}</p>
-            <p style={{ fontSize: '14px', marginTop: '10px' }}>
-              {t('auth.checkYourEmail')}
-            </p>
-            <p style={{ fontSize: '14px', marginTop: '10px', opacity: 0.8 }}>
-              {t('auth.redirectingToLogin')}
-            </p>
+            <p className="success-subtitle">{t('auth.checkYourEmail')}</p>
+            <p className="success-redirect">{t('auth.redirectingToLogin')}</p>
           </div>
         ) : (
           <>
-            <p style={{ marginBottom: '20px', color: 'var(--text-secondary)' }}>
-              {t('auth.forgotPasswordDescription')}
-            </p>
+            <p className="auth-description">{t('auth.forgotPasswordDescription')}</p>
             {error && <div className="error">{error}</div>}
             <form onSubmit={handleSubmit}>
               <div className="form-group">
-                <label>{t('common.email')}</label>
+                <label htmlFor="email">{t('common.email')}</label>
                 <input
+                  id="email"
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={handleEmailChange}
                   required
                   disabled={loading}
+                  autoComplete="email"
                 />
               </div>
               <button type="submit" disabled={loading}>
@@ -81,11 +79,10 @@ export default function ForgotPassword() {
           </>
         )}
         
-        <p style={{ marginTop: '20px' }}>
+        <p className="auth-switch">
           <Link to="/login">{t('auth.backToLogin')}</Link>
         </p>
       </div>
     </div>
   );
 }
-

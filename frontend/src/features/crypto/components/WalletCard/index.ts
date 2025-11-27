@@ -1,0 +1,2 @@
+export { WalletCard } from './WalletCard';
+

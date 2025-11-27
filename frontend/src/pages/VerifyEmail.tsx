@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import axios from 'axios';
+import { authApi } from '@api';
 import './Auth.css';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const REDIRECT_DELAY = 3000;
 
 export default function VerifyEmail() {
   const [searchParams] = useSearchParams();
@@ -30,13 +30,12 @@ export default function VerifyEmail() {
       }
 
       try {
-        await axios.post(`${API_URL}/auth/verify-email`, { token });
+        await authApi.verifyEmail(token);
         setSuccess(true);
         
-        // Redirect to login after 3 seconds
         setTimeout(() => {
           navigate('/login');
-        }, 3000);
+        }, REDIRECT_DELAY);
       } catch (err: any) {
         setError(err.response?.data?.message || t('auth.emailVerificationFailed'));
       } finally {
@@ -53,7 +52,7 @@ export default function VerifyEmail() {
       <div className="auth-container">
         <div className="auth-card">
           <h1>{t('auth.verifyingEmail')}</h1>
-          <p>{t('common.loading')}</p>
+          <p className="loading-text">{t('common.loading')}</p>
         </div>
       </div>
     );
@@ -67,14 +66,12 @@ export default function VerifyEmail() {
         {success ? (
           <div className="success-message">
             <p>{t('auth.emailVerifiedSuccess')}</p>
-            <p style={{ fontSize: '14px', marginTop: '10px' }}>
-              {t('auth.redirectingToLogin')}
-            </p>
+            <p className="success-subtitle">{t('auth.redirectingToLogin')}</p>
           </div>
         ) : (
           <>
             <div className="error">{error}</div>
-            <p style={{ marginTop: '20px' }}>
+            <p className="auth-switch">
               <Link to="/login">{t('auth.backToLogin')}</Link>
             </p>
           </>
@@ -83,4 +80,3 @@ export default function VerifyEmail() {
     </div>
   );
 }
-

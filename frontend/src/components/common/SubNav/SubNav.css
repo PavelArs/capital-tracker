@@ -1,0 +1,41 @@
+.sub-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.sub-nav__btn {
+  background: var(--bg-secondary, #f1f5f9);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary, #64748b);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.sub-nav__btn:hover {
+  background: var(--bg-hover, #e2e8f0);
+  color: var(--text-primary, #1e293b);
+}
+
+.sub-nav__btn.active {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+
+@media (max-width: 640px) {
+  .sub-nav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 0.5rem;
+  }
+
+  .sub-nav__btn {
+    flex-shrink: 0;
+  }
+}
+
