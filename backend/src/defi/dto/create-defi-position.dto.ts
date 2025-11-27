@@ -27,4 +27,3 @@ export class CreateDeFiPositionDto {
   @IsString()
   description?: string;
 }
-

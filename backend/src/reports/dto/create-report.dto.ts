@@ -24,4 +24,3 @@ export class CreateReportDto {
   @IsObject()
   parameters?: any;
 }
-

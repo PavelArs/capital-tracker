@@ -42,10 +42,7 @@ export class IntegrationsController {
 
   @Get('brokers/:id')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBrokerIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async getBrokerIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.integrationsService.getBrokerIntegration(id, user.userId);
   }
 
@@ -62,20 +59,14 @@ export class IntegrationsController {
   @Post('brokers/:id/sync')
   @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async syncBrokerIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async syncBrokerIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.integrationsService.syncBrokerIntegration(id, user.userId);
   }
 
   @Delete('brokers/:id')
   @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async deleteBrokerIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async deleteBrokerIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     await this.integrationsService.deleteBrokerIntegration(id, user.userId);
     return { message: 'Broker integration deleted successfully' };
   }
@@ -99,10 +90,7 @@ export class IntegrationsController {
 
   @Get('banks/:id')
   @RequireSubscription(SubscriptionType.PRO)
-  async getBankIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async getBankIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.integrationsService.getBankIntegration(id, user.userId);
   }
 
@@ -119,20 +107,14 @@ export class IntegrationsController {
   @Post('banks/:id/sync')
   @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async syncBankIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async syncBankIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.integrationsService.syncBankIntegration(id, user.userId);
   }
 
   @Delete('banks/:id')
   @HttpCode(HttpStatus.OK)
   @RequireSubscription(SubscriptionType.PRO)
-  async deleteBankIntegration(
-    @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-  ) {
+  async deleteBankIntegration(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     await this.integrationsService.deleteBankIntegration(id, user.userId);
     return { message: 'Bank integration deleted successfully' };
   }

@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, SetMetadata } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  SetMetadata,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { SubscriptionType } from '../../entities/subscription.entity';
@@ -31,18 +37,12 @@ export class SubscriptionGuard implements CanActivate {
       throw new ForbiddenException('User not authenticated');
     }
 
-    const hasAccess = await this.subscriptionsService.checkFeatureAccess(
-      userId,
-      requiredType,
-    );
+    const hasAccess = await this.subscriptionsService.checkFeatureAccess(userId, requiredType);
 
     if (!hasAccess) {
-      throw new ForbiddenException(
-        `This feature requires ${requiredType} subscription`,
-      );
+      throw new ForbiddenException(`This feature requires ${requiredType} subscription`);
     }
 
     return true;
   }
 }
-

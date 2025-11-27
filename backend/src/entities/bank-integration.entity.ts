@@ -71,4 +71,3 @@ export class BankIntegration {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

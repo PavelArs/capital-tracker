@@ -81,4 +81,3 @@ export class Report {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

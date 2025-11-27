@@ -11,4 +11,3 @@ import { Liability } from '../entities/liability.entity';
   exports: [LiabilitiesService],
 })
 export class LiabilitiesModule {}
-

@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { BrokerIntegration, BrokerType, IntegrationStatus } from '../entities/broker-integration.entity';
-import { BankIntegration, BankType } from '../entities/bank-integration.entity';
+import { BrokerIntegration, IntegrationStatus } from '../entities/broker-integration.entity';
+import { BankIntegration } from '../entities/bank-integration.entity';
 import { CreateBrokerIntegrationDto } from './dto/create-broker-integration.dto';
 import { CreateBankIntegrationDto } from './dto/create-bank-integration.dto';
 
@@ -34,10 +34,7 @@ export class IntegrationsService {
     });
   }
 
-  async getBrokerIntegration(
-    id: string,
-    userId: string,
-  ): Promise<BrokerIntegration> {
+  async getBrokerIntegration(id: string, userId: string): Promise<BrokerIntegration> {
     const integration = await this.brokerIntegrationRepository.findOne({
       where: { id, userId },
     });
@@ -62,10 +59,7 @@ export class IntegrationsService {
     await this.brokerIntegrationRepository.remove(integration);
   }
 
-  async syncBrokerIntegration(
-    id: string,
-    userId: string,
-  ): Promise<BrokerIntegration> {
+  async syncBrokerIntegration(id: string, userId: string): Promise<BrokerIntegration> {
     const integration = await this.getBrokerIntegration(id, userId);
     // TODO: Implement actual sync logic with broker API
     integration.lastSyncAt = new Date();
@@ -92,10 +86,7 @@ export class IntegrationsService {
     });
   }
 
-  async getBankIntegration(
-    id: string,
-    userId: string,
-  ): Promise<BankIntegration> {
+  async getBankIntegration(id: string, userId: string): Promise<BankIntegration> {
     const integration = await this.bankIntegrationRepository.findOne({
       where: { id, userId },
     });
@@ -120,10 +111,7 @@ export class IntegrationsService {
     await this.bankIntegrationRepository.remove(integration);
   }
 
-  async syncBankIntegration(
-    id: string,
-    userId: string,
-  ): Promise<BankIntegration> {
+  async syncBankIntegration(id: string, userId: string): Promise<BankIntegration> {
     const integration = await this.getBankIntegration(id, userId);
     // TODO: Implement actual sync logic with bank API
     integration.lastSyncAt = new Date();
@@ -131,4 +119,3 @@ export class IntegrationsService {
     return this.bankIntegrationRepository.save(integration);
   }
 }
-

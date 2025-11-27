@@ -1,13 +1,9 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-} from "@nestjs/common";
-import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
-import { CurrencyUpdateService } from "./currency-update.service";
-import { Currency, CurrencyType } from "../entities/currency.entity";
-import { UserCurrencyPreference } from "../entities/UserCurrencyPreference.entity";
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { CurrencyUpdateService } from './currency-update.service';
+import { Currency } from '../entities/currency.entity';
+import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
 
 @Injectable()
 export class CurrenciesService {
@@ -16,14 +12,14 @@ export class CurrenciesService {
     private currencyRepository: Repository<Currency>,
     @InjectRepository(UserCurrencyPreference)
     private userCurrencyPreferenceRepository: Repository<UserCurrencyPreference>,
-    private currencyUpdateService: CurrencyUpdateService
+    private currencyUpdateService: CurrencyUpdateService,
   ) {}
 
   // Получить все валюты с учетом предпочтений пользователя
   async findAll(userId?: string): Promise<Currency[]> {
     const currencies = await this.currencyRepository.find({
       where: { isActive: true },
-      order: { code: "ASC" },
+      order: { code: 'ASC' },
     });
 
     if (!userId) {
@@ -35,9 +31,7 @@ export class CurrenciesService {
       where: { userId, isHidden: true },
     });
 
-    const hiddenCurrencyIds = new Set(
-      hiddenPreferences.map((pref) => pref.currencyId)
-    );
+    const hiddenCurrencyIds = new Set(hiddenPreferences.map((pref) => pref.currencyId));
 
     // Фильтруем валюты, исключая скрытые
     return currencies.filter((currency) => !hiddenCurrencyIds.has(currency.id));
@@ -51,7 +45,7 @@ export class CurrenciesService {
     return currency;
   }
 
-  async getExchangeRates(baseCurrency: string = "USD") {
+  async getExchangeRates(baseCurrency: string = 'USD') {
     return this.currencyUpdateService.getExchangeRates(baseCurrency);
   }
 
@@ -62,7 +56,7 @@ export class CurrenciesService {
 
     try {
       // Get all rates in USD base
-      const ratesInUSD = await this.getExchangeRates("USD");
+      const ratesInUSD = await this.getExchangeRates('USD');
 
       const fromRateInUSD = ratesInUSD[from];
       const toRateInUSD = ratesInUSD[to];
@@ -106,7 +100,7 @@ export class CurrenciesService {
     }
 
     if (!currency.isSystem) {
-      throw new BadRequestException("Only system currencies can be hidden.");
+      throw new BadRequestException('Only system currencies can be hidden.');
     }
 
     // Проверяем, есть ли уже предпочтение
@@ -153,7 +147,7 @@ export class CurrenciesService {
 
     // Загружаем валюты отдельным запросом
     const currencies = await this.currencyRepository
-      .createQueryBuilder("currency")
+      .createQueryBuilder('currency')
       .whereInIds(currencyIds)
       .getMany();
 

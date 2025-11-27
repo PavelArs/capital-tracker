@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Report, ReportType, ReportFormat } from '../entities/report.entity';
+import { Report, ReportType } from '../entities/report.entity';
 import { Asset } from '../entities/asset.entity';
 import { Liability } from '../entities/liability.entity';
 import { CryptoWallet } from '../entities/crypto-wallet.entity';
@@ -45,10 +45,7 @@ export class ReportsService {
     return report;
   }
 
-  async generateReport(
-    id: string,
-    userId: string,
-  ): Promise<Report> {
+  async generateReport(id: string, userId: string): Promise<Report> {
     const report = await this.findOne(id, userId);
 
     // Collect data based on report type
@@ -78,10 +75,7 @@ export class ReportsService {
     await this.reportRepository.remove(report);
   }
 
-  private async generateFinancialSummary(
-    userId: string,
-    capitalId?: string,
-  ): Promise<any> {
+  private async generateFinancialSummary(userId: string, _capitalId?: string): Promise<any> {
     const assets = await this.assetRepository.find({
       where: { userId },
     });
@@ -97,10 +91,7 @@ export class ReportsService {
       (sum, liability) => sum + Number(liability.amount),
       0,
     );
-    const totalCrypto = cryptoWallets.reduce(
-      (sum, wallet) => sum + Number(wallet.balance),
-      0,
-    );
+    const totalCrypto = cryptoWallets.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
 
     return {
       totalAssets: totalAssets + totalCrypto,
@@ -113,10 +104,7 @@ export class ReportsService {
     };
   }
 
-  private async generateAssetAllocation(
-    userId: string,
-    capitalId?: string,
-  ): Promise<any> {
+  private async generateAssetAllocation(userId: string, _capitalId?: string): Promise<any> {
     const assets = await this.assetRepository.find({
       where: { userId },
     });
@@ -131,10 +119,7 @@ export class ReportsService {
       allocation[category] = (allocation[category] || 0) + Number(asset.amount);
     });
 
-    const totalCrypto = cryptoWallets.reduce(
-      (sum, wallet) => sum + Number(wallet.balance),
-      0,
-    );
+    const totalCrypto = cryptoWallets.reduce((sum, wallet) => sum + Number(wallet.balance), 0);
     if (totalCrypto > 0) {
       allocation['crypto'] = (allocation['crypto'] || 0) + totalCrypto;
     }
@@ -146,10 +131,7 @@ export class ReportsService {
     };
   }
 
-  private async generatePerformanceReport(
-    userId: string,
-    capitalId?: string,
-  ): Promise<any> {
+  private async generatePerformanceReport(_userId: string, _capitalId?: string): Promise<any> {
     // TODO: Implement performance tracking over time
     return {
       message: 'Performance report generation not yet implemented',
@@ -157,4 +139,3 @@ export class ReportsService {
     };
   }
 }
-

@@ -40,4 +40,3 @@ export class UserCurrencyPreference {
   @UpdateDateColumn()
   updatedAt: Date;
 }
-

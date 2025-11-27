@@ -6,12 +6,9 @@ import {
   IsOptional,
   IsUUID,
   IsPositive,
-} from "class-validator";
-import { Type } from "class-transformer";
-import {
-  LiabilityCategory,
-  LiabilityFrequency,
-} from "../../entities/liability.entity";
+} from 'class-validator';
+import { Type } from 'class-transformer';
+import { LiabilityCategory, LiabilityFrequency } from '../../entities/liability.entity';
 
 export class CreateLiabilityDto {
   @IsString()

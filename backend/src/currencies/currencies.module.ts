@@ -17,5 +17,3 @@ import { CryptoModule } from '../crypto/crypto.module';
   exports: [CurrenciesService],
 })
 export class CurrenciesModule {}
-
-

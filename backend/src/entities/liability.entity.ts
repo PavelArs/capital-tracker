@@ -6,34 +6,34 @@ import {
   UpdateDateColumn,
   ManyToOne,
   JoinColumn,
-} from "typeorm";
-import { User } from "./user.entity";
-import { Currency } from "./currency.entity";
+} from 'typeorm';
+import { User } from './user.entity';
+import { Currency } from './currency.entity';
 
 export enum LiabilityCategory {
-  SUBSCRIPTIONS = "subscriptions",
-  REGULAR_EXPENSES = "regular_expenses",
-  LOANS = "loans",
-  MORTGAGE = "mortgage",
-  CREDIT_CARD = "credit_card",
-  OTHER = "other",
+  SUBSCRIPTIONS = 'subscriptions',
+  REGULAR_EXPENSES = 'regular_expenses',
+  LOANS = 'loans',
+  MORTGAGE = 'mortgage',
+  CREDIT_CARD = 'credit_card',
+  OTHER = 'other',
 }
 
 export enum LiabilityFrequency {
-  DAILY = "daily",
-  WEEKLY = "weekly",
-  MONTHLY = "monthly",
-  QUARTERLY = "quarterly",
-  YEARLY = "yearly",
+  DAILY = 'daily',
+  WEEKLY = 'weekly',
+  MONTHLY = 'monthly',
+  QUARTERLY = 'quarterly',
+  YEARLY = 'yearly',
 }
 
-@Entity("liabilities")
+@Entity('liabilities')
 export class Liability {
-  @PrimaryGeneratedColumn("uuid")
+  @PrimaryGeneratedColumn('uuid')
   id: string;
 
   @ManyToOne(() => User)
-  @JoinColumn({ name: "userId" })
+  @JoinColumn({ name: 'userId' })
   user: User;
 
   @Column()
@@ -43,35 +43,35 @@ export class Liability {
   name: string;
 
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: LiabilityCategory,
   })
   category: LiabilityCategory;
 
-  @Column("decimal", { precision: 20, scale: 8 })
+  @Column('decimal', { precision: 20, scale: 8 })
   amount: number;
 
   @ManyToOne(() => Currency)
-  @JoinColumn({ name: "currencyId" })
+  @JoinColumn({ name: 'currencyId' })
   currency: Currency;
 
   @Column()
   currencyId: string;
 
-  @Column({ type: "date" })
+  @Column({ type: 'date' })
   date: Date;
 
-  @Column({ nullable: true, type: "text" })
+  @Column({ nullable: true, type: 'text' })
   description: string;
 
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: LiabilityFrequency,
     nullable: true,
   })
   frequency: LiabilityFrequency | null;
 
-  @Column({ nullable: true, type: "date" })
+  @Column({ nullable: true, type: 'date' })
   deadline: Date | null;
 
   @CreateDateColumn()

@@ -32,10 +32,7 @@ export class CryptoController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async create(
-    @CurrentUser() user: JwtPayload,
-    @Body() createDto: CreateCryptoWalletDto,
-  ) {
+  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateCryptoWalletDto) {
     // Check if user has PRO subscription for additional blockchains
     const allowedFreeTypes = [CryptoType.BITCOIN, CryptoType.ETHEREUM];
     if (!allowedFreeTypes.includes(createDto.type)) {
@@ -44,9 +41,7 @@ export class CryptoController {
         SubscriptionType.PRO,
       );
       if (!hasProAccess) {
-        throw new ForbiddenException(
-          'Additional blockchains require PRO subscription',
-        );
+        throw new ForbiddenException('Additional blockchains require PRO subscription');
       }
     }
     return this.cryptoService.create(user.userId, createDto);
