@@ -1,6 +1,7 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { ConfigService } from '@nestjs/config';
@@ -41,6 +42,87 @@ async function bootstrap(): Promise<void> {
 
   // Ensure sensitive data (like passwords) is excluded from responses
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+
+  // Swagger/OpenAPI Configuration
+  const isProduction = configService.get('NODE_ENV') === 'production';
+
+  if (!isProduction) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('Capital Tracker API')
+      .setDescription(
+        `## Overview
+Capital Tracker is a personal finance management API for tracking assets, liabilities, investments, and generating financial insights.
+
+## Authentication
+Most endpoints require JWT authentication. Include the token in the Authorization header:
+\`Authorization: Bearer <your_token>\`
+
+## Rate Limiting
+API endpoints are rate-limited to prevent abuse:
+- General endpoints: 100 requests per minute
+- Authentication endpoints: 5 requests per minute
+- Password reset: 3 requests per minute
+
+## Error Handling
+All errors follow a consistent format with appropriate HTTP status codes.`,
+      )
+      .setVersion('1.0')
+      .setLicense('MIT', 'https://opensource.org/licenses/MIT')
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          name: 'JWT',
+          description: 'Enter your JWT token',
+          in: 'header',
+        },
+        'JWT-auth',
+      )
+      .addTag('auth', 'Authentication and authorization endpoints')
+      .addTag('assets', 'Asset management operations')
+      .addTag('liabilities', 'Liability management operations')
+      .addTag('capitals', 'Capital tracking and snapshots')
+      .addTag('currencies', 'Currency management and exchange rates')
+      .addTag('crypto', 'Cryptocurrency wallet management')
+      .addTag('defi', 'DeFi position tracking')
+      .addTag('integrations', 'Bank and broker integrations')
+      .addTag('metrics', 'Financial metrics and analytics')
+      .addTag('reports', 'Financial report generation')
+      .addTag('subscriptions', 'Subscription management')
+      .addTag('ai-recommendations', 'AI-powered financial recommendations')
+      .addTag('health', 'Health check endpoints')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig, {
+      operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,
+      deepScanRoutes: true,
+    });
+
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: {
+        persistAuthorization: true,
+        docExpansion: 'none',
+        filter: true,
+        showRequestDuration: true,
+        syntaxHighlight: {
+          activate: true,
+          theme: 'monokai',
+        },
+        tryItOutEnabled: true,
+      },
+      customCss: `
+        .swagger-ui .topbar { display: none }
+        .swagger-ui .info .title { font-size: 2rem; }
+        .swagger-ui .info .description { max-width: none; }
+      `,
+      customSiteTitle: 'Capital Tracker API Documentation',
+    });
+
+    logger.log(
+      `Swagger documentation available at: http://localhost:${configService.get<number>('PORT', 3000)}/api/docs`,
+    );
+  }
 
   const port = configService.get<number>('PORT', 3000);
   await app.listen(port);

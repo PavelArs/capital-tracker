@@ -11,6 +11,14 @@ import {
   HttpCode,
   HttpStatus,
 } from '@nestjs/common';
+import {
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiParam,
+  ApiBody,
+} from '@nestjs/swagger';
 import { CryptoService } from './crypto.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -20,7 +28,10 @@ import { SubscriptionType } from '../entities/subscription.entity';
 import { CryptoType } from '../entities/crypto-wallet.entity';
 import { CryptoPricesService, CryptoPrices } from './crypto-prices.service';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
 
+@ApiTags('crypto')
+@ApiBearerAuth('JWT-auth')
 @Controller('crypto')
 @UseGuards(JwtAuthGuard, SubscriptionGuard)
 export class CryptoController {
@@ -32,8 +43,26 @@ export class CryptoController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Add a crypto wallet',
+    description:
+      'Add a new cryptocurrency wallet for tracking. Bitcoin and Ethereum are free, other blockchains require PRO subscription.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Wallet added successfully',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error',
+    type: ValidationErrorResponseDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'PRO subscription required for this blockchain',
+    type: ErrorResponseDto,
+  })
   async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateCryptoWalletDto) {
-    // Check if user has PRO subscription for additional blockchains
     const allowedFreeTypes = [CryptoType.BITCOIN, CryptoType.ETHEREUM];
     if (!allowedFreeTypes.includes(createDto.type)) {
       const hasProAccess = await this.subscriptionsService.checkFeatureAccess(
@@ -48,33 +77,117 @@ export class CryptoController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'Get all crypto wallets',
+    description: 'Retrieve all cryptocurrency wallets belonging to the authenticated user',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Wallets retrieved successfully',
+  })
   findAll(@CurrentUser() user: JwtPayload) {
     return this.cryptoService.findAll(user.userId);
   }
 
   @Get('prices')
+  @ApiOperation({
+    summary: 'Get crypto prices',
+    description: 'Get current cryptocurrency prices in USD',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Prices retrieved successfully',
+    schema: {
+      properties: {
+        bitcoin: { type: 'number', example: 65000.5 },
+        ethereum: { type: 'number', example: 3500.25 },
+      },
+    },
+  })
   getPrices(): CryptoPrices {
     return this.cryptoPricesService.getAllPrices();
   }
 
   @Post('token-prices')
   @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get token prices by contract addresses',
+    description: 'Get prices for ERC-20 tokens by their contract addresses',
+  })
+  @ApiBody({
+    schema: {
+      properties: {
+        contractAddresses: {
+          type: 'array',
+          items: { type: 'string' },
+          example: ['0x1f9840a85d5af5bf1d1762f925bdaddc4201f984'],
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Token prices retrieved successfully',
+  })
   async getTokenPrices(@Body() body: { contractAddresses: string[] }) {
     return this.cryptoPricesService.getBulkTokenPrices(body.contractAddresses);
   }
 
   @Get(':id')
+  @ApiOperation({
+    summary: 'Get crypto wallet by ID',
+    description: 'Retrieve a specific cryptocurrency wallet by its ID',
+  })
+  @ApiParam({ name: 'id', description: 'Wallet UUID', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Wallet retrieved successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Wallet not found',
+    type: ErrorResponseDto,
+  })
   findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.cryptoService.findOne(id, user.userId);
   }
 
   @Patch(':id/update-balance')
+  @ApiOperation({
+    summary: 'Update wallet balance',
+    description:
+      'Fetch and update the current balance of a cryptocurrency wallet from the blockchain',
+  })
+  @ApiParam({ name: 'id', description: 'Wallet UUID', format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Balance updated successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Wallet not found',
+    type: ErrorResponseDto,
+  })
   updateBalance(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.cryptoService.updateBalance(id, user.userId);
   }
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Delete a crypto wallet',
+    description: 'Remove a cryptocurrency wallet from tracking',
+  })
+  @ApiParam({ name: 'id', description: 'Wallet UUID', format: 'uuid' })
+  @ApiResponse({
+    status: 204,
+    description: 'Wallet deleted successfully',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Wallet not found',
+    type: ErrorResponseDto,
+  })
   remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
     return this.cryptoService.remove(id, user.userId);
   }
