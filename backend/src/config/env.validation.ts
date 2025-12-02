@@ -54,9 +54,9 @@ export class EnvironmentVariables {
   @IsString()
   JWT_SECRET!: string;
 
-  @IsString()
+  @IsNumber()
   @IsOptional()
-  JWT_EXPIRES_IN: string = '7d';
+  JWT_EXPIRES_IN: number = 60 * 60 * 24 * 7;
 
   // Frontend URL for CORS
   @IsString()
