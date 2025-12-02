@@ -1,39 +1,85 @@
-import { Injectable, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 import axios from 'axios';
 import { CryptoPricesService } from '../crypto/crypto-prices.service';
+import { ExchangeRatesCacheService } from '../cache/exchange-rates-cache.service';
 
 @Injectable()
-export class CurrencyUpdateService {
+export class CurrencyUpdateService implements OnModuleInit {
   private exchangeRates: Record<string, number> = {};
-  private cryptoRates: Record<string, number> = {}; // BTC, ETH в USD
+  private cryptoRates: Record<string, number> = {}; // BTC, ETH in USD
   private lastUpdate: Date;
   private lastCryptoUpdate: Date;
 
   constructor(
     @Inject(forwardRef(() => CryptoPricesService))
     private cryptoPricesService: CryptoPricesService,
-  ) {
-    // Initialize on startup
-    this.updateExchangeRates();
-    this.updateCryptoRates();
+    private exchangeRatesCacheService: ExchangeRatesCacheService,
+    @InjectPinoLogger(CurrencyUpdateService.name)
+    private readonly logger: PinoLogger,
+  ) {}
+
+  async onModuleInit(): Promise<void> {
+    // Initialize on startup - try to load from cache first, then fetch if needed
+    await this.initializeRates();
+  }
+
+  private async initializeRates(): Promise<void> {
+    // Try to load exchange rates from cache
+    const cachedExchangeRates = await this.exchangeRatesCacheService.getExchangeRates('USD');
+    if (cachedExchangeRates) {
+      this.exchangeRates = cachedExchangeRates.rates;
+      this.lastUpdate = new Date(cachedExchangeRates.cachedAt);
+      this.logger.info(
+        {
+          cachedAt: cachedExchangeRates.cachedAt,
+          ratesCount: Object.keys(cachedExchangeRates.rates).length,
+        },
+        'Loaded exchange rates from cache',
+      );
+    } else {
+      await this.updateExchangeRates();
+    }
+
+    // Try to load crypto rates from cache
+    const cachedCryptoRates = await this.exchangeRatesCacheService.getCryptoRates();
+    if (cachedCryptoRates) {
+      this.cryptoRates = cachedCryptoRates;
+      this.lastCryptoUpdate = new Date();
+      this.logger.info({ rates: cachedCryptoRates }, 'Loaded crypto rates from cache');
+    } else {
+      await this.updateCryptoRates();
+    }
   }
 
   @Cron(CronExpression.EVERY_HOUR)
-  async updateExchangeRates() {
+  async updateExchangeRates(): Promise<void> {
     try {
+      this.logger.info('Fetching exchange rates from API');
+
       // Using ExchangeRate-API (free tier, no key required for basic usage)
       const response = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
       this.exchangeRates = response.data.rates;
       this.lastUpdate = new Date();
+
+      // Cache the rates in Redis
+      await this.exchangeRatesCacheService.setExchangeRates('USD', this.exchangeRates);
+
+      this.logger.info(
+        { ratesCount: Object.keys(this.exchangeRates).length },
+        'Exchange rates updated and cached successfully',
+      );
     } catch (error) {
-      console.error('Error updating exchange rates:', error.message);
+      this.logger.error({ error: error.message }, 'Error updating exchange rates');
     }
   }
 
   @Cron('*/15 * * * *') // Every 15 minutes
-  async updateCryptoRates() {
+  async updateCryptoRates(): Promise<void> {
     try {
+      this.logger.info('Fetching crypto rates');
+
       // Use CryptoPricesService instead of direct CoinGecko API calls
       // This uses cached prices and reduces API requests
       const btcPrice = await this.cryptoPricesService.getPrice('BTC');
@@ -49,22 +95,47 @@ export class CurrencyUpdateService {
         USDT: usdtPrice,
       };
       this.lastCryptoUpdate = new Date();
-      console.log('Updated crypto rates from cache:', this.cryptoRates);
+
+      // Cache crypto rates in Redis
+      await this.exchangeRatesCacheService.setCryptoRates(this.cryptoRates);
+
+      this.logger.info({ rates: this.cryptoRates }, 'Updated and cached crypto rates');
     } catch (error) {
-      console.error('Error updating crypto rates:', error.message);
+      this.logger.error({ error: error.message }, 'Error updating crypto rates');
       // Keep existing rates on error
     }
   }
 
   async getExchangeRates(baseCurrency: string = 'USD'): Promise<Record<string, number>> {
-    // Update if rates are old or empty
-    if (!this.lastUpdate || Date.now() - this.lastUpdate.getTime() > 3600000) {
+    const cacheTtl = this.exchangeRatesCacheService.getCacheTtl();
+
+    // Try to load fiat rates from Redis cache
+    const cachedFiatRates = await this.exchangeRatesCacheService.getExchangeRates('USD');
+    if (cachedFiatRates && this.isCacheValid(cachedFiatRates.cachedAt, cacheTtl)) {
+      this.exchangeRates = cachedFiatRates.rates;
+      this.lastUpdate = new Date(cachedFiatRates.cachedAt);
+      this.logger.debug({ fromCache: true }, 'Loaded fiat rates from Redis cache');
+    } else if (!this.lastUpdate || Date.now() - this.lastUpdate.getTime() > cacheTtl) {
       await this.updateExchangeRates();
     }
-    if (!this.lastCryptoUpdate || Date.now() - this.lastCryptoUpdate.getTime() > 600000) {
+
+    // Try to load crypto rates from Redis cache
+    const cachedCryptoRates = await this.exchangeRatesCacheService.getCryptoRates();
+    if (cachedCryptoRates && Object.keys(cachedCryptoRates).length > 0) {
+      this.cryptoRates = cachedCryptoRates;
+      this.lastCryptoUpdate = new Date();
+      this.logger.debug({ fromCache: true }, 'Loaded crypto rates from Redis cache');
+    } else if (!this.lastCryptoUpdate || Date.now() - this.lastCryptoUpdate.getTime() > cacheTtl) {
       await this.updateCryptoRates();
     }
 
+    // Build normalized rates combining fiat + crypto
+    const normalizedRates = this.buildNormalizedRates(baseCurrency);
+
+    return normalizedRates;
+  }
+
+  private buildNormalizedRates(baseCurrency: string): Record<string, number> {
     // For crypto currencies, the rate is "how many USD for 1 crypto"
     // For fiat currencies from exchange API, the rate is "how many CURRENCY for 1 USD"
     // We need to normalize everything to "how many CURRENCY for 1 USD"
@@ -107,5 +178,9 @@ export class CurrencyUpdateService {
     }
 
     return convertedRates;
+  }
+
+  private isCacheValid(cachedAt: number, ttl: number): boolean {
+    return Date.now() - cachedAt < ttl;
   }
 }

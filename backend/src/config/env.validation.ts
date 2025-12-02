@@ -94,6 +94,21 @@ export class EnvironmentVariables {
   @IsString()
   @IsOptional()
   DEV_INVITATION_CODE: string = 'DEV2024';
+
+  // Redis
+  @IsString()
+  @IsOptional()
+  REDIS_HOST: string = 'localhost';
+
+  @IsNumber()
+  @Transform(({ value }) => parseInt(value, 10))
+  @IsOptional()
+  REDIS_PORT: number = 6379;
+
+  @IsNumber()
+  @Transform(({ value }) => (value ? parseInt(value, 10) : 600000)) // 10 minutes in milliseconds
+  @IsOptional()
+  EXCHANGE_RATES_CACHE_TTL: number = 600000;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
