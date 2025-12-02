@@ -1,7 +1,7 @@
 import { Module, Global } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { redisStore } from 'cache-manager-redis-yet';
+import KeyvRedis from '@keyv/redis';
 import { ExchangeRatesCacheService } from './exchange-rates-cache.service';
 
 @Global()
@@ -14,14 +14,11 @@ import { ExchangeRatesCacheService } from './exchange-rates-cache.service';
         const redisHost = configService.get<string>('REDIS_HOST', 'localhost');
         const redisPort = configService.get<number>('REDIS_PORT', 6379);
 
+        const redisStore = new KeyvRedis(`redis://${redisHost}:${redisPort}`);
+
         return {
-          store: await redisStore({
-            socket: {
-              host: redisHost,
-              port: redisPort,
-            },
-            ttl: 600000, // Default 10 minutes TTL
-          }),
+          stores: [redisStore],
+          ttl: 600000, // Default 10 minutes TTL in milliseconds
         };
       },
     }),
