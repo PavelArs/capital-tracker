@@ -102,36 +102,8 @@ export class CryptoWalletNotFoundException extends NotFoundException {
   }
 }
 
-// DeFi-related exceptions
-export class DefiPositionNotFoundException extends NotFoundException {
-  constructor(positionId: string) {
-    super(`DeFi position with ID "${positionId}" not found`);
-  }
-}
-
-// Report-related exceptions
-export class ReportNotFoundException extends NotFoundException {
-  constructor(reportId: string) {
-    super(`Report with ID "${reportId}" not found`);
-  }
-}
-
-// Subscription-related exceptions
-export class SubscriptionNotFoundException extends NotFoundException {
-  constructor(subscriptionId: string) {
-    super(`Subscription with ID "${subscriptionId}" not found`);
-  }
-}
-
 export class SubscriptionRequiredException extends ForbiddenException {
   constructor(requiredType: string) {
     super(`This feature requires ${requiredType} subscription`);
-  }
-}
-
-// Integration-related exceptions
-export class IntegrationNotFoundException extends NotFoundException {
-  constructor(integrationType: string, integrationId: string) {
-    super(`${integrationType} integration with ID "${integrationId}" not found`);
   }
 }

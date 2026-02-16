@@ -85,12 +85,9 @@ All errors follow a consistent format with appropriate HTTP status codes.`,
       .addTag('capitals', 'Capital tracking and snapshots')
       .addTag('currencies', 'Currency management and exchange rates')
       .addTag('crypto', 'Cryptocurrency wallet management')
-      .addTag('defi', 'DeFi position tracking')
-      .addTag('integrations', 'Bank and broker integrations')
       .addTag('metrics', 'Financial metrics and analytics')
       .addTag('reports', 'Financial report generation')
       .addTag('subscriptions', 'Subscription management')
-      .addTag('ai-recommendations', 'AI-powered financial recommendations')
       .addTag('health', 'Health check endpoints')
       .build();
 
