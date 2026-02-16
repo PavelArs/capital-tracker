@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import axios from 'axios';
 
 export interface CryptoPrices {
@@ -26,7 +27,10 @@ export class CryptoPricesService {
   private lastRateLimitError: Date | null = null;
   private updatePromise: Promise<void> | null = null;
 
-  constructor() {
+  constructor(
+    @InjectPinoLogger(CryptoPricesService.name)
+    private readonly logger: PinoLogger,
+  ) {
     // Initialize on startup
     this.updatePrices();
   }
@@ -60,13 +64,14 @@ export class CryptoPricesService {
             : this.RETRY_DELAY_MS * Math.pow(2, attempt); // Exponential backoff
 
           if (attempt < retries) {
-            console.warn(
-              `Rate limit hit (429). Retrying after ${delay}ms (attempt ${attempt + 1}/${retries + 1})`,
+            this.logger.warn(
+              { delay, attempt: attempt + 1, maxAttempts: retries + 1 },
+              'Rate limit hit (429), retrying',
             );
             await this.sleep(delay);
             continue;
           } else {
-            console.error('Rate limit exceeded. Max retries reached.');
+            this.logger.error('Rate limit exceeded, max retries reached');
             throw error;
           }
         }
@@ -87,7 +92,7 @@ export class CryptoPricesService {
 
     // If we recently hit rate limit, skip update and use cache
     if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
-      console.log('Skipping price update due to recent rate limit error. Using cache.');
+      this.logger.info('Skipping price update due to recent rate limit error, using cache');
       return Promise.resolve();
     }
 
@@ -112,24 +117,24 @@ export class CryptoPricesService {
               usd: response.data.bitcoin.usd,
               lastUpdated: now,
             };
-            console.log(`Updated BTC price: $${response.data.bitcoin.usd}`);
+            this.logger.info({ price: response.data.bitcoin.usd }, 'Updated BTC price');
           } else {
-            console.warn('BTC price not found in API response');
+            this.logger.warn('BTC price not found in API response');
           }
           if (response.data.ethereum) {
             this.prices['ETH'] = {
               usd: response.data.ethereum.usd,
               lastUpdated: now,
             };
-            console.log(`Updated ETH price: $${response.data.ethereum.usd}`);
+            this.logger.info({ price: response.data.ethereum.usd }, 'Updated ETH price');
           } else {
-            console.warn('ETH price not found in API response');
+            this.logger.warn('ETH price not found in API response');
           }
         } else {
-          console.warn('Empty response from CoinGecko API');
+          this.logger.warn('Empty response from CoinGecko API');
         }
       } catch (error: any) {
-        console.error('Error updating crypto prices:', error.message);
+        this.logger.error({ err: error }, 'Error updating crypto prices');
         // Don't clear cache on error - use existing cached values
       } finally {
         this.isUpdatingCrypto = false;
@@ -165,7 +170,7 @@ export class CryptoPricesService {
         }
         // If still 0, fall through to return cached value
       } catch (error) {
-        console.error('Error updating prices synchronously:', error.message);
+        this.logger.error({ err: error }, 'Error updating prices synchronously');
         // Fall through to return cached value if update fails
       }
     }
@@ -188,7 +193,7 @@ export class CryptoPricesService {
 
     // If we recently hit rate limit, return cached value even if expired
     if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
-      console.log('Using cached token price due to recent rate limit error');
+      this.logger.info('Using cached token price due to recent rate limit error');
       return cached?.usd || 0;
     }
 
@@ -215,7 +220,7 @@ export class CryptoPricesService {
 
       return price;
     } catch (error: any) {
-      console.error(`Error fetching token price for ${contractAddress}:`, error.message);
+      this.logger.error({ err: error, contractAddress }, 'Error fetching token price');
       // Return cached value even if expired, if available
       return cached?.usd || 0;
     }
@@ -266,7 +271,7 @@ export class CryptoPricesService {
 
     // If we recently hit rate limit, return cached values
     if (this.lastRateLimitError && Date.now() - this.lastRateLimitError.getTime() < 5 * 60 * 1000) {
-      console.log('Using cached token prices due to recent rate limit error');
+      this.logger.info('Using cached token prices due to recent rate limit error');
       return result;
     }
 
@@ -300,7 +305,7 @@ export class CryptoPricesService {
 
       return result;
     } catch (error: any) {
-      console.error('Error fetching bulk token prices:', error.message);
+      this.logger.error({ err: error }, 'Error fetching bulk token prices');
       // Return cached values (including expired) as fallback
       return result;
     } finally {
@@ -328,7 +333,10 @@ export class CryptoPricesService {
     }
 
     if (expiredAddresses.length > 0) {
-      console.log(`Invalidated ${expiredAddresses.length} very old token price cache entries`);
+      this.logger.info(
+        { count: expiredAddresses.length },
+        'Invalidated old token price cache entries',
+      );
     }
   }
 
