@@ -13,34 +13,8 @@ describe('metricsApi', () => {
     vi.clearAllMocks();
   });
 
-  describe('get', () => {
-    it('should fetch metrics with default currency', async () => {
-      const mockMetrics = {
-        netWorth: 100000,
-        totalAssets: 150000,
-        totalLiabilities: 50000,
-      };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockMetrics });
-
-      const result = await metricsApi.get();
-
-      expect(apiClient.get).toHaveBeenCalledWith('/metrics', { params: { currency: 'USD' } });
-      expect(result).toEqual(mockMetrics);
-    });
-
-    it('should fetch metrics with custom currency', async () => {
-      const mockMetrics = { netWorth: 92000 };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockMetrics });
-
-      const result = await metricsApi.get('EUR');
-
-      expect(apiClient.get).toHaveBeenCalledWith('/metrics', { params: { currency: 'EUR' } });
-      expect(result).toEqual(mockMetrics);
-    });
-  });
-
   describe('getMetrics', () => {
-    it('should fetch metrics (alias for get)', async () => {
+    it('should fetch metrics with default currency', async () => {
       const mockMetrics = { netWorth: 100000 };
       vi.mocked(apiClient.get).mockResolvedValue({ data: mockMetrics });
 

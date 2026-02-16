@@ -9,10 +9,10 @@ import {
   LiabilityForm,
   LiabilityList,
   LiabilityChart,
-  DEFAULT_CURRENCIES,
   REGULAR_CATEGORIES,
   getInitialFormData,
 } from '@features/liabilities';
+import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
 import type { LiabilityFormData } from '@features/liabilities';
 import './Liabilities.css';
 
