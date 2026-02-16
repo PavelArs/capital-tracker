@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
 import { Asset, AssetType, IncomeType } from '../entities/asset.entity';
 import { Liability } from '../entities/liability.entity';
@@ -18,6 +19,8 @@ export class MetricsService {
     private cryptoWalletRepository: Repository<CryptoWallet>,
     private currenciesService: CurrenciesService,
     private cryptoPricesService: CryptoPricesService,
+    @InjectPinoLogger(MetricsService.name)
+    private readonly logger: PinoLogger,
   ) {}
 
   async getMetrics(userId: string, targetCurrency: string = 'USD') {
@@ -173,7 +176,10 @@ export class MetricsService {
         try {
           amount = await this.currenciesService.convert(amount, itemCurrency, targetCurrency);
         } catch (error) {
-          console.error(`Error converting ${itemCurrency} to ${targetCurrency}:`, error.message);
+          this.logger.error(
+            { err: error, from: itemCurrency, to: targetCurrency },
+            'Error converting currency',
+          );
         }
       }
 
@@ -203,19 +209,23 @@ export class MetricsService {
           const ethBalance = parseFloat(wallet.balance.toString());
 
           const ethValue = ethBalance * ethPrice;
-          console.log(
-            `Wallet ${wallet.id} (${wallet.address}): ETH balance=${ethBalance}, ETH price=$${ethPrice}, ETH value=$${ethValue}`,
+          this.logger.info(
+            { walletId: wallet.id, address: wallet.address, ethBalance, ethPrice, ethValue },
+            'Calculated ETH wallet value',
           );
 
           if (ethPrice === 0) {
-            console.warn(`ETH price is 0 for wallet ${wallet.id}. Balance: ${ethBalance}`);
+            this.logger.warn({ walletId: wallet.id, ethBalance }, 'ETH price is 0');
           }
 
           valueUSD += ethValue;
 
           // Add token values
           if (wallet.tokens && Array.isArray(wallet.tokens)) {
-            console.log(`Wallet ${wallet.id}: Found ${wallet.tokens.length} tokens`);
+            this.logger.info(
+              { walletId: wallet.id, tokenCount: wallet.tokens.length },
+              'Found tokens in wallet',
+            );
 
             // Get all token contract addresses
             const tokenAddresses = wallet.tokens
@@ -223,11 +233,12 @@ export class MetricsService {
               .filter((addr) => addr);
 
             if (tokenAddresses.length > 0) {
-              console.log(
-                `Wallet ${wallet.id}: Fetching prices for ${tokenAddresses.length} tokens: ${tokenAddresses.join(', ')}`,
+              this.logger.info(
+                { walletId: wallet.id, tokenCount: tokenAddresses.length, tokenAddresses },
+                'Fetching token prices',
               );
               const tokenPrices = await this.cryptoPricesService.getBulkTokenPrices(tokenAddresses);
-              console.log(`Wallet ${wallet.id}: Received token prices:`, tokenPrices);
+              this.logger.info({ walletId: wallet.id, tokenPrices }, 'Received token prices');
 
               for (const token of wallet.tokens) {
                 if (token.contractAddress && token.balance) {
@@ -235,13 +246,25 @@ export class MetricsService {
                   const tokenBalance = parseFloat(token.balance.toString());
                   const tokenValue = tokenBalance * tokenPrice;
 
-                  console.log(
-                    `Token ${token.symbol} (${token.contractAddress}): balance=${tokenBalance}, price=$${tokenPrice}, value=$${tokenValue}`,
+                  this.logger.info(
+                    {
+                      symbol: token.symbol,
+                      contractAddress: token.contractAddress,
+                      tokenBalance,
+                      tokenPrice,
+                      tokenValue,
+                    },
+                    'Calculated token value',
                   );
 
                   if (tokenPrice === 0 && tokenBalance > 0) {
-                    console.warn(
-                      `Token ${token.symbol} (${token.contractAddress}) price is 0. Balance: ${tokenBalance}`,
+                    this.logger.warn(
+                      {
+                        symbol: token.symbol,
+                        contractAddress: token.contractAddress,
+                        tokenBalance,
+                      },
+                      'Token price is 0 with positive balance',
                     );
                   }
 
@@ -249,10 +272,10 @@ export class MetricsService {
                 }
               }
             } else {
-              console.log(`Wallet ${wallet.id}: No token contract addresses found`);
+              this.logger.info({ walletId: wallet.id }, 'No token contract addresses found');
             }
           } else {
-            console.log(`Wallet ${wallet.id}: No tokens found`);
+            this.logger.info({ walletId: wallet.id }, 'No tokens found in wallet');
           }
         } else if (wallet.type === 'bitcoin') {
           // Get BTC price
@@ -260,18 +283,19 @@ export class MetricsService {
           const btcBalance = parseFloat(wallet.balance.toString());
           const btcValue = btcBalance * btcPrice;
 
-          console.log(
-            `Wallet ${wallet.id} (${wallet.address}): BTC balance=${btcBalance}, BTC price=$${btcPrice}, BTC value=$${btcValue}`,
+          this.logger.info(
+            { walletId: wallet.id, address: wallet.address, btcBalance, btcPrice, btcValue },
+            'Calculated BTC wallet value',
           );
 
           if (btcPrice === 0) {
-            console.warn(`BTC price is 0 for wallet ${wallet.id}. Balance: ${btcBalance}`);
+            this.logger.warn({ walletId: wallet.id, btcBalance }, 'BTC price is 0');
           }
 
           valueUSD += btcValue;
         }
 
-        console.log(`Wallet ${wallet.id}: Total valueUSD before conversion: $${valueUSD}`);
+        this.logger.info({ walletId: wallet.id, valueUSD }, 'Wallet value before conversion');
 
         // Convert to target currency if needed
         if (targetCurrency !== 'USD' && valueUSD > 0) {
@@ -281,27 +305,28 @@ export class MetricsService {
               'USD',
               targetCurrency,
             );
-            console.log(
-              `Wallet ${wallet.id}: Converted $${valueUSD} USD to ${targetCurrency}: ${convertedValue}`,
+            this.logger.info(
+              { walletId: wallet.id, fromValue: valueUSD, targetCurrency, convertedValue },
+              'Converted wallet value to target currency',
             );
             valueUSD = convertedValue;
           } catch (error) {
-            console.error(`Error converting crypto value to ${targetCurrency}:`, error.message);
+            this.logger.error({ err: error, targetCurrency }, 'Error converting crypto value');
           }
         }
 
-        console.log(`Wallet ${wallet.id}: Final valueUSD: $${valueUSD}`);
+        this.logger.info({ walletId: wallet.id, finalValue: valueUSD }, 'Wallet final value');
         total += valueUSD;
       } catch (error) {
-        console.error(`Error calculating value for wallet ${wallet.id}:`, error.message);
-        console.error(error);
+        this.logger.error({ err: error, walletId: wallet.id }, 'Error calculating wallet value');
         // Continue with other wallets even if one fails
       }
     }
 
     if (total === 0 && wallets.length > 0) {
-      console.warn(
-        `Total crypto value is 0 for ${wallets.length} wallet(s). This might indicate price fetching issues.`,
+      this.logger.warn(
+        { walletCount: wallets.length },
+        'Total crypto value is 0, this might indicate price fetching issues',
       );
     }
 
@@ -329,7 +354,10 @@ export class MetricsService {
         try {
           amount = await this.currenciesService.convert(amount, itemCurrency, targetCurrency);
         } catch (error) {
-          console.error(`Error converting ${itemCurrency} to ${targetCurrency}:`, error.message);
+          this.logger.error(
+            { err: error, from: itemCurrency, to: targetCurrency },
+            'Error converting currency',
+          );
         }
       }
 
@@ -379,7 +407,10 @@ export class MetricsService {
         try {
           amount = await this.currenciesService.convert(amount, itemCurrency, targetCurrency);
         } catch (error) {
-          console.error(`Error converting ${itemCurrency} to ${targetCurrency}:`, error.message);
+          this.logger.error(
+            { err: error, from: itemCurrency, to: targetCurrency },
+            'Error converting currency',
+          );
         }
       }
 
@@ -414,54 +445,13 @@ export class MetricsService {
         try {
           amount = await this.currenciesService.convert(amount, itemCurrency, targetCurrency);
         } catch (error) {
-          console.error(`Error converting ${itemCurrency} to ${targetCurrency}:`, error.message);
+          this.logger.error(
+            { err: error, from: itemCurrency, to: targetCurrency },
+            'Error converting currency',
+          );
         }
       }
 
-      if (!distribution[liability.category]) {
-        distribution[liability.category] = 0;
-      }
-      distribution[liability.category] += amount;
-    }
-
-    // Convert to percentages
-    const result: Record<string, number> = {};
-    for (const [category, value] of Object.entries(distribution)) {
-      result[category] = total > 0 ? (value / total) * 100 : 0;
-    }
-
-    return result;
-  }
-
-  // Legacy methods kept for backward compatibility (deprecated)
-  private calculateAssetDistribution(assets: Asset[], total: number): Record<string, number> {
-    const distribution: Record<string, number> = {};
-
-    for (const asset of assets) {
-      const amount = parseFloat(asset.amount.toString());
-      if (!distribution[asset.category]) {
-        distribution[asset.category] = 0;
-      }
-      distribution[asset.category] += amount;
-    }
-
-    // Convert to percentages
-    const result: Record<string, number> = {};
-    for (const [category, value] of Object.entries(distribution)) {
-      result[category] = total > 0 ? (value / total) * 100 : 0;
-    }
-
-    return result;
-  }
-
-  private calculateLiabilityDistribution(
-    liabilities: Liability[],
-    total: number,
-  ): Record<string, number> {
-    const distribution: Record<string, number> = {};
-
-    for (const liability of liabilities) {
-      const amount = parseFloat(liability.amount.toString());
       if (!distribution[liability.category]) {
         distribution[liability.category] = 0;
       }

@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
+import { getLoggerToken } from 'nestjs-pino';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import { MetricsService } from './metrics.service';
 import { Asset, AssetType, AssetCategory, IncomeType } from '../entities/asset.entity';
@@ -15,6 +16,14 @@ describe('MetricsService', () => {
   let cryptoWalletRepository: jest.Mocked<Repository<CryptoWallet>>;
   let currenciesService: jest.Mocked<CurrenciesService>;
   let cryptoPricesService: jest.Mocked<CryptoPricesService>;
+
+  const mockLogger = {
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+    setContext: jest.fn(),
+  };
 
   const mockUserId = 'user-123';
 
@@ -222,6 +231,10 @@ describe('MetricsService', () => {
             getPrice: jest.fn(),
             getBulkTokenPrices: jest.fn(),
           },
+        },
+        {
+          provide: getLoggerToken(MetricsService.name),
+          useValue: mockLogger,
         },
       ],
     }).compile();
