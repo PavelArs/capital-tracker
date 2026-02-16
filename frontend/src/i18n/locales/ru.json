@@ -76,6 +76,7 @@
     "assets": "Активы",
     "liabilities": "Обязательства",
     "crypto": "Криптовалюты",
+    "metrics": "Метрики",
     "settings": "Настройки"
   },
   "dashboard": {
@@ -213,11 +214,28 @@
     "noCurrencies": "Нет доступных валют",
     "noData": "Нет валют в этой категории",
     "toggleError": "Не удалось изменить видимость валюты. Попробуйте снова.",
+    "contract": "Контракт",
     "types": {
       "fiat": "Фиатная",
       "crypto": "Криптовалюта",
       "stablecoin": "Стейблкоин"
     }
+  },
+  "metrics": {
+    "title": "Метрики и аналитика",
+    "currency": "Валюта",
+    "netWorth": "Чистый капитал",
+    "totalAssets": "Всего активов",
+    "totalLiabilities": "Всего обязательств",
+    "activeIncome": "Активный доход",
+    "passiveIncome": "Пассивный доход",
+    "runway": "Запас прочности",
+    "months": "месяцев",
+    "flRatio": "FL-Коэффициент",
+    "flRatioDescription": "Пассивный доход / Месячные расходы",
+    "capitalHistory": "История капитала (30 дней)",
+    "assetDistribution": "Распределение активов",
+    "liabilityDistribution": "Распределение обязательств"
   },
   "language": {
     "select": "Выбрать язык",

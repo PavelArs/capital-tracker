@@ -15,6 +15,7 @@ import Dashboard from '@pages/Dashboard';
 import Assets from '@pages/Assets';
 import Liabilities from '@pages/Liabilities';
 import Crypto from '@pages/Crypto';
+import Metrics from '@pages/Metrics';
 import Settings from '@pages/Settings';
 import Subscriptions from '@pages/Subscriptions';
 import Layout from '@components/Layout';
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="assets/*" element={<Assets />} />
         <Route path="liabilities" element={<Liabilities />} />
         <Route path="crypto" element={<Crypto />} />
+        <Route path="metrics" element={<Metrics />} />
         <Route path="settings" element={<Settings />} />
         <Route path="subscriptions" element={<Subscriptions />} />
       </Route>

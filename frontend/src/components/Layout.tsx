@@ -90,6 +90,9 @@ export default function Layout() {
           <Link to="/crypto" onClick={closeMobileMenu}>
             {t('navigation.crypto')}
           </Link>
+          <Link to="/metrics" onClick={closeMobileMenu}>
+            {t('navigation.metrics')}
+          </Link>
           <Link to="/settings" onClick={closeMobileMenu}>
             {t('navigation.settings')}
           </Link>

@@ -76,6 +76,7 @@
     "assets": "Assets",
     "liabilities": "Liabilities",
     "crypto": "Crypto",
+    "metrics": "Metrics",
     "settings": "Settings"
   },
   "dashboard": {
@@ -213,11 +214,28 @@
     "noCurrencies": "No currencies available",
     "noData": "No currencies in this category",
     "toggleError": "Failed to toggle currency visibility. Please try again.",
+    "contract": "Contract",
     "types": {
       "fiat": "Fiat",
       "crypto": "Cryptocurrency",
       "stablecoin": "Stablecoin"
     }
+  },
+  "metrics": {
+    "title": "Metrics & Analytics",
+    "currency": "Currency",
+    "netWorth": "Net Worth",
+    "totalAssets": "Total Assets",
+    "totalLiabilities": "Total Liabilities",
+    "activeIncome": "Active Income",
+    "passiveIncome": "Passive Income",
+    "runway": "Runway",
+    "months": "months",
+    "flRatio": "FL-Ratio",
+    "flRatioDescription": "Passive Income / Monthly Expenses",
+    "capitalHistory": "Capital History (30 days)",
+    "assetDistribution": "Asset Distribution",
+    "liabilityDistribution": "Liability Distribution"
   },
   "language": {
     "select": "Select Language",
