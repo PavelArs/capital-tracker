@@ -28,7 +28,6 @@ export type {
 
 // Constants
 export {
-  DEFAULT_CURRENCIES,
   CACHE_TTL,
   STOCK_CATEGORIES,
   FLOW_CATEGORIES,

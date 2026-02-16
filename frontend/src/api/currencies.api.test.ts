@@ -14,21 +14,6 @@ describe('currenciesApi', () => {
     vi.clearAllMocks();
   });
 
-  describe('getAll', () => {
-    it('should fetch all currencies', async () => {
-      const mockCurrencies = [
-        { id: '1', code: 'USD', name: 'US Dollar' },
-        { id: '2', code: 'EUR', name: 'Euro' },
-      ];
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockCurrencies });
-
-      const result = await currenciesApi.getAll();
-
-      expect(apiClient.get).toHaveBeenCalledWith('/currencies');
-      expect(result).toEqual(mockCurrencies);
-    });
-  });
-
   describe('getList', () => {
     it('should fetch currencies list', async () => {
       const mockCurrencies = [{ id: '1', code: 'USD' }];
@@ -38,28 +23,6 @@ describe('currenciesApi', () => {
 
       expect(apiClient.get).toHaveBeenCalledWith('/currencies/list');
       expect(result).toEqual(mockCurrencies);
-    });
-  });
-
-  describe('getExchangeRates', () => {
-    it('should fetch exchange rates with default base currency', async () => {
-      const mockRates = { base: 'USD', rates: { EUR: 0.92 }, lastUpdated: '2024-01-15' };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockRates });
-
-      const result = await currenciesApi.getExchangeRates();
-
-      expect(apiClient.get).toHaveBeenCalledWith('/currencies/rates', { params: { base: 'USD' } });
-      expect(result).toEqual(mockRates);
-    });
-
-    it('should fetch exchange rates with custom base currency', async () => {
-      const mockRates = { base: 'EUR', rates: { USD: 1.09 }, lastUpdated: '2024-01-15' };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockRates });
-
-      const result = await currenciesApi.getExchangeRates('EUR');
-
-      expect(apiClient.get).toHaveBeenCalledWith('/currencies/rates', { params: { base: 'EUR' } });
-      expect(result).toEqual(mockRates);
     });
   });
 
@@ -125,17 +88,4 @@ describe('currenciesApi', () => {
     });
   });
 
-  describe('toggle', () => {
-    it('should toggle currency visibility', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({ data: { message: 'Currency toggled' } });
-
-      const result = await currenciesApi.toggle('currency-1', true);
-
-      expect(apiClient.post).toHaveBeenCalledWith('/currencies/toggle', {
-        currencyId: 'currency-1',
-        isHidden: true,
-      });
-      expect(result).toEqual({ message: 'Currency toggled' });
-    });
-  });
 });

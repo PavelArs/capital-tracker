@@ -13,10 +13,10 @@ import {
   AssetTotals,
   AssetChart,
   useCurrencyConversion,
-  DEFAULT_CURRENCIES,
   CHART_COLORS,
   getInitialFormData,
 } from '@features/assets';
+import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
 import type {
   AssetTab,
   ViewMode,
