@@ -1,52 +1,45 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Param,
+  Controller,
   Delete,
-  UseGuards,
-  Patch,
-  ForbiddenException,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
-  ApiParam,
   ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { CryptoService } from './crypto.service';
-import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { SubscriptionGuard } from '../auth/guards/subscription.guard';
-import { SubscriptionsService } from '../subscriptions/subscriptions.service';
-import { SubscriptionType } from '../entities/subscription.entity';
-import { CryptoType } from '../entities/crypto-wallet.entity';
-import { CryptoPricesService, CryptoPrices } from './crypto-prices.service';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
+import { CryptoPrices, CryptoPricesService } from './crypto-prices.service';
+import { CryptoService } from './crypto.service';
+import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 @ApiTags('crypto')
 @ApiBearerAuth('JWT-auth')
 @Controller('crypto')
-@UseGuards(JwtAuthGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard)
 export class CryptoController {
   constructor(
     private readonly cryptoService: CryptoService,
     private readonly cryptoPricesService: CryptoPricesService,
-    private readonly subscriptionsService: SubscriptionsService,
   ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Add a crypto wallet',
-    description:
-      'Add a new cryptocurrency wallet for tracking. Bitcoin and Ethereum are free, other blockchains require PRO subscription.',
+    description: 'Add a new cryptocurrency wallet for tracking.',
   })
   @ApiResponse({
     status: 201,
@@ -57,22 +50,7 @@ export class CryptoController {
     description: 'Validation error',
     type: ValidationErrorResponseDto,
   })
-  @ApiResponse({
-    status: 403,
-    description: 'PRO subscription required for this blockchain',
-    type: ErrorResponseDto,
-  })
   async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateCryptoWalletDto) {
-    const allowedFreeTypes = [CryptoType.BITCOIN, CryptoType.ETHEREUM];
-    if (!allowedFreeTypes.includes(createDto.type)) {
-      const hasProAccess = await this.subscriptionsService.checkFeatureAccess(
-        user.userId,
-        SubscriptionType.PRO,
-      );
-      if (!hasProAccess) {
-        throw new ForbiddenException('Additional blockchains require PRO subscription');
-      }
-    }
     return this.cryptoService.create(user.userId, createDto);
   }
 

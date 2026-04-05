@@ -1,7 +1,7 @@
+import { formatAmount } from '@utils/formatters';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { formatAmount } from '@utils/formatters';
-import type { TotalAmount, ViewMode, AssetTab } from '../../types';
+import type { AssetTab, TotalAmount, ViewMode } from '../../types';
 import './AssetTotals.css';
 
 interface AssetTotalsProps {

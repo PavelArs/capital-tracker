@@ -1,25 +1,22 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { APP_GUARD, APP_FILTER } from '@nestjs/core';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { AuthModule } from './auth/auth.module';
 import { AssetsModule } from './assets/assets.module';
-import { LiabilitiesModule } from './liabilities/liabilities.module';
+import { AuthModule } from './auth/auth.module';
+import { RedisCacheModule } from './cache/cache.module';
+import { validateEnvironment } from './config/env.validation';
+import { TypeOrmConfigService } from './config/typeorm.config';
 import { CryptoModule } from './crypto/crypto.module';
 import { CurrenciesModule } from './currencies/currencies.module';
-import { MetricsModule } from './metrics/metrics.module';
-import { SubscriptionsModule } from './subscriptions/subscriptions.module';
-import { CapitalsModule } from './capitals/capitals.module';
-import { ReportsModule } from './reports/reports.module';
 import { HealthModule } from './health/health.module';
-import { RedisCacheModule } from './cache/cache.module';
-import { TypeOrmConfigService } from './config/typeorm.config';
-import { validateEnvironment } from './config/env.validation';
+import { LiabilitiesModule } from './liabilities/liabilities.module';
+import { MetricsModule } from './metrics/metrics.module';
 import { GlobalExceptionFilter } from './shared/filters';
 
 @Module({
@@ -74,9 +71,6 @@ import { GlobalExceptionFilter } from './shared/filters';
     CryptoModule,
     CurrenciesModule,
     MetricsModule,
-    SubscriptionsModule,
-    CapitalsModule,
-    ReportsModule,
     HealthModule,
   ],
   controllers: [AppController],

@@ -1,5 +1,5 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
 import { currenciesApi } from '@api';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CACHE_TTL } from '../constants';
 import type { ExchangeRateCache } from '../types';
 
@@ -56,7 +56,7 @@ export function useCurrencyConversion() {
       pendingRequestsRef.current[cacheKey] = requestPromise;
       return requestPromise;
     },
-    []
+    [],
   );
 
   const convertAmount = useCallback(
@@ -70,7 +70,7 @@ export function useCurrencyConversion() {
         return amount;
       }
     },
-    [getExchangeRate]
+    [getExchangeRate],
   );
 
   return { getExchangeRate, convertAmount, clearCache };

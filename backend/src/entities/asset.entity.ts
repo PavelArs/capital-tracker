@@ -1,14 +1,14 @@
 import {
-  Entity,
-  PrimaryGeneratedColumn,
   Column,
   CreateDateColumn,
-  UpdateDateColumn,
-  ManyToOne,
+  Entity,
   JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
 } from 'typeorm';
-import { User } from './user.entity';
 import { Currency } from './currency.entity';
+import { User } from './user.entity';
 
 export enum AssetType {
   STOCK = 'stock', // Балансовые активы (имеют стоимость сейчас)

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
 type ResolvedTheme = 'light' | 'dark';
@@ -54,11 +54,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       if (mediaQuery.addEventListener) {
         mediaQuery.addEventListener('change', handleChange);
         return () => mediaQuery.removeEventListener('change', handleChange);
-      } else {
-        // Fallback для старых браузеров
-        mediaQuery.addListener(handleChange);
-        return () => mediaQuery.removeListener(handleChange);
       }
+      // Fallback для старых браузеров
+      mediaQuery.addListener(handleChange);
+      return () => mediaQuery.removeListener(handleChange);
     }
   }, [theme]);
 

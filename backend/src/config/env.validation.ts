@@ -1,14 +1,14 @@
+import { Transform, plainToInstance } from 'class-transformer';
 import {
-  IsString,
-  IsNumber,
-  IsEnum,
-  IsOptional,
   IsBoolean,
-  Min,
+  IsEnum,
+  IsNumber,
+  IsOptional,
+  IsString,
   Max,
+  Min,
   validateSync,
 } from 'class-validator';
-import { plainToInstance, Transform } from 'class-transformer';
 
 export enum Environment {
   Development = 'development',
@@ -24,31 +24,31 @@ export class EnvironmentVariables {
   @IsNumber()
   @Min(1)
   @Max(65535)
-  @Transform(({ value }) => parseInt(value, 10))
+  @Transform(({ value }) => Number.parseInt(value, 10))
   @IsOptional()
-  PORT: number = 3000;
+  PORT = 3000;
 
   // Database
   @IsString()
   @IsOptional()
-  DB_HOST: string = 'localhost';
+  DB_HOST = 'localhost';
 
   @IsNumber()
-  @Transform(({ value }) => parseInt(value, 10))
+  @Transform(({ value }) => Number.parseInt(value, 10))
   @IsOptional()
-  DB_PORT: number = 5432;
+  DB_PORT = 5432;
 
   @IsString()
   @IsOptional()
-  DB_USERNAME: string = 'postgres';
+  DB_USERNAME = 'postgres';
 
   @IsString()
   @IsOptional()
-  DB_PASSWORD: string = 'postgres';
+  DB_PASSWORD = 'postgres';
 
   @IsString()
   @IsOptional()
-  DB_NAME: string = 'capital_tracker';
+  DB_NAME = 'capital_tracker';
 
   // JWT
   @IsString()
@@ -61,7 +61,7 @@ export class EnvironmentVariables {
   // Frontend URL for CORS
   @IsString()
   @IsOptional()
-  FRONTEND_URL: string = 'http://localhost:3001';
+  FRONTEND_URL = 'http://localhost:3001';
 
   // Email Configuration (optional)
   @IsString()
@@ -69,7 +69,7 @@ export class EnvironmentVariables {
   SMTP_HOST?: string;
 
   @IsNumber()
-  @Transform(({ value }) => (value ? parseInt(value, 10) : undefined))
+  @Transform(({ value }) => (value ? Number.parseInt(value, 10) : undefined))
   @IsOptional()
   SMTP_PORT?: number;
 
@@ -89,26 +89,26 @@ export class EnvironmentVariables {
   @IsBoolean()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsOptional()
-  SKIP_EMAIL_VERIFICATION: boolean = false;
+  SKIP_EMAIL_VERIFICATION = false;
 
   @IsString()
   @IsOptional()
-  DEV_INVITATION_CODE: string = 'DEV2024';
+  DEV_INVITATION_CODE = 'DEV2024';
 
   // Redis
   @IsString()
   @IsOptional()
-  REDIS_HOST: string = 'localhost';
+  REDIS_HOST = 'localhost';
 
   @IsNumber()
-  @Transform(({ value }) => parseInt(value, 10))
+  @Transform(({ value }) => Number.parseInt(value, 10))
   @IsOptional()
-  REDIS_PORT: number = 6379;
+  REDIS_PORT = 6379;
 
   @IsNumber()
-  @Transform(({ value }) => (value ? parseInt(value, 10) : 600000)) // 10 minutes in milliseconds
+  @Transform(({ value }) => (value ? Number.parseInt(value, 10) : 600000)) // 10 minutes in milliseconds
   @IsOptional()
-  EXCHANGE_RATES_CACHE_TTL: number = 600000;
+  EXCHANGE_RATES_CACHE_TTL = 600000;
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {

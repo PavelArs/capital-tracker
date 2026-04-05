@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { useAuth } from '@contexts/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router-dom';
 import './Auth.css';
 
 export default function Register() {
@@ -9,7 +9,6 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
-  const [invitationCode, setInvitationCode] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,7 +22,6 @@ export default function Register() {
     }
   }, [user, loading, navigate]);
 
-  // Auto-redirect after successful registration
   useEffect(() => {
     if (success) {
       const timer = setTimeout(() => {
@@ -42,7 +40,7 @@ export default function Register() {
       setIsSubmitting(true);
 
       try {
-        await register(email, password, firstName, lastName, invitationCode);
+        await register(email, password, firstName, lastName);
         setSuccess(true);
       } catch (err: any) {
         setError(err.response?.data?.message || t('auth.registrationFailed'));
@@ -50,19 +48,15 @@ export default function Register() {
         setIsSubmitting(false);
       }
     },
-    [email, password, firstName, lastName, invitationCode, register, t]
+    [email, password, firstName, lastName, register, t],
   );
-
-  const handleInvitationCodeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setInvitationCode(e.target.value.toUpperCase());
-  }, []);
 
   if (loading) {
     return <div className="loading-container">{t('common.loading')}</div>;
   }
 
   if (user) {
-    return null; // Will redirect via useEffect
+    return null;
   }
 
   return (
@@ -88,19 +82,6 @@ export default function Register() {
 
         {!success && (
           <form onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label htmlFor="invitationCode">{t('auth.invitationCode')}</label>
-              <input
-                id="invitationCode"
-                type="text"
-                value={invitationCode}
-                onChange={handleInvitationCodeChange}
-                required
-                placeholder={t('auth.invitationCodePlaceholder')}
-                disabled={isSubmitting}
-              />
-            </div>
-
             <div className="form-group">
               <label htmlFor="email">{t('common.email')}</label>
               <input

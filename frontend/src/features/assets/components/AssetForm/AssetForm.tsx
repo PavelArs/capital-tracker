@@ -1,13 +1,13 @@
-import { useTranslation } from 'react-i18next';
-import { Modal } from '@components/common';
 import LoadingButton from '@components/LoadingButton';
-import type { AssetFormProps, IncomeType } from '../../types';
+import { Modal } from '@components/common';
+import { useTranslation } from 'react-i18next';
 import {
-  STOCK_CATEGORIES,
-  FLOW_CATEGORIES,
   ACTIVE_INCOME_CATEGORIES,
+  FLOW_CATEGORIES,
   PASSIVE_INCOME_CATEGORIES,
+  STOCK_CATEGORIES,
 } from '../../constants';
+import type { AssetFormProps, IncomeType } from '../../types';
 import './AssetForm.css';
 
 export function AssetForm({

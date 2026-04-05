@@ -1,13 +1,13 @@
-import { useTranslation } from 'react-i18next';
-import { Modal } from '@components/common';
 import LoadingButton from '@components/LoadingButton';
-import type { LiabilityFormProps, FrequencyType } from '../../types';
+import { Modal } from '@components/common';
+import { useTranslation } from 'react-i18next';
 import {
-  LIABILITY_CATEGORIES,
   FREQUENCY_OPTIONS,
-  REGULAR_CATEGORIES,
+  LIABILITY_CATEGORIES,
   NON_REGULAR_CATEGORIES,
+  REGULAR_CATEGORIES,
 } from '../../constants';
+import type { FrequencyType, LiabilityFormProps } from '../../types';
 import './LiabilityForm.css';
 
 export function LiabilityForm({

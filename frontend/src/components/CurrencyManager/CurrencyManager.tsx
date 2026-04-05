@@ -1,7 +1,7 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import { currenciesApi } from '@api';
 import type { Currency } from '@shared/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './CurrencyManager.css';
 
 type TabType = 'active' | 'hidden';
@@ -66,7 +66,7 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
         alert(t('currencies.toggleError'));
       }
     },
-    [fetchCurrencies, fetchHiddenCurrencies, t]
+    [fetchCurrencies, fetchHiddenCurrencies, t],
   );
 
   const groupedCurrencies = useMemo<GroupedCurrencies>(
@@ -75,7 +75,7 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
       crypto: currencies.filter((c) => c.type === 'crypto'),
       stablecoin: currencies.filter((c) => c.type === 'stablecoin'),
     }),
-    [currencies]
+    [currencies],
   );
 
   const groupedHidden = useMemo<GroupedCurrencies>(
@@ -84,11 +84,11 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
       crypto: hiddenCurrencies.filter((c) => c.type === 'crypto'),
       stablecoin: hiddenCurrencies.filter((c) => c.type === 'stablecoin'),
     }),
-    [hiddenCurrencies]
+    [hiddenCurrencies],
   );
 
   const renderCurrencyTable = useCallback(
-    (currenciesList: Currency[], showContract: boolean = false, isHidden: boolean = false) => {
+    (currenciesList: Currency[], showContract = false, isHidden = false) => {
       if (currenciesList.length === 0) {
         return <p className="no-data">{t('currencies.noData')}</p>;
       }
@@ -124,9 +124,7 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
                   </td>
                 )}
                 <td>
-                  <span
-                    className={`status-badge ${currency.isActive ? 'active' : 'inactive'}`}
-                  >
+                  <span className={`status-badge ${currency.isActive ? 'active' : 'inactive'}`}>
                     {currency.isActive ? t('currencies.active') : t('currencies.inactive')}
                   </span>
                 </td>
@@ -136,7 +134,7 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
                     className={isHidden ? 'btn-show' : 'btn-hide'}
                     title={isHidden ? t('currencies.show') : t('currencies.hide')}
                   >
-                    {isHidden ? '👁️ ' + t('currencies.show') : '🚫 ' + t('currencies.hide')}
+                    {isHidden ? `👁️ ${t('currencies.show')}` : `🚫 ${t('currencies.hide')}`}
                   </button>
                 </td>
               </tr>
@@ -145,7 +143,7 @@ export default function CurrencyManager({ variant = 'section' }: CurrencyManager
         </table>
       );
     },
-    [handleToggle, t]
+    [handleToggle, t],
   );
 
   if (loading) {

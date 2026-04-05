@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import axios from 'axios';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 
 export interface CryptoPrices {
   [symbol: string]: {
@@ -60,8 +60,8 @@ export class CryptoPricesService {
           this.lastRateLimitError = new Date();
           const retryAfter = error.response?.headers['retry-after'];
           const delay = retryAfter
-            ? parseInt(retryAfter) * 1000
-            : this.RETRY_DELAY_MS * Math.pow(2, attempt); // Exponential backoff
+            ? Number.parseInt(retryAfter) * 1000
+            : this.RETRY_DELAY_MS * 2 ** attempt; // Exponential backoff
 
           if (attempt < retries) {
             this.logger.warn(
@@ -70,10 +70,9 @@ export class CryptoPricesService {
             );
             await this.sleep(delay);
             continue;
-          } else {
-            this.logger.error('Rate limit exceeded, max retries reached');
-            throw error;
           }
+          this.logger.error('Rate limit exceeded, max retries reached');
+          throw error;
         }
 
         // For non-rate-limit errors, throw immediately
@@ -113,7 +112,7 @@ export class CryptoPricesService {
         if (response.data) {
           const now = new Date();
           if (response.data.bitcoin) {
-            this.prices['BTC'] = {
+            this.prices.BTC = {
               usd: response.data.bitcoin.usd,
               lastUpdated: now,
             };
@@ -122,7 +121,7 @@ export class CryptoPricesService {
             this.logger.warn('BTC price not found in API response');
           }
           if (response.data.ethereum) {
-            this.prices['ETH'] = {
+            this.prices.ETH = {
               usd: response.data.ethereum.usd,
               lastUpdated: now,
             };
@@ -200,7 +199,7 @@ export class CryptoPricesService {
     // If cache is invalid or missing, fetch from API
     try {
       const response = await this.makeApiRequestWithRetry(() =>
-        axios.get(`https://api.coingecko.com/api/v3/simple/token_price/ethereum`, {
+        axios.get('https://api.coingecko.com/api/v3/simple/token_price/ethereum', {
           params: {
             contract_addresses: normalizedAddress,
             vs_currencies: 'usd',
@@ -280,7 +279,7 @@ export class CryptoPricesService {
       // Fetch missing prices in bulk
       const addressesToFetchStr = addressesToFetch.join(',');
       const response = await this.makeApiRequestWithRetry(() =>
-        axios.get(`https://api.coingecko.com/api/v3/simple/token_price/ethereum`, {
+        axios.get('https://api.coingecko.com/api/v3/simple/token_price/ethereum', {
           params: {
             contract_addresses: addressesToFetchStr,
             vs_currencies: 'usd',

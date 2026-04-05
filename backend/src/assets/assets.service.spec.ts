@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
-import { AssetsService } from './assets.service';
-import { Asset, AssetType, AssetCategory } from '../entities/asset.entity';
+import { Repository } from 'typeorm';
+import { Asset, AssetCategory, AssetType } from '../entities/asset.entity';
 import { AssetNotFoundException } from '../shared/exceptions';
+import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 

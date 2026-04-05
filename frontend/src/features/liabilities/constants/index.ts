@@ -1,4 +1,4 @@
-import type { LiabilityFormData, CategoryOption } from '../types';
+import type { CategoryOption, LiabilityFormData } from '../types';
 
 export const LIABILITY_CATEGORIES: CategoryOption[] = [
   { value: 'subscriptions', labelKey: 'liabilities.categories.subscriptions' },

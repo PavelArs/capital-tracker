@@ -1,10 +1,10 @@
+import { ClassSerializerInterceptor, ValidationPipe } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory, Reflector } from '@nestjs/core';
-import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
-import { Logger } from 'nestjs-pino';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
-import { ConfigService } from '@nestjs/config';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -82,17 +82,14 @@ All errors follow a consistent format with appropriate HTTP status codes.`,
       .addTag('auth', 'Authentication and authorization endpoints')
       .addTag('assets', 'Asset management operations')
       .addTag('liabilities', 'Liability management operations')
-      .addTag('capitals', 'Capital tracking and snapshots')
       .addTag('currencies', 'Currency management and exchange rates')
       .addTag('crypto', 'Cryptocurrency wallet management')
       .addTag('metrics', 'Financial metrics and analytics')
-      .addTag('reports', 'Financial report generation')
-      .addTag('subscriptions', 'Subscription management')
       .addTag('health', 'Health check endpoints')
       .build();
 
     const document = SwaggerModule.createDocument(app, swaggerConfig, {
-      operationIdFactory: (controllerKey: string, methodKey: string) => methodKey,
+      operationIdFactory: (_controllerKey: string, methodKey: string) => methodKey,
       deepScanRoutes: true,
     });
 

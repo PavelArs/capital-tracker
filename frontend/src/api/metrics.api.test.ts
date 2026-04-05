@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { metricsApi } from './metrics.api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from './client';
+import { metricsApi } from './metrics.api';
 
 vi.mock('./client', () => ({
   default: {

@@ -1,5 +1,5 @@
-import apiClient from './client';
 import type { Currency } from '@shared/types';
+import apiClient from './client';
 
 export interface ConversionResult {
   from: string;

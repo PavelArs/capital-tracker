@@ -1,4 +1,4 @@
-import { onCLS, onFCP, onLCP, onTTFB, onINP } from 'web-vitals';
+import { onCLS, onFCP, onINP, onLCP, onTTFB } from 'web-vitals';
 import { logger } from './logger';
 
 const reportWebVitals = (onPerfEntry?: (metric: any) => void) => {

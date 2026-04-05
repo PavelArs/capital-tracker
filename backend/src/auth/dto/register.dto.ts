@@ -1,6 +1,6 @@
-import { IsEmail, IsString, MinLength, MaxLength, IsOptional, Matches } from 'class-validator';
-import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
 /**
  * DTO for user registration
@@ -54,12 +54,4 @@ export class RegisterDto {
   @MaxLength(50, { message: 'Last name must not exceed 50 characters' })
   @Transform(({ value }: { value: string }) => value?.trim())
   lastName?: string;
-
-  @ApiProperty({
-    description: 'Invitation code required for registration',
-    example: 'INVITE123',
-  })
-  @IsString({ message: 'Invitation code must be a string' })
-  @Transform(({ value }: { value: string }) => value?.trim().toUpperCase())
-  invitationCode!: string;
 }

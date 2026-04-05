@@ -1,30 +1,30 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate } from 'react-router-dom';
 import { assetsApi, currenciesApi } from '@api';
-import type { Asset, Currency } from '@shared/types';
-import { PageHeader, SubNav } from '@components/common';
 import AssetsSkeleton from '@components/AssetsSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
+import { PageHeader, SubNav } from '@components/common';
 import {
+  AssetChart,
   AssetForm,
   AssetList,
-  AssetViewControls,
   AssetTotals,
-  AssetChart,
-  useCurrencyConversion,
+  AssetViewControls,
   CHART_COLORS,
   getInitialFormData,
+  useCurrencyConversion,
+} from '@features/assets';
+import type {
+  AssetChartData,
+  AssetFormData,
+  AssetTab,
+  GroupBy,
+  TotalAmount,
+  ViewMode,
 } from '@features/assets';
 import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
-import type {
-  AssetTab,
-  ViewMode,
-  GroupBy,
-  AssetFormData,
-  TotalAmount,
-  AssetChartData,
-} from '@features/assets';
+import type { Asset, Currency } from '@shared/types';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useLocation, useNavigate } from 'react-router-dom';
 import './Assets.css';
 
 export default function Assets() {
@@ -67,7 +67,7 @@ export default function Assets() {
       { key: 'stock', label: t('assets.stockAssets'), path: '/assets/stock' },
       { key: 'flow', label: t('assets.flowAssets'), path: '/assets/flow' },
     ],
-    [t]
+    [t],
   );
 
   // Update active tab when location changes
@@ -119,7 +119,7 @@ export default function Assets() {
           return { ...prev, currencyId: usdCurrency?.id || data[0]?.id || '1' };
         });
       }
-    } catch (err) {
+    } catch (_err) {
       console.warn('Could not load currencies from API, using defaults');
     }
   };
@@ -161,7 +161,7 @@ export default function Assets() {
         name: formData.name,
         assetType: formData.assetType,
         category: formData.category,
-        amount: parseFloat(formData.amount),
+        amount: Number.parseFloat(formData.amount),
         currencyId: currencyIdToUse,
         date: formData.date,
         description: formData.description,
@@ -222,10 +222,10 @@ export default function Assets() {
 
         setShowForm(true);
       } catch (err) {
-        alert('Error editing asset: ' + (err as Error).message);
+        alert(`Error editing asset: ${(err as Error).message}`);
       }
     },
-    [currencies]
+    [currencies],
   );
 
   const handleCancel = useCallback(() => {
@@ -252,7 +252,7 @@ export default function Assets() {
         }
       }
     },
-    [fetchAssets, t]
+    [fetchAssets, t],
   );
 
   const handleRetry = useCallback(() => {
@@ -280,7 +280,7 @@ export default function Assets() {
         setActiveTab(tab as AssetTab);
       }
     },
-    [navigate, subNavTabs]
+    [navigate, subNavTabs],
   );
 
   // Chart data preparation
@@ -297,9 +297,9 @@ export default function Assets() {
           typeof asset.currency === 'object' && asset.currency !== null
             ? (asset.currency as { code?: string }).code || 'USD'
             : String(asset.currency || 'USD');
-        const amount = parseFloat(String(asset.amount));
+        const amount = Number.parseFloat(String(asset.amount));
 
-        if (isNaN(amount) || amount <= 0) continue;
+        if (Number.isNaN(amount) || amount <= 0) continue;
 
         const key =
           viewMode === 'all'
@@ -314,7 +314,7 @@ export default function Assets() {
         if (assetCurrencyCode !== 'USD') {
           try {
             amountInUSD = await convertAmount(amount, assetCurrencyCode, 'USD');
-            if (isNaN(amountInUSD) || amountInUSD <= 0) amountInUSD = amount;
+            if (Number.isNaN(amountInUSD) || amountInUSD <= 0) amountInUSD = amount;
           } catch {
             amountInUSD = amount;
           }
@@ -324,9 +324,7 @@ export default function Assets() {
           categoryTotals[key] = (categoryTotals[key] || 0) + amount;
         }
         categoryTotalsUSD[key] = (categoryTotalsUSD[key] || 0) + amountInUSD;
-      } catch {
-        continue;
-      }
+      } catch {}
     }
 
     if (viewMode === 'single') {
@@ -406,13 +404,11 @@ export default function Assets() {
                 ? (asset.currency as { code?: string }).code || 'USD'
                 : String(asset.currency || 'USD');
             stockTotal += await convertAmount(
-              parseFloat(String(asset.amount)),
+              Number.parseFloat(String(asset.amount)),
               assetCurrencyCode,
-              selectedCurrency
+              selectedCurrency,
             );
-          } catch {
-            continue;
-          }
+          } catch {}
         }
 
         for (const asset of flowAssets) {
@@ -422,13 +418,11 @@ export default function Assets() {
                 ? (asset.currency as { code?: string }).code || 'USD'
                 : String(asset.currency || 'USD');
             flowTotal += await convertAmount(
-              parseFloat(String(asset.amount)),
+              Number.parseFloat(String(asset.amount)),
               assetCurrencyCode,
-              selectedCurrency
+              selectedCurrency,
             );
-          } catch {
-            continue;
-          }
+          } catch {}
         }
 
         setTotalAmount({
@@ -445,7 +439,8 @@ export default function Assets() {
               ? (asset.currency as { code?: string }).code || 'USD'
               : String(asset.currency || 'USD');
           stockTotalsByCurrency[assetCurrencyCode] =
-            (stockTotalsByCurrency[assetCurrencyCode] || 0) + parseFloat(String(asset.amount));
+            (stockTotalsByCurrency[assetCurrencyCode] || 0) +
+            Number.parseFloat(String(asset.amount));
         }
 
         for (const asset of flowAssets) {
@@ -454,7 +449,8 @@ export default function Assets() {
               ? (asset.currency as { code?: string }).code || 'USD'
               : String(asset.currency || 'USD');
           flowTotalsByCurrency[assetCurrencyCode] =
-            (flowTotalsByCurrency[assetCurrencyCode] || 0) + parseFloat(String(asset.amount));
+            (flowTotalsByCurrency[assetCurrencyCode] || 0) +
+            Number.parseFloat(String(asset.amount));
         }
 
         setTotalAmount({

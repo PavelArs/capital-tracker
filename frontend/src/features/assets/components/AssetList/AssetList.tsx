@@ -1,7 +1,7 @@
+import type { Asset } from '@shared/types';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AssetCard } from '../AssetCard';
-import type { Asset } from '@shared/types';
 import './AssetList.css';
 
 interface AssetListProps {

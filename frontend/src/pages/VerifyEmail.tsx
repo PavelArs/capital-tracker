@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { authApi } from '@api';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './Auth.css';
 
 const REDIRECT_DELAY = 3000;

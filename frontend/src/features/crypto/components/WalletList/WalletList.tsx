@@ -1,8 +1,8 @@
+import type { CryptoWallet } from '@shared/types';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { WalletCard } from '../WalletCard';
-import type { CryptoWallet } from '@shared/types';
 import type { CryptoPrice, TokenPrices } from '../../types';
+import { WalletCard } from '../WalletCard';
 import './WalletList.css';
 
 interface WalletListProps {

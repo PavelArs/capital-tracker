@@ -17,8 +17,8 @@ jobs:
   # ============================================
   # Backend Jobs
   # ============================================
-  backend-lint:
-    name: Backend Lint
+  backend-check:
+    name: Backend Lint & Format
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -32,38 +32,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Run ESLint
-        run: npm run lint
-
-  backend-format:
-    name: Backend Format Check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Check formatting with Prettier
-        run: npm run format -- --check
+      - name: Run Biome check
+        run: pnpm lint
 
   backend-test:
     name: Backend Tests
@@ -80,14 +57,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run unit tests with coverage
-        run: npm run test
+        run: pnpm test
         env:
           CI: true
 
@@ -102,7 +80,7 @@ jobs:
   backend-build:
     name: Backend Build
     runs-on: ubuntu-latest
-    needs: [backend-lint, backend-format]
+    needs: [backend-check]
     defaults:
       run:
         working-directory: backend
@@ -115,28 +93,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: backend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: pnpm build
 
       - name: Verify build artifacts
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "❌ Build failed: dist directory not found"
-            exit 1
-          fi
-          echo "✅ Build successful"
+        run: test -d "dist" && echo "Build successful" || (echo "Build failed" && exit 1)
 
   # ============================================
   # Frontend Jobs
   # ============================================
-  frontend-lint:
-    name: Frontend Lint
+  frontend-check:
+    name: Frontend Lint & Format
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -150,38 +124,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
-      - name: Run ESLint
-        run: npm run lint
-
-  frontend-format:
-    name: Frontend Format Check
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Check formatting with Prettier
-        run: npm run format
+      - name: Run Biome check
+        run: pnpm lint
 
   frontend-test:
     name: Frontend Tests
@@ -198,14 +149,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run unit tests with coverage
-        run: npm run test
+        run: pnpm test
         env:
           CI: true
 
@@ -220,7 +172,7 @@ jobs:
   frontend-build:
     name: Frontend Build
     runs-on: ubuntu-latest
-    needs: [frontend-lint, frontend-format]
+    needs: [frontend-check]
     defaults:
       run:
         working-directory: frontend
@@ -233,27 +185,23 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
-          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: pnpm build
         env:
           VITE_API_URL: https://api.example.com
 
       - name: Verify build artifacts
-        run: |
-          if [ ! -d "dist" ]; then
-            echo "❌ Build failed: dist directory not found"
-            exit 1
-          fi
-          echo "✅ Build successful"
+        run: test -d "dist" && echo "Build successful" || (echo "Build failed" && exit 1)
 
   # ============================================
-  # Docker Build Verification (optional, runs on PRs)
+  # Docker Build Verification
   # ============================================
   docker-build:
     name: Docker Build Check
@@ -276,14 +224,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ${{ matrix.service }} Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.context }}
           push: false
           tags: capital-tracker-${{ matrix.service }}:test
-          build-args: |
-            ${{ matrix.service == 'frontend' && 'VITE_API_URL=https://api.example.com' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -294,28 +240,31 @@ jobs:
     name: CI Status
     runs-on: ubuntu-latest
     needs:
-      - backend-lint
-      - backend-format
+      - backend-check
       - backend-test
       - backend-build
-      - frontend-lint
-      - frontend-format
+      - frontend-check
       - frontend-test
       - frontend-build
     if: always()
 
     steps:
       - name: Check CI Status
+        env:
+          BACKEND_CHECK: ${{ needs.backend-check.result }}
+          BACKEND_TEST: ${{ needs.backend-test.result }}
+          BACKEND_BUILD: ${{ needs.backend-build.result }}
+          FRONTEND_CHECK: ${{ needs.frontend-check.result }}
+          FRONTEND_TEST: ${{ needs.frontend-test.result }}
+          FRONTEND_BUILD: ${{ needs.frontend-build.result }}
         run: |
-          if [[ "${{ needs.backend-lint.result }}" != "success" ]] || \
-             [[ "${{ needs.backend-format.result }}" != "success" ]] || \
-             [[ "${{ needs.backend-test.result }}" != "success" ]] || \
-             [[ "${{ needs.backend-build.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-lint.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-format.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-test.result }}" != "success" ]] || \
-             [[ "${{ needs.frontend-build.result }}" != "success" ]]; then
-            echo "❌ CI failed"
+          if [[ "$BACKEND_CHECK" != "success" ]] || \
+             [[ "$BACKEND_TEST" != "success" ]] || \
+             [[ "$BACKEND_BUILD" != "success" ]] || \
+             [[ "$FRONTEND_CHECK" != "success" ]] || \
+             [[ "$FRONTEND_TEST" != "success" ]] || \
+             [[ "$FRONTEND_BUILD" != "success" ]]; then
+            echo "CI failed"
             exit 1
           fi
-          echo "✅ All CI checks passed"
+          echo "All CI checks passed"

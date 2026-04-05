@@ -1,23 +1,12 @@
 // User & Auth types
-export type SubscriptionType = 'free' | 'pro' | 'enterprise';
-
 export interface User {
   id: string;
   email: string;
   firstName?: string;
   lastName?: string;
-  subscriptionType: SubscriptionType;
   emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface InvitationCode {
-  id: string;
-  code: string;
-  isUsed: boolean;
-  usedAt: string | null;
-  createdAt: string;
 }
 
 export interface LoginCredentials {
@@ -30,7 +19,6 @@ export interface RegisterData {
   password: string;
   firstName?: string;
   lastName?: string;
-  invitationCode: string;
 }
 
 export interface AuthResponse {
@@ -124,7 +112,7 @@ export interface CreateLiabilityDto {
 export interface UpdateLiabilityDto extends Partial<CreateLiabilityDto> {}
 
 // Crypto types
-export type CryptoType = 'bitcoin' | 'ethereum' | 'solana' | 'bnb' | 'polygon' | 'avalanche';
+export type CryptoType = 'bitcoin' | 'ethereum';
 
 export interface CryptoWallet {
   id: string;

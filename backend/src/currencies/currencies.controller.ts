@@ -1,19 +1,19 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Query,
-  UseGuards,
   HttpCode,
   HttpStatus,
+  Post,
+  Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { CurrenciesService } from './currencies.service';
-import { ToggleCurrencyDto } from './dto/toggle-currency.dto';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
-import { MessageResponseDto, ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
+import { ErrorResponseDto, MessageResponseDto, ValidationErrorResponseDto } from '../shared/dto';
+import { CurrenciesService } from './currencies.service';
+import { ToggleCurrencyDto } from './dto/toggle-currency.dto';
 
 @ApiTags('currencies')
 @ApiBearerAuth('JWT-auth')
@@ -81,7 +81,7 @@ export class CurrenciesController {
     },
   })
   convert(@Query('amount') amount: string, @Query('from') from: string, @Query('to') to: string) {
-    return this.currenciesService.convert(parseFloat(amount), from, to);
+    return this.currenciesService.convert(Number.parseFloat(amount), from, to);
   }
 
   @Get('hidden')

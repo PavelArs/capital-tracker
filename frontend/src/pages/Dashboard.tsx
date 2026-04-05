@@ -1,20 +1,20 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Line } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
 import { metricsApi } from '@api';
-import type { Metrics, MetricsHistory } from '@shared/types';
 import DashboardSkeleton from '@components/DashboardSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
+import type { Metrics, MetricsHistory } from '@shared/types';
+import {
+  CategoryScale,
+  Chart as ChartJS,
+  Legend,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Title,
+  Tooltip,
+} from 'chart.js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Line } from 'react-chartjs-2';
+import { useTranslation } from 'react-i18next';
 import './Dashboard.css';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -62,7 +62,7 @@ export default function Dashboard() {
         category.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())
       );
     },
-    [t]
+    [t],
   );
 
   const fetchMetrics = useCallback(async () => {
@@ -135,7 +135,7 @@ export default function Dashboard() {
         },
       ],
     }),
-    [history, t]
+    [history, t],
   );
 
   const chartOptions = useMemo(() => {
@@ -360,7 +360,7 @@ export default function Dashboard() {
                           {(percentage as number).toFixed(2)}%
                         </span>
                       </li>
-                    )
+                    ),
                   )}
                 </ul>
               ) : (
@@ -380,7 +380,7 @@ export default function Dashboard() {
                           {(percentage as number).toFixed(2)}%
                         </span>
                       </li>
-                    )
+                    ),
                   )}
                 </ul>
               ) : (
@@ -400,7 +400,7 @@ export default function Dashboard() {
                           {(percentage as number).toFixed(2)}%
                         </span>
                       </li>
-                    )
+                    ),
                   )}
                 </ul>
               ) : (

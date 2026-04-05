@@ -1,10 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
-import { CryptoWallet, CryptoType } from '../entities/crypto-wallet.entity';
+import { Repository } from 'typeorm';
 import { CurrenciesService } from '../currencies/currencies.service';
+import { CryptoType, CryptoWallet } from '../entities/crypto-wallet.entity';
 
 @Injectable()
 export class CryptoUpdateService {
@@ -112,7 +112,7 @@ export class CryptoUpdateService {
             { timeout: 10000 },
           );
 
-          if (response.data && response.data.result && response.data.result !== '0x') {
+          if (response.data?.result && response.data.result !== '0x') {
             // Use BigInt for large numbers to avoid precision loss
             const balanceWei = BigInt(response.data.result);
             // Convert wei to ETH with better precision handling
@@ -120,9 +120,8 @@ export class CryptoUpdateService {
             return ethBalance;
           }
         }
-      } catch (error) {
+      } catch (_error) {
         console.log(`Failed to get balance from ${endpoint.url}, trying next...`);
-        continue;
       }
     }
 
@@ -155,9 +154,7 @@ export class CryptoUpdateService {
       const currencies = await this.currenciesService.findAll();
 
       // Filter currencies that have contract addresses (ERC-20 tokens)
-      const tokenCurrencies = currencies.filter(
-        (c) => c.contractAddress && c.contractAddress.startsWith('0x'),
-      );
+      const tokenCurrencies = currencies.filter((c) => c.contractAddress?.startsWith('0x'));
 
       if (tokenCurrencies.length === 0) {
         return [];
@@ -189,7 +186,7 @@ export class CryptoUpdateService {
           try {
             // Get token decimals (default to 18 if not available)
             const decimals = (await this.getTokenDecimals(currency.contractAddress)) || 18;
-            const formattedBalance = balance / Math.pow(10, decimals);
+            const formattedBalance = balance / 10 ** decimals;
 
             tokens.push({
               symbol: currency.code,
@@ -255,7 +252,7 @@ export class CryptoUpdateService {
             { timeout: 10000 },
           );
 
-          if (response.data && response.data.result && response.data.result !== '0x') {
+          if (response.data?.result && response.data.result !== '0x') {
             // Parse hex result to number
             const balanceHex = response.data.result;
             if (balanceHex === '0x' || balanceHex === '0x0') {
@@ -265,9 +262,8 @@ export class CryptoUpdateService {
             return Number(balanceWei);
           }
         }
-      } catch (error) {
+      } catch (_error) {
         console.log(`Failed to get token balance from ${endpoint.url}, trying next...`);
-        continue;
       }
     }
 
@@ -309,15 +305,13 @@ export class CryptoUpdateService {
             { timeout: 10000 },
           );
 
-          if (response.data && response.data.result && response.data.result !== '0x') {
+          if (response.data?.result && response.data.result !== '0x') {
             const decimalsHex = response.data.result;
-            const decimals = parseInt(decimalsHex, 16);
+            const decimals = Number.parseInt(decimalsHex, 16);
             return decimals;
           }
         }
-      } catch (error) {
-        continue;
-      }
+      } catch (_error) {}
     }
 
     return null; // Return null if decimals cannot be fetched

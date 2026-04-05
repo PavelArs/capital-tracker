@@ -37,8 +37,6 @@
     "alreadyHaveAccount": "Уже есть аккаунт?",
     "firstName": "Имя (необязательно)",
     "lastName": "Фамилия (необязательно)",
-    "invitationCode": "Код-приглашение",
-    "invitationCodePlaceholder": "Введите код-приглашение",
     "forgotPassword": "Забыли пароль?",
     "forgotPasswordDescription": "Введите свой email, и мы отправим вам ссылку для сброса пароля.",
     "sendResetLink": "Отправить ссылку",
@@ -76,7 +74,6 @@
     "assets": "Активы",
     "liabilities": "Обязательства",
     "crypto": "Криптовалюты",
-    "metrics": "Метрики",
     "settings": "Настройки"
   },
   "dashboard": {
@@ -221,22 +218,6 @@
       "stablecoin": "Стейблкоин"
     }
   },
-  "metrics": {
-    "title": "Метрики и аналитика",
-    "currency": "Валюта",
-    "netWorth": "Чистый капитал",
-    "totalAssets": "Всего активов",
-    "totalLiabilities": "Всего обязательств",
-    "activeIncome": "Активный доход",
-    "passiveIncome": "Пассивный доход",
-    "runway": "Запас прочности",
-    "months": "месяцев",
-    "flRatio": "FL-Коэффициент",
-    "flRatioDescription": "Пассивный доход / Месячные расходы",
-    "capitalHistory": "История капитала (30 дней)",
-    "assetDistribution": "Распределение активов",
-    "liabilityDistribution": "Распределение обязательств"
-  },
   "language": {
     "select": "Выбрать язык",
     "english": "English",
@@ -255,16 +236,6 @@
     "language": "Язык",
     "languageDescription": "Выберите предпочитаемый язык интерфейса",
     "theme": "Тема",
-    "themeDescription": "Выберите предпочитаемую цветовую тему",
-    "invitationCode": "Код-приглашение",
-    "yourInvitationCode": "Ваш код-приглашение",
-    "invitationCodeDescription": "Вы можете создать один код-приглашение для приглашения нового пользователя. Каждый код можно использовать только один раз.",
-    "noInvitationCode": "У вас пока нет кода-приглашения.",
-    "generateInvitationCode": "Создать код-приглашение",
-    "invitationCodeGenerateError": "Не удалось создать код-приглашение. Возможно, у вас уже есть активный код.",
-    "codeActive": "Активен - Готов к использованию",
-    "codeUsed": "Использован",
-    "proFeature": "Pro функция",
-    "invitationCodeProOnly": "Коды-приглашения доступны только для подписчиков Pro и Enterprise. Обновите подписку, чтобы делиться приглашениями с друзьями и коллегами."
+    "themeDescription": "Выберите предпочитаемую цветовую тему"
   }
 }

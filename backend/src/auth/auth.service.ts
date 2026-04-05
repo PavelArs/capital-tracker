@@ -1,41 +1,30 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { PinoLogger } from 'nestjs-pino';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { PinoLogger } from 'nestjs-pino';
+import { MoreThan, Repository } from 'typeorm';
+import { EmailService } from '../email/email.service';
 import { User } from '../entities/user.entity';
 import {
-  Subscription,
-  SubscriptionType,
-  SubscriptionStatus,
-} from '../entities/subscription.entity';
-import { InvitationCode } from '../entities/invitation-code.entity';
-import { RegisterDto } from './dto/register.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
-import { EmailService } from '../email/email.service';
-import {
-  UserNotFoundException,
   DuplicateEmailException,
   EmailNotVerifiedException,
   InvalidTokenException,
-  InvalidInvitationCodeException,
-  InvitationCodeAlreadyUsedException,
-  InvitationCodeNotAllowedException,
-  ActiveInvitationCodeExistsException,
+  UserNotFoundException,
 } from '../shared/exceptions';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { RegisterDto } from './dto/register.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 export interface UserWithoutPassword {
   id: string;
   email: string;
   firstName: string | null;
   lastName: string | null;
-  subscriptionType: SubscriptionType;
   emailVerified: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -56,10 +45,6 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
-    @InjectRepository(Subscription)
-    private readonly subscriptionRepository: Repository<Subscription>,
-    @InjectRepository(InvitationCode)
-    private readonly invitationCodeRepository: Repository<InvitationCode>,
     private readonly jwtService: JwtService,
     private readonly emailService: EmailService,
     private readonly configService: ConfigService,
@@ -78,23 +63,9 @@ export class AuthService {
     );
   }
 
-  private get devInvitationCode(): string {
-    return this.configService.get<string>('DEV_INVITATION_CODE', 'DEV2024');
-  }
-
   async register(registerDto: RegisterDto): Promise<RegisterResponse> {
     this.logger.info({ email: registerDto.email }, 'Processing registration');
 
-    // Check if using dev invitation code (only works in development)
-    const isDevCode = this.isDevelopment && registerDto.invitationCode === this.devInvitationCode;
-
-    let invitationCode: InvitationCode | null = null;
-
-    if (!isDevCode) {
-      invitationCode = await this.validateInvitationCode(registerDto.invitationCode);
-    }
-
-    // Check for existing user
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
     });
@@ -106,7 +77,6 @@ export class AuthService {
 
     const hashedPassword = await bcrypt.hash(registerDto.password, 10);
 
-    // Generate email verification token (only if not skipping verification)
     let verificationToken: string | null = null;
     let hashedVerificationToken: string | null = null;
 
@@ -120,7 +90,6 @@ export class AuthService {
       password: hashedPassword,
       firstName: registerDto.firstName ?? null,
       lastName: registerDto.lastName ?? null,
-      subscriptionType: SubscriptionType.FREE,
       emailVerified: this.skipEmailVerification,
       emailVerificationToken: hashedVerificationToken,
     });
@@ -128,31 +97,12 @@ export class AuthService {
     const savedUser = await this.userRepository.save(user);
     this.logger.info({ userId: savedUser.id }, 'User created successfully');
 
-    // Mark invitation code as used (skip for dev code)
-    if (!isDevCode && invitationCode) {
-      invitationCode.isUsed = true;
-      invitationCode.usedByUserId = savedUser.id;
-      invitationCode.usedAt = new Date();
-      await this.invitationCodeRepository.save(invitationCode);
-    }
-
-    // Create free subscription
-    const subscription = this.subscriptionRepository.create({
-      userId: savedUser.id,
-      type: SubscriptionType.FREE,
-      status: SubscriptionStatus.ACTIVE,
-      startDate: new Date(),
-    });
-    await this.subscriptionRepository.save(subscription);
-
-    // Send email verification (only if not skipping and token exists)
     if (!this.skipEmailVerification && verificationToken) {
       await this.sendVerificationEmail(savedUser, verificationToken);
     }
 
     const userResponse = this.excludePassword(savedUser);
 
-    // Return access token in dev mode with skip verification
     if (this.skipEmailVerification) {
       return {
         ...userResponse,
@@ -177,7 +127,6 @@ export class AuthService {
       return null;
     }
 
-    // Check if email is verified (skip in dev mode)
     if (!this.skipEmailVerification && !user.emailVerified) {
       throw new EmailNotVerifiedException();
     }
@@ -201,65 +150,6 @@ export class AuthService {
     }
 
     return this.excludePassword(user);
-  }
-
-  async generateInvitationCode(userId: string): Promise<InvitationCode> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new UserNotFoundException(userId);
-    }
-
-    if (user.subscriptionType === SubscriptionType.FREE) {
-      throw new InvitationCodeNotAllowedException();
-    }
-
-    // Check if user already has an invitation code
-    const existingCode = await this.invitationCodeRepository.findOne({
-      where: { createdByUserId: userId, isUsed: false },
-    });
-
-    if (existingCode) {
-      throw new ActiveInvitationCodeExistsException();
-    }
-
-    // Generate unique code
-    const code = await this.generateUniqueCode();
-
-    const invitationCode = this.invitationCodeRepository.create({
-      code,
-      createdByUserId: userId,
-    });
-
-    this.logger.info({ userId }, 'Invitation code generated');
-    return await this.invitationCodeRepository.save(invitationCode);
-  }
-
-  async getMyInvitationCode(userId: string): Promise<InvitationCode | null> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new UserNotFoundException(userId);
-    }
-
-    const invitationCode = await this.invitationCodeRepository.findOne({
-      where: { createdByUserId: userId },
-    });
-
-    // If user downgraded to FREE and code is not used yet, mark it as invalid
-    if (
-      invitationCode &&
-      !invitationCode.isUsed &&
-      user.subscriptionType === SubscriptionType.FREE
-    ) {
-      return null;
-    }
-
-    return invitationCode;
   }
 
   async forgotPassword(forgotPasswordDto: ForgotPasswordDto): Promise<{ message: string }> {
@@ -404,45 +294,6 @@ export class AuthService {
     return { message: secureMessage };
   }
 
-  private async validateInvitationCode(code: string): Promise<InvitationCode> {
-    const invitationCode = await this.invitationCodeRepository.findOne({
-      where: { code },
-      relations: ['createdBy'],
-    });
-
-    if (!invitationCode) {
-      throw new InvalidInvitationCodeException();
-    }
-
-    if (invitationCode.isUsed) {
-      throw new InvitationCodeAlreadyUsedException();
-    }
-
-    if (
-      invitationCode.createdBy &&
-      invitationCode.createdBy.subscriptionType === SubscriptionType.FREE
-    ) {
-      throw new InvalidInvitationCodeException();
-    }
-
-    return invitationCode;
-  }
-
-  private async generateUniqueCode(): Promise<string> {
-    let code: string;
-    let isUnique = false;
-
-    do {
-      code = randomBytes(4).toString('hex').toUpperCase();
-      const existing = await this.invitationCodeRepository.findOne({
-        where: { code },
-      });
-      isUnique = !existing;
-    } while (!isUnique);
-
-    return code;
-  }
-
   private async sendVerificationEmail(user: User, token: string): Promise<void> {
     try {
       await this.emailService.sendEmailVerification(user.email, user.firstName, token);
@@ -457,7 +308,6 @@ export class AuthService {
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      subscriptionType: user.subscriptionType,
       emailVerified: user.emailVerified,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,

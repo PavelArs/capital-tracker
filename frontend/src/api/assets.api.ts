@@ -1,5 +1,5 @@
-import apiClient from './client';
 import type { Asset, CreateAssetDto, UpdateAssetDto } from '@shared/types';
+import apiClient from './client';
 
 export const assetsApi = {
   getAll: async (): Promise<Asset[]> => {

@@ -28,7 +28,6 @@ export const Skeleton: React.FC<SkeletonProps> = ({
         return { borderRadius: '50%' };
       case 'rounded':
         return { borderRadius: '8px' };
-      case 'rectangular':
       default:
         return { borderRadius: '4px' };
     }

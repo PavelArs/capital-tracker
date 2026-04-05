@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { cryptoApi } from './crypto.api';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import apiClient from './client';
+import { cryptoApi } from './crypto.api';
 
 vi.mock('./client', () => ({
   default: {

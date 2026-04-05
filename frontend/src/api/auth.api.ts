@@ -1,13 +1,7 @@
+import type { AuthResponse, LoginCredentials, RegisterData, User } from '@shared/types';
 import apiClient from './client';
-import type {
-  User,
-  LoginCredentials,
-  RegisterData,
-  AuthResponse,
-  InvitationCode,
-} from '@shared/types';
 
-export interface RegisterResponse extends Omit<User, 'subscriptionType'> {
+export interface RegisterResponse extends User {
   access_token?: string;
   message: string;
 }
@@ -28,7 +22,6 @@ export const authApi = {
     return response.data;
   },
 
-  // Alias for getProfile
   getCurrentUser: async (): Promise<User> => {
     const response = await apiClient.get<User>('/auth/me');
     return response.data;
@@ -57,19 +50,5 @@ export const authApi = {
       email,
     });
     return response.data;
-  },
-
-  generateInvitationCode: async (): Promise<InvitationCode> => {
-    const response = await apiClient.post<InvitationCode>('/auth/invitation-code/generate');
-    return response.data;
-  },
-
-  getMyInvitationCode: async (): Promise<InvitationCode | null> => {
-    try {
-      const response = await apiClient.get<InvitationCode>('/auth/invitation-code');
-      return response.data;
-    } catch {
-      return null;
-    }
   },
 };

@@ -1,24 +1,22 @@
-import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { setErrorHandler } from '@api';
+import ErrorNotification from '@components/ErrorNotification';
+import Layout from '@components/Layout';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
-import { setErrorHandler } from '@api';
-import ErrorNotification from '@components/ErrorNotification';
+import Assets from '@pages/Assets';
+import Crypto from '@pages/Crypto';
+import Dashboard from '@pages/Dashboard';
+import ForgotPassword from '@pages/ForgotPassword';
+import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
 import Register from '@pages/Register';
-import ForgotPassword from '@pages/ForgotPassword';
-import ResetPassword from '@pages/ResetPassword';
-import VerifyEmail from '@pages/VerifyEmail';
 import ResendVerification from '@pages/ResendVerification';
-import Dashboard from '@pages/Dashboard';
-import Assets from '@pages/Assets';
-import Liabilities from '@pages/Liabilities';
-import Crypto from '@pages/Crypto';
-import Metrics from '@pages/Metrics';
+import ResetPassword from '@pages/ResetPassword';
 import Settings from '@pages/Settings';
-import Subscriptions from '@pages/Subscriptions';
-import Layout from '@components/Layout';
+import VerifyEmail from '@pages/VerifyEmail';
+import React, { useEffect } from 'react';
+import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -58,9 +56,7 @@ function AppRoutes() {
         <Route path="assets/*" element={<Assets />} />
         <Route path="liabilities" element={<Liabilities />} />
         <Route path="crypto" element={<Crypto />} />
-        <Route path="metrics" element={<Metrics />} />
         <Route path="settings" element={<Settings />} />
-        <Route path="subscriptions" element={<Subscriptions />} />
       </Route>
     </Routes>
   );

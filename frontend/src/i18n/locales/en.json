@@ -37,8 +37,6 @@
     "alreadyHaveAccount": "Already have an account?",
     "firstName": "First Name (optional)",
     "lastName": "Last Name (optional)",
-    "invitationCode": "Invitation Code",
-    "invitationCodePlaceholder": "Enter invitation code",
     "forgotPassword": "Forgot Password?",
     "forgotPasswordDescription": "Enter your email address and we'll send you a link to reset your password.",
     "sendResetLink": "Send Reset Link",
@@ -76,7 +74,6 @@
     "assets": "Assets",
     "liabilities": "Liabilities",
     "crypto": "Crypto",
-    "metrics": "Metrics",
     "settings": "Settings"
   },
   "dashboard": {
@@ -221,22 +218,6 @@
       "stablecoin": "Stablecoin"
     }
   },
-  "metrics": {
-    "title": "Metrics & Analytics",
-    "currency": "Currency",
-    "netWorth": "Net Worth",
-    "totalAssets": "Total Assets",
-    "totalLiabilities": "Total Liabilities",
-    "activeIncome": "Active Income",
-    "passiveIncome": "Passive Income",
-    "runway": "Runway",
-    "months": "months",
-    "flRatio": "FL-Ratio",
-    "flRatioDescription": "Passive Income / Monthly Expenses",
-    "capitalHistory": "Capital History (30 days)",
-    "assetDistribution": "Asset Distribution",
-    "liabilityDistribution": "Liability Distribution"
-  },
   "language": {
     "select": "Select Language",
     "english": "English",
@@ -255,16 +236,6 @@
     "language": "Language",
     "languageDescription": "Choose your preferred language for the interface",
     "theme": "Theme",
-    "themeDescription": "Choose your preferred color theme",
-    "invitationCode": "Invitation Code",
-    "yourInvitationCode": "Your Invitation Code",
-    "invitationCodeDescription": "You can generate one invitation code to invite a new user. Each code can only be used once.",
-    "noInvitationCode": "You don't have an invitation code yet.",
-    "generateInvitationCode": "Generate Invitation Code",
-    "invitationCodeGenerateError": "Failed to generate invitation code. You may already have an active code.",
-    "codeActive": "Active - Ready to use",
-    "codeUsed": "Used",
-    "proFeature": "Pro Feature",
-    "invitationCodeProOnly": "Invitation codes are exclusive to Pro and Enterprise subscribers. Upgrade your subscription to share invitations with friends and colleagues."
+    "themeDescription": "Choose your preferred color theme"
   }
 }
