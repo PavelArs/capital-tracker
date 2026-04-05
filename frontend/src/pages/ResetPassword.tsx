@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { authApi } from '@api';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import './Auth.css';
 
 const MIN_PASSWORD_LENGTH = 6;
@@ -60,7 +60,7 @@ export default function ResetPassword() {
         setLoading(false);
       }
     },
-    [password, confirmPassword, token, navigate, t]
+    [password, confirmPassword, token, navigate, t],
   );
 
   const handlePasswordChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

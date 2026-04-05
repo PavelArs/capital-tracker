@@ -1,5 +1,5 @@
+import type { CreateCryptoWalletDto, CryptoWallet } from '@shared/types';
 import apiClient from './client';
-import type { CryptoWallet, CreateCryptoWalletDto } from '@shared/types';
 
 export interface CryptoPrices {
   BTC: { usd: number } | number;

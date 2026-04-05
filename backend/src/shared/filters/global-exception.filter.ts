@@ -1,7 +1,7 @@
 import {
-  ExceptionFilter,
-  Catch,
   ArgumentsHost,
+  Catch,
+  ExceptionFilter,
   HttpException,
   HttpStatus,
   Injectable,
@@ -62,10 +62,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = exception.name;
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const responseObj = exceptionResponse as Record<string, unknown>;
-        message = Array.isArray(responseObj['message'])
-          ? responseObj['message'].join(', ')
-          : (responseObj['message'] as string) || exception.message;
-        error = (responseObj['error'] as string) || exception.name;
+        message = Array.isArray(responseObj.message)
+          ? responseObj.message.join(', ')
+          : (responseObj.message as string) || exception.message;
+        error = (responseObj.error as string) || exception.name;
       } else {
         message = exception.message;
         error = exception.name;

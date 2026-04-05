@@ -1,12 +1,12 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
 import { cryptoApi } from '@api';
-import type { CryptoWallet, CryptoToken } from '@shared/types';
-import { PageHeader } from '@components/common';
 import CryptoSkeleton from '@components/CryptoSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
+import { PageHeader } from '@components/common';
 import { WalletForm, WalletList, getInitialFormData } from '@features/crypto';
-import type { WalletFormData, WalletType, CryptoPrice, TokenPrices } from '@features/crypto';
+import type { CryptoPrice, TokenPrices, WalletFormData, WalletType } from '@features/crypto';
+import type { CryptoToken, CryptoWallet } from '@shared/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './Crypto.css';
 
 export default function Crypto() {
@@ -146,7 +146,7 @@ export default function Crypto() {
         }
       }
     },
-    [fetchWallets, t]
+    [fetchWallets, t],
   );
 
   const handleUpdateBalance = useCallback(async (id: string) => {
@@ -155,7 +155,7 @@ export default function Crypto() {
       const updatedWallet = await cryptoApi.updateBalance(id);
 
       setWallets((prevWallets) =>
-        prevWallets.map((wallet) => (wallet.id === id ? updatedWallet : wallet))
+        prevWallets.map((wallet) => (wallet.id === id ? updatedWallet : wallet)),
       );
 
       if (
@@ -170,7 +170,7 @@ export default function Crypto() {
         if (contractAddresses.length > 0) {
           try {
             const prices = await cryptoApi.getTokenPrices(
-              contractAddresses.map((addr: string) => addr.toLowerCase())
+              contractAddresses.map((addr: string) => addr.toLowerCase()),
             );
             setTokenPrices((prevPrices) => ({ ...prevPrices, ...prices }));
           } catch {

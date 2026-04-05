@@ -1,19 +1,19 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-import { liabilitiesApi, currenciesApi } from '@api';
-import type { Liability, Currency } from '@shared/types';
-import { PageHeader } from '@components/common';
+import { currenciesApi, liabilitiesApi } from '@api';
 import AssetsSkeleton from '@components/AssetsSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
+import { PageHeader } from '@components/common';
 import {
+  LiabilityChart,
   LiabilityForm,
   LiabilityList,
-  LiabilityChart,
   REGULAR_CATEGORIES,
   getInitialFormData,
 } from '@features/liabilities';
-import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
 import type { LiabilityFormData } from '@features/liabilities';
+import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
+import type { Currency, Liability } from '@shared/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './Liabilities.css';
 
 export default function Liabilities() {
@@ -97,7 +97,7 @@ export default function Liabilities() {
         name: formData.name,
         category: formData.category,
         liabilityType: isRecurring ? 'recurring' : 'one_time',
-        amount: parseFloat(formData.amount),
+        amount: Number.parseFloat(formData.amount),
         currencyId: currencyIdToUse,
         date: formData.date,
         description: formData.description,
@@ -108,7 +108,7 @@ export default function Liabilities() {
       if (editingId) {
         await liabilitiesApi.update(
           editingId,
-          payload as Parameters<typeof liabilitiesApi.update>[1]
+          payload as Parameters<typeof liabilitiesApi.update>[1],
         );
       } else {
         await liabilitiesApi.create(payload as Parameters<typeof liabilitiesApi.create>[0]);
@@ -169,10 +169,10 @@ export default function Liabilities() {
 
         setShowForm(true);
       } catch (err) {
-        alert('Error editing liability: ' + (err as Error).message);
+        alert(`Error editing liability: ${(err as Error).message}`);
       }
     },
-    [currencies]
+    [currencies],
   );
 
   const handleCancel = useCallback(() => {
@@ -199,7 +199,7 @@ export default function Liabilities() {
         }
       }
     },
-    [fetchLiabilities, t]
+    [fetchLiabilities, t],
   );
 
   const handleRetry = useCallback(() => {

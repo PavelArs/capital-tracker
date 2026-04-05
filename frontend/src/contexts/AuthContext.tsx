@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, authApi } from '@api';
 import type { User } from '@shared/types';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 
 interface AuthContextType {
   user: User | null;
@@ -11,7 +11,7 @@ interface AuthContextType {
     email: string,
     password: string,
     firstName?: string,
-    lastName?: string
+    lastName?: string,
   ) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -28,9 +28,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (token) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      api.defaults.headers.common.Authorization = `Bearer ${token}`;
     } else {
-      delete api.defaults.headers.common['Authorization'];
+      api.defaults.headers.common.Authorization = undefined;
     }
   }, [token]);
 
@@ -39,13 +39,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const savedToken = localStorage.getItem(TOKEN_KEY);
       if (savedToken) {
         try {
-          api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+          api.defaults.headers.common.Authorization = `Bearer ${savedToken}`;
           const userData = await authApi.getCurrentUser();
           setUser(userData);
           setToken(savedToken);
         } catch {
           localStorage.removeItem(TOKEN_KEY);
-          delete api.defaults.headers.common['Authorization'];
+          api.defaults.headers.common.Authorization = undefined;
           setToken(null);
           setUser(null);
         }
@@ -62,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(access_token);
     setUser(userData);
     localStorage.setItem(TOKEN_KEY, access_token);
-    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
   }, []);
 
   const register = useCallback(
@@ -77,20 +77,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (response.access_token) {
         const { access_token } = response;
         setToken(access_token);
-        api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+        api.defaults.headers.common.Authorization = `Bearer ${access_token}`;
         const fullUser = await authApi.getCurrentUser();
         setUser(fullUser);
         localStorage.setItem(TOKEN_KEY, access_token);
       }
     },
-    []
+    [],
   );
 
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
     localStorage.removeItem(TOKEN_KEY);
-    delete api.defaults.headers.common['Authorization'];
+    api.defaults.headers.common.Authorization = undefined;
   }, []);
 
   const refreshUser = useCallback(async () => {

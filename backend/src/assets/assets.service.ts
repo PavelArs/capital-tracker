@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
+import { Repository } from 'typeorm';
 import { Asset } from '../entities/asset.entity';
+import { AssetNotFoundException } from '../shared/exceptions';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
-import { AssetNotFoundException } from '../shared/exceptions';
 
 @Injectable()
 export class AssetsService {

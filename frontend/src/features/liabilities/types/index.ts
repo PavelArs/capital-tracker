@@ -1,4 +1,4 @@
-import type { Liability, Currency } from '@shared/types';
+import type { Currency, Liability } from '@shared/types';
 
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly' | '';
 

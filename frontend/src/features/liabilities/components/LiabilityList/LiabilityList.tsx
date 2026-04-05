@@ -1,7 +1,7 @@
+import type { Liability } from '@shared/types';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LiabilityCard } from '../LiabilityCard';
-import type { Liability } from '@shared/types';
 import './LiabilityList.css';
 
 interface LiabilityListProps {

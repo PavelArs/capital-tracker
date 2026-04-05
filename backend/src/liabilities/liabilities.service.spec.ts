@@ -1,12 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
-import { LiabilitiesService } from './liabilities.service';
+import { Repository } from 'typeorm';
 import { Liability, LiabilityCategory, LiabilityFrequency } from '../entities/liability.entity';
 import { LiabilityNotFoundException } from '../shared/exceptions';
 import { CreateLiabilityDto } from './dto/create-liability.dto';
 import { UpdateLiabilityDto } from './dto/update-liability.dto';
+import { LiabilitiesService } from './liabilities.service';
 
 describe('LiabilitiesService', () => {
   let service: LiabilitiesService;

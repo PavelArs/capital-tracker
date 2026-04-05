@@ -1,9 +1,9 @@
-import { memo, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Pie } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import { formatAmount } from '@utils/formatters';
-import type { ViewMode, AssetChartData } from '../../types';
+import { ArcElement, Chart as ChartJS, Legend, Tooltip } from 'chart.js';
+import { memo, useMemo } from 'react';
+import { Pie } from 'react-chartjs-2';
+import { useTranslation } from 'react-i18next';
+import type { AssetChartData, ViewMode } from '../../types';
 import './AssetChart.css';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
@@ -26,7 +26,7 @@ export const AssetChart = memo(function AssetChart({
       plugins: {
         tooltip: {
           callbacks: {
-            label: function (context: any) {
+            label: (context: any) => {
               const label = context.label || '';
               let currency = '';
               let percentage = '';
@@ -86,7 +86,7 @@ export const AssetChart = memo(function AssetChart({
       maintainAspectRatio: true,
       responsive: true,
     }),
-    [chartData, selectedCurrency, viewMode]
+    [chartData, selectedCurrency, viewMode],
   );
 
   if (!chartData) {

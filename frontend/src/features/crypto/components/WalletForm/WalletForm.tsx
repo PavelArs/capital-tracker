@@ -1,9 +1,9 @@
+import LoadingButton from '@components/LoadingButton';
+import { Modal } from '@components/common';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Modal } from '@components/common';
-import LoadingButton from '@components/LoadingButton';
+import { ADDRESS_PLACEHOLDERS, WALLET_TYPES } from '../../constants';
 import type { WalletFormProps, WalletType } from '../../types';
-import { WALLET_TYPES, ADDRESS_PLACEHOLDERS } from '../../constants';
 import './WalletForm.css';
 
 export function WalletForm({

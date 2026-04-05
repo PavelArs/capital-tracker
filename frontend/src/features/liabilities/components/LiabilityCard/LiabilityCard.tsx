@@ -1,7 +1,7 @@
-import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
 import LoadingButton from '@components/LoadingButton';
 import { formatAmount } from '@utils/formatters';
+import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { LiabilityCardProps } from '../../types';
 import './LiabilityCard.css';
 
@@ -22,7 +22,7 @@ export const LiabilityCard = memo(function LiabilityCard({
     typeof liability.currency === 'object' && liability.currency !== null
       ? (liability.currency as { code?: string }).code || 'USD'
       : String(liability.currency || 'USD');
-  const amount = parseFloat(String(liability.amount));
+  const amount = Number.parseFloat(String(liability.amount));
 
   const extLiability = liability as unknown as ExtendedLiability;
   const isOverdue = extLiability.deadline && new Date(extLiability.deadline) < new Date();

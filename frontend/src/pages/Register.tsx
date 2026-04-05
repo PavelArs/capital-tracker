@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { useAuth } from '@contexts/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router-dom';
 import './Auth.css';
 
 export default function Register() {
@@ -48,7 +48,7 @@ export default function Register() {
         setIsSubmitting(false);
       }
     },
-    [email, password, firstName, lastName, register, t]
+    [email, password, firstName, lastName, register, t],
   );
 
   if (loading) {

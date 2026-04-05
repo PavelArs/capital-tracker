@@ -2,11 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
-import { Asset, AssetType, IncomeType } from '../entities/asset.entity';
-import { Liability } from '../entities/liability.entity';
-import { CryptoWallet } from '../entities/crypto-wallet.entity';
-import { CurrenciesService } from '../currencies/currencies.service';
 import { CryptoPricesService } from '../crypto/crypto-prices.service';
+import { CurrenciesService } from '../currencies/currencies.service';
+import { Asset, AssetType, IncomeType } from '../entities/asset.entity';
+import { CryptoWallet } from '../entities/crypto-wallet.entity';
+import { Liability } from '../entities/liability.entity';
 
 @Injectable()
 export class MetricsService {
@@ -23,7 +23,7 @@ export class MetricsService {
     private readonly logger: PinoLogger,
   ) {}
 
-  async getMetrics(userId: string, targetCurrency: string = 'USD') {
+  async getMetrics(userId: string, targetCurrency = 'USD') {
     const assets = await this.assetRepository.find({
       where: { userId },
       relations: ['currency'],
@@ -125,7 +125,7 @@ export class MetricsService {
     };
   }
 
-  async getCapitalHistory(userId: string, days: number = 30, targetCurrency: string = 'USD') {
+  async getCapitalHistory(userId: string, days = 30, targetCurrency = 'USD') {
     const history = [];
     const today = new Date();
 
@@ -169,7 +169,7 @@ export class MetricsService {
     let total = 0;
 
     for (const item of items) {
-      let amount = parseFloat(item.amount.toString());
+      let amount = Number.parseFloat(item.amount.toString());
       const itemCurrency = item.currency?.code || 'USD';
 
       if (itemCurrency !== targetCurrency) {
@@ -206,7 +206,7 @@ export class MetricsService {
         if (wallet.type === 'ethereum') {
           // Get ETH price
           const ethPrice = await this.cryptoPricesService.getPrice('ETH');
-          const ethBalance = parseFloat(wallet.balance.toString());
+          const ethBalance = Number.parseFloat(wallet.balance.toString());
 
           const ethValue = ethBalance * ethPrice;
           this.logger.info(
@@ -243,7 +243,7 @@ export class MetricsService {
               for (const token of wallet.tokens) {
                 if (token.contractAddress && token.balance) {
                   const tokenPrice = tokenPrices[token.contractAddress.toLowerCase()] || 0;
-                  const tokenBalance = parseFloat(token.balance.toString());
+                  const tokenBalance = Number.parseFloat(token.balance.toString());
                   const tokenValue = tokenBalance * tokenPrice;
 
                   this.logger.info(
@@ -280,7 +280,7 @@ export class MetricsService {
         } else if (wallet.type === 'bitcoin') {
           // Get BTC price
           const btcPrice = await this.cryptoPricesService.getPrice('BTC');
-          const btcBalance = parseFloat(wallet.balance.toString());
+          const btcBalance = Number.parseFloat(wallet.balance.toString());
           const btcValue = btcBalance * btcPrice;
 
           this.logger.info(
@@ -346,7 +346,7 @@ export class MetricsService {
     let totalMonthly = 0;
 
     for (const liability of regularLiabilities) {
-      let amount = parseFloat(liability.amount.toString());
+      let amount = Number.parseFloat(liability.amount.toString());
       const itemCurrency = liability.currency?.code || 'USD';
 
       // Convert to target currency
@@ -399,7 +399,7 @@ export class MetricsService {
     const distribution: Record<string, number> = {};
 
     for (const asset of assets) {
-      let amount = parseFloat(asset.amount.toString());
+      let amount = Number.parseFloat(asset.amount.toString());
       const itemCurrency = asset.currency?.code || 'USD';
 
       // Convert to target currency
@@ -437,7 +437,7 @@ export class MetricsService {
     const distribution: Record<string, number> = {};
 
     for (const liability of liabilities) {
-      let amount = parseFloat(liability.amount.toString());
+      let amount = Number.parseFloat(liability.amount.toString());
       const itemCurrency = liability.currency?.code || 'USD';
 
       // Convert to target currency

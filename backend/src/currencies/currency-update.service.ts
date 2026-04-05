@@ -1,9 +1,9 @@
-import { Injectable, Inject, forwardRef, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, OnModuleInit, forwardRef } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { PinoLogger, InjectPinoLogger } from 'nestjs-pino';
 import axios from 'axios';
-import { CryptoPricesService } from '../crypto/crypto-prices.service';
+import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { ExchangeRatesCacheService } from '../cache/exchange-rates-cache.service';
+import { CryptoPricesService } from '../crypto/crypto-prices.service';
 
 @Injectable()
 export class CurrencyUpdateService implements OnModuleInit {
@@ -106,7 +106,7 @@ export class CurrencyUpdateService implements OnModuleInit {
     }
   }
 
-  async getExchangeRates(baseCurrency: string = 'USD'): Promise<Record<string, number>> {
+  async getExchangeRates(baseCurrency = 'USD'): Promise<Record<string, number>> {
     const cacheTtl = this.exchangeRatesCacheService.getCacheTtl();
 
     // Try to load fiat rates from Redis cache

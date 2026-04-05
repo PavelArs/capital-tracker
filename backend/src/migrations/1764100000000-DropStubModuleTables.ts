@@ -21,7 +21,7 @@ export class DropStubModuleTables1764100000000 implements MigrationInterface {
     await queryRunner.query(`DROP TYPE IF EXISTS "public"."bank_integrations_status_enum"`);
   }
 
-  public async down(queryRunner: QueryRunner): Promise<void> {
+  public async down(_queryRunner: QueryRunner): Promise<void> {
     // These stub module tables are intentionally dropped and will not be recreated.
     // The original table definitions can be found in 1763669182662-Init.ts if needed.
   }

@@ -1,7 +1,7 @@
-import { memo } from 'react';
-import { useTranslation } from 'react-i18next';
 import LoadingButton from '@components/LoadingButton';
 import { formatAmount } from '@utils/formatters';
+import { memo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { AssetCardProps } from '../../types';
 import './AssetCard.css';
 
@@ -14,7 +14,7 @@ export const AssetCard = memo(function AssetCard({
   const { t } = useTranslation();
 
   const currencyCode = (asset.currency as any)?.code || asset.currency || 'USD';
-  const amount = parseFloat(String(asset.amount));
+  const amount = Number.parseFloat(String(asset.amount));
 
   return (
     <div className="asset-card">

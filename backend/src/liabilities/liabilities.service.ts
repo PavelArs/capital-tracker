@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
+import { Repository } from 'typeorm';
 import { Liability } from '../entities/liability.entity';
+import { LiabilityNotFoundException } from '../shared/exceptions';
 import { CreateLiabilityDto } from './dto/create-liability.dto';
 import { UpdateLiabilityDto } from './dto/update-liability.dto';
-import { LiabilityNotFoundException } from '../shared/exceptions';
 
 @Injectable()
 export class LiabilitiesService {

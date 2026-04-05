@@ -1,29 +1,29 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Param,
+  Controller,
   Delete,
-  UseGuards,
-  Patch,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
   ApiBearerAuth,
-  ApiParam,
   ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
 } from '@nestjs/swagger';
-import { CryptoService } from './crypto.service';
-import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CryptoPricesService, CryptoPrices } from './crypto-prices.service';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
+import { CryptoPrices, CryptoPricesService } from './crypto-prices.service';
+import { CryptoService } from './crypto.service';
+import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 @ApiTags('crypto')
 @ApiBearerAuth('JWT-auth')

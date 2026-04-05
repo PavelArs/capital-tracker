@@ -1,5 +1,5 @@
-import { IsString, IsEnum } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsEnum, IsString } from 'class-validator';
 import { CryptoType } from '../../entities/crypto-wallet.entity';
 
 /**

@@ -1,19 +1,19 @@
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { JwtService } from '@nestjs/jwt';
-import { ConfigService } from '@nestjs/config';
-import { PinoLogger } from 'nestjs-pino';
 import * as bcrypt from 'bcrypt';
-import { AuthService } from './auth.service';
-import { User } from '../entities/user.entity';
+import { PinoLogger } from 'nestjs-pino';
+import { Repository } from 'typeorm';
 import { EmailService } from '../email/email.service';
+import { User } from '../entities/user.entity';
 import {
-  UserNotFoundException,
   DuplicateEmailException,
   EmailNotVerifiedException,
   InvalidTokenException,
+  UserNotFoundException,
 } from '../shared/exceptions';
+import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 
 jest.mock('bcrypt');

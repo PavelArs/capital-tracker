@@ -1,14 +1,14 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
-  IsString,
+  IsDateString,
   IsEnum,
   IsNumber,
-  IsDateString,
   IsOptional,
-  IsUUID,
   IsPositive,
+  IsString,
+  IsUUID,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { LiabilityCategory, LiabilityFrequency } from '../../entities/liability.entity';
 
 /**

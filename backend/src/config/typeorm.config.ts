@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { TypeOrmModuleOptions, TypeOrmOptionsFactory } from '@nestjs/typeorm';
 
 @Injectable()
 export class TypeOrmConfigService implements TypeOrmOptionsFactory {
@@ -14,10 +14,10 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       username: this.configService.get('DB_USERNAME', 'postgres'),
       password: this.configService.get('DB_PASSWORD', 'postgres'),
       database: this.configService.get('DB_NAME', 'capital_tracker'),
-      entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+      entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
       synchronize: false, // Always false - use migrations instead
       logging: ['error', 'warn'],
-      migrations: [__dirname + '/../migrations/*{.ts,.js}'],
+      migrations: [`${__dirname}/../migrations/*{.ts,.js}`],
       migrationsRun: true, // Run migrations automatically on startup
     };
   }

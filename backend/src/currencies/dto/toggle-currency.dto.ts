@@ -1,5 +1,5 @@
-import { IsBoolean, IsNotEmpty, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsBoolean, IsNotEmpty, IsUUID } from 'class-validator';
 
 /**
  * DTO for toggling currency visibility

@@ -45,13 +45,13 @@
 }
 
 /* Dark theme support */
-[data-theme='dark'] .skeleton {
+[data-theme="dark"] .skeleton {
   --skeleton-base: #2a2a2a;
   --skeleton-highlight: #3a3a3a;
 }
 
 /* Light theme (default) */
-[data-theme='light'] .skeleton,
+[data-theme="light"] .skeleton,
 .skeleton {
   --skeleton-base: #e0e0e0;
   --skeleton-highlight: #f0f0f0;

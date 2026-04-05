@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
+import { Repository } from 'typeorm';
 import { CryptoWallet } from '../entities/crypto-wallet.entity';
-import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
-import { CryptoUpdateService } from './crypto-update.service';
 import { CryptoWalletNotFoundException } from '../shared/exceptions';
+import { CryptoUpdateService } from './crypto-update.service';
+import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 @Injectable()
 export class CryptoService {

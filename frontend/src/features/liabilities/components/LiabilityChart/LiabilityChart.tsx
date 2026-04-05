@@ -1,8 +1,8 @@
-import { memo, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Pie } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
 import type { Liability } from '@shared/types';
+import { ArcElement, Chart as ChartJS, Legend, Tooltip } from 'chart.js';
+import { memo, useMemo } from 'react';
+import { Pie } from 'react-chartjs-2';
+import { useTranslation } from 'react-i18next';
 import { CHART_COLORS } from '../../constants';
 import './LiabilityChart.css';
 
@@ -19,10 +19,10 @@ export const LiabilityChart = memo(function LiabilityChart({ liabilities }: Liab
     const categoryTotals = liabilities.reduce(
       (acc, liability) => {
         acc[liability.category] =
-          (acc[liability.category] || 0) + parseFloat(String(liability.amount));
+          (acc[liability.category] || 0) + Number.parseFloat(String(liability.amount));
         return acc;
       },
-      {} as Record<string, number>
+      {} as Record<string, number>,
     );
 
     return {
@@ -53,7 +53,7 @@ export const LiabilityChart = memo(function LiabilityChart({ liabilities }: Liab
       maintainAspectRatio: true,
       responsive: true,
     }),
-    []
+    [],
   );
 
   if (liabilities.length === 0) {
