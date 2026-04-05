@@ -3,7 +3,6 @@ import {
   UnauthorizedException,
   BadRequestException,
   ConflictException,
-  ForbiddenException,
 } from '@nestjs/common';
 
 // User-related exceptions
@@ -40,33 +39,6 @@ export class InvalidTokenException extends BadRequestException {
   }
 }
 
-// Invitation code exceptions
-export class InvalidInvitationCodeException extends BadRequestException {
-  constructor() {
-    super('Invalid invitation code');
-  }
-}
-
-export class InvitationCodeAlreadyUsedException extends BadRequestException {
-  constructor() {
-    super('Invitation code has already been used');
-  }
-}
-
-export class InvitationCodeNotAllowedException extends ForbiddenException {
-  constructor() {
-    super(
-      'Invitation codes are only available for Pro and Enterprise subscribers. Upgrade your subscription to share invitations.',
-    );
-  }
-}
-
-export class ActiveInvitationCodeExistsException extends BadRequestException {
-  constructor() {
-    super('You already have an active invitation code');
-  }
-}
-
 // Asset-related exceptions
 export class AssetNotFoundException extends NotFoundException {
   constructor(assetId: string) {
@@ -81,13 +53,6 @@ export class LiabilityNotFoundException extends NotFoundException {
   }
 }
 
-// Capital-related exceptions
-export class CapitalNotFoundException extends NotFoundException {
-  constructor(capitalId: string) {
-    super(`Capital with ID "${capitalId}" not found`);
-  }
-}
-
 // Currency-related exceptions
 export class CurrencyNotFoundException extends NotFoundException {
   constructor(currencyId: string) {
@@ -99,11 +64,5 @@ export class CurrencyNotFoundException extends NotFoundException {
 export class CryptoWalletNotFoundException extends NotFoundException {
   constructor(walletId: string) {
     super(`Crypto wallet with ID "${walletId}" not found`);
-  }
-}
-
-export class SubscriptionRequiredException extends ForbiddenException {
-  constructor(requiredType: string) {
-    super(`This feature requires ${requiredType} subscription`);
   }
 }

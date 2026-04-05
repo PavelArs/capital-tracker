@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api, authApi } from '@api';
-import type { User, InvitationCode, SubscriptionType } from '@shared/types';
-
-// Re-export types for backward compatibility
-export type { SubscriptionType };
+import type { User } from '@shared/types';
 
 interface AuthContextType {
   user: User | null;
@@ -14,13 +11,10 @@ interface AuthContextType {
     email: string,
     password: string,
     firstName?: string,
-    lastName?: string,
-    invitationCode?: string
+    lastName?: string
   ) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
-  generateInvitationCode: () => Promise<InvitationCode>;
-  getMyInvitationCode: () => Promise<InvitationCode | null>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -32,7 +26,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem(TOKEN_KEY));
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Update axios default headers when token changes
   useEffect(() => {
     if (token) {
       api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
@@ -41,7 +34,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [token]);
 
-  // Restore user from token on mount
   useEffect(() => {
     const restoreUser = async () => {
       const savedToken = localStorage.getItem(TOKEN_KEY);
@@ -52,7 +44,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(userData);
           setToken(savedToken);
         } catch {
-          // Token is invalid, remove it
           localStorage.removeItem(TOKEN_KEY);
           delete api.defaults.headers.common['Authorization'];
           setToken(null);
@@ -75,34 +66,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const register = useCallback(
-    async (
-      email: string,
-      password: string,
-      firstName?: string,
-      lastName?: string,
-      invitationCode?: string
-    ) => {
+    async (email: string, password: string, firstName?: string, lastName?: string) => {
       const response = await authApi.register({
         email,
         password,
         firstName,
         lastName,
-        invitationCode: invitationCode || '',
       });
 
-      // In development mode with skip email verification, access_token is returned
-      // In production mode, user must verify email before login
       if (response.access_token) {
         const { access_token } = response;
         setToken(access_token);
-        // Fetch the full user profile to get all fields including subscriptionType
         api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
         const fullUser = await authApi.getCurrentUser();
         setUser(fullUser);
         localStorage.setItem(TOKEN_KEY, access_token);
       }
-      // If no access_token, user must verify email before they can login
-      // Response contains message about checking email
     },
     []
   );
@@ -123,14 +102,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const generateInvitationCode = useCallback(async (): Promise<InvitationCode> => {
-    return authApi.generateInvitationCode();
-  }, []);
-
-  const getMyInvitationCode = useCallback(async (): Promise<InvitationCode | null> => {
-    return authApi.getMyInvitationCode();
-  }, []);
-
   const value: AuthContextType = {
     user,
     token,
@@ -139,8 +110,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     register,
     logout,
     refreshUser,
-    generateInvitationCode,
-    getMyInvitationCode,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

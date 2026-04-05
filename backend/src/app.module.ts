@@ -13,9 +13,6 @@ import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { CryptoModule } from './crypto/crypto.module';
 import { CurrenciesModule } from './currencies/currencies.module';
 import { MetricsModule } from './metrics/metrics.module';
-import { SubscriptionsModule } from './subscriptions/subscriptions.module';
-import { CapitalsModule } from './capitals/capitals.module';
-import { ReportsModule } from './reports/reports.module';
 import { HealthModule } from './health/health.module';
 import { RedisCacheModule } from './cache/cache.module';
 import { TypeOrmConfigService } from './config/typeorm.config';
@@ -74,9 +71,6 @@ import { GlobalExceptionFilter } from './shared/filters';
     CryptoModule,
     CurrenciesModule,
     MetricsModule,
-    SubscriptionsModule,
-    CapitalsModule,
-    ReportsModule,
     HealthModule,
   ],
   controllers: [AppController],

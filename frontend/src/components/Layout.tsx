@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@contexts/AuthContext';
-import SubscriptionBadge from '@components/SubscriptionBadge';
 import './Layout.css';
 
 export default function Layout() {
@@ -90,9 +89,6 @@ export default function Layout() {
           <Link to="/crypto" onClick={closeMobileMenu}>
             {t('navigation.crypto')}
           </Link>
-          <Link to="/metrics" onClick={closeMobileMenu}>
-            {t('navigation.metrics')}
-          </Link>
           <Link to="/settings" onClick={closeMobileMenu}>
             {t('navigation.settings')}
           </Link>
@@ -101,7 +97,6 @@ export default function Layout() {
         <div ref={navUserRef} className={`nav-user ${mobileMenuOpen ? 'open' : ''}`}>
           <div className="nav-user-info">
             <span className="nav-user-email">{user?.email}</span>
-            {user?.subscriptionType && <SubscriptionBadge type={user.subscriptionType} />}
           </div>
           <button onClick={handleLogout}>{t('auth.logout')}</button>
         </div>

@@ -55,11 +55,4 @@ export class RegisterDto {
   @Transform(({ value }: { value: string }) => value?.trim())
   lastName?: string;
 
-  @ApiProperty({
-    description: 'Invitation code required for registration',
-    example: 'INVITE123',
-  })
-  @IsString({ message: 'Invitation code must be a string' })
-  @Transform(({ value }: { value: string }) => value?.trim().toUpperCase())
-  invitationCode!: string;
 }

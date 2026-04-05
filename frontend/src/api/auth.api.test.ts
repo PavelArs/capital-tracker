@@ -37,7 +37,6 @@ describe('authApi', () => {
         password: 'password123',
         firstName: 'John',
         lastName: 'Doe',
-        invitationCode: 'CODE123',
       };
       const registerResponse = {
         id: '1',
@@ -139,35 +138,4 @@ describe('authApi', () => {
     });
   });
 
-  describe('generateInvitationCode', () => {
-    it('should generate invitation code', async () => {
-      const mockCode = { id: '1', code: 'ABC123', isUsed: false };
-      vi.mocked(apiClient.post).mockResolvedValue({ data: mockCode });
-
-      const result = await authApi.generateInvitationCode();
-
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/invitation-code/generate');
-      expect(result).toEqual(mockCode);
-    });
-  });
-
-  describe('getMyInvitationCode', () => {
-    it('should return invitation code when exists', async () => {
-      const mockCode = { id: '1', code: 'ABC123', isUsed: false };
-      vi.mocked(apiClient.get).mockResolvedValue({ data: mockCode });
-
-      const result = await authApi.getMyInvitationCode();
-
-      expect(apiClient.get).toHaveBeenCalledWith('/auth/invitation-code');
-      expect(result).toEqual(mockCode);
-    });
-
-    it('should return null when no invitation code', async () => {
-      vi.mocked(apiClient.get).mockRejectedValue(new Error('Not found'));
-
-      const result = await authApi.getMyInvitationCode();
-
-      expect(result).toBeNull();
-    });
-  });
 });

@@ -4,13 +4,8 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
-  OneToOne,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
-import { Subscription, SubscriptionType } from './subscription.entity';
-import { Capital } from './capital.entity';
-import { InvitationCode } from './invitation-code.entity';
 
 @Entity('users')
 export class User {
@@ -30,13 +25,6 @@ export class User {
   @Column({ nullable: true, type: 'varchar' })
   lastName!: string | null;
 
-  @Column({
-    type: 'enum',
-    enum: SubscriptionType,
-    default: SubscriptionType.FREE,
-  })
-  subscriptionType!: SubscriptionType;
-
   @Column({ default: false })
   emailVerified!: boolean;
 
@@ -48,18 +36,6 @@ export class User {
 
   @Column({ nullable: true, type: 'timestamp' })
   resetPasswordExpires!: Date | null;
-
-  @OneToMany(() => Subscription, (subscription) => subscription.user)
-  subscriptions!: Subscription[];
-
-  @OneToMany(() => Capital, (capital) => capital.user)
-  capitals!: Capital[];
-
-  @OneToMany(() => InvitationCode, (invitationCode) => invitationCode.createdBy)
-  generatedInvitationCodes!: InvitationCode[];
-
-  @OneToOne(() => InvitationCode, (invitationCode) => invitationCode.usedBy)
-  usedInvitationCode!: InvitationCode;
 
   @CreateDateColumn()
   createdAt!: Date;
