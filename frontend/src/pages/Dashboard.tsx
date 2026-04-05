@@ -1,7 +1,7 @@
-import { metricsApi } from '@api';
+import { currenciesApi, metricsApi } from '@api';
 import DashboardSkeleton from '@components/DashboardSkeleton';
 import ErrorMessage from '@components/ErrorMessage';
-import type { Metrics, MetricsHistory } from '@shared/types';
+import type { Currency, Metrics, MetricsHistory } from '@shared/types';
 import {
   CategoryScale,
   Chart as ChartJS,
@@ -19,12 +19,11 @@ import './Dashboard.css';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
-const CURRENCY_OPTIONS = ['USD', 'EUR', 'RUB'] as const;
-
 export default function Dashboard() {
   const { t } = useTranslation();
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const [history, setHistory] = useState<MetricsHistory[]>([]);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currency, setCurrency] = useState<string>('USD');
@@ -102,6 +101,13 @@ export default function Dashboard() {
       fetchingRef.current.history = false;
     }
   }, [currency]);
+
+  useEffect(() => {
+    currenciesApi
+      .getList()
+      .then(setCurrencies)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchMetrics();
@@ -247,11 +253,15 @@ export default function Dashboard() {
         <div className="currency-selector">
           <label htmlFor="currency-select">{t('common.currency')}:</label>
           <select id="currency-select" value={currency} onChange={handleCurrencyChange}>
-            {CURRENCY_OPTIONS.map((curr) => (
-              <option key={curr} value={curr}>
-                {curr}
-              </option>
-            ))}
+            {currencies.length > 0 ? (
+              currencies.map((curr) => (
+                <option key={curr.id} value={curr.code}>
+                  {curr.code}
+                </option>
+              ))
+            ) : (
+              <option value="USD">USD</option>
+            )}
           </select>
         </div>
       </div>
