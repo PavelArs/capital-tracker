@@ -27,12 +27,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  YC_REGISTRY: registry.yandexcloud.net
-  BACKEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-backend
-  FRONTEND_IMAGE: registry.yandexcloud.net/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-frontend
-  HEALTH_CHECK_TIMEOUT: 30
+  GHCR_REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/capital-tracker-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/capital-tracker-frontend
+  NODE_VERSION: "22"
   HEALTH_CHECK_INTERVAL: 5
-  HEALTH_CHECK_RETRIES: 3
+  HEALTH_CHECK_RETRIES: 6
 
 jobs:
   # ============================================
@@ -56,38 +56,30 @@ jobs:
 
       - name: Calculate semantic version
         id: version
+        env:
+          BUMP_INPUT: ${{ github.event.inputs.version_bump || 'auto' }}
         run: |
           COMMIT_SHORT=${GITHUB_SHA:0:7}
           echo "commit_short=$COMMIT_SHORT" >> $GITHUB_OUTPUT
 
-          # Get the latest version tag
           LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-
           if [ -z "$LATEST_TAG" ]; then
             LATEST_TAG="v0.0.0"
-            echo "No previous version found, starting from v0.0.0"
           fi
-
           echo "previous_version=$LATEST_TAG" >> $GITHUB_OUTPUT
-          echo "📦 Previous version: $LATEST_TAG"
 
-          # Parse version components
           VERSION=${LATEST_TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3)
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          PATCH=$(echo "$VERSION" | cut -d. -f3)
 
-          # Determine bump type
-          BUMP_TYPE="${{ github.event.inputs.version_bump || 'auto' }}"
-
-          if [ "$BUMP_TYPE" == "auto" ]; then
-            # Auto-detect from commit messages since last tag
+          BUMP_TYPE="$BUMP_INPUT"
+          if [ "$BUMP_TYPE" = "auto" ]; then
             if [ "$LATEST_TAG" != "v0.0.0" ]; then
-              COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || echo "")
+              COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || echo "")
             else
               COMMITS=$(git log --pretty=format:"%s" -20 2>/dev/null || echo "")
             fi
-            
             if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?!:|BREAKING CHANGE"; then
               BUMP_TYPE="major"
             elif echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?:"; then
@@ -97,69 +89,45 @@ jobs:
             fi
           fi
 
-          # Calculate new version
           case $BUMP_TYPE in
-            major)
-              MAJOR=$((MAJOR + 1))
-              MINOR=0
-              PATCH=0
-              ;;
-            minor)
-              MINOR=$((MINOR + 1))
-              PATCH=0
-              ;;
-            patch)
-              PATCH=$((PATCH + 1))
-              ;;
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
           esac
 
-          NEW_VERSION="v${MAJOR}.${MINOR}.${PATCH}"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "🚀 New version: $NEW_VERSION (bump: $BUMP_TYPE)"
+          echo "version=v${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
 
       - name: Generate changelog
         id: changelog
+        env:
+          LATEST_TAG: ${{ steps.version.outputs.previous_version }}
         run: |
-          LATEST_TAG="${{ steps.version.outputs.previous_version }}"
-
           if [ "$LATEST_TAG" != "v0.0.0" ] && git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
-            COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"• %s \`%h\`" 2>/dev/null | head -20)
-            COMMIT_COUNT=$(git rev-list ${LATEST_TAG}..HEAD --count 2>/dev/null || echo "0")
+            COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"- %s (%h)" 2>/dev/null | head -20)
+            COMMIT_COUNT=$(git rev-list "${LATEST_TAG}..HEAD" --count 2>/dev/null || echo "0")
           else
-            COMMITS=$(git log --pretty=format:"• %s \`%h\`" -20 2>/dev/null)
+            COMMITS=$(git log --pretty=format:"- %s (%h)" -20 2>/dev/null)
             COMMIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo "0")
           fi
 
-          # Escape for GitHub output
-          CHANGELOG=$(echo "$COMMITS" | head -15)
-
           {
             echo "changelog<<CHANGELOG_EOF"
-            echo "$CHANGELOG"
+            echo "$COMMITS" | head -15
             echo "CHANGELOG_EOF"
           } >> $GITHUB_OUTPUT
 
           echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
 
   # ============================================
-  # Build Docker Images
+  # Build Backend Docker Image
   # ============================================
-  build:
-    name: Build Docker Images
+  build-backend:
+    name: Build Backend Image
     runs-on: ubuntu-latest
     needs: version
-
-    strategy:
-      matrix:
-        include:
-          - service: backend
-            context: ./backend
-          - service: frontend
-            context: ./frontend
-
-    outputs:
-      backend_image: ${{ steps.output.outputs.backend_image }}
-      frontend_image: ${{ steps.output.outputs.frontend_image }}
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -168,48 +136,79 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Yandex Container Registry
+      - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.YC_REGISTRY }}
-          username: oauth
-          password: ${{ secrets.YC_TOKEN }}
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push ${{ matrix.service }}
+      - name: Build and push backend
         uses: docker/build-push-action@v5
         with:
-          context: ${{ matrix.context }}
+          context: ./backend
           push: true
           tags: |
-            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.version }}
-            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.commit_short }}
-            ${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:latest
-          build-args: ${{ matrix.service == 'frontend' && format('VITE_API_URL={0}', secrets.VITE_API_URL) || '' }}
-          cache-from: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache
-          cache-to: type=registry,ref=${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:buildcache,mode=max
+            ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.commit_short }}
+            ${{ env.BACKEND_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           provenance: false
 
-      - name: Set output
-        id: output
-        run: |
-          IMAGE="${{ env.YC_REGISTRY }}/${{ secrets.YC_REGISTRY_ID }}/capital-tracker-${{ matrix.service }}:${{ needs.version.outputs.version }}"
-          echo "${{ matrix.service }}_image=$IMAGE" >> $GITHUB_OUTPUT
+  # ============================================
+  # Build Frontend Docker Image
+  # ============================================
+  build-frontend:
+    name: Build Frontend Image
+    runs-on: ubuntu-latest
+    needs: version
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.commit_short }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+          build-args: |
+            VITE_API_URL=/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
 
   # ============================================
   # Deploy to Production
   # ============================================
   deploy:
-    name: Deploy to VM
+    name: Deploy
     runs-on: ubuntu-latest
-    needs: [version, build]
+    needs: [version, build-backend, build-frontend]
     permissions:
       contents: write
 
     outputs:
-      backup_filename: ${{ steps.backup-db.outputs.backup-filename }}
-      previous_backend: ${{ steps.get-versions.outputs.current-backend }}
-      previous_frontend: ${{ steps.get-versions.outputs.current-frontend }}
-      deployed_version: ${{ needs.version.outputs.version }}
+      backup_filename: ${{ steps.backup-db.outputs.backup_filename }}
+      previous_backend: ${{ steps.get-versions.outputs.current_backend }}
 
     steps:
       - name: Checkout code
@@ -220,160 +219,124 @@ jobs:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: Add VM to known hosts
+      - name: Add host to known hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
-      - name: Get current running versions
+      - name: Get current running version
         id: get-versions
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          CURRENT_BACKEND=$(ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
-            "docker inspect capital-tracker-backend-1 --format='{{.Config.Image}}' 2>/dev/null || \
-             docker inspect capital_tracker_backend --format='{{.Config.Image}}' 2>/dev/null || \
-             echo 'none'")
-          CURRENT_FRONTEND=$(ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} \
-            "docker inspect capital-tracker-frontend-1 --format='{{.Config.Image}}' 2>/dev/null || \
-             docker inspect capital_tracker_frontend --format='{{.Config.Image}}' 2>/dev/null || \
-             echo 'none'")
-
-          {
-            echo "current-backend<<EOF"
-            echo "$CURRENT_BACKEND"
-            echo "EOF"
-            echo "current-frontend<<EOF"
-            echo "$CURRENT_FRONTEND"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-          echo "📦 Current Backend: $CURRENT_BACKEND"
-          echo "📦 Current Frontend: $CURRENT_FRONTEND"
+          CURRENT_BACKEND=$(ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "docker inspect capital_tracker_backend --format='{{.Config.Image}}' 2>/dev/null || echo 'none'")
+          echo "current_backend=$CURRENT_BACKEND" >> $GITHUB_OUTPUT
 
       - name: Create database backup
         id: backup-db
         if: github.event.inputs.skip_backup != 'true'
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          BACKUP_TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          BACKUP_FILENAME="capital-tracker-backup-${BACKUP_TIMESTAMP}.sql.gz"
+          BACKUP_FILENAME="capital-tracker-backup-$(date +%Y%m%d-%H%M%S).sql.gz"
 
-          echo "💾 Creating database backup: $BACKUP_FILENAME"
-
-          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "BACKUP_FILENAME=$BACKUP_FILENAME bash -s" << 'BACKUP_SCRIPT'
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "BACKUP_FILENAME=$BACKUP_FILENAME bash -s" << 'BACKUP_SCRIPT'
             set -e
             cd /opt/capital-tracker
-
             mkdir -p backups
 
             DB_NAME=$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
             DB_USER=$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
 
-            POSTGRES_CONTAINER=$(docker compose ps -q postgres 2>/dev/null || docker-compose ps -q postgres 2>/dev/null)
-
+            POSTGRES_CONTAINER=$(docker compose ps -q postgres 2>/dev/null)
             if [ -z "$POSTGRES_CONTAINER" ]; then
-              POSTGRES_CONTAINER=$(docker ps -q -f name=capital_tracker_db || docker ps -q -f name=capital-tracker-postgres)
+              POSTGRES_CONTAINER=$(docker ps -q -f name=capital_tracker_db)
             fi
 
             if [ -z "$POSTGRES_CONTAINER" ]; then
-              echo "❌ Postgres container not found!"
-              exit 1
+              echo "Postgres container not found, skipping backup"
+              exit 0
             fi
 
-            docker exec $POSTGRES_CONTAINER pg_dump -U $DB_USER -d $DB_NAME | gzip > "backups/$BACKUP_FILENAME"
-
+            docker exec "$POSTGRES_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" | gzip > "backups/$BACKUP_FILENAME"
             ls -t backups/capital-tracker-backup-*.sql.gz | tail -n +11 | xargs -r rm
-            echo "✅ Backup created successfully"
           BACKUP_SCRIPT
 
-          {
-            echo "backup-filename<<EOF"
-            echo "$BACKUP_FILENAME"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-      - name: Copy docker-compose.yml
-        run: |
-          scp docker-compose.yml ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }}:/opt/capital-tracker/docker-compose.yml
+          echo "backup_filename=$BACKUP_FILENAME" >> $GITHUB_OUTPUT
 
       - name: Deploy application
         env:
-          YC_TOKEN: ${{ secrets.YC_TOKEN }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          NEW_BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.version }}
+          NEW_FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.version }}
         run: |
-          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+          scp docker-compose.yml "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/capital-tracker/docker-compose.yml"
+
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "NEW_BACKEND_IMAGE=$NEW_BACKEND_IMAGE NEW_FRONTEND_IMAGE=$NEW_FRONTEND_IMAGE bash -s" << 'DEPLOY_SCRIPT'
             set -e
             cd /opt/capital-tracker
 
-            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net
+            # Update image references in .env
+            for VAR in BACKEND_IMAGE FRONTEND_IMAGE; do
+              eval VALUE=\$"NEW_${VAR}"
+              grep -q "^${VAR}=" .env 2>/dev/null && \
+                sed -i "s|^${VAR}=.*|${VAR}=$VALUE|" .env || \
+                echo "${VAR}=$VALUE" >> .env
+            done
 
-            echo "📥 Pulling latest images..."
             docker compose pull
-
-            echo "🔄 Restarting services..."
             docker compose down
             docker compose up -d
-
-            echo "🧹 Cleaning up old images..."
             docker image prune -f
-
-            echo "📊 Service status:"
-            docker compose ps
-          EOF
+          DEPLOY_SCRIPT
 
       - name: Wait for services to initialize
-        run: |
-          echo "⏳ Waiting 10 seconds for services to initialize..."
-          sleep 10
+        run: sleep 10
 
       - name: Health check
-        id: health-check
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          MAX_ATTEMPTS=$(( ${{ env.HEALTH_CHECK_TIMEOUT }} / ${{ env.HEALTH_CHECK_INTERVAL }} ))
+          MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
           ATTEMPT=0
-
-          echo "🏥 Starting health checks (timeout: ${{ env.HEALTH_CHECK_TIMEOUT }}s)"
 
           while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
             ATTEMPT=$((ATTEMPT + 1))
-            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            echo "Health check attempt $ATTEMPT/$MAX_ATTEMPTS..."
 
-            if ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
-              echo "✅ Health check passed"
-              echo "health-status=passed" >> $GITHUB_OUTPUT
+            if ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
+              echo "Health check passed"
               exit 0
             fi
 
             if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              echo "⏳ Retrying in ${{ env.HEALTH_CHECK_INTERVAL }}s..."
               sleep ${{ env.HEALTH_CHECK_INTERVAL }}
             fi
           done
 
-          echo "❌ Health check failed after $MAX_ATTEMPTS attempts"
-          echo "health-status=failed" >> $GITHUB_OUTPUT
+          echo "Health check failed"
           exit 1
 
-      - name: Create version tags
+      - name: Create version tag
         if: success()
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
-
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-
-          # Create version tag
-          git tag -a "$VERSION" -m "Release $VERSION
-
-          Backend: ${{ env.BACKEND_IMAGE }}:$VERSION
-          Frontend: ${{ env.FRONTEND_IMAGE }}:$VERSION
-          Commit: ${{ needs.version.outputs.commit_short }}"
-
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git tag -a "$VERSION" -m "Release $VERSION"
           git push origin "$VERSION"
-
-          echo "✅ Created tag: $VERSION"
 
   # ============================================
   # Rollback on Failure
@@ -384,113 +347,56 @@ jobs:
     needs: [version, deploy]
     if: failure() && needs.deploy.outputs.previous_backend != 'none'
 
-    outputs:
-      rollback_status: ${{ steps.rollback-health.outputs.status }}
-
     steps:
       - name: Setup SSH
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
 
-      - name: Add VM to known hosts
+      - name: Add host to known hosts
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
 
       - name: Rollback deployment
         env:
-          YC_TOKEN: ${{ secrets.YC_TOKEN }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
-          PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
         run: |
-          echo "🔄 INITIATING ROLLBACK..."
-          echo "Backend: $PREV_BACKEND"
-          echo "Frontend: $PREV_FRONTEND"
-
-          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << EOF
+          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "PREV_BACKEND=$PREV_BACKEND bash -s" << 'ROLLBACK_SCRIPT'
             set -e
             cd /opt/capital-tracker
 
-            echo "$YC_TOKEN" | docker login --username oauth --password-stdin registry.yandexcloud.net
-
             if [ -n "$PREV_BACKEND" ] && [ "$PREV_BACKEND" != "none" ]; then
-              echo "📥 Pulling previous backend: $PREV_BACKEND"
-              docker pull "$PREV_BACKEND" || true
-              docker tag "$PREV_BACKEND" "${{ env.BACKEND_IMAGE }}:latest" || true
-            fi
-
-            if [ -n "$PREV_FRONTEND" ] && [ "$PREV_FRONTEND" != "none" ]; then
-              echo "📥 Pulling previous frontend: $PREV_FRONTEND"
-              docker pull "$PREV_FRONTEND" || true
-              docker tag "$PREV_FRONTEND" "${{ env.FRONTEND_IMAGE }}:latest" || true
+              grep -q "^BACKEND_IMAGE=" .env 2>/dev/null && \
+                sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$PREV_BACKEND|" .env || \
+                echo "BACKEND_IMAGE=$PREV_BACKEND" >> .env
             fi
 
             docker compose down
             docker compose up -d
-
-            echo "⏳ Waiting for rollback to complete..."
             sleep 20
-          EOF
+          ROLLBACK_SCRIPT
 
       - name: Verify rollback health
-        id: rollback-health
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
           ATTEMPTS=0
-          MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
-
-          while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+          while [ $ATTEMPTS -lt ${{ env.HEALTH_CHECK_RETRIES }} ]; do
             ATTEMPTS=$((ATTEMPTS + 1))
-            echo "Verifying rollback health (attempt $ATTEMPTS/$MAX_ATTEMPTS)..."
-
-            if ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
-              echo "✅ Rollback successful - service is healthy"
-              echo "status=success" >> $GITHUB_OUTPUT
+            if ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
+              echo "Rollback successful"
               exit 0
             fi
-
-            if [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; then
-              sleep 10
-            fi
+            sleep 10
           done
-
-          echo "❌ Rollback health check failed - manual intervention required!"
-          echo "status=failed" >> $GITHUB_OUTPUT
+          echo "Rollback health check failed - manual intervention required"
           exit 1
-
-  # ============================================
-  # Cleanup
-  # ============================================
-  cleanup:
-    name: Cleanup
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: success()
-
-    steps:
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.YC_VM_SSH_KEY }}
-
-      - name: Add VM to known hosts
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.YC_VM_HOST }} >> ~/.ssh/known_hosts
-
-      - name: Cleanup old images and backups
-        run: |
-          echo "🧹 Cleaning up old Docker images and backups..."
-          ssh ${{ secrets.YC_VM_USER }}@${{ secrets.YC_VM_HOST }} << 'EOF'
-            docker image prune -a -f --filter "until=72h" || true
-
-            cd /opt/capital-tracker/backups 2>/dev/null || exit 0
-            BACKUP_COUNT=$(ls -1 capital-tracker-backup-*.sql.gz 2>/dev/null | wc -l)
-            echo "📊 Total backups: $BACKUP_COUNT"
-
-            ls -t capital-tracker-backup-*.sql.gz 2>/dev/null | tail -n +11 | xargs -r rm
-            echo "✅ Cleanup complete"
-          EOF
 
   # ============================================
   # Notifications
@@ -502,11 +408,6 @@ jobs:
     if: always() && (needs.deploy.result == 'success' || needs.deploy.result == 'failure')
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Send Telegram notification
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -519,80 +420,33 @@ jobs:
           COMMIT_COUNT: ${{ needs.version.outputs.commit_count }}
           CHANGELOG: ${{ needs.version.outputs.changelog }}
           BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
-          PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
-          PREV_FRONTEND: ${{ needs.deploy.outputs.previous_frontend }}
-          BACKEND_IMG: ${{ env.BACKEND_IMAGE }}
-          FRONTEND_IMG: ${{ env.FRONTEND_IMAGE }}
+          BACKEND_IMG: ghcr.io/${{ github.repository_owner }}/capital-tracker-backend
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
-          SHA: ${{ github.sha }}
         run: |
           if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
             echo "Telegram secrets not configured, skipping notification"
             exit 0
           fi
 
-          DEPLOY_DATE=$(date '+%Y-%m-%d %H:%M:%S UTC')
           REPO_URL="https://github.com/${REPO}"
-
-          # Escape Markdown special characters in changelog
           SAFE_CHANGELOG=$(echo "$CHANGELOG" | sed 's/`//g' | sed 's/\*/•/g' | sed 's/_/-/g' | head -15)
 
-          if [ "$DEPLOY_STATUS" == "success" ]; then
-            {
-              echo "🚀 <b>Capital Tracker Deployment</b>"
-              echo ""
-              echo "📅 <b>Date:</b> ${DEPLOY_DATE}"
-              echo "🏷️ <b>Version:</b> <code>${VERSION}</code>"
-              echo "🔖 <b>Commit:</b> <code>${COMMIT_SHORT}</code>"
-              echo "📝 <b>Changes:</b> ${COMMIT_COUNT} commit(s)"
-              echo ""
-              echo "📦 <b>Docker Images:</b>"
-              echo "• Backend: <code>${BACKEND_IMG}:${VERSION}</code>"
-              echo "• Frontend: <code>${FRONTEND_IMG}:${VERSION}</code>"
-              echo ""
-              echo "<b>Recent Changes:</b>"
-              echo "${SAFE_CHANGELOG}"
-              echo ""
-              echo "---"
-              echo "🔗 <b>Links:</b>"
-              echo "• <a href=\"${REPO_URL}/compare/${PREV_VERSION}...${VERSION}\">Full Changelog</a>"
-              echo "• <a href=\"${REPO_URL}/commit/${SHA}\">Commit Details</a>"
-              echo ""
-              echo "💾 <b>Backup:</b> <code>${BACKUP_FILENAME}</code>"
-              echo "📍 <b>Location:</b> /opt/capital-tracker/backups/"
-              echo ""
-              echo "✅ <b>Status:</b> Deployed and health check passed"
-            } > /tmp/message.txt
+          if [ "$DEPLOY_STATUS" = "success" ]; then
+            MESSAGE="<b>Capital Tracker Deployed</b>
+<b>Version:</b> <code>${VERSION}</code>
+<b>Changes:</b> ${COMMIT_COUNT} commit(s)
+<b>Image:</b> <code>${BACKEND_IMG}:${VERSION}</code>
+
+${SAFE_CHANGELOG}
+
+<a href=\"${REPO_URL}/compare/${PREV_VERSION}...${VERSION}\">Full Changelog</a>"
           else
-            if [ "$ROLLBACK_STATUS" == "success" ]; then
-              ROLLBACK_MSG="🔄 <b>Automatic Rollback:</b> Completed successfully"
-            elif [ "$ROLLBACK_STATUS" == "failure" ]; then
-              ROLLBACK_MSG="⚠️ <b>Automatic Rollback:</b> Failed - manual intervention required!"
-            else
-              ROLLBACK_MSG="🔄 <b>Automatic Rollback:</b> Attempted"
-            fi
-
-            {
-              echo "❌ <b>Capital Tracker Deployment FAILED</b>"
-              echo ""
-              echo "📅 <b>Date:</b> ${DEPLOY_DATE}"
-              echo "🏷️ <b>Version:</b> <code>${VERSION}</code> (attempted)"
-              echo "🔖 <b>Commit:</b> <code>${COMMIT_SHORT}</code>"
-              echo "🔗 <b>Workflow:</b> <a href=\"${REPO_URL}/actions/runs/${RUN_ID}\">View Details</a>"
-              echo ""
-              echo "${ROLLBACK_MSG}"
-              echo "📦 <b>Previous Backend:</b> <code>${PREV_BACKEND}</code>"
-              echo "📦 <b>Previous Frontend:</b> <code>${PREV_FRONTEND}</code>"
-              echo ""
-              echo "💾 <b>Database Backup:</b> <code>${BACKUP_FILENAME}</code>"
-              echo "📍 <b>Location:</b> /opt/capital-tracker/backups/"
-              echo ""
-              echo "<b>Status:</b> Deployment or health check failed. Database backup created. Please review the logs and verify service status."
-            } > /tmp/message.txt
+            MESSAGE="<b>Capital Tracker Deploy FAILED</b>
+<b>Version:</b> <code>${VERSION}</code> (attempted)
+<b>Rollback:</b> ${ROLLBACK_STATUS}
+<a href=\"${REPO_URL}/actions/runs/${RUN_ID}\">View Details</a>"
           fi
-
-          MESSAGE=$(cat /tmp/message.txt)
 
           PAYLOAD=$(jq -n \
             --arg chat_id "$TELEGRAM_CHAT_ID" \
