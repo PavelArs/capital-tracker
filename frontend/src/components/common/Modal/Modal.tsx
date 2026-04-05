@@ -16,7 +16,7 @@ export function Modal({ isOpen, onClose, title, children, className = '' }: Moda
         onClose();
       }
     },
-    [onClose]
+    [onClose],
   );
 
   useEffect(() => {

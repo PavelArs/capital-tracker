@@ -112,12 +112,12 @@
   transition: background-color 0.2s;
 }
 
-.form-actions button[type='submit'] {
+.form-actions button[type="submit"] {
   background-color: #e67e22;
   color: white;
 }
 
-.form-actions button[type='submit']:hover {
+.form-actions button[type="submit"]:hover {
   background-color: #d35400;
 }
 
@@ -157,10 +157,7 @@
   font-size: 1rem;
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition:
-    border-color 0.2s,
-    background-color 0.2s,
-    color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s;
 }
 
 .form-group select option {
@@ -199,9 +196,7 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .chart-container {
@@ -212,9 +207,7 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   position: sticky;
   top: 2rem;
   align-self: flex-start;
@@ -309,9 +302,7 @@
   font-weight: 600;
   color: var(--text-color);
   white-space: nowrap;
-  transition:
-    opacity 0.2s ease,
-    visibility 0.2s ease;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
   text-align: right;
 }
 
@@ -322,9 +313,7 @@
   right: 0;
   opacity: 0;
   visibility: hidden;
-  transition:
-    opacity 0.2s ease,
-    visibility 0.2s ease;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
 }
 
 .liability-item:hover .liability-item-amount {
@@ -346,10 +335,7 @@
   cursor: pointer;
   font-size: 1rem;
   margin-right: 0.5rem;
-  transition:
-    background-color 0.2s,
-    opacity 0.2s ease,
-    visibility 0.2s ease;
+  transition: background-color 0.2s, opacity 0.2s ease, visibility 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -375,10 +361,7 @@
   border-radius: 4px;
   cursor: pointer;
   font-size: 1rem;
-  transition:
-    background-color 0.2s,
-    opacity 0.2s ease,
-    visibility 0.2s ease;
+  transition: background-color 0.2s, opacity 0.2s ease, visibility 0.2s ease;
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
-import { useTranslation } from 'react-i18next';
+import CurrenciesSection from '@components/CurrenciesSection';
 import LanguageSwitcher from '@components/LanguageSwitcher';
 import ThemeSwitcher from '@components/ThemeSwitcher';
-import CurrenciesSection from '@components/CurrenciesSection';
+import { useCallback, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import './Settings.css';
 
 type SettingsSection = 'general' | 'currencies';

@@ -1,12 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CryptoModule } from '../crypto/crypto.module';
+import { CurrenciesModule } from '../currencies/currencies.module';
+import { Asset } from '../entities/asset.entity';
+import { CryptoWallet } from '../entities/crypto-wallet.entity';
+import { Liability } from '../entities/liability.entity';
 import { MetricsController } from './metrics.controller';
 import { MetricsService } from './metrics.service';
-import { Asset } from '../entities/asset.entity';
-import { Liability } from '../entities/liability.entity';
-import { CryptoWallet } from '../entities/crypto-wallet.entity';
-import { CurrenciesModule } from '../currencies/currencies.module';
-import { CryptoModule } from '../crypto/crypto.module';
 
 @Module({
   imports: [

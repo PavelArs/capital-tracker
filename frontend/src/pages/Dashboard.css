@@ -40,10 +40,7 @@
   cursor: pointer;
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition:
-    border-color 0.2s,
-    background-color 0.2s,
-    color 0.2s;
+  transition: border-color 0.2s, background-color 0.2s, color 0.2s;
   min-width: 100px;
   appearance: none;
   -webkit-appearance: none;
@@ -73,10 +70,7 @@
   padding: 1.5rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition:
-    transform 0.2s,
-    box-shadow 0.2s,
-    background-color 0.3s ease;
+  transition: transform 0.2s, box-shadow 0.2s, background-color 0.3s ease;
 }
 
 .metric-card:hover {
@@ -127,9 +121,7 @@
   box-shadow: 0 2px 4px var(--shadow);
   margin-bottom: 2rem;
   margin-top: 2rem;
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   position: static !important;
   top: auto !important;
   isolation: isolate;
@@ -156,9 +148,7 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition:
-    background-color 0.3s ease,
-    box-shadow 0.3s ease;
+  transition: background-color 0.3s ease, box-shadow 0.3s ease;
   position: static;
 }
 

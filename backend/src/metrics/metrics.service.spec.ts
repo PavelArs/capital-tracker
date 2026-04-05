@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { getLoggerToken } from 'nestjs-pino';
 import { Repository, SelectQueryBuilder } from 'typeorm';
-import { MetricsService } from './metrics.service';
-import { Asset, AssetType, AssetCategory, IncomeType } from '../entities/asset.entity';
-import { Liability, LiabilityCategory, LiabilityFrequency } from '../entities/liability.entity';
-import { CryptoWallet, CryptoType } from '../entities/crypto-wallet.entity';
-import { CurrenciesService } from '../currencies/currencies.service';
 import { CryptoPricesService } from '../crypto/crypto-prices.service';
+import { CurrenciesService } from '../currencies/currencies.service';
+import { Asset, AssetCategory, AssetType, IncomeType } from '../entities/asset.entity';
+import { CryptoType, CryptoWallet } from '../entities/crypto-wallet.entity';
+import { Liability, LiabilityCategory, LiabilityFrequency } from '../entities/liability.entity';
+import { MetricsService } from './metrics.service';
 
 describe('MetricsService', () => {
   let service: MetricsService;

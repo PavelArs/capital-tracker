@@ -1,5 +1,5 @@
+import type { CreateLiabilityDto, Liability, UpdateLiabilityDto } from '@shared/types';
 import apiClient from './client';
-import type { Liability, CreateLiabilityDto, UpdateLiabilityDto } from '@shared/types';
 
 export const liabilitiesApi = {
   getAll: async (): Promise<Liability[]> => {

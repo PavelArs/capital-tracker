@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useTranslation } from 'react-i18next';
 import { authApi } from '@api';
+import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link, useNavigate } from 'react-router-dom';
 import './Auth.css';
 
 const REDIRECT_DELAY = 3000;
@@ -42,7 +42,7 @@ export default function ResendVerification() {
         setLoading(false);
       }
     },
-    [email, t]
+    [email, t],
   );
 
   const handleEmailChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {

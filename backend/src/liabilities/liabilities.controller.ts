@@ -1,22 +1,22 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  UseGuards,
+  Get,
   HttpCode,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiParam } from '@nestjs/swagger';
-import { LiabilitiesService } from './liabilities.service';
-import { CreateLiabilityDto } from './dto/create-liability.dto';
-import { UpdateLiabilityDto } from './dto/update-liability.dto';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
+import { CreateLiabilityDto } from './dto/create-liability.dto';
+import { UpdateLiabilityDto } from './dto/update-liability.dto';
+import { LiabilitiesService } from './liabilities.service';
 
 @ApiTags('liabilities')
 @ApiBearerAuth('JWT-auth')

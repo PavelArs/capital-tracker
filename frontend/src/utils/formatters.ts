@@ -37,17 +37,17 @@ export const formatAmount = (amount: number, currencyCode?: string): string => {
       minimumFractionDigits: minDecimals,
       maximumFractionDigits: 8,
     });
-  } else if (absAmount < 100) {
+  }
+  if (absAmount < 100) {
     // For small amounts, show up to 4 decimal places
     return amount.toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 4,
     });
-  } else {
-    // For regular amounts, show 2 decimal places
-    return amount.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    });
   }
+  // For regular amounts, show 2 decimal places
+  return amount.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 };

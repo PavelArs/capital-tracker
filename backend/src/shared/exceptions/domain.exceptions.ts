@@ -1,8 +1,8 @@
 import {
-  NotFoundException,
-  UnauthorizedException,
   BadRequestException,
   ConflictException,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 
 // User-related exceptions

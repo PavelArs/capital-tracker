@@ -1,7 +1,7 @@
-import { memo, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 import LoadingButton from '@components/LoadingButton';
 import type { CryptoToken } from '@shared/types';
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { WalletCardProps } from '../../types';
 import './WalletCard.css';
 
@@ -18,7 +18,7 @@ export const WalletCard = memo(function WalletCard({
 
   const symbol = wallet.type === 'ethereum' ? 'ETH' : 'BTC';
   const price = cryptoPrices[symbol]?.usd || 0;
-  const balance = parseFloat(wallet.balance.toString());
+  const balance = Number.parseFloat(wallet.balance.toString());
 
   const walletValue = useMemo(() => {
     let totalValue = balance * price;
@@ -27,7 +27,7 @@ export const WalletCard = memo(function WalletCard({
       wallet.tokens.forEach((token: CryptoToken) => {
         if (token.contractAddress) {
           const tokenPrice = tokenPrices[token.contractAddress.toLowerCase()] || 0;
-          const tokenBalance = parseFloat(token.balance.toString());
+          const tokenBalance = Number.parseFloat(token.balance.toString());
           totalValue += tokenBalance * tokenPrice;
         }
       });
@@ -70,7 +70,7 @@ export const WalletCard = memo(function WalletCard({
                 const tokenPrice = token.contractAddress
                   ? tokenPrices[token.contractAddress.toLowerCase()] || 0
                   : 0;
-                const tokenBalance = parseFloat(token.balance.toString());
+                const tokenBalance = Number.parseFloat(token.balance.toString());
                 const tokenValueUSD = tokenPrice * tokenBalance;
 
                 return (

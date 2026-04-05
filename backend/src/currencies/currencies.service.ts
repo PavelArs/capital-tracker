@@ -1,9 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CurrencyUpdateService } from './currency-update.service';
-import { Currency } from '../entities/currency.entity';
 import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
+import { Currency } from '../entities/currency.entity';
+import { CurrencyUpdateService } from './currency-update.service';
 
 @Injectable()
 export class CurrenciesService {
@@ -45,7 +45,7 @@ export class CurrenciesService {
     return currency;
   }
 
-  async getExchangeRates(baseCurrency: string = 'USD') {
+  async getExchangeRates(baseCurrency = 'USD') {
     return this.currencyUpdateService.getExchangeRates(baseCurrency);
   }
 

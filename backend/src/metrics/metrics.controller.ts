@@ -1,9 +1,9 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { MetricsService } from './metrics.service';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser, JwtPayload } from '../shared/decorators';
 import { ErrorResponseDto } from '../shared/dto';
+import { MetricsService } from './metrics.service';
 
 @ApiTags('metrics')
 @ApiBearerAuth('JWT-auth')
@@ -91,7 +91,7 @@ export class MetricsController {
   ) {
     return this.metricsService.getCapitalHistory(
       user.userId,
-      days ? parseInt(days, 10) : 30,
+      days ? Number.parseInt(days, 10) : 30,
       currency || 'USD',
     );
   }

@@ -1,11 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { PinoLogger } from 'nestjs-pino';
-import { CryptoService } from './crypto.service';
-import { CryptoWallet, CryptoType } from '../entities/crypto-wallet.entity';
-import { CryptoUpdateService } from './crypto-update.service';
+import { Repository } from 'typeorm';
+import { CryptoType, CryptoWallet } from '../entities/crypto-wallet.entity';
 import { CryptoWalletNotFoundException } from '../shared/exceptions';
+import { CryptoUpdateService } from './crypto-update.service';
+import { CryptoService } from './crypto.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 describe('CryptoService', () => {

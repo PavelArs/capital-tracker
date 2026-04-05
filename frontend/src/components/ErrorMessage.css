@@ -90,14 +90,14 @@
 }
 
 /* Dark theme support */
-[data-theme='dark'] .error-message {
+[data-theme="dark"] .error-message {
   --error-bg: rgba(239, 68, 68, 0.1);
   --error-border: rgba(239, 68, 68, 0.3);
   --error-color: #ef4444;
 }
 
 /* Light theme */
-[data-theme='light'] .error-message,
+[data-theme="light"] .error-message,
 .error-message {
   --error-bg: #fee;
   --error-border: #fcc;

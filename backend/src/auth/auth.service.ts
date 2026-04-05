@@ -1,24 +1,24 @@
+import { randomBytes } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
-import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { PinoLogger } from 'nestjs-pino';
+import { JwtService } from '@nestjs/jwt';
+import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
-import { User } from '../entities/user.entity';
-import { RegisterDto } from './dto/register.dto';
-import { ForgotPasswordDto } from './dto/forgot-password.dto';
-import { ResetPasswordDto } from './dto/reset-password.dto';
-import { VerifyEmailDto } from './dto/verify-email.dto';
-import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { PinoLogger } from 'nestjs-pino';
+import { MoreThan, Repository } from 'typeorm';
 import { EmailService } from '../email/email.service';
+import { User } from '../entities/user.entity';
 import {
-  UserNotFoundException,
   DuplicateEmailException,
   EmailNotVerifiedException,
   InvalidTokenException,
+  UserNotFoundException,
 } from '../shared/exceptions';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { RegisterDto } from './dto/register.dto';
+import { ResendVerificationDto } from './dto/resend-verification.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyEmailDto } from './dto/verify-email.dto';
 
 export interface UserWithoutPassword {
   id: string;

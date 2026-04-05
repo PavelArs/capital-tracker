@@ -1,5 +1,5 @@
+import type { AuthResponse, LoginCredentials, RegisterData, User } from '@shared/types';
 import apiClient from './client';
-import type { User, LoginCredentials, RegisterData, AuthResponse } from '@shared/types';
 
 export interface RegisterResponse extends User {
   access_token?: string;
