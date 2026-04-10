@@ -2,13 +2,11 @@ services:
   postgres:
     image: postgres:16-alpine
     container_name: capital_tracker_db
-    restart: ${RESTART_POLICY:-no}
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-capital_tracker}
-    ports:
-      - "${DB_PORT_MAPPING:-5432:5432}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -22,10 +20,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: capital_tracker_redis
-    restart: ${RESTART_POLICY:-no}
+    restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
-    ports:
-      - "${REDIS_PORT_MAPPING:-6379:6379}"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -37,81 +33,56 @@ services:
       - capital-tracker-network
 
   backend:
-    image: ${BACKEND_IMAGE:-capital-tracker-backend:local}
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE:-ghcr.io/pavelars/capital-tracker-backend:latest}
     container_name: capital_tracker_backend
-    restart: ${RESTART_POLICY:-no}
+    restart: unless-stopped
     environment:
-      DB_HOST: ${DB_HOST:-postgres}
+      DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-capital_tracker}
-      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      JWT_SECRET: ${JWT_SECRET}
       PORT: 3000
-      NODE_ENV: ${NODE_ENV:-development}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3001}
-      SMTP_HOST: ${SMTP_HOST:-smtp.yandex.com}
+      NODE_ENV: production
+      FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_USER: ${SMTP_USER:-your-production-email@yandex.ru}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-your-production-app-password}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     ports:
-      - "${BACKEND_PORT_MAPPING:-3000:3000}"
+      - "127.0.0.1:3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    networks:
-      - capital-tracker-network
-    volumes:
-      # Only mount source code in development
-      - ${BACKEND_SOURCE_VOLUME:-./backend:/app}
-      - ${BACKEND_NODE_MODULES_VOLUME:-/app/node_modules}
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
-        ]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
-
-  frontend:
-    image: ${FRONTEND_IMAGE:-capital-tracker-frontend:local}
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
-    container_name: capital_tracker_frontend
-    restart: ${RESTART_POLICY:-no}
-    ports:
-      - "${FRONTEND_PORT_MAPPING:-3001:80}"
-    depends_on:
-      - backend
     networks:
       - capital-tracker-network
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/pavelars/capital-tracker-frontend:latest}
+    container_name: capital_tracker_frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:80"
+    depends_on:
+      - backend
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:80/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})",
-        ]
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+    networks:
+      - capital-tracker-network
 
 volumes:
   postgres_data:

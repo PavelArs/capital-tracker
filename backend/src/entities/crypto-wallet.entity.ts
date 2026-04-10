@@ -12,15 +12,6 @@ import { User } from './user.entity';
 export enum CryptoType {
   BITCOIN = 'bitcoin',
   ETHEREUM = 'ethereum',
-  // Additional blockchains for PRO subscription
-  POLYGON = 'polygon',
-  BINANCE_SMART_CHAIN = 'binance_smart_chain',
-  AVALANCHE = 'avalanche',
-  SOLANA = 'solana',
-  ARBITRUM = 'arbitrum',
-  OPTIMISM = 'optimism',
-  BASE = 'base',
-  CUSTOM = 'custom',
 }
 
 @Entity('crypto_wallets')

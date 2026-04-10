@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import axios from 'axios';
+import { PinoLogger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
 import { CurrenciesService } from '../currencies/currencies.service';
 import { CryptoType, CryptoWallet } from '../entities/crypto-wallet.entity';
@@ -12,7 +13,10 @@ export class CryptoUpdateService {
     @InjectRepository(CryptoWallet)
     private cryptoWalletRepository: Repository<CryptoWallet>,
     private currenciesService: CurrenciesService,
-  ) {}
+    private readonly logger: PinoLogger,
+  ) {
+    this.logger.setContext(CryptoUpdateService.name);
+  }
 
   @Cron(CronExpression.EVERY_HOUR)
   async updateAllWallets() {
@@ -38,25 +42,22 @@ export class CryptoUpdateService {
         await this.updateBitcoinWallet(wallet);
       }
     } catch (error) {
-      console.error(`Error updating wallet ${walletId}:`, error.message);
+      this.logger.error({ walletId, error: error.message }, 'Error updating wallet');
     }
   }
 
   private async updateEthereumWallet(wallet: CryptoWallet) {
     try {
-      // Get ETH balance
       const ethBalance = await this.getEthereumBalance(wallet.address);
 
-      // Get ERC-20 tokens
       let tokens: any[] = [];
       try {
         tokens = await this.getEthereumTokens(wallet.address);
       } catch (tokenError) {
-        console.error(
-          'Error fetching tokens (continuing with ETH balance only):',
-          tokenError.message,
+        this.logger.warn(
+          { address: wallet.address, error: tokenError.message },
+          'Error fetching tokens, continuing with ETH balance only',
         );
-        // Continue even if tokens fail - at least we have ETH balance
       }
 
       wallet.balance = ethBalance;
@@ -64,35 +65,40 @@ export class CryptoUpdateService {
       wallet.lastUpdated = new Date();
       await this.cryptoWalletRepository.save(wallet);
 
-      console.log(`Updated wallet ${wallet.address}: ${ethBalance} ETH, ${tokens.length} tokens`);
+      this.logger.info(
+        { address: wallet.address, balance: ethBalance, tokenCount: tokens.length },
+        'Updated Ethereum wallet',
+      );
     } catch (error) {
-      console.error(`Error updating Ethereum wallet ${wallet.address}:`, error.message);
-      throw error; // Re-throw to allow caller to handle
+      this.logger.error(
+        { address: wallet.address, error: error.message },
+        'Error updating Ethereum wallet',
+      );
+      throw error;
     }
   }
 
   private async updateBitcoinWallet(wallet: CryptoWallet) {
     try {
-      // Using Blockstream API (public, no key required)
       const response = await axios.get(`https://blockstream.info/api/address/${wallet.address}`);
 
       const balance =
         response.data.chain_stats.funded_txo_sum - response.data.chain_stats.spent_txo_sum;
-      wallet.balance = balance / 100000000; // Convert satoshi to BTC
+      wallet.balance = balance / 100000000;
       wallet.lastUpdated = new Date();
       await this.cryptoWalletRepository.save(wallet);
     } catch (error) {
-      console.error('Error updating Bitcoin wallet:', error.message);
+      this.logger.error(
+        { address: wallet.address, error: error.message },
+        'Error updating Bitcoin wallet',
+      );
     }
   }
 
   private async getEthereumBalance(address: string): Promise<number> {
-    // Normalize address - ensure it has 0x prefix
     const normalizedAddress = address.startsWith('0x') ? address : `0x${address}`;
 
-    // Try multiple endpoints for reliability
     const endpoints = [
-      // Public RPC endpoints
       { url: 'https://eth.llamarpc.com', type: 'rpc' },
       { url: 'https://rpc.ankr.com/eth', type: 'rpc' },
       { url: 'https://ethereum.publicnode.com', type: 'rpc' },
@@ -113,54 +119,48 @@ export class CryptoUpdateService {
           );
 
           if (response.data?.result && response.data.result !== '0x') {
-            // Use BigInt for large numbers to avoid precision loss
             const balanceWei = BigInt(response.data.result);
-            // Convert wei to ETH with better precision handling
             const ethBalance = Number(balanceWei) / 1e18;
             return ethBalance;
           }
         }
       } catch (_error) {
-        console.log(`Failed to get balance from ${endpoint.url}, trying next...`);
+        this.logger.debug({ endpoint: endpoint.url }, 'Failed to get balance, trying next');
       }
     }
 
-    // Fallback: try Etherscan API (no key required for basic balance)
+    // Fallback: Etherscan API
     try {
       const response = await axios.get(
         `https://api.etherscan.io/api?module=account&action=balance&address=${normalizedAddress}&tag=latest`,
         { timeout: 10000 },
       );
-      if (response.data && response.data.status === '1' && response.data.result) {
+      if (response.data?.status === '1' && response.data.result) {
         const balanceWei = BigInt(response.data.result);
         return Number(balanceWei) / 1e18;
       }
     } catch (e) {
-      console.error('Error fetching ETH balance from Etherscan:', e.message);
+      this.logger.error({ error: e.message }, 'Error fetching ETH balance from Etherscan');
     }
 
-    console.error(
-      `Failed to fetch ETH balance for address ${normalizedAddress} from all endpoints`,
+    this.logger.error(
+      { address: normalizedAddress },
+      'Failed to fetch ETH balance from all endpoints',
     );
-    return 0; // Return 0 instead of throwing to allow wallet creation even if balance fetch fails
+    return 0;
   }
 
   private async getEthereumTokens(address: string): Promise<any[]> {
-    // Normalize address - ensure it has 0x prefix
     const normalizedAddress = address.startsWith('0x') ? address : `0x${address}`;
 
     try {
-      // Get list of active currencies from settings with contract addresses
       const currencies = await this.currenciesService.findAll();
-
-      // Filter currencies that have contract addresses (ERC-20 tokens)
       const tokenCurrencies = currencies.filter((c) => c.contractAddress?.startsWith('0x'));
 
       if (tokenCurrencies.length === 0) {
         return [];
       }
 
-      // Fetch all token balances in parallel for better performance
       const balancePromises = tokenCurrencies.map(async (currency) => {
         try {
           const balance = await this.getERC20TokenBalance(
@@ -169,9 +169,9 @@ export class CryptoUpdateService {
           );
           return { currency, balance };
         } catch (error) {
-          console.error(
-            `Error fetching balance for token ${currency.code} (${currency.contractAddress}):`,
-            error.message,
+          this.logger.error(
+            { token: currency.code, contract: currency.contractAddress, error: error.message },
+            'Error fetching token balance',
           );
           return { currency, balance: 0 };
         }
@@ -180,11 +180,9 @@ export class CryptoUpdateService {
       const balanceResults = await Promise.all(balancePromises);
       const tokens: any[] = [];
 
-      // Process only tokens with non-zero balance
       for (const { currency, balance } of balanceResults) {
         if (balance > 0) {
           try {
-            // Get token decimals (default to 18 if not available)
             const decimals = (await this.getTokenDecimals(currency.contractAddress)) || 18;
             const formattedBalance = balance / 10 ** decimals;
 
@@ -196,15 +194,17 @@ export class CryptoUpdateService {
               decimals: decimals,
             });
           } catch (error) {
-            console.error(`Error getting decimals for token ${currency.code}:`, error.message);
-            // Skip this token if we can't get decimals
+            this.logger.error(
+              { token: currency.code, error: error.message },
+              'Error getting token decimals',
+            );
           }
         }
       }
 
       return tokens;
     } catch (error) {
-      console.error('Error fetching Ethereum tokens:', error.message);
+      this.logger.error({ error: error.message }, 'Error fetching Ethereum tokens');
       return [];
     }
   }
@@ -213,11 +213,7 @@ export class CryptoUpdateService {
     walletAddress: string,
     contractAddress: string,
   ): Promise<number> {
-    // ERC-20 balanceOf function signature: balanceOf(address) -> uint256
-    // Function selector: 0x70a08231
     const functionSelector = '0x70a08231';
-
-    // Pad wallet address to 32 bytes (64 hex chars)
     const paddedAddress = walletAddress.toLowerCase().slice(2).padStart(64, '0');
     const data = functionSelector + paddedAddress;
 
@@ -225,7 +221,6 @@ export class CryptoUpdateService {
       ? contractAddress.toLowerCase()
       : `0x${contractAddress.toLowerCase()}`;
 
-    // Try multiple endpoints for reliability
     const endpoints = [
       { url: 'https://eth.llamarpc.com', type: 'rpc' },
       { url: 'https://rpc.ankr.com/eth', type: 'rpc' },
@@ -240,20 +235,13 @@ export class CryptoUpdateService {
             {
               jsonrpc: '2.0',
               method: 'eth_call',
-              params: [
-                {
-                  to: normalizedContractAddress,
-                  data: data,
-                },
-                'latest',
-              ],
+              params: [{ to: normalizedContractAddress, data: data }, 'latest'],
               id: 1,
             },
             { timeout: 10000 },
           );
 
           if (response.data?.result && response.data.result !== '0x') {
-            // Parse hex result to number
             const balanceHex = response.data.result;
             if (balanceHex === '0x' || balanceHex === '0x0') {
               return 0;
@@ -263,7 +251,7 @@ export class CryptoUpdateService {
           }
         }
       } catch (_error) {
-        console.log(`Failed to get token balance from ${endpoint.url}, trying next...`);
+        this.logger.debug({ endpoint: endpoint.url }, 'Failed to get token balance, trying next');
       }
     }
 
@@ -271,8 +259,6 @@ export class CryptoUpdateService {
   }
 
   private async getTokenDecimals(contractAddress: string): Promise<number | null> {
-    // ERC-20 decimals() function signature: decimals() -> uint8
-    // Function selector: 0x313ce567
     const functionSelector = '0x313ce567';
 
     const normalizedContractAddress = contractAddress.startsWith('0x')
@@ -293,13 +279,7 @@ export class CryptoUpdateService {
             {
               jsonrpc: '2.0',
               method: 'eth_call',
-              params: [
-                {
-                  to: normalizedContractAddress,
-                  data: functionSelector,
-                },
-                'latest',
-              ],
+              params: [{ to: normalizedContractAddress, data: functionSelector }, 'latest'],
               id: 1,
             },
             { timeout: 10000 },
@@ -314,6 +294,6 @@ export class CryptoUpdateService {
       } catch (_error) {}
     }
 
-    return null; // Return null if decimals cannot be fetched
+    return null;
   }
 }
