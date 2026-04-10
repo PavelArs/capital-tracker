@@ -1,375 +1,185 @@
-# Capital Tracker - Личный учёт капитала
+# Capital Tracker
 
-Минимально жизнеспособное веб-приложение для личного учёта капитала с перспективой дальнейшего расширения.
+Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
 
-## Архитектура
+## Tech Stack
 
-- **Backend**: NestJS (Node.js)
-- **Frontend**: React + TypeScript + Vite
-- **База данных**: PostgreSQL
-- **Развёртывание**: Docker + docker-compose
+- **Backend:** NestJS 11, TypeScript, TypeORM, PostgreSQL 16, Redis 7
+- **Frontend:** React 18, Vite, TypeScript, Chart.js, i18next (EN/RU)
+- **Tooling:** pnpm, Biome (lint + format), Jest/Vitest
+- **Infrastructure:** Docker Compose, GitHub Actions CI/CD, ghcr.io, nginx
 
-## Функциональные возможности
+## Features
 
-### 1. Управление активами и пассивами
+- **Assets & Liabilities** - CRUD with Stock (balance sheet) and Flow (income) asset types, multi-currency support
+- **Crypto Wallets** - Bitcoin and Ethereum address tracking with live balance updates, ERC-20 token support
+- **Financial Metrics** - Net worth, runway, FL-ratio (passive income coverage), category distributions
+- **Dashboard** - Charts, history (30 days), dynamic currency selector
+- **Auth** - Registration, login, email verification, password reset (JWT + bcrypt)
+- **Exchange Rates** - Auto-updated fiat and crypto rates, Redis-cached
 
-- CRUD операции для активов с двумя типами:
-  - **Stock Assets** (балансовые): Недвижимость, инвестиции, сбережения, техника, авто (входят в Net Worth)
-  - **Flow Assets** (потоковые доходы): Зарплата, дивиденды, фриланс, аренда, пенсия (входят в Cash Flow)
-- CRUD операции для пассивов (subscriptions, regular_expenses, loans, mortgage, credit_card, other)
-- Поддержка различных валют и дат
+## Quick Start
 
-### 2. Криптокошельки
+### Prerequisites
 
-- Добавление Ethereum и Bitcoin адресов
-- Автоматическое получение балансов нативных валют
-- Поддержка ERC-20 токенов для Ethereum
-- Конвертация криптовалют в фиатные валюты (USD)
-- Отображение стоимости в реальном времени
-- Автоматическое обновление балансов и цен по расписанию
+- Node.js 22+
+- pnpm (`corepack enable`)
+- Docker and Docker Compose
+- PostgreSQL + Redis (or use Docker)
 
-### 3. Валюты
-
-- Хранение активов/пассивов в разных валютах
-- Автоматическое получение курсов валют
-- Конвертация в любую выбранную валюту
-
-### 4. Метрики
-
-- Финансовый запас прочности (runway) - рассчитывается на основе Net Worth
-- FL-ratio (Financial Independence ratio) - рассчитывается на основе Stock Assets (правило 4%)
-- Распределение капитала по категориям балансовых активов (Stock)
-- Распределение потоковых доходов (Flow)
-- Распределение пассивов
-- Включение стоимости криптовалют и токенов в общий капитал
-
-### 5. Графики
-
-- Пайчарт активов
-- Пайчарт пассивов
-- Динамика общей стоимости капитала (30 дней)
-
-### 6. Обновление данных
-
-- Cron задачи для обновления криптовалютных балансов (каждый час)
-- Автоматическое обновление курсов валют (каждый час)
-- Автоматическое обновление цен криптовалют и токенов (каждые 10 минут)
-
-### 7. Аутентификация и Email уведомления
-
-- Регистрация и вход (JWT)
-- Защищённые маршруты
-- Архитектура готова для добавления уровней доступа
-- **Приветственные email** при регистрации
-- **Восстановление пароля** через email с токеном сброса
-- Email подтверждения изменения пароля
-
-## Структура проекта
-
-```
-.
-├── backend/              # NestJS backend
-│   ├── src/
-│   │   ├── auth/        # Аутентификация
-│   │   ├── assets/      # Управление активами
-│   │   ├── liabilities/ # Управление пассивами
-│   │   ├── crypto/      # Криптокошельки
-│   │   ├── currencies/  # Валюты и курсы
-│   │   ├── metrics/     # Метрики и аналитика
-│   │   └── entities/    # Модели БД
-│   ├── Dockerfile
-│   └── package.json
-├── frontend/            # React frontend
-│   ├── src/
-│   │   ├── pages/      # Страницы приложения
-│   │   ├── components/ # Компоненты
-│   │   └── contexts/   # React контексты
-│   ├── Dockerfile
-│   └── package.json
-├── docker-compose.yml         # Единый Docker Compose для dev и prod
-├── env.local.example          # Шаблон .env для локальной разработки
-├── env.production.example     # Шаблон .env для production
-├── QUICK_START.md            # Быстрый старт
-├── DOCKER_SETUP.md           # Полная документация по Docker
-├── DEPLOYMENT.md             # Деплой на Yandex Cloud
-├── EMAIL_SETUP.md            # Настройка email уведомлений
-└── README.md
-```
-
-## Быстрый старт
-
-### Требования
-
-- Docker и Docker Compose (для Docker развёртывания)
-- Node.js 20+ (для локальной разработки)
-- PostgreSQL (для локальной разработки)
-
-### Вариант 1: Автоматическая установка (рекомендуется)
-
-Используйте скрипт установки для автоматической настройки проекта:
+### Development
 
 ```bash
-# Установить все зависимости
-chmod +x install.sh
-./install.sh
-```
+# Start database and cache
+docker compose up postgres redis -d
 
-Или установите backend и frontend отдельно:
+# Install dependencies
+pnpm install
 
-```bash
-# Backend
+# Backend (port 3000)
 cd backend
-chmod +x install.sh
-./install.sh
+cp .env.example .env    # edit with your settings
+pnpm dev
 
-# Frontend
-cd ../frontend
-chmod +x install.sh
-./install.sh
+# Frontend (port 3001)
+cd frontend
+cp .env.example .env
+pnpm dev
 ```
 
-### Вариант 2: Запуск с Docker (Рекомендуется)
-
-1. Клонируйте репозиторий:
+### Docker (full stack)
 
 ```bash
-git clone <repository-url>
-cd capital-tracker
-```
+# Development (with source mounts, uses docker-compose.override.yml)
+cp docker-compose.override.example.yml docker-compose.override.yml
+docker compose up -d
 
-2. Создайте `.env` файл из шаблона:
-
-```bash
-cp env.local.example .env
-```
-
-3. Запустите приложение:
-
-```bash
+# Production (image-based, no overrides on server)
 docker compose up -d
 ```
 
-4. Приложение будет доступно:
+## Common Commands
 
-   - Frontend: http://localhost:3001
-   - Backend API: http://localhost:3000
-   - PostgreSQL: localhost:5432
+### Backend (`cd backend`)
 
-5. Остановка:
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start dev server with watch mode |
+| `pnpm build` | Build NestJS application |
+| `pnpm test` | Run tests with coverage |
+| `pnpm lint` | Biome lint + format check |
+| `pnpm check` | Auto-fix lint + format issues |
+| `pnpm migration:generate` | Generate TypeORM migration |
+| `pnpm migration:run` | Run pending migrations |
 
-```bash
-docker compose down
+### Frontend (`cd frontend`)
+
+| Command | Description |
+|---------|-------------|
+| `pnpm dev` | Start Vite dev server |
+| `pnpm build` | TypeScript check + production build |
+| `pnpm test` | Run tests with coverage |
+| `pnpm lint` | Biome lint + format check |
+| `pnpm check` | Auto-fix lint + format issues |
+
+## Architecture
+
+```
+backend/src/
+  auth/           JWT auth, registration, email verification, password reset
+  assets/         Asset CRUD (Stock/Flow types)
+  liabilities/    Liability CRUD
+  crypto/         Wallet tracking, balance updates, price fetching
+  currencies/     Exchange rates, currency preferences (Redis-cached)
+  metrics/        Net worth, runway, FL-ratio calculations
+  cache/          Redis cache module
+  health/         Health check endpoint
+  email/          Nodemailer email service
+  entities/       TypeORM entities
+  migrations/     Database migrations
+
+frontend/src/
+  pages/          Route pages (Dashboard, Assets, Liabilities, Crypto, Settings)
+  components/     Reusable UI components
+  features/       Feature-specific components (asset cards, wallet forms, etc.)
+  contexts/       Auth, Error, Theme contexts
+  api/            Axios API layer
+  i18n/           English and Russian locales
 ```
 
-### Вариант 3: Локальная разработка (ручная установка)
+## Production Deployment
 
-#### Backend
+### Infrastructure
 
-1. Перейдите в директорию backend:
+The app is designed to run on a personal server with:
+- **nginx** on the host for TLS termination and reverse proxy
+- **Docker Compose** for services (postgres, redis, backend, frontend)
+- **GitHub Actions** CI/CD with ghcr.io container registry
 
-```bash
-cd backend
-```
+### Setup
 
-2. Инициализируйте проект (если нужно):
+1. Configure GitHub Actions secrets:
+   - `DEPLOY_SSH_KEY` - SSH private key for server access
+   - `DEPLOY_HOST` - Server IP or hostname
+   - `DEPLOY_USER` - SSH user
+   - (Optional) `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` for deploy notifications
 
-```bash
-npm init -y
-npm install -g @nestjs/cli
-```
+2. On the server:
+   ```bash
+   # Create app directory
+   mkdir -p /opt/capital-tracker
+   cd /opt/capital-tracker
 
-3. Установите зависимости:
+   # Create .env with production values
+   cat > .env << EOF
+   DB_USERNAME=postgres
+   DB_PASSWORD=<strong-password>
+   DB_NAME=capital_tracker
+   JWT_SECRET=<random-secret>
+   FRONTEND_URL=https://<your-domain>
+   SMTP_HOST=<smtp-host>
+   SMTP_PORT=465
+   SMTP_USER=<smtp-user>
+   SMTP_PASSWORD=<smtp-password>
+   EOF
+   ```
 
-```bash
-npm install
-```
+3. Copy and configure nginx:
+   ```bash
+   cp deploy/nginx.conf /etc/nginx/sites-available/capital-tracker
+   # Edit: replace <your-domain> with your actual domain
+   ln -s /etc/nginx/sites-available/capital-tracker /etc/nginx/sites-enabled/
+   nginx -t && systemctl reload nginx
+   ```
 
-Или используйте скрипт установки (см. `backend/setup.md` для детальных инструкций):
+4. Push to `main` - CI/CD will automatically build, push images to ghcr.io, and deploy.
 
-```bash
-chmod +x install.sh
-./install.sh
-```
+### CI/CD Pipeline
 
-4. Создайте файл `.env` на основе `.env.example`:
-
-```bash
-cp .env.example .env
-# Отредактируйте .env с вашими настройками
-```
-
-5. Запустите PostgreSQL (через Docker или локально):
-
-```bash
-docker run -d --name postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=capital_tracker -p 5432:5432 postgres:15-alpine
-```
-
-6. Запустите backend:
-
-```bash
-npm run start:dev
-```
-
-#### Frontend
-
-1. Перейдите в директорию frontend:
-
-```bash
-cd frontend
-```
-
-2. Инициализируйте проект (если нужно):
-
-```bash
-npm init -y
-```
-
-3. Установите зависимости:
-
-```bash
-npm install
-```
-
-Или используйте скрипт установки (см. `frontend/setup.md` для детальных инструкций):
-
-```bash
-chmod +x install.sh
-./install.sh
-```
-
-4. Создайте файл `.env` (опционально, если нужен другой API URL):
-
-```bash
-cp .env.local.example .env
-# Отредактируйте .env если нужно изменить API URL
-```
-
-5. Запустите frontend:
-
-```bash
-npm run dev
-```
+- **CI** (on PR to main): lint, test, build for both backend and frontend, Docker build verification
+- **CD** (on push to main): semantic versioning, build + push images to ghcr.io, SSH deploy with health check, automatic rollback on failure, database backup before deploy
 
 ## API Endpoints
 
-### Аутентификация
+Interactive API docs available at `/api/docs` (development only).
 
-- `POST /auth/register` - Регистрация (отправляет приветственное письмо)
-- `POST /auth/login` - Вход
-- `POST /auth/forgot-password` - Запрос на восстановление пароля
-- `POST /auth/reset-password` - Сброс пароля по токену
-- `GET /auth/me` - Получить текущего пользователя
+| Group | Endpoints |
+|-------|-----------|
+| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email` |
+| Assets | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id` |
+| Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id` |
+| Crypto | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
+| Currencies | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show` |
+| Metrics | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD` |
+| Health | `GET /health` |
 
-### Активы
+## External APIs
 
-- `GET /assets` - Получить все активы
-- `POST /assets` - Создать актив
-- `GET /assets/:id` - Получить актив
-- `PATCH /assets/:id` - Обновить актив
-- `DELETE /assets/:id` - Удалить актив
+- **Exchange rates:** [ExchangeRate-API](https://api.exchangerate-api.com) (free tier)
+- **ETH balances/tokens:** Public RPC endpoints (LlamaRPC, Ankr, PublicNode)
+- **BTC balances:** [Blockstream API](https://blockstream.info/api)
+- **Crypto prices:** [CoinGecko API](https://api.coingecko.com) (free tier)
 
-### Пассивы
-
-- `GET /liabilities` - Получить все пассивы
-- `POST /liabilities` - Создать пассив
-- `GET /liabilities/:id` - Получить пассив
-- `PATCH /liabilities/:id` - Обновить пассив
-- `DELETE /liabilities/:id` - Удалить пассив
-
-### Криптокошельки
-
-- `GET /crypto` - Получить все кошельки
-- `POST /crypto` - Добавить кошелёк
-- `GET /crypto/:id` - Получить кошелёк
-- `PATCH /crypto/:id/update-balance` - Обновить баланс
-- `DELETE /crypto/:id` - Удалить кошелёк
-
-### Валюты
-
-- `GET /currencies/rates?base=USD` - Получить курсы валют
-- `GET /currencies/convert?amount=100&from=USD&to=EUR` - Конвертировать валюту
-- `GET /currencies` - Получить список валют
-
-### Метрики
-
-- `GET /metrics?currency=USD` - Получить метрики
-- `GET /metrics/history?days=30&currency=USD` - Получить историю капитала
-
-## Внешние API
-
-Приложение использует следующие публичные API:
-
-- **Курсы валют**: ExchangeRate-API (https://api.exchangerate-api.com)
-- **Ethereum балансы**: Public RPC endpoints (LlamaRPC, Ankr, PublicNode)
-- **Ethereum токены**: Ethplorer API (https://api.ethplorer.io)
-- **Bitcoin балансы**: Blockstream API (https://blockstream.info)
-- **Цены криптовалют**: CoinGecko API (https://api.coingecko.com)
-
-**Примечание**: Для production рекомендуется использовать API ключи для увеличения лимитов запросов.
-
-## База данных
-
-### Основные таблицы:
-
-- `users` - Пользователи
-- `assets` - Активы (с разделением на Stock/Flow типы)
-  - `assetType`: ENUM('stock', 'flow')
-  - `category`: различные категории в зависимости от типа
-- `liabilities` - Пассивы
-- `crypto_wallets` - Криптокошельки
-
-### Подробнее о типах активов
-
-См. файл [STOCK_FLOW_ASSETS.md](STOCK_FLOW_ASSETS.md) для детальной информации о концепции разделения активов на Stock и Flow.
-
-### Миграции БД
-
-Проект использует TypeORM для управления миграциями базы данных:
-
-- **Автоматический запуск**: Миграции выполняются автоматически при старте приложения (через `migrationsRun: true`)
-- **Seed данные**: Начальные данные (валюты) вставляются через миграции
-
-#### Команды для работы с миграциями:
-
-```bash
-# В контейнере Docker
-docker compose exec backend sh
-
-# Генерация новой миграции на основе изменений в Entity
-npm run migration:generate -- src/migrations/MigrationName
-
-# Запуск миграций вручную (не требуется, т.к. выполняются автоматически)
-npm run migration:run
-
-# Откат последней миграции
-npm run migration:revert
-```
-
-**Примечание**: После изменения Entity файлов генерируйте новые миграции, не полагайтесь на `synchronize: true` в production.
-
-## Безопасность
-
-- JWT токены для аутентификации
-- Хеширование паролей (bcrypt)
-- Валидация входных данных
-- CORS настройки
-
-**Важно**: Перед развёртыванием в production:
-
-1. Измените `JWT_SECRET` на безопасный случайный ключ
-2. Настройте переменные окружения
-3. Используйте HTTPS
-4. Настройте rate limiting
-5. Добавьте мониторинг и логирование
-
-## Расширение функциональности
-
-Архитектура спроектирована для удобного перехода к микросервисной архитектуре:
-
-- Каждый модуль (assets, liabilities, crypto, etc.) может быть выделен в отдельный сервис
-- Использование TypeORM позволяет легко мигрировать на другие БД
-- Frontend и Backend полностью разделены
-
-## Лицензия
+## License
 
 MIT
