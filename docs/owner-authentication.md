@@ -14,15 +14,21 @@ uses `create_host_path: false`; it cannot create a missing key source. The opera
 must still arrange the private key, CLI access, exact HTTPS origin and explicit
 migration step as part of a separately reviewed release. This wiring does not mean
 that the production stack or full release pipeline has been run or verified.
-Distributed password/IP throttling, recent-MFA security settings, the full ASVS Level 2 matrix and security scans remain required.
+The proposed request-limit change adds shared PostgreSQL admission for the three
+authentication handlers; implementation and verification remain pending.
+Recent-MFA security settings, the full ASVS Level 2 matrix and security scans
+remain required.
 
 ## Owner provisioning and password recovery
 
 Run all explicit migrations first. The ninth adds the empty `owner_auth` binding,
-the tenth adds `auth_sessions`, and the eleventh adds encrypted MFA/recovery state
-and extends sessions. The MFA migration revokes preceding session records, leaves
-users and financial rows intact, and does not enroll anyone. Current binaries require
-the fully migrated schema. An owner without confirmed enrollment cannot log in.
+the tenth adds `auth_sessions`, the eleventh adds encrypted MFA/recovery state
+and extends sessions, and the proposed twelfth adds only the request admission
+ledger. The MFA migration revokes preceding session records, leaves users and
+financial rows intact, and does not enroll anyone. The request-limit migration
+must preserve all existing owner, MFA, session and portfolio rows and be
+replay-safe. After integration, binaries require the fully migrated twelve-
+migration schema. An owner without confirmed enrollment cannot log in.
 
 The owner CLI uses explicit `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and
 `DB_NAME` settings, with no implicit `.env` loading. Supply them through the trusted
@@ -223,12 +229,36 @@ IPv4 quotas group by /32 and ordinary IPv6 by /64, while peer trust always compa
 the entire canonical address. Source trust grants no authentication or CSRF/Origin
 exception. Existing 401/403 examples assume valid source metadata and available quota.
 
-The 30/5/5 requests per minute for CSRF/password/MFA still live in one process and
-reset on restart; replicas multiply these budgets. This change does not claim
-persistent account request limits, complete DoS protection or revised session-touch
-ordering for valid-source requests rejected by the limiter. A subsequent change
-will persist admission state in PostgreSQL. The separate owner MFA failure budget
-already remains in PostgreSQL.
+## Proposed shared authentication admission
+
+After the request-limit change is integrated, the three matched handlers commit
+admissions in PostgreSQL before session or credential work. The fixed windows are
+exactly 30 requests per 60 seconds for a verified source on CSRF, 5 per 60
+seconds for a verified source on password login, and 5 per 60 seconds for a
+verified source on MFA. Password login also charges 10 requests per 600 seconds
+for the normalized claimed email (trimmed and lowercased), shared across sources.
+These budgets are shared across replicas and survive restarts.
+
+The source identity keeps the existing trusted-peer and forwarding-header
+contract. The claimed email is stored only as a SHA-256 subject digest. The
+ledger is capped at 4096 live rows. Fixed windows begin at fresh PostgreSQL time,
+do not slide on denial, and successful login, recovery, enrollment or restart
+does not reset them. Existing MFA challenge limits remain independent: five wrong
+factors retire a challenge and the persistent owner cooldown still enforces its
+ten-failure policy across replicas and restarts.
+
+An exhausted source, account or capacity window returns generic 429 with
+`Cache-Control: no-store` and an integer `Retry-After` (1–60 seconds for source
+windows, 1–600 seconds for account or capacity). Connection, lock, query or
+commit failure returns generic 503 with `no-store`; there is no memory fallback,
+automatic retry, late admission or Redis dependency. The runtime
+`connectTimeoutMS=5000` bound applies to every PostgreSQL pool checkout used by
+admission. A finite ledger and pool still limit availability; these controls do
+not guarantee service availability.
+
+Rejected re-login remains read-only: it does not rotate or touch a session, look
+up credentials or verify a password. The existing proxy-trust and Nginx
+contracts remain unchanged.
 
 Authentication uses the host-only `__Host-ct-session` cookie with Secure, HttpOnly,
 SameSite=Strict and Path=/ attributes. Raw tokens are independent random 256-bit
@@ -282,10 +312,10 @@ window begin a ten-minute cooldown; the tenth and blocked completion attempts re
 Renewing a challenge, restarting the backend or spoofing forwarding headers cannot
 reset the persisted owner block. Blocked attempts do not extend its deadline. Expiry,
 successful factor completion, trusted confirmation or password recovery clears the
-relevant failure state. The existing process-local limit of five password requests
-and five MFA requests per minute also applies; restarting a process can reset that
-IP limit, not the persisted owner limit. Full distributed password/account request
-throttling remains separate release work.
+relevant failure state. The proposed shared source and claimed-account admissions
+are separate from this persistent owner/challenge cooldown. Do not reset either
+ledger during a test case to make a later factor phase pass; use the real
+two-replica path and record the expected ledger deltas.
 
 ## Threat model and remaining controls
 

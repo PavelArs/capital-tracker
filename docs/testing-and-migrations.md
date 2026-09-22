@@ -74,8 +74,11 @@ previous still-valid TOTP step using PostgreSQL time, then enter a fresh current
 through the browser. Additional same-window logins use actual unused CLI-issued
 recovery codes. The fixture handles clock boundaries with bounded retries and does
 not reset accepted counters, inject authenticated cookies or mock authentication.
-It restarts the isolated backend between tests to reset the existing process-local
-request limiter; persisted MFA lockout cases explicitly test behavior across restart.
+The proposed request-limit acceptance must use two real backend replicas sharing
+the same PostgreSQL service. Restarting either replica must preserve exhausted
+CSRF, password and MFA windows and the normalized claimed-email window; tests
+must use explicit expected ledger deltas rather than clearing the ledger between
+phases. Persisted MFA lockout cases remain independent and continue across restart.
 These tests do not establish complete route coverage. Another browser engine,
 scanners, full ASVS coverage and backup/restore exercises remain release work.
 
@@ -98,6 +101,33 @@ not been run on GitHub in this session; local success is not a hosted CI claim.
 The ninth required CI job runs `pnpm audit:production` after a frozen install.
 It fails on high/critical production advisories and registry errors; lower-severity
 findings remain visible in [the dependency security record](dependency-security.md).
+
+## Proposed request-limit acceptance
+
+The pending request-limit change is accepted only after implementation against the
+actual rendered `deploy/nginx.conf` template and two real backend replicas sharing
+the same PostgreSQL instance. Exercise 30/60s source admission for CSRF, 5/60s
+source admission for password login, 5/60s source admission for MFA and the
+10/600s normalized claimed-email admission. Verify the source and account windows
+are shared across replicas and restarts, fixed at their first PostgreSQL timestamp,
+and never reset by success, recovery, enrollment or denial. A rejected re-login
+must remain read-only, with no session touch, credential lookup or verifier call.
+
+The real database checks must cover the 4096-live-row cap, pruning only expired
+rows, preservation of live under-limit rows, the two-process last-slot race and
+the additive migration from populated migration 11 to migration 12. Keep the
+existing MFA five-attempt challenge retirement and ten-failure owner cooldown in
+the same test flow; do not clear the request ledger to make that flow pass.
+
+HTTP assertions must require generic 429, `no-store` and integer `Retry-After`
+(1–60 seconds for source windows and 1–600 seconds for account/capacity), and
+generic 503/no-store for connection, lock, query or commit failure. Admission
+uses `connectTimeoutMS=5000` for every runtime PostgreSQL pool checkout. There is
+no automatic retry, memory fallback, Redis fallback or late admission after a
+pool/lock refusal; releasing a resource only affects a later explicit request.
+These bounded resources limit availability, so the acceptance must not claim an
+availability guarantee. This section records requirements only; it is not a
+passing test or production rollout claim.
 
 ## Build images directly
 
@@ -136,9 +166,10 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies eleven migrations: eight historic migrations, the additive owner
-binding, the session table and the MFA/session extension. A populated
-fully migrated database is idempotent. Pending destructive historical migrations
+uuid-ossp and applies twelve migrations: eight historic migrations, the additive
+owner binding, the session table, the MFA/session extension and the additive
+request admission ledger. A populated fully migrated database is idempotent and
+the twelfth migration preserves all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
 error messages are suppressed because they can contain values or credentials.
@@ -162,7 +193,7 @@ and candidate enrollment, clears MFA lockout, and preserves the confirmed factor
 transaction. Migration fixtures include preceding eight-, nine- and ten-migration
 schemas. The MFA upgrade must preserve users, owner/password and financial rows,
 revoke old password-only session rows, create no implicit enrollment and remain
-idempotent. Current binaries require all eleven migrations. Owner bootstrap must
+idempotent. After integration, binaries require all twelve migrations. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret
