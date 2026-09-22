@@ -27,9 +27,14 @@ const previousName = 'capital_tracker_previous_eight_e2e';
 const previousNineName = 'capital_tracker_previous_nine_e2e';
 const previousTenName = 'capital_tracker_previous_ten_e2e';
 const previousElevenName = 'capital_tracker_previous_eleven_e2e';
+const previousTwelveName = 'capital_tracker_previous_twelve_e2e';
+const accountingTables = [
+  'manual_accounts', 'accounting_instruments',
+  'account_opening_snapshots', 'account_opening_positions',
+];
 const testDatabases = [
   freshName, legacyName, emptyLegacyName, previousName,
-  previousNineName, previousTenName, previousElevenName,
+  previousNineName, previousTenName, previousElevenName, previousTwelveName,
 ];
 let stage = 'isolated configuration';
 const migrationNames = [
@@ -45,6 +50,7 @@ const migrationNames = [
   'AddOwnerSessions1790000000000',
   'AddOwnerMfa1790010000000',
   'AddAuthRequestLimits1790020000000',
+  'AddManualOpeningPositions1790030000000',
 ];
 
 function connection(database) {
@@ -137,14 +143,17 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly twelve migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirteen migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
-    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']) {
+    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables]) {
       assert.ok(tables.includes(table), `Missing current table ${table}`);
     }
     assert.equal((await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count, 0);
+    for (const table of accountingTables) {
+      assert.equal((await client.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count, 0);
+    }
     const owner = await seedOwner(client, 'fresh-migration@example.invalid');
     await client.query(
       `INSERT INTO crypto_wallets("userId", type, address, balance)
@@ -251,7 +260,7 @@ async function verifyLegacy(database, empty = false) {
 
 async function createPreviousSchema(client, target, previousCount) {
   assert.ok(testDatabases.includes(target));
-  assert.ok([8, 9, 10, 11].includes(previousCount));
+  assert.ok([8, 9, 10, 11, 12].includes(previousCount));
   await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   const migrationClasses = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
@@ -309,10 +318,11 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       before.rows.migrations, 'Preserve previous migration records');
     assert.deepEqual((await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows.map(({name}) => name), migrationNames);
     const addedTables = [...(previousCount === 8 ? ['owner_auth'] : []),
-      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits'];
+      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables];
     assert.deepEqual(after.rows.owner_mfa, [], 'No implicit MFA enrollment');
     assert.deepEqual(after.rows.owner_mfa_recovery, [], 'No implicit recovery codes');
     assert.deepEqual(after.rows.auth_request_limits, [], 'Migration creates no request admissions');
+    for (const table of accountingTables) assert.deepEqual(after.rows[table], [], 'No implicit opening state');
     // Only the additive tables' schema/index/constraint entries may differ.
     for (const [kind, tableKey] of [['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename']]) {
       assert.deepEqual(after[kind].filter((row) => !addedTables.includes(row[tableKey])), before[kind].filter((row) => !addedTables.includes(row[tableKey])), `Preserve previous ${kind}`);
@@ -433,14 +443,18 @@ async function seedPreviousEleven(client, cipher) {
   };
 }
 
-async function verifyPreviousElevenUpgrade() {
-  stage = 'LIMIT-006-A previous11 schema and populated fixture';
-  const client = new Client(connection(previousElevenName));
+async function verifyPopulatedAuthUpgrade(previousCount) {
+  assert.ok([11, 12].includes(previousCount));
+  const target = previousCount === 11 ? previousElevenName : previousTwelveName;
+  const scenario = previousCount === 11 ? 'LIMIT-006-A' : 'OPEN-004-B';
+  const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []), ...accountingTables];
+  stage = `${scenario} previous${previousCount} schema and populated fixture`;
+  const client = new Client(connection(target));
   const directory = mkdtempSync(join(tmpdir(), 'capital-migration-mfa-'));
   let connected = false;
   try {
     await client.connect(); connected = true;
-    await createPreviousSchema(client, previousElevenName, 11);
+    await createPreviousSchema(client, target, previousCount);
     // This key is newly generated inside the disposable test container. No owner
     // key/environment is read, and the private directory is removed in finally.
     const file = join(directory, 'key');
@@ -449,9 +463,24 @@ async function verifyPreviousElevenUpgrade() {
     const cipher = new MfaCipher(new ConfigService({ MFA_KEY_FILE: file, MFA_KEY_ID: 'migration-fixture' }));
     const verifyFactors = await seedPreviousEleven(client, cipher);
     await verifyFactors();
+    if (previousCount === 12) {
+      for (const [scope, hits, seconds] of [
+        ['csrf-ip', 29, 60], ['login-ip', 5, 60], ['mfa-ip', 3, 60], ['login-account', 9, 600],
+      ]) {
+        const subject = scope === 'login-account' ? 'migration-owner@example.invalid' : 'v4:192.0.2.42/32';
+        const digest = createHash('sha256')
+          .update(JSON.stringify(['ct-auth-request-v1', scope, subject])).digest('hex');
+        await client.query(`WITH moment AS MATERIALIZED (SELECT clock_timestamp() AS now)
+          INSERT INTO auth_request_limits(scope,"subjectHash",hits,"windowStartedAt","expiresAt")
+          SELECT $1,$2,$3,now,now+$4*interval '1 second' FROM moment`, [scope, digest, hits, seconds]);
+      }
+      assert.equal((await client.query(`SELECT count(*)::int AS count FROM auth_request_limits
+        WHERE "expiresAt">clock_timestamp() AND hits>0`)).rows[0].count, 4,
+      'Predecessor contains live nonzero admissions for every policy');
+    }
     const before = await snapshot(client);
-    assert.equal(before.rows.migrations.length, 11);
-    assert.equal(before.rows.auth_request_limits, undefined, 'New ledger does not exist before upgrade');
+    assert.equal(before.rows.migrations.length, previousCount);
+    for (const table of addedTables) assert.equal(before.rows[table], undefined, 'Additive table absent before upgrade');
     for (const table of ['users', 'assets', 'liabilities', 'crypto_wallets', 'user_currency_preferences']) {
       assert.equal(before.rows[table].length, 2, `Both principals have populated ${table}`);
     }
@@ -468,27 +497,29 @@ async function verifyPreviousElevenUpgrade() {
     assert.equal((await client.query(`SELECT count(*)::int AS count FROM auth_sessions
       WHERE "expiresAt" <= clock_timestamp()`)).rows[0].count, 1, 'Fixture includes an expired full session');
 
-    stage = 'LIMIT-006-A migration12 preserves every previous row and schema object';
-    const upgraded = runMigration(previousElevenName);
-    assert.equal(upgraded.status, 0, 'Previous11 upgrade must run the actual migration CLI successfully');
+    stage = `${scenario} current migration preserves every previous row and schema object`;
+    const upgraded = runMigration(target);
+    assert.equal(upgraded.status, 0, 'Populated upgrade must run the actual migration CLI successfully');
     const after = await snapshot(client);
-    assert.deepEqual(after.rows.auth_request_limits, [], 'New ledger must be empty');
+    for (const table of addedTables) assert.deepEqual(after.rows[table], [], 'New tables must be empty');
     for (const [table, rows] of Object.entries(before.rows)) {
       if (table !== 'migrations') {
         assert.deepEqual(after.rows[table], rows, `Preserve every previous ${table} row, including all session classes`);
       }
     }
-    const oldMigrationNames = migrationNames.slice(0, 11);
+    const oldMigrationNames = migrationNames.slice(0, previousCount);
     assert.deepEqual(after.rows.migrations.filter(({ row }) => oldMigrationNames.includes(JSON.parse(row).name)),
-      before.rows.migrations, 'All eleven prior migration records are unchanged');
+      before.rows.migrations, 'Every prior migration record is unchanged');
     const records = (await client.query('SELECT id,timestamp,name FROM migrations ORDER BY timestamp')).rows;
     assert.deepEqual(records.map(row => row.name), migrationNames);
-    assert.equal(records[11].id, records[10].id + 1, 'Migration history appends exactly one record');
-    assert.equal(String(records[11].timestamp), '1790020000000');
+    for (let index = previousCount; index < migrationNames.length; index++) {
+      assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
+      assert.equal(String(records[index].timestamp), index === 11 ? '1790020000000' : '1790030000000');
+    }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
     ]) {
-      assert.deepEqual(after[kind].filter(row => row[tableKey] !== 'auth_request_limits'), before[kind],
+      assert.deepEqual(after[kind].filter(row => !addedTables.includes(row[tableKey])), before[kind],
         `Every previous ${kind} entry remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);
@@ -496,18 +527,18 @@ async function verifyPreviousElevenUpgrade() {
     const oldSequence = before.sequences.find(row => row.sequencename === 'migrations_id_seq');
     const newSequence = after.sequences.find(row => row.sequencename === 'migrations_id_seq');
     assert.ok(oldSequence && newSequence, 'Migration record sequence must exist');
-    assert.equal(BigInt(newSequence.last_value), BigInt(oldSequence.last_value) + 1n);
+    assert.equal(BigInt(newSequence.last_value), BigInt(oldSequence.last_value) + BigInt(migrationNames.length - previousCount));
     assert.deepEqual(after.sequences.map(row => row.sequencename === 'migrations_id_seq'
       ? { ...row, last_value: oldSequence.last_value } : row), before.sequences,
     'Only the migration record sequence advances; all sequence definitions are preserved');
     await verifyFactors();
 
-    stage = 'LIMIT-006-A migration12 populated replay';
-    const replay = runMigration(previousElevenName);
+    stage = `${scenario} current migration populated replay`;
+    const replay = runMigration(target);
     assert.equal(replay.status, 0);
     assert.deepEqual(await snapshot(client), after, 'Replay is identical across all schema, data, sessions and migration state');
     await verifyFactors();
-    console.log('PASS LIMIT-006-A populated11-to12 preserves every prior row/schema/session, authentic encrypted factors and used/unused recovery; empty ledger and exact replay');
+    console.log(`PASS ${scenario} populated${previousCount}-to13 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
     finally { rmSync(directory, { recursive: true, force: true }); }
@@ -549,7 +580,8 @@ async function main() {
   stage = 'OWN-MIG-001 previous8 upgrade'; await verifyAdditiveOwnerUpgrade();
   stage = 'SES-MIG-001 previous9 upgrade'; await verifyAdditiveOwnerUpgrade(9);
   stage = 'MFA-MIG-001 previous10 upgrade and session revocation'; await verifyAdditiveOwnerUpgrade(10);
-  await verifyPreviousElevenUpgrade();
+  await verifyPopulatedAuthUpgrade(11);
+  await verifyPopulatedAuthUpgrade(12);
 }
 
 main().catch(() => {
