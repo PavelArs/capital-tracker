@@ -130,10 +130,11 @@ the same test flow; do not clear the request ledger to make that flow pass.
 
 HTTP assertions must require generic 429, `no-store` and integer `Retry-After`
 (1–60 seconds for source windows and 1–600 seconds for account/capacity), and
-generic 503/no-store for an actual HTTP held-lock case and for actual PostgreSQL
-query, commit and pool-failure probes. Admission uses `connectTimeoutMS=5000`
-for every runtime PostgreSQL pool checkout. There is
-no automatic retry, memory fallback, Redis fallback or late admission after a
+generic 503/no-store for the actual HTTP held-lock case. Separate real PostgreSQL
+query, commit and pool-failure probes verify safe service exceptions, transaction
+cleanup and absence of retries. Admission uses `connectTimeoutMS=5000` for every
+runtime PostgreSQL pool checkout. There is no automatic retry, memory fallback,
+Redis fallback or late admission after a
 pool/lock refusal; releasing a resource only affects a later explicit request.
 These bounded resources limit availability, so the acceptance must not claim an
 availability guarantee. This section records requirements only; it is not a

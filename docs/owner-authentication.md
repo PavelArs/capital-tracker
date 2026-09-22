@@ -241,7 +241,7 @@ These budgets are shared across replicas and survive restarts.
 
 The source identity keeps the existing trusted-peer and forwarding-header
 contract. Both the source IP and claimed email are stored only as SHA-256 subject
-digests; hashes protect stored identifiers but do not provide anonymity. The
+digests; these unsalted digests do not anonymize guessable identifiers. The
 ledger is capped at 4096 live rows: pruning may remove expired rows, but admission
 never evicts a live budget, and an existing under-limit subject remains usable at
 capacity. Fixed windows begin at fresh PostgreSQL time, do not slide on denial,
@@ -261,7 +261,8 @@ An exhausted source, account or capacity window returns generic 429 with
 `Cache-Control: no-store` and an integer `Retry-After` (1–60 seconds for source
 windows, 1–600 seconds for account or capacity). Connection, lock, query or
 commit failure returns generic 503 with `no-store`; there is no memory fallback,
-automatic retry, late admission or Redis dependency. The runtime
+automatic retry or late admission after pool refusal. Admission uses PostgreSQL;
+Redis remains part of the existing application cache. The runtime
 `connectTimeoutMS=5000` bound applies to every runtime PostgreSQL pool checkout
 and new connection, not only admission. It does not bound total HTTP or Nest
 startup time or impose retry behavior outside the pool connection path. A finite

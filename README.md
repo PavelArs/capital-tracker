@@ -212,8 +212,8 @@ CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
 claimed email for login. See
 [owner authentication](docs/owner-authentication.md) for configuration, caps and
 remaining protection requirements. Source IP and claimed-email subjects are
-stored as SHA-256 digests; this protects stored identifiers without implying
-anonymity.
+stored as bounded SHA-256 digests. These unsalted digests do not anonymize
+guessable identifiers.
 
 ## External APIs
 

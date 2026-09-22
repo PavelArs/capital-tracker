@@ -85,9 +85,25 @@ This run does not replace the populated11-to12 migration or real HTTP acceptance
 
 ## Remaining verification
 
-Populated11-to12 migration, all retained63 HTTP scenarios plus new limits cases,
-independent fixture/oracle review, full image acceptance, final image identities,
-cleanup/preservation, documentation integration and archive remain outstanding.
+The full image command `pnpm test:e2e` is running with evidence in
+`/private/tmp/capital-ledger-image-first.log`; no overall exit or full-suite pass
+is claimed yet. Its populated11-to12 migration and repeat of every ledger
+PostgreSQL probe have passed. The migration fixture verifies authentic encrypted
+active/candidate factors, used/unused recovery, all session classes, two principals'
+financial rows, complete old schema/index/constraint/sequence preservation and
+exact replay. Historical8/9/10 preservation and unsafe legacy refusals also pass.
+
+Independent source/fixture review found no remaining blocker. Actual integration
+includes c42d1ea (migration fixture), 50f3d53 (retained63 plus11 LIMIT cases) and
+c8e9727 (malformed JSON accounting). Strict E2E TypeScript and discovery74 passed.
+Root's asynchronous Docker client is present, so the concurrency case really
+executes overlapping requests rather than synchronous calls in Promise.all.
+All11 new HTTP LIMIT cases have passed in the running suite; retained cases,
+overall success/cleanup and final documentation/archive are still pending.
+
+Frozen offline install and required high-threshold production audit both exited0
+(`/private/tmp/capital-ledger-frozen.log`, `/private/tmp/capital-ledger-audit.log`).
+The two known moderate Router findings remain visible; no advisory is suppressed.
 Independent implementation, acceptance and migration tasks run in separate Git
 worktrees. Simple documentation refinements use gpt-5.6-luna; security-critical
 implementation and independent QA retain stronger agents.
