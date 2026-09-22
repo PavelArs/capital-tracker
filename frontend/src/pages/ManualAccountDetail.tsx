@@ -21,6 +21,12 @@ type PositionDraft = {
 type InstrumentPage = { items: Instrument[]; nextCursor: string | null };
 type RetryKey = { signature: string; requestId: string };
 
+function mergeInstruments(current: Instrument[], incoming: Instrument[]): Instrument[] {
+  const byId = new Map(current.map((instrument) => [instrument.id, instrument]));
+  for (const instrument of incoming) byId.set(instrument.id, instrument);
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
 function asDraft(position: Position): PositionDraft {
   return {
     key: newRequestId(),
@@ -94,10 +100,21 @@ export default function ManualAccountDetail() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [conflictOpening, setConflictOpening] = useState<AccountDetailData | null>(null);
+  const [conflictPending, setConflictPending] = useState(false);
   const [conflictReviewed, setConflictReviewed] = useState(false);
   const initialAccountRef = useRef<string | null>(null);
+  const historyRequestRef = useRef(0);
   const openingRetryRef = useRef<RetryKey | null>(null);
   const instrumentRetryRef = useRef<RetryKey | null>(null);
+  const routeRef = useRef({ id, generation: 0 });
+  if (routeRef.current.id !== id) {
+    routeRef.current = { id, generation: routeRef.current.generation + 1 };
+  }
+  const routeGeneration = routeRef.current.generation;
+  const isCurrentRoute = useCallback(
+    () => routeRef.current.id === id && routeRef.current.generation === routeGeneration,
+    [id, routeGeneration],
+  );
 
   const instrumentById = useMemo(() => {
     const map = new Map(instruments.map((instrument) => [instrument.id, instrument]));
@@ -119,9 +136,10 @@ export default function ManualAccountDetail() {
   const loadAccount = useCallback(
     async (asReview = false) => {
       setLoading(true);
-      setError(null);
+      if (!asReview) setError(null);
       try {
         const value = await accountingApi.getAccount(id);
+        if (!isCurrentRoute()) return;
         if (asReview) {
           setConflictOpening(value);
           setConflictReviewed(false);
@@ -144,51 +162,85 @@ export default function ManualAccountDetail() {
           }
         }
       } catch (loadError) {
+        if (!isCurrentRoute()) return;
         setError(accountingError(loadError, 'загрузить счет'));
       } finally {
-        setLoading(false);
+        if (isCurrentRoute()) setLoading(false);
       }
     },
-    [id],
+    [id, isCurrentRoute],
   );
 
-  const loadInstruments = useCallback(async (cursor?: string, append = false) => {
-    setInstrumentsLoading(true);
-    setInstrumentError(null);
-    try {
-      const page: InstrumentPage = await accountingApi.listInstruments(cursor);
-      setInstruments((current) => (append ? [...current, ...page.items] : page.items));
-      setInstrumentCursor(page.nextCursor);
-    } catch (loadError) {
-      setInstrumentError(accountingError(loadError, 'загрузить инструменты'));
-    } finally {
-      setInstrumentsLoading(false);
-    }
-  }, []);
+  const loadInstruments = useCallback(
+    async (cursor?: string, append = false) => {
+      setInstrumentsLoading(true);
+      setInstrumentError(null);
+      try {
+        const page: InstrumentPage = await accountingApi.listInstruments(cursor);
+        if (!isCurrentRoute()) return;
+        setInstruments((current) => mergeInstruments(append ? current : [], page.items));
+        setInstrumentCursor(page.nextCursor);
+      } catch (loadError) {
+        if (!isCurrentRoute()) return;
+        setInstrumentError(accountingError(loadError, 'загрузить инструменты'));
+      } finally {
+        if (isCurrentRoute()) setInstrumentsLoading(false);
+      }
+    },
+    [isCurrentRoute],
+  );
 
   const loadHistory = useCallback(
     async (beforeRevision?: number, append = false) => {
+      const requestVersion = ++historyRequestRef.current;
       setHistoryLoading(true);
       setHistoryError(null);
       try {
         const page = await accountingApi.listOpenings(id, beforeRevision);
-        setHistory((current) => (append ? [...current, ...page.items] : page.items));
+        if (!isCurrentRoute() || requestVersion !== historyRequestRef.current) return;
+        setHistory((current) => {
+          const byRevision = new Map(
+            (append ? current : []).map((opening) => [opening.revision, opening]),
+          );
+          for (const opening of page.items) byRevision.set(opening.revision, opening);
+          return [...byRevision.values()].sort((left, right) => right.revision - left.revision);
+        });
         setHistoryCursor(typeof page.nextCursor === 'number' ? page.nextCursor : null);
       } catch (loadError) {
+        if (!isCurrentRoute() || requestVersion !== historyRequestRef.current) return;
         setHistoryError(accountingError(loadError, 'загрузить историю'));
       } finally {
-        setHistoryLoading(false);
+        if (isCurrentRoute() && requestVersion === historyRequestRef.current) {
+          setHistoryLoading(false);
+        }
       }
     },
-    [id],
+    [id, isCurrentRoute],
   );
 
   useEffect(() => {
+    historyRequestRef.current++;
     initialAccountRef.current = null;
     setAccount(null);
     setHistory([]);
+    setHistoryCursor(null);
     setInstruments([]);
+    setInstrumentCursor(null);
     setDraft([]);
+    setLoading(true);
+    setInstrumentsLoading(true);
+    setHistoryLoading(true);
+    setSaving(false);
+    setCreatingInstrument(false);
+    setError(null);
+    setInstrumentError(null);
+    setHistoryError(null);
+    setNotice(null);
+    setConflictOpening(null);
+    setConflictPending(false);
+    setConflictReviewed(false);
+    openingRetryRef.current = null;
+    instrumentRetryRef.current = null;
     void loadAccount();
     void loadInstruments();
     void loadHistory();
@@ -224,25 +276,23 @@ export default function ManualAccountDetail() {
         ...input,
         requestId: instrumentRetryRef.current.requestId,
       });
+      if (!isCurrentRoute()) return;
       instrumentRetryRef.current = null;
-      setInstruments((current) =>
-        current.some((item) => item.id === instrument.id)
-          ? current
-          : [...current, instrument].sort((left, right) => left.id.localeCompare(right.id)),
-      );
+      setInstruments((current) => mergeInstruments(current, [instrument]));
       setInstrumentName('');
       setInstrumentSymbol('');
       setNotice('Инструмент создан и добавлен в список.');
     } catch (createError) {
+      if (!isCurrentRoute()) return;
       setInstrumentError(accountingError(createError, 'создать инструмент'));
     } finally {
-      setCreatingInstrument(false);
+      if (isCurrentRoute()) setCreatingInstrument(false);
     }
   }
 
   async function saveOpening(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!account) return;
+    if (!account || account.id !== id) return;
     if (draft.length < 1 || draft.length > 100) {
       setError('Добавьте от 1 до 100 позиций.');
       return;
@@ -264,7 +314,7 @@ export default function ManualAccountDetail() {
       totalCostUsd: position.costStatus === 'known' ? position.totalCostUsd : null,
     }));
     const expectedRevision =
-      conflictReviewed && conflictOpening
+      conflictPending && conflictReviewed && conflictOpening
         ? conflictOpening.currentRevision
         : account.currentRevision;
     const inputWithoutId = { expectedRevision, asOf: asOf.trim(), positions };
@@ -276,44 +326,54 @@ export default function ManualAccountDetail() {
     setError(null);
     setNotice(null);
     try {
-      const opening = await accountingApi.saveOpening(id, {
+      const receipt = await accountingApi.saveOpening(id, {
         ...inputWithoutId,
         requestId: openingRetryRef.current.requestId,
       });
+      if (!isCurrentRoute()) return;
+      historyRequestRef.current++;
       openingRetryRef.current = null;
-      setConflictOpening(null);
-      setConflictReviewed(false);
-      setAccount((current) =>
-        current
-          ? {
-              ...current,
-              currentRevision: opening.revision,
-              currentOpening: opening,
-            }
-          : current,
+      setHistory((current) =>
+        [receipt, ...current.filter((item) => item.revision !== receipt.revision)].sort(
+          (left, right) => right.revision - left.revision,
+        ),
       );
-      setDraft(opening.positions.map(asDraft));
-      setAsOf(opening.asOf);
-      setHistory((current) => [
-        opening,
-        ...current.filter((item) => item.revision !== opening.revision),
-      ]);
-      setNotice('Начальные позиции сохранены. Предыдущие версии остаются в истории.');
+      let latestAccount: AccountDetailData;
+      try {
+        latestAccount = await accountingApi.getAccount(id);
+      } catch {
+        if (!isCurrentRoute()) return;
+        setConflictPending(true);
+        setConflictOpening(null);
+        setConflictReviewed(false);
+        setError(
+          `Сохранена ревизия ${receipt.revision}, но не удалось загрузить текущую версию. Нажмите «Загрузить актуальную версию».`,
+        );
+        return;
+      }
+      if (!isCurrentRoute()) return;
+      setConflictOpening(null);
+      setConflictPending(false);
+      setConflictReviewed(false);
+      setAccount(latestAccount);
+      setDraft(latestAccount.currentOpening?.positions.map(asDraft) ?? []);
+      setAsOf(latestAccount.currentOpening?.asOf ?? defaultAsOf());
+      setNotice(
+        receipt.revision === latestAccount.currentRevision
+          ? 'Начальные позиции сохранены. Предыдущие версии остаются в истории.'
+          : `Запрос сохранил ревизию ${receipt.revision}; текущая версия уже ${latestAccount.currentRevision}. Показана актуальная версия.`,
+      );
     } catch (saveError) {
+      if (!isCurrentRoute()) return;
       setError(accountingError(saveError, 'сохранить начальные позиции'));
       if (isConflict(saveError)) {
+        setConflictPending(true);
+        setConflictOpening(null);
         setConflictReviewed(false);
-        try {
-          const latest = await accountingApi.getAccount(id);
-          setConflictOpening(latest);
-        } catch (reloadError) {
-          setError(
-            `${accountingError(saveError, 'сохранить начальные позиции')} ${accountingError(reloadError, 'загрузить актуальную версию')}`,
-          );
-        }
+        await loadAccount(true);
       }
     } finally {
-      setSaving(false);
+      if (isCurrentRoute()) setSaving(false);
     }
   }
 
@@ -321,17 +381,17 @@ export default function ManualAccountDetail() {
   const conflictPositions = conflictOpening?.currentOpening?.positions ?? [];
 
   return (
-    <main className="manual-page manual-detail-page">
+    <div className="manual-page manual-detail-page">
       <p className="manual-back-link">
         <Link to="/manual-accounts">← Ручные счета</Link>
       </p>
-      {loading && !account && <p role="status">Загрузка счета…</p>}
-      {error && !account && (
+      {loading && account?.id !== id && <p role="status">Загрузка счета…</p>}
+      {error && account?.id !== id && (
         <p className="manual-feedback manual-feedback--error" role="alert">
           {error}
         </p>
       )}
-      {account && (
+      {account?.id === id && (
         <>
           <header className="manual-page__header">
             <h1>{account.name}</h1>
@@ -354,23 +414,45 @@ export default function ManualAccountDetail() {
             </p>
           )}
 
-          {conflictOpening && (
+          {conflictPending && (
             <section
               className="manual-card manual-conflict"
               aria-labelledby="manual-conflict-heading"
             >
               <h2 id="manual-conflict-heading">Счет изменился</h2>
-              <p>Черновик сохранен на странице. Проверьте последнюю сохраненную версию ниже.</p>
-              <p>Актуальная ревизия: {conflictOpening.currentRevision}</p>
-              <PositionsTable caption="Текущие позиции на сервере" positions={conflictPositions} />
-              <label className="manual-review-check">
-                <input
-                  type="checkbox"
-                  checked={conflictReviewed}
-                  onChange={(event) => setConflictReviewed(event.target.checked)}
-                />
-                Я проверил актуальную версию и хочу заменить ее сохраненным черновиком.
-              </label>
+              <p>
+                Черновик сохранен на странице. Загрузите и проверьте последнюю версию перед
+                сохранением.
+              </p>
+              <button
+                className="manual-button manual-button--secondary"
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setError(null);
+                  void loadAccount(true);
+                }}
+              >
+                {loading ? 'Загрузка…' : 'Загрузить актуальную версию'}
+              </button>
+              {conflictOpening?.id === id && (
+                <>
+                  <p>Актуальная ревизия: {conflictOpening.currentRevision}</p>
+                  <PositionsTable
+                    caption="Текущие позиции на сервере"
+                    positions={conflictPositions}
+                  />
+                  <label className="manual-review-check">
+                    <input
+                      type="checkbox"
+                      checked={conflictReviewed}
+                      disabled={saving}
+                      onChange={(event) => setConflictReviewed(event.target.checked)}
+                    />
+                    Я проверил актуальную версию и хочу заменить ее сохраненным черновиком.
+                  </label>
+                </>
+              )}
             </section>
           )}
 
@@ -388,6 +470,7 @@ export default function ManualAccountDetail() {
                   type="text"
                   inputMode="text"
                   autoComplete="off"
+                  disabled={saving}
                   placeholder="2026-09-22T12:30:00.000Z"
                   value={asOf}
                   onChange={(event) => {
@@ -411,6 +494,7 @@ export default function ManualAccountDetail() {
                           <label htmlFor={`position-instrument-${index}`}>Инструмент</label>
                           <select
                             id={`position-instrument-${index}`}
+                            disabled={saving}
                             value={position.instrumentId}
                             onChange={(event) =>
                               updateDraft(index, { instrumentId: event.target.value })
@@ -438,6 +522,7 @@ export default function ManualAccountDetail() {
                             type="text"
                             inputMode="decimal"
                             autoComplete="off"
+                            disabled={saving}
                             value={position.quantity}
                             onChange={(event) =>
                               updateDraft(index, { quantity: event.target.value })
@@ -448,6 +533,7 @@ export default function ManualAccountDetail() {
                           <label htmlFor={`position-cost-status-${index}`}>Себестоимость</label>
                           <select
                             id={`position-cost-status-${index}`}
+                            disabled={saving}
                             value={position.costStatus}
                             onChange={(event) =>
                               updateDraft(index, {
@@ -469,6 +555,7 @@ export default function ManualAccountDetail() {
                               type="text"
                               inputMode="decimal"
                               autoComplete="off"
+                              disabled={saving}
                               value={position.totalCostUsd}
                               onChange={(event) =>
                                 updateDraft(index, { totalCostUsd: event.target.value })
@@ -480,6 +567,7 @@ export default function ManualAccountDetail() {
                       <button
                         className="manual-button manual-button--danger"
                         type="button"
+                        disabled={saving}
                         onClick={() =>
                           setDraft((current) =>
                             current.filter((_, itemIndex) => itemIndex !== index),
@@ -496,7 +584,7 @@ export default function ManualAccountDetail() {
                 <button
                   className="manual-button manual-button--secondary"
                   type="button"
-                  disabled={draft.length >= 100}
+                  disabled={saving || draft.length >= 100}
                   onClick={() =>
                     setDraft((current) => [
                       ...current,
@@ -515,7 +603,7 @@ export default function ManualAccountDetail() {
                 <button
                   className="manual-button"
                   type="submit"
-                  disabled={saving || (Boolean(conflictOpening) && !conflictReviewed)}
+                  disabled={saving || (conflictPending && !conflictReviewed)}
                 >
                   {saving ? 'Сохранение…' : 'Сохранить начальные позиции'}
                 </button>
@@ -537,6 +625,7 @@ export default function ManualAccountDetail() {
                   id="manual-instrument-name"
                   maxLength={120}
                   required
+                  disabled={creatingInstrument}
                   autoComplete="off"
                   value={instrumentName}
                   onChange={(event) => setInstrumentName(event.target.value)}
@@ -547,6 +636,7 @@ export default function ManualAccountDetail() {
                 <input
                   id="manual-instrument-symbol"
                   maxLength={32}
+                  disabled={creatingInstrument}
                   autoComplete="off"
                   value={instrumentSymbol}
                   onChange={(event) => setInstrumentSymbol(event.target.value)}
@@ -649,7 +739,7 @@ export default function ManualAccountDetail() {
           </section>
         </>
       )}
-    </main>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@ import './ManualAccounts.css';
 
 export default function ManualAccounts() {
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
+  const [createdAccount, setCreatedAccount] = useState<AccountSummary | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(true);
@@ -49,8 +50,9 @@ export default function ManualAccounts() {
     setError(null);
     setNotice(null);
     try {
-      await accountingApi.createAccount({ requestId, name: cleanName });
+      const created = await accountingApi.createAccount({ requestId, name: cleanName });
       retryRef.current = null;
+      setCreatedAccount(created);
       setName('');
       setNotice('Счет создан.');
       await loadAccounts();
@@ -62,7 +64,7 @@ export default function ManualAccounts() {
   }
 
   return (
-    <main className="manual-page">
+    <div className="manual-page">
       <header className="manual-page__header">
         <div>
           <h1>Ручные счета</h1>
@@ -81,6 +83,7 @@ export default function ManualAccounts() {
               maxLength={120}
               required
               autoComplete="off"
+              disabled={submitting}
               value={name}
               onChange={(event) => {
                 setName(event.target.value);
@@ -98,9 +101,15 @@ export default function ManualAccounts() {
           </p>
         )}
         {notice && (
-          <p className="manual-feedback manual-feedback--success" role="status">
-            {notice}
-          </p>
+          <div className="manual-feedback manual-feedback--success" role="status">
+            <p>{notice}</p>
+            {createdAccount && (
+              <p>
+                Открыть счет:{' '}
+                <Link to={`/manual-accounts/${createdAccount.id}`}>{createdAccount.name}</Link>
+              </p>
+            )}
+          </div>
         )}
       </section>
 
@@ -147,6 +156,6 @@ export default function ManualAccounts() {
           </button>
         )}
       </section>
-    </main>
+    </div>
   );
 }
