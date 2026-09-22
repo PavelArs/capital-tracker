@@ -189,7 +189,7 @@ Swagger/documentation endpoint is mounted, including in development.
 
 | Group | Endpoints |
 |-------|-----------|
-| Auth | `GET /auth/csrf`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` |
+| Auth | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout` |
 | Assets | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id` |
 | Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id` |
 | Crypto | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
@@ -198,12 +198,15 @@ Swagger/documentation endpoint is mounted, including in development.
 | Health | Public `GET /health` (minimal liveness); private `GET /health/details` |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
-All writes, including login/logout, require the exact configured Origin and
+All writes, including login/MFA/logout, require the exact configured Origin and
 `X-CSRF-Token`; the browser client obtains it lazily and retains it only in memory.
-Login rotates the session, server logout revokes it, and CLI recovery revokes all
+Password verification creates only pending MFA state; a valid factor grants full
+access. Each stage rotates the session, server logout revokes it, and CLI recovery revokes all
 owner sessions. Legacy bearer credentials are not accepted. Sessions have thirty
-minutes idle/twelve hours absolute expiry; the anonymous five-minute pool is capped
-at 512 and authenticated sessions at 10. See the operator guide for cap behavior and
+minutes idle/twelve hours absolute expiry; the combined anonymous/pending five-minute
+pool is capped at 512 and authenticated sessions at 10. HTTP startup requires exact
+`TRUSTED_PROXY_IPS` configuration; auth source limits remain process-local. See
+[owner authentication](docs/owner-authentication.md) for configuration, caps and
 remaining protection requirements.
 
 ## External APIs

@@ -1,6 +1,7 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
+import { AuthClientSourceService } from '../client-source';
 import { PENDING_ROUTE, PUBLIC_ROUTE } from '../public.decorator';
 import { SessionIdentity, SessionService, readSessionCookie } from '../session.service';
 
@@ -14,9 +15,11 @@ export class SessionGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
+    private readonly clientSources: AuthClientSourceService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    this.clientSources.validate(context);
     const request = context.switchToHttp().getRequest<SessionRequest>();
     context.switchToHttp().getResponse<Response>().setHeader('Cache-Control', 'no-store');
     const publicRoute = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [

@@ -45,6 +45,7 @@ services:
       PORT: 3000
       NODE_ENV: production
       FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:?Set exact observed proxy socket IPs as JSON or explicit [] for direct mode}
       MFA_KEY_FILE: /run/secrets/ct-mfa-key
       MFA_KEY_ID: ${MFA_KEY_ID:?Set the non-secret MFA key identifier}
       REDIS_HOST: redis

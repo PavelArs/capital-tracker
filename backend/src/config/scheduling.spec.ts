@@ -16,6 +16,7 @@ describe('ISO-005-B periodic scheduling control', () => {
     process.env.FRONTEND_URL = 'https://synthetic-scheduling.invalid';
     process.env.MFA_KEY_FILE = '/synthetic/key';
     process.env.MFA_KEY_ID = 'synthetic';
+    process.env.TRUSTED_PROXY_IPS = '[]';
     if (setting === undefined) Reflect.deleteProperty(process.env, 'BACKGROUND_JOBS_ENABLED');
     else process.env.BACKGROUND_JOBS_ENABLED = setting;
     await jest.isolateModulesAsync(async () => {

@@ -1,11 +1,12 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, lstatSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, lstatSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import https from 'node:https';
 import { setTimeout as delay } from 'node:timers/promises';
 import { withPreservedFile } from './preserve-file.cjs';
+import { assertSyntheticNetworks } from './acceptance-networks.cjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const project = 'capital-tracker-e2e';
@@ -19,8 +20,16 @@ if (command === 'down') {
   compose('down', '--remove-orphans');
 } else {
   await withPreservedFile(join(root, 'frontend/nginx.conf'), async () => {
+    assertSyntheticNetworks();
     const tls = join(root, 'tests/e2e/.runtime/tls');
     mkdirSync(tls, { recursive: true });
+    // Exercise the actual deployment edge, changing only synthetic authorities/TLS.
+    const proxyTemplate = readFileSync(join(root, 'deploy/nginx.conf'), 'utf8')
+      .replaceAll('<your-domain>', 'localhost')
+      .replaceAll('/etc/letsencrypt/live/localhost', '/etc/nginx/tls')
+      .replaceAll('http://127.0.0.1:3000', 'http://backend:3000')
+      .replaceAll('http://127.0.0.1:3001', 'http://frontend:80');
+    writeFileSync(join(root, 'tests/e2e/.runtime/deploy-nginx.conf'), proxyTemplate);
     const key = join(root, 'tests/e2e/.runtime/mfa-key');
     try { writeFileSync(key, randomBytes(32), { mode: 0o600, flag: 'wx' }); }
     catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -62,18 +71,20 @@ if (command === 'down') {
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e/provider-proxy.cjs')}:/tests/provider-proxy.cjs:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/provider-proxy.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
-        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/migrations.cjs');
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/migrations.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
-        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/owner-cli.cjs');
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/owner-cli.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
-        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/sessions-db.cjs');
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/sessions-db.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
-        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/mfa-db.cjs');
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/mfa-db.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
-        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/mfa-expiry.cjs');
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/mfa-expiry.cjs');
       compose('run', '--rm', '--no-deps', 'migrate');
       compose('run', '--rm', '--no-deps', 'seed');
-      compose('up', '-d', '--wait', '--wait-timeout', '120', 'backend', 'frontend', 'proxy');
+      compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/client-source-startup.cjs');
+      compose('up', '-d', '--wait', '--wait-timeout', '120', 'backend', 'frontend', 'proxy', 'client-a', 'client-b');
       // Container health is insufficient: verify the browser's actual host ingress too.
       let ready = false;
       const deadline = Date.now() + 30_000;

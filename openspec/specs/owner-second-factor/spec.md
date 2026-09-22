@@ -30,6 +30,10 @@ owner ID, with secrets exported only to newly created private files.
 Password verification SHALL grant only a five-minute pending session after confirmed
 enrollment exists. Only successful TOTP/recovery verification SHALL issue full access.
 
+The authentication scenarios below assume valid source metadata and available
+request quota. Malformed forwarding metadata from an explicitly trusted proxy MUST
+return 400 before factor/session operations, without granting or consuming access.
+
 #### Scenario: MFA-002-A Password alone remains outside private APIs
 - **WHEN** a real browser submits correct owner credentials
 - **THEN** it sees the Russian second-factor form and receives only a pending cookie

@@ -4,12 +4,13 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { OwnerAuth } from '../entities/owner-auth.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AuthClientSourceModule } from './client-source.module';
 import { SessionGuard } from './guards/session.guard';
 import { MfaService } from './mfa.service';
 import { SessionService } from './session.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([OwnerAuth])],
+  imports: [TypeOrmModule.forFeature([OwnerAuth]), AuthClientSourceModule],
   controllers: [AuthController],
   providers: [
     AuthService,

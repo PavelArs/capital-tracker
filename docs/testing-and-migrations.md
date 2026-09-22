@@ -8,6 +8,17 @@ not establish production readiness.
 
 ## Reproducible checks
 
+The isolated proxy runs the actual `deploy/nginx.conf` template with only synthetic
+domain, certificate path and upstream authority substitutions. Its `/api/` routing
+and forwarding policy are therefore exercised by all browser tests. Two additional
+Node clients have distinct fixed IPs on an internal client-only network; only the
+proxy joins both this network and the backend network. They carry the public TLS
+certificate, no DB settings or MFA keys. Real socket addresses and Docker topology
+are asserted, and the client verifies HTTPS certificates. The helper's direct HTTP
+mode is restricted to negative trusted/untrusted-peer tests using existing images.
+Fixed synthetic subnets are checked for overlap with unrelated Docker networks
+before startup; a collision aborts without changing those networks.
+
 ```sh
 pnpm install --frozen-lockfile
 pnpm verify:baseline

@@ -189,6 +189,47 @@ origins. Use `VITE_API_URL=/api` behind the same HTTPS proxy, which forwards `/a
 to the backend. The browser supplies Origin; the server never trusts Host or forwarded
 headers to derive it. Express proxy trust remains disabled.
 
+HTTP startup also requires `TRUSTED_PROXY_IPS`, a JSON string array of zero to eight
+exact socket peer IP literals. `[]` explicitly selects direct mode; all forwarded
+addresses are ignored in that mode. Missing/blank values, hostnames, ports, CIDRs,
+IPv6 zones and canonical duplicates fail startup. Migration and owner/MFA CLIs do
+not require this HTTP-only setting.
+
+Before an upgrade, verify the TCP peer the backend actually observes for a request
+from the sole HTTPS edge. Use host/container socket inspection or the existing
+backend request log's `remoteAddress` in an isolated rehearsal. Do not copy
+`X-Forwarded-For`, a browser address, or the synthetic test network addresses into
+production configuration. A host Nginx reaching a published container port may
+appear as a bridge gateway rather than loopback; Docker inspection alone does not
+prove the address on that path. Restrict access to the backend port, record the
+observed exact peer, configure the JSON array, and verify again after network
+recreation. Complete this rehearsal before restarting an existing HTTP service;
+no public rollout is implied by these instructions.
+
+The owned `deploy/nginx.conf` template strips `/api/`, replaces `X-Forwarded-For`
+and `X-Real-IP` with its socket client address, supplies its own scheme and removes
+`Forwarded`/`X-Forwarded-Host`. It supports one edge only; do not add `real_ip`,
+PROXY protocol or another CDN/proxy without revisiting this contract. The HTTP
+redirect uses the configured domain. Preserve the complete server-level header
+set: adding a location-level `proxy_set_header` prevents inheritance of that set.
+The separate owner `frontend/nginx.conf` is not rewritten by this change.
+
+Only CSRF retrieval, password login and MFA quotas use this attribution. An exact
+trusted peer must supply one raw `X-Forwarded-For` field containing one strict IP
+literal; otherwise those handlers return generic 400/no-store before any quota,
+session or factor work, even after a bucket is exhausted. Untrusted peers use
+their socket address and ignore forwarding headers. IPv4-mapped IPv6 becomes IPv4;
+IPv4 quotas group by /32 and ordinary IPv6 by /64, while peer trust always compares
+the entire canonical address. Source trust grants no authentication or CSRF/Origin
+exception. Existing 401/403 examples assume valid source metadata and available quota.
+
+The 30/5/5 requests per minute for CSRF/password/MFA still live in one process and
+reset on restart; replicas multiply these budgets. This change does not claim
+persistent account request limits, complete DoS protection or revised session-touch
+ordering for valid-source requests rejected by the limiter. A subsequent change
+will persist admission state in PostgreSQL. The separate owner MFA failure budget
+already remains in PostgreSQL.
+
 Authentication uses the host-only `__Host-ct-session` cookie with Secure, HttpOnly,
 SameSite=Strict and Path=/ attributes. Raw tokens are independent random 256-bit
 values; only SHA-256 hashes are stored in PostgreSQL. HTTP-only local login is
@@ -243,8 +284,8 @@ reset the persisted owner block. Blocked attempts do not extend its deadline. Ex
 successful factor completion, trusted confirmation or password recovery clears the
 relevant failure state. The existing process-local limit of five password requests
 and five MFA requests per minute also applies; restarting a process can reset that
-IP limit, not the persisted owner limit. Full distributed password/IP throttling and
-trusted proxy attribution remain separate release work.
+IP limit, not the persisted owner limit. Full distributed password/account request
+throttling remains separate release work.
 
 ## Threat model and remaining controls
 

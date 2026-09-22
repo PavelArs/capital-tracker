@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { DataSource } from 'typeorm';
+import { AuthClientSourceService } from '../client-source';
 import { PUBLIC_ROUTE } from '../public.decorator';
 import { SESSION_COOKIE, SessionService, readSessionCookie } from '../session.service';
 import { SessionGuard } from './session.guard';
@@ -13,7 +14,11 @@ describe('CHAR-AUTH-001 / SES-001-D real default-deny session boundary', () => {
     source,
     new ConfigService({ FRONTEND_URL: 'https://example.invalid' }),
   );
-  const guard = new SessionGuard(new Reflector(), sessions);
+  const guard = new SessionGuard(
+    new Reflector(),
+    sessions,
+    new AuthClientSourceService(new ConfigService({ TRUSTED_PROXY_IPS: '[]' }), new Reflector()),
+  );
   function context(headers: Record<string, string | undefined>, publicRoute = false) {
     const handler = () => {};
     if (publicRoute) Reflect.defineMetadata(PUBLIC_ROUTE, true, handler);

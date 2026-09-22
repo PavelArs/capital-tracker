@@ -37,6 +37,10 @@ Every state-changing matched route, including login/MFA/logout, SHALL require a 
 session-bound synchronizer token and the exact configured HTTPS Origin. Public
 metadata MUST NOT exempt mutations. Failed writes MUST NOT mutate application data.
 
+For CSRF retrieval, login and MFA, the scenarios below assume valid source metadata and available
+request quota. Malformed forwarding metadata from an explicitly trusted proxy MUST
+return 400 before any session operation; it MUST NOT permit invalid Origin or CSRF.
+
 #### Scenario: SES-002-A Invalid CSRF or Origin denies mutation
 - **GIVEN** an authenticated owner session
 - **WHEN** a write omits CSRF or sends wrong/cross-session CSRF or absent/null/foreign Origin

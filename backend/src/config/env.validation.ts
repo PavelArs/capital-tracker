@@ -1,6 +1,8 @@
 import { Transform, plainToInstance } from 'class-transformer';
 import { IsEnum, IsNumber, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
 
+import { parseTrustedProxyIps } from '../auth/client-source';
+
 export enum Environment {
   Development = 'development',
   Production = 'production',
@@ -41,6 +43,9 @@ export class EnvironmentVariables {
   @IsOptional()
   DB_NAME = 'capital_tracker';
 
+  @IsString()
+  TRUSTED_PROXY_IPS!: string;
+
   // Frontend URL for CORS
   @IsString()
   FRONTEND_URL!: string;
@@ -68,6 +73,7 @@ export class EnvironmentVariables {
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
+  parseTrustedProxyIps(config.TRUSTED_PROXY_IPS);
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: false,
   });

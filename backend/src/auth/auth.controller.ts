@@ -13,6 +13,7 @@ import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { AuthService } from './auth.service';
+import { AuthClientSource } from './client-source';
 import { FactorDto } from './dto/factor.dto';
 import { LoginDto } from './dto/login.dto';
 import { SessionRequest } from './guards/session.guard';
@@ -35,6 +36,7 @@ export class AuthController {
   ) {}
 
   @Public()
+  @AuthClientSource()
   @Get('csrf')
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   async csrf(@Request() req: SessionRequest, @Res({ passthrough: true }) res: Response) {
@@ -46,6 +48,7 @@ export class AuthController {
   }
 
   @Public()
+  @AuthClientSource()
   @Post('login')
   @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -64,6 +67,7 @@ export class AuthController {
   }
 
   @AllowPending()
+  @AuthClientSource()
   @Post('mfa')
   @HttpCode(200)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
