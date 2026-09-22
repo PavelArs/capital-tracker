@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { type APIRequestContext, type Page, expect } from '@playwright/test';
-import { loginWithMfa, test } from './mfa-fixtures';
+import { type Page, expect } from '@playwright/test';
+import { loginWithMfa, restartBackend, test } from './mfa-fixtures';
 
 // Characterize retained portfolio behavior through the real opaque-cookie authentication path.
 // All credentials, addresses, database rows and browser artifacts here are synthetic test fixtures.
@@ -105,22 +105,6 @@ async function openWallets(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
 }
 
-async function waitForBackend(request: APIRequestContext): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        try {
-          const response = await request.get('/api/health', { timeout: 2_000 });
-          return response.status();
-        } catch {
-          return 0;
-        }
-      },
-      { timeout: 60_000, message: 'Restarted release backend becomes healthy through HTTPS' },
-    )
-    .toBe(200);
-}
-
 test('ISO-003-A: HTTPS login is public and direct private API requests are denied', async ({
   page,
   request,
@@ -199,8 +183,7 @@ test('ISO-004-A/ISO-004-B: BTC create, restart, refresh and delete persist throu
     await page.reload();
     await expect(page.getByText('1.25000000 BTC', { exact: true })).toBeVisible();
     expect(walletRows(walletId)).toEqual(created);
-    compose('restart', 'backend');
-    await waitForBackend(request);
+    await restartBackend(request);
     await page.reload();
     await expect(page.getByText(bitcoinAddress, { exact: true })).toBeVisible();
     await expect(page.getByText('1.25000000 BTC', { exact: true })).toBeVisible();

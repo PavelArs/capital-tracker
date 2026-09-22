@@ -2,6 +2,8 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { type APIRequestContext, type Page, test as base, expect } from '@playwright/test';
+import { ledgerState, observeBrowserCsrf, resetAdmissionsBetweenCases } from './admission-fixtures';
+import { restartBackends, selectBackend } from './replicas';
 
 export const owner = {
   id: '11111111-1111-4111-8111-111111111111',
@@ -150,6 +152,7 @@ export function totpAt(enrollment: Pick<Enrollment, 'uri'>, counter = databaseCo
 }
 
 export function enrollOwner(): Enrollment {
+  const admissionsBefore = ledgerState();
   for (let candidate = 0; candidate < 3; candidate++) {
     const preparedPath = `/tmp/capital-mfa-prepare-${randomUUID()}.json`;
     const prepared = runMfaCli([
@@ -200,6 +203,9 @@ export function enrollOwner(): Enrollment {
       for (const code of recoveryCodes)
         expect(/^[a-f0-9]{8}(?:-[a-f0-9]{8}){3}$/i.test(code)).toBe(true);
       expect(query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1')).toBe(String(current - 1));
+      expect(ledgerState(), 'CLI preparation/confirmation retain request admissions').toBe(
+        admissionsBefore,
+      );
       return {
         ...enrollment,
         confirmationCounter: current - 1,
@@ -254,6 +260,7 @@ export async function getCsrf(request: APIRequestContext): Promise<string> {
 }
 
 export async function passwordStep(page: Page, password = owner.password) {
+  observeBrowserCsrf(page);
   await page.goto('/login');
   await page.getByLabel('Email', { exact: true }).fill(owner.email);
   await page.getByLabel('Пароль', { exact: true }).fill(password);
@@ -311,7 +318,7 @@ export async function loginWithMfa(page: Page, password = owner.password) {
 }
 
 export async function restartBackend(request: APIRequestContext): Promise<void> {
-  compose(['restart', 'backend']);
+  await restartBackends();
   await expect
     .poll(
       async () => {
@@ -329,8 +336,15 @@ export async function restartBackend(request: APIRequestContext): Promise<void> 
 export const test = base.extend<{ mfa: Enrollment }>({
   mfa: [
     async ({ request }, use) => {
+      await selectBackend('both');
       await restartBackend(request);
+      const admissionsBeforeEnrollment = ledgerState();
       activeEnrollment = enrollOwner();
+      expect(ledgerState(), 'Real CLI enrollment never resets request limits').toBe(
+        admissionsBeforeEnrollment,
+      );
+      // This is the only ledger clear: independent synthetic case isolation.
+      resetAdmissionsBetweenCases();
       try {
         await use(activeEnrollment);
       } finally {

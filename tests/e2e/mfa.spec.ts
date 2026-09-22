@@ -1,6 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { type APIRequestContext, type Browser, type Page, expect } from '@playwright/test';
 import {
+  counts,
+  expectAdmissionDelta,
+  expectHostAdmissions,
+  expectLedger,
+  hostSubject,
+  ledger,
+  ledgerState,
+  ownerCount,
+  sourceA,
+  sourceB,
+} from './admission-fixtures';
+import {
   type Enrollment,
   type Factor,
   completeFactor,
@@ -22,6 +34,7 @@ import {
   test,
   totpAt,
 } from './mfa-fixtures';
+import { sendFrom } from './source-client';
 
 function authenticatedCount(): number {
   return Number(query("SELECT count(*) FROM auth_sessions WHERE state = 'authenticated'"));
@@ -108,7 +121,12 @@ async function assertPending(page: Page, token: string) {
 test('MFA-002-A: real password submission grants only five-minute pending state and no private access', async ({
   page,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const factorsBefore = factorState();
   const callsBefore = providerRequests();
   const pending = await passwordStep(page);
@@ -128,7 +146,10 @@ test('MFA-002-A: real password submission grants only five-minute pending state 
   expect(authenticatedCount()).toBe(0);
   expect(providerRequests()).toBe(callsBefore);
   expect(factorState()).toBe(factorsBefore);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(1, 0);
+  expect(
+    fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+  ).toBe(before);
 });
 
 test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable full session', async ({
@@ -136,7 +157,12 @@ test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable f
   request,
   mfa,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const pending = await passwordStep(page);
   const factor = nextFactor(mfa);
   const full = await completeFactor(page, factor);
@@ -163,7 +189,10 @@ test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable f
   await page.reload();
   await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
   expect((await page.context().request.get('/api/auth/me')).status()).toBe(200);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(1, 1);
+  expect(
+    fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+  ).toBe(before);
 });
 
 test('MFA-002-C: a provisioned but explicitly unenrolled owner cannot authenticate with a password', async ({
@@ -174,7 +203,12 @@ test('MFA-002-C: a provisioned but explicitly unenrolled owner cannot authentica
     `DELETE FROM owner_mfa_recovery WHERE "userId" = '${owner.id}'; DELETE FROM owner_mfa WHERE id = 1 AND "userId" = '${owner.id}'`,
   );
   try {
-    const before = fingerprint();
+    const before = fingerprint([
+      'auth_sessions',
+      'owner_mfa',
+      'owner_mfa_recovery',
+      'auth_request_limits',
+    ]);
     const csrfToken = await getCsrf(request);
     const response = await request.post('/api/auth/login', {
       headers: { Origin: origin, 'X-CSRF-Token': csrfToken },
@@ -185,7 +219,10 @@ test('MFA-002-C: a provisioned but explicitly unenrolled owner cannot authentica
     expect((await request.get('/api/auth/me')).status()).toBe(401);
     expect(authenticatedCount()).toBe(0);
     expect(query("SELECT count(*) FROM auth_sessions WHERE state = 'pending_mfa'")).toBe('0');
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(1, 0, 1);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   } finally {
     enrollOwner();
   }
@@ -197,7 +234,12 @@ for (const mismatch of ['expired', 'revision', 'owner'] as const) {
     mfa,
   }) => {
     const pending = await passwordStep(page);
-    const before = fingerprint();
+    const before = fingerprint([
+      'auth_sessions',
+      'owner_mfa',
+      'owner_mfa_recovery',
+      'auth_request_limits',
+    ]);
     const factorsBefore = factorState();
     const mutation =
       mismatch === 'expired'
@@ -214,7 +256,10 @@ for (const mismatch of ['expired', 'revision', 'owner'] as const) {
     );
     expect(authenticatedCount()).toBe(0);
     expect(factorState()).toBe(factorsBefore);
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(1, 1);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   });
 }
 
@@ -222,7 +267,12 @@ test('MFA-002-C: anonymous factor submission fails before CSRF and leaves the fa
   request,
   mfa,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const factorsBefore = factorState();
   const csrfToken = await getCsrf(request);
   for (const csrf of ['', csrfToken]) {
@@ -230,7 +280,10 @@ test('MFA-002-C: anonymous factor submission fails before CSRF and leaves the fa
   }
   expect(authenticatedCount()).toBe(0);
   expect(factorState()).toBe(factorsBefore);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(0, 2, 1, []);
+  expect(
+    fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+  ).toBe(before);
 });
 
 test('MFA-002-C: invalid Origin or CSRF cannot mutate pending authentication state', async ({
@@ -238,7 +291,10 @@ test('MFA-002-C: invalid Origin or CSRF cannot mutate pending authentication sta
   mfa,
 }) => {
   const pending = await passwordStep(page);
-  const before = fingerprint([]);
+  const before = fingerprint(['auth_request_limits']);
+  const admissions = ledger();
+  const subject = await hostSubject();
+  let spent = 0;
   const data = { kind: 'totp', code: totpAt(mfa) };
   for (const headers of [
     { Origin: origin },
@@ -246,10 +302,11 @@ test('MFA-002-C: invalid Origin or CSRF cannot mutate pending authentication sta
     { Origin: 'https://attacker.example.invalid', 'X-CSRF-Token': pending.csrfToken },
     { Origin: 'null', 'X-CSRF-Token': pending.csrfToken },
     { 'X-CSRF-Token': pending.csrfToken },
-  ]) {
+  ] as Array<Record<string, string>>) {
     const response = await page.context().request.post('/api/auth/mfa', { headers, data });
     expect(response.status()).toBe(403);
-    expect(fingerprint([])).toBe(before);
+    expectAdmissionDelta(admissions, [{ scope: 'mfa-ip', subject, hits: ++spent }]);
+    expect(fingerprint(['auth_request_limits'])).toBe(before);
   }
   expect(authenticatedCount()).toBe(0);
 });
@@ -261,7 +318,12 @@ test('MFA-002-C: logging out a pending challenge prevents factor completion and 
 }) => {
   const pending = await passwordStep(page);
   const factorsBefore = factorState();
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const logout = await page.context().request.post('/api/auth/logout', {
     headers: { Origin: origin, 'X-CSRF-Token': pending.csrfToken },
   });
@@ -280,7 +342,10 @@ test('MFA-002-C: logging out a pending challenge prevents factor completion and 
   ).toBe('0');
   expect(authenticatedCount()).toBe(0);
   expect(factorState()).toBe(factorsBefore);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(1, 1);
+  expect(
+    fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+  ).toBe(before);
 });
 
 for (const kind of ['totp', 'recovery'] as const) {
@@ -289,8 +354,16 @@ for (const kind of ['totp', 'recovery'] as const) {
     mfa,
   }) => {
     const pending = await passwordStep(page);
-    const before = fingerprint();
+    const before = fingerprint([
+      'auth_sessions',
+      'owner_mfa',
+      'owner_mfa_recovery',
+      'auth_request_limits',
+    ]);
     const factorsBefore = factorState();
+    const admissions = ledger();
+    const subject = await hostSubject();
+    let spent = 0;
     const malformed =
       kind === 'totp'
         ? [123456, ['123456'], { code: '123456' }, '１２３４５６', '12345']
@@ -304,6 +377,7 @@ for (const kind of ['totp', 'recovery'] as const) {
     for (const code of malformed) {
       await rejectFactor(page.context().request, pending.csrfToken, { kind, code }, 400);
       expect(factorState()).toBe(factorsBefore);
+      expectAdmissionDelta(admissions, [{ scope: 'mfa-ip', subject, hits: ++spent }]);
       expect(
         query(
           `SELECT "failedAttempts" FROM auth_sessions WHERE "tokenHash" = '${hashToken(pending.token)}'`,
@@ -311,7 +385,10 @@ for (const kind of ['totp', 'recovery'] as const) {
       ).toBe('0');
     }
     expect(authenticatedCount()).toBe(0);
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(1, 5);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   });
 }
 
@@ -321,7 +398,12 @@ test('MFA-003-B: confirmation and login counters cannot be reused, including aft
   request,
   mfa,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const pending = await passwordStep(page);
   await rejectFactor(
     page.context().request,
@@ -339,7 +421,10 @@ test('MFA-003-B: confirmation and login counters cannot be reused, including aft
     await rejectFactor(replay.context.request, replay.csrfToken, used, 401);
     expect(query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1')).toBe(lastCounter);
     expect(authenticatedCount()).toBe(1);
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(2, 4);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   } finally {
     await replay.context.close();
   }
@@ -351,7 +436,12 @@ for (const kind of ['totp', 'recovery'] as const) {
     request,
     mfa,
   }) => {
-    const before = fingerprint();
+    const before = fingerprint([
+      'auth_sessions',
+      'owner_mfa',
+      'owner_mfa_recovery',
+      'auth_request_limits',
+    ]);
     const left = await independentPending(browser);
     const right = await independentPending(browser);
     try {
@@ -384,7 +474,10 @@ for (const kind of ['totp', 'recovery'] as const) {
         expect(query('SELECT count(*) FROM owner_mfa_recovery WHERE "usedAt" IS NOT NULL')).toBe(
           '1',
         );
-      expect(fingerprint()).toBe(before);
+      await expectHostAdmissions(2, 3);
+      expect(
+        fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+      ).toBe(before);
     } finally {
       await left.context.close();
       await right.context.close();
@@ -397,7 +490,12 @@ test('MFA-004-A: the real recovery form accepts case-insensitive CLI codes once'
   browser,
   mfa,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   await passwordStep(page);
   const factor = recoveryFactor(mfa);
   const lastCounter = query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1');
@@ -409,7 +507,10 @@ test('MFA-004-A: the real recovery form accepts case-insensitive CLI codes once'
     await rejectFactor(replay.context.request, replay.csrfToken, factor, 401);
     expect(query('SELECT count(*) FROM owner_mfa_recovery WHERE "usedAt" IS NOT NULL')).toBe('1');
     expect(authenticatedCount()).toBe(1);
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(2, 2);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   } finally {
     await replay.context.close();
   }
@@ -420,42 +521,80 @@ test('MFA-005-A/MFA-005-B: challenge and owner lockouts persist across renewal a
   request,
   mfa,
 }) => {
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const wrong = { kind: 'totp', code: unusedWrongCode(mfa) };
-  for (let challenge = 0; challenge < 2; challenge++) {
-    const pending = await independentPending(browser);
-    try {
-      for (let attempt = 1; attempt <= 5; attempt++) {
-        const response = await factorRequest(pending.context.request, pending.csrfToken, wrong);
-        expect(response.status()).toBe(challenge === 1 && attempt === 5 ? 429 : 401);
-      }
-      expect(
-        query(
-          `SELECT count(*) FROM auth_sessions WHERE "tokenHash" = '${hashToken(pending.token)}'`,
-        ),
-      ).toBe('0');
-      expect(query('SELECT "failedAttempts" FROM owner_mfa WHERE id = 1')).toBe(
-        String((challenge + 1) * 5),
-      );
-      expect(authenticatedCount()).toBe(0);
-    } finally {
-      await pending.context.close();
+  for (const [challenge, client] of (['client-a', 'client-b'] as const).entries()) {
+    const csrf = await sendFrom(client, {
+      requests: [{ method: 'GET', path: '/api/auth/csrf' }],
+    });
+    expect(csrf.responses[0].status).toBe(200);
+    const login = await sendFrom(client, {
+      jar: csrf.jar,
+      requests: [
+        {
+          method: 'POST',
+          path: '/api/auth/login',
+          headers: { 'X-CSRF-Token': csrf.responses[0].body.csrfToken },
+          body: { email: owner.email, password: owner.password },
+        },
+      ],
+    });
+    expect(login.responses[0].status).toBe(200);
+    const token = login.jar[cookieName];
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const response = await sendFrom(client, {
+        jar: login.jar,
+        requests: [
+          {
+            method: 'POST',
+            path: '/api/auth/mfa',
+            headers: { 'X-CSRF-Token': login.responses[0].body.csrfToken },
+            body: wrong,
+          },
+        ],
+      });
+      expect(response.responses[0].status).toBe(challenge === 1 && attempt === 5 ? 429 : 401);
     }
+    expect(
+      query(`SELECT count(*) FROM auth_sessions WHERE "tokenHash" = '${hashToken(token)}'`),
+    ).toBe('0');
+    expect(query('SELECT "failedAttempts" FROM owner_mfa WHERE id = 1')).toBe(
+      String((challenge + 1) * 5),
+    );
+    expect(authenticatedCount()).toBe(0);
+    const admissions = ledgerState();
     await restartBackend(request);
+    expect(ledgerState(), 'Both process restarts preserve request windows').toBe(admissions);
   }
   const blocked = await independentPending(browser);
   try {
+    const host = await hostSubject();
+    expect([sourceA, sourceB]).not.toContain(host);
+    const admissions = ledger();
+    const blockedState = fingerprint(['auth_request_limits']);
+    let spent = 0;
     const deadline = query('SELECT "blockedUntil"::text FROM owner_mfa WHERE id = 1');
     expect(query('SELECT "blockedUntil" > clock_timestamp() FROM owner_mfa WHERE id = 1')).toBe(
       't',
     );
     const factor = { kind: 'totp', code: totpAt(mfa) };
-    for (const extra of [{}, { 'X-Forwarded-For': '203.0.113.19', 'X-Real-IP': '203.0.113.20' }]) {
+    for (const extra of [
+      {},
+      { 'X-Forwarded-For': '203.0.113.19', 'X-Real-IP': '203.0.113.20' },
+    ] as Array<Record<string, string>>) {
       const response = await blocked.context.request.post('/api/auth/mfa', {
         headers: { Origin: origin, 'X-CSRF-Token': blocked.csrfToken, ...extra },
         data: factor,
       });
       expect(response.status()).toBe(429);
+      expect((await response.json()).message).toBe('Too many attempts');
+      expect(fingerprint(['auth_request_limits'])).toBe(blockedState);
+      expectAdmissionDelta(admissions, [{ scope: 'mfa-ip', subject: host, hits: ++spent }]);
       expect(query('SELECT "blockedUntil"::text FROM owner_mfa WHERE id = 1')).toBe(deadline);
     }
     // External negative-time fixture expires an existing block; never fabricates authentication.
@@ -471,7 +610,15 @@ test('MFA-005-A/MFA-005-B: challenge and owner lockouts persist across renewal a
       query('SELECT "failedAttempts" = 0 AND "blockedUntil" IS NULL FROM owner_mfa WHERE id = 1'),
     ).toBe('t');
     expect(authenticatedCount()).toBe(1);
-    expect(fingerprint()).toBe(before);
+    expectLedger([
+      ...counts(sourceA, 1, 1, 5),
+      ...counts(sourceB, 1, 1, 5),
+      ...counts(host, 1, 1, 3),
+      ownerCount(3),
+    ]);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   } finally {
     await blocked.context.close();
   }
@@ -483,7 +630,13 @@ test('MFA-001-C: CLI-confirmed replacement invalidates old factors, codes, and p
   request,
   mfa,
 }) => {
-  const before = fingerprint(['owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery']);
+  const before = fingerprint([
+    'owner_auth',
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   await passwordStep(page);
   const full = await completeFactor(page);
   const pending = await independentPending(browser);
@@ -508,9 +661,16 @@ test('MFA-001-C: CLI-confirmed replacement invalidates old factors, codes, and p
     await completeFactor(page, nextFactor(replacement));
     expect(authenticatedCount()).toBe(1);
     expect(query('SELECT "userId" FROM owner_auth WHERE id = 1')).toBe(owner.id);
-    expect(fingerprint(['owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery'])).toBe(
-      before,
-    );
+    await expectHostAdmissions(3, 4);
+    expect(
+      fingerprint([
+        'owner_auth',
+        'auth_sessions',
+        'owner_mfa',
+        'owner_mfa_recovery',
+        'auth_request_limits',
+      ]),
+    ).toBe(before);
   } finally {
     await pending.context.close();
   }
@@ -535,7 +695,12 @@ test('MFA-003-A: factor failures and request logs never echo submitted codes or 
   mfa,
 }) => {
   const pending = await passwordStep(page);
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const wrong = unusedWrongCode(mfa);
   const response = await factorRequest(page.context().request, pending.csrfToken, {
     kind: 'totp',
@@ -544,7 +709,7 @@ test('MFA-003-A: factor failures and request logs never echo submitted codes or 
   expect(response.status()).toBe(401);
   expect((await response.text()).includes(wrong)).toBe(false);
   const full = await completeFactor(page, recoveryFactor(mfa));
-  const logs = compose(['logs', '--no-color', '--tail', '1500', 'backend']);
+  const logs = compose(['logs', '--no-color', '--tail', '1500', 'backend', 'backend-replica']);
   const secret = new URL(mfa.uri).searchParams.get('secret');
   expect(typeof secret).toBe('string');
   for (const value of [
@@ -560,7 +725,10 @@ test('MFA-003-A: factor failures and request logs never echo submitted codes or 
   }
   // Exact JSON values avoid accidentally matching a six-digit substring of a timestamp.
   expect(new RegExp(`"code"\\s*:\\s*"${wrong}"`).test(logs)).toBe(false);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(1, 2);
+  expect(
+    fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+  ).toBe(before);
 });
 
 test('MFA-006-A: a tampered active envelope fails safely without consuming the real factor', async ({
@@ -568,7 +736,12 @@ test('MFA-006-A: a tampered active envelope fails safely without consuming the r
   mfa,
 }) => {
   const pending = await passwordStep(page);
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const lastCounter = query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1');
   const code = totpAt(mfa);
   // Negative-only database fixture. Replacement through the trusted CLI restores validity.
@@ -586,7 +759,10 @@ test('MFA-006-A: a tampered active envelope fails safely without consuming the r
     expect(query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1')).toBe(lastCounter);
     expect(query('SELECT count(*) FROM owner_mfa_recovery WHERE "usedAt" IS NOT NULL')).toBe('0');
     expect((await page.context().request.get('/api/auth/me')).status()).toBe(401);
-    expect(fingerprint()).toBe(before);
+    await expectHostAdmissions(1, 1);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
   } finally {
     enrollOwner();
   }
@@ -599,11 +775,26 @@ test('MFA-003-A/SES-002-D: toString objects in login and factor fields return 40
 }) => {
   const pending = await passwordStep(page);
   const anonymousCsrf = await getCsrf(request);
-  const before = fingerprint();
+  const before = fingerprint([
+    'auth_sessions',
+    'owner_mfa',
+    'owner_mfa_recovery',
+    'auth_request_limits',
+  ]);
   const factorsBefore = factorState();
+  const admissions = ledger();
+  const subject = await hostSubject();
+  let loginSpent = 0;
+  let factorSpent = 0;
   const assertUnchanged = async () => {
     expect(factorState()).toBe(factorsBefore);
-    expect(fingerprint()).toBe(before);
+    expectAdmissionDelta(admissions, [
+      { scope: 'login-ip', subject, hits: loginSpent },
+      { scope: 'mfa-ip', subject, hits: factorSpent },
+    ]);
+    expect(
+      fingerprint(['auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits']),
+    ).toBe(before);
     expect(authenticatedCount()).toBe(0);
     expect(
       query(`SELECT state = 'pending_mfa' AND "failedAttempts" = 0
@@ -629,6 +820,7 @@ test('MFA-003-A/SES-002-D: toString objects in login and factor fields return 40
     expect(Object.hasOwn(body, 'user')).toBe(false);
     expect(JSON.stringify(body).includes(owner.password)).toBe(false);
     expect((await request.get('/api/auth/me')).status()).toBe(401);
+    loginSpent++;
     await assertUnchanged();
   }
 
@@ -641,6 +833,7 @@ test('MFA-003-A/SES-002-D: toString objects in login and factor fields return 40
     expect(body.statusCode).toBe(400);
     expect(body.error).toBe('Bad Request');
     expect(JSON.stringify(body).includes(freshCode)).toBe(false);
+    factorSpent++;
     await assertUnchanged();
   }
 });

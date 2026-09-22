@@ -2,7 +2,17 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { type APIRequestContext, type APIResponse, type Page, expect } from '@playwright/test';
+import {
+  expectAdmissionDelta,
+  expectHostAdmissions,
+  hostSubject,
+  ledger,
+  observeBrowserCsrf,
+  ownerCount,
+  subjectHash,
+} from './admission-fixtures';
 import { loginWithMfa, recoveryFactor, test } from './mfa-fixtures';
+import { restartBackends } from './replicas';
 
 // All credentials and database rows belong to the disposable HTTPS acceptance project.
 const repositoryRoot = resolve(__dirname, '../..');
@@ -52,7 +62,7 @@ function query(sql: string): string {
 }
 
 async function restartBackend(request: APIRequestContext): Promise<void> {
-  compose('restart', 'backend');
+  await restartBackends();
   await expect
     .poll(
       async () => {
@@ -80,7 +90,7 @@ function sessionRows(token: string): SessionRow[] {
   );
 }
 
-function fingerprint(includeSessions = false): string {
+function fingerprint(includeSessions = false, excludeAdmissions = false): string {
   const tables = query(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
   )
@@ -89,6 +99,10 @@ function fingerprint(includeSessions = false): string {
       (name) =>
         includeSessions || !['auth_sessions', 'owner_mfa', 'owner_mfa_recovery'].includes(name),
     );
+  if (excludeAdmissions) {
+    expect(tables).toContain('auth_request_limits');
+    tables.splice(tables.indexOf('auth_request_limits'), 1);
+  }
   expect(tables).toContain('crypto_wallets');
   expect(tables).toContain('owner_auth');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
@@ -186,6 +200,7 @@ test('SES-001-B: real browser logout revokes a copied issued credential', async 
 test('SES-001-A: successful browser login exposes no bearer or browser-storage credential', async ({
   page,
 }) => {
+  observeBrowserCsrf(page);
   await page.goto('/login');
   await page.evaluate(() =>
     localStorage.setItem('token', 'synthetic-legacy-token-must-be-cleared'),
@@ -194,7 +209,7 @@ test('SES-001-A: successful browser login exposes no bearer or browser-storage c
   page.on('request', (request) => {
     bearerSent ||= Boolean(request.headers().authorization);
   });
-  const before = fingerprint();
+  const before = fingerprint(false, true);
   await csrf(page.context().request);
   const anonymous = await sessionCookie(page);
   const anonRows = sessionRows(anonymous);
@@ -229,7 +244,8 @@ test('SES-001-A: successful browser login exposes no bearer or browser-storage c
   expect(JSON.stringify(storage).includes(token)).toBe(false);
   expect(JSON.stringify(storage).includes(csrfToken)).toBe(false);
   expect(bearerSent).toBe(false);
-  expect(fingerprint()).toBe(before);
+  await expectHostAdmissions(1, 1, 1);
+  expect(fingerprint(false, true)).toBe(before);
 });
 
 test('SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies', async ({
@@ -321,24 +337,30 @@ test('SES-002-B: login requires pre-session, exact Origin and bound CSRF before 
   request,
 }) => {
   const data = { email: ownerEmail, password: ownerPassword };
-  const before = fingerprint(true);
+  const admissions = ledger();
+  const subject = await hostSubject();
+  const before = fingerprint(true, true);
   const noSession = await request.post('/api/auth/login', {
     headers: { Origin: origin, 'X-CSRF-Token': 'A'.repeat(43) },
     data,
   });
   expect(noSession.status()).toBe(403);
-  expect(fingerprint(true)).toBe(before);
+  expectAdmissionDelta(admissions, [{ scope: 'login-ip', subject, hits: 1 }]);
+  expect(fingerprint(true, true)).toBe(before);
   const csrfToken = await csrf(request);
-  const beforeInvalid = fingerprint(true);
+  const admissionsInvalid = ledger();
+  let spent = 0;
+  const beforeInvalid = fingerprint(true, true);
   for (const headers of [
     { Origin: origin },
     { 'X-CSRF-Token': csrfToken },
     { Origin: 'https://foreign.example.invalid', 'X-CSRF-Token': csrfToken },
-  ]) {
+  ] as Array<Record<string, string>>) {
     const response = await request.post('/api/auth/login', { headers, data });
     expect(response.status()).toBe(403);
+    expectAdmissionDelta(admissionsInvalid, [{ scope: 'login-ip', subject, hits: ++spent }]);
     noStore(response);
-    expect(fingerprint(true)).toBe(beforeInvalid);
+    expect(fingerprint(true, true)).toBe(beforeInvalid);
   }
   expect((await request.get('/api/auth/me')).status()).toBe(401);
 });
@@ -346,7 +368,9 @@ test('SES-002-B: login requires pre-session, exact Origin and bound CSRF before 
 test('SES-002-B: forged logout cannot revoke an authenticated session', async ({ page }) => {
   const { token, csrfToken } = await browserLogin(page);
   const before = fingerprint(true);
-  for (const headers of [{ Origin: origin }, { 'X-CSRF-Token': csrfToken }]) {
+  for (const headers of [{ Origin: origin }, { 'X-CSRF-Token': csrfToken }] as Array<
+    Record<string, string>
+  >) {
     const response = await page.context().request.post('/api/auth/logout', { headers });
     expect(response.status()).toBe(403);
     noStore(response);
@@ -373,15 +397,19 @@ test('SES-002-C: two tabs reuse CSRF and foreign Origin cannot read or allocate 
   expect(second.body.csrfToken === first).toBe(true);
   expect((await sessionCookie(page)) === token).toBe(true);
   await secondTab.waitForLoadState('networkidle');
-  const before = fingerprint(true);
+  const admissions = ledger();
+  const subject = await hostSubject();
+  let spent = 0;
+  const before = fingerprint(true, true);
   for (const client of [request, page.context().request]) {
     const response = await client.get('/api/auth/csrf', {
       headers: { Origin: 'https://foreign.example.invalid' },
     });
     expect(response.status()).toBe(403);
+    expectAdmissionDelta(admissions, [{ scope: 'csrf-ip', subject, hits: ++spent }]);
     noStore(response);
     expect((await response.text()).includes(first)).toBe(false);
-    expect(fingerprint(true)).toBe(before);
+    expect(fingerprint(true, true)).toBe(before);
   }
   await secondTab.close();
 });
@@ -405,7 +433,10 @@ test('SES-001-D: malformed, duplicate, anonymous, header and URL credentials can
     expect(response.status()).toBe(401);
     noStore(response);
   }
-  for (const headers of [{ Authorization: `Bearer ${token}` }, { 'X-Session-Token': token }]) {
+  for (const headers of [
+    { Authorization: `Bearer ${token}` },
+    { 'X-Session-Token': token },
+  ] as Array<Record<string, string>>) {
     expect((await request.get('/api/auth/me', { headers })).status()).toBe(401);
   }
   expect((await request.get(`/api/auth/me?token=${token}`)).status()).toBe(401);
@@ -440,7 +471,9 @@ for (const boundary of ['idle', 'absolute'] as const) {
     request,
   }) => {
     const { token } = await browserLogin(page);
-    const before = fingerprint();
+    const admissions = ledger();
+    const subject = await hostSubject();
+    const before = fingerprint(false, true);
     const times =
       boundary === 'idle'
         ? '"lastSeenAt" = clock_timestamp() - interval \'30 minutes\''
@@ -454,7 +487,8 @@ for (const boundary of ['idle', 'absolute'] as const) {
     expect((await sessionCookie(page)) === token).toBe(false);
     expect((await page.context().request.get('/api/auth/me')).status()).toBe(401);
     await deniedReplay(request, token);
-    expect(fingerprint()).toBe(before);
+    expectAdmissionDelta(admissions, [{ scope: 'csrf-ip', subject, hits: 1 }]);
+    expect(fingerprint(false, true)).toBe(before);
   });
 }
 
@@ -482,6 +516,7 @@ test('SES-001-A: re-login rotates an authenticated cookie and consumes the old C
   const full = await completed.json();
   expect(Object.keys(full).sort()).toEqual(['csrfToken', 'user']);
   const second = { token: await sessionCookie(page), csrfToken: full.csrfToken as string };
+  await expectHostAdmissions(2, 2);
   expect(first.token === second.token).toBe(false);
   expect(first.csrfToken === second.csrfToken).toBe(false);
   expect(sessionRows(first.token)).toHaveLength(0);
@@ -519,7 +554,7 @@ test('SES-004-B: auth/private responses are no-store and logs redact captured cr
   expect(urlCredential.status()).toBe(401);
   noStore(urlCredential);
   expect((await urlCredential.text()).includes(token)).toBe(false);
-  const logs = compose('logs', '--no-color', '--tail', '1000', 'backend');
+  const logs = compose('logs', '--no-color', '--tail', '1000', 'backend', 'backend-replica');
   expect(logs.includes(token)).toBe(false);
   expect(logs.includes(csrfToken)).toBe(false);
 });
@@ -528,10 +563,13 @@ test('SES-002-D: malformed login values are rejected without server errors or da
   request,
 }) => {
   const csrfToken = await csrf(request);
-  const before = fingerprint();
+  const admissions = ledger();
+  const subject = await hostSubject();
+  let spent = 0;
+  const before = fingerprint(false, true);
   const errors: unknown[] = [];
-  // Exactly five password attempts follow this test's real backend restart, keeping
-  // validation assertions inside the production login throttle rather than bypassing it.
+  // Independent-case ledger isolation leaves exactly five validation admissions;
+  // process restart never resets a request window.
   for (const credentials of [
     { email: { value: ownerEmail }, password: ownerPassword },
     { email: [ownerEmail], password: ownerPassword },
@@ -544,6 +582,7 @@ test('SES-002-D: malformed login values are rejected without server errors or da
       data: credentials,
     });
     expect(response.status()).toBe(400);
+    expectAdmissionDelta(admissions, [{ scope: 'login-ip', subject, hits: ++spent }]);
     noStore(response);
     const body = await response.json();
     expect(body.statusCode).toBe(400);
@@ -552,7 +591,7 @@ test('SES-002-D: malformed login values are rejected without server errors or da
     expect(Object.hasOwn(body, 'access_token')).toBe(false);
     expect(JSON.stringify(body).includes(ownerPassword)).toBe(false);
     errors.push({ error: body.error, message: body.message });
-    expect(fingerprint()).toBe(before);
+    expect(fingerprint(false, true)).toBe(before);
     expect((await request.get('/api/auth/me')).status()).toBe(401);
   }
   expect(errors[1]).toEqual(errors[0]);
@@ -563,10 +602,11 @@ test('SES-003-B: concurrent real password requests cannot upgrade one anonymous 
   page,
   request,
 }) => {
+  observeBrowserCsrf(page);
   await page.goto('/login');
   const csrfToken = await csrf(page.context().request);
   const anonymous = await sessionCookie(page);
-  const before = fingerprint();
+  const before = fingerprint(false, true);
   const responses = await Promise.all(
     [0, 1].map(() =>
       page.context().request.post('/api/auth/login', {
@@ -591,5 +631,13 @@ test('SES-003-B: concurrent real password requests cannot upgrade one anonymous 
   expect(query("SELECT count(*) FROM auth_sessions WHERE state = 'authenticated'")).toBe('0');
   expect(sessionRows(anonymous)).toHaveLength(0);
   await deniedReplay(request, anonymous);
-  expect(fingerprint()).toBe(before);
+  // The losing request may fail its read-only session check before account admission,
+  // or pass it before the winner rotates: both paths still charge the source exactly twice.
+  const accountHits = ledger().find(
+    (row) =>
+      row.scope === 'login-account' && row.subjectHash === subjectHash('login-account', ownerEmail),
+  )?.hits;
+  expect([1, 2]).toContain(accountHits);
+  await expectHostAdmissions(2, 0, 1, [ownerCount(accountHits!)]);
+  expect(fingerprint(false, true)).toBe(before);
 });

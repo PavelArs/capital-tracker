@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { resolve } from 'node:path';
 import { type APIRequestContext, type Page, expect } from '@playwright/test';
+import { expectHostAdmissions, ledgerState, ownerCount } from './admission-fixtures';
 import { loginWithMfa, test } from './mfa-fixtures';
 
 const repositoryRoot = resolve(__dirname, '../..');
@@ -84,6 +85,7 @@ function preservedData(): { tables: string; otherUsers: string } {
       'auth_sessions',
       'owner_mfa',
       'owner_mfa_recovery',
+      'auth_request_limits',
     ]),
     otherUsers: query(`SELECT md5(COALESCE(jsonb_agg(row_data ORDER BY row_data::text)::text, '[]'))
       FROM (SELECT to_jsonb(u) AS row_data FROM users u WHERE id <> '${ownerId}'::uuid) rows`),
@@ -91,6 +93,7 @@ function preservedData(): { tables: string; otherUsers: string } {
 }
 
 function ownerCli(args: string[], password: string): void {
+  const admissions = ledgerState();
   const output = compose(
     [
       'exec',
@@ -107,6 +110,7 @@ function ownerCli(args: string[], password: string): void {
   expect(output.includes(password)).toBe(false);
   expect(output.includes('$argon2')).toBe(false);
   expect(output.includes('credentialVersion')).toBe(false);
+  expect(ledgerState(), 'Operator CLI never clears committed request admissions').toBe(admissions);
 }
 
 function assertPublicUser(user: Record<string, unknown>): void {
@@ -149,7 +153,7 @@ async function expectPrivateDenial(
   legacyBearer = false,
 ): Promise<void> {
   for (const path of ['/api/auth/me', '/api/crypto']) {
-    const headers = legacyBearer
+    const headers: Record<string, string> = legacyBearer
       ? { Authorization: `Bearer ${token}` }
       : { Cookie: `${cookieName}=${token}` };
     const response = await request.get(path, { headers });
@@ -236,7 +240,7 @@ test.describe('OWN-003: real owner authorization and CLI recovery', () => {
   test('OWN-003-A: non-owner passwords and legacy/non-owner bearers fail generically', async ({
     request,
   }) => {
-    const before = databaseFingerprint(['auth_sessions']);
+    const before = databaseFingerprint(['auth_sessions', 'auth_request_limits']);
     const sessionsBefore = query(
       "SELECT count(*) FROM auth_sessions WHERE state = 'authenticated'",
     );
@@ -253,6 +257,11 @@ test.describe('OWN-003: real owner authorization and CLI recovery', () => {
       expect(body.user).toBeUndefined();
       messages.push({ statusCode: body.statusCode, error: body.error, message: body.message });
     }
+    await expectHostAdmissions(3, 0, 3, [
+      ownerCount(1),
+      ownerCount(1, 'foreign@example.invalid'),
+      ownerCount(1, 'missing@example.invalid'),
+    ]);
     expect(messages[1]).toEqual(messages[0]);
     expect(messages[2]).toEqual(messages[0]);
     const credentialVersion = query('SELECT "credentialVersion" FROM owner_auth WHERE id = 1');
@@ -264,7 +273,7 @@ test.describe('OWN-003: real owner authorization and CLI recovery', () => {
     ]) {
       await expectPrivateDenial(request, attackBearer(payload), true);
     }
-    expect(databaseFingerprint(['auth_sessions'])).toBe(before);
+    expect(databaseFingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
     expect(query("SELECT count(*) FROM auth_sessions WHERE state = 'authenticated'")).toBe(
       sessionsBefore,
     );
@@ -292,6 +301,7 @@ test.describe('OWN-003: real owner authorization and CLI recovery', () => {
     } finally {
       ownerCli(['bootstrap', '--email', ownerEmail, '--existing-user-id', ownerId], ownerPassword);
     }
+    await expectHostAdmissions(2, 1, 1);
     expect(query('SELECT "userId" FROM owner_auth WHERE id = 1')).toBe(ownerId);
     expect(preservedData()).toEqual(before);
   });
@@ -341,6 +351,7 @@ test.describe('OWN-003: real owner authorization and CLI recovery', () => {
       }
 
       const recoveredToken = await browserLogin(page, recoveredPassword);
+      await expectHostAdmissions(4, 2, 2);
       expect(recoveredToken === token).toBe(false);
       const profile = await page.context().request.get('/api/auth/me');
       expect(profile.status()).toBe(200);
