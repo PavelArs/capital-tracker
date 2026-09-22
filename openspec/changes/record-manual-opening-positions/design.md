@@ -132,17 +132,31 @@ with legacy wallets, profit/return widgets or fabricated fiat/chain identity.
 Use explicit response projections, never serialize persistence payloads by default.
 Instrument: {id, name, symbol: string|null, namespace: 'manual', createdAt}.
 Account summary: {id, name, currentRevision: integer, createdAt}. Account detail:
-{...summary, currentOpening: Opening|null}. Account creation/replay returns summary;
+{...summary, currentOpening: Opening|null}. Account creation/replay returns summary; replay preserves the original id, name and
+createdAt but projects the live currentRevision without mutating its pointer. It does
+not promise the original revision 0 after later openings exist.
 instrument creation/replay returns Instrument. Opening creation/replay returns Opening
 itself, including its original revision, with no claim that it is still current.
 Opening: {accountId, revision, requestId, asOf, createdAt, positions: Position[]}.
-Position: {instrumentId, quantity: string, costStatus: 'known'|'unknown',
-totalCostUsd: string|null}. Positions are sorted by instrument UUID. Instrument labels
-are obtained from the bounded instrument list and are immutable in this slice.
+Read-only Position: {instrumentId, instrumentName, instrumentSymbol: string|null,
+quantity: string, costStatus: 'known'|'unknown',
+totalCostUsd: string|null}. Positions are sorted by instrument UUID. Immutable instrument labels are projected through an owner-scoped join bounded to
+100 positions, so current/history rows remain labeled even when their instruments
+are beyond the first picker page. Request positions still accept only instrumentId,
+quantity, costStatus and totalCostUsd; clients cannot assign projected labels. The UI
+instrument picker explicitly paginates rather than fetching all owner instruments.
 Account/instrument lists return {items, nextCursor: UUID|null}; history returns
 {items: Opening[], nextCursor: integer|null}, to pass as beforeRevision next time.
 All timestamps are canonical UTC strings; do not return ownerId, canonical request
 payload or database internals. Existing safe error envelope handles 400/401/403/404/409.
+
+The new pages own Russian validation, retry and conflict feedback instead of showing
+raw English backend messages. Coordinator owns a narrow accounting-route delegation
+in the existing API client's notification handling: suppress duplicate global toasts
+for page-handled accounting errors while preserving existing 401 redirects and 403
+CSRF invalidation/recovery semantics. Do not replace the transport or introduce a
+new error framework; use status-based local text with field feedback where available.
+Never render arbitrary server text as HTML or hide an unsuccessful save.
 
 ### Independent delivery and evidence
 

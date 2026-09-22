@@ -15,6 +15,7 @@ full-owner session/CSRF protection, parameterized owner-scoped access and no pro
 #### Scenario: OPEN-001-B Identity and bounded discovery remain explicit
 - **WHEN** two instruments share a symbol and one instrument is reused across two manual accounts
 - **THEN** distinct UUIDs remain distinct and accounts retain separate positions without automatic aggregation
+- **AND** current and historical position responses include immutable owner-scoped instrument names/symbols even beyond the first instrument page
 - **AND** empty accounts remain usable and account/instrument lists use exclusive UUID pagination default 50 / max 100 with no unbounded nested history
 
 ### Requirement: OPEN-002 Exact values and explicit coverage
@@ -54,6 +55,7 @@ all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be expose
 - **AND** replaying an old request after a newer revision returns its original snapshot 200 without changing the current pointer
 - **AND** decimal-zero normalization, equivalent UTC offsets and reordered positions replay the same canonical request, while rejected batches consume no request key
 - **AND** string/boolean/object expectedRevision values return 400 before coercion
+- **AND** account-creation replay retains its original id/name/createdAt while reporting the live currentRevision without moving its pointer
 - **AND** old rows remain identical and a failed position leaves no partial snapshot or pointer update
 
 #### Scenario: OPEN-003-B History and empty initialization are bounded
@@ -71,6 +73,7 @@ types; names SHALL render as text and sensitive position data SHALL NOT enter lo
 - **WHEN** anonymous/pending clients access new routes, a full owner sends invalid Origin/CSRF, or a request names a foreign account/instrument
 - **THEN** responses are 401, 403 or generic 404 respectively, without accounting/financial mutation or identity disclosure
 - **AND** ownerId/server-field mass assignment returns 400 and untrusted labels render as text
+- **AND** accounting failures show Russian page feedback without duplicate raw-English global toasts, while existing 401 redirects and 403 CSRF handling remain intact
 
 #### Scenario: OPEN-004-B Populated predecessor remains unchanged
 - **GIVEN** a populated twelve-migration synthetic schema including live request limits and factor/session classes
