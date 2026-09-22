@@ -191,7 +191,7 @@ export default function ManualAccountDetail() {
   );
 
   const loadHistory = useCallback(
-    async (beforeRevision?: number, append = false) => {
+    async (beforeRevision?: number, append = false, preserveExisting = false) => {
       const requestVersion = ++historyRequestRef.current;
       setHistoryLoading(true);
       setHistoryError(null);
@@ -200,7 +200,10 @@ export default function ManualAccountDetail() {
         if (!isCurrentRoute() || requestVersion !== historyRequestRef.current) return;
         setHistory((current) => {
           const byRevision = new Map(
-            (append ? current : []).map((opening) => [opening.revision, opening]),
+            (append || preserveExisting ? current : []).map((opening) => [
+              opening.revision,
+              opening,
+            ]),
           );
           for (const opening of page.items) byRevision.set(opening.revision, opening);
           return [...byRevision.values()].sort((left, right) => right.revision - left.revision);
@@ -358,6 +361,8 @@ export default function ManualAccountDetail() {
       setAccount(latestAccount);
       setDraft(latestAccount.currentOpening?.positions.map(asDraft) ?? []);
       setAsOf(latestAccount.currentOpening?.asOf ?? defaultAsOf());
+      await loadHistory(undefined, false, true);
+      if (!isCurrentRoute()) return;
       setNotice(
         receipt.revision === latestAccount.currentRevision
           ? 'Начальные позиции сохранены. Предыдущие версии остаются в истории.'
