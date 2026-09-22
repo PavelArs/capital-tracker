@@ -240,12 +240,22 @@ for the normalized claimed email (trimmed and lowercased), shared across sources
 These budgets are shared across replicas and survive restarts.
 
 The source identity keeps the existing trusted-peer and forwarding-header
-contract. The claimed email is stored only as a SHA-256 subject digest. The
-ledger is capped at 4096 live rows. Fixed windows begin at fresh PostgreSQL time,
-do not slide on denial, and successful login, recovery, enrollment or restart
-does not reset them. Existing MFA challenge limits remain independent: five wrong
-factors retire a challenge and the persistent owner cooldown still enforces its
-ten-failure policy across replicas and restarts.
+contract. Both the source IP and claimed email are stored only as SHA-256 subject
+digests; hashes protect stored identifiers but do not provide anonymity. The
+ledger is capped at 4096 live rows: pruning may remove expired rows, but admission
+never evicts a live budget, and an existing under-limit subject remains usable at
+capacity. Fixed windows begin at fresh PostgreSQL time, do not slide on denial,
+and successful login, recovery, enrollment or restart does not reset them.
+Existing MFA challenge limits remain independent: five wrong factors retire a
+challenge and the persistent owner cooldown still enforces its ten-failure policy
+across replicas and restarts.
+
+For a well-formed request, source admission is charged before authentication work.
+Password login charges the claimed-email budget only after valid DTO parsing,
+session authorization, exact Origin and CSRF checks; MFA follows the same
+authorization boundary. Malformed trusted-source metadata is rejected before
+admission and spends zero budget. Malformed JSON rejected by the HTTP parser is
+outside admission and likewise spends zero budget.
 
 An exhausted source, account or capacity window returns generic 429 with
 `Cache-Control: no-store` and an integer `Retry-After` (1–60 seconds for source

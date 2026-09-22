@@ -211,7 +211,9 @@ CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
 30/60s, 5/60s and 5/60s per verified source, plus 10/600s per normalized
 claimed email for login. See
 [owner authentication](docs/owner-authentication.md) for configuration, caps and
-remaining protection requirements.
+remaining protection requirements. Source IP and claimed-email subjects are
+stored as SHA-256 digests; this protects stored identifiers without implying
+anonymity.
 
 ## External APIs
 

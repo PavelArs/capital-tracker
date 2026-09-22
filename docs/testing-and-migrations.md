@@ -110,19 +110,29 @@ the same PostgreSQL instance. Exercise 30/60s source admission for CSRF, 5/60s
 source admission for password login, 5/60s source admission for MFA and the
 10/600s normalized claimed-email admission. Verify the source and account windows
 are shared across replicas and restarts, fixed at their first PostgreSQL timestamp,
-and never reset by success, recovery, enrollment or denial. A rejected re-login
-must remain read-only, with no session touch, credential lookup or verifier call.
+and never reset by success, recovery, enrollment or denial. A re-login refused by
+admission must remain read-only, with no session touch, credential lookup or
+verifier call; ordinary credential and factor failures retain their existing
+verification and counter behavior.
+
+Assert the charge order: valid source admission precedes authentication work;
+the claimed-email admission follows valid DTO, session, Origin and CSRF checks.
+Malformed trusted-source metadata and malformed JSON rejected by the HTTP parser
+spend zero admissions. Verify both source-IP and claimed-email subjects are stored
+only as SHA-256 digests, with no implication of anonymity.
 
 The real database checks must cover the 4096-live-row cap, pruning only expired
-rows, preservation of live under-limit rows, the two-process last-slot race and
-the additive migration from populated migration 11 to migration 12. Keep the
+rows, never evicting a live budget, continued use of an existing under-limit
+subject at capacity, the two-process last-slot race and the additive migration
+from populated migration 11 to migration 12. Keep the
 existing MFA five-attempt challenge retirement and ten-failure owner cooldown in
 the same test flow; do not clear the request ledger to make that flow pass.
 
 HTTP assertions must require generic 429, `no-store` and integer `Retry-After`
 (1–60 seconds for source windows and 1–600 seconds for account/capacity), and
-generic 503/no-store for connection, lock, query or commit failure. Admission
-uses `connectTimeoutMS=5000` for every runtime PostgreSQL pool checkout. There is
+generic 503/no-store for an actual HTTP held-lock case and for actual PostgreSQL
+query, commit and pool-failure probes. Admission uses `connectTimeoutMS=5000`
+for every runtime PostgreSQL pool checkout. There is
 no automatic retry, memory fallback, Redis fallback or late admission after a
 pool/lock refusal; releasing a resource only affects a later explicit request.
 These bounded resources limit availability, so the acceptance must not claim an
