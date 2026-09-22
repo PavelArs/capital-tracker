@@ -105,6 +105,9 @@ export default function Layout() {
           <Link to="/crypto" onClick={closeMobileMenu}>
             {t('navigation.crypto')}
           </Link>
+          <Link to="/manual-accounts" onClick={closeMobileMenu}>
+            Ручные счета
+          </Link>
           <Link to="/settings" onClick={closeMobileMenu}>
             {t('navigation.settings')}
           </Link>

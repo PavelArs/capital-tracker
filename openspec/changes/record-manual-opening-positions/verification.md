@@ -60,3 +60,36 @@ wrapper completed. This does not replace new-page or full retained acceptance.
 Backend implementer reports build and125newsource tests passed; root integrated
 source build also exits0. Existing frontend client characterization12tests pass
 (capital-manual-client-regression.log). Full baseline/expandedHTTPS/review remain pending.
+
+## Independent source review
+
+A separate reviewer inspected the raw input/global-pipe boundary, owner-scoped SQL,
+uniqueness/replay/CAS and awaited transaction, explicit response projections and
+root DDL; no backend/security blocker found. The reviewer identified a test oracle
+weakness:101 identical positions proved duplicate rejection instead of the size cap.
+Root strengthened it with100 valid distinct UUIDs and101 distinct rejection, plus a
+positive256-character leading-zero amount. Both accounting suites now pass126tests
+(capital-manual-boundary-reviewed.log). No product assertion was weakened.
+
+Frontend review is still active. Initial findings cover replay/current-state mismatch,
+stale asynchronous navigation, edits during pending saves, duplicate picker entries
+and conflict reload recovery. They must be resolved before final acceptance/archive.
+
+## Integrated source and frontend review
+
+Root integrated frontend dee2a7a, independent-review fixes fe8962b and final bounded
+history refresh f0a90f2. Independent review found no remaining blocker after repairs:
+POST receipts no longer replace the actual current snapshot; fresh GET supplies it.
+Generation guards reject stale account-route responses; pending forms lock inputs;
+conflicts preserve drafts and require explicit reload/review; picker entries merge
+by UUID, creation exposes a direct account link, and history requests use version
+checks and refresh after save. No own-backend/authentication mock was added.
+Expanded independent HTTPS tests integrated2d59dbb, strictTSC/discovery passed85total.
+They include actual blocked writes proving disabled inputs, deterministic overlapping
+requests through both real upstreams, safe commit500 and retained private boundaries.
+
+pnpm verify:baseline exited0 in capital-manual-baseline-first.log after integration.
+Frozen offline install and required high-threshold audit both exited0 in
+capital-manual-frozen.log and capital-manual-audit.log. Two known moderate Router
+findings remain visible and unsuppressed; lockfile is unchanged. Full release-image
+verification still remains; no archive or full product completion is claimed.

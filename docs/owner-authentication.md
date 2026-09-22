@@ -27,7 +27,7 @@ and extends sessions, and the twelfth adds only the request admission
 ledger. The MFA migration revokes preceding session records, leaves users and
 financial rows intact, and does not enroll anyone. The request-limit migration
 preserves all existing owner, MFA, session and portfolio rows and is replay-safe.
-Current binaries require the fully migrated twelve-migration schema. An owner without confirmed enrollment cannot log in.
+Current binaries require the fully migrated thirteen-migration schema. An owner without confirmed enrollment cannot log in.
 
 The owner CLI uses explicit `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and
 `DB_NAME` settings, with no implicit `.env` loading. Supply them through the trusted

@@ -70,9 +70,10 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error: AxiosError<ApiError>) => {
-    const authUiHandlesError = ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
-      error.config?.url || '',
-    );
+    const pageHandlesError =
+      ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
+        error.config?.url || '',
+      ) || error.config?.url?.startsWith('/accounting/') === true;
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
@@ -97,7 +98,7 @@ apiClient.interceptors.response.use(
       }
 
       const anonymousProfile = status === 401 && error.config?.url === '/auth/me';
-      if (status >= 400 && errorHandler && !authUiHandlesError && !anonymousProfile) {
+      if (status >= 400 && errorHandler && !pageHandlesError && !anonymousProfile) {
         let errorMessage = 'An error occurred';
 
         if (data?.message) {
@@ -132,11 +133,11 @@ apiClient.interceptors.response.use(
         errorHandler(errorMessage);
       }
     } else if (error.request) {
-      if (errorHandler && !authUiHandlesError) {
+      if (errorHandler && !pageHandlesError) {
         errorHandler('Network error. Please check your connection.');
       }
     } else {
-      if (errorHandler && !authUiHandlesError) {
+      if (errorHandler && !pageHandlesError) {
         errorHandler(error.message || 'An unexpected error occurred');
       }
     }

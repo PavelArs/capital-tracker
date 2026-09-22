@@ -180,10 +180,11 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies twelve migrations: eight historic migrations, the additive
+uuid-ossp and applies thirteen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
-request admission ledger. A populated fully migrated database is idempotent and
-the twelfth migration preserves all existing rows. Pending destructive historical migrations
+request admission ledger, and four manual-accounting tables. A populated fully
+migrated database is idempotent. The twelfth and thirteenth migrations preserve
+all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
 error messages are suppressed because they can contain values or credentials.
@@ -204,11 +205,13 @@ Owner authentication acceptance invokes the production CLI for bootstrap and rec
 checks concurrent bootstrap and previous-schema preservation, and exercises real HTTPS
 revocation and retired auth endpoints. CLI recovery revokes pending/full sessions
 and candidate enrollment, clears MFA lockout, and preserves the confirmed factor and unused recovery codes in the credential
-transaction. Migration fixtures include preceding eight-, nine-, ten- and eleven-migration
+transaction. Migration fixtures include preceding eight-, nine-, ten-, eleven- and twelve-migration
 schemas. The eleven-to-twelve upgrade preserves every existing session and factor
-row, adds an empty request ledger and replays without changes. The MFA upgrade must preserve users, owner/password and financial rows,
+row, adds an empty request ledger and replays without changes. The populated
+twelve-to-thirteen fixture also preserves live admission scopes and every old
+schema/sequence definition, creating four empty accounting tables. The MFA upgrade must preserve users, owner/password and financial rows,
 revoke old password-only session rows, create no implicit enrollment and remain
-idempotent. Current binaries require all twelve migrations. Owner bootstrap must
+idempotent. Current binaries require all thirteen migrations. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret
@@ -222,3 +225,28 @@ See [owner authentication](owner-authentication.md) for key permissions and moun
 private enrollment/recovery outputs, uncertain-commit handling, pending/full cookies,
 exact-origin requirements, replay limits and session expiry. No Docker command in
 this guide is authorization to operate an existing owner database or production stack.
+
+
+## Manual opening acceptance
+
+See [manual accounting](manual-accounting.md) for its bounded API contract. The
+independent manual-opening-db.cjs fixture invokes the actual migrated production
+service against a fresh allowlisted synthetic database. It verifies exact numeric
+strings, strict pre-storage scale/type validation, finite/null/composite-owner SQL
+constraints, two-process races, replay-before-CAS and real deferred-COMMIT rollback.
+The separate migrations.cjs fixture verifies a fully populated predecessor12.
+
+New Playwright cases use real password/MFA, private Russian forms, HTTPS and the
+same PostgreSQL database. They must preserve all previous financial/security tests,
+check actual string roundtrips/restart/history and zero provider calls, and verify
+safe denied requests and commit failure without private values in response/logs.
+Only legitimate authorized session activity may differ before a controller failure;
+invalid Origin/CSRF cannot touch session activity. Source spies or direct error-filter
+probes do not replace actual authenticated HTTP acceptance.
+
+To reduce repeated readiness delay, synthetic backend health checks run every2s
+including startup; their command, timeout5s, start period30s and retries6 remain
+those of the exact release image. Artifact checks compare the complete effective
+policy. Actual process restart, direct health and upstream evidence remain required.
+Production Compose/images do not inherit the test cadence. Full retained acceptance
+validates this fixture-only refactor; no artificial failure is manufactured.
