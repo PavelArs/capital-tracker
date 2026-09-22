@@ -1,24 +1,13 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto, MessageResponseDto, ValidationErrorResponseDto } from '../shared/dto';
 import { CurrenciesService } from './currencies.service';
 import { ToggleCurrencyDto } from './dto/toggle-currency.dto';
 
 @ApiTags('currencies')
-@ApiBearerAuth('JWT-auth')
+@ApiCookieAuth('__Host-ct-session')
 @Controller('currencies')
-@UseGuards(JwtAuthGuard)
 export class CurrenciesController {
   constructor(private readonly currenciesService: CurrenciesService) {}
 
@@ -36,7 +25,7 @@ export class CurrenciesController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  findAll(@CurrentUser() user: JwtPayload) {
+  findAll(@CurrentUser() user: OwnerIdentity) {
     return this.currenciesService.findAll(user.userId);
   }
 
@@ -93,7 +82,7 @@ export class CurrenciesController {
     status: 200,
     description: 'Hidden currencies retrieved successfully',
   })
-  async getHiddenCurrencies(@CurrentUser() user: JwtPayload) {
+  async getHiddenCurrencies(@CurrentUser() user: OwnerIdentity) {
     return this.currenciesService.getHiddenCurrencies(user.userId);
   }
 
@@ -126,7 +115,7 @@ export class CurrenciesController {
     description: 'Validation error',
     type: ValidationErrorResponseDto,
   })
-  async hideCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
+  async hideCurrency(@CurrentUser() user: OwnerIdentity, @Body() toggleDto: ToggleCurrencyDto) {
     await this.currenciesService.hideCurrency(user.userId, toggleDto.currencyId);
     return { message: 'Currency hidden successfully' };
   }
@@ -147,7 +136,7 @@ export class CurrenciesController {
     description: 'Validation error',
     type: ValidationErrorResponseDto,
   })
-  async showCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
+  async showCurrency(@CurrentUser() user: OwnerIdentity, @Body() toggleDto: ToggleCurrencyDto) {
     await this.currenciesService.showCurrency(user.userId, toggleDto.currencyId);
     return { message: 'Currency shown successfully' };
   }
@@ -168,7 +157,7 @@ export class CurrenciesController {
     description: 'Validation error',
     type: ValidationErrorResponseDto,
   })
-  async toggleCurrency(@CurrentUser() user: JwtPayload, @Body() toggleDto: ToggleCurrencyDto) {
+  async toggleCurrency(@CurrentUser() user: OwnerIdentity, @Body() toggleDto: ToggleCurrencyDto) {
     if (toggleDto.isHidden) {
       await this.currenciesService.hideCurrency(user.userId, toggleDto.currencyId);
     } else {

@@ -7,10 +7,47 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 const apiClient = axios.create({
   baseURL: API_URL,
   timeout: 10000,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+let csrfToken: string | null = null;
+let csrfRequest: Promise<string> | null = null;
+let csrfVersion = 0;
+
+export function setCsrfToken(token: string | null): void {
+  csrfToken = token;
+  csrfVersion++;
+  csrfRequest = null;
+}
+
+async function getCsrfToken(): Promise<string> {
+  if (csrfToken) return csrfToken;
+  if (csrfRequest) return csrfRequest;
+
+  const version = csrfVersion;
+  const request = apiClient.get<{ csrfToken: string }>('/auth/csrf').then(({ data }) => {
+    // Password, factor verification or logout may replace the session during retrieval.
+    if (version !== csrfVersion) return getCsrfToken();
+    if (typeof data.csrfToken !== 'string' || !data.csrfToken) {
+      throw new Error('Unable to confirm the session');
+    }
+    csrfToken = data.csrfToken;
+    return csrfToken;
+  });
+  csrfRequest = request;
+  try {
+    return await request;
+  } finally {
+    if (csrfRequest === request) csrfRequest = null;
+  }
+}
+
+function isUnsafeRequest(config?: InternalAxiosRequestConfig): boolean {
+  return !['get', 'head', 'options'].includes(config?.method?.toLowerCase() || 'get');
+}
 
 // Error handler function - will be set from ErrorContext
 let errorHandler: ((message: string) => void) | null = null;
@@ -19,13 +56,11 @@ export function setErrorHandler(handler: (message: string) => void): void {
   errorHandler = handler;
 }
 
-// Request interceptor for adding auth token
+// Cookies are browser-managed; synchronizer tokens stay only in memory.
 apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = localStorage.getItem('token');
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
+  async (config: InternalAxiosRequestConfig) => {
+    config.headers.delete('Authorization');
+    if (isUnsafeRequest(config)) config.headers.set('X-CSRF-Token', await getCsrfToken());
     return config;
   },
   (error) => Promise.reject(error),
@@ -34,24 +69,35 @@ apiClient.interceptors.request.use(
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,
-  (error: AxiosError<ApiError>) => {
+  async (error: AxiosError<ApiError>) => {
+    const authUiHandlesError = ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
+      error.config?.url || '',
+    );
     if (error.response) {
       const status = error.response.status;
       const data = error.response.data;
 
+      if (status === 403 && isUnsafeRequest(error.config)) {
+        // A delayed rejection must not discard a newer login or another refresh.
+        if (error.config?.headers.get('X-CSRF-Token') === csrfToken) setCsrfToken(null);
+        try {
+          await getCsrfToken();
+        } catch {
+          // Preserve the original failure. Only a later explicit action may retry.
+        }
+      }
+
       // Handle 401 - Unauthorized
       if (status === 401) {
-        localStorage.removeItem('token');
-        // Don't redirect on login/register pages
-        if (
-          !window.location.pathname.includes('/login') &&
-          !window.location.pathname.includes('/register')
-        ) {
+        if (!['/auth/login', '/auth/mfa'].includes(error.config?.url || '')) setCsrfToken(null);
+        // Keep failed login feedback on the login page.
+        if (window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
       }
 
-      if (status >= 400 && errorHandler) {
+      const anonymousProfile = status === 401 && error.config?.url === '/auth/me';
+      if (status >= 400 && errorHandler && !authUiHandlesError && !anonymousProfile) {
         let errorMessage = 'An error occurred';
 
         if (data?.message) {
@@ -86,11 +132,11 @@ apiClient.interceptors.response.use(
         errorHandler(errorMessage);
       }
     } else if (error.request) {
-      if (errorHandler) {
+      if (errorHandler && !authUiHandlesError) {
         errorHandler('Network error. Please check your connection.');
       }
     } else {
-      if (errorHandler) {
+      if (errorHandler && !authUiHandlesError) {
         errorHandler(error.message || 'An unexpected error occurred');
       }
     }

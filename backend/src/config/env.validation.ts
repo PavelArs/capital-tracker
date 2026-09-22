@@ -1,14 +1,5 @@
 import { Transform, plainToInstance } from 'class-transformer';
-import {
-  IsBoolean,
-  IsEnum,
-  IsNumber,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-  validateSync,
-} from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
 
 export enum Environment {
   Development = 'development',
@@ -50,50 +41,15 @@ export class EnvironmentVariables {
   @IsOptional()
   DB_NAME = 'capital_tracker';
 
-  // JWT
-  @IsString()
-  JWT_SECRET!: string;
-
-  @IsNumber()
-  @IsOptional()
-  JWT_EXPIRES_IN: number = 60 * 60 * 24 * 7;
-
   // Frontend URL for CORS
   @IsString()
-  @IsOptional()
-  FRONTEND_URL = 'http://localhost:3001';
-
-  // Email Configuration (optional)
-  @IsString()
-  @IsOptional()
-  SMTP_HOST?: string;
-
-  @IsNumber()
-  @Transform(({ value }) => (value ? Number.parseInt(value, 10) : undefined))
-  @IsOptional()
-  SMTP_PORT?: number;
+  FRONTEND_URL!: string;
 
   @IsString()
-  @IsOptional()
-  SMTP_USER?: string;
+  MFA_KEY_FILE!: string;
 
   @IsString()
-  @IsOptional()
-  SMTP_PASSWORD?: string;
-
-  @IsString()
-  @IsOptional()
-  SMTP_FROM?: string;
-
-  // Development flags
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  SKIP_EMAIL_VERIFICATION = false;
-
-  @IsString()
-  @IsOptional()
-  DEV_INVITATION_CODE = 'DEV2024';
+  MFA_KEY_ID!: string;
 
   // Redis
   @IsString()

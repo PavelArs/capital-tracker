@@ -4,7 +4,6 @@ export interface User {
   email: string;
   firstName?: string;
   lastName?: string;
-  emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,16 +13,19 @@ export interface LoginCredentials {
   password: string;
 }
 
-export interface RegisterData {
-  email: string;
-  password: string;
-  firstName?: string;
-  lastName?: string;
+export interface LoginResponse {
+  mfaRequired: true;
+  csrfToken: string;
 }
 
-export interface AuthResponse {
-  access_token: string;
+export interface FactorCredentials {
+  kind: 'totp' | 'recovery';
+  code: string;
+}
+
+export interface FullAuthResponse {
   user: User;
+  csrfToken: string;
 }
 
 // Asset types

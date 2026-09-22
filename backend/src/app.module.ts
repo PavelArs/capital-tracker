@@ -43,11 +43,32 @@ import { GlobalExceptionFilter } from './shared/filters';
                   },
                 },
             level: isProduction ? 'info' : 'debug',
+            serializers: {
+              // Never serialize query parameters or arbitrary request headers.
+              req: (req: {
+                id?: string;
+                method?: string;
+                url?: string;
+                remoteAddress?: string;
+              }) => ({
+                id: req.id,
+                method: req.method,
+                url: req.url?.split('?')[0],
+                remoteAddress: req.remoteAddress,
+              }),
+            },
             autoLogging: {
               ignore: (req: { url?: string }) => req.url === '/health',
             },
             redact: {
-              paths: ['req.headers.authorization', 'req.body.password', 'req.body.newPassword'],
+              paths: [
+                'req.headers.authorization',
+                'req.headers.cookie',
+                'res.headers["set-cookie"]',
+                'req.headers["x-csrf-token"]',
+                'req.body.password',
+                'req.body.newPassword',
+              ],
               censor: '[REDACTED]',
             },
           },
@@ -63,7 +84,7 @@ import { GlobalExceptionFilter } from './shared/filters';
     TypeOrmModule.forRootAsync({
       useClass: TypeOrmConfigService,
     }),
-    ScheduleModule.forRoot(),
+    ScheduleModule.forRoot({ cronJobs: process.env.BACKGROUND_JOBS_ENABLED !== 'false' }),
     RedisCacheModule,
     AuthModule,
     AssetsModule,

@@ -1,17 +1,23 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "22.21.1"
+  OPENSPEC_TELEMETRY: "0"
 
 jobs:
   # ============================================
@@ -26,15 +32,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -51,15 +57,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -70,7 +76,7 @@ jobs:
           CI: true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: backend-coverage
@@ -87,15 +93,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -118,15 +124,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -143,15 +149,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -162,7 +168,7 @@ jobs:
           CI: true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: frontend-coverage
@@ -179,15 +185,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -204,38 +210,41 @@ jobs:
   # Docker Build Verification
   # ============================================
   docker-build:
-    name: Docker Build Check
+    name: Release Images and Real Acceptance
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [backend-build, frontend-build, backend-test, frontend-test]
-    if: github.event_name == 'pull_request'
-
-    strategy:
-      matrix:
-        include:
-          - service: backend
-            context: ./backend
-          - service: frontend
-            context: ./frontend
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          context: ${{ matrix.context }}
-          push: false
-          tags: capital-tracker-${{ matrix.service }}:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: synthetic-acceptance-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
-  # ============================================
-  # CI Status Check (required for merge)
-  # ============================================
+  spec-check:
+    name: Specification and Engineering Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm specs:validate
+      - run: pnpm test:engineering
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
@@ -246,25 +255,19 @@ jobs:
       - frontend-check
       - frontend-test
       - frontend-build
+      - docker-build
+      - spec-check
     if: always()
-
     steps:
-      - name: Check CI Status
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Check every required result
         env:
-          BACKEND_CHECK: ${{ needs.backend-check.result }}
-          BACKEND_TEST: ${{ needs.backend-test.result }}
-          BACKEND_BUILD: ${{ needs.backend-build.result }}
-          FRONTEND_CHECK: ${{ needs.frontend-check.result }}
-          FRONTEND_TEST: ${{ needs.frontend-test.result }}
-          FRONTEND_BUILD: ${{ needs.frontend-build.result }}
-        run: |
-          if [[ "$BACKEND_CHECK" != "success" ]] || \
-             [[ "$BACKEND_TEST" != "success" ]] || \
-             [[ "$BACKEND_BUILD" != "success" ]] || \
-             [[ "$FRONTEND_CHECK" != "success" ]] || \
-             [[ "$FRONTEND_TEST" != "success" ]] || \
-             [[ "$FRONTEND_BUILD" != "success" ]]; then
-            echo "CI failed"
-            exit 1
-          fi
-          echo "All CI checks passed"
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: >-
+          node scripts/check-ci-results.cjs "$NEEDS_JSON"
+          backend-check backend-test backend-build
+          frontend-check frontend-test frontend-build
+          docker-build spec-check

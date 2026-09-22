@@ -42,16 +42,20 @@ services:
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-capital_tracker}
-      JWT_SECRET: ${JWT_SECRET}
       PORT: 3000
       NODE_ENV: production
       FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-465}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MFA_KEY_FILE: /run/secrets/ct-mfa-key
+      MFA_KEY_ID: ${MFA_KEY_ID:?Set the non-secret MFA key identifier}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+    volumes:
+      - type: bind
+        source: ${MFA_KEY_FILE:?Set an absolute path to the private MFA key file}
+        target: /run/secrets/ct-mfa-key
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:

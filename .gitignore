@@ -44,3 +44,9 @@ temp/
 Thumbs.db
 .DS_Store
 
+
+# Synthetic verification outputs
+coverage/
+playwright-report/
+test-results/
+tests/e2e/.runtime/

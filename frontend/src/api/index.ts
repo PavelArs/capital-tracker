@@ -10,6 +10,5 @@ export { metricsApi } from './metrics.api';
 export { currenciesApi } from './currencies.api';
 
 // Re-export types from API modules
-export type { RegisterResponse } from './auth.api';
 export type { ConversionResult } from './currencies.api';
 export type { CryptoPrices, TokenPrices } from './crypto.api';

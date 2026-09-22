@@ -1,20 +1,28 @@
-import type { AuthResponse, LoginCredentials, RegisterData, User } from '@shared/types';
-import apiClient from './client';
-
-export interface RegisterResponse extends User {
-  access_token?: string;
-  message: string;
-}
+import type {
+  FactorCredentials,
+  FullAuthResponse,
+  LoginCredentials,
+  LoginResponse,
+  User,
+} from '@shared/types';
+import apiClient, { setCsrfToken } from './client';
 
 export const authApi = {
-  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/auth/login', credentials);
+  login: async (credentials: LoginCredentials): Promise<LoginResponse> => {
+    const response = await apiClient.post<LoginResponse>('/auth/login', credentials);
+    setCsrfToken(response.data.csrfToken);
     return response.data;
   },
 
-  register: async (data: RegisterData): Promise<RegisterResponse> => {
-    const response = await apiClient.post<RegisterResponse>('/auth/register', data);
+  verifyFactor: async (credentials: FactorCredentials): Promise<FullAuthResponse> => {
+    const response = await apiClient.post<FullAuthResponse>('/auth/mfa', credentials);
+    setCsrfToken(response.data.csrfToken);
     return response.data;
+  },
+
+  logout: async (): Promise<void> => {
+    await apiClient.post('/auth/logout');
+    setCsrfToken(null);
   },
 
   getProfile: async (): Promise<User> => {
@@ -24,31 +32,6 @@ export const authApi = {
 
   getCurrentUser: async (): Promise<User> => {
     const response = await apiClient.get<User>('/auth/me');
-    return response.data;
-  },
-
-  forgotPassword: async (email: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/auth/forgot-password', { email });
-    return response.data;
-  },
-
-  resetPassword: async (token: string, newPassword: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/auth/reset-password', {
-      token,
-      newPassword,
-    });
-    return response.data;
-  },
-
-  verifyEmail: async (token: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/auth/verify-email', { token });
-    return response.data;
-  },
-
-  resendVerification: async (email: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/auth/resend-verification', {
-      email,
-    });
     return response.data;
   },
 };

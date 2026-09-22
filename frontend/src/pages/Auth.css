@@ -68,6 +68,12 @@
   opacity: 0.9;
 }
 
+.auth-card button.secondary {
+  background-color: transparent;
+  color: var(--text-color);
+  border: 1px solid var(--border-color);
+}
+
 .auth-card button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -82,35 +88,10 @@
   opacity: 0.9;
 }
 
-.success-message {
-  background-color: var(--success-color, #4caf50);
-  color: white;
-  padding: 1rem;
-  border-radius: 4px;
-  margin-bottom: 1rem;
-  text-align: center;
-}
-
-.success-message p {
-  margin: 0;
-  color: white;
-}
-
 .auth-card p {
   text-align: center;
   margin-top: 1rem;
   color: var(--text-secondary);
-}
-
-.auth-card a {
-  color: var(--primary-color);
-  text-decoration: none;
-  transition: opacity 0.2s;
-}
-
-.auth-card a:hover {
-  opacity: 0.8;
-  text-decoration: underline;
 }
 
 /* Mobile responsive styles */

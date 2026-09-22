@@ -1,5 +1,29 @@
 # Capital Tracker
 
+> Brownfield refactor in progress. Read [the audit](docs/brownfield-audit.md) before
+> starting against existing data. Explicit migration preflight refuses unsafe legacy upgrades.
+> Production deployment is disabled by default and is not release-ready.
+> The target contract is [the refactor brief](capital-tracker-openspec-prompt.md).
+
+## Verification during the refactor
+
+Use Node 22.21.1 (`nvm use`) and pinned pnpm 10.33.0:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm verify:baseline
+```
+
+This runs specification validation, lint, builds and Jest/Vitest checks. It covers source-level checks. Run `pnpm test:e2e` for isolated real images, PostgreSQL
+and HTTPS Chromium verification; security scans and recovery are still pending. See
+[provider feasibility](docs/provider-feasibility.md) and the active OpenSpec change
+for limits and actual evidence. See [testing and migrations](docs/testing-and-migrations.md)
+for exact isolated commands and migration requirements. See [owner provisioning](docs/owner-authentication.md)
+for existing-user adoption, recovery and the current cookie/CSRF/MFA contract.
+Mandatory second-factor verification passed local PostgreSQL and55 HTTPS Chromium checks;
+distributed authentication limits and release hardening remain.
+Original project folders/data remain untouched.
+
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
 
 ## Tech Stack
@@ -15,7 +39,7 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 - **Crypto Wallets** - Bitcoin and Ethereum address tracking with live balance updates, ERC-20 token support
 - **Financial Metrics** - Net worth, runway, FL-ratio (passive income coverage), category distributions
 - **Dashboard** - Charts, history (30 days), dynamic currency selector
-- **Auth** - Registration, login, email verification, password reset (JWT + bcrypt)
+- **Auth** - CLI-only owner bootstrap/recovery and MFA enrollment, Argon2id, mandatory TOTP or single-use recovery codes, revocable PostgreSQL cookie sessions and CSRF protection
 - **Exchange Rates** - Auto-updated fiat and crypto rates, Redis-cached
 
 ## Quick Start
@@ -29,34 +53,32 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 
 ### Development
 
-```bash
-# Start database and cache
-docker compose up postgres redis -d
+Use the disposable HTTPS acceptance stack below for complete authenticated checks.
+For source development, configure a separate disposable PostgreSQL/Redis instance,
+run explicit migrations and provision its owner as described in
+[owner authentication](docs/owner-authentication.md). The current CLI requires all
+eleven migrations, a protected server MFA key and confirmed CLI enrollment.
 
-# Install dependencies
-pnpm install
+`FRONTEND_URL` must be the exact HTTPS browser origin, without a trailing slash or
+path. Use `VITE_API_URL=/api` through an HTTPS proxy forwarding to the backend.
+`pnpm --dir backend dev` and `pnpm --dir frontend dev` provide source watch servers,
+but their HTTP ports alone cannot support Secure-cookie login. The acceptance
+origin is `https://127.0.0.1:8443`; `localhost` is a different origin.
 
-# Backend (port 3000)
-cd backend
-cp .env.example .env    # edit with your settings
-pnpm dev
-
-# Frontend (port 3001)
-cd frontend
-cp .env.example .env
-pnpm dev
-```
-
-### Docker (full stack)
+### Docker acceptance stack
 
 ```bash
-# Development (with source mounts, uses docker-compose.override.yml)
-cp docker-compose.override.example.yml docker-compose.override.yml
-docker compose up -d
+# Build and verify the disposable stack with release images, HTTPS and PostgreSQL
+pnpm test:e2e
 
-# Production (image-based, no overrides on server)
-docker compose up -d
+# Production rollout remains disabled pending release hardening.
+# Check the active change's verification record for actual results.
 ```
+
+The legacy `docker-compose.override.example.yml` is not compatible with the current
+HTTPS authentication path and is not the supported acceptance setup. Its services
+still require a separately configured TLS proxy and disposable database. Prefer
+the isolated acceptance stack; never use legacy production Compose for tests.
 
 ## Common Commands
 
@@ -70,7 +92,7 @@ docker compose up -d
 | `pnpm lint` | Biome lint + format check |
 | `pnpm check` | Auto-fix lint + format issues |
 | `pnpm migration:generate` | Generate TypeORM migration |
-| `pnpm migration:run` | Run pending migrations |
+| `pnpm migration:run` | Explicit preflight and migration; requires DB_* environment |
 
 ### Frontend (`cd frontend`)
 
@@ -86,7 +108,7 @@ docker compose up -d
 
 ```
 backend/src/
-  auth/           JWT auth, registration, email verification, password reset
+  auth/           Owner provisioning, Argon2id, cookie sessions, CSRF/default-deny
   assets/         Asset CRUD (Stock/Flow types)
   liabilities/    Liability CRUD
   crypto/         Wallet tracking, balance updates, price fetching
@@ -94,7 +116,6 @@ backend/src/
   metrics/        Net worth, runway, FL-ratio calculations
   cache/          Redis cache module
   health/         Health check endpoint
-  email/          Nodemailer email service
   entities/       TypeORM entities
   migrations/     Database migrations
 
@@ -135,12 +156,7 @@ The app is designed to run on a personal server with:
    DB_USERNAME=postgres
    DB_PASSWORD=<strong-password>
    DB_NAME=capital_tracker
-   JWT_SECRET=<random-secret>
    FRONTEND_URL=https://<your-domain>
-   SMTP_HOST=<smtp-host>
-   SMTP_PORT=465
-   SMTP_USER=<smtp-user>
-   SMTP_PASSWORD=<smtp-password>
    EOF
    ```
 
@@ -152,26 +168,39 @@ The app is designed to run on a personal server with:
    nginx -t && systemctl reload nginx
    ```
 
-4. Push to `main` - CI/CD will automatically build, push images to ghcr.io, and deploy.
+4. Production rollout is disabled by default. Do not enable `PRODUCTION_ROLLOUT_ENABLED`
+   until the release-hardening change and isolated recovery tests are complete and
+   the owner explicitly authorizes rollout. The retained manual workflow is legacy
+   containment, not an approved release procedure.
 
 ### CI/CD Pipeline
 
-- **CI** (on PR to main): lint, test, build for both backend and frontend, Docker build verification
-- **CD** (on push to main): semantic versioning, build + push images to ghcr.io, SSH deploy with health check, automatic rollback on failure, database backup before deploy
+- **CI** (PRs and pushes to main): lint, test, build, Docker builds and pinned OpenSpec checks; aggregate requires every job to succeed.
+- **CD**: legacy manual workflow gated by main branch and explicit rollout variable; disabled by default pending release hardening. It still has known backup, artifact and deployment limitations documented in the audit.
 
 ## API Endpoints
 
-Interactive API docs available at `/api/docs` (development only).
+These are backend paths; the HTTPS proxy exposes them under `/api/`. No HTTP
+Swagger/documentation endpoint is mounted, including in development.
 
 | Group | Endpoints |
 |-------|-----------|
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email` |
+| Auth | `GET /auth/csrf`, `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` |
 | Assets | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id` |
 | Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id` |
 | Crypto | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
 | Currencies | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show` |
 | Metrics | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD` |
-| Health | `GET /health` |
+| Health | Public `GET /health` (minimal liveness); private `GET /health/details` |
+
+Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
+All writes, including login/logout, require the exact configured Origin and
+`X-CSRF-Token`; the browser client obtains it lazily and retains it only in memory.
+Login rotates the session, server logout revokes it, and CLI recovery revokes all
+owner sessions. Legacy bearer credentials are not accepted. Sessions have thirty
+minutes idle/twelve hours absolute expiry; the anonymous five-minute pool is capped
+at 512 and authenticated sessions at 10. See the operator guide for cap behavior and
+remaining protection requirements.
 
 ## External APIs
 

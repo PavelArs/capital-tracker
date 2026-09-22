@@ -36,7 +36,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
       error,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: request.url.split('?')[0],
     };
 
     // Log error with context
@@ -71,7 +71,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = exception.name;
       }
 
-      return { status, message, error };
+      // Nest's default unmatched-route message includes the complete request URL.
+      return { status, message: status === 404 ? 'Not Found' : message, error };
     }
 
     // Handle non-HTTP exceptions
@@ -86,8 +87,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const logContext = {
       statusCode: status,
       method: request.method,
-      url: request.url,
-      userAgent: request.get('User-Agent'),
+      url: request.url.split('?')[0],
       ip: request.ip,
     };
 
@@ -95,7 +95,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.error(
         {
           ...logContext,
-          error: exception instanceof Error ? exception.stack : String(exception),
+          errorType: exception instanceof Error ? exception.name : 'UnknownError',
         },
         'Server error occurred',
       );
@@ -103,7 +103,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.warn(
         {
           ...logContext,
-          message: exception instanceof Error ? exception.message : String(exception),
+          errorType: exception instanceof Error ? exception.name : 'UnknownError',
         },
         'Client error occurred',
       );

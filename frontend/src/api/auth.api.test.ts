@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { authApi } from './auth.api';
-import apiClient from './client';
+import apiClient, { setCsrfToken } from './client';
 
 vi.mock('./client', () => ({
+  setCsrfToken: vi.fn(),
   default: {
     get: vi.fn(),
     post: vi.fn(),
@@ -15,11 +16,11 @@ describe('authApi', () => {
   });
 
   describe('login', () => {
-    it('should login user and return auth response', async () => {
-      const credentials = { email: 'test@example.com', password: 'password123' };
+    it('returns only the pending password response and installs its CSRF token', async () => {
+      const credentials = { email: 'test@example.com', password: 'Synthetic-password-42!' };
       const authResponse = {
-        access_token: 'jwt-token',
-        user: { id: '1', email: 'test@example.com' },
+        csrfToken: 'pending-csrf',
+        mfaRequired: true,
       };
       vi.mocked(apiClient.post).mockResolvedValue({ data: authResponse });
 
@@ -27,29 +28,36 @@ describe('authApi', () => {
 
       expect(apiClient.post).toHaveBeenCalledWith('/auth/login', credentials);
       expect(result).toEqual(authResponse);
+      expect(result).not.toHaveProperty('user');
+      expect(setCsrfToken).toHaveBeenCalledWith(authResponse.csrfToken);
     });
   });
 
-  describe('register', () => {
-    it('should register new user', async () => {
-      const registerData = {
-        email: 'new@example.com',
-        password: 'password123',
-        firstName: 'John',
-        lastName: 'Doe',
-      };
-      const registerResponse = {
-        id: '1',
-        email: 'new@example.com',
-        message: 'Registration successful',
-        access_token: 'jwt-token',
-      };
-      vi.mocked(apiClient.post).mockResolvedValue({ data: registerResponse });
+  describe('verifyFactor', () => {
+    it('preserves the submitted code and installs full CSRF only after successful verification', async () => {
+      const credentials = { kind: 'totp' as const, code: '012345' };
+      vi.mocked(apiClient.post).mockRejectedValueOnce(new Error('Invalid factor'));
+      await expect(authApi.verifyFactor(credentials)).rejects.toThrow('Invalid factor');
+      expect(setCsrfToken).not.toHaveBeenCalled();
 
-      const result = await authApi.register(registerData);
+      const authResponse = { csrfToken: 'full-csrf', user: { id: '1', email: 'test@example.com' } };
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ data: authResponse });
+      expect(await authApi.verifyFactor(credentials)).toEqual(authResponse);
+      expect(apiClient.post).toHaveBeenLastCalledWith('/auth/mfa', credentials);
+      expect(setCsrfToken).toHaveBeenCalledExactlyOnceWith('full-csrf');
+    });
+  });
 
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/register', registerData);
-      expect(result).toEqual(registerResponse);
+  describe('logout', () => {
+    it('clears CSRF only after the server accepts logout', async () => {
+      vi.mocked(apiClient.post).mockRejectedValueOnce(new Error('Session still active'));
+      await expect(authApi.logout()).rejects.toThrow('Session still active');
+      expect(setCsrfToken).not.toHaveBeenCalled();
+
+      vi.mocked(apiClient.post).mockResolvedValueOnce({ status: 204 });
+      await authApi.logout();
+      expect(apiClient.post).toHaveBeenLastCalledWith('/auth/logout');
+      expect(setCsrfToken).toHaveBeenCalledWith(null);
     });
   });
 
@@ -74,67 +82,6 @@ describe('authApi', () => {
 
       expect(apiClient.get).toHaveBeenCalledWith('/auth/me');
       expect(result).toEqual(mockUser);
-    });
-  });
-
-  describe('forgotPassword', () => {
-    it('should request password reset', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({
-        data: { message: 'Reset email sent' },
-      });
-
-      const result = await authApi.forgotPassword('test@example.com');
-
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/forgot-password', {
-        email: 'test@example.com',
-      });
-      expect(result).toEqual({ message: 'Reset email sent' });
-    });
-  });
-
-  describe('resetPassword', () => {
-    it('should reset password with token', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({
-        data: { message: 'Password reset successful' },
-      });
-
-      const result = await authApi.resetPassword('reset-token', 'newPassword123');
-
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/reset-password', {
-        token: 'reset-token',
-        newPassword: 'newPassword123',
-      });
-      expect(result).toEqual({ message: 'Password reset successful' });
-    });
-  });
-
-  describe('verifyEmail', () => {
-    it('should verify email with token', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({
-        data: { message: 'Email verified' },
-      });
-
-      const result = await authApi.verifyEmail('verify-token');
-
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/verify-email', {
-        token: 'verify-token',
-      });
-      expect(result).toEqual({ message: 'Email verified' });
-    });
-  });
-
-  describe('resendVerification', () => {
-    it('should resend verification email', async () => {
-      vi.mocked(apiClient.post).mockResolvedValue({
-        data: { message: 'Verification email sent' },
-      });
-
-      const result = await authApi.resendVerification('test@example.com');
-
-      expect(apiClient.post).toHaveBeenCalledWith('/auth/resend-verification', {
-        email: 'test@example.com',
-      });
-      expect(result).toEqual({ message: 'Verification email sent' });
     });
   });
 });

@@ -7,14 +7,9 @@ import { ThemeProvider } from '@contexts/ThemeContext';
 import Assets from '@pages/Assets';
 import Crypto from '@pages/Crypto';
 import Dashboard from '@pages/Dashboard';
-import ForgotPassword from '@pages/ForgotPassword';
 import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
-import Register from '@pages/Register';
-import ResendVerification from '@pages/ResendVerification';
-import ResetPassword from '@pages/ResetPassword';
 import Settings from '@pages/Settings';
-import VerifyEmail from '@pages/VerifyEmail';
 import React, { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 
@@ -37,11 +32,6 @@ function AppRoutes() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/resend-verification" element={<ResendVerification />} />
 
       {/* Protected routes */}
       <Route
@@ -58,6 +48,7 @@ function AppRoutes() {
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
       </Route>
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }

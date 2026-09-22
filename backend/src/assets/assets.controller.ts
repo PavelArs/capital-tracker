@@ -8,20 +8,17 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
 import { AssetsService } from './assets.service';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 
 @ApiTags('assets')
-@ApiBearerAuth('JWT-auth')
+@ApiCookieAuth('__Host-ct-session')
 @Controller('assets')
-@UseGuards(JwtAuthGuard)
 export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 
@@ -45,7 +42,7 @@ export class AssetsController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  create(@CurrentUser() user: JwtPayload, @Body() createAssetDto: CreateAssetDto) {
+  create(@CurrentUser() user: OwnerIdentity, @Body() createAssetDto: CreateAssetDto) {
     return this.assetsService.create(user.userId, createAssetDto);
   }
 
@@ -63,7 +60,7 @@ export class AssetsController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  findAll(@CurrentUser() user: JwtPayload) {
+  findAll(@CurrentUser() user: OwnerIdentity) {
     return this.assetsService.findAll(user.userId);
   }
 
@@ -82,7 +79,7 @@ export class AssetsController {
     description: 'Asset not found',
     type: ErrorResponseDto,
   })
-  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  findOne(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.assetsService.findOne(id, user.userId);
   }
 
@@ -107,7 +104,7 @@ export class AssetsController {
     type: ErrorResponseDto,
   })
   update(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: OwnerIdentity,
     @Param('id') id: string,
     @Body() updateAssetDto: UpdateAssetDto,
   ) {
@@ -130,7 +127,7 @@ export class AssetsController {
     description: 'Asset not found',
     type: ErrorResponseDto,
   })
-  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  remove(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.assetsService.remove(id, user.userId);
   }
 }

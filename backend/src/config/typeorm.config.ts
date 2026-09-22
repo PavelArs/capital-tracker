@@ -16,9 +16,18 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       database: this.configService.get('DB_NAME', 'capital_tracker'),
       entities: [`${__dirname}/../**/*.entity{.ts,.js}`],
       synchronize: false, // Always false - use migrations instead
-      logging: ['error', 'warn'],
+      logging: false,
+      logger: {
+        log: () => {},
+        logQuery: () => {},
+        logQueryError: () => {},
+        logQuerySlow: () => {},
+        logSchemaBuild: () => {},
+        logMigration: () => {},
+      },
       migrations: [`${__dirname}/../migrations/*{.ts,.js}`],
-      migrationsRun: true, // Run migrations automatically on startup
+      migrationsRun: false, // Migrations run only through the explicit release command.
+      installExtensions: false, // Runtime connections never provision database extensions.
     };
   }
 }

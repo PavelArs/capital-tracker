@@ -1,4 +1,6 @@
 import { useAuth } from '@contexts/AuthContext';
+import { useError } from '@contexts/ErrorContext';
+import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, Outlet, useNavigate } from 'react-router-dom';
@@ -6,16 +8,29 @@ import './Layout.css';
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { showError } = useError();
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const navLinksRef = useRef<HTMLDivElement>(null);
   const navUserRef = useRef<HTMLDivElement>(null);
 
-  const handleLogout = useCallback(() => {
-    logout();
-    navigate('/login');
-  }, [logout, navigate]);
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      showError(
+        isAxiosError(error) && error.response?.status === 403
+          ? t('auth.sessionExpired')
+          : t('auth.logoutFailed'),
+      );
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [logout, navigate, showError, t]);
 
   const toggleMobileMenu = useCallback(() => {
     setMobileMenuOpen((prev) => !prev);
@@ -99,7 +114,9 @@ export default function Layout() {
           <div className="nav-user-info">
             <span className="nav-user-email">{user?.email}</span>
           </div>
-          <button onClick={handleLogout}>{t('auth.logout')}</button>
+          <button onClick={handleLogout} disabled={isLoggingOut}>
+            {t('auth.logout')}
+          </button>
         </div>
       </nav>
 
