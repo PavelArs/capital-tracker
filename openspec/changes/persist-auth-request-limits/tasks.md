@@ -1,7 +1,7 @@
 ## 1. Independent acceptance before behavior changes
 
 - [x] 1.1 Independently review LIMIT-001..006 and complete deltas for exact charging, read-only sessions, timeout/commit/capacity semantics and preserved existing assertions.
-- [ ] 1.2 Add deterministic real two-replica HTTPS fixtures and independent LIMIT-001-A/B acceptance, then record expected429/actual401 RED on the preceding image without future-table prerequisites.
+- [x] 1.2 Add deterministic real two-replica HTTPS fixtures and independent LIMIT-001-A/B acceptance, then record expected429/actual401 RED on the preceding image without future-table prerequisites.
 - [ ] 1.3 Write source-boundary and real PostgreSQL acceptance for LIMIT-002..006, including zero verifier calls, exact ledger deltas, held-lock time, capacity race, pool timeout and populated11-to12 preservation.
 
 ## 2. Bounded persistent admission

@@ -27,6 +27,7 @@ async function main() {
     };
     const result = await new Promise((resolve, reject) => {
       const transport = directAddress ? http : https;
+      let localAddress, remoteAddress;
       const request = transport.request({
         hostname: directAddress ?? 'proxy', port: directAddress ? 3000 : 443,
         ...(directAddress ? {} : { servername: 'localhost', ca: readFileSync('/tests/public-ca.pem'), rejectUnauthorized: true }),
@@ -50,8 +51,15 @@ async function main() {
           let payload = text;
           try { payload = JSON.parse(text); } catch { /* Preserve empty/non-JSON responses. */ }
           resolve({ status: response.statusCode, headers: response.headers, body: payload,
-            localAddress: request.socket.localAddress, remoteAddress: request.socket.remoteAddress });
+            localAddress, remoteAddress });
         });
+      });
+      request.once('socket', (socket) => {
+        // Capture while connected: graceful Nginx reload can close a response's
+        // socket before the body-end callback, clearing its remoteAddress field.
+        const capture = () => { localAddress = socket.localAddress; remoteAddress = socket.remoteAddress; };
+        if (socket.connecting) socket.once('connect', capture);
+        else capture();
       });
       request.on('error', reject);
       request.on('timeout', () => request.destroy(new Error('Source client request timed out')));

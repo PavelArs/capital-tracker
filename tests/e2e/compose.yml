@@ -95,13 +95,23 @@ services:
 
   backend:
     <<: *backend
-    depends_on:
+    networks:
+      isolated:
+        ipv4_address: 172.30.91.10
+    depends_on: &runtime-dependencies
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
       providers:
         condition: service_healthy
+
+  backend-replica:
+    <<: *backend
+    networks:
+      isolated:
+        ipv4_address: 172.30.91.11
+    depends_on: *runtime-dependencies
 
   frontend:
     image: capital-tracker-frontend:acceptance
@@ -129,6 +139,8 @@ services:
         ipv4_address: 172.30.90.2
     depends_on:
       backend:
+        condition: service_healthy
+      backend-replica:
         condition: service_healthy
       frontend:
         condition: service_healthy

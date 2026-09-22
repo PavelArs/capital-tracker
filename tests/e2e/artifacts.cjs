@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { resolve } = require('node:path');
-const { readFileSync } = require('node:fs');
+const { renderAcceptanceProxy } = require('../../scripts/render-acceptance-proxy.cjs');
 const root = resolve(__dirname, '../..');
 const compose = ['compose', '-p', 'capital-tracker-e2e', '-f', resolve(__dirname, 'compose.yml')];
 const docker = (...args) => execFileSync('docker', args, { cwd: root, encoding: 'utf8', timeout: 30000 }).trim();
@@ -19,7 +19,7 @@ assert.ok(!backend.Mounts.some(mount => mount.Source.endsWith('/provider-tls')
 const providerContainer = inspect(docker(...compose, 'ps', '-q', 'providers'));
 assert.ok(!providerContainer.Mounts.some(mount => mount.Destination === '/run/secrets/ct-mfa-key'
   || mount.Source.endsWith('/mfa-key')), 'External fixture cannot read the MFA key');
-for (const name of ['backend', 'frontend', 'postgres', 'redis', 'providers']) {
+for (const name of ['backend', 'backend-replica', 'frontend', 'postgres', 'redis', 'providers']) {
   const container = inspect(docker(...compose, 'ps', '-q', name));
   assert.deepEqual(container.HostConfig.PortBindings ?? {}, {}, `${name} must have no published ports`);
   assert.deepEqual(Object.keys(container.NetworkSettings.Networks), ['capital-tracker-e2e_isolated']);
@@ -29,11 +29,15 @@ assert.deepEqual(Object.keys(proxy.NetworkSettings.Networks).sort(),
   ['capital-tracker-e2e_clients', 'capital-tracker-e2e_ingress', 'capital-tracker-e2e_isolated']);
 assert.equal(proxy.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.2');
 assert.ok(backend.Config.Env.includes('TRUSTED_PROXY_IPS=["172.30.91.2"]'));
-const rendered = readFileSync(resolve(root, 'deploy/nginx.conf'), 'utf8')
-  .replaceAll('<your-domain>', 'localhost')
-  .replaceAll('/etc/letsencrypt/live/localhost', '/etc/nginx/tls')
-  .replaceAll('http://127.0.0.1:3000', 'http://backend:3000')
-  .replaceAll('http://127.0.0.1:3001', 'http://frontend:80');
+const replica = inspect(docker(...compose, 'ps', '-q', 'backend-replica'));
+assert.equal(replica.Image, backend.Image);
+assert.deepEqual([...replica.Config.Env].sort(), [...backend.Config.Env].sort());
+const mountsByDestination = container => [...container.Mounts].sort((a, b) => a.Destination.localeCompare(b.Destination));
+assert.deepEqual(mountsByDestination(replica), mountsByDestination(backend));
+assert.equal(replica.Config.User, backend.Config.User);
+assert.equal(backend.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.10');
+assert.equal(replica.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.11');
+const rendered = renderAcceptanceProxy();
 assert.equal(docker(...compose, 'exec', '-T', 'proxy', 'cat', '/etc/nginx/conf.d/default.conf'), rendered.trim());
 docker(...compose, 'exec', '-T', 'proxy', 'nginx', '-t');
 const effective = docker(...compose, 'exec', '-T', 'proxy', 'nginx', '-T').replace(/#[^\n]*/g, '');
