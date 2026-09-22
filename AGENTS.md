@@ -27,6 +27,11 @@ frontend/nginx.conf modification. No real database access, folder removal,
 production deployment or private data disclosure during isolated preparation.
 Destructive schema changes need backup/export, migration plan and owner approval.
 
+Use isolated Git worktrees for independent parallel implementation tasks and review
+their diffs before integration. Use a simpler agent model for straightforward bounded
+tasks; retain a stronger model for architecture, security, complex implementation and
+independent review. Keep migration, lockfile and deployment ownership centralized.
+
 Maintain concise CONTINUITY.md with goal, constraints, decisions, done/now/next,
 open questions and evidence. Never record secrets. Read docs/brownfield-audit.md
 before database upgrades: explicit migration preflight refuses unsafe legacy history.
