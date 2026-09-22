@@ -1,7 +1,7 @@
 ## 1. Independent contract and actual acceptance RED
 
 - [x] 1.1 Confirm persist-auth-request-limits is verified and archived before implementation; independently review OPEN-001..004 schema/API/decimal/time/retry contracts and assign non-overlapping worktrees.
-- [ ] 1.2 Write actual owner/MFA HTTPS manual-account creation/read acceptance and record failing preceding-image behavior before implementing new routes; missing future helper imports are not behavioral RED.
+- [x] 1.2 Write actual owner/MFA HTTPS manual-account creation/read acceptance and record failing preceding-image behavior before implementing new routes; missing future helper imports are not behavioral RED.
 - [ ] 1.3 Add independent exact-string/time boundary tests and PostgreSQL race/rollback/preservation scenarios for OPEN-002/003/004 without changing retained security or financial assertions.
 
 ## 2. Small exact manual-account implementation
