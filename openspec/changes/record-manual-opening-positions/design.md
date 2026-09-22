@@ -46,7 +46,10 @@ Accounts have currentRevision nullable in SQL (API 0 means no opening). Snapshot
 canonical payload, asOf and createdAt. Opening request uniqueness is
 (ownerId, accountId, requestId); a key on another account is independent. Positions reference snapshot and instrument
 through composite owner foreign keys; unique snapshot/instrument, quantity, costStatus
-and totalCostUsd. Add owner/id unique constraints where needed to support composite
+and totalCostUsd. Quantity, costStatus and every composite foreign-key identity
+component are NOT NULL; only the initial account currentRevision and unknown cost
+are nullable. Known cost requires a non-null value, explicitly closing SQL CHECK
+UNKNOWN/null behavior. Add owner/id unique constraints where needed to support composite
 references. Owner foreign keys target users.id. Account (ownerId,id,currentRevision) references its own snapshot; create
 account with null pointer, insert snapshot and positions, then set pointer in the
 same transaction. Snapshot/account foreign keys do not cascade-delete history.
@@ -165,6 +168,11 @@ backend worktree owns accounting logic/DTOs; frontend owns page/styles/API types
 independent QA owns behavioral RED, exact boundary and real PG/HTTPS acceptance.
 Freeze interface/schema first; no concurrent migration/dependency edits. Existing
 MFA/session/admission and owner Nginx preservation oracles remain unchanged.
+Atomicity acceptance includes a disposable-DB deferred constraint trigger that fails
+a real service commit after writes; snapshot, positions, pointer and request identity
+must roll back, and an explicit retry after fixture removal must succeed. Precheck
+validation failures alone do not prove transaction rollback. Direct SQL pairing
+probes include known plus NULL and NULL costStatus. No production fault endpoint is added.
 
 ## Risks / Trade-offs
 
