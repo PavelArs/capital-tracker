@@ -252,13 +252,19 @@ An exhausted source, account or capacity window returns generic 429 with
 windows, 1–600 seconds for account or capacity). Connection, lock, query or
 commit failure returns generic 503 with `no-store`; there is no memory fallback,
 automatic retry, late admission or Redis dependency. The runtime
-`connectTimeoutMS=5000` bound applies to every PostgreSQL pool checkout used by
-admission. A finite ledger and pool still limit availability; these controls do
-not guarantee service availability.
+`connectTimeoutMS=5000` bound applies to every runtime PostgreSQL pool checkout
+and new connection, not only admission. It does not bound total HTTP or Nest
+startup time or impose retry behavior outside the pool connection path. A finite
+ledger and pool still limit availability; these controls do not guarantee service
+availability.
 
-Rejected re-login remains read-only: it does not rotate or touch a session, look
-up credentials or verify a password. The existing proxy-trust and Nginx
-contracts remain unchanged.
+Requests refused by source or claimed-account admission remain read-only: they
+do not rotate or touch a session, look up credentials or verify a password.
+Authorization rejections likewise leave the session unchanged, while later
+factor failures retain their existing counter and challenge-retirement behavior.
+Successful authentication increments its applicable budget normally without
+resetting the window; CLI recovery and enrollment add zero request admissions.
+The existing proxy-trust and Nginx contracts remain unchanged.
 
 Authentication uses the host-only `__Host-ct-session` cookie with Secure, HttpOnly,
 SameSite=Strict and Path=/ attributes. Raw tokens are independent random 256-bit
