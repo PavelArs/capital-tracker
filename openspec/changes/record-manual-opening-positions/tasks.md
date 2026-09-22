@@ -6,9 +6,9 @@
 
 ## 2. Small exact manual-account implementation
 
-- [ ] 2.1 Add only migration13 and four entities with exact numeric/check/composite-owner/idempotency/current-snapshot constraints; rehearse populated12 upgrade/fresh/replay and retain legacy refusal tests (OPEN-004-B).
+- [ ] 2.1 Add only migration 13 and four tables and their typed persistence mappings with exact numeric/check/composite-owner/idempotency/current-snapshot constraints; rehearse populated 12 upgrade/fresh/replay and retain legacy refusal tests (OPEN-004-B).
 - [ ] 2.2 Implement pure decimal and strict offset-time validation/canonicalization with raw-type defenses, no floating-point amounts or added arithmetic dependency (OPEN-002).
-- [ ] 2.3 Implement private account/instrument creation and bounded owner-scoped discovery, database-enforced retry identity and consistent400/404/409 semantics (OPEN-001/004-A).
+- [ ] 2.3 Implement private account/instrument creation and bounded owner-scoped discovery, database-enforced retry identity and consistent 400/404/409 semantics (OPEN-001/004-A).
 - [ ] 2.4 Implement account-locked replay-before-CAS whole-opening replacement, atomic pointer update and bounded immutable history (OPEN-003).
 - [ ] 2.5 Add protected Russian list/detail pages, string inputs, manual instrument reuse, explicit UTC coverage, known/unknown cost and safe retry/conflict/history flows using existing layout/forms (OPEN-001/002/003).
 - [ ] 2.6 Document API precision/time/identity/history limits and no legacy aggregation, valuation or acquisition-history claim; keep providers, authentication and owner configuration unchanged.

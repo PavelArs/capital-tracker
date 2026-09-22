@@ -13,7 +13,7 @@ to record manual opening positions without silently inventing costs or gains.
   UTC coverage boundary; it is neither an acquisition date nor a contribution.
 - Support complete opening-state replacement using optimistic revisions, retaining
   every prior snapshot. Database-backed request identities make retries safe.
-- Add only migration13 and new routes. Preserve all prior owner/authentication,
+- Add only migration 13 and new routes. Preserve all prior owner/authentication,
   financial and wallet rows, configurations and existing authenticated journeys.
 
 This slice deliberately excludes CSV import, trades, FIFO, transfers, prices,
