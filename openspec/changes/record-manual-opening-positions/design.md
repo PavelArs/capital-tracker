@@ -24,7 +24,12 @@ CurrentUser, default-deny sessions/MFA, CSRF client, protected layout and existi
 form/table styles. No generic repository, event framework, arithmetic library or
 UI-library migration is needed to store exact values. Existing global implicit DTO
 conversion remains; preserve original JSON field types before decimal validation,
-using the established raw-type defense rather than IsString alone.
+using the established raw-type defense rather than IsString alone. Apply this to
+all declared JSON string fields: name, symbol, asOf, requestId, instrumentId,
+costStatus, quantity and known totalCostUsd. Arrays, objects (including toString
+properties), numbers and booleans must return 400 without conversion or server errors.
+Only unknown totalCostUsd permits its explicitly required null. Pure boundary tests
+cover the full matrix; actual HTTP representatives verify the global pipe integration.
 
 Four additive tables: manual_accounts, accounting_instruments,
 account_opening_snapshots, account_opening_positions. Every object belongs to an
@@ -40,6 +45,11 @@ creation payload, createdAt, name (trimmed nonempty 1..120 characters); instrume
 optionally have trimmed nonempty symbol 1..32. Absent symbol canonicalizes to null;
 explicit null is rejected. Reject control characters and preserve ordinary Unicode;
 no case folding or Unicode normalization. There are no rename/delete endpoints here.
+Accept UUIDv4 strings in either letter case, then normalize to lowercase hyphenated
+form before payload comparison, key lookup, position sorting and duplicate checks.
+Apply the same normalization to request IDs, path IDs, instrument IDs and UUID cursors.
+A positions array containing lower/uppercase spellings of the same instrument is a
+400 duplicate; equivalent UUID spellings on a valid idempotent retry return 200.
 
 Accounts have currentRevision nullable in SQL (API 0 means no opening). Snapshot key
 (ownerId,accountId,revision), revision positive bounded integer, includes requestId,
@@ -71,6 +81,11 @@ positive; known cost is finite and nonnegative. Direct SQL rejection probes cove
 NaN and both infinities for quantity and cost, alongside null/status mismatches. Zero known cost is distinct from null.
 Do not use Number/parseFloat/toFixed or numeric JSON outputs. No totals or arithmetic
 are offered, so decimal parsing/canonicalization can remain small and pure.
+[PostgreSQL 16 numeric documentation](https://www.postgresql.org/docs/16/datatype-numeric.html#DATATYPE-NUMERIC-DECIMAL)
+confirms declared scale rounds input before storage and numeric NaN sorts greater
+than ordinary values. Therefore pre-storage scale validation and explicit finite
+checks are both necessary. Infinity is already rejected by constrained numeric,
+but direct probes must verify that protection alongside explicit NaN rejection.
 
 asOf accepts Gregorian ISO YYYY-MM-DDTHH:mm:ss with optional 1..3 fractional digits
 and required Z or numeric +/-HH:mm offset. Years 1970..9999; validate month/day/leap
@@ -173,6 +188,16 @@ a real service commit after writes; snapshot, positions, pointer and request ide
 must roll back, and an explicit retry after fixture removal must succeed. Precheck
 validation failures alone do not prove transaction rollback. Direct SQL pairing
 probes include known plus NULL and NULL costStatus. No production fault endpoint is added.
+Reuse the existing GlobalExceptionFilter generic 500 and safe errorType logging for
+unexpected storage/commit errors; runtime TypeORM query/error logging is already
+suppressed. Assert safe response and absence of private position values in logs,
+while preserving intentional 400/404/409. No storage-wrapper abstraction is needed.
+Normal private-route authorization legitimately updates session lastSeenAt before
+controller validation/accounting transactions. Rollback fingerprints therefore
+require unchanged accounting, legacy financial and ownership/factor state, while
+allowing that documented authorized session touch. Do not falsely claim a failed
+accounting commit rolls back the preceding session transaction. Invalid CSRF/Origin
+continues to fail authorization without touching sessions.
 
 ## Risks / Trade-offs
 

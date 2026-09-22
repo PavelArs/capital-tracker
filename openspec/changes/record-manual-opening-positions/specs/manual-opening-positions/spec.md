@@ -24,6 +24,10 @@ finite positive quantity and finite nonnegative known total USD cost. SQL constr
 SHALL explicitly reject numeric NaN and both infinities, including direct writes. Unknown cost SHALL pair status
 unknown with literal null; known zero MUST remain distinct. The system MUST reject
 raw numbers/coercion, invalid grammar, overflow or excess scale before storage.
+All declared JSON string fields MUST preserve and validate raw types before implicit
+conversion, including malicious object/array values; expectedRevision remains a raw
+JSON integer. Accepted UUIDv4 strings SHALL normalize to lowercase hyphenated form
+before equality, request identity, ordering and duplicate-instrument checks.
 Explicit-offset valid Gregorian asOf SHALL normalize to UTC millisecond precision,
 years 1970..9999, with optional 1..3 fractional digits. Coverage MUST NOT imply purchase
 time, external contribution, complete acquisition history, valuation or return.
@@ -54,9 +58,12 @@ all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be expose
 - **THEN** identical retries create one snapshot, changed payload 409, and competing replacements have exactly one 201 and one 409
 - **AND** replaying an old request after a newer revision returns its original snapshot 200 without changing the current pointer
 - **AND** decimal-zero normalization, equivalent UTC offsets and reordered positions replay the same canonical request, while rejected batches consume no request key
+- **AND** uppercase UUID spellings replay equivalently, but mixed-case duplicate instrument IDs in one positions array return 400
 - **AND** string/boolean/object expectedRevision values return 400 before coercion
 - **AND** account-creation replay retains its original id/name/createdAt while reporting the live currentRevision without moving its pointer
 - **AND** old rows remain identical and a failed position leaves no partial snapshot or pointer update
+- **AND** an actual deferred commit failure returns safe generic 500 with accounting rows and request identity rolled back, without private values in logs
+- **AND** rollback assertions permit only the preceding valid private-session lastSeenAt touch outside the accounting transaction
 
 #### Scenario: OPEN-003-B History and empty initialization are bounded
 - **WHEN** an empty account receives expectedRevision 0 or saved history is requested
