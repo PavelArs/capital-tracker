@@ -7,6 +7,10 @@ Protect owner access with revocable opaque cookies, database expiry, exact-origi
 Authentication SHALL use independent cryptographically random 256-bit tokens stored
 only as SHA-256 hashes, in Secure/HttpOnly/SameSite=Strict/Path=/ host-only
 `__Host-ct-session` cookies. JWT/header/URL/localStorage credentials MUST NOT authenticate.
+Login/MFA admission authorization SHALL preserve all existing checks while remaining
+read-only. Subsequent password/factor transactions SHALL retain their existing
+success and failure mutation contracts, including failed-factor counters and
+challenge retirement. Normal private activity and logout retain their existing behavior.
 
 #### Scenario: SES-001-A Real login rotates the cookie without browser token storage
 - **GIVEN** a real browser with an anonymous CSRF session
@@ -35,7 +39,9 @@ only as SHA-256 hashes, in Secure/HttpOnly/SameSite=Strict/Path=/ host-only
 ### Requirement: SES-002 Session-bound CSRF and exact origin
 Every state-changing matched route, including login/MFA/logout, SHALL require a valid
 session-bound synchronizer token and the exact configured HTTPS Origin. Public
-metadata MUST NOT exempt mutations. Failed writes MUST NOT mutate application data.
+metadata MUST NOT exempt mutations. Failed authorization SHALL preserve session,
+owner, factor and financial rows; expected committed request admissions MAY change
+only their independent ledger according to auth-request-limits.
 
 For CSRF retrieval, login and MFA, the scenarios below assume valid source metadata and available
 request quota. Malformed forwarding metadata from an explicitly trusted proxy MUST

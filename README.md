@@ -60,8 +60,7 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 Use the disposable HTTPS acceptance stack below for complete authenticated checks.
 For source development, configure a separate disposable PostgreSQL/Redis instance,
 run explicit migrations and provision its owner as described in
-[owner authentication](docs/owner-authentication.md). After integration, the CLI
-requires all twelve migrations, a protected server MFA key and confirmed CLI
+[owner authentication](docs/owner-authentication.md). The CLI requires all twelve migrations, a protected server MFA key and confirmed CLI
 enrollment; the additive request-limit migration preserves existing data.
 
 `FRONTEND_URL` must be the exact HTTPS browser origin, without a trailing slash or
@@ -206,8 +205,7 @@ access. Each stage rotates the session, server logout revokes it, and CLI recove
 owner sessions. Legacy bearer credentials are not accepted. Sessions have thirty
 minutes idle/twelve hours absolute expiry; the combined anonymous/pending five-minute
 pool is capped at 512 and authenticated sessions at 10. HTTP startup requires exact
-`TRUSTED_PROXY_IPS` configuration. After the request-limit change is integrated,
-CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
+`TRUSTED_PROXY_IPS` configuration. CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
 30/60s, 5/60s and 5/60s per verified source, plus 10/600s per normalized
 claimed email for login. See
 [owner authentication](docs/owner-authentication.md) for configuration, caps and

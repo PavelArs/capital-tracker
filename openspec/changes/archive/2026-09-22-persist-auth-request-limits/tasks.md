@@ -11,11 +11,11 @@
 - [x] 2.3 Bound runtime pool acquisition and implement safe429/Retry-After/503 handling with no retry/fallback/late admission (LIMIT-005).
 - [x] 2.4 Integrate source admission in SessionGuard, read-only login/MFA authorization, DTO-then-account admission before credential verification, and skip old throttling only on the three handlers (LIMIT-002).
 - [x] 2.5 Adapt isolated tests with explicit between-case ledger reset and precise ledger deltas; preserve all63 previous cases and MFA5/restart/5 using genuine A/B/third-source traffic (LIMIT-006-B).
-- [ ] 2.6 Document configuration, fixed-window charging, finite-capacity availability limitations, migration/rollback and distinction from existing MFA cooldown/general-route quotas.
+- [x] 2.6 Document configuration, fixed-window charging, finite-capacity availability limitations, migration/rollback and distinction from existing MFA cooldown/general-route quotas.
 
 ## 3. Independent review and actual verification
 
 - [x] 3.1 Independently review code, migration, fixtures and oracles; fix demonstrated findings with meaningful regressions.
 - [x] 3.2 Pass frozen install, production audit, lint/build/unit and strict OpenSpec checks on the supported runtime.
-- [ ] 3.3 Pass real PostgreSQL migration/concurrency/capacity/expiry/pool/CLI checks and full HTTPS Playwright on the exact two release-image replicas, without retries or weaker retained assertions.
-- [ ] 3.4 Record actual RED/GREEN, image identities, no-owner-data/configuration change and cleanup evidence; sync/archive and checkpoint only after required verification passes.
+- [x] 3.3 Pass real PostgreSQL migration/concurrency/capacity/expiry/pool/CLI checks and full HTTPS Playwright on the exact two release-image replicas, without retries or weaker retained assertions.
+- [x] 3.4 Record actual RED/GREEN, image identities, no-owner-data/configuration change and cleanup evidence; sync/archive and checkpoint only after required verification passes.

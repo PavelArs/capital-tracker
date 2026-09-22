@@ -14,8 +14,8 @@ uses `create_host_path: false`; it cannot create a missing key source. The opera
 must still arrange the private key, CLI access, exact HTTPS origin and explicit
 migration step as part of a separately reviewed release. This wiring does not mean
 that the production stack or full release pipeline has been run or verified.
-The proposed request-limit change adds shared PostgreSQL admission for the three
-authentication handlers; implementation and verification remain pending.
+The three authentication handlers use shared PostgreSQL request admission,
+verified through two actual release-image replicas and process restarts.
 Recent-MFA security settings, the full ASVS Level 2 matrix and security scans
 remain required.
 
@@ -23,12 +23,11 @@ remain required.
 
 Run all explicit migrations first. The ninth adds the empty `owner_auth` binding,
 the tenth adds `auth_sessions`, the eleventh adds encrypted MFA/recovery state
-and extends sessions, and the proposed twelfth adds only the request admission
+and extends sessions, and the twelfth adds only the request admission
 ledger. The MFA migration revokes preceding session records, leaves users and
 financial rows intact, and does not enroll anyone. The request-limit migration
-must preserve all existing owner, MFA, session and portfolio rows and be
-replay-safe. After integration, binaries require the fully migrated twelve-
-migration schema. An owner without confirmed enrollment cannot log in.
+preserves all existing owner, MFA, session and portfolio rows and is replay-safe.
+Current binaries require the fully migrated twelve-migration schema. An owner without confirmed enrollment cannot log in.
 
 The owner CLI uses explicit `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and
 `DB_NAME` settings, with no implicit `.env` loading. Supply them through the trusted
@@ -229,10 +228,9 @@ IPv4 quotas group by /32 and ordinary IPv6 by /64, while peer trust always compa
 the entire canonical address. Source trust grants no authentication or CSRF/Origin
 exception. Existing 401/403 examples assume valid source metadata and available quota.
 
-## Proposed shared authentication admission
+## Shared authentication admission
 
-After the request-limit change is integrated, the three matched handlers commit
-admissions in PostgreSQL before session or credential work. The fixed windows are
+The three matched handlers commit admissions in PostgreSQL before session or credential work. The fixed windows are
 exactly 30 requests per 60 seconds for a verified source on CSRF, 5 per 60
 seconds for a verified source on password login, and 5 per 60 seconds for a
 verified source on MFA. Password login also charges 10 requests per 600 seconds
@@ -329,7 +327,7 @@ window begin a ten-minute cooldown; the tenth and blocked completion attempts re
 Renewing a challenge, restarting the backend or spoofing forwarding headers cannot
 reset the persisted owner block. Blocked attempts do not extend its deadline. Expiry,
 successful factor completion, trusted confirmation or password recovery clears the
-relevant failure state. The proposed shared source and claimed-account admissions
+relevant failure state. The shared source and claimed-account admissions
 are separate from this persistent owner/challenge cooldown. Do not reset either
 ledger during a test case to make a later factor phase pass; use the real
 two-replica path and record the expected ledger deltas.

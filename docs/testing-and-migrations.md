@@ -74,7 +74,7 @@ previous still-valid TOTP step using PostgreSQL time, then enter a fresh current
 through the browser. Additional same-window logins use actual unused CLI-issued
 recovery codes. The fixture handles clock boundaries with bounded retries and does
 not reset accepted counters, inject authenticated cookies or mock authentication.
-The proposed request-limit acceptance must use two real backend replicas sharing
+Request-limit acceptance uses two real backend replicas sharing
 the same PostgreSQL service. Restarting either replica must preserve exhausted
 CSRF, password and MFA windows and the normalized claimed-email window; tests
 must use explicit expected ledger deltas rather than clearing the ledger between
@@ -102,10 +102,9 @@ The ninth required CI job runs `pnpm audit:production` after a frozen install.
 It fails on high/critical production advisories and registry errors; lower-severity
 findings remain visible in [the dependency security record](dependency-security.md).
 
-## Proposed request-limit acceptance
+## Persistent request-limit acceptance
 
-The pending request-limit change is accepted only after implementation against the
-actual rendered `deploy/nginx.conf` template and two real backend replicas sharing
+Acceptance exercises the actual rendered `deploy/nginx.conf` template and two real backend replicas sharing
 the same PostgreSQL instance. Exercise 30/60s source admission for CSRF, 5/60s
 source admission for password login, 5/60s source admission for MFA and the
 10/600s normalized claimed-email admission. Verify the source and account windows
@@ -134,11 +133,15 @@ generic 503/no-store for the actual HTTP held-lock case. Separate real PostgreSQ
 query, commit and pool-failure probes verify safe service exceptions, transaction
 cleanup and absence of retries. Admission uses `connectTimeoutMS=5000` for every
 runtime PostgreSQL pool checkout. There is no automatic retry, memory fallback,
-Redis fallback or late admission after a
-pool/lock refusal; releasing a resource only affects a later explicit request.
-These bounded resources limit availability, so the acceptance must not claim an
-availability guarantee. This section records requirements only; it is not a
-passing test or production rollout claim.
+Redis fallback or late admission after a pool/lock refusal; releasing a resource only affects a later explicit request.
+These bounded resources limit availability; there is no availability guarantee.
+
+The verified run passed all 74 HTTPS Chromium cases without retries, including
+all 63 retained cases and 11 new LIMIT cases, plus real migration/CLI/PostgreSQL
+probes. Browser execution took 21.7 minutes locally; the image acceptance CI job
+has a 35-minute bound to accommodate these real restarts and a clean build.
+The nine required gates and their commands remain unchanged. Hosted CI and
+production deployment were not run. See the [archived evidence](../openspec/changes/archive/2026-09-22-persist-auth-request-limits/verification.md).
 
 ## Build images directly
 
@@ -201,10 +204,11 @@ Owner authentication acceptance invokes the production CLI for bootstrap and rec
 checks concurrent bootstrap and previous-schema preservation, and exercises real HTTPS
 revocation and retired auth endpoints. CLI recovery revokes pending/full sessions
 and candidate enrollment, clears MFA lockout, and preserves the confirmed factor and unused recovery codes in the credential
-transaction. Migration fixtures include preceding eight-, nine- and ten-migration
-schemas. The MFA upgrade must preserve users, owner/password and financial rows,
+transaction. Migration fixtures include preceding eight-, nine-, ten- and eleven-migration
+schemas. The eleven-to-twelve upgrade preserves every existing session and factor
+row, adds an empty request ledger and replays without changes. The MFA upgrade must preserve users, owner/password and financial rows,
 revoke old password-only session rows, create no implicit enrollment and remain
-idempotent. After integration, binaries require all twelve migrations. Owner bootstrap must
+idempotent. Current binaries require all twelve migrations. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret

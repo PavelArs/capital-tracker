@@ -155,3 +155,11 @@ Independent pre-implementation reviews resolved source-attribution separation,
 read-only authorization, prune-wait clocks, Retry-After header handling, precise
 success charging and no finite owner-availability promise. No open product decision
 blocks this bounded slice.
+
+### Acceptance execution budget
+
+The complete verified browser suite takes 21.7 minutes locally with independent
+restart/health checks for both replicas. Increase only the existing docker-build
+CI job timeout from 20 to 35 minutes for the full suite and clean build; retain all
+nine required jobs, permissions, commands, action pins and zero Playwright retries.
+The existing 183 engineering gate tests pass after this configuration change.

@@ -74,4 +74,4 @@ file MUST remain unchanged. Verification MUST use the actual rendered template.
 #### Scenario: PROXY-004-B Retained contracts and honest persistence limit
 - **WHEN** the full source and release-image PostgreSQL/HTTPS acceptance runs
 - **THEN** retained MFA/session/CLI/migration/wallet assertions pass without weaker quotas or authentication bypasses
-- **AND** documentation states these 30/5/5 request limits remain process-local and restart persistence is not implemented by this change
+- **AND** documentation distinguishes shared PostgreSQL authentication admission from the unchanged process-local general-route quotas
