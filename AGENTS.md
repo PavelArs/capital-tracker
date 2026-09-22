@@ -31,6 +31,9 @@ Use isolated Git worktrees for independent parallel implementation tasks and rev
 their diffs before integration. Use a simpler agent model for straightforward bounded
 tasks; retain a stronger model for architecture, security, complex implementation and
 independent review. Keep migration, lockfile and deployment ownership centralized.
+Keep code clean and consistent with compatible project conventions. Use current
+practices supported by the installed tools, and choose simple architecture patterns
+that fit the task rather than introducing unnecessary abstractions.
 
 Maintain concise CONTINUITY.md with goal, constraints, decisions, done/now/next,
 open questions and evidence. Never record secrets. Read docs/brownfield-audit.md

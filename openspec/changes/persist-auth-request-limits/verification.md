@@ -1,7 +1,8 @@
 # Verification: persist-auth-request-limits
 
-Status: active, behavior RED captured before implementation. No persistent-limit
-GREEN or production-readiness claim.
+Status: active. Behavior RED preceded implementation. Source and isolated
+PostgreSQL service checks now pass; full HTTP/migration acceptance remains pending.
+No production-readiness claim.
 
 ## Independent preparation
 
@@ -48,11 +49,45 @@ now compare complete sorted entries; source evidence is captured at connection.
 Those prerequisite logs are capital-ledger-artifact-setup-failure.log and
 capital-ledger-socket-setup-failure.log under /private/tmp, not counted as RED.
 
+## Implemented source and PostgreSQL service checks
+
+Root integrated the dedicated admission service/migration12 (2fe0036), reviewed
+handler integration (739a649) and independent source boundaries (ec3f8af). The
+integration and security reviewers found no remaining source blocker; these
+reviews alone do not establish runtime behavior.
+
+`pnpm verify:baseline` with Node22.21.1 exited0, recorded in
+`/private/tmp/capital-ledger-baseline-first.log`: 541 backend tests/20 suites,
+81 frontend tests/10 files, both lint/build and all9 strict OpenSpec items.
+Existing77 backend/29 frontend lint warnings and frontend bundle-size warning
+remain. Independent configuration RED was expected5000/actualundefined with
+two prior tests passing, then GREEN in the real installed source boundary tests
+(`/private/tmp/capital-admission-pool-config-red.log`).
+
+`node /private/tmp/capital-ledger-pg.cjs auth-limits-db.cjs` built the actual
+backend release image and exited0 against disposable PostgreSQL16.10. Evidence:
+`/private/tmp/capital-ledger-pg-first.log`. The external fixture passed:
+
+- Four policy limits, independently calculated digests, fixed deadlines, exact
+  PostgreSQL expiry and committed pruning on expected denial.
+- Distinct actual Node processes racing for one remaining hit and the last live
+  capacity slot; every preceding live row preserved, existing allowance usable.
+- Actual advisory, target-row and pruning waits crossing database deadlines.
+- Real2s lock timeout, immediate query and deferred-commit trigger failures with
+  nontransactional sequence proof of one attempt, safe503 and released runners.
+- Actual runtime poolSize1 exhaustion with configured5000ms timeout; releasing
+  the connection causes no late admission; a new explicit request succeeds.
+- Actual schema scope/hash/hit/null/finite/exact-duration/key/index constraints.
+
+All preceding nonledger rows remained identical in that fixture. The synthetic
+stack was removed in finally and the owner Nginx preservation wrapper succeeded.
+This run does not replace the populated11-to12 migration or real HTTP acceptance.
+
 ## Remaining verification
 
-Source/PG/HTTP GREEN, populated11-to12 migration, all retained63 scenarios plus new
-limits cases, independent implementation/security review, exact image identities,
-final cleanup/preservation, documentation integration and archive remain outstanding.
-The user requested parallel Git worktrees and simpler models for simple tasks;
-documentation is isolated on refactor/auth-limits-docs with gpt-5.6-luna, while
-security-critical implementation and independent QA retain stronger agents.
+Populated11-to12 migration, all retained63 HTTP scenarios plus new limits cases,
+independent fixture/oracle review, full image acceptance, final image identities,
+cleanup/preservation, documentation integration and archive remain outstanding.
+Independent implementation, acceptance and migration tasks run in separate Git
+worktrees. Simple documentation refinements use gpt-5.6-luna; security-critical
+implementation and independent QA retain stronger agents.

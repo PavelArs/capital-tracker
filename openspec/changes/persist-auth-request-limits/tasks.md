@@ -7,9 +7,9 @@
 ## 2. Bounded persistent admission
 
 - [ ] 2.1 Add only migration12 ledger schema, constraints and expiry index; preserve all historical migrations and existing owner data (LIMIT-006-A).
-- [ ] 2.2 Implement stable hashed policies and committed fixed-window admissions under bounded PostgreSQL locks/capacity using fresh database time (LIMIT-001/003/004).
-- [ ] 2.3 Bound runtime pool acquisition and implement safe429/Retry-After/503 handling with no retry/fallback/late admission (LIMIT-005).
-- [ ] 2.4 Integrate source admission in SessionGuard, read-only login/MFA authorization, DTO-then-account admission before credential verification, and skip old throttling only on the three handlers (LIMIT-002).
+- [x] 2.2 Implement stable hashed policies and committed fixed-window admissions under bounded PostgreSQL locks/capacity using fresh database time (LIMIT-001/003/004).
+- [x] 2.3 Bound runtime pool acquisition and implement safe429/Retry-After/503 handling with no retry/fallback/late admission (LIMIT-005).
+- [x] 2.4 Integrate source admission in SessionGuard, read-only login/MFA authorization, DTO-then-account admission before credential verification, and skip old throttling only on the three handlers (LIMIT-002).
 - [ ] 2.5 Adapt isolated tests with explicit between-case ledger reset and precise ledger deltas; preserve all63 previous cases and MFA5/restart/5 using genuine A/B/third-source traffic (LIMIT-006-B).
 - [ ] 2.6 Document configuration, fixed-window charging, finite-capacity availability limitations, migration/rollback and distinction from existing MFA cooldown/general-route quotas.
 

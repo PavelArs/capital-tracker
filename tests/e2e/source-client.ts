@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -28,7 +28,16 @@ const docker = (args: string[], input?: string) => execFileSync('docker', args, 
 });
 
 export async function sendFrom(client: 'client-a' | 'client-b', input: SourceInput): Promise<SourceResult> {
-  const result: SourceResult = JSON.parse(docker([...compose, 'exec', '-T', client, 'node', '/tests/client.cjs'], JSON.stringify(input)));
+  // Actual concurrent callers must overlap; Promise.all around execFileSync would
+  // silently serialize requests and provide no shared-budget race evidence.
+  const output = await new Promise<string>((resolve, reject) => {
+    const child = execFile('docker', [...compose, 'exec', '-T', client, 'node', '/tests/client.cjs'], {
+      cwd: root, encoding: 'utf8', timeout: 120_000, maxBuffer: 2 * 1024 * 1024,
+    }, (error, stdout) => error ? reject(error) : resolve(stdout));
+    child.stdin?.on('error', (error) => { if ((error as NodeJS.ErrnoException).code !== 'EPIPE') reject(error); });
+    child.stdin?.end(JSON.stringify(input));
+  });
+  const result: SourceResult = JSON.parse(output);
   for (const response of result.responses) {
     assert.equal(response.localAddress, client === 'client-a' ? '172.30.90.10' : '172.30.90.11');
     assert.equal(response.remoteAddress, '172.30.90.2');
