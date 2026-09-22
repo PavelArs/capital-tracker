@@ -394,10 +394,21 @@ test('LIMIT-002-C: account denial cannot touch a real full-session re-login', as
   expect(fingerprint(['auth_request_limits'])).toBe(before);
 });
 
-test('LIMIT-002-B: invalid source charges zero and invalid session, CSRF or DTO charges only source', async () => {
+test('LIMIT-002-B: invalid source charges zero and invalid session, CSRF or DTO charges only source', async ({
+  request,
+}) => {
   const a = await anonymous('client-a');
   const before = fingerprint(['auth_request_limits']);
   const original = ledgerState();
+  // Send actual malformed JSON bytes: the protocol client intentionally serializes
+  // objects and cannot exercise this parser boundary.
+  const malformedJson = await request.post('/api/auth/login', {
+    headers: { 'Content-Type': 'application/json', Origin: origin },
+    data: '{',
+  });
+  expect(malformedJson.status()).toBe(400);
+  expect(ledgerState()).toBe(original);
+  expect(fingerprint(['auth_request_limits'])).toBe(before);
   const malformed = await sendDirect('trusted', {
     jar: a.jar,
     requests: [
