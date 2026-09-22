@@ -1,0 +1,315 @@
+import { randomUUID } from 'node:crypto';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { DataSource, EntityManager } from 'typeorm';
+import {
+  parseAccount,
+  parseDecimal,
+  parseHistoryQuery,
+  parseInstrument,
+  parseListQuery,
+  parseOpening,
+  parseUuid,
+} from './input';
+
+interface AccountRow {
+  id: string;
+  name: string;
+  currentRevision: number | null;
+  createdAt: Date;
+  canonicalPayload: string;
+}
+interface InstrumentRow {
+  id: string;
+  name: string;
+  symbol: string | null;
+  namespace: 'manual';
+  createdAt: Date;
+  canonicalPayload: string;
+}
+interface SnapshotRow {
+  accountId: string;
+  revision: number;
+  requestId: string;
+  asOf: Date;
+  createdAt: Date;
+  canonicalPayload: string;
+}
+export interface AccountSummary {
+  id: string;
+  name: string;
+  currentRevision: number;
+  createdAt: string;
+}
+export interface Instrument {
+  id: string;
+  name: string;
+  symbol: string | null;
+  namespace: 'manual';
+  createdAt: string;
+}
+export interface Position {
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  quantity: string;
+  costStatus: 'known' | 'unknown';
+  totalCostUsd: string | null;
+}
+export interface Opening {
+  accountId: string;
+  revision: number;
+  requestId: string;
+  asOf: string;
+  createdAt: string;
+  positions: Position[];
+}
+const accountView = (row: AccountRow): AccountSummary => ({
+  id: row.id,
+  name: row.name,
+  currentRevision: row.currentRevision ?? 0,
+  createdAt: row.createdAt.toISOString(),
+});
+const instrumentView = (row: InstrumentRow): Instrument => ({
+  id: row.id,
+  name: row.name,
+  symbol: row.symbol,
+  namespace: row.namespace,
+  createdAt: row.createdAt.toISOString(),
+});
+const conflict = () => new ConflictException('Accounting request conflicts with saved state');
+// Service callers use typed numeric pagination; HTTP query strings are parsed in
+// the controller. Reject misuse before converting or opening a connection.
+function queryNumber(value: unknown): string {
+  if (typeof value !== 'number' || !Number.isInteger(value))
+    throw new BadRequestException('Invalid accounting input');
+  return String(value);
+}
+
+@Injectable()
+export class AccountingService {
+  constructor(private readonly source: DataSource) {}
+
+  async createAccount(
+    ownerId: string,
+    input: unknown,
+  ): Promise<{ created: boolean; value: AccountSummary }> {
+    const owner = parseUuid(ownerId);
+    const value = parseAccount(input);
+    const payload = JSON.stringify({ name: value.name });
+    const rows: AccountRow[] = await this.source.query(
+      `INSERT INTO manual_accounts
+      (id,"ownerId","requestId","canonicalPayload",name) VALUES ($1,$2,$3,$4,$5)
+      ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
+      [randomUUID(), owner, value.requestId, payload, value.name],
+    );
+    const row =
+      rows[0] ??
+      ((
+        await this.source.query(
+          `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND "requestId"=$2`,
+          [owner, value.requestId],
+        )
+      )[0] as AccountRow | undefined);
+    if (!row || row.canonicalPayload !== payload) throw conflict();
+    return { created: rows.length === 1, value: accountView(row) };
+  }
+
+  async createInstrument(
+    ownerId: string,
+    input: unknown,
+  ): Promise<{ created: boolean; value: Instrument }> {
+    const owner = parseUuid(ownerId);
+    const value = parseInstrument(input);
+    const payload = JSON.stringify({ name: value.name, symbol: value.symbol });
+    const rows: InstrumentRow[] = await this.source.query(
+      `INSERT INTO accounting_instruments
+      (id,"ownerId","requestId","canonicalPayload",name,symbol) VALUES ($1,$2,$3,$4,$5,$6)
+      ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
+      [randomUUID(), owner, value.requestId, payload, value.name, value.symbol],
+    );
+    const row =
+      rows[0] ??
+      ((
+        await this.source.query(
+          `SELECT * FROM accounting_instruments WHERE "ownerId"=$1 AND "requestId"=$2`,
+          [owner, value.requestId],
+        )
+      )[0] as InstrumentRow | undefined);
+    if (!row || row.canonicalPayload !== payload) throw conflict();
+    return { created: rows.length === 1, value: instrumentView(row) };
+  }
+
+  async saveOpening(
+    ownerId: string,
+    accountId: string,
+    input: unknown,
+  ): Promise<{ created: boolean; value: Opening }> {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const value = parseOpening(input);
+    const payload = JSON.stringify({
+      expectedRevision: value.expectedRevision,
+      asOf: value.asOf,
+      positions: value.positions,
+    });
+    return this.source.transaction(async (manager) => {
+      const [account]: AccountRow[] = await manager.query(
+        'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
+        [owner, id],
+      );
+      if (!account) throw new NotFoundException();
+      const [previous]: SnapshotRow[] = await manager.query(
+        `SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND "requestId"=$3`,
+        [owner, id, value.requestId],
+      );
+      if (previous) {
+        if (previous.canonicalPayload !== payload) throw conflict();
+        return { created: false, value: await this.openingView(manager, owner, previous) };
+      }
+      if ((account.currentRevision ?? 0) !== value.expectedRevision) throw conflict();
+      const instruments: { id: string }[] = await manager.query(
+        'SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
+        [owner, value.positions.map((position) => position.instrumentId)],
+      );
+      if (instruments.length !== value.positions.length) throw new NotFoundException();
+      const revision = value.expectedRevision + 1;
+      const [snapshot]: SnapshotRow[] = await manager.query(
+        `INSERT INTO account_opening_snapshots
+        ("ownerId","accountId",revision,"requestId","canonicalPayload","asOf") VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [owner, id, revision, value.requestId, payload, value.asOf],
+      );
+      for (const position of value.positions) {
+        await manager.query(
+          `INSERT INTO account_opening_positions
+          ("ownerId","accountId",revision,"instrumentId",quantity,"costStatus","totalCostUsd") VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            owner,
+            id,
+            revision,
+            position.instrumentId,
+            position.quantity,
+            position.costStatus,
+            position.totalCostUsd,
+          ],
+        );
+      }
+      await manager.query(
+        'UPDATE manual_accounts SET "currentRevision"=$3 WHERE "ownerId"=$1 AND id=$2',
+        [owner, id, revision],
+      );
+      return { created: true, value: await this.openingView(manager, owner, snapshot) };
+    });
+  }
+
+  async listAccounts(ownerId: string, options: { cursor?: string; limit?: number } = {}) {
+    const owner = parseUuid(ownerId);
+    const query = parseListQuery({
+      ...options,
+      ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
+    });
+    const rows: AccountRow[] = await this.source.query(
+      `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,
+      [owner, query.cursor ?? null, query.limit + 1],
+    );
+    const items = rows.slice(0, query.limit).map(accountView);
+    return { items, nextCursor: rows.length > query.limit ? items[items.length - 1].id : null };
+  }
+
+  async listInstruments(ownerId: string, options: { cursor?: string; limit?: number } = {}) {
+    const owner = parseUuid(ownerId);
+    const query = parseListQuery({
+      ...options,
+      ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
+    });
+    const rows: InstrumentRow[] = await this.source.query(
+      `SELECT * FROM accounting_instruments WHERE "ownerId"=$1 AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,
+      [owner, query.cursor ?? null, query.limit + 1],
+    );
+    const items = rows.slice(0, query.limit).map(instrumentView);
+    return { items, nextCursor: rows.length > query.limit ? items[items.length - 1].id : null };
+  }
+
+  async getAccount(
+    ownerId: string,
+    accountId: string,
+  ): Promise<AccountSummary & { currentOpening: Opening | null }> {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const [row]: AccountRow[] = await this.source.query(
+      'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2',
+      [owner, id],
+    );
+    if (!row) throw new NotFoundException();
+    let currentOpening: Opening | null = null;
+    if (row.currentRevision !== null) {
+      const [snapshot]: SnapshotRow[] = await this.source.query(
+        'SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND revision=$3',
+        [owner, id, row.currentRevision],
+      );
+      currentOpening = await this.openingView(this.source.manager, owner, snapshot);
+    }
+    return { ...accountView(row), currentOpening };
+  }
+
+  async listOpenings(
+    ownerId: string,
+    accountId: string,
+    options: { beforeRevision?: number; limit?: number } = {},
+  ) {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const query = parseHistoryQuery({
+      ...options,
+      ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
+      ...(options.beforeRevision === undefined
+        ? {}
+        : { beforeRevision: queryNumber(options.beforeRevision) }),
+    });
+    const [account] = await this.source.query(
+      'SELECT id FROM manual_accounts WHERE "ownerId"=$1 AND id=$2',
+      [owner, id],
+    );
+    if (!account) throw new NotFoundException();
+    const rows: SnapshotRow[] = await this.source.query(
+      `SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND ($3::int IS NULL OR revision<$3) ORDER BY revision DESC LIMIT $4`,
+      [owner, id, query.beforeRevision ?? null, query.limit + 1],
+    );
+    const items = await Promise.all(
+      rows.slice(0, query.limit).map((row) => this.openingView(this.source.manager, owner, row)),
+    );
+    return {
+      items,
+      nextCursor: rows.length > query.limit ? items[items.length - 1].revision : null,
+    };
+  }
+
+  private async openingView(
+    manager: EntityManager,
+    owner: string,
+    snapshot: SnapshotRow,
+  ): Promise<Opening> {
+    const rows: Position[] = await manager.query(
+      `SELECT p."instrumentId",i.name AS "instrumentName",i.symbol AS "instrumentSymbol",p.quantity,p."costStatus",p."totalCostUsd"
+      FROM account_opening_positions p JOIN accounting_instruments i ON i."ownerId"=p."ownerId" AND i.id=p."instrumentId"
+      WHERE p."ownerId"=$1 AND p."accountId"=$2 AND p.revision=$3 ORDER BY p."instrumentId"`,
+      [owner, snapshot.accountId, snapshot.revision],
+    );
+    return {
+      accountId: snapshot.accountId,
+      revision: snapshot.revision,
+      requestId: snapshot.requestId,
+      asOf: snapshot.asOf.toISOString(),
+      createdAt: snapshot.createdAt.toISOString(),
+      positions: rows.map((row) => ({
+        ...row,
+        quantity: parseDecimal(row.quantity, true),
+        totalCostUsd: row.totalCostUsd === null ? null : parseDecimal(row.totalCostUsd, false),
+      })),
+    };
+  }
+}
