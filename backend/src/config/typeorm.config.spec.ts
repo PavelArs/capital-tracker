@@ -22,6 +22,20 @@ describe('MIG-001: application startup schema safety', () => {
   });
 });
 
+describe('LIMIT-005-C: bounded runtime connection acquisition', () => {
+  it('sets the supported five-second pool timeout without an overriding pg option', () => {
+    const service = new TypeOrmConfigService(new ConfigService());
+    const options = service.createTypeOrmOptions();
+    expect(options).toMatchObject({ type: 'postgres', connectTimeoutMS: 5000 });
+    expect(options.extra?.connectionTimeoutMillis).toBeUndefined();
+    // No connection is opened here; the real pool exhaustion/no-late-admission
+    // behavior is exercised separately by auth-limits-db.cjs against PostgreSQL.
+    const source = new DataSource(options as DataSourceOptions);
+    expect(source.isInitialized).toBe(false);
+    expect(source.options).toMatchObject({ connectTimeoutMS: 5000 });
+  });
+});
+
 describe('SES-004-B: runtime SQL credential privacy', () => {
   it('does not print query parameters or database error details through its actual logger', () => {
     const service = new TypeOrmConfigService(new ConfigService());
