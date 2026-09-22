@@ -533,7 +533,7 @@ async function main() {
   const source = productionSource(); await source.initialize();
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
-    assert.equal((await source.query('SELECT count(*)::int AS count FROM migrations'))[0].count, 12);
+    assert.equal((await source.query('SELECT count(*)::int AS count FROM migrations'))[0].count, 13);
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {
       await run(source);

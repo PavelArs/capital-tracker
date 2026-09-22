@@ -64,24 +64,33 @@ No full production-readiness or availability guarantee is claimed.
 
 ## Now and next
 
-Next bounded change: record-manual-opening-positions, independently reviewed artifacts
-in ../capital-tracker-worktrees/manual-opening-spec through fd29f1d, to integrate next.
-Manual accounts/instruments, numeric(78,30) exact strings, known/unknown aggregate USD
-opening cost, explicit UTC coverage, immutable complete revisions, owner isolation,
-idempotency and CAS. Four additive tables/migration13. No CSV/FIFO/prices/aggregation.
-QA is writing genuine old-image real-auth RED in manual-opening-acceptance worktree;
-no behavior implementation until it runs. Review vectors:
-/private/tmp/capital-manual-openings-acceptance-review.md. Preserve raw types before
-global DTO conversion, PostgreSQL finite/null checks, UUID lowercase identity,
-replay-before-CAS, rollback at actual deferred commit. Allow legitimate session
-lastSeenAt authorization touch outside accounting transactions.
+Active record-manual-opening-positions integrated; prioradmissionarchive e34b88d.
+Actual precedingimageRED153109e: realMFA API201expected/404actual andmissingRussianpage,
+logcapital-manual-opening-behavior-red.log exit1; nofuturetables orownbackendmock.
+Rootstoragef537161 fouradditivetables/migration13; typedaccountingbackend d646507,
+independentPG/upgradetests aab92f9. FocusedPGsecondlogexit0, populated12preservesallrows/
+schema/seq+liveadmissions; exactnumeric/null/composite/race/deferredcommitchecks pass.
+FirstPGsetup failedCompose start_interval requiresstart_period; fixture repeatsimage30s,
+retains actualimagehealthpolicy except2s/2s cadence, independentlyartifactverified.
+FocusedrealMFAAPI exit0/1case14s capital-manual-opening-api-first.log; backendimage
+sha256:9efd443953ddd723844aca23da46a9de6b016ffbc16b443ed65a933b3f35ce47. UIimage stillold.
+Backend build/125boundarytests pass; root strengthened100/101distinctpositions and256raw
+length. Source independentreview no blocker, rawbodytypeObject→servicevalidationonce.
+Frontend client12retainedtests pass; fullcurrentbaseline notrun untilUIintegration.
 
-Later required: CSV/trades/FIFO/fees, owned transfers and flows, performance/XIRR/TWR,
-DB-first price/FX/history, six chain adapters/reconciliation, optional explicit free AI,
-immutable image promotion/security/backup restore and final requirements audit;
-only then old-repo consolidation/confirmed duplicate cleanup.
+Parallel: manual_opening_frontend gpt6luna ownsnewpages/API/components in ownworktree;
+gate_acceptance ownsnewmanual-opening.spec/fixtures in manual-opening-acceptance;
+audit_security independentread-onlyUI/clientreview; provider_feasibility completedPG
+and independentbackend/DDLreview. Rootownsmigrations/AppModule/App/Layout/client/shared
+fixtures/lock/deployment. Next integrateUI+expandedQA afterreview, runfullsource/frozen/
+audit andactualHTTPS74retained+new tests; onlythenarchive. OwnerNginxpreserved/unstaged.
+Currentchanges NOTfullyverified; noarchiveyet. docs/manual-accounting.md describes
+boundedmanualpositions, notCSV/FIFO/prices/aggregation. Evidenceinactiveverification.md.
 
-Existing auth worktree commits are integrated; retain until safe cleanup. Agents
- audit_security, gate_acceptance, provider_feasibility are reusable via followup_task.
- send_message does not wake idle agents. Simple docs agent previously completed;
- a later followup failed threadlimit. No approval rejection occurred.
+Later required: CSV/trades/FIFO/fees, ownedtransfers/flows, performance/XIRR/TWR,
+DB-firstprice/FX/history, sixchainadapters/reconciliation, optionalexplicitfreeAI,
+immutableimagepromotion/security/backuprestore andfinalrequirementsaudit; onlythen
+oldrepoconsolidation/confirmedduplicatecleanup. Fullgoal remainsopen.
+
+Worktreesretained; do notstage node_modules symlinks. Reuseidleagents viafollowup_task.
+Noapprovalrejectionoccurred. NoDocker runningafterfocusedAPI cleanup; nextfullrunrootonly.

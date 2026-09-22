@@ -26,3 +26,37 @@ Backend boundary tests were authored before implementation at191bb2a; a missing
 input module was not executed or claimed as behavioral RED. PG/migration and
 expanded HTTP acceptance are authored in independent worktrees. Required source,
 PG/image verification, review and archive remain pending.
+
+## Initial fixture setup correction
+
+The first focused PG command (capital-manual-opening-pg-first.log) exited1 before
+running a migration: Compose requires explicit start_period with start_interval.
+The synthetic override now repeats the existing image start_period30s; artifact
+comparison still allows only the two cadence differences. No accounting assertion
+ran or was relaxed. This setup error is not additional behavioral RED.
+
+## Focused PostgreSQL and API GREEN
+
+After the Compose correction, node /private/tmp/capital-manual-opening-pg.cjs
+migrations.cjs manual-opening-db.cjs exited0 (capital-manual-opening-pg-second.log).
+The actual image built from the integrated service/migration passed fresh13/replay,
+unsafe legacy refusals and populated8/9/10/11/12 upgrades. Every predecessor12 row,
+schema and sequence definition is preserved including all four live admission scopes.
+New tables start empty. Service probes passed exactstrings/calendar boundaries,
+finite/null/compositeowner constraints, actual cross-process request/CAS lock races,
+old replay without pointer rewind, and deferred COMMIT failure with exact-one-attempt
+sequence evidence, complete rollback and explicit retry. These are real service/PG
+checks; its separate error-filter probe does not claim an authenticated HTTP failure.
+
+The initial authenticated API acceptance now passes through real browser/MFA/HTTPS:
+node /private/tmp/capital-manual-opening-api.cjs exited0,1case14.0s in
+capital-manual-opening-api-first.log. Exact tested backend image:
+sha256:9efd443953ddd723844aca23da46a9de6b016ffbc16b443ed65a933b3f35ce47.
+Frontend remained the preceding image for this API-only run. Artifact probes verified
+the actual image health command/failure policy unchanged, with only the faster
+synthetic cadence, and both identical replicas. Owned cleanup and file-preservation
+wrapper completed. This does not replace new-page or full retained acceptance.
+
+Backend implementer reports build and125newsource tests passed; root integrated
+source build also exits0. Existing frontend client characterization12tests pass
+(capital-manual-client-regression.log). Full baseline/expandedHTTPS/review remain pending.

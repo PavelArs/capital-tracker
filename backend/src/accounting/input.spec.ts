@@ -72,6 +72,9 @@ describe('OPEN-002 exact decimal boundary', () => {
     rejects(() => parseDecimal('000.000', true));
     expect(parseDecimal('0.000000000000000001', true)).toBe('0.000000000000000001');
   });
+  it('accepts the full raw text boundary without counting leading zeros as precision', () => {
+    expect(parseDecimal(`${'0'.repeat(255)}1`, true)).toBe('1');
+  });
 });
 
 describe('OPEN-002 explicit calendar and offset boundary', () => {
@@ -237,8 +240,16 @@ describe('OPEN-003 complete opening canonicalization', () => {
     },
   );
   it('requires one through one hundred real position objects', () => {
-    for (const positions of [null, {}, [], [null], Array(101).fill(known)])
+    for (const positions of [null, {}, [], [null]])
       rejects(() => parseOpening({ ...opening, positions }));
+    const positions = Array.from({ length: 101 }, (_, index) => ({
+      ...known,
+      instrumentId: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
+    }));
+    expect(parseOpening({ ...opening, positions: positions.slice(0, 100) }).positions).toHaveLength(
+      100,
+    );
+    rejects(() => parseOpening({ ...opening, positions }));
   });
 });
 

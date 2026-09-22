@@ -18,13 +18,16 @@ DELETE, public routes, dependencies, production rollout. These remain future wor
 
 ### Small accounting module and explicit identity
 
-Use one Nest accounting module/controller/service with narrow DTOs and pure decimal/
-time validators, plus React manual-account list/detail pages and API types. Reuse
+Use one Nest accounting module/controller/service with typed input contracts and pure
+decimal/time validators, plus React manual-account list/detail pages and API types. Reuse
 CurrentUser, default-deny sessions/MFA, CSRF client, protected layout and existing
 form/table styles. No generic repository, event framework, arithmetic library or
 UI-library migration is needed to store exact values. Existing global implicit DTO
 conversion remains; preserve original JSON field types before decimal validation,
-using the established raw-type defense rather than IsString alone. Apply this to
+by receiving raw unknown/Object bodies and validating once in the service before any
+database operation. The global pipe remains unchanged and skips Object; the accounting
+parser explicitly enforces required fields, the complete allowlist and original types.
+This avoids double conversion and maintains defensive validation for non-HTTP callers. Apply this to
 all declared JSON string fields: name, symbol, asOf, requestId, instrumentId,
 costStatus, quantity and known totalCostUsd. Arrays, objects (including toString
 properties), numbers and booleans must return 400 without conversion or server errors.
@@ -224,3 +227,15 @@ unused; downgrade must not drop saved manual history without a separate recovery
 
 No product decision blocks this bounded proposal. CSV chronology, FIFO cost allocation,
 chain/manual identity linkage and historical performance remain explicit later changes.
+
+### Acceptance readiness observation
+
+The existing 74-case predecessor passed before this pure fixture adjustment. The
+synthetic Compose backend health interval and start_interval are both 2s, inheriting
+its actual image command, timeout, start period and retries. Artifact acceptance
+compares every effective field against the exact image policy, allowing only these
+two cadence differences; restart and independent health/upstream assertions remain.
+This reduces repeated readiness polling delay as the suite grows, without changing
+production images or masking startup failures. Supported by the installed Compose
+5.5.1/Engine29 and [Compose healthcheck documentation](https://docs.docker.com/reference/compose-file/services/#healthcheck).
+Full retained acceptance, not artificial RED, validates this fixture-only refactor.

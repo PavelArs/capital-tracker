@@ -24,8 +24,9 @@ for existing-user adoption, recovery and the current cookie/CSRF/MFA contract.
 The required production dependency audit fails on high/critical findings or registry
 errors. See [dependency security](docs/dependency-security.md) for the dated results
 and remaining lower-severity findings.
-Mandatory second-factor verification passed local PostgreSQL and55 HTTPS Chromium checks;
-distributed authentication limits and release hardening remain.
+The archived persistent authentication-limit slice passed real PostgreSQL checks and74
+HTTPS Chromium cases. [Manual accounting](docs/manual-accounting.md) is the active
+next slice; full release hardening remains.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
@@ -60,8 +61,8 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 Use the disposable HTTPS acceptance stack below for complete authenticated checks.
 For source development, configure a separate disposable PostgreSQL/Redis instance,
 run explicit migrations and provision its owner as described in
-[owner authentication](docs/owner-authentication.md). The CLI requires all twelve migrations, a protected server MFA key and confirmed CLI
-enrollment; the additive request-limit migration preserves existing data.
+[owner authentication](docs/owner-authentication.md). The CLI requires all thirteen migrations, a protected server MFA key and confirmed CLI
+enrollment; the additive manual-accounting migration preserves existing data.
 
 `FRONTEND_URL` must be the exact HTTPS browser origin, without a trailing slash or
 path. Use `VITE_API_URL=/api` through an HTTPS proxy forwarding to the backend.

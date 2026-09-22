@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { LoggerModule } from 'nestjs-pino';
+import { AccountingModule } from './accounting/accounting.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AssetsModule } from './assets/assets.module';
@@ -92,6 +93,7 @@ import { GlobalExceptionFilter } from './shared/filters';
     ScheduleModule.forRoot({ cronJobs: process.env.BACKGROUND_JOBS_ENABLED !== 'false' }),
     RedisCacheModule,
     AuthModule,
+    AccountingModule,
     AssetsModule,
     LiabilitiesModule,
     CryptoModule,

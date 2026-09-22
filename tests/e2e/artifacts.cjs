@@ -35,6 +35,12 @@ assert.deepEqual([...replica.Config.Env].sort(), [...backend.Config.Env].sort())
 const mountsByDestination = container => [...container.Mounts].sort((a, b) => a.Destination.localeCompare(b.Destination));
 assert.deepEqual(mountsByDestination(replica), mountsByDestination(backend));
 assert.equal(replica.Config.User, backend.Config.User);
+const imageHealth = inspect(backend.Image).Config.Healthcheck;
+for (const container of [backend, replica]) {
+  assert.deepEqual(container.Config.Healthcheck, {
+    ...imageHealth, Interval: 2_000_000_000, StartInterval: 2_000_000_000,
+  }, 'Only acceptance readiness cadence differs from the exact image health policy');
+}
 assert.equal(backend.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.10');
 assert.equal(replica.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.11');
 const rendered = renderAcceptanceProxy();

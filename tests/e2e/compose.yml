@@ -24,6 +24,11 @@ x-backend: &backend
     HTTP_PROXY: http://providers:8080
     NO_PROXY: localhost,127.0.0.1,postgres,redis,backend,frontend,providers
     NODE_EXTRA_CA_CERTS: /run/acceptance/provider-ca.pem
+  # Keep the image health command and failure policy; observe readiness sooner.
+  healthcheck:
+    interval: 2s
+    start_interval: 2s
+    start_period: 30s # Compose requires this with start_interval; equals the image.
   networks: [isolated]
   volumes:
     - ./.runtime/mfa-key:/run/secrets/ct-mfa-key:ro
