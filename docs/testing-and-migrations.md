@@ -11,6 +11,7 @@ not establish production readiness.
 ```sh
 pnpm install --frozen-lockfile
 pnpm verify:baseline
+pnpm audit:production
 pnpm exec playwright install chromium
 pnpm test:e2e
 ```
@@ -31,8 +32,16 @@ HTTP Vite/backend development ports alone cannot support the Secure session cook
 
 All backend dependencies use an internal Docker network. The proxy also joins a
 separate ingress network so Docker Desktop can publish HTTPS to the browser host.
-The fixture HTTP proxy returns deterministic external-provider data and never
-forwards upstream. No application/authentication response is mocked. Test-only
+The fixture proxy terminates HTTPS CONNECT locally for three allowlisted provider
+hosts and returns deterministic data without forwarding upstream. It binds the
+CONNECT host, TLS SNI and HTTP Host; tunneled controls and unknown destinations fail.
+Backend runtime trusts only the mounted public synthetic provider certificate via
+NODE_EXTRA_CA_CERTS, while normal TLS verification stays enabled. Its separate TLS
+private key is mounted only into the provider among running application services;
+trusted short-lived seed/test tools also retain their whole-fixture-directory mounts.
+The external provider service cannot read the MFA key. A real Axios transport probe
+checks trusted/untrusted TLS, authority binding, controls and early disconnections.
+No application/authentication response is mocked. Test-only
 seed scripts, TLS material and the synthetic MFA key are mounted separately, excluded
 from release images. The harness creates a private 32-byte key under ignored
 `tests/e2e/.runtime/mfa-key` and mounts it read-only into runtime/CLI containers. On
@@ -75,6 +84,9 @@ results.
 
 CI invokes the same pnpm test:e2e command in its required docker-build job. It has
 not been run on GitHub in this session; local success is not a hosted CI claim.
+The ninth required CI job runs `pnpm audit:production` after a frozen install.
+It fails on high/critical production advisories and registry errors; lower-severity
+findings remain visible in [the dependency security record](dependency-security.md).
 
 ## Build images directly
 

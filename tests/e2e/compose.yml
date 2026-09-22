@@ -22,9 +22,11 @@ x-backend: &backend
     HTTPS_PROXY: http://providers:8080
     HTTP_PROXY: http://providers:8080
     NO_PROXY: localhost,127.0.0.1,postgres,redis,backend,frontend,providers
+    NODE_EXTRA_CA_CERTS: /run/acceptance/provider-ca.pem
   networks: [isolated]
   volumes:
     - ./.runtime/mfa-key:/run/secrets/ct-mfa-key:ro
+    - ./.runtime/provider-tls/fullchain.pem:/run/acceptance/provider-ca.pem:ro
 
 services:
   postgres:
@@ -58,6 +60,7 @@ services:
     command: [node, /tests/providers.cjs]
     volumes:
       - ./providers.cjs:/tests/providers.cjs:ro
+      - ./.runtime/provider-tls:/tests/tls:ro
     networks: [isolated]
     read_only: true
     healthcheck:
@@ -84,6 +87,7 @@ services:
     volumes:
       - ./:/tests:ro
       - ./.runtime/mfa-key:/run/secrets/ct-mfa-key:ro
+      - ./.runtime/provider-tls/fullchain.pem:/run/acceptance/provider-ca.pem:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -5,11 +5,12 @@ Require complete fail-closed engineering gates and contain legacy deployment whi
 ## Requirements
 ### Requirement: ENG-001 Complete fail-closed CI aggregation
 The CI aggregate SHALL require exact success from backend lint, tests and build,
-frontend lint, tests and build, Docker build, and specification/tooling checks.
-It MUST run even when dependencies fail and MUST reject missing or malformed results.
+frontend lint, tests and build, Docker build, specification/tooling checks and
+production dependency audit. It MUST run even when dependencies fail and MUST
+reject missing or malformed results.
 
 #### Scenario: ENG-001-A Every required job succeeds
-- **GIVEN** all eight required jobs have completed successfully
+- **GIVEN** all nine required jobs have completed successfully
 - **WHEN** the aggregate evaluates their results
 - **THEN** it exits successfully
 
@@ -17,7 +18,7 @@ It MUST run even when dependencies fail and MUST reject missing or malformed res
 - **GIVEN** one required job has failure, cancelled, skipped, missing, null or unknown status and the others succeed
 - **WHEN** the aggregate evaluates results
 - **THEN** it exits nonzero and names the unsuccessful job
-- **AND** Docker/specification results receive the same treatment as application checks
+- **AND** Docker/specification/dependency-audit results receive the same treatment as application checks
 
 #### Scenario: ENG-001-C Invalid input cannot pass
 - **GIVEN** malformed JSON, a non-object result, or an empty/duplicate required list

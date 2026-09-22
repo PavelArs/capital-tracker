@@ -1,0 +1,1147 @@
+{
+  "date": "2026-09-22",
+  "scope": "production dependency graph; exploitability not inferred",
+  "checkpoint": "93f7f94",
+  "node": "22.21.1",
+  "pnpm": "10.33.0",
+  "command": "pnpm audit --prod --json",
+  "exitCode": 1,
+  "lockSha256": "48bbb75fd687b2d8be3310a753b7c73bab293544baa37ef5a99a235627db4b96",
+  "metadata": {
+    "vulnerabilities": {
+      "info": 0,
+      "low": 3,
+      "moderate": 38,
+      "high": 25,
+      "critical": 0
+    },
+    "dependencies": 324,
+    "devDependencies": 0,
+    "optionalDependencies": 0,
+    "totalDependencies": 324
+  },
+  "advisories": [
+    {
+      "id": 1113635,
+      "module": "multer",
+      "severity": "high",
+      "title": "Multer vulnerable to Denial of Service via incomplete cleanup",
+      "vulnerable": "<2.1.0",
+      "patched": ">=2.1.0",
+      "url": "https://github.com/advisories/GHSA-xf7r-hgr6-v32p",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1113636,
+      "module": "multer",
+      "severity": "high",
+      "title": "Multer vulnerable to Denial of Service via resource exhaustion",
+      "vulnerable": "<2.1.0",
+      "patched": ">=2.1.0",
+      "url": "https://github.com/advisories/GHSA-v52c-386h-88mc",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1113996,
+      "module": "multer",
+      "severity": "high",
+      "title": "Multer Vulnerable to Denial of Service via Uncontrolled Recursion",
+      "vulnerable": "<2.1.1",
+      "patched": ">=2.1.1",
+      "url": "https://github.com/advisories/GHSA-5528-5vmv-3xc2",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1114301,
+      "module": "file-type",
+      "severity": "moderate",
+      "title": "file-type affected by infinite loop in ASF parser on malformed input with zero-size sub-header",
+      "vulnerable": ">=13.0.0 <21.3.1",
+      "patched": ">=21.3.1",
+      "url": "https://github.com/advisories/GHSA-5v7r-6r5c-r473",
+      "findings": [
+        {
+          "version": "21.1.0",
+          "paths": [
+            "backend>@nestjs/common>file-type"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1114726,
+      "module": "file-type",
+      "severity": "moderate",
+      "title": "file-type: ZIP Decompression Bomb DoS via [Content_Types].xml entry",
+      "vulnerable": ">=20.0.0 <=21.3.1",
+      "patched": ">=21.3.2",
+      "url": "https://github.com/advisories/GHSA-j47w-4g3g-c36v",
+      "findings": [
+        {
+          "version": "21.1.0",
+          "paths": [
+            "backend>@nestjs/common>file-type"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1115573,
+      "module": "path-to-regexp",
+      "severity": "high",
+      "title": "path-to-regexp vulnerable to Denial of Service via sequential optional groups",
+      "vulnerable": ">=8.0.0 <8.4.0",
+      "patched": ">=8.4.0",
+      "url": "https://github.com/advisories/GHSA-j3q9-mxjg-w52f",
+      "findings": [
+        {
+          "version": "8.3.0",
+          "paths": [
+            "backend>@nestjs/core>path-to-regexp"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1115582,
+      "module": "path-to-regexp",
+      "severity": "moderate",
+      "title": "path-to-regexp vulnerable to Regular Expression Denial of Service via multiple wildcards",
+      "vulnerable": ">=8.0.0 <8.4.0",
+      "patched": ">=8.4.0",
+      "url": "https://github.com/advisories/GHSA-27v5-c462-wpq7",
+      "findings": [
+        {
+          "version": "8.3.0",
+          "paths": [
+            "backend>@nestjs/core>path-to-regexp"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1115806,
+      "module": "lodash",
+      "severity": "high",
+      "title": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "vulnerable": ">=4.0.0 <=4.17.23",
+      "patched": ">=4.18.0",
+      "url": "https://github.com/advisories/GHSA-r5fr-rjxr-66jc",
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            "backend>@nestjs/config>lodash"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1115810,
+      "module": "lodash",
+      "severity": "moderate",
+      "title": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+      "vulnerable": "<=4.17.23",
+      "patched": ">=4.18.0",
+      "url": "https://github.com/advisories/GHSA-f23m-r3pf-42rh",
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            "backend>@nestjs/config>lodash"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1116560,
+      "module": "follow-redirects",
+      "severity": "moderate",
+      "title": "follow-redirects leaks Custom Authentication Headers to Cross-Domain Redirect Targets",
+      "vulnerable": "<=1.15.11",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-r4q5-vmmm-2653",
+      "findings": [
+        {
+          "version": "1.15.11",
+          "paths": [
+            "backend>axios>follow-redirects"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1116673,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios has a NO_PROXY Hostname Normalization Bypass that Leads to SSRF",
+      "vulnerable": ">=1.0.0 <1.15.0",
+      "patched": ">=1.15.0",
+      "url": "https://github.com/advisories/GHSA-3p68-rc4w-qgx5",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117063,
+      "module": "@nestjs/core",
+      "severity": "moderate",
+      "title": "@nestjs/core Improperly Neutralizes Special Elements in Output Used by a Downstream Component ('Injection')",
+      "vulnerable": "<=11.1.17",
+      "patched": ">=11.1.18",
+      "url": "https://github.com/advisories/GHSA-36xv-jgw5-4q75",
+      "findings": [
+        {
+          "version": "11.1.9",
+          "paths": [
+            "backend>@nestjs/core"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117574,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Authentication Bypass via Prototype Pollution Gadget in `validateStatus` Merge Strategy",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-w9j2-pvgh-6h63",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117576,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Incomplete Fix for CVE-2025-62718 — NO_PROXY Protection Bypassed via RFC 1122 Loopback Subnet (127.0.0.0/8) in Axios 1.15.0",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-pmwg-cvhr-8vh7",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117577,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Invisible JSON Response Tampering via Prototype Pollution Gadget in `parseReviver`",
+      "vulnerable": ">=1.0.0 <1.15.2",
+      "patched": ">=1.15.2",
+      "url": "https://github.com/advisories/GHSA-3w6x-2g7m-8v23",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117580,
+      "module": "axios",
+      "severity": "low",
+      "title": "Axios: Null Byte Injection via Reverse-Encoding in AxiosURLSearchParams",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-xhjh-pmcv-23jw",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117581,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: CRLF Injection in multipart/form-data body via unsanitized blob.type in formDataToStream",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-445q-vr5w-6q77",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117583,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: no_proxy bypass via IP alias allows SSRF",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-m7pr-hjqh-92cm",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117587,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios' HTTP adapter-streamed uploads bypass maxBodyLength when maxRedirects: 0",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-5c9x-8gcm-mpgx",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117589,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: HTTP adapter streamed responses bypass maxContentLength",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-vf2m-468p-8v99",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117591,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Prototype Pollution Gadgets - Response Tampering, Data Exfiltration, and Request Hijacking",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-pf86-5x62-jrwf",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117593,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Header Injection via Prototype Pollution",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-6chq-wfr3-2hj9",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1117595,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: XSRF Token Cross-Origin Leakage via Prototype Pollution Gadget in `withXSRFToken` Boolean Coercion",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-xx6v-rp6x-q39c",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1118607,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios has prototype pollution read-side gadgets in HTTP adapter that allow credential injection and request hijacking",
+      "vulnerable": ">=1.0.0 <1.15.2",
+      "patched": ">=1.15.2",
+      "url": "https://github.com/advisories/GHSA-q8qp-cvcw-x6jj",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1119404,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios has Unrestricted Cloud Metadata Exfiltration via Header Injection Chain",
+      "vulnerable": ">=1.0.0 <1.15.0",
+      "patched": ">=1.15.0",
+      "url": "https://github.com/advisories/GHSA-fvcv-3m26-pcqx",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1119441,
+      "module": "uuid",
+      "severity": "moderate",
+      "title": "uuid: Missing buffer bounds check in v3/v5/v6 when buf is provided",
+      "vulnerable": "<11.1.1",
+      "patched": ">=11.1.1",
+      "url": "https://github.com/advisories/GHSA-w5hq-g745-h8pq",
+      "findings": [
+        {
+          "version": "11.1.0",
+          "paths": [
+            "backend>typeorm>uuid"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1119502,
+      "module": "qs",
+      "severity": "moderate",
+      "title": "qs has a remotely triggerable DoS: qs.stringify crashes with TypeError on null/undefined entries in comma-format arrays when encodeValuesOnly is set",
+      "vulnerable": ">=6.11.1 <=6.15.1",
+      "patched": ">=6.15.2",
+      "url": "https://github.com/advisories/GHSA-q8mj-m7cp-5q26",
+      "findings": [
+        {
+          "version": "6.15.0",
+          "paths": [
+            "backend>@nestjs/platform-express>express>qs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120125,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: unbounded recursion in toFormData causes DoS via deeply nested request data",
+      "vulnerable": ">=1.0.0 <1.15.1",
+      "patched": ">=1.15.1",
+      "url": "https://github.com/advisories/GHSA-62hf-57xw-28j9",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120370,
+      "module": "lodash",
+      "severity": "moderate",
+      "title": "Lodash has Prototype Pollution Vulnerability in `_.unset` and `_.omit` functions",
+      "vulnerable": ">=4.0.0 <=4.17.22",
+      "patched": ">=4.17.23",
+      "url": "https://github.com/advisories/GHSA-xxjr-mmjv-4gpg",
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            "backend>@nestjs/config>lodash"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120547,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Regular Expression Denial of Service (ReDoS) via Cookie Name Injection",
+      "vulnerable": ">=1.0.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-hfxv-24rg-xrqf",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120643,
+      "module": "axios",
+      "severity": "high",
+      "title": "Allocation of Resources Without Limits or Throttling in Axios",
+      "vulnerable": ">=1.7.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-777c-7fjr-54vf",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120645,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Proxy-Authorization Credential Leak to Origin Server Across HTTP-to-HTTPS Redirect in Axios Node.js HTTP Adapter",
+      "vulnerable": ">=1.0.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-p92q-9vqr-4j8v",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120647,
+      "module": "axios",
+      "severity": "high",
+      "title": "Axios: Proxy-Authorization header leaks to redirect target when proxy is re-evaluated to direct connection",
+      "vulnerable": ">=1.0.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-j5f8-grm9-p9fc",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120649,
+      "module": "axios",
+      "severity": "high",
+      "title": "axios Vulnerable to Credential Theft and Response Hijacking via Prototype Pollution Gadget in Config Merge",
+      "vulnerable": ">=1.0.0 <1.15.2",
+      "patched": ">=1.15.2",
+      "url": "https://github.com/advisories/GHSA-3g43-6gmg-66jw",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120650,
+      "module": "axios",
+      "severity": "high",
+      "title": "axios Vulnerable to Full Man-in-the-Middle via Prototype Pollution Gadget in `config.proxy`",
+      "vulnerable": ">=1.0.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-35jp-ww65-95wh",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120652,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "axios has DoS & Header Injection via Prototype Pollution Read-Side Gadgets in axios merge functions",
+      "vulnerable": ">=1.0.0 <1.16.0",
+      "patched": ">=1.16.0",
+      "url": "https://github.com/advisories/GHSA-898c-q2cr-xwhg",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1120743,
+      "module": "form-data",
+      "severity": "high",
+      "title": "form-data: CRLF injection in form-data via unescaped multipart field names and filenames",
+      "vulnerable": ">=4.0.0 <4.0.6",
+      "patched": ">=4.0.6",
+      "url": "https://github.com/advisories/GHSA-hmw2-7cc7-3qxx",
+      "findings": [
+        {
+          "version": "4.0.5",
+          "paths": [
+            "backend>axios>form-data"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1121089,
+      "module": "multer",
+      "severity": "high",
+      "title": "Multer vulnerable to Denial of Service via deeply nested field names",
+      "vulnerable": ">=1.0.0 <2.2.0",
+      "patched": ">=2.2.0",
+      "url": "https://github.com/advisories/GHSA-72gw-mp4g-v24j",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1121091,
+      "module": "multer",
+      "severity": "moderate",
+      "title": "Multer vulnerable to Denial of Service via incomplete cleanup of aborted uploads",
+      "vulnerable": ">=2.0.0-alpha.1 <2.2.0",
+      "patched": ">=2.2.0",
+      "url": "https://github.com/advisories/GHSA-3p4h-7m6x-2hcm",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1121284,
+      "module": "typeorm",
+      "severity": "moderate",
+      "title": "TypeORM: SQL Injection in UpdateQueryBuilder/SoftDeleteQueryBuilder orderBy (MySQL/MariaDB)",
+      "vulnerable": ">=0.1.12 <=0.3.28",
+      "patched": ">=0.3.29",
+      "url": "https://github.com/advisories/GHSA-9ggv-8w38-r7pm",
+      "findings": [
+        {
+          "version": "0.3.28",
+          "paths": [
+            "backend>typeorm"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1121860,
+      "module": "js-yaml",
+      "severity": "moderate",
+      "title": "JS-YAML: Quadratic-complexity DoS in merge key handling via repeated aliases",
+      "vulnerable": ">=4.0.0 <=4.1.1",
+      "patched": ">=4.2.0",
+      "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68",
+      "findings": [
+        {
+          "version": "4.1.1",
+          "paths": [
+            "backend>@nestjs/swagger>js-yaml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1123896,
+      "module": "brace-expansion",
+      "severity": "high",
+      "title": "brace-expansion: DoS via exponential-time expansion of consecutive non-expanding {} groups",
+      "vulnerable": ">=2.0.0 <2.1.2",
+      "patched": ">=2.1.2",
+      "url": "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+      "findings": [
+        {
+          "version": "2.0.3",
+          "paths": [
+            "backend>typeorm>glob>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1123911,
+      "module": "js-yaml",
+      "severity": "high",
+      "title": "js-yaml: YAML merge-key chains can force quadratic CPU consumption",
+      "vulnerable": ">=4.0.0 <4.3.0",
+      "patched": ">=4.3.0",
+      "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m",
+      "findings": [
+        {
+          "version": "4.1.1",
+          "paths": [
+            "backend>@nestjs/swagger>js-yaml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1123976,
+      "module": "body-parser",
+      "severity": "low",
+      "title": "body-parser vulnerable to denial of service when invalid limit value silently disables size enforcement",
+      "vulnerable": ">=2.0.0 <2.3.0",
+      "patched": ">=2.3.0",
+      "url": "https://github.com/advisories/GHSA-v422-hmwv-36x6",
+      "findings": [
+        {
+          "version": "2.2.2",
+          "paths": [
+            "backend>@nestjs/platform-express>express>body-parser"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1124268,
+      "module": "react-router",
+      "severity": "moderate",
+      "title": "React Router: Open redirect via backslash in <Link> and useNavigate (CVE-2025-68470 bypass)",
+      "vulnerable": ">=6.0.0 <7.18.0",
+      "patched": ">=7.18.0",
+      "url": "https://github.com/advisories/GHSA-wrjc-x8rr-h8h6",
+      "findings": [
+        {
+          "version": "6.30.3",
+          "paths": [
+            "frontend>react-router-dom>react-router"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1124272,
+      "module": "react-router",
+      "severity": "moderate",
+      "title": "React Router: Arbitrary Constructor Injection via deserializeErrors() in React Router SSR Hydration",
+      "vulnerable": ">=6.4.0 <7.18.0",
+      "patched": ">=7.18.0",
+      "url": "https://github.com/advisories/GHSA-337j-9hxr-rhxg",
+      "findings": [
+        {
+          "version": "6.30.3",
+          "paths": [
+            "frontend>react-router-dom>react-router"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1130589,
+      "module": "brace-expansion",
+      "severity": "high",
+      "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+      "vulnerable": ">=2.0.0 <2.1.3",
+      "patched": ">=2.1.3",
+      "url": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+      "findings": [
+        {
+          "version": "2.0.3",
+          "paths": [
+            "backend>typeorm>glob>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1130736,
+      "module": "brace-expansion",
+      "severity": "high",
+      "title": "brace-expansion: DoS via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation",
+      "vulnerable": ">=2.0.0 <2.1.4",
+      "patched": ">=2.1.4",
+      "url": "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+      "findings": [
+        {
+          "version": "2.0.3",
+          "paths": [
+            "backend>typeorm>glob>minimatch>brace-expansion"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1136293,
+      "module": "@remix-run/router",
+      "severity": "moderate",
+      "title": "React Router's same-origin redirect with path starting // causes open redirect via protocol-relative URL reinterpretation",
+      "vulnerable": ">=1.3.0 <1.23.3",
+      "patched": ">=1.23.3",
+      "url": "https://github.com/advisories/GHSA-2j2x-hqr9-3h42",
+      "findings": [
+        {
+          "version": "1.23.2",
+          "paths": [
+            "frontend>react-router-dom>@remix-run/router"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1136303,
+      "module": "react-router",
+      "severity": "moderate",
+      "title": "React Router's same-origin redirect with path starting // causes open redirect via protocol-relative URL reinterpretation",
+      "vulnerable": ">=6.7.0 <6.30.4",
+      "patched": ">=6.30.4",
+      "url": "https://github.com/advisories/GHSA-2j2x-hqr9-3h42",
+      "findings": [
+        {
+          "version": "6.30.3",
+          "paths": [
+            "frontend>react-router-dom>react-router"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1138115,
+      "module": "js-yaml",
+      "severity": "high",
+      "title": "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) — CVE-2026-59870 fix not backported",
+      "vulnerable": ">=4.0.0 <4.3.1",
+      "patched": ">=4.3.1",
+      "url": "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+      "findings": [
+        {
+          "version": "4.1.1",
+          "paths": [
+            "backend>@nestjs/swagger>js-yaml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1139517,
+      "module": "typeorm",
+      "severity": "moderate",
+      "title": " TypeORM: migration:generate template-literal code injection",
+      "vulnerable": "<0.3.31",
+      "patched": ">=0.3.31",
+      "url": "https://github.com/advisories/GHSA-2rp8-mm9q-fp49",
+      "findings": [
+        {
+          "version": "0.3.28",
+          "paths": [
+            "backend>typeorm"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1147949,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Prototype pollution gadgets can alter axios request construction",
+      "vulnerable": ">=1.0.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-mmx7-hfxf-jppx",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1147950,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Deep formToJSON Key Recursion Can Cause Denial of Service",
+      "vulnerable": ">=1.0.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-pmv8-rq9r-6j72",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1153175,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: HTTP/2 streamed uploads bypass `maxBodyLength`",
+      "vulnerable": ">=1.13.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-mwf2-3pr3-8698",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1153180,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Nested axios option objects can consume polluted prototype values",
+      "vulnerable": ">=1.0.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-7q8q-rj6j-mhjq",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1153182,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Fetch adapter `ReadableStream` uploads bypass `maxBodyLength`",
+      "vulnerable": ">=1.7.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-jqh4-m9w3-8hp9",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1153185,
+      "module": "axios",
+      "severity": "moderate",
+      "title": "Axios: Excessive recursion in formDataToJSON can cause denial of service",
+      "vulnerable": ">=1.0.0 <1.18.0",
+      "patched": ">=1.18.0",
+      "url": "https://github.com/advisories/GHSA-42h9-826w-cgv3",
+      "findings": [
+        {
+          "version": "1.14.0",
+          "paths": [
+            "backend>axios"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1158506,
+      "module": "qs",
+      "severity": "moderate",
+      "title": "qs array-limit bypass via bracket-key comma parsing",
+      "vulnerable": ">=6.14.2 <=6.15.3",
+      "patched": ">=6.16.0",
+      "url": "https://github.com/advisories/GHSA-x5fp-wj9c-mxmx",
+      "findings": [
+        {
+          "version": "6.15.0",
+          "paths": [
+            "backend>@nestjs/platform-express>express>qs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1158507,
+      "module": "qs",
+      "severity": "moderate",
+      "title": "qs: Denial of Service via Attacker Controlled isBuffer",
+      "vulnerable": ">=2.2.5 <6.16.0",
+      "patched": ">=6.16.0",
+      "url": "https://github.com/advisories/GHSA-4mjr-xmp4-gh2g",
+      "findings": [
+        {
+          "version": "6.15.0",
+          "paths": [
+            "backend>@nestjs/platform-express>express>qs"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1164782,
+      "module": "fflate",
+      "severity": "moderate",
+      "title": "fflate unzipSync can enter an infinite loop when parsing malformed ZIP64 archives",
+      "vulnerable": ">=0.8.0 <0.8.3",
+      "patched": ">=0.8.3",
+      "url": "https://github.com/advisories/GHSA-px8p-9vwx-vf98",
+      "findings": [
+        {
+          "version": "0.8.2",
+          "paths": [
+            "backend>@nestjs/common>file-type>@tokenizer/inflate>fflate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1193652,
+      "module": "react-router-dom",
+      "severity": "moderate",
+      "title": "React Router: Open redirect leading to XSS",
+      "vulnerable": ">=6.30.2 <=6.30.5",
+      "patched": ">=6.30.6",
+      "url": "https://github.com/advisories/GHSA-jjmj-jmhj-qwj2",
+      "findings": [
+        {
+          "version": "6.30.3",
+          "paths": [
+            "frontend>react-router-dom"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1193727,
+      "module": "js-yaml",
+      "severity": "high",
+      "title": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+      "vulnerable": ">=4.0.0 <4.3.2",
+      "patched": ">=4.3.2",
+      "url": "https://github.com/advisories/GHSA-2883-xcg3-v3hh",
+      "findings": [
+        {
+          "version": "4.1.1",
+          "paths": [
+            "backend>@nestjs/swagger>js-yaml"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1193790,
+      "module": "multer",
+      "severity": "high",
+      "title": "multer vulnerable to Denial of Service via crafted multipart field names",
+      "vulnerable": "<2.3.0",
+      "patched": ">=2.3.0",
+      "url": "https://github.com/advisories/GHSA-wc9g-mqfw-jrwm",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1193792,
+      "module": "multer",
+      "severity": "low",
+      "title": "multer vulnerable to file size limit bypass via async fileFilter race condition",
+      "vulnerable": "<2.3.0",
+      "patched": ">=2.3.0",
+      "url": "https://github.com/advisories/GHSA-qvfw-j98x-7q72",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 1193793,
+      "module": "multer",
+      "severity": "high",
+      "title": "multer vulnerable to Denial of Service via oversized array index in field names",
+      "vulnerable": "<2.3.0",
+      "patched": ">=2.3.0",
+      "url": "https://github.com/advisories/GHSA-535w-7cp7-47q4",
+      "findings": [
+        {
+          "version": "2.0.2",
+          "paths": [
+            "backend>@nestjs/platform-express>multer"
+          ]
+        }
+      ]
+    }
+  ]
+}

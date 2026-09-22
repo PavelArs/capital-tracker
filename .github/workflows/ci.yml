@@ -245,6 +245,19 @@ jobs:
       - run: pnpm specs:validate
       - run: pnpm test:engineering
 
+  dependency-audit:
+    name: Production Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit:production
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
@@ -257,6 +270,7 @@ jobs:
       - frontend-build
       - docker-build
       - spec-check
+      - dependency-audit
     if: always()
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -270,4 +284,4 @@ jobs:
           node scripts/check-ci-results.cjs "$NEEDS_JSON"
           backend-check backend-test backend-build
           frontend-check frontend-test frontend-build
-          docker-build spec-check
+          docker-build spec-check dependency-audit

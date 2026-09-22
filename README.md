@@ -12,6 +12,7 @@ Use Node 22.21.1 (`nvm use`) and pinned pnpm 10.33.0:
 ```bash
 pnpm install --frozen-lockfile
 pnpm verify:baseline
+pnpm audit:production
 ```
 
 This runs specification validation, lint, builds and Jest/Vitest checks. It covers source-level checks. Run `pnpm test:e2e` for isolated real images, PostgreSQL
@@ -20,6 +21,9 @@ and HTTPS Chromium verification; security scans and recovery are still pending. 
 for limits and actual evidence. See [testing and migrations](docs/testing-and-migrations.md)
 for exact isolated commands and migration requirements. See [owner provisioning](docs/owner-authentication.md)
 for existing-user adoption, recovery and the current cookie/CSRF/MFA contract.
+The required production dependency audit fails on high/critical findings or registry
+errors. See [dependency security](docs/dependency-security.md) for the dated results
+and remaining lower-severity findings.
 Mandatory second-factor verification passed local PostgreSQL and55 HTTPS Chromium checks;
 distributed authentication limits and release hardening remain.
 Original project folders/data remain untouched.

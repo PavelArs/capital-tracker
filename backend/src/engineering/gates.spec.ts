@@ -15,20 +15,24 @@ const requiredJobs = [
   'frontend-build',
   'docker-build',
   'spec-check',
+  'dependency-audit',
 ];
 
 type Needs = Record<string, unknown>;
 type WorkflowStep = {
+  uses?: string;
   run?: string;
   if?: string;
   env?: Record<string, string>;
   'continue-on-error'?: boolean;
+  'working-directory'?: string;
 };
 type WorkflowJob = {
   needs?: string | string[];
   if?: string;
   steps?: WorkflowStep[];
   'continue-on-error'?: boolean;
+  defaults?: { run?: { 'working-directory'?: string } };
 };
 type Workflow = {
   on: Record<string, { branches?: string[] } | null>;
@@ -97,7 +101,7 @@ function invokeWorkflowGate(step: WorkflowStep, needs: Needs) {
 }
 
 describe('ENG-001: fail-closed CI result CLI', () => {
-  it('ENG-001-A accepts exact success for all eight required jobs', () => {
+  it('ENG-001-A accepts exact success for all nine required jobs', () => {
     const result = invokeGate([JSON.stringify(successfulNeeds()), ...requiredJobs]);
     expect(result.status).toBe(0);
   });
@@ -165,8 +169,7 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
     expect(ci.on.push?.branches).toContain('main');
   });
 
-  it('aggregates all eight real jobs, including Docker and specifications', () => {
-    // This assertion demonstrates behavioral RED against the original six-job aggregate.
+  it('aggregates all nine real jobs, including Docker, specifications and dependency audit', () => {
     expect(dependencies(ci.jobs['ci-status']).sort()).toEqual([...requiredJobs].sort());
     for (const job of requiredJobs) {
       expect(ci.jobs[job]).toBeDefined();
@@ -197,6 +200,63 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
     const result = invokeWorkflowGate(gateStep(ci), needs);
     expect(result.status).not.toBe(0);
     expect(result.output).toContain(job);
+  });
+
+  it.each(['failure', 'cancelled', 'skipped', 'unknown', '', null])(
+    'DEP-001-A/DEP-001-B: actual workflow command rejects dependency-audit result %p',
+    (status) => {
+      const needs = successfulNeeds();
+      needs['dependency-audit'] = { result: status };
+      // Execute the unchanged workflow shell command, not just a newly supplied CLI list.
+      // Before wiring the ninth argument, this wrongly returns success for all six cases.
+      const result = invokeWorkflowGate(gateStep(ci), needs);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain('dependency-audit');
+    },
+  );
+});
+
+describe('DEP-001: required production dependency audit', () => {
+  it('provides the pinned reusable production/high command without suppressing advisories or registry errors', () => {
+    const manifest = JSON.parse(readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8')) as {
+      packageManager: string;
+      scripts: Record<string, string>;
+      pnpm?: { auditConfig?: { ignoreCves?: unknown[]; ignoreGhsas?: unknown[] } };
+    };
+    expect(manifest.packageManager).toBe('pnpm@10.33.0');
+    expect(manifest.scripts['audit:production']).toBe('pnpm audit --prod --audit-level high');
+    expect(manifest.pnpm?.auditConfig?.ignoreCves ?? []).toEqual([]);
+    expect(manifest.pnpm?.auditConfig?.ignoreGhsas ?? []).toEqual([]);
+    const workspace = parse(
+      readFileSync(resolve(repositoryRoot, 'pnpm-workspace.yaml'), 'utf8'),
+    ) as { auditConfig?: { ignoreCves?: unknown[]; ignoreGhsas?: unknown[] } };
+    expect(workspace.auditConfig?.ignoreCves ?? []).toEqual([]);
+    expect(workspace.auditConfig?.ignoreGhsas ?? []).toEqual([]);
+  });
+
+  it('runs a mandatory frozen-workspace audit job without conditional or continue-on-error bypasses', () => {
+    const audit = workflow('ci').jobs['dependency-audit'];
+    expect(audit).toBeDefined();
+    expect(audit.if).toBeUndefined();
+    expect(audit['continue-on-error'] ?? false).toBe(false);
+    expect(audit.defaults?.run?.['working-directory'] ?? '.').toBe('.');
+    const steps = audit.steps ?? [];
+    expect(steps.some((step) => /^pnpm\/action-setup@[a-f0-9]{40}$/.test(step.uses ?? ''))).toBe(
+      true,
+    );
+    const installIndex = steps.findIndex(
+      (step) => step.run?.trim() === 'pnpm install --frozen-lockfile',
+    );
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    const auditSteps = steps.filter((step) => step.run?.includes('audit:production'));
+    expect(auditSteps).toHaveLength(1);
+    expect(auditSteps[0].run?.trim()).toBe('pnpm audit:production');
+    expect(steps.indexOf(auditSteps[0])).toBeGreaterThan(installIndex);
+    for (const step of steps) {
+      expect(step['continue-on-error'] ?? false).toBe(false);
+      expect(step.if).toBeUndefined();
+      expect(step['working-directory'] ?? '.').toBe('.');
+    }
   });
 });
 

@@ -1,0 +1,124 @@
+# Production dependency security record
+
+Reviewed **2026-09-22** for `patch-production-dependency-advisories`.
+Scope: pnpm production dependencies. Development tools, operating-system/image
+packages, application exploitability and production deployment require separate
+verification.
+
+## Baseline and current verification status
+
+The actual pre-change `pnpm audit --prod --json` registry response reported
+**25 high, 0 critical, 38 moderate and 3 low** advisory records across 324
+production dependencies. The command exited **1**. These counts describe advisory
+records, not proven exploitable application flaws.
+
+Post-resolution results on **2026-09-22**, with the report and lockfile checked:
+
+- Frozen installation completed with exit **0**.
+- Full `pnpm audit --prod --json`: **0 high, 0 critical, 2 moderate, 0 low**
+  across **329** production dependencies; exit **1** because the two Router
+  findings below remain. Local evidence: `/private/tmp/capital-dependency-audit-after.json`.
+- Required `pnpm audit:production`: exit **0** at the high/critical threshold;
+  its output still reports both moderate findings. Local evidence:
+  `/private/tmp/capital-dependency-command-green.log`.
+- Audited lockfile SHA-256:
+  `788c2f1fa098842758ab89a004ec8c45ef36712584f0b39eb94d83a814a96b9e`.
+
+`pnpm verify:baseline` passed: 424 backend tests in 18 suites, 81 frontend tests
+in 10 files, both lint/build commands and strict OpenSpec validation. Existing
+77 backend/29 frontend lint warnings remain. The first rebuilt-image run passed 54/55 browser cases; the retained BTC case
+exposed an external-fixture incompatibility with Axios HTTPS CONNECT (501).
+The fixture now terminates allowlisted TLS locally with normal certificate checks;
+independent transport acceptance and the final full image run passed (exit 0).
+All 55 HTTPS Chromium cases, real PostgreSQL migration/CLI/session/MFA checks,
+artifact isolation, stack cleanup and Nginx preservation passed without retries.
+See the [archived verification record](../openspec/changes/archive/2026-09-22-patch-production-dependency-advisories/verification.md)
+for actual RED/GREEN evidence and image identities.
+The passed severity threshold is not a zero-vulnerability audit or a production
+security-readiness claim.
+
+Use Node 22.21.1 and pnpm 10.33.0:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm audit:production
+pnpm audit --prod --json
+```
+
+`audit:production` runs `pnpm audit --prod --audit-level high`; CI requires its
+`dependency-audit` job. This threshold permits lower-severity findings, which must
+remain visible and reviewed. Registry errors must fail the check. Do not suppress
+advisories or treat an unavailable registry as a clean result.
+
+## Selected compatible updates
+
+| Package | Selected version | Relevant change |
+| --- | --- | --- |
+| Backend Nest common/core/platform-express; testing aligned | 11.1.18 | Common pins file-type 21.3.4; core/platform pin path-to-regexp 8.4.2. [Release](https://github.com/nestjs/nest/releases/tag/v11.1.18), [common metadata](https://registry.npmjs.org/@nestjs/common/11.1.18). |
+| Nest config | 4.0.4 | Pins Lodash 4.18.1. Internal dotenv also moves to 17.4.1; verify configuration and CLI behavior. [Release](https://github.com/nestjs/config/releases/tag/4.0.4). |
+| Nest Swagger | 11.2.7 | Fixes Lodash/path-to-regexp pins; YAML needs the override below. Existing decorators remain; there is no HTTP Swagger interface. [Metadata](https://registry.npmjs.org/@nestjs/swagger/11.2.7). |
+| TypeORM | 0.3.31 | Fixes reported 0.3 advisories and raises UUID to `^11.1.1`. Write criteria become stricter; retain actual PostgreSQL migration, transaction and owner-scope tests. [Release](https://github.com/typeorm/typeorm/releases/tag/0.3.31). |
+| Axios, backend and frontend | 1.18.0 | Meets all baseline Axios advisory floors. Recheck provider proxy behavior, cookies/CSRF, error handling and absence of automatic write retries. [Release](https://github.com/axios/axios/releases/tag/v1.18.0). |
+| React Router DOM | 6.30.6 | Preserves major 6; pins react-router 6.30.6 and @remix-run/router 1.23.4. The full audit confirms the two moderate findings below. [Metadata](https://registry.npmjs.org/react-router-dom/6.30.6). |
+
+React/React DOM remain 18.3.1; the Vite major remains 7. This change does not require
+a React, Router, Nest or TypeORM major migration.
+
+Two exact parent-scoped overrides are necessary because upstream pins older
+children:
+
+```json
+{
+  "@nestjs/platform-express@11.1.18>multer": "2.3.0",
+  "@nestjs/swagger@11.2.7>js-yaml": "4.3.2"
+}
+```
+
+Both preserve the child major. See the [Multer security release](https://github.com/expressjs/multer/releases/tag/v2.3.0),
+[YAML release](https://github.com/nodeca/js-yaml/releases/tag/4.3.2) and
+[pnpm override syntax](https://pnpm.io/10.x/settings#overrides). Remove each override
+when an adopted parent naturally supplies a fixed version.
+
+The checked production graph resolves form-data **4.0.6**, follow-redirects
+**1.16.0**, UUID **11.1.1**, brace-expansion **2.1.7**, qs **6.16.0**, body-parser
+**2.3.0** and path-to-regexp **8.4.2**, including Express's independent router
+branch. Both Axios importers resolve **1.18.0**. The file-type/inflate update
+removes the affected fflate production path.
+
+Only the two overrides above were needed. Normal compatible resolution supplied
+path-to-regexp; this targeted update refreshed retained transitive ranges:
+
+```sh
+pnpm update --recursive --prod --depth Infinity form-data brace-expansion qs body-parser
+```
+
+For future updates, inspect every production path rather than only the audit's
+representative path. A parent update can retain an older nested resolution.
+The selective resolution also refreshed shared development graph entries, including
+Babel 7.29.7 and brace-expansion major 1/5 branches within their parent ranges;
+this does not establish a clean development-dependency audit.
+
+## Open Router findings and deadline
+
+**Owner: project maintainer. Follow-up: resolve and verify these findings before
+any production release, and no later than 2026-10-06.** Keep them in audit output;
+there is no advisory ignore entry or blanket risk acceptance.
+
+- [GHSA-337j-9hxr-rhxg](https://github.com/remix-run/react-router/security/advisories/GHSA-337j-9hxr-rhxg),
+  moderate: SSR error hydration. The maintainer excludes Declarative Mode. This
+  frontend uses BrowserRouter and a client `createRoot` mount, so the reviewed
+  application does not use the described SSR path; the package finding remains.
+- [GHSA-wrjc-x8rr-h8h6](https://github.com/remix-run/react-router/security/advisories/GHSA-wrjc-x8rr-h8h6),
+  moderate: unexpected external navigation from untrusted paths. The app uses
+  Link/useNavigate; inspected destinations are fixed internal routes or fixed tab
+  entries. No untrusted target was found in that bounded review. This does not
+  justify suppressing the advisory or assuming future navigation is safe.
+
+A separately tested Router migration is required to remove both version-based
+findings. Do not select 7.18.0 solely from their fix floor: it has the additional
+high [GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-vcr4-c8h2),
+fixed in 7.18.2. Version 7.18.4 is the current v7 maintenance candidate as of this
+review; re-audit it when implementing the follow-up. Current React 18/Node 22 meet
+v7's minimums, but the [upgrade guide](https://raw.githubusercontent.com/remix-run/react-router/react-router@7.18.0/docs/upgrading/v6.md)
+requires checking splat/transition behavior. Test `assets/*`, tab navigation,
+unknown-route redirects and login/MFA/logout flows before adopting it.

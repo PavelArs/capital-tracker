@@ -10,6 +10,9 @@ Backend: `pnpm --dir backend lint`, `pnpm --dir backend build`,
 `pnpm --dir backend test --runInBand`. Frontend: `pnpm --dir frontend lint`,
 `pnpm --dir frontend build`, `pnpm --dir frontend test`.
 Repository/HTTP mocks are not real database/browser verification.
+Run `pnpm audit:production` for the required high/critical production dependency
+gate. Preserve visible lower-severity findings in docs/dependency-security.md;
+registry failures and advisory findings must never be suppressed.
 
 OpenSpec 1.2.0: `OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive`.
 Core workflow: propose -> apply -> independent review -> verify -> archive.

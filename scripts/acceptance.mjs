@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, lstatSync, writeFileSync } from 'node:fs';
+import { mkdirSync, lstatSync, writeFileSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -31,6 +31,22 @@ if (command === 'down') {
     run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '2', '-nodes',
       '-keyout', join(tls, 'privkey.pem'), '-out', join(tls, 'fullchain.pem'),
       '-subj', '/CN=capital-tracker-e2e.invalid', '-addext', 'subjectAltName=IP:127.0.0.1,DNS:localhost']);
+    const providerTls = join(root, 'tests/e2e/.runtime/provider-tls');
+    mkdirSync(providerTls, { recursive: true });
+    if (!lstatSync(providerTls).isDirectory()) throw new Error('Provider TLS fixture directory must not be a symlink');
+    // These two fixed fixture files are synthetic, regenerated each run. A previous
+    // Linux run may have assigned the private key to the non-root fixture container.
+    for (const name of ['privkey.pem', 'fullchain.pem']) {
+      const path = join(providerTls, name);
+      try {
+        if (!lstatSync(path).isFile()) throw new Error('Provider TLS fixture must be a regular file');
+        unlinkSync(path);
+      } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '2', '-nodes',
+      '-keyout', join(providerTls, 'privkey.pem'), '-out', join(providerTls, 'fullchain.pem'),
+      '-subj', '/CN=capital-tracker-provider-fixture.invalid',
+      '-addext', 'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com']);
     compose('down', '--remove-orphans');
     try {
       compose('build', 'backend', 'frontend');
@@ -38,7 +54,13 @@ if (command === 'down') {
         '--mount', `type=bind,src=${key},dst=/synthetic-key`, '--entrypoint', 'node',
         'capital-tracker-backend:acceptance', '-e',
         "const fs=require('node:fs');fs.chownSync('/synthetic-key',1000,1000);fs.chmodSync('/synthetic-key',0o400)"]);
+      if (process.platform === 'linux') run('docker', ['run', '--rm', '--network', 'none', '--user', '0',
+        '--mount', `type=bind,src=${join(providerTls, 'privkey.pem')},dst=/synthetic-provider-key`, '--entrypoint', 'node',
+        'capital-tracker-backend:acceptance', '-e',
+        "const fs=require('node:fs');fs.chownSync('/synthetic-provider-key',1000,1000);fs.chmodSync('/synthetic-provider-key',0o400)"]);
       compose('up', '-d', '--wait', '--wait-timeout', '120', 'postgres', 'redis', 'providers');
+      compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e/provider-proxy.cjs')}:/tests/provider-proxy.cjs:ro`,
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/provider-proxy.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/migrations.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,

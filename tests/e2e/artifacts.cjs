@@ -11,6 +11,13 @@ assert.equal(backend.Config.User, 'node', 'MFA runtime must remain non-root');
 const keyMount = backend.Mounts.find(mount => mount.Destination === '/run/secrets/ct-mfa-key');
 assert.ok(keyMount, 'MFA key must be supplied at runtime');
 assert.equal(keyMount.RW, false, 'Runtime cannot overwrite the mounted MFA key');
+const caMount = backend.Mounts.find(mount => mount.Destination === '/run/acceptance/provider-ca.pem');
+assert.ok(caMount && !caMount.RW, 'Only the public synthetic provider certificate is mounted read-only');
+assert.ok(!backend.Mounts.some(mount => mount.Source.endsWith('/provider-tls')
+  || mount.Source.endsWith('/provider-tls/privkey.pem')), 'Application cannot read provider private key');
+const providerContainer = inspect(docker(...compose, 'ps', '-q', 'providers'));
+assert.ok(!providerContainer.Mounts.some(mount => mount.Destination === '/run/secrets/ct-mfa-key'
+  || mount.Source.endsWith('/mfa-key')), 'External fixture cannot read the MFA key');
 for (const name of ['backend', 'frontend', 'postgres', 'redis', 'providers']) {
   const container = inspect(docker(...compose, 'ps', '-q', name));
   assert.deepEqual(container.HostConfig.PortBindings ?? {}, {}, `${name} must have no published ports`);
@@ -24,9 +31,11 @@ for (const network of Object.keys(backend.NetworkSettings.Networks)) {
 const scan = `
 const fs = require('node:fs');
 const assert = require('node:assert/strict');
-for (const path of ['/tests', '/app/tests', '/app/backend/src', '/app/.env', '/app/backend/.env', '/run/secrets/ct-mfa-key']) {
+for (const path of ['/tests', '/app/tests', '/app/backend/src', '/app/.env', '/app/backend/.env', '/run/secrets/ct-mfa-key', '/run/acceptance/provider-ca.pem']) {
   assert.equal(fs.existsSync(path), false, 'No fixture/source/env path: ' + path);
 }
+assert.equal(process.env.NODE_EXTRA_CA_CERTS, undefined, 'Production image must not carry fixture TLS trust');
+assert.notEqual(process.env.NODE_TLS_REJECT_UNAUTHORIZED, '0', 'Normal TLS verification remains enabled');
 function walk(path) {
   for (const entry of fs.readdirSync(path, { withFileTypes: true })) {
     const full = path + '/' + entry.name;
