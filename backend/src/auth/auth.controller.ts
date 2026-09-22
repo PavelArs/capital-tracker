@@ -9,16 +9,16 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { AuthService } from './auth.service';
-import { AuthClientSource } from './client-source';
 import { FactorDto } from './dto/factor.dto';
 import { LoginDto } from './dto/login.dto';
 import { SessionRequest } from './guards/session.guard';
 import { MfaService } from './mfa.service';
 import { AllowPending, Public } from './public.decorator';
+import { AuthRequestLimit } from './request-limit.decorator';
+import { AuthRequestLimitsService } from './request-limits.service';
 import {
   COOKIE_OPTIONS,
   SESSION_COOKIE,
@@ -33,12 +33,12 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly sessions: SessionService,
     private readonly factors: MfaService,
+    private readonly limits: AuthRequestLimitsService,
   ) {}
 
   @Public()
-  @AuthClientSource()
+  @AuthRequestLimit('csrf-ip')
   @Get('csrf')
-  @Throttle({ default: { limit: 30, ttl: 60000 } })
   async csrf(@Request() req: SessionRequest, @Res({ passthrough: true }) res: Response) {
     if (req.headers.origin !== undefined) this.sessions.checkOrigin(req.headers.origin);
     const state = await this.sessions.csrf(readSessionCookie(req.headers.cookie));
@@ -48,10 +48,9 @@ export class AuthController {
   }
 
   @Public()
-  @AuthClientSource()
+  @AuthRequestLimit('login-ip')
   @Post('login')
   @HttpCode(200)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiBody({ type: LoginDto })
   @ApiOperation({ summary: 'Verify the owner password and begin second-factor verification' })
   async login(
@@ -59,6 +58,7 @@ export class AuthController {
     @Request() req: SessionRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
+    await this.limits.admit('login-account', credentials.email);
     const verified = await this.auth.validateUser(credentials.email, credentials.password);
     if (!verified) throw new UnauthorizedException();
     const state = await this.sessions.rotate(req.authSession.hash, verified);
@@ -67,10 +67,9 @@ export class AuthController {
   }
 
   @AllowPending()
-  @AuthClientSource()
+  @AuthRequestLimit('mfa-ip')
   @Post('mfa')
   @HttpCode(200)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async mfa(
     @Body() factor: FactorDto,
     @Request() req: SessionRequest,

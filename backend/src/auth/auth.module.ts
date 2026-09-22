@@ -7,6 +7,7 @@ import { AuthService } from './auth.service';
 import { AuthClientSourceModule } from './client-source.module';
 import { SessionGuard } from './guards/session.guard';
 import { MfaService } from './mfa.service';
+import { AuthRequestLimitsService } from './request-limits.service';
 import { SessionService } from './session.service';
 
 @Module({
@@ -14,6 +15,7 @@ import { SessionService } from './session.service';
   controllers: [AuthController],
   providers: [
     AuthService,
+    AuthRequestLimitsService,
     SessionService,
     MfaService,
     { provide: APP_GUARD, useClass: SessionGuard },

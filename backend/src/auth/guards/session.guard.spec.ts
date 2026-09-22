@@ -5,6 +5,7 @@ import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-hos
 import { DataSource } from 'typeorm';
 import { AuthClientSourceService } from '../client-source';
 import { PUBLIC_ROUTE } from '../public.decorator';
+import { AuthRequestLimitsService } from '../request-limits.service';
 import { SESSION_COOKIE, SessionService, readSessionCookie } from '../session.service';
 import { SessionGuard } from './session.guard';
 
@@ -18,6 +19,7 @@ describe('CHAR-AUTH-001 / SES-001-D real default-deny session boundary', () => {
     new Reflector(),
     sessions,
     new AuthClientSourceService(new ConfigService({ TRUSTED_PROXY_IPS: '[]' }), new Reflector()),
+    new AuthRequestLimitsService(source),
   );
   function context(headers: Record<string, string | undefined>, publicRoute = false) {
     const handler = () => {};

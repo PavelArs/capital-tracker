@@ -180,6 +180,7 @@ export class SessionService {
     origin: unknown,
     csrf: unknown,
     allowPending = false,
+    readOnly = false,
   ): Promise<SessionIdentity> {
     const denied = () => (requireOwner ? new UnauthorizedException() : new ForbiddenException());
     if (!token || !tokenPattern.test(token)) throw denied();
@@ -202,10 +203,11 @@ export class SessionService {
           throw new ForbiddenException();
       }
       // The row lock serializes touches with logout/recovery; denied writes do not touch.
-      await manager.query(
-        'UPDATE auth_sessions SET "lastSeenAt" = clock_timestamp() WHERE "tokenHash" = $1',
-        [row.tokenHash],
-      );
+      if (!readOnly)
+        await manager.query(
+          'UPDATE auth_sessions SET "lastSeenAt" = clock_timestamp() WHERE "tokenHash" = $1',
+          [row.tokenHash],
+        );
       return this.identity(row);
     });
   }

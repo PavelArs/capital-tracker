@@ -3,6 +3,8 @@ import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
 import { AuthClientSourceService } from '../client-source';
 import { PENDING_ROUTE, PUBLIC_ROUTE } from '../public.decorator';
+import { AUTH_REQUEST_LIMIT, AuthSourcePolicy } from '../request-limit.decorator';
+import { AuthRequestLimitsService } from '../request-limits.service';
 import { SessionIdentity, SessionService, readSessionCookie } from '../session.service';
 
 export interface SessionRequest extends Request {
@@ -16,12 +18,15 @@ export class SessionGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly sessions: SessionService,
     private readonly clientSources: AuthClientSourceService,
+    private readonly limits: AuthRequestLimitsService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     this.clientSources.validate(context);
     const request = context.switchToHttp().getRequest<SessionRequest>();
     context.switchToHttp().getResponse<Response>().setHeader('Cache-Control', 'no-store');
+    const policy = this.reflector.get<AuthSourcePolicy>(AUTH_REQUEST_LIMIT, context.getHandler());
+    if (policy) await this.limits.admit(policy, this.clientSources.resolve(request).subject);
     const publicRoute = this.reflector.getAllAndOverride<boolean>(PUBLIC_ROUTE, [
       context.getHandler(),
       context.getClass(),
@@ -37,6 +42,7 @@ export class SessionGuard implements CanActivate {
         context.getHandler(),
         context.getClass(),
       ]) === true,
+      policy === 'login-ip' || policy === 'mfa-ip',
     );
     request.authSession = session;
     if (session.user) request.user = session.user;

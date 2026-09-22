@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
+import { AuthRequestLimitException } from '../../auth/request-limits.service';
 
 interface ErrorResponse {
   statusCode: number;
@@ -28,6 +29,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    if (exception instanceof AuthRequestLimitException) {
+      response.setHeader('Retry-After', String(exception.retryAfter));
+      response.setHeader('Cache-Control', 'no-store');
+    }
 
     const { status, message, error } = this.getErrorDetails(exception);
 
