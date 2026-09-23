@@ -112,6 +112,33 @@ describe('XIRR-YEAR / ORACLES independently known roots', () => {
 });
 
 describe('XIRR-FLOWS complete exact aggregation', () => {
+  it('supports exactly64 dates and yields while solving an independently known geometric series', async () => {
+    const start = Date.parse('1970-01-01T00:00:00.000Z');
+    const year = 31536000000;
+    const items = Array.from({ length: 63 }, (_, i) =>
+      flow('1', new Date(start + i * year).toISOString()),
+    );
+    let ticks = 0;
+    const heartbeat = setInterval(() => ticks++, 1);
+    try {
+      // Independent Python Decimal sum(1.1**i, i=1..63), rounded to30 places.
+      const result = await available(
+        input(
+          '0',
+          '4446.915684525902395869512133369842',
+          new Date(start).toISOString(),
+          new Date(start + 63 * year).toISOString(),
+        ),
+        items,
+        0.1,
+      );
+      expect(result.cashFlowDateCount).toBe(64);
+      expect(ticks).toBeGreaterThan(0);
+    } finally {
+      clearInterval(heartbeat);
+    }
+  });
+
   it('aggregates all1000 maximum amounts with a51-digit sum before solving', async () => {
     const result = await available(
       input('0', maximum),

@@ -205,6 +205,7 @@ test('XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewe
     });
     const profitButton = page.getByRole('button', { name: 'Рассчитать прибыль', exact: true });
     const xirrButton = page.getByRole('button', { name: 'Рассчитать XIRR', exact: true });
+    await expect(xirrButton).toBeVisible();
     const profitRegion = page.getByRole('region', { name: 'Результат расчёта', exact: true });
     const xirrRegion = page.getByRole('region', { name: 'Доходность XIRR', exact: true });
     const xirrRate = (region: typeof xirrRegion) =>

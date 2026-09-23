@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import type { PortfolioFlowJournal } from '../entities/portfolio-flow-journal.entity';
 import type { PortfolioFlowVersion } from '../entities/portfolio-flow-version.entity';
@@ -15,6 +15,7 @@ import {
   parseFlowVoid,
 } from './portfolio-flow-input';
 import { parseTradeHistoryQuery } from './trade-input';
+import { projectXirr } from './xirr';
 
 const basis = { basis: 'owner-declared-usd-flows' as const, completeness: 'unreconciled' as const };
 const conflict = () => new ConflictException('Flow request conflicts with saved state');
@@ -45,6 +46,8 @@ function receipt(row: PortfolioFlowVersion) {
 
 @Injectable()
 export class PortfolioFlowService {
+  private xirrActive = false;
+
   constructor(private readonly source: DataSource) {}
 
   async initialize(ownerId: string, raw: unknown) {
@@ -183,20 +186,41 @@ export class PortfolioFlowService {
   async previewProfit(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const input = parseProfitPreview(raw);
+    return (await this.valuationSnapshot(owner, input)).preview;
+  }
+
+  async previewXirr(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseProfitPreview(raw);
+    if (this.xirrActive) throw new HttpException('XIRR calculation is busy', 429);
+    this.xirrActive = true;
+    try {
+      const { preview, items } = await this.valuationSnapshot(owner, input);
+      // The snapshot transaction has committed and released before CPU work starts.
+      return { ...preview, xirr: await projectXirr(input, items) };
+    } finally {
+      this.xirrActive = false;
+    }
+  }
+
+  private valuationSnapshot(owner: string, input: ReturnType<typeof parseProfitPreview>) {
     return this.read(async (manager) => {
-      const { journal, summary } = await this.period(manager, owner, input);
+      const { journal, summary, items } = await this.period(manager, owner, input);
       return {
-        from: input.from,
-        to: input.to,
-        coverageFrom: journal.coverageFrom.toISOString(),
-        journalRevision: journal.currentRevision,
-        basis: 'manual-usd-valuations' as const,
-        flowBasis: basis.basis,
-        completeness: basis.completeness,
-        openingValueUsd: input.openingValueUsd,
-        closingValueUsd: input.closingValueUsd,
-        flows: summary,
-        profitUsd: projectPeriodProfit(input.openingValueUsd, input.closingValueUsd, summary),
+        items,
+        preview: {
+          from: input.from,
+          to: input.to,
+          coverageFrom: journal.coverageFrom.toISOString(),
+          journalRevision: journal.currentRevision,
+          basis: 'manual-usd-valuations' as const,
+          flowBasis: basis.basis,
+          completeness: basis.completeness,
+          openingValueUsd: input.openingValueUsd,
+          closingValueUsd: input.closingValueUsd,
+          flows: summary,
+          profitUsd: projectPeriodProfit(input.openingValueUsd, input.closingValueUsd, summary),
+        },
       };
     });
   }

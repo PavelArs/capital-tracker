@@ -7,6 +7,12 @@ import { PortfolioFlowService } from './portfolio-flow.service';
 export class PortfolioFlowController {
   constructor(private readonly flows: PortfolioFlowService) {}
 
+  @Post('xirr-preview')
+  @HttpCode(200)
+  previewXirr(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {
+    return this.flows.previewXirr(owner.userId, input);
+  }
+
   @Post('profit-preview')
   @HttpCode(200)
   previewProfit(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {
