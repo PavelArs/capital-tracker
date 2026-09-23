@@ -174,6 +174,7 @@ export function TradeJournal({
 
   async function send(operation: Operation) {
     if (writeLock.current || openingBusy) return;
+    const previouslyAmbiguous = retry.current?.ambiguous === true;
     writeLock.current = true;
     setWriting(true);
     setError(null);
@@ -212,7 +213,12 @@ export function TradeJournal({
     } catch (error) {
       if (!active.current) return;
       const status = isAxiosError(error) ? error.response?.status : undefined;
-      const ambiguousResult = status === undefined || status >= 500;
+      // Only this exact POST's application 409 resolves a prior unknown outcome:
+      // current guards emit 401/403/429, and the service checks the saved receipt
+      // before mutable conflicts. Parser/proxy 400 or visibility 404 do not prove
+      // whether the earlier attempt committed. Read-request errors never enter here.
+      const refused = status !== undefined && status >= 400 && status < 500;
+      const ambiguousResult = previouslyAmbiguous ? status !== 409 : !refused;
       if (retry.current) retry.current.ambiguous = ambiguousResult;
       setError(errorMessage(error));
       if (isAxiosError(error) && error.response?.status === 409) {
