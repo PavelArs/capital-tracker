@@ -148,9 +148,14 @@ async function main() {
     const results = await Promise.allSettled([prices.set(owner, raceId, set(0, '1')), competing.set(owner, raceId, set(0, '2'))]);
     assert.equal(results.filter(r => r.status === 'fulfilled' && r.value.created).length, 1);
     assert.equal(results.filter(r => r.status === 'rejected' && r.reason.getStatus() === 409).length, 1);
+    const winner = results.find(r => r.status === 'fulfilled').value.value;
+    const raceBook = await prices.list(owner, raceId, {});
+    assert.equal(raceBook.currentRevision, 1); assert.deepEqual(raceBook.items, [winner]);
     const replay = set(1, '3');
     const parallel = await Promise.all([prices.set(owner, raceId, replay), competing.set(owner, raceId, replay)]);
     assert.deepEqual(parallel.map(r => r.created).sort(), [false, true]); assert.deepEqual(parallel[0].value, parallel[1].value);
+    const replayBook = await prices.list(owner, raceId, {});
+    assert.equal(replayBook.currentRevision, 2); assert.deepEqual(replayBook.items, [parallel[0].value]);
     console.log('PASS PRICE-RACE actual separate-pool CAS and same-command concurrency');
 
     let reached, resume, paused = false;

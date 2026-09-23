@@ -1,7 +1,7 @@
 ## 1. Contract and acceptance
 
 - [x] 1.1 Audit price/storage/provider and deployment boundaries, baseline433 tests, keep/simplify/remove inventory and independent contract review.
-- [ ] 1.2 Write exact input, actual PostgreSQL/migration and two critical HTTPS acceptance scenarios; observe predecessor API/UI RED before implementing behavior.
+- [x] 1.2 Write exact input, actual PostgreSQL/migration and two critical HTTPS acceptance scenarios; observe predecessor API/UI RED before implementing behavior.
 
 ## 2. Implementation
 

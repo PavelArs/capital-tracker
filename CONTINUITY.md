@@ -108,7 +108,9 @@ removed. Reuse carry_docs_review Luna(simple), historical_ui Sol(complex/review)
 gate_acceptance quota-limited untilSep29: do not retry/purchase.
 Active next slice: record-manual-usd-prices, specified cdde4d8. Root acceptance
 8b6dd1c (pure input + real PG); migration runner/count expectations806fee5.
-No product changes yet; awaiting genuine predecessor API/UI RED. Root owns
+Genuine predecessor RED observed: pendingMFA API expected401 received404; missing
+newUIheading. Log /private/tmp/capital-prices-predecessor-red.log, exit1,2failed.
+Root backend implementing; Sol UI implementing after RED GO. Root owns
 backend/migration18/PG/shared runner, Luna acceptance in prices-acceptance worktree,
 Sol UI in prices-ui worktree. Frozen active design: per-instrument manualUSD/unit
 exact points, immutable set/void versions, owner instrument lockRC/CAS/replay,
@@ -116,8 +118,8 @@ RR READ ONLY effective pages/history,10000cap, Russian review/recovery UI.
 No providers/dependencies. PG fixture covers fresh18/populated17 upgrade and
 actual two-pool race/RR checks. Baseline433/9 pass2.745s; strict18spec+change pass.
 Predecessor XIRR images listed above unchanged. Prepared RED harness
-/private/tmp/capital-prices-predecessor-red.cjs checks image identity; not yet run.
-No Docker running at this checkpoint. Browser acceptance draft under review.
+/private/tmp/capital-prices-predecessor-red.cjs verified predecessor identity before the run.
+No Docker running at this checkpoint. Browser acceptance ad96a36 integrated after independent root review.
 Whole brief still needs TWR, transfers/swaps/rewards, DBprices/history/
 charts, blockchains/reconciliation, optionalAI, releasehardening/backuprestore/
 consolidation. Conventional manual XIRR is partial support; do not move/delete
