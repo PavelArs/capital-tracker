@@ -1,0 +1,25 @@
+.csv-imports {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.csv-imports fieldset {
+  display: grid;
+  gap: 1rem;
+}
+.csv-imports th,
+.csv-imports td,
+.csv-imports p,
+.csv-imports li {
+  overflow-wrap: anywhere;
+}
+.csv-literal th,
+.csv-literal td {
+  white-space: pre-wrap;
+}
+.csv-summary-line {
+  display: contents;
+}
+.csv-imports select {
+  max-width: 100%;
+}

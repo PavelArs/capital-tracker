@@ -10,6 +10,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CsvImports } from './CsvImports';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
 import { accountingError, newRequestId } from './feedback';
@@ -41,6 +42,8 @@ export function TradeJournal({
   const [state, setState] = useState<JournalState | null>(null);
   const [loading, setLoading] = useState(true);
   const [writing, setWriting] = useState(false);
+  const [csvBlocked, setCsvBlocked] = useState(false);
+  const csvLock = useRef(false);
   const [coverage, setCoverage] = useState(() => new Date().toISOString());
   const [assertEmpty, setAssertEmpty] = useState(false);
   const [draft, setDraft] = useState<TradeDraft>(emptyTradeDraft);
@@ -107,6 +110,23 @@ export function TradeJournal({
     [accountId],
   );
 
+  const csvSelection = useRef({ target, load });
+  csvSelection.current = { target, load };
+  const blockForCsv = useCallback((blocked: boolean) => {
+    csvLock.current = blocked;
+    setCsvBlocked(blocked);
+  }, []);
+  const refreshAfterCsv = useCallback(async () => {
+    setHideResults(true);
+    setReviewed(false);
+    setReviewReady(false);
+    const selected = csvSelection.current;
+    const loaded = await selected.load(selected.target?.tradeId, selected.target?.version);
+    // Preserve any existing review requirement and the original selected version.
+    if (!loaded) setNeedsReview(true);
+    return loaded;
+  }, []);
+
   useEffect(() => {
     active.current = true;
     void load();
@@ -117,13 +137,13 @@ export function TradeJournal({
   }, [load]);
 
   function edit(next: TradeDraft) {
-    if (retry.current?.ambiguous || writeLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
     retry.current = null;
     setDraft(next);
     setError(null);
   }
   function select(trade: TradeVersion, kind: 'correct' | 'void') {
-    if (retry.current?.ambiguous || writeLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
     retry.current = null;
     setTarget(trade);
     setMode(kind);
@@ -144,7 +164,7 @@ export function TradeJournal({
     }
   }
   function cancel() {
-    if (retry.current?.ambiguous || writeLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
     retry.current = null;
     setMode('create');
     setTarget(null);
@@ -166,14 +186,14 @@ export function TradeJournal({
     );
   }
   async function refresh() {
-    if (writing || writeLock.current) return;
+    if (writing || writeLock.current || csvLock.current) return;
     setError(null);
     setReviewed(false);
     await load(target?.tradeId, target?.version);
   }
 
   async function send(operation: Operation) {
-    if (writeLock.current || openingBusy) return;
+    if (writeLock.current || openingBusy || csvLock.current) return;
     const previouslyAmbiguous = retry.current?.ambiguous === true;
     writeLock.current = true;
     setWriting(true);
@@ -311,12 +331,13 @@ export function TradeJournal({
   const ambiguous = retry.current?.ambiguous === true;
   const targetUnavailable =
     needsReview && target !== null && (!reviewTarget || reviewTarget.kind === 'void');
-  const disabled =
+  const manualDisabled =
     writing ||
     openingBusy ||
     loading ||
     !state ||
     (needsReview && (!reviewed || !reviewReady || targetUnavailable));
+  const disabled = manualDisabled || csvBlocked;
   const journal = state?.journal;
   return (
     <section className="manual-card trade-journal" aria-labelledby="trade-journal-heading">
@@ -334,7 +355,7 @@ export function TradeJournal({
       <button
         type="button"
         className="manual-button manual-button--secondary"
-        disabled={writing || openingBusy || loading}
+        disabled={writing || openingBusy || loading || csvBlocked}
         onClick={() => void refresh()}
       >
         Обновить журнал
@@ -348,7 +369,7 @@ export function TradeJournal({
           <button
             type="button"
             className="manual-button"
-            disabled={writing || openingBusy || loading}
+            disabled={writing || openingBusy || loading || csvBlocked}
             onClick={() => {
               if (retry.current?.ambiguous) void send(retry.current.operation);
             }}
@@ -403,7 +424,7 @@ export function TradeJournal({
             <input
               type="checkbox"
               checked={reviewed}
-              disabled={!reviewReady || loading || writing || targetUnavailable}
+              disabled={!reviewReady || loading || writing || targetUnavailable || csvBlocked}
               onChange={(event) => {
                 setReviewed(event.target.checked);
                 if (event.target.checked && !retry.current?.ambiguous) retry.current = null;
@@ -486,7 +507,7 @@ export function TradeJournal({
               <button
                 type="button"
                 className="manual-button manual-button--secondary"
-                disabled={writing || loading || ambiguous}
+                disabled={writing || loading || ambiguous || csvBlocked}
                 onClick={cancel}
               >
                 Отменить аннулирование
@@ -503,7 +524,7 @@ export function TradeJournal({
               lockDraft={ambiguous}
               correction={mode === 'correct'}
               onCancel={cancel}
-              cancelDisabled={writing || loading || ambiguous}
+              cancelDisabled={writing || loading || ambiguous || csvBlocked}
             />
           )}
           {!hideResults && !loading && (
@@ -512,12 +533,22 @@ export function TradeJournal({
               accountId={accountId}
               journal={journal}
               disabled={writing || openingBusy || (needsReview && !reviewed)}
-              mutationDisabled={ambiguous}
+              mutationDisabled={ambiguous || csvBlocked}
               onCorrect={(trade) => select(trade, 'correct')}
               onVoid={(trade) => select(trade, 'void')}
               onStale={stale}
             />
           )}
+          <CsvImports
+            key={accountId}
+            accountId={accountId}
+            journalRevision={journal.journalRevision}
+            instruments={instruments}
+            parentBusy={writing || openingBusy || ambiguous}
+            parentBlocked={manualDisabled || ambiguous}
+            onBlocked={blockForCsv}
+            onJournalRefresh={refreshAfterCsv}
+          />
         </>
       )}
     </section>
