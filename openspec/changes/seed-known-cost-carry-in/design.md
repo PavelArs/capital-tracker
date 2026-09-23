@@ -147,7 +147,9 @@ no destructive down/reset or automatic image rollback promise is appropriate.
 Wire projections, canonical tuples, lot identity, shared helper seams and explicit
 new schema constraints are reviewed in persistence.md. Acceptance review and the
 actual predecessor catalog check remain. Reconcile all affected specification blocks
-against the actual archived CSV canonical specs before test authorship. No implementation
+against the actual archived CSV canonical specs before predecessor RED execution.
+Independent tests may be authored in an isolated worktree from this frozen contract
+while that predecessor gate finishes; no carry-in product code is changed. No implementation
 or migration is authorized by a draft artifact alone; the established ATDD prerequisites
 remain mandatory. No new owner permission or external service is required for this
 isolated reversible preparation.
