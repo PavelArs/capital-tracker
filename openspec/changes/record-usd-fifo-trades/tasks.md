@@ -18,7 +18,7 @@
 - [x] 3.2 Implement complete create/correct/terminal-void commands, shared trade key namespace, replay-before-CAS, caps, full-history validation and atomic version/head/journal commit.
 - [x] 3.3 Implement repeatable-read current projections, bounded revision-pinned pages and immutable version pages, with owner-scoped labels and exact response contracts.
 - [ ] 3.4 Wire private controllers into existing accounting/session/CSRF/quota boundaries and retain Russian-safe existing generic error handling without logging private inputs.
-- [ ] 3.5 Independently exercise actual production service with isolated PostgreSQL: duplicate/CAS/two-process competing-sale races, historical prefix refusal, all correction fields, chronology collisions, exact caps and old replay receipts.
+- [x] 3.5 Independently exercise actual production service with isolated PostgreSQL: duplicate/CAS/two-process competing-sale races, historical prefix refusal, all correction fields, chronology collisions, exact caps and old replay receipts.
 - [ ] 3.6 Prove coherent concurrent reads and deferred-COMMIT rollback after version/head/state writes using a disposable fixture and independent stage probe; verify failed-key reuse and secret-free generic HTTP failure. No product fault endpoint.
 
 ## 4. Russian journal UI and real release acceptance

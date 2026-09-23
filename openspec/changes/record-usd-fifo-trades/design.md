@@ -2,8 +2,8 @@
 
 Manual openings provide exact aggregate quantities and known/unknown USD cost, not
 acquisition chronology. The preceding change was verified and archived as
-2026-09-23-record-manual-opening-positions (e2080aa). Implementation of this change
-still requires genuine predecessor-image RED.
+2026-09-23-record-manual-opening-positions (e2080aa). Genuine predecessor-image
+HTTP/UI RED was observed before implementation; verification.md records the evidence.
 The target brief requires FIFO and rebuilding derived history after old edits. This
 bounded vertical slice proves those behaviors through real Russian UI, HTTPS and PG.
 The normative API/storage contract is in `persistence.md`; stable scenarios are in specs.
@@ -117,12 +117,20 @@ Labels include “Журнал сделок в USD”, “Позиции был�
 Explain 30-decimal allocation, declared coverage and unsupported opening carry-in.
 Do not label this as portfolio return, market value, USD cash or tax report.
 
-Keep a request key across transport ambiguity; changing the draft starts a new key.
+Keep the complete command across transport ambiguity, including key, target and
+original expected revision. While its outcome is unresolved, protect the draft from
+edits and offer an explicit exact replay even if the live target has since changed.
+Read-side conflicts, reload and review never discard that unresolved command. A
+confirmed rejection permits an explicit reviewed edit with a new command/key.
 After any success/replay, treat the result as a receipt and fetch current journal;
 never set current state from an old receipt. Preserve drafts on 409, require explicit
 current-state review before another write and never auto-submit. Disable editable
 fields during writes; route-generation/request-sequence guards reject stale responses.
 On page revision drift, discard accumulated pages and explicitly reload. Preserve
+the selected draft on manual refresh, but require review of every execution field
+if the selected head changed; a refreshed journal CAS is not consent to overwrite an
+unseen target. Keep opening eligibility unresolved after ambiguous initialization
+until an actual current-state read resolves it. Preserve
 Russian local errors, existing 401 redirect and 403 CSRF handling without transport
 framework changes. All routes remain full-MFA private with session/CSRF and existing
 quotas; valid authorization can touch session lastSeenAt before the accounting TX.

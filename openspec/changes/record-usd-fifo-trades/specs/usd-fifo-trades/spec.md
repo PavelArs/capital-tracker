@@ -135,6 +135,19 @@ No provider, legacy observation or external-flow mutation SHALL occur.
 - **AND** successful or replayed receipts trigger a current-state read, not replacement by an old result
 - **AND** stale 409 preserves the draft with Russian feedback and explicit review before resubmission; writes disable edits and stale route responses cannot change another account
 
+#### Scenario: TRADE-006-C Refresh cannot silently rebase a selected mutation
+- **GIVEN** a correction draft or void confirmation refers to version 1 and another request corrects that trade to version 2
+- **WHEN** the owner refreshes the journal without submitting the draft
+- **THEN** the draft remains unchanged and the refreshed complete target is displayed for explicit review before a new command can use the newer journal revision
+- **AND** a target now terminally void cannot silently turn the selected mutation into a create
+
+#### Scenario: TRADE-006-D Read conflicts cannot discard an unresolved command
+- **GIVEN** a real correction commits but its response is lost before browser delivery
+- **WHEN** a stale revision-pinned read returns 409 and the owner refreshes and reviews the journal
+- **THEN** unchanged explicit retry still sends the complete original command, including its original request key, target and expected revision
+- **AND** the API returns the original receipt with 200, no duplicate version is created and a fresh current-state read supplies the displayed results
+- **AND** an ambiguous initialization keeps the opening editor blocked until current journal state is known
+
 #### Scenario: TRADE-006-B Retained security and privacy
 - **WHEN** anonymous/pending clients, invalid Origin/CSRF, foreign IDs, mass assignment or literal malicious labels exercise new routes
 - **THEN** statuses remain 401/403/generic 404/400 as appropriate, labels render as text and unauthorized requests cannot mutate accounting data

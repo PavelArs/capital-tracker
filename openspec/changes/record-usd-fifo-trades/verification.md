@@ -66,13 +66,50 @@ hashes remain unchanged. Independent backend/schema review found no blocker in
 owner predicates, lock ordering, replay-before-CAS, complete history or read isolation.
 Root has wired TradeController/TradeService into AccountingModule; actual HTTPS
 verification of that integration still awaits the complete frontend/image run.
-Independent fixture review identified that the existing two-command buy race shares
+Independent fixture review identified that the first two-command buy race shares
 a chronology key: its loser could fail chronology validation rather than stale CAS.
 It also does not prove the required competing-sale/no-overspend case. A separate
-distinct-order sell race is being added; task3.5 remains incomplete until it passes.
+distinct-order sell race was added in c25b5a9 and independently reviewed. The repeat
+`caffeinate -is node /private/tmp/capital-usd-trades-pg.cjs usd-trades-db.cjs`
+passed all cases, terminal exit0: /private/tmp/capital-usd-pg-race-review.log.
+Two separately valid buys with distinct chronology isolate CAS. Two0.75-unit sales
+against1 unit commit only one sale, leaving exactly0.25/$25. Both stale and freshly
+revised oversold retries remain atomic; after a legitimate backdated0.5/$50 purchase,
+the same losing request key is reusable and exact totals remain150 cost/180 net/30 result.
 Full backend lint/build,737 tests/24 suites,183 engineering tests/2 suites and strict
 OpenSpec11-item validation passed: /private/tmp/capital-usd-backend-baseline.log exit0.
 The PG trade fixture preserves populated users/owner-auth and all existing financial
 rows; it does not seed live session/MFA/admission rows. Populated migration preservation
 already tests those states; trade-write preservation awaits the real authenticated
 HTTPS cases. Expanded HTTPS acceptance, frontend gates/review and archive remain pending.
+
+Frontend214bec4+6be9da9 integrated after root review. Actual integrated lint/build and
+81 retained tests/10 files passed, exit0: /private/tmp/capital-usd-frontend-integrated.log.
+Existing77 backend/29 frontend warnings and the existing bundle-size warning remain.
+Frozen install and the live required production audit passed, terminal exit0:
+/private/tmp/capital-usd-frozen-live.log and /private/tmp/capital-usd-audit-live.log.
+The audit still reports2 moderate findings. Initial sandbox attempts failed due to
+pnpm cache context/no-TTY and registry DNS restrictions; those were not counted as
+successful checks. Reviewed escalations completed without changing the lockfile.
+
+Independent frontend review found two unresolved blockers: manual refresh can bind
+a selected old correction/void draft to an unseen newer revision, and a stale-read
+review can discard an unresolved command after a lost successful response. Related
+ambiguous initialization must keep the opening editor blocked until a current read.
+TRADE-006-C/D now make these observable requirements explicit. Independent real HTTPS
+regressionsf8d2ea5 were integrated before fixing either defect. Actual
+`caffeinate -is node /private/tmp/capital-usd-trades-focused.cjs regression` exited1:
+/private/tmp/capital-usd-ui-review-red.log. Exactly two intended assertions failed:
+- After a real external correction and manual refresh, Save was enabled rather than
+  disabled pending review of the new target.
+- After a real correction201/PG commit followed by aborted response delivery, actual
+  pinned-read409 and explicit review, resubmission returned201 instead of200, creating
+  an extra correction rather than resolving the original command.
+The network fault forwarded the unchanged real request with route.fetch, verified
+its actual201 and PostgreSQL commit, then aborted delivery; no backend response or
+authentication was fabricated. Artifact/MFA/HTTPS prerequisites passed. Synthetic
+cleanup completed; retained screenshots/traces are in
+/private/tmp/capital-usd-ui-review-red-artifacts.
+Pre-fix backend17283e22fdc410782a31ebdd86e627e8c07cb576fd1f0b82ffb9bc87e39fc2c3,
+frontend e39d4b2f442bf087612ddae5287361f7c40075e04e473e113eb18fd8b2c5a182.
+The fixes and complete release acceptance remain pending. Do not archive yet.

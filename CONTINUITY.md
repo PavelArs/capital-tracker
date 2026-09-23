@@ -80,7 +80,7 @@ Initial RED wrapper now uses mutable acceptance tags; do not repeat an old-image
 without pinning predecessor digests. No fake unavailable-import RED was run.
 
 Integrated pure helpers92e4c12, independent tests27c7ee5, PGfixturedfbef7a and backend
-81587f2 (main ab73279). Root migration14 adds three tables, typed entities and module
+81587f2. Root migration14 adds three tables, typed entities and module
 wiring; shared fixtures/harness now expect14. No historical migration changed.
 capital-usd-source-first.log exit0:196/4 suites including70 new arithmetic/parser tests.
 capital-usd-migrations-first.log exit0: fresh14/replay/all unsafe refusals and populated
@@ -93,20 +93,32 @@ All three logs are in /private/tmp; owned Compose cleanup completed. Nginx/lock 
 Independent backend/schema review found no blocker. Full backend lint/build passed,
 737/24 source tests and183/2 engineering tests passed, strict11 OpenSpec items passed:
 /private/tmp/capital-usd-backend-baseline.log exit0. Reviewer identified a fixture gap:
-same-chronology buy race does not isolate CAS or prove competing-sale overspend;
-provider agent now adds distinct-order sale race in usd-trades-db-tests. Task3.5 pending.
+same-chronology buy race did not isolate CAS or prove competing-sale overspend.
+Independent c25b5a9 added both; actual PG repeat capital-usd-pg-race-review.log exit0.
+All cases pass, with exact competing-sale remaining0.25/$25 and losing-key reuse.
+Frozen install and live requiredaudit exit0 in capital-usd-frozen-live.log and
+capital-usd-audit-live.log (2moderate, nohighcritical; lockunchanged). Initial sandbox
+install cache/noTTY and registryDNS attempts failed, not counted as passing.
 
 Existing agents reused because platform thread limit prevents new spawn:
-- audit_security owns frontend in usd-trades-frontend: API, journal/forms/results,
-  minimal account detail/CSS integration; implement explicit ambiguity/receipt/draft guards.
-- gate_acceptance owns expanded real HTTPS tests in usd-trades-acceptance, including
-  financial UI, private boundaries, two-backend races and actual HTTP deferred rollback.
-- provider_feasibility independently reviews backend/DDL and PG-fixture validity;
-  owns only usd-trades-db.cjs for the additional independent race oracle.
+- audit_security owns frontend in usd-trades-frontend. Initial214bec4+6be9da9 integrated,
+  lint/build/81tests pass; now fixing two independently reproduced review defects.
+- gate_acceptance authored expandedHTTPS2c71d72, distinctrace6aece32, UIregressionsf8d2ea5,
+  allintegrated (main728ff6b).99discovered; fullruntimepending. NoDockerbyagents.
+- provider_feasibility independently reviewed backend/DDL/PG/UI/docs; staticUI findings
+  nowconfirmedrealRED. Noownedworkactive; canreuseforfixreview.
 Root owns integration, DDL/shared fixtures/evidence and all Docker; do not run Docker
 from agents. Root UI plan /private/tmp/capital-usd-trades-frontend-plan.md independently
 reviewed. All worktrees retained; never stage dependency symlinks. Read persistence.md.
-Full source/image/Playwright verification, frontend review and archive remain pending.
+UIreviewRED: capital-usd-ui-review-red.log exit1, exactly2intendedfailures afterrealMFA:
+manualrefreshselectedv1/externalv2 expecteddisabledSave butenabled; actualcorrection
+201commit/transportabort thenpinned409/review expected200replay but201duplicateversion.
+Savedartifacts /private/tmp/capital-usd-ui-review-red-artifacts. Frontend pre-fiximage
+e39d4b2f442bf087612ddae5287361f7c40075e04e473e113eb18fd8b2c5a182; backendsame17283e.
+TRADE-006-C/D explicitlyspecifytargetreview andexactambiguouscommand; noassertionsweakened.
+Rootfocused wrapper /private/tmp/capital-usd-trades-focused.cjs usescurrentbuiltimages,
+optionalgrep argument. Other12newcases nowrunning capital-usd-focused-first.log;
+fixes will rebuild onlyafterthisrunends. Rootfullsource/build/imageGREEN+archivepending.
 
 Remaining full goal: CSV/carry-in/owned transfers/flows, performance/XIRR/TWR, DB-first
 price/FX/history, sixchain adapters/reconciliation, optional explicitfree AI, immutable
