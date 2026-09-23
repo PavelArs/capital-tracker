@@ -1,0 +1,113 @@
+.prices-page {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1rem;
+  color: var(--text-color);
+}
+
+.prices-page header p,
+.prices-card p {
+  line-height: 1.5;
+}
+
+.prices-card {
+  margin: 1rem 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+.prices-card h2 {
+  margin-top: 0;
+}
+
+.prices-card label,
+.prices-fields label {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-weight: 600;
+}
+
+.prices-card select,
+.prices-fields input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.prices-fields {
+  display: grid;
+  gap: 0.4rem;
+  margin: 1rem 0;
+}
+
+.prices-fields input + label {
+  margin-top: 0.5rem;
+}
+
+.prices-card .prices-review {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.prices-actions,
+.prices-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.prices-card button {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.8rem;
+  border: 0;
+  border-radius: 4px;
+  background: var(--primary-color);
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.prices-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.prices-notice {
+  padding: 0.65rem 0.85rem;
+  border-left: 3px solid var(--primary-color);
+  background: var(--bg-color);
+}
+
+.prices-table-wrap {
+  overflow-x: auto;
+}
+
+.prices-card table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.prices-card th,
+.prices-card td {
+  padding: 0.55rem;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.prices-history {
+  padding-left: 1.4rem;
+  overflow-wrap: anywhere;
+}

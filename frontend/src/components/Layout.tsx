@@ -108,6 +108,9 @@ export default function Layout() {
           <Link to="/manual-accounts" onClick={closeMobileMenu}>
             Ручные счета
           </Link>
+          <Link to="/manual-prices" onClick={closeMobileMenu}>
+            Ручные цены
+          </Link>
           <Link to="/capital-flows" onClick={closeMobileMenu}>
             Вводы и выводы
           </Link>

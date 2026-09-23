@@ -12,6 +12,7 @@ import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
 import ManualAccountDetail from '@pages/ManualAccountDetail';
 import ManualAccounts from '@pages/ManualAccounts';
+import ManualPrices from '@pages/ManualPrices';
 import PeriodProfit from '@pages/PeriodProfit';
 import Settings from '@pages/Settings';
 import React, { useEffect } from 'react';
@@ -52,6 +53,7 @@ function AppRoutes() {
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
+        <Route path="manual-prices" element={<ManualPrices />} />
         <Route path="capital-flows" element={<CapitalFlows />} />
         <Route path="period-profit" element={<PeriodProfit />} />
         <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
