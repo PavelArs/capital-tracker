@@ -58,8 +58,12 @@ The system SHALL serialize on the account, replay an existing request before CAS
 atomically append the complete next snapshot and update current pointer, preserving
 all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be exposed. New opening writes SHALL refuse 409 after an explicit
 trade journal exists, under the same owned account lock used by journal initialization.
-Existing request replay SHALL retain its original semantics. Journal eligibility SHALL
-require absence of ALL opening history, not merely a NULL current pointer.
+Existing request replay SHALL retain its original semantics. Declared-empty journal eligibility SHALL
+require absence of ALL opening history, not merely a NULL current pointer. Separately,
+explicit known-cost carry-in SHALL pin the current immutable opening revision and
+reconcile owner-supplied original lots under CARRY-001..006; no automatic conversion
+SHALL occur. The same journal dependency SHALL block later new opening snapshots
+while retaining all old opening receipts and historical rows.
 
 #### Scenario: OPEN-003-A Retries and competing replacements preserve provenance
 - **WHEN** identical requests race, changed payload reuses a key, or different keys race on one expectedRevision
@@ -82,7 +86,8 @@ require absence of ALL opening history, not merely a NULL current pointer.
 - **WHEN** a journal has been explicitly initialized, even if all its trades are void
 - **THEN** a new opening write returns 409 without creating a snapshot or moving the pointer
 - **AND** the account UI explains journal dependency instead of offering a misleading empty-opening editor
-- **AND** an opening-versus-initialization race commits exactly one model under the common account lock
+- **AND** a first-opening-versus-declared-empty-initialization race commits exactly one model under the common account lock
+- **AND** an opening-replacement-versus-carry-in-initialization race at one expected opening revision commits exactly one new command, preserving the earlier opening in either outcome
 
 ### Requirement: OPEN-004 Owner isolation and data-preserving extension
 New accounting state SHALL start empty in additive migration 13 and preserve prior

@@ -1,9 +1,9 @@
 # Known-cost opening lots
 
-The active `seed-known-cost-carry-in` change adds an explicit FIFO origin for an
-account whose current opening has known costs for every position. It is implemented
-locally; the complete release gate and archival are still pending. See its
-[verification record](../openspec/changes/seed-known-cost-carry-in/verification.md)
+The verified `seed-known-cost-carry-in` slice adds an explicit FIFO origin for an
+account whose current opening has known costs for every position. The complete local
+release gate passed133/133 HTTPS Chromium cases and real PostgreSQL/migration checks.
+See its [verification record](../openspec/changes/archive/2026-09-23-seed-known-cost-carry-in/verification.md)
 for actual results and unrun checks.
 
 The owner enters 1..100 original acquisition lots: owned instrument, acquisition

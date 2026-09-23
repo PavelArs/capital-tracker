@@ -29,7 +29,7 @@
 - [x] 4.2 Invalidate consent on every input/account/source revision change, reject late responses, and submit only the reviewed complete original initialization command with a fresh key after explicit owner action (CARRY-005-A).
 - [x] 4.3 Retain ambiguous original commands across in-app refresh/SPA/auth recovery and denied retries, without automatic POST or browser-storage persistence; keep accepted receipts visible through failed current reads (CARRY-005-A).
 - [x] 4.4 Show current seeded FIFO with explicit initial cost and lot provenance, retained opening as historical evidence and unchanged existing empty-origin/manual/CSV workflows (CARRY-001-A, CARRY-004-A).
-- [ ] 4.5 Run focused real HTTPS/browser acceptance to GREEN and retain unchanged parent draft/correction, empty-origin, opening, CSV and authentication regressions.
+- [x] 4.5 Run focused real HTTPS/browser acceptance to GREEN and retain unchanged parent draft/correction, empty-origin, opening, CSV and authentication regressions.
 
 ## 5. Refactor and independently review
 
@@ -41,6 +41,6 @@
 ## 6. Verify and archive this bounded slice
 
 - [x] 6.1 Run frozen install, production high/critical dependency gate, OpenSpec strict validation, lint/type/build/unit checks and E2E TypeScript checks on the integrated commit; document existing warnings separately.
-- [ ] 6.2 Run the complete pinned-image `pnpm test:e2e` gate through fresh16/replay/all populated upgrades/refusals, PostgreSQL probes and actual HTTPS Playwright with one worker and zero retries; record counts, commit, image digests, logs and exit status.
-- [ ] 6.3 Confirm synthetic cleanup, unchanged owner Nginx/lockfile expectations and no production/provider side effects; reconcile all specification/test/implementation/evidence links and disclose any genuinely unrun checks.
-- [ ] 6.4 Mark tasks only on observed evidence, sync the complete reviewed deltas with the supported OpenSpec archive command, and validate canonical specs again; then select the next small requirement gap without claiming the whole brief complete.
+- [x] 6.2 Run the complete pinned-image `pnpm test:e2e` gate through fresh16/replay/all populated upgrades/refusals, PostgreSQL probes and actual HTTPS Playwright with one worker and zero retries; record counts, commit, image digests, logs and exit status.
+- [x] 6.3 Confirm synthetic cleanup, unchanged owner Nginx/lockfile expectations and no production/provider side effects; reconcile all specification/test/implementation/evidence links and disclose any genuinely unrun checks.
+- [x] 6.4 Mark tasks only on observed evidence, sync the complete reviewed deltas with the supported OpenSpec archive command, and validate canonical specs again; then select the next small requirement gap without claiming the whole brief complete.

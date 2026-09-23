@@ -21,7 +21,7 @@ pre-existing application schema before mutating application tables or migration 
 #### Scenario: ISO-001 Fresh PostgreSQL migration and replay
 - **GIVEN** an empty isolated PostgreSQL database and the release backend image
 - **WHEN** the explicit migration command runs twice
-- **THEN** all fifteen migrations are recorded exactly once and current tables exist
+- **THEN** all sixteen migrations are recorded exactly once and current tables exist
 - **AND** the second run preserves data and migration records
 
 #### Scenario: ISO-002 Unsafe prior schema is refused before mutation
@@ -64,3 +64,10 @@ pre-existing application schema before mutating application tables or migration 
 - **THEN** every preceding row, column/index/constraint, enum/extension and prior migration sequence state is preserved except the one new migration ledger increment
 - **AND** three empty import tables appear with exact byte/state/range/composite identity constraints, no original or accounting entry is invented, and replay changes nothing
 - **AND** fresh installation, every previous populated upgrade and all unsafe historical preflight refusals retain their existing assertions
+
+#### Scenario: CARRY-MIG-001 Populated CSV history survives baseline extension
+- **GIVEN** a populated fifteen-migration isolated schema containing known/unknown openings, empty-origin journals, corrected/void trades, draft/committed/rolled-back CSV originals and live owner/MFA/session/admission data
+- **WHEN** actual migration16 and replay run in the release image
+- **THEN** every preceding row, original byte/settings/receipt/provenance, schema object and sequence definition is preserved, aside from explicitly reviewed additive origin constraints and the migration ledger advancement
+- **AND** new carry-in storage starts empty, no aggregate is converted and old accepted commands replay identically
+- **AND** fresh16 and every earlier populated upgrade/unsafe-history refusal remain passing; no owner database or destructive downgrade is used

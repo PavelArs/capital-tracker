@@ -5,13 +5,16 @@ Record private USD purchases and sales from an explicit empty origin, preserving
 FIFO cost allocation, immutable corrections, safe replay and coherent bounded results.
 ## Requirements
 ### Requirement: TRADE-001 Explicit eligible empty-origin journal
-The system SHALL require an owner-attested empty origin before accepting trades,
+Declared-empty initialization SHALL require an owner-attested empty origin before accepting trades,
 using the routes/projections in the [API and persistence contract](../../changes/archive/2026-09-23-record-usd-fifo-trades/persistence.md). Initialization SHALL require literal
 boolean assertEmpty true, an explicit valid coverageFrom, a NULL opening pointer and
 NO opening snapshot history. Absence of an opening alone MUST NOT imply empty holdings.
 Known, unknown and known-zero aggregate opening cost MUST NOT become synthetic lots.
 Initialization/opening writers SHALL lock the same owned account row before eligibility
-checks. The origin SHALL survive all later corrections and voids.
+checks. The origin SHALL survive all later corrections and voids. A separately attested
+known-cost carry-in origin SHALL be available under CARRY-001..006, pinned to a current
+opening and explicitly supplied original lots. It SHALL NOT change this empty-origin
+endpoint's exclusions or synthesize lots from an aggregate opening.
 
 #### Scenario: TRADE-001-A Explicit initialization and immutable retry
 - **GIVEN** a manual account without opening history and a real full-owner session
@@ -21,9 +24,9 @@ checks. The origin SHALL survive all later corrections and voids.
 - **AND** missing, false, string, numeric or object assertions return 400
 
 #### Scenario: TRADE-001-B Opening exclusion and real race
-- **WHEN** initialization targets known-positive, known-zero, unknown-cost or NULL-pointer-with-retained-history accounts
+- **WHEN** declared-empty initialization targets known-positive, known-zero, unknown-cost or NULL-pointer-with-retained-history accounts
 - **THEN** it returns 409 and preserves all existing rows
-- **WHEN** two real processes race initialization against the first opening on an eligible account
+- **WHEN** two real processes race declared-empty initialization against the first opening on an eligible account
 - **THEN** exactly one returns 201, the other 409, and no committed state contains both histories
 - **AND** voiding every trade never re-enables opening writes
 
@@ -53,8 +56,15 @@ amount arithmetic. Buy basis SHALL be gross plus buy fee; sale net SHALL be gros
 minus sale fee, including negative net. Sale fees SHALL enter once. FIFO allocation
 SHALL use the difference of floor(C*q/Q) at successive cumulative disposed quantities
 of each original lot, giving the final disposal its remainder. Results SHALL expose
-buy/sell UUID AND version provenance, canonical signed strings and known zero distinctly.
-Aggregate outputs SHALL allow up to 81 atom digits and intermediate products 156 digits.
+actual trade-backed buy/sell UUID AND version provenance, canonical signed strings
+and known zero distinctly. Carry-in matches SHALL instead identify their immutable
+lot/opening source, without a fabricated buy UUID/version.
+Aggregate outputs SHALL allow up to 82 atom digits and intermediate products 156 digits,
+covering the unchanged1000 active trade limit plus at most100 carry-in lots. A carry-in
+origin SHALL seed original quantity/cost and prior-disposal/allocation offsets under
+CARRY-002; it SHALL NOT create purchase, fee, sale or external-flow totals. Its initial
+recorded basis SHALL be explicit, with remaining basis included in current inventory
+and tagged lot/match provenance. Existing empty-origin outputs SHALL remain exact.
 
 #### Scenario: TRADE-003-A Mandatory FIFO and fees
 - **WHEN** buys of 1 for gross 100 and 1 for gross 200 precede sale of 1.5 for gross 450, all fees 0
@@ -123,6 +133,9 @@ The same active/version bounds SHALL apply without truncation or partial accepta
 ### Requirement: TRADE-005 Coherent bounded derived reads
 Every derived response SHALL identify its calculation journalRevision and obtain
 revision, heads, complete effective history and labels from one coherent snapshot.
+For a carry-in origin, its immutable baseline SHALL be loaded through the same snapshot
+manager and seed the complete calculation before pagination. New carry-in provenance
+variants SHALL not fabricate buyTradeId/buyVersion or change empty-origin field sets.
 The API SHALL follow the [API and persistence contract](../../changes/archive/2026-09-23-record-usd-fifo-trades/persistence.md) bounded envelopes: current trades/lots/realizations/
 per-sale matches default 50 / max 100 with revision-pinned offset continuation; versions
 default 10 / max 20 exclusive beforeVersion. Nonzero offset SHALL require a revision;
@@ -140,7 +153,11 @@ The system SHALL expose a Russian journal section in protected manual account de
 explicit empty-origin attestation, gross/fee/time/order entry, full correction/void,
 current results and bounded provenance. It SHALL label realized journal results and
 remaining recorded cost, not portfolio return, fiat cash, market value or tax compliance.
-Existing opening accounts SHALL remain intact and explain unsupported carry-in.
+Existing opening accounts SHALL remain intact. Eligible known-cost accounts SHALL
+offer the explicit reviewed carry-in journey; unsupported unknown/mismatched cost SHALL
+remain visible. A referenced opening SHALL be displayed as historical baseline evidence,
+not another current holding added to seeded journal inventory. Baseline immutability
+in this slice SHALL be disclosed before acceptance.
 Private routes SHALL retain full MFA, session/CSRF, existing quotas and owner isolation.
 No provider, legacy observation or external-flow mutation SHALL occur.
 

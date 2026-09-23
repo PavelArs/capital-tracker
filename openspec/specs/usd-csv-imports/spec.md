@@ -64,6 +64,8 @@ null candidateSummary/previewHash, never a profitability result for a valid subs
 Raw envelopes SHALL fail400, inaccessible mapped identities generic404 and non-draft
 economic preview409. Valid previews SHALL report every normalized row, ignored column,
 exact current/candidate summary, coherent journal revision and versioned preview hash.
+For a reviewed carry-in origin, both summaries and validation SHALL use its immutable
+original-lot baseline under CARRY-002/004 without adding baseline buys or fees.
 
 #### Scenario: CSV-002-A Inspection supports deliberate mapping without guessing
 - **WHEN** the owner inspects comma or semicolon data containing doubled quotes, quoted delimiter/newlines, optional BOM and mixed LF/CRLF endings
@@ -92,7 +94,8 @@ All import/manual/opening writers SHALL use the same owned-account lock. Confirm
 rollback SHALL share a dedicated owner/account/request key namespace; accepted replay
 SHALL precede reparse, parser support, batch state, mapped identity, CAS and caps.
 
-One accepted confirmation SHALL validate the complete candidate history once and
+One accepted confirmation SHALL validate the complete candidate history, including
+any reviewed immutable carry-in baseline, once and
 atomically append N create versions/heads, N source links, one immutable receipt,
 accepted settings and final journal revision+N. Source order SHALL assign consecutive
 version ordinals; economic time/order SHALL determine FIFO. No provisional prefix or
@@ -123,7 +126,9 @@ and commit no partial trade, link, receipt, batch transition or pointer.
 ### Requirement: CSV-004 Conditional complete rollback preserves history
 Rollback SHALL append N terminal void versions only when every imported trade still
 has its exact initial create head, N version slots remain and the complete remaining
-history is valid. It SHALL remove the whole batch from candidate calculation at once.
+history is valid. It SHALL remove the whole batch from candidate calculation at once. A reviewed
+carry-in baseline SHALL remain in that calculation and its original lots SHALL not
+be voided or replaced by batch rollback.
 Prior FIFO matches to imported lots MUST NOT independently block valid reallocation.
 Any modified imported head, negative remaining prefix or capacity refusal SHALL reject
 the entire operation. Originals, accepted settings, create versions and receipts SHALL
@@ -144,7 +149,10 @@ remain private and immutable; there SHALL be no delete, restore or reimport gene
 
 ### Requirement: CSV-005 Coherent bounded preview and provenance
 Preview and live rollbackReview SHALL read journal revision, complete history, batch
-and owned labels in one read-only REPEATABLE READ snapshot. Preview hash SHALL use
+and owned labels in one read-only REPEATABLE READ snapshot. Carry-in baseline records
+SHALL be loaded through that same snapshot manager and applied consistently to all
+current/candidate/rollback summaries. Accepted historical receipt replay SHALL remain
+independent of recalculation or current baseline read success. Preview hash SHALL use
 the fixed canonical tuples/version in persistence.md. New confirmation SHALL require
 the same revision and recomputed hash. Immutable command receipts MUST NOT be shown
 as current FIFO. Batch lists SHALL use bounded exclusive UUID cursors; provenance

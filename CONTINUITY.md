@@ -53,7 +53,7 @@ Full brief, hosted CI, other browsers, backup/restore and production remain unve
 
 ## Current carry-in slice
 
-Read openspec/changes/seed-known-cost-carry-in/{proposal,design,persistence,specs,
+Read openspec/changes/archive/2026-09-23-seed-known-cost-carry-in/{proposal,design,persistence,specs,
 tasks,verification}.md (actual individual paths). Known-cost current opening only;
 explicit original Q/C/R, original cumulative allocation, immutable origin/baseline,
 shared account lock and caller-owned RR reads. No inferred history or double holdings.
@@ -100,10 +100,14 @@ Current images:
 backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315
 frontend sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a
 
-NEXT: run complete gate on fixture correction; record real terminal result/images,
-independent cleanup/hashes, close4.5/6.2/6.3 and archive6.4 only after success. Use
-supported openspec archive --yes to sync all reviewed deltas, then fix canonical
-purpose/relative links and validate again. Never deploy or consolidate incomplete work.
+COMPLETE: full gate at59863bf passed133/133 Chromium28.9m,1worker0retries,
+terminal exit0, /private/tmp/capital-carry-in-release-complete.log. All prerequisite
+PG/migration/auth/artifact checks passed. Independent cleanup inventories empty;
+owner Nginx and lock hashes match. No active synthetic run or containers remain.
+Supported openspec archive seed-known-cost-carry-in --yes succeeded2026-09-23:
+6new and10modified requirements, zero removals; predecessor scenarios retained.
+Canonical purpose and archive links updated. No new product changes after c20e465;
+59863bf is synthetic fixture determinism. Never consolidate incomplete work.
 
 ## Next slice prepared independently, not implemented
 
@@ -111,7 +115,9 @@ Worktree capital-tracker-worktrees/historical-accounting-design, branch
 refactor/historical-accounting-design. New inspect-historical-accounting proposal/
 design/4requirements/15tasks e65529a; pure/query test oracles6390ac8; independent
 initial API/UI tests0a6efa2; root HTTP privacy tests a7e1471; independent PG probe
-82a8baa with root final review ee07ba6. All changes isolated from active release.
+82a8baa with root review ee07ba6; late-response/correction browser case153d979,
+root all-accounting-POST guard and strict E2ETSC review a639c25. Worktree HEADa639c25.
+All changes isolated from active release.
 Cheap agent gpt-6-luna authored/reviewed bounded tasks; root caught and corrected
 missing trade fingerprints, UI CSRF bookkeeping and a quantity2 expected-value bug.
 Strict E2ETSC/scoped Biome/PG syntax passed, no historical runtime or product code yet.
@@ -120,5 +126,5 @@ Future interface: HistoricalAccountingService(source).getSnapshot(owner,account,
 Pure interfaces: projectHistoricalAccounting(heads,baseline,at), parseHistoricalQuery.
 Do not integrate or run next-feature RED before carry-in is verified/archived. Then
 reconcile canonical specs, integrate prepared commits, run exact carry-in-image missing
-API/UI RED without rebuild, implement incrementally. PG100+1000 bound and late-response
-UI cases still need coverage. Full target remains substantially unfinished.
+API/UI RED without rebuild, implement incrementally. PG100+1000 bound, account-switch and pinned409
+UI cases still need coverage. All prepared browser/PG/pure cases remain unexecuted. Full target remains substantially unfinished.

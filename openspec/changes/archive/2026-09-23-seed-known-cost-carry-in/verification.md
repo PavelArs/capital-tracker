@@ -1,10 +1,10 @@
 # Verification: known-cost carry-in
 
-Status: CSV predecessor verified/archived; independently reviewed carry-in API/UI
-acceptance demonstrated genuine missing-feature RED against its exact release images.
-Carry-in is implemented and has source, real PostgreSQL and focused HTTPS GREEN
-evidence below. A JSON transport defect was reproduced and fixed with real HTTPS GREEN. The
-complete release gate remains pending; final independent review is recorded below.
+Status: carry-in implementation and independent review are complete. The final full
+release gate at59863bf passed133/133 Chromium in28.9m with exit0, plus all real
+PostgreSQL/migration/authentication/startup/artifact prerequisites. Exact evidence and
+earlier failed attempts are retained below. This bounded slice was archived with the supported
+OpenSpec CLI; the full target brief and production release remain incomplete.
 
 ## Traceability and evidence to collect
 
@@ -347,3 +347,48 @@ strict characterization, not a manufactured new-feature RED. Independent exact-d
 review found no weakened oracle. Artifact script syntax passed; source checks remain
 valid because product code is unchanged. Owner Nginx/lock hashes remained unchanged.
 The complete gate must restart from the beginning before archival.
+
+## Complete release GREEN — 2026-09-23
+
+At59863bf, actual command
+`PATH=/private/tmp/capital-task-bin:/Users/pavelars/.nvm/versions/node/v22.23.2/bin:$PATH caffeinate -is pnpm test:e2e`
+completed with terminal exit0. Full log:
+`/private/tmp/capital-carry-in-release-complete.log`.
+
+-133/133 Chromium passed in28.9m, one worker and zero retries;124 predecessor cases
+ and9 carry-in cases, including the strengthened CARRY-005-B and JSON413 assertions.
+-Provider TLS/CONNECT, fresh16/replay/populated8..15 upgrades and unsafe legacy
+ refusals, all auth-limit/opening/USD/CSV/carry-in real PostgreSQL families, owner
+ CLI/session/MFA/expiry,27 startup refusals and actual topology/artifact checks passed.
+-Backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315.
+-Frontend sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a.
+
+Independent Docker inventories after terminal completion found no containers or
+networks carrying the synthetic project label. Owner Nginx remained0644/1348 bytes,
+SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432;
+pnpm-lock SHA256aa2588325aacdc54e8437d3500c7d2df580cc20cd061d1e3727f30f0dcc1e4f8.
+The owner's unstaged Nginx change is intentionally retained. No owner database,
+production deployment, remote push or repository consolidation was performed.
+
+The source checks, independent reviews and exact RED/GREEN evidence above remain
+applicable to this integrated source; later changes are documentation/archival only.
+All ten modified canonical requirements retain their predecessor scenario headings;
+six new carry-in requirements cover the new behavior. Historical failed/partial
+runs are not counted as successful verification. Hosted CI, a second browser engine,
+backup/restore and completion of the full brief remain unrun/unfulfilled.
+
+## Supported archival — 2026-09-23
+
+`OPENSPEC_TELEMETRY=0 openspec archive seed-known-cost-carry-in --yes` exited0,
+synchronized five capabilities (+6requirements,~10modified,-0removed), and moved
+this change into2026-09-23-seed-known-cost-carry-in. The only unchecked task was
+6.4, archival itself, and was completed after this command and canonical validation.
+All predecessor scenario headings were independently compared with pre-archive
+canonical HEAD and retained across all ten modified requirements. A first local
+comparison helper used an overly greedy regex and failed; its corrected check
+passed. This helper issue was not an application or specification regression.
+
+Canonical `openspec validate --all --strict --no-interactive` passed13/13 specs,
+exit0; log `/private/tmp/capital-carry-in-archive-validation.log`. Canonical purpose
+and documentation archive links were updated after the generated archive. No source,
+image, schema, dependency or financial/security assertion changed during archival.
