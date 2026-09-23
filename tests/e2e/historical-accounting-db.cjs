@@ -5,7 +5,6 @@
 const assert = require('node:assert/strict');
 const { spawn, spawnSync } = require('node:child_process');
 const { createHash, randomUUID } = require('node:crypto');
-const { performance } = require('node:perf_hooks');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
@@ -355,8 +354,8 @@ async function at(svc, owner, account, instant, page = {}) {
 }
 
 async function coverageAndFailures(source, svc, f) {
-  stage = 'HIST-001/002 initialized coverage, inclusive carry-in and private refusals';
-  const { owner, other, firstInstrument, foreignAccount } = f;
+  stage = 'HIST-002 initialized coverage, inclusive carry-in and private refusals';
+  const { owner, firstInstrument, foreignAccount } = f;
   const empty = await newAccount(svc, owner, 'Empty historical account');
   await svc.trade.initialize(owner, empty, {
     requestId: randomUUID(),
@@ -536,13 +535,11 @@ async function pagesAndRevision(source, svc, f) {
   assert.deepEqual(current.summary, summary({ grossBuysUsd: '520', remainingCostUsd: '520' }));
   assert.deepEqual(
     current.items.map((item) => [item.instrumentId, item.quantity, item.costUsd]),
-    [
-      ...expectedIds.map((id) => [
-        id,
-        expectedPositions[id].quantity,
-        id === firstInstrument ? '120' : expectedPositions[id].costUsd,
-      ]),
-    ],
+    expectedIds.map((id) => [
+      id,
+      expectedPositions[id].quantity,
+      id === firstInstrument ? '120' : expectedPositions[id].costUsd,
+    ]),
   );
 }
 

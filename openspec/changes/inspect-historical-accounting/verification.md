@@ -39,6 +39,17 @@ symlinks to existing main-checkout dependencies; no install or product change.
 Scoped Biome passed. None of these browser cases has run yet: carry-in archival is
 delayed by its independently reproduced unknown-cost alert regression and full rerun.
 
+The independent author also prepared `historical-accounting-db.cjs` (82a8baa): actual
+production service + fresh synthetic PostgreSQL, guarded absent fixture database,
+full-row fingerprints across reads/refusals, UUID pages/stale revision and separate
+reader/writer processes with a real query barrier. Root review corrected the second
+instrument's independent expected quantity2 (original draft incorrectly said1),
+narrowed claimed coverage to HIST-002/003 and removed unused boilerplate. Syntax/diff
+checks passed; no PostgreSQL runtime result is claimed. The probe expects
+`HistoricalAccountingService(source).getSnapshot(ownerId, accountId, rawQuery)`.
+Missing future service is a prerequisite error before creating its fixture database.
+Real100+1000 bounds and expanded late-response UI checks still need implementation.
+
 | Scenarios | Planned executable evidence |
 | --- | --- |
 | HIST-001-A, HIST-002-A | `tests/e2e/historical-accounting.spec.ts`: actual owner/password/MFA, HTTPS API/UI, PostgreSQL; exact chronological100/300/100 costs and250/230 realized, inclusive baseline boundary |
