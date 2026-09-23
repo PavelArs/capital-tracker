@@ -111,6 +111,9 @@ export default function Layout() {
           <Link to="/capital-flows" onClick={closeMobileMenu}>
             Вводы и выводы
           </Link>
+          <Link to="/period-profit" onClick={closeMobileMenu}>
+            Прибыль за период
+          </Link>
           <Link to="/settings" onClick={closeMobileMenu}>
             {t('navigation.settings')}
           </Link>

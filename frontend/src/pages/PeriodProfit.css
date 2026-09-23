@@ -1,0 +1,111 @@
+.profit-page {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+  color: var(--text-color);
+}
+
+.profit-header p {
+  line-height: 1.5;
+}
+
+.profit-card {
+  margin: 1rem 0;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-color);
+  box-shadow: 0 2px 4px var(--shadow);
+}
+
+.profit-card h2 {
+  margin-top: 0;
+}
+
+.profit-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.profit-field {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.profit-field label {
+  font-weight: 600;
+}
+
+.profit-field small {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.profit-field input {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.profit-review {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.profit-button {
+  width: fit-content;
+  min-height: 2.6rem;
+  padding: 0.6rem 1rem;
+  border: 0;
+  border-radius: 4px;
+  background: var(--primary-color);
+  color: white;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.profit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.profit-message {
+  display: block;
+  margin: 1rem 0;
+}
+
+.profit-error {
+  color: var(--error-color);
+}
+
+.profit-result {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr);
+  gap: 0.5rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.profit-result dt {
+  font-weight: 600;
+}
+
+.profit-result dd {
+  margin: 0;
+}
+
+@media (max-width: 550px) {
+  .profit-result {
+    grid-template-columns: 1fr;
+  }
+
+  .profit-result dd {
+    margin-bottom: 0.5rem;
+  }
+}
