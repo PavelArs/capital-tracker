@@ -17,4 +17,4 @@
 
 ## 4. Archive
 
-- [ ] 4.1 Strictly validate, archive with supported CLI, confirm exact canonical sync and preservation of existing specifications.
+- [x] 4.1 Strictly validate, archive with supported CLI, confirm exact canonical sync and preservation of existing specifications.

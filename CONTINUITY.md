@@ -47,9 +47,12 @@ valuation. Use archive verification.md files for exact old results and image IDs
 ## Current manual USD price slice
 
 record-manual-usd-prices implemented, independently reviewed, scoped GREEN;
-archive pending. Contract cdde4d8, acceptance8b6dd1c/ad96a36, backend978247d,
+archived2026-09-23-record-manual-usd-prices,9/9tasks. Strict18canonical specs pass,
+activechangesempty, prior17specs unchanged. Contractcdde4d8,
+acceptance8b6dd1c/ad96a36, backend978247d,
 UIac9f408, root history-access fixb01bced, final strengthened acceptanceb00a1cc.
-Guide docs/manual-usd-prices.md; evidence active change verification.md.
+Guide docs/manual-usd-prices.md; evidence
+openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md.
 
 Additive migration1790080000000 (current18), one manual_usd_price_versions table.
 Per-owner/instrument UUID book, exact USD/unit price strings48int/30frac, canonical
@@ -95,7 +98,8 @@ FEsha256:45a1f6056008cddc1162ebb52681475af63863922a673bcff947b79fac08c9db
 No fullbackend/fullE2E/hostedCI/release scans/production run. All oldcases retained;
 fullrunner includes pricePG fixture, oldcurrentmigration assertions updated to18.
 
-Next after archive: small historical valuation from reconstructed holdings and
+Owner Nginx hash/mode and lock preserved; synthetic containers/networks empty.
+Next: small historical valuation from reconstructed holdings and
 stored exact-time manual prices, with missing prices visible; don't infer past
 holdings from today's balances. Whole brief still needs automatic prices/history/
 charts, TWR, transfers/swaps/rewards, blockchain reconciliation, optionalAI and

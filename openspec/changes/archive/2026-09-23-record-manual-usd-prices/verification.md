@@ -1,7 +1,7 @@
 # Manual USD prices verification
 
-Status: implemented, independently reviewed, PostgreSQL and three targeted HTTPS
-journeys pass. Strengthened UI refresh-failure assertion also passes; archive pending.
+Status: implemented, independently reviewed and verified; archived as
+`2026-09-23-record-manual-usd-prices`. All nine tasks complete.
 
 Baseline92a3039: only owner frontend/nginx.conf edit. Active changes empty and17
 canonical specs before this slice. `pnpm --dir backend test --runInBand
@@ -142,3 +142,18 @@ isolated price points, not automatic portfolio values or provider price history.
 Final queries for Docker containers and networks labeled project
 `capital-tracker-e2e` returned empty. Strict pre-archive validation passed18/18
 (17 canonical specs plus the active change); all artifacts done.
+
+## Archive
+
+Supported `openspec archive record-manual-usd-prices --yes` exited0, added four
+canonical requirements and archived the change. Its8/9 warning referred only to
+the final archive/verification task, marked complete after actual execution.
+Post-archive strict validation passed18/18 canonical specs; `openspec list --json`
+returned `{"changes":[]}`. All17 preceding spec SHA-256 hashes are unchanged;
+new canonical requirements exactly equal the reviewed delta. Replaced only the
+new generated Purpose placeholder and normalized its final newline.
+
+Luna's independent final documentation audit found result/counts consistent; the
+temporary future archive links now resolve to this actual archived path. Git diff
+check passes. Final archive commit contains only evidence/spec synchronization,
+not unverified product changes.
