@@ -246,6 +246,9 @@ New Playwright cases use real password/MFA, private Russian forms, HTTPS and the
 same PostgreSQL database. They must preserve all previous financial/security tests,
 check actual string roundtrips/restart/history and zero provider calls, and verify
 safe denied requests and commit failure without private values in response/logs.
+The 2026-09-23 complete run passed all 85 cases without retries in 17.6 minutes,
+plus the real database/CLI/migration/artifact prerequisites. Exact commands/images
+and the earlier failed run are recorded in the [archived evidence](../openspec/changes/archive/2026-09-23-record-manual-opening-positions/verification.md).
 Only legitimate authorized session activity may differ before a controller failure;
 invalid Origin/CSRF cannot touch session activity. Source spies or direct error-filter
 probes do not replace actual authenticated HTTP acceptance.

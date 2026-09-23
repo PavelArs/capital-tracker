@@ -24,9 +24,9 @@ for existing-user adoption, recovery and the current cookie/CSRF/MFA contract.
 The required production dependency audit fails on high/critical findings or registry
 errors. See [dependency security](docs/dependency-security.md) for the dated results
 and remaining lower-severity findings.
-The archived persistent authentication-limit slice passed real PostgreSQL checks and74
-HTTPS Chromium cases. [Manual accounting](docs/manual-accounting.md) is the active
-next slice; full release hardening remains.
+The verified [manual accounting](docs/manual-accounting.md) slice passed real
+PostgreSQL checks and all 85 HTTPS Chromium cases, including 74 retained cases.
+USD trades/FIFO are the next bounded slice; full release hardening remains.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.

@@ -17,5 +17,5 @@
 
 - [x] 3.1 Independently review schema, backend/frontend integration and test oracles; resolve demonstrated defects with regressions, including raw-number coercion and concurrent request replay.
 - [x] 3.2 Pass supported-runtime frozen install, production audit, lint/build/unit and strict OpenSpec validation; preserve all prior tests.
-- [ ] 3.3 Pass real PostgreSQL race/atomicity/upgrade checks and full release-image HTTPS Playwright including actual large-string roundtrip/restart and private owner boundaries, with no provider calls from new flows.
-- [ ] 3.4 Record actual RED/GREEN, exact images, unchanged owner configuration/data and synthetic cleanup; sync/archive/checkpoint only after required terminal verification.
+- [x] 3.3 Pass real PostgreSQL race/atomicity/upgrade checks and full release-image HTTPS Playwright including actual large-string roundtrip/restart and private owner boundaries, with no provider calls from new flows.
+- [x] 3.4 Record actual RED/GREEN, exact images, unchanged owner configuration/data and synthetic cleanup; sync/archive/checkpoint only after required terminal verification.

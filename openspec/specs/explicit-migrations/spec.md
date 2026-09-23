@@ -21,7 +21,7 @@ pre-existing application schema before mutating application tables or migration 
 #### Scenario: ISO-001 Fresh PostgreSQL migration and replay
 - **GIVEN** an empty isolated PostgreSQL database and the release backend image
 - **WHEN** the explicit migration command runs twice
-- **THEN** all twelve migrations are recorded exactly once and current tables exist
+- **THEN** all thirteen migrations are recorded exactly once and current tables exist
 - **AND** the second run preserves data and migration records
 
 #### Scenario: ISO-002 Unsafe prior schema is refused before mutation

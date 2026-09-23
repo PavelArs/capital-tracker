@@ -1,6 +1,8 @@
 # Verification: record-manual-opening-positions
 
-Status: implementation in progress; no GREEN or completion claim.
+Status: required local verification passed and actual OpenSpec archive completed on
+2026-09-23. Canonical manual-opening-positions and explicit-migrations specs are synced.
+Earlier failures and interim notes below are retained as chronological evidence.
 
 ## Independent preceding-image RED
 
@@ -126,3 +128,52 @@ awake without changing application clocks, timeouts or system sleep settings.
 
 After failure, Docker read checks found zero owned Compose containers/networks.
 Owner Nginx retained its original SHA256/mode0644/1348bytes; lockfile hash unchanged.
+
+## Final verified release-image result — 2026-09-23
+
+`PATH=/Users/pavelars/.nvm/versions/node/v22.21.1/bin:$PATH caffeinate -is pnpm test:e2e`
+exited 0 in `/private/tmp/capital-manual-image-second.log`. All 85 Chromium cases
+passed, one worker, zero retries, 17.6 minutes of browser execution: all 74 retained
+cases and 11 new manual-opening cases. Every prior failed case passed with retained
+security/amount assertions. This was a fresh synthetic database and a full image run,
+not a selected retry. The two legacy startup requests are asserted exactly and the
+accounting intervals still require zero external-provider requests.
+
+All preceding real PostgreSQL/migration/CLI/session/MFA/expiry/provider-TLS and
+27 invalid-HTTP-startup checks passed. Fresh thirteen migrations, populated12-to13,
+replay and all retained unsafe-history refusals passed. The independent manual DB
+fixture covered exact values, direct constraints, two-process serialization and
+post-write deferred-COMMIT rollback. Browser acceptance independently covered that
+rollback through authenticated HTTPS, safe errors/logs, real UI conflicts, disabled
+in-flight inputs, bounded discovery/history and exact persistence through restart.
+
+| Contract | Executed evidence |
+| --- | --- |
+| OPEN-001/002 | manual-opening-red.spec.ts and manual-opening.spec.ts: actual forms/API/PG exact strings, zero versus unknown, raw types, UUID identity, labels and pagination |
+| OPEN-003 | manual-opening-db.cjs and browser cases: two real process/upstream races, replay/CAS, immutable history, deferred commit failure and explicit retry |
+| OPEN-004 | migrations.cjs populated predecessor preservation plus real private/CSRF/Origin/foreign-ID and safe-log HTTP cases |
+| Retained behavior | All prior 74 HTTPS cases and all previous migration/authentication/CLI/provider/artifact prerequisites |
+
+Exact tested images, independently inspected after cleanup:
+- backend `sha256:9efd443953ddd723844aca23da46a9de6b016ffbc16b443ed65a933b3f35ce47`
+- frontend `sha256:cca53f6ade800efbb256f5164f37ebf4b4085190bde35253b44fe394ee0bf084`
+
+Source baseline remains exit0:667 backend tests/22 suites,81 frontend tests/10 files,
+both lint/build, frozen install and required high-threshold production audit. After
+the fixture correction, `pnpm test:engineering` passed183 tests/2 suites in
+capital-manual-fixture-engineering.log; strict OpenSpec and diff checks passed.
+No production dependency changed. Existing77/29 lint warnings, bundle warning and
+two documented moderate dependency findings remain visible; no advisory suppression.
+
+The harness completed its file-preservation finally check. Independent Docker reads
+found no owned Compose containers/networks or direct source-probe containers.
+Owner frontend/nginx.conf remains SHA256
+115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432,
+mode0644,1348bytes, unstaged. Lock SHA256 remains
+13e4fbf1d1effcf66367ef7829885eb53b339cb9f52ab43854ca2e4ba77c4e73.
+Only synthetic tmpfs PostgreSQL data was created/removed. Existing owner data,
+original project folders, Git history, configuration and unrelated work are preserved.
+
+Hosted CI, second-browser execution, full image/SAST/DAST/ASVS scans, backup/restore
+and production rollout remain unexecuted. CSV/FIFO/prices/returns and the remaining
+full brief are not completed by this opening-only slice. No production-readiness claim.
