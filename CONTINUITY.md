@@ -41,9 +41,11 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-No Docker run active after three corrected followups passed.
-Last log /private/tmp/capital-csv-final-regressions-2.log (3/3 PASS,36.7s,exit0).
-Runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
+ACTIVE: complete CSV release gate `caffeinate -is pnpm test:e2e`, started at source
+2ddfc58, PTY74345; log /private/tmp/capital-csv-release-full.log. Migration/PG and
+startup prerequisites passed;124 Chromium cases are running,1worker0retries.
+Do not claim final success/archive until terminal exit and cleanup are observed.
+Focused runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
 
 ## Completed and archived
 
@@ -83,59 +85,54 @@ Hosted CI, second browser, image/SAST/DAST/full ASVS and backup/restore remain u
 
 ## Now and next
 
-Active import-usd-trades-csv; all artifacts ready/strict12; genuine initial RED
-recorded12eb619 on exact USD images, intended API404/missingheading, real auth/PG
-preservation. Test initialcommitd435a86, independent122 boundaries126240d,
-root input/parser/dependency63611f7, schema/proxy03ec6bc, backend3c11a38,
-module/populated migration5ea3354, PGfixture755189a, HTTPsecuritydeb8611, UI83398d0.
-Current task/evidence file has exact executed checks and pending items.
+CSV change `import-usd-trades-csv`:25/28 tasks checked. Full gate and final archive
+remain. Active proposal/design/persistence/specs/tasks/verification contain the exact
+contract, complete RED/GREEN history and independent review. Genuine missing API/UI
+RED preceded implementation; no assertion was weakened to force success.
 
-Backend full859tests/26suites, lint/build pass. Release backend image:
+Current product source12e718c; full-gate integrated source2ddfc58. Backend image:
 sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46.
-Actual fresh15/replay/populated8..14/refusal plus retained manual/USD PG pass:
-/private/tmp/capital-csv-migration-regression-2.log. Initial attempt failed because
-test helper lacked14 allowlist, fixed without changing expected behavior.
-Actual CSV PG nine families pass /private/tmp/capital-csv-pg-first.log: exactFIFO,
-whole-batch/replay, conditional rollback, process races, genuine deferred COMMIT,
-RR barriers, SQL limits and valid caps. Root fixed fixture's foreign-journal seed
-to retain all protected prior rows; no assertions weakened.
-Initial7 realHTTPS cases PASS (1.5m, one worker, zero retries), including security
-and declared/chunked wire limits. Full gate not run; no archive. Expanded9 CSV
-journey/command cases now running after three intended UI regression REDs.
+Frontend image:
+sha256:e973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f.
+Source gate /private/tmp/capital-csv-final-source-gates.log exit0: strict12,
+backend859/26 suites, frontend95/10 files, both lint/build;77/29 retained warnings.
+E2E strict TypeScript exit0 /private/tmp/capital-csv-e2e-types.log. Frozen install
+and required audit passed;2 existing moderate,0 high/critical. Lock only adds
+csv-parse7.0.2. Real PG nine CSV families and all migration upgrades passed.
 
-Current product source12e718c; HEADc7e903a before current evidence updates. Shared auth and refresh/newfile
-fixes independently reviewed and runtimeGREEN; seven main UIjourneys pass, selected
-manual correction/void alsoPASS. Literal source-key actualRED then spanprewrapfix;
-first visiblekeyoracle nowpasses, laterfixturepreview correctlyrejects duplicate
-account chronology. QAfixing secondrow order1 preservingeveryfinancialassertion.
-Commands2bothPASS afterindependentlyreviewed exactexpectedkeysorting correction:
-actualtworeplica hashes/replay andboth realdeferredCOMMIT rollback+originalkeyretry.
-Logs/details in active verification.md. Artifacts copies under /private/tmp.
+All23 new CSV cases have passed focused execution and during the ongoing full gate.
+Focus logs include capital-csv-final-regressions-2.log (3/3,36.7s),
+capital-csv-upload-loss.log (1/1,14.3s), capital-csv-format.log (1/1,13.5s),
+capital-csv-literal-and-commands.log (2 commands passed, intended literal RED),
+capital-csv-journey-first.log (7 UI passed,2 exact-key-order fixture failures).
+Earlier actual401/refresh/new-file/literal RED led to reviewed product fixes.
+Later fixture repairs preserved exact financial/security assertions; read verification.
 
-Latest fivefocusedchecks /private/tmp/capital-csv-final-regressions.log exit1:
-PASS latepreviewdifferentaccount andvalidmultipart authnegatives; 3testharnessfailures:
-literalfixturechronology; pinnedread routealreadyhandled; acceptedreadfailure locator
-matches2correctalerts. Corrections b2617a4 integratedc7e903a and all3nowPASS (36.7s).
-No product changes for those harness failures. Gateagent now adds final lost-upload
-File recovery using CDP response-stage intercept of actual201 then failRequest;
-request-stage route.fetch cannot reliably replay browserBlob multipart. No mocked
-response; realPGbytes beforeloss and normalexplicit200replay required.
-Rootsourcegate /private/tmp/capital-csv-final-source-gates.log exit0: strict12,
-backend859/26, frontend95/10, bothlint/build; existing77/29warnings retained.
-Currentfrontend releasee973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f.
+Finish PTY74345/log, inspect terminal count/exit and independent Docker cleanup,
+owner Nginx hash and lock/status. If complete124 succeeds, finish3.1/6.2/6.3,
+update current docs/evidence, sync full deltas via actual `openspec archive
+import-usd-trades-csv --yes`, and strict-validate canonical specs. Preserve every
+historical failure and old scenario. No final pass or archive claim before observation.
 
-Agents: gate_acceptance test-only2files csv-import-journey.spec.ts/csv-import-fixtures.ts;
-audit_security independentfinalreview (reported separateunknownuploadcoveragegap);
-provider_feasibility read-only nextsmallcarryin-slice planning. Docs f0a47ca integrated
-ba68ad0; active design/spec explicitly documentsinapp/SPA recovery lifetime and full
-reloadloss, reviewconfirmedbriefdoesn'trequirebrowserpersistentkeys. FullCSVreleasegate
-~123casesstillpending, noarchive. Root ownsDocker/migrations/lock/sharedfixtures.
+Next isolated specification: `seed-known-cost-carry-in` in worktree
+../capital-tracker-worktrees/carry-in-design, branch refactor/carry-in-design.
+CLI-created artifacts,29 tasks and verification manifest; strict13 passed.
+Provider contract616cb3f integrated there asd090939; full reviewed artifacts saved
+in d3d278e. Worktree clean; no product code or database change.
+Audit reviewed shared parser/FIFO-overload/readBaseline seams, schema/provenance;
+QA approved independent scenarios; exact Russian locators and all shared seams are frozen. Known-cost current-opening baseline
+uses explicit original Q/C/R with cumulative allocation offsets; no inferred lots,
+unknown-cost zeroing, fabricated buys or second ledger. Baseline amendment deferred
+explicitly to a later required slice, not silently excluded from the whole brief.
 
-CSV scope remains UTF8<=256KiB/100rows, explicitowned UUID/USD/decimal/time/order/fee,
-whole-batch atomic acceptance/provenance/conditional rollback,1000/10000journalcaps.
-Originalbytesimmutable, sha+bytesexactdedup,256retainedfiles; no overlappingsemantic
-dedup, openingconversion, carry-in or full-refactor completion claim.
+After actual CSV archive, reconcile draft deltas against archived canonical specs,
+commit/integrate only reviewed artifacts, author independent carry-in API/UI tests
+and demonstrate genuine RED against exact CSV images before product changes.
+Then parallelize bounded acceptance/backend/frontend worktrees with root sole DDL,
+shared fixture and runtime ownership. Preserve exact old empty-origin projections.
 
-Remaining full goal after CSV: carry-in/owned transfers/flows, performance XIRR/TWR,
-DB-first price/FX/history, six-chain adapters/reconciliation, explicit optional free
-AI, immutable promotion/security/backup restore, final requirements audit, consolidation.
+Agents: reuse gate_acceptance (QA), audit_security (independent review) and
+provider_feasibility (contract/docs; CSV implementation history preserved).
+No current agent may run Docker or mutate root shared schema/deployment/lock.
+No hosted CI, second browser, backup-restore/release promotion, owner DB or production
+operation has been claimed as executed. The full brief remains incomplete.
