@@ -177,3 +177,35 @@ files and the existing opening write guard; frontend owns journal API/components
 independent QA owns arithmetic/PG/HTTPS tests in separate worktrees. Preserve existing
 opening, security, migrations and provider-count oracles. Source checks and artifact
 validation are distinct from actual future RED/GREEN and production readiness.
+
+### Pure calculation and input test seam
+
+`backend/src/accounting/fifo.ts` exports `FifoTrade`, consisting of the normalized
+`Execution` fields plus `tradeId`, `version`, `instrumentName` and `instrumentSymbol`,
+and `calculateFifo(trades: readonly FifoTrade[])`. Its result is
+`{summary, lots, realizations, matches}` using exactly the Summary fields in
+JournalState and the Lot, Realization and Match projections defined above. These
+arrays contain the complete bounded calculation, before API pagination. Matches are
+ordered by sale chronology and then each sale's FIFO buy chronology; lots and
+realizations follow the chronology already specified above.
+
+Inputs are normalized active canonical executions for one account, at most 1,000
+trades. The helper does not mutate the supplied array or records and sorts by explicit
+execution chronology. It exports `FifoHistoryError` for a negative historical prefix
+or duplicate effective chronology. The helper enforces the 1,000-effective-trade
+bound. It uses pure BigInt arithmetic without database or Nest dependencies; it does
+not coerce or validate raw HTTP input types. Coverage, ownership, request identity,
+CAS and transaction handling remain service responsibilities.
+
+`backend/src/accounting/trade-input.ts` exports `parseJournalInitialization(raw)`,
+`parseTradeCreate(raw)`, `parseTradeCorrection(raw)`, `parseTradeVoid(raw)`,
+`parseTradePageQuery(raw)` and `parseTradeHistoryQuery(raw)`. Each accepts unknown raw
+input and returns a strongly typed normalized value according to the command/query
+shapes and defaults above. Correction uses the same body shape as create; its target
+trade ID comes from the path. The create/correction parsers reject buy gross-plus-fee
+overflow with 400 before database access or request reservation. Existing raw type,
+unknown-field, decimal, UUID, instant and integer rules remain unchanged.
+
+These function names are a bounded implementation seam for independent tests, not a
+new framework. Author expected values independently before helpers; an unavailable
+module/import is a prerequisite failure, never claimed behavioral RED.
