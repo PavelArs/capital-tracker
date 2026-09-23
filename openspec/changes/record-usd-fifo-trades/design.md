@@ -1,8 +1,9 @@
 ## Context
 
 Manual openings provide exact aggregate quantities and known/unknown USD cost, not
-acquisition chronology. The preceding change is still being verified; implementation
-of this change waits for its successful archive and genuine predecessor-image RED.
+acquisition chronology. The preceding change was verified and archived as
+2026-09-23-record-manual-opening-positions (e2080aa). Implementation of this change
+still requires genuine predecessor-image RED.
 The target brief requires FIFO and rebuilding derived history after old edits. This
 bounded vertical slice proves those behaviors through real Russian UI, HTTPS and PG.
 The normative API/storage contract is in `persistence.md`; stable scenarios are in specs.

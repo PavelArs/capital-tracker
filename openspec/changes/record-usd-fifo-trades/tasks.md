@@ -1,13 +1,13 @@
 ## 1. Predecessor and independent acceptance RED
 
-- [ ] 1.1 Finish verified archive of record-manual-opening-positions; reconcile this delta against canonical OPEN-003/MIG-002 without losing retained scenarios.
-- [ ] 1.2 Independently review the frozen API/persistence/arithmetic contract and map TRADE-001..006, OPEN-003-C and TRADE-MIG-001 to owned tests before implementation.
-- [ ] 1.3 Against the exact verified predecessor release image, authenticate with real password/MFA, prove /auth/me 200, create an eligible account and observe intended initialization 201 versus actual 404; do not import future services/query future tables as prerequisites.
-- [ ] 1.4 Observe separate real UI RED for the Russian journal action/form; record terminal commands, logs, image IDs and owned cleanup. Only then implement behavior. Retain all preceding passing assertions.
+- [x] 1.1 Finish verified archive of record-manual-opening-positions; reconcile this delta against canonical OPEN-003/MIG-002 without losing retained scenarios.
+- [x] 1.2 Independently review the frozen API/persistence/arithmetic contract and map TRADE-001..006, OPEN-003-C and TRADE-MIG-001 to owned tests before implementation.
+- [x] 1.3 Against the exact verified predecessor release image, authenticate with real password/MFA, prove /auth/me 200, create an eligible account and observe intended initialization 201 versus actual 404; do not import future services/query future tables as prerequisites.
+- [x] 1.4 Observe separate real UI RED for the Russian journal action/form; record terminal commands, logs, image IDs and owned cleanup. Only then implement behavior. Retain all preceding passing assertions.
 
 ## 2. Exact inputs, arithmetic and additive persistence
 
-- [ ] 2.1 Write independent pure boundary/allocation tests for TRADE-002/003 before helpers: mandatory 250/100, fees 245/101, negative net/loss, >2^53, scale 30, 48/30 extrema, gross-plus-fee overflow, [0,0,1,0,1,0,1], conservation, split cumulative allocations and wide sums; never calculate expected values with the production helper.
+- [x] 2.1 Write independent pure boundary/allocation tests for TRADE-002/003 before helpers: mandatory 250/100, fees 245/101, negative net/loss, >2^53, scale 30, 48/30 extrema, gross-plus-fee overflow, [0,0,1,0,1,0,1], conservation, split cumulative allocations and wide sums; never calculate expected values with the production helper.
 - [ ] 2.2 Implement strict raw parsers, signed atom formatting and bounded pure FIFO using BigInt and documented cumulative allocation; no dependency or generic framework.
 - [ ] 2.3 Coordinator adds the three tables/typed mappings and migration 14 per persistence.md, including composite RESTRICT identity FKs, deferred head FK, finite numeric/time checks and exact bounds; no previous row/schema rewrite or backfill.
 - [ ] 2.4 Extend isolated migration acceptance for fresh fourteen/replay and populated thirteen-to-fourteen preservation, keeping every prior populated upgrade and unsafe-history refusal oracle.

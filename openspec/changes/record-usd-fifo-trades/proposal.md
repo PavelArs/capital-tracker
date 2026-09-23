@@ -50,6 +50,6 @@ boundaries and manual UUID identities. Introduce no provider calls, paid service
 package or generic event framework.
 
 Implementation depends on verified archive of record-manual-opening-positions.
-This proposal is prepared in its own worktree while that predecessor's 85-case
-release-image verification runs. No trade implementation or owner data change is
-authorized by preparing artifacts; the next behavior still requires actual RED.
+That predecessor passed all85 cases and was archived on2026-09-23. Independent
+contracts/tests were prepared in separate worktrees; implementation begins only
+after the real predecessor-image RED recorded in verification.md.
