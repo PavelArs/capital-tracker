@@ -465,7 +465,7 @@ async function manualAndCsv(source, svc, f) {
   const beforePreview = await fingerprint(source);
   const preview = await svc.csv.preview(owner,imported.account,batch.identity.batchId,batch.settings);
   assert.equal(preview.canConfirm,true); assert.equal(preview.journalRevision,0);
-  assert.deepEqual(preview.currentSummary,{...zeros,remainingCostUsd:'300'});
+  assert.deepEqual(preview.summaryBefore,{...zeros,remainingCostUsd:'300'});
   assert.deepEqual(preview.candidateSummary,expected);
   assert.equal(await fingerprint(source),beforePreview,'Preview never writes a provisional baseline or trade');
   const confirmed = await csvConfirm(svc,owner,imported.account,batch,0);
