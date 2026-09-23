@@ -16,8 +16,22 @@ const apiClient = axios.create({
 let csrfToken: string | null = null;
 let csrfRequest: Promise<string> | null = null;
 let csrfVersion = 0;
+let authenticationVersion = 0;
+const requestAuthentication = new WeakMap<InternalAxiosRequestConfig, number>();
+let unauthorizedRegistration: { notify: () => void } | null = null;
+
+export function setUnauthorizedHandler(notify: () => void): () => void {
+  const registration = { notify };
+  unauthorizedRegistration = registration;
+  return () => {
+    if (unauthorizedRegistration === registration) unauthorizedRegistration = null;
+  };
+}
 
 export function setCsrfToken(token: string | null): void {
+  // Non-null tokens are published by successful password/factor rotations.
+  // Ordinary CSRF retrieval and invalidation do not create a new authentication.
+  if (token !== null) authenticationVersion++;
   csrfToken = token;
   csrfVersion++;
   csrfRequest = null;
@@ -61,6 +75,7 @@ apiClient.interceptors.request.use(
   async (config: InternalAxiosRequestConfig) => {
     config.headers.delete('Authorization');
     if (isUnsafeRequest(config)) config.headers.set('X-CSRF-Token', await getCsrfToken());
+    requestAuthentication.set(config, authenticationVersion);
     return config;
   },
   (error) => Promise.reject(error),
@@ -88,13 +103,15 @@ apiClient.interceptors.response.use(
         }
       }
 
-      // Handle 401 - Unauthorized
-      if (status === 401) {
-        if (!['/auth/login', '/auth/mfa'].includes(error.config?.url || '')) setCsrfToken(null);
-        // Keep failed login feedback on the login page.
-        if (window.location.pathname !== '/login') {
-          window.location.href = '/login';
-        }
+      if (
+        status === 401 &&
+        !['/auth/login', '/auth/mfa'].includes(error.config?.url || '') &&
+        error.config &&
+        requestAuthentication.get(error.config) === authenticationVersion
+      ) {
+        setCsrfToken(null);
+        // React navigation preserves in-memory commands; the original request still rejects.
+        unauthorizedRegistration?.notify();
       }
 
       const anonymousProfile = status === 401 && error.config?.url === '/auth/me';

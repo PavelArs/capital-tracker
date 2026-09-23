@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 let apiClient: AxiosInstance;
 let authApi: typeof import('./auth.api').authApi;
 let setErrorHandler: typeof import('./client').setErrorHandler;
+let setUnauthorizedHandler: typeof import('./client').setUnauthorizedHandler;
 
 function response(config: InternalAxiosRequestConfig, data: unknown, status = 200) {
   return { config, data, status, statusText: String(status), headers: {} };
@@ -23,7 +24,7 @@ describe('cookie session API client', () => {
   beforeEach(async () => {
     vi.resetModules();
     window.history.replaceState({}, '', '/login');
-    ({ default: apiClient, setErrorHandler } = await import('./client'));
+    ({ default: apiClient, setErrorHandler, setUnauthorizedHandler } = await import('./client'));
     ({ authApi } = await import('./auth.api'));
   });
 
@@ -369,5 +370,140 @@ describe('cookie session API client', () => {
     ]);
     expect(sent[2].headers.get('X-CSRF-Token')).toBe('pending-csrf');
     expect(sent[4].headers.get('X-CSRF-Token')).toBe('anonymous-2');
+  });
+
+  it('notifies React on a protected 401 without changing the document URL or retrying its write', async () => {
+    window.history.replaceState({}, '', '/manual-accounts/retained-command');
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    const sent: InternalAxiosRequestConfig[] = [];
+    apiClient.defaults.adapter = async (config) => {
+      sent.push(config);
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'current-csrf' });
+      throw rejected(config, 401);
+    };
+
+    await expect(
+      apiClient.post('/accounting/accounts/one/csv-imports/batch/confirm', {
+        requestId: 'original-command',
+      }),
+    ).rejects.toMatchObject({ response: { status: 401 } });
+
+    expect(onUnauthorized).toHaveBeenCalledOnce();
+    expect(window.location.pathname).toBe('/manual-accounts/retained-command');
+    expect(sent.map((config) => config.url)).toEqual([
+      '/auth/csrf',
+      '/accounting/accounts/one/csv-imports/batch/confirm',
+    ]);
+  });
+
+  it('cleans up only the registration being removed and tolerates repeated cleanup', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const removeFirst = setUnauthorizedHandler(first);
+    const removeSecond = setUnauthorizedHandler(second);
+    removeFirst();
+    removeFirst();
+    apiClient.defaults.adapter = async (config) => {
+      throw rejected(config, 401);
+    };
+
+    await expect(apiClient.get('/accounting/accounts')).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledOnce();
+    removeSecond();
+    await expect(apiClient.get('/accounting/instruments')).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    expect(second).toHaveBeenCalledOnce();
+  });
+
+  it.each(['/auth/login', '/auth/mfa'])(
+    'keeps %s denial local without clearing authentication state',
+    async (path) => {
+      const onUnauthorized = vi.fn();
+      setUnauthorizedHandler(onUnauthorized);
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/auth/csrf') return response(config, { csrfToken: 'form-csrf' });
+        throw rejected(config, 401);
+      };
+      await expect(apiClient.post(path, {})).rejects.toMatchObject({ response: { status: 401 } });
+      expect(onUnauthorized).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['get', 'post'] as const)(
+    'ignores a delayed old-session %s 401 after a successful factor rotation',
+    async (method) => {
+      const onUnauthorized = vi.fn();
+      setUnauthorizedHandler(onUnauthorized);
+      let rejectOld: () => void = () => {};
+      const delayed = new Promise<void>((resolve) => {
+        rejectOld = resolve;
+      });
+      const sent: InternalAxiosRequestConfig[] = [];
+      apiClient.defaults.adapter = async (config) => {
+        sent.push(config);
+        if (config.url === '/auth/csrf') return response(config, { csrfToken: 'old-csrf' });
+        if (config.url === '/auth/login')
+          return response(config, { mfaRequired: true, csrfToken: 'pending-csrf' });
+        if (config.url === '/auth/mfa')
+          return response(config, { user: { id: 'owner' }, csrfToken: 'new-full-csrf' });
+        if (config.url === '/accounting/old') {
+          await delayed;
+          throw rejected(config, 401);
+        }
+        return response(config, {});
+      };
+      const old = expect(
+        apiClient.request({ method, url: '/accounting/old' }),
+      ).rejects.toMatchObject({ response: { status: 401 } });
+      await vi.waitFor(() =>
+        expect(sent.some((config) => config.url === '/accounting/old')).toBe(true),
+      );
+      await authApi.login({ email: 'owner@example.invalid', password: 'Synthetic-password-42!' });
+      await authApi.verifyFactor({ kind: 'totp', code: '012345' });
+      rejectOld();
+      await old;
+
+      expect(onUnauthorized).not.toHaveBeenCalled();
+      await apiClient.post('/accounting/explicit-next-action', {});
+      expect(sent.at(-1)?.headers.get('X-CSRF-Token')).toBe('new-full-csrf');
+      expect(sent.filter((config) => config.url === '/accounting/old')).toHaveLength(1);
+    },
+  );
+
+  it('still reports a current-session 401 after an ordinary 403 CSRF refresh', async () => {
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    let rejectRead: () => void = () => {};
+    const delayed = new Promise<void>((resolve) => {
+      rejectRead = resolve;
+    });
+    let readStarted = false;
+    let csrfRequests = 0;
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf')
+        return response(config, { csrfToken: `csrf-${++csrfRequests}` });
+      if (config.url === '/accounting/old-read') {
+        readStarted = true;
+        await delayed;
+        throw rejected(config, 401);
+      }
+      throw rejected(config, 403);
+    };
+    const old = expect(apiClient.get('/accounting/old-read')).rejects.toMatchObject({
+      response: { status: 401 },
+    });
+    await vi.waitFor(() => expect(readStarted).toBe(true));
+    await expect(apiClient.post('/accounting/refused-write')).rejects.toMatchObject({
+      response: { status: 403 },
+    });
+    expect(csrfRequests).toBe(2);
+    rejectRead();
+    await old;
+    expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 });
