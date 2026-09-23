@@ -1,7 +1,7 @@
 ## 1. Freeze the reviewed scope and predecessor
 
 - [ ] 1.1 Finish and archive `import-usd-trades-csv` with its actual full release gate, reconcile every modified requirement against the resulting canonical specs, and record the exact predecessor commit/images.
-- [ ] 1.2 Independently review proposal, scenarios and persistence contract; freeze input/FIFO/baseline-reader interfaces, SQL constraint names and unchanged empty-origin projections before acceptance authorship (CARRY-001..006).
+- [x] 1.2 Independently review proposal, scenarios and persistence contract; freeze input/FIFO/baseline-reader interfaces, SQL constraint names and unchanged empty-origin projections before acceptance authorship (CARRY-001..006).
 - [ ] 1.3 Record a scenario-to-test verification manifest and genuine baseline results; preserve all existing financial/security characterization assertions and the owner Nginx edit.
 
 ## 2. Write independent acceptance before new behavior

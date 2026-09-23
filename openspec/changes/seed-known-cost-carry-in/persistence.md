@@ -347,8 +347,8 @@ New baseline constraints share prefix `account_carry_in_lots_` with suffixes `pk
 `ordinal_check`, `opening_revision_check`, `order_check`, `quantities_check`,
 `cost_check`, `acquired_at_check` and `created_at_check`.
 The sole replaced predecessor constraint is the generated quoted
-`account_trade_journals_originKind_check`; verify its actual populated15 catalog
-name before executing DDL. Preserve every other original constraint, including
+`account_trade_journals_originKind_check`; its actual populated15 catalog name was verified read-only on2026-09-23
+(verification.md). Preserve every other original constraint, including
 originKind NOT NULL, request/account identity, revision and time checks.
 
 Required real tests cover original-versus-rebased partial allocation; exact opening
