@@ -215,3 +215,39 @@ logs `/private/tmp/capital-csv-root-frontend-tests.log`,
 `/private/tmp/capital-csv-review-fixes-build.log`. Strict OpenSpec12 passed.
 These checks precede the small literal rendering repair and remaining read-failure
 regressions. Full release verification remains pending.
+
+## Final focused regressions and harness corrections — 2026-09-23
+
+`/private/tmp/capital-csv-final-source-gates.log`: actual `pnpm verify:baseline`
+exit0 after the literal rendering repair, strict12, backend859 tests/26 suites,
+frontend95 tests/10 files, both builds and lints (retained77/29 warnings and bundle
+warning). Current release frontend is
+`sha256:e973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f`;
+backend remains the verified0c239e1e image.
+
+Actual first five-case followup run exited1, two passed/three failed in60.0 seconds
+(`/private/tmp/capital-csv-final-regressions.log`; retained synthetic artifacts
+`/private/tmp/capital-csv-final-regressions-artifacts`). Different-account late-response
+isolation and valid multipart anonymous/pending/Origin/CSRF negatives passed.
+The other failures were corrected as test harness issues with independent review:
+
+- Literal rendering passed its original visible-key oracle, then valid-preview setup
+  correctly failed duplicate chronology. Two different instruments still share the
+  account chronology namespace. The second source row now has explicit order1;
+  raw keys, UUIDs, quantity1 each, costs100/200 and aggregate300 oracles are unchanged.
+- The accepted-receipt case matched two legitimate alerts (accepted-read failure and
+  stale rollback review). The locator now selects the accepted-command alert by text;
+  its required content, visible receipt, write locks and subsequent review stay intact.
+- The held real matches GET was released by Playwright1.63 when its last registered
+  one-shot handler disappeared. The trace proved actual409 before the test's explicit
+  release, followed by “Route is already handled” on continue. Keep that GET handler
+  registered until finally cleanup; additionally require exactly one held GET and no
+  response before release. No response or route error is fabricated/suppressed.
+
+Independent QA commitb2617a4, integratedc7e903a, contains only those repairs. Actual
+rerun with grep `leading spaces|pinned read409|lost parent read` passed3/3,36.7 seconds,
+one worker/zero retries, exit0 (`/private/tmp/capital-csv-final-regressions-2.log`).
+All product behavior remains unchanged from12e718c. Owned cleanup completed; earlier
+independent Docker inventories were empty, and final cleanup checks remain required
+at the full gate. Lost-upload File recovery is the final independent coverage addition
+before complete release verification; the slice remains active.

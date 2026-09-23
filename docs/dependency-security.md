@@ -133,3 +133,16 @@ review; re-audit it when implementing the follow-up. Current React 18/Node 22 me
 v7's minimums, but the [upgrade guide](https://raw.githubusercontent.com/remix-run/react-router/react-router@7.18.0/docs/upgrading/v6.md)
 requires checking splat/transition behavior. Test `assets/*`, tab navigation,
 unknown-route redirects and login/MFA/logout flows before adopting it.
+
+## CSV parser addition — 2026-09-23
+
+The active CSV slice adds exact backend `csv-parse@7.0.2`, with no transitive
+runtime dependencies or new override. The maintained parser's actual UTF-8,
+quoting, physical-line and size boundaries have independent tests; dependency
+selection alone is not validation. See the active change's `parser-decision.md`.
+
+The frozen install and `pnpm audit:production` completed successfully after this
+addition: zero high/critical findings and the same two moderate Router findings
+above. No advisory suppression or paid scanning service was added. Commands and
+logs are recorded in the CSV change's verification record; image/static/dynamic
+scans and the Router follow-up remain separate release requirements.

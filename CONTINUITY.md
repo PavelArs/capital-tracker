@@ -41,8 +41,8 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-No Docker run active after focused followups; root awaits test-harness correction.
-Last log /private/tmp/capital-csv-final-regressions.log (2 PASS, 3 harness failures).
+No Docker run active after three corrected followups passed.
+Last log /private/tmp/capital-csv-final-regressions-2.log (3/3 PASS,36.7s,exit0).
 Runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
 
 ## Completed and archived
@@ -103,7 +103,7 @@ Initial7 realHTTPS cases PASS (1.5m, one worker, zero retries), including securi
 and declared/chunked wire limits. Full gate not run; no archive. Expanded9 CSV
 journey/command cases now running after three intended UI regression REDs.
 
-Current HEAD12e718c (plus owner-auth docs pending). Shared auth and refresh/newfile
+Current product source12e718c; HEADc7e903a before current evidence updates. Shared auth and refresh/newfile
 fixes independently reviewed and runtimeGREEN; seven main UIjourneys pass, selected
 manual correction/void alsoPASS. Literal source-key actualRED then spanprewrapfix;
 first visiblekeyoracle nowpasses, laterfixturepreview correctlyrejects duplicate
@@ -115,8 +115,11 @@ Logs/details in active verification.md. Artifacts copies under /private/tmp.
 Latest fivefocusedchecks /private/tmp/capital-csv-final-regressions.log exit1:
 PASS latepreviewdifferentaccount andvalidmultipart authnegatives; 3testharnessfailures:
 literalfixturechronology; pinnedread routealreadyhandled; acceptedreadfailure locator
-matches2correctalerts. Gateagent owns corrections and final lost-upload/File recovery
-case; no productfix inferred. Don't weakenoracles orclaimfullgreen.
+matches2correctalerts. Corrections b2617a4 integratedc7e903a and all3nowPASS (36.7s).
+No product changes for those harness failures. Gateagent now adds final lost-upload
+File recovery using CDP response-stage intercept of actual201 then failRequest;
+request-stage route.fetch cannot reliably replay browserBlob multipart. No mocked
+response; realPGbytes beforeloss and normalexplicit200replay required.
 Rootsourcegate /private/tmp/capital-csv-final-source-gates.log exit0: strict12,
 backend859/26, frontend95/10, bothlint/build; existing77/29warnings retained.
 Currentfrontend releasee973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f.
