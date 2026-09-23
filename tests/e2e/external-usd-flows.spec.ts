@@ -577,6 +577,10 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     const historyGate = new Promise<void>((resolve) => {
       releaseHistory = resolve;
     });
+    let historyDelivered: () => void = () => {};
+    const historyDone = new Promise<void>((resolve) => {
+      historyDelivered = resolve;
+    });
     const historyPattern = `**${periodPath}/${otherId}/versions*`;
     await page.route(historyPattern, async (route) => {
       const response = await route.fetch();
@@ -584,7 +588,11 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       expect(await response.json()).toMatchObject({ flowId: otherId, items: [{ amountUsd: '1' }] });
       historyFetched = true;
       await historyGate;
-      await route.fulfill({ response });
+      try {
+        await route.fulfill({ response });
+      } finally {
+        historyDelivered();
+      }
     });
     try {
       await other.getByRole('button', { name: 'Версии', exact: true }).click();
@@ -599,6 +607,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       await expect(amount).toHaveValue('1300');
     } finally {
       releaseHistory();
+      await historyDone;
       await page.unroute(historyPattern);
     }
   } finally {

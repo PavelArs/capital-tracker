@@ -233,6 +233,8 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
   const showVersions = async (flowId: string, beforeVersion?: number) => {
     const generation = ++versionGeneration.current;
     setVersionFlowId(flowId);
+    // A new selection cannot borrow another flow's immutable history while loading.
+    if (beforeVersion === undefined) setVersions(null);
     setVersionsRead('loading');
     setVersionsError('');
     try {
