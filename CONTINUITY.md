@@ -50,8 +50,9 @@ openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md.
 ## Latest manual period profit slice
 
 preview-period-profit implemented, independently reviewed and verified with scoped checks;
-archive synchronization pending. Productsourcec4ae371, backend43681aa. Guide
-docs/period-profit-preview.md; evidence openspec/changes/preview-period-profit/verification.md.
+archived 2026-09-23-preview-period-profit; all 11 tasks complete. Canonical strict
+validation passes 16/16; active changes empty. All preceding 15 specs unchanged. Productsourcec4ae371, backend43681aa. Guide
+docs/period-profit-preview.md; evidence openspec/changes/archive/2026-09-23-preview-period-profit/verification.md.
 POST /accounting/portfolio/profit-preview (200), bodystrictfrom/to/nonnegativeexact
 openingValueUsd/closingValueUsd/assertReviewedtrue; noownerinput. Completecurrent
 ownerflows inoneRRREADONLY snapshot; missing/beforecoverage409, invalid400.

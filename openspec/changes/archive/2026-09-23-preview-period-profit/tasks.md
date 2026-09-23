@@ -19,4 +19,4 @@
 ## 4. Documentation and archive
 
 - [x] 4.1 Document usage, limitations, scenario-to-check manifest, actual results/unrun checks and continuity; confirm owner edit/lock preserved.
-- [ ] 4.2 Validate OpenSpec strictly, archive using the supported command, then confirm synchronized canonical specs and no active change.
+- [x] 4.2 Validate OpenSpec strictly, archive using the supported command, then confirm synchronized canonical specs and no active change.

@@ -1,7 +1,6 @@
 # Period profit verification
 
-Status: implementation, independent review and required focused GREEN complete;
-OpenSpec archive synchronization pending.
+Status: complete and archived after independent review and required focused GREEN.
 
 Genuine predecessor RED: `/private/tmp/capital-profit-predecessor-red.cjs`, exit1,
 log `/private/tmp/capital-profit-predecessor-red.log`; both cases fail as expected:
@@ -108,3 +107,17 @@ hosted CI/security scans, complete upgrade matrix, production rollout and
 backup/restore/release hardening. Those are not implied by focused success; no
 dependency/schema change requires them for this slice. All existing CI gates and
 cases remain. XIRR/TWR/providers/prices and whole-brief consolidation remain future.
+
+## Archive closure
+
+OpenSpec1.2.0 `openspec archive preview-period-profit --yes` exited0 and created
+`2026-09-23-preview-period-profit`: four new requirements, no modified/removed
+requirements. The sole incomplete task at invocation was4.2, archive itself; it
+was marked complete only after successful synchronization. All15 preceding
+canonical specification files remain byte-for-byte unchanged. Luna independently
+checked the final evidence counts/logs and found only the temporary archive-link
+lifecycle mismatch; the linked archive now exists. No unresolved review finding.
+
+`openspec validate --all --strict --no-interactive` exited0: 16 canonical specs
+passed. `openspec list --json` exited0 with an empty changes array. Final diff
+check passed; only the preserved owner Nginx edit remains outside this change.
