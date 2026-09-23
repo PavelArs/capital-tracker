@@ -27,7 +27,7 @@ export type PriceReceipt = {
 } & ({ kind: 'set'; priceUsd: string } | { kind: 'void'; priceUsd: null });
 
 export interface PriceBook {
-  instrument: Instrument;
+  instrument: Pick<Instrument, 'id' | 'name' | 'symbol' | 'namespace'>;
   currentRevision: number;
   source: 'manual';
   quoteCurrency: 'USD';

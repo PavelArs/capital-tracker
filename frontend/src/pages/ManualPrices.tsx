@@ -218,6 +218,7 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           ? { ...page, items: [...previous.items, ...page.items] }
           : page,
       );
+      setHistoryAt(page.observedAt);
       setHistoryRead('ready');
     } catch (error) {
       if (
@@ -434,7 +435,8 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
                 <ul className="prices-history">
                   {history.items.map((item) => (
                     <li key={item.revision}>
-                      Ревизия {item.revision}: {item.kind === 'void' ? 'Исключена' : item.priceUsd}{' '}
+                      Ревизия {item.revision}:{' '}
+                      <span>{item.kind === 'void' ? 'Исключена' : item.priceUsd}</span>{' '}
                       {item.kind === 'set' && 'USD за единицу'} — {item.createdAt}
                     </li>
                   ))}
@@ -462,6 +464,7 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           ошибочной даты сначала исключите старый момент, затем сохраните новый. Ноль означает
           заявленную нулевую цену, а не отсутствие данных.
         </p>
+        <p>Историю исключённой цены можно открыть, указав её дату в поле ниже.</p>
         {voidAt && (
           <p className="prices-notice">
             Подготовлено исключение цены на {voidAt}. Оно сохранит историю и уберёт этот момент из
@@ -496,6 +499,13 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           Я проверил инструмент, дату и цену
         </label>
         <div className="prices-actions">
+          <button
+            type="button"
+            disabled={!instrumentId || !observedAt || saving || bookRead !== 'ready'}
+            onClick={() => void showHistory(observedAt)}
+          >
+            История указанной даты
+          </button>
           <button
             type="button"
             disabled={!canSave}

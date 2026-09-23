@@ -5,9 +5,9 @@
 
 ## 2. Implementation
 
-- [ ] 2.1 Add non-destructive migration18/entity and strict exact input boundaries (PRICE-EXACT/BOUND/MIGRATION).
-- [ ] 2.2 Implement owner-serialized append-only set/void/replay and RR effective/history reads (PRICE-REPAIR/RACE/PAGES/SNAPSHOT/PRIVATE).
-- [ ] 2.3 Add reviewed Russian UI with selection/paging/history, stale-response and uncertain-save recovery (PRICE-UI/RECOVERY).
+- [x] 2.1 Add non-destructive migration18/entity and strict exact input boundaries (PRICE-EXACT/BOUND/MIGRATION).
+- [x] 2.2 Implement owner-serialized append-only set/void/replay and RR effective/history reads (PRICE-REPAIR/RACE/PAGES/SNAPSHOT/PRIVATE).
+- [x] 2.3 Add reviewed Russian UI with selection/paging/history, stale-response and uncertain-save recovery (PRICE-UI/RECOVERY).
 
 ## 3. Review and scoped verification
 

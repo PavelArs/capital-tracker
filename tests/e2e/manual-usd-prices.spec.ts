@@ -372,6 +372,11 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   await review.check();
   await page.getByRole('button', { name: 'Подтвердить исключение', exact: true }).click();
   await expect(page.getByText('Сохранённых цен нет.', { exact: true })).toBeVisible();
+  await page.getByLabel('Дата цены (UTC)', { exact: true }).fill(pointAt);
+  await page.getByRole('button', { name: 'История указанной даты', exact: true }).click();
+  await expect(historyRegion.getByText('Исключена', { exact: true })).toBeVisible();
+  await expect(historyRegion.getByText('110', { exact: true })).toBeVisible();
+  await expect(historyRegion.getByText('100', { exact: true })).toBeVisible();
   await page.reload();
   await instrumentPicker.selectOption(firstInstrument.id);
   const afterReload = await browserGet(page, firstInstrument.id, () => load.click());
