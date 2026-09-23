@@ -139,6 +139,16 @@ test('PROFIT-CAPITAL / PROFIT-PERIOD / PROFIT-COVERAGE / PROFIT-PRIVATE: exact a
     expect(beforeCoverage.status()).toBe(409);
     noStore(beforeCoverage);
 
+    for (const invalid of [
+      previewInput({ assertReviewed: false }),
+      previewInput({ ownerId: foreign.ownerId }),
+      previewInput({ openingValueUsd: 1000 }),
+    ]) {
+      const rejected = await api.send('POST', previewPath, invalid);
+      expect(rejected.status()).toBe(400);
+      noStore(rejected);
+    }
+
     const anonymous = await request.fetch(previewEndpoint, {
       method: 'POST',
       data: previewInput(),

@@ -99,6 +99,7 @@ function PeriodProfitOwner() {
               id="profit-from"
               value={from}
               onChange={(event) => edit(setFrom, event.target.value)}
+              placeholder="2025-01-01T00:00:00.000Z"
               aria-describedby="profit-from-help"
               required
             />
@@ -113,6 +114,7 @@ function PeriodProfitOwner() {
               id="profit-to"
               value={to}
               onChange={(event) => edit(setTo, event.target.value)}
+              placeholder="2026-01-01T00:00:00.000Z"
               aria-describedby="profit-to-help"
               required
             />
@@ -127,6 +129,7 @@ function PeriodProfitOwner() {
               id="profit-opening"
               value={openingValueUsd}
               onChange={(event) => edit(setOpeningValueUsd, event.target.value)}
+              aria-describedby="profit-from-help profit-amount-help"
               inputMode="decimal"
               required
             />
@@ -137,10 +140,15 @@ function PeriodProfitOwner() {
               id="profit-closing"
               value={closingValueUsd}
               onChange={(event) => edit(setClosingValueUsd, event.target.value)}
+              aria-describedby="profit-to-help profit-amount-help"
               inputMode="decimal"
               required
             />
           </div>
+          <p id="profit-amount-help">
+            Укажите неотрицательные суммы, включая весь учитываемый капитал и денежные остатки по
+            одному разу. Для дробной части используйте точку.
+          </p>
           <label className="profit-review">
             <input
               type="checkbox"
@@ -173,6 +181,7 @@ function PeriodProfitOwner() {
           <h2>Результат расчёта</h2>
           <p>Оценка вручную. Потоки не сверены. Это временный расчёт для ревизии журнала.</p>
           <p>Ревизия журнала: {result.journalRevision}</p>
+          <p>Исправления и аннулирования потоков изменят следующий расчёт за этот период.</p>
           <p>Граница учёта потоков: {result.coverageFrom}</p>
           <dl className="profit-result">
             <dt>Начало периода (UTC)</dt>

@@ -6,9 +6,9 @@
 
 ## 2. Implementation
 
-- [ ] 2.1 Implement strict inputs and exact signed projection (PROFIT-CAPITAL/EXACT/INPUT), preserving flow characterization.
-- [ ] 2.2 Add owner-protected read-only snapshot preview using the complete period and unchanged journal semantics (PROFIT-PERIOD/SNAPSHOT/COVERAGE/PRIVATE).
-- [ ] 2.3 Add Russian manual preview form with reviewed input binding and stale response invalidation (PROFIT-UI/LATE).
+- [x] 2.1 Implement strict inputs and exact signed projection (PROFIT-CAPITAL/EXACT/INPUT), preserving flow characterization.
+- [x] 2.2 Add owner-protected read-only snapshot preview using the complete period and unchanged journal semantics (PROFIT-PERIOD/SNAPSHOT/COVERAGE/PRIVATE).
+- [x] 2.3 Add Russian manual preview form with reviewed input binding and stale response invalidation (PROFIT-UI/LATE).
 
 ## 3. Review and focused verification
 
