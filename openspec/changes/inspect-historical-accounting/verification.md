@@ -95,3 +95,40 @@ exit0 (`/private/tmp/capital-historical-backend-build.log`). Scoped Biome passed
 A real PostgreSQL maximum fixture now covers100 original lots plus1000 current buys
 at maximum input precision; expected values independently checked with Python Decimal
 precision100. It is wired into the existing full acceptance runner and has not run yet.
+
+## Backend and independent review — 2026-09-23
+
+At85c7581, complete backend tests passed939/939 in30suites,10.093s,exit0; lint
+exit0 with77 existing warnings. Logs `capital-historical-backend-tests.log` and
+`capital-historical-backend-lint.log` under/private/tmp. Actual production-image
+PostgreSQL probe (`caffeinate -is node /private/tmp/capital-historical-db-focused.cjs`)
+passed all coverage/ownership/known-zero, UUID paging/stale revision, two-process
+RR/read-only barrier and100+1000 maximum-precision families, terminal exit0.
+Image sha256:bb9e33d8218ba26225abb3f33834c83be707f4bf2a60f2468cb0f22bb8942c21;
+log `/private/tmp/capital-historical-db-focused.log`. Independent post-run Docker
+container/network inventories were empty. These are PostgreSQL results, not UI GREEN.
+
+Independent gpt-6-sol review (frontend author, separate from root backend author)
+found one saved-data error classification gap. The actual fresh PostgreSQL fixture
+set a baseline acquisition after coverage, with SQL constraints enabled; expected409
+received a non-HTTP error against unchanged bb9e33 image, exit1. First failure log
+withheld exception detail; a repeated diagnostic check safely printed only the
+expected/actual status, `/private/tmp/capital-historical-invalid-confirmed-red.log`.
+No import, setup or SQL constraint failure was counted as this behavior RED.
+
+Explicit saved-baseline invariant failures now use the shared FifoHistoryError.
+Historical head/baseline reads occur inside a narrow persisted-validation catch,
+which maps FifoHistoryError/BadRequestException to the existing private409. Raw
+caller input remains parsed outside; SQL and programming exceptions remain500.
+Unchanged old callers retain their original private500 saved-baseline path. The
+same reviewer inspected this exact diff and closed the finding. Actual rebuilt-image
+PostgreSQL probe then passed all five families including that regression, exit0,
+`/private/tmp/capital-historical-invalid-green.log`. No schema/dependency change.
+
+Frontend production files from independent worktree b104603/14e6fbc integrated as
+f5e88fd/42b6805. Root reviewed request invalidation, exact/pinned pages, Russian
+labels, literal rendering and preserved parent state. Newly authored API-mocked
+component tests were removed to follow the external-provider-only mocking boundary;
+all predecessor frontend tests are retained. Real HTTPS journeys remain mandatory.
+Do not infer a final frontend count from the author's earlier intermediate98-test
+log; integrated source verification below records its actual result.

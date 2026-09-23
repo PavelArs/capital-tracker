@@ -14,7 +14,7 @@
 
 - [x] 3.1 Implement strict query normalization and exact complete-prefix position projection using existing decimal/date/page/FIFO helpers; no schema or existing-wire change (HIST-001..003).
 - [x] 3.2 Add the protected thin route and focused service using one read-only RR transaction for all owned journal/baseline/head/label reads, with private400/404/409 behavior (HIST-002..004).
-- [ ] 3.3 Add the isolated Russian form/results with explicit UTC/coverage/revision labels, pinned pages, request invalidation and preserved parent draft/correction state (HIST-004).
+- [x] 3.3 Add the isolated Russian form/results with explicit UTC/coverage/revision labels, pinned pages, request invalidation and preserved parent draft/correction state (HIST-004).
 - [ ] 3.4 Run pure tests, actual PostgreSQL and focused HTTPS acceptance to GREEN; record exact counts/commands and resolve genuine failures without weakening financial/security assertions.
 
 ## 4. Refactor and review

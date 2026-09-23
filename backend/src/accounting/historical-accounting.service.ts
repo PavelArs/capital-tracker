@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { FifoHistoryError } from './fifo';
 import { projectHistoricalAccounting } from './historical-accounting';
@@ -26,9 +26,9 @@ export class HistoricalAccountingService {
         (query.journalRevision !== undefined && query.journalRevision !== journal.currentRevision)
       )
         throw conflict();
-      const heads = await readTradeHeads(manager, owner, id);
-      const baseline = await readBaseline(manager, owner, id, journal);
       try {
+        const heads = await readTradeHeads(manager, owner, id);
+        const baseline = await readBaseline(manager, owner, id, journal);
         const { initialCostUsd, summary, positions } = projectHistoricalAccounting(
           heads,
           baseline,
@@ -49,7 +49,10 @@ export class HistoricalAccountingService {
           nextOffset: end < positions.length ? end : null,
         };
       } catch (error) {
-        if (error instanceof FifoHistoryError) throw conflict();
+        // Input was parsed before the transaction. These validation errors concern
+        // persisted history; SQL/programming failures retain the private500 path.
+        if (error instanceof FifoHistoryError || error instanceof BadRequestException)
+          throw conflict();
         throw error;
       }
     });

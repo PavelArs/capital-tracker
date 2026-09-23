@@ -101,6 +101,8 @@ async function status(action, expected) {
     actual = error?.getStatus?.();
   }
   assert.ok(failed, 'Expected a deliberate service rejection');
+  if (actual !== expected)
+    console.error(`REFUSAL expected${expected}, received${actual ?? 'non-HTTP error'} at ${stage}`);
   assert.equal(actual, expected, 'Reject for the specified domain boundary');
 }
 
@@ -669,6 +671,19 @@ async function supportedMaxima(source, svc, f) {
   assert.equal(await fingerprint(source), before, 'Maximum-bound historical reads preserve every row');
 }
 
+async function invalidSavedHistory(source, svc, f) {
+  stage = 'HIST-003 deliberately malformed saved baseline returns private409';
+  const { owner, firstInstrument } = f;
+  const account = await carryAccount(svc, owner, firstInstrument, 'Malformed synthetic baseline');
+  // Deliberately invalidate chronology only in this fresh isolated fixture. SQL
+  // storage constraints remain enabled; a saved domain error is not caller input.
+  await source.query(`UPDATE account_carry_in_lots SET "acquiredAt"='2025-01-02T00:00:00Z'
+    WHERE "ownerId"=$1 AND "accountId"=$2`, [owner, account]);
+  const before = await fingerprint(source);
+  await status(() => at(svc, owner, account, coverageFrom), 409);
+  assert.equal(await fingerprint(source), before, 'Refusal never repairs or rewrites saved history');
+}
+
 async function main() {
   sentinel();
   if (!require('node:fs').existsSync(historyModule)) {
@@ -716,7 +731,7 @@ async function main() {
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     const svc = services(source);
     const fixture = await seed(source, svc);
-    for (const run of [coverageAndFailures, pagesAndRevision, coherentRead, supportedMaxima]) {
+    for (const run of [coverageAndFailures, pagesAndRevision, coherentRead, supportedMaxima, invalidSavedHistory]) {
       await run(source, svc, fixture);
     }
     console.log('PASS HIST-002/003 synthetic production-service PostgreSQL acceptance');

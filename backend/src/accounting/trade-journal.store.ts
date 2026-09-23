@@ -3,6 +3,7 @@ import { EntityManager } from 'typeorm';
 import {
   type Execution,
   type FifoCarryInInput,
+  FifoHistoryError,
   type FifoTrade,
   deriveCarryInAmounts,
 } from './fifo';
@@ -109,7 +110,7 @@ export async function readBaseline(
   if (!manager.queryRunner?.isTransactionActive)
     throw new Error('Baseline read requires transaction');
   if (!Number.isSafeInteger(journal.openingRevision) || journal.openingRevision < 1)
-    throw new Error('Invalid saved carry-in origin');
+    throw new FifoHistoryError();
   const rows: (Omit<FifoCarryInInput, 'acquiredAt'> & { acquiredAt: Date })[] = await manager.query(
     `SELECT l.id AS "lotId",l."openingRevision",l.ordinal,l."instrumentId",
       i.name AS "instrumentName",i.symbol AS "instrumentSymbol",l."acquiredAt",
@@ -121,10 +122,10 @@ export async function readBaseline(
     ORDER BY l.ordinal LIMIT 101`,
     [owner, id, journal.openingRevision],
   );
-  if (rows.length < 1 || rows.length > 100) throw new Error('Invalid saved carry-in lots');
+  if (rows.length < 1 || rows.length > 100) throw new FifoHistoryError();
   return rows.map((row, index) => {
     if (row.ordinal !== index + 1 || row.acquiredAt > journal.coverageFrom)
-      throw new Error('Invalid saved carry-in chronology');
+      throw new FifoHistoryError();
     const lot: FifoCarryInInput = {
       ...row,
       acquiredAt: row.acquiredAt.toISOString(),
