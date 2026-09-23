@@ -1279,3 +1279,149 @@ test('TRADE-004-B / TRADE-006-D regression: lost correction followed by pinned40
   ]);
   assertQuota();
 });
+
+test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier committed correction whose response was lost', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await fixture(page);
+  const bought = await api.create(account.id, tradeInput(instrument.id, 0));
+  await api.create(
+    account.id,
+    tradeInput(instrument.id, 1, { side: 'sell', quantity: '0.5', grossUsd: '100' }),
+  );
+  const before = priorState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const trades = page.getByRole('table', { name: 'Сделки журнала', exact: true });
+  await trades
+    .getByRole('row')
+    .filter({ hasText: bought.trade.tradeId })
+    .getByRole('button', { name: 'Исправить', exact: true })
+    .click();
+  const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('120');
+  const path = `/api/accounting/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`;
+  const pattern = `**${path}`;
+  const commands: TradeInput[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === path)
+      commands.push(request.postDataJSON() as TradeInput);
+  });
+  let committed: TradeReceipt | undefined;
+  let lost = false;
+  await page.route(
+    pattern,
+    async (route) => {
+      // The first request really commits. Only delivery is aborted after observing PG.
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committed = readReceipt(await response.json());
+      expect(committed.journalRevision).toBe(3);
+      expect(committed.trade.version).toBe(2);
+      expect(
+        rows<{
+          version: number;
+          journalRevision: number;
+        }>(`SELECT version,"journalRevision" FROM account_trade_versions
+      WHERE "accountId"='${account.id}' AND "requestId"='${committed.trade.requestId}'`),
+      ).toEqual([{ version: 2, journalRevision: 3 }]);
+      lost = true;
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  try {
+    await page.getByRole('button', { name: 'Сохранить сделку', exact: true }).click();
+    await expect.poll(() => lost).toBe(true);
+    const retry = page.getByRole('button', { name: 'Повторить исходный запрос', exact: true });
+    await expect(retry).toBeEnabled();
+    await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toBeDisabled();
+    expect(commands).toHaveLength(1);
+    expect(commands[0].expectedJournalRevision).toBe(2);
+    const afterCommit = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const committedRows = tradeRows(account.id);
+    await page.route(
+      pattern,
+      async (route) => {
+        // Remove only CSRF from this retry; the real backend supplies the403.
+        // No own response is fabricated, and the original command body is unchanged.
+        const headers = Object.fromEntries(
+          Object.entries(route.request().headers()).filter(
+            ([name]) => name.toLowerCase() !== 'x-csrf-token',
+          ),
+        );
+        await route.continue({ headers });
+      },
+      { times: 1 },
+    );
+    const denied = await browserPost(
+      page,
+      `/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`,
+      () => retry.click(),
+    );
+    expect(denied.status()).toBe(403);
+    await expect(page.getByRole('alert')).toContainText(/[А-Яа-я]/);
+    await page.waitForLoadState('networkidle');
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+    expect(tradeRows(account.id)).toEqual(committedRows);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterCommit);
+    for (const label of [
+      'Инструмент',
+      'Тип сделки',
+      'Дата и время сделки (UTC)',
+      'Порядок в этот момент',
+      'Количество',
+      'Валовая сумма, USD',
+      'Комиссия, USD',
+    ]) {
+      await expect(
+        form.getByLabel(label, { exact: true }),
+        'A denied retry provides no evidence about the earlier committed request',
+      ).toBeDisabled();
+    }
+    const targetActions = trades.getByRole('button', { name: /^(Исправить|Аннулировать)$/ });
+    await expect(targetActions).toHaveCount(4);
+    for (const button of await targetActions.all()) {
+      await expect(
+        button,
+        'The unresolved command keeps its original selected target',
+      ).toBeDisabled();
+    }
+    await expect(
+      page.getByRole('button', { name: 'Отменить исправление', exact: true }),
+    ).toBeDisabled();
+    await expect(retry).toBeEnabled();
+    const replay = await browserPost(
+      page,
+      `/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`,
+      () => retry.click(),
+    );
+    expect(replay.status()).toBe(200);
+    expect(readReceipt(await replay.json())).toEqual(committed);
+    expect(commands).toHaveLength(3);
+    expect(commands[2]).toEqual(commands[0]);
+    await summary(page, '40', '60');
+    expect((await api.state(account.id)).journal).toMatchObject({
+      journalRevision: 3,
+      versionCount: 3,
+    });
+    expect((await api.versions(account.id, bought.trade.tradeId)).items).toEqual([
+      committed!.trade,
+      bought.trade,
+    ]);
+    expect(tradeRows(account.id)).toEqual(committedRows);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterCommit);
+  } finally {
+    await page.unroute(pattern);
+  }
+  expect(priorState()).toBe(before);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
