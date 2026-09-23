@@ -26,9 +26,9 @@ The journal supports up to1000 active entries and10000 versions. Pages are bound
 continuations pin the journal revision, and a stale continuation requires an explicit
 refresh.
 
-The Russian UI contract labels the review page “Внешние денежные потоки”. Entry
+The Russian UI labels the review page “Внешние денежные потоки”. Entry
 requires separate confirmation of the coverage boundary and each external USD flow.
-The UI contract retains a pending command for explicit retry after an uncertain
+The UI retains a pending command for explicit retry after an uncertain
 response; it does not automatically post a retry or store pending commands in browser
 storage. In-memory recovery ends on a full page reload, after which saved entries
 remain discoverable from the journal.

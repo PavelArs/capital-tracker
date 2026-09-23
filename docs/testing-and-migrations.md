@@ -214,11 +214,11 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies sixteen migrations: eight historic migrations, the additive
+uuid-ossp and applies seventeen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
 request admission ledger, four manual-accounting tables, three USD journal tables,
-three CSV import tables and the carry-in baseline table/journal opening reference. A populated fully
-migrated database is idempotent. The twelfth through sixteenth migrations preserve
+three CSV import tables, the carry-in baseline table/journal opening reference and two external USD flow tables. A populated fully
+migrated database is idempotent. The twelfth through seventeenth migrations preserve
 all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
@@ -253,7 +253,10 @@ correction/void and replay history while adding three empty CSV import tables.
 The populated fifteen-to-sixteen fixture also retains CSV draft/committed/rolled-back
 originals, settings, commands and provenance, with every previous journal column
 unchanged and the new nullable opening reference explicitly NULL.
-Current binaries require all sixteen migrations. Old images cannot interpret a new
+The populated sixteen-to-seventeen fixture additionally retains original carry-in
+lots and their allocation phase, old exact sale results, original receipts and every
+previous schema object. Only two empty external-flow tables and the migration ledger
+entry are added. Current binaries require all seventeen migrations. Old images cannot interpret a new
 carry-in origin: do not mix old/new binaries or assume binary rollback is safe after
 initialization. No destructive down migration is provided. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
@@ -343,3 +346,14 @@ and zero retries, plus all real migration/PostgreSQL/authentication prerequisite
 A full browser document reload clears ephemeral command recovery; tests distinguish
 it from in-app data refresh and SPA navigation, including session-expiry login.
 Neither local acceptance nor this documentation authorizes production deployment.
+
+## External USD flows
+
+See [external USD flows](external-usd-flows.md) for declared coverage, exclusions,
+exact period totals and original-command recovery. The focused verification uses
+pure input/arithmetic tests, real PostgreSQL races/rollback/RR/limits/constraints,
+fresh and populated16 migration preservation, and a small HTTPS set. The full
+runner includes `external-usd-flows-db.cjs` for CI. Browser flow cases alone use
+an exact synthetic-database-guarded fixture to clear the two new flow tables
+between independent cases, because an owner can have only one immutable origin.
+No case resets its own accounting or admission state midway through a journey.

@@ -42,6 +42,11 @@ positions and FIFO cost at a selected instant from the current corrected journal
 Its targeted verification passed seven new and two retained critical HTTPS cases,
 plus real PostgreSQL checks; the complete 140-case browser suite was not rerun under
 the owner's updated testing policy. Remaining product and release work is pending.
+The [external USD flow journal](docs/external-usd-flows.md) records explicit
+contributions/withdrawals with exact period totals, immutable correction history
+and safe original-command recovery. Four new and two retained critical HTTPS
+scenarios, real PostgreSQL and populated-schema migration checks passed. It does
+not yet calculate portfolio profit, XIRR or TWR.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
