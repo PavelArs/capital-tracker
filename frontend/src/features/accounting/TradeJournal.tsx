@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
 import { HistoricalAccounting } from './HistoricalAccounting';
+import { HistoricalValuation } from './HistoricalValuation';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
 import { accountingError, newRequestId } from './feedback';
@@ -577,6 +578,10 @@ export function TradeJournal({
         </>
       )}
       <HistoricalAccounting
+        accountId={accountId}
+        journalRevision={journal?.journalRevision ?? null}
+      />
+      <HistoricalValuation
         accountId={accountId}
         journalRevision={journal?.journalRevision ?? null}
       />
