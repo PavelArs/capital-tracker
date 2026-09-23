@@ -1011,3 +1011,261 @@ test('TRADE-004-B / TRADE-006-A: a real committed response lost in transport ret
   ]);
   assertQuota();
 });
+
+test('TRADE-006-A regression: manual refresh of a selected target requires explicit review of its unseen correction before correction or void', async ({
+  page,
+}) => {
+  const api = await tradeApi(page);
+  const firstInstrument = await api.instrument(
+    `Original reviewed instrument ${randomUUID()}`,
+    'SAME',
+  );
+  const latestInstrument = await api.instrument(
+    `Latest reviewed instrument ${randomUUID()}`,
+    'SAME',
+  );
+  const accounts = [await api.account(), await api.account()];
+  for (const account of accounts) await api.initialize(account.id);
+  const before = priorState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  for (const [index, mode] of ['correct', 'void'].entries()) {
+    const account = accounts[index];
+    const initialInput = tradeInput(firstInstrument.id, 0);
+    const initial = await api.create(account.id, initialInput);
+    await page.goto(`/manual-accounts/${account.id}`);
+    const row = page
+      .getByRole('table', { name: 'Сделки журнала', exact: true })
+      .getByRole('row')
+      .filter({ hasText: initial.trade.tradeId });
+    await row
+      .getByRole('button', { name: mode === 'correct' ? 'Исправить' : 'Аннулировать', exact: true })
+      .click();
+    if (mode === 'correct') {
+      await page
+        .getByRole('group', { name: 'Сделка в USD', exact: true })
+        .getByLabel('Валовая сумма, USD', { exact: true })
+        .fill('120');
+    }
+    const latestInput = tradeInput(latestInstrument.id, 1, {
+      quantity: '2',
+      grossUsd: '240',
+      feeUsd: '3',
+      occurredAt: '2025-01-03T04:05:06.007Z',
+      orderWithinTimestamp: 9,
+    });
+    const latest = await api.correct(account.id, initial.trade.tradeId, latestInput);
+    expect(latest.trade.version).toBe(2);
+    const unchanged = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const submit = page.getByRole('button', {
+      name: mode === 'correct' ? 'Сохранить сделку' : 'Подтвердить аннулирование',
+      exact: true,
+    });
+    await page.getByRole('button', { name: 'Обновить журнал', exact: true }).click();
+    await page.waitForLoadState('networkidle');
+    await expect(
+      submit,
+      'Refreshing live CAS must not authorize a write against an unseen target version',
+    ).toBeDisabled();
+    const review = page.getByRole('region', { name: 'Журнал изменился', exact: true });
+    await expect(review).toBeVisible();
+    await expect(review).toContainText('Текущая версия выбранной сделки: 2');
+    for (const value of [
+      latestInstrument.name,
+      latestInstrument.id,
+      latestInput.occurredAt,
+      '240',
+      'комиссия 3',
+      'порядок 9',
+    ]) {
+      await expect(review).toContainText(value);
+    }
+    await expect(review).toContainText(/покупка/);
+    await expect(review).toContainText(/(?:количество\s*[:;]?\s*2|;\s*2\s*;)/i);
+    const check = review.getByRole('checkbox', {
+      name: 'Я проверил актуальную версию журнала и хочу сохранить черновик.',
+      exact: true,
+    });
+    await expect(check).not.toBeChecked();
+    if (mode === 'correct') {
+      const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+      await expect(form.getByLabel('Количество', { exact: true })).toHaveValue('1');
+      await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('120');
+      await expect(form.getByLabel('Инструмент', { exact: true })).toHaveValue(firstInstrument.id);
+    }
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(unchanged);
+    await check.check();
+    const suffix = mode === 'correct' ? 'corrections' : 'voids';
+    const response = await browserPost(
+      page,
+      `/accounts/${account.id}/trades/${initial.trade.tradeId}/${suffix}`,
+      () => submit.click(),
+    );
+    expect(response.status()).toBe(201);
+    const accepted = readReceipt(await response.json());
+    expect(accepted.trade.version).toBe(3);
+    expect(accepted.journalRevision).toBe(3);
+    if (mode === 'correct') {
+      expect(accepted.trade).toMatchObject({
+        kind: 'correct',
+        instrumentId: firstInstrument.id,
+        quantity: '1',
+        grossUsd: '120',
+      });
+      await summary(page, '0', '120');
+    } else {
+      expect(accepted.trade).toMatchObject({
+        kind: 'void',
+        instrumentId: latestInstrument.id,
+        quantity: '2',
+        grossUsd: '240',
+        feeUsd: '3',
+        occurredAt: latestInput.occurredAt,
+        orderWithinTimestamp: 9,
+      });
+      await summary(page, '0', '0');
+    }
+    expect((await api.versions(account.id, initial.trade.tradeId)).items).toEqual([
+      accepted.trade,
+      latest.trade,
+      initial.trade,
+    ]);
+  }
+  expect(priorState()).toBe(before);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('TRADE-004-B / TRADE-006-A regression: lost correction followed by pinned409 and explicit review replays the original command exactly once', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await fixture(page);
+  const bought = await api.create(account.id, tradeInput(instrument.id, 0));
+  const sold = await api.create(
+    account.id,
+    tradeInput(instrument.id, 1, { side: 'sell', quantity: '0.5', grossUsd: '100' }),
+  );
+  const before = priorState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const trades = page.getByRole('table', { name: 'Сделки журнала', exact: true });
+  await trades
+    .getByRole('row')
+    .filter({ hasText: bought.trade.tradeId })
+    .getByRole('button', { name: 'Исправить', exact: true })
+    .click();
+  await page
+    .getByRole('group', { name: 'Сделка в USD', exact: true })
+    .getByLabel('Валовая сумма, USD', { exact: true })
+    .fill('120');
+  await page.waitForLoadState('networkidle');
+  const path = `/api/accounting/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`;
+  const routePattern = `**${path}`;
+  const commands: TradeInput[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === path)
+      commands.push(request.postDataJSON() as TradeInput);
+  });
+  let committed: TradeReceipt | undefined;
+  let lost = false;
+  await page.route(
+    routePattern,
+    async (route) => {
+      // Transport fault only: real unchanged request, real201 and actual PG commit;
+      // no synthetic response, authentication injection or backend replacement.
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      committed = readReceipt(await response.json());
+      expect(committed.journalRevision).toBe(3);
+      expect(committed.trade.version).toBe(2);
+      expect(
+        rows<{
+          currentVersion: number;
+          currentRevision: number;
+        }>(`SELECT t."currentVersion",j."currentRevision"
+      FROM account_trades t JOIN account_trade_journals j ON j."accountId"=t."accountId" AND j."ownerId"=t."ownerId"
+      WHERE t.id='${bought.trade.tradeId}'`),
+      ).toEqual([{ currentVersion: 2, currentRevision: 3 }]);
+      lost = true;
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  try {
+    const submit = page.getByRole('button', { name: 'Сохранить сделку', exact: true });
+    await submit.click();
+    await expect.poll(() => lost).toBe(true);
+    await expect(page.getByRole('alert')).toContainText(/[А-Яа-я]/);
+    await page.waitForLoadState('networkidle');
+    expect(commands).toHaveLength(1);
+    expect(commands[0].expectedJournalRevision).toBe(2);
+    const pinned = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+        `/api/accounting/accounts/${account.id}/trades/${sold.trade.tradeId}/matches`,
+    );
+    await trades
+      .getByRole('row')
+      .filter({ hasText: sold.trade.tradeId })
+      .getByRole('button', { name: 'Распределение FIFO', exact: true })
+      .click();
+    const rejectedPage = await pinned;
+    expect(new URL(rejectedPage.url()).searchParams.get('journalRevision')).toBe('2');
+    expect(rejectedPage.status()).toBe(409);
+    await expect(
+      page.getByRole('heading', { name: 'Журнал изменился', exact: true }),
+    ).toBeVisible();
+    await expect(submit).toBeDisabled();
+    await page.getByRole('button', { name: 'Обновить журнал', exact: true }).click();
+    const check = page.getByRole('checkbox', {
+      name: 'Я проверил актуальную версию журнала и хочу сохранить черновик.',
+      exact: true,
+    });
+    await expect(check).toBeEnabled();
+    await check.check();
+    const beforeRetry = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const versionRows = tradeRows(account.id);
+    const retried = await browserPost(
+      page,
+      `/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`,
+      () => submit.click(),
+    );
+    expect(
+      retried.status(),
+      'Review after a transport ambiguity must replay, not append another correction',
+    ).toBe(200);
+    expect(readReceipt(await retried.json())).toEqual(committed);
+    expect(commands).toHaveLength(2);
+    expect(
+      commands[1],
+      'Review preserves the original full request body, key and revision',
+    ).toEqual(commands[0]);
+    await summary(page, '40', '60');
+    expect((await api.state(account.id)).journal).toMatchObject({
+      journalRevision: 3,
+      versionCount: 3,
+    });
+    expect((await api.versions(account.id, bought.trade.tradeId)).items).toEqual([
+      committed!.trade,
+      bought.trade,
+    ]);
+    expect(tradeRows(account.id)).toEqual(versionRows);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeRetry);
+  } finally {
+    await page.unroute(routePattern);
+  }
+  expect(priorState()).toBe(before);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
