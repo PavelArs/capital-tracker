@@ -43,7 +43,7 @@ import {
 async function fillTrade(page: Page, input: TradeInput): Promise<void> {
   const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
   await expect(form).toBeVisible();
-  const instrument = form.getByLabel('Инструмент', { exact: true });
+  const instrument = form.getByRole('combobox', { name: 'Инструмент', exact: true });
   await expect(instrument).toBeVisible();
   await expect(instrument).toBeEnabled();
   const option = instrument.locator(`option[value="${input.instrumentId}"]`);
@@ -65,7 +65,7 @@ async function fillTrade(page: Page, input: TradeInput): Promise<void> {
   }
   await instrument.selectOption(input.instrumentId);
   await form
-    .getByLabel('Тип сделки', { exact: true })
+    .getByRole('combobox', { name: 'Тип сделки', exact: true })
     .selectOption({ label: input.side === 'buy' ? 'Покупка' : 'Продажа' });
   await form.getByLabel('Дата и время сделки (UTC)', { exact: true }).fill(input.occurredAt);
   await form
@@ -178,7 +178,11 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
                 'Валовая сумма, USD',
                 'Комиссия, USD',
               ]) {
-                await expect(form.getByLabel(label, { exact: true })).toBeDisabled();
+                await expect(
+                  label === 'Инструмент' || label === 'Тип сделки'
+                    ? form.getByRole('combobox', { name: label, exact: true })
+                    : form.getByLabel(label, { exact: true }),
+                ).toBeDisabled();
               }
               await release();
               return await pending;
@@ -1103,7 +1107,9 @@ test('TRADE-006-C regression: manual refresh of a selected target requires expli
       const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
       await expect(form.getByLabel('Количество', { exact: true })).toHaveValue('1');
       await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('120');
-      await expect(form.getByLabel('Инструмент', { exact: true })).toHaveValue(firstInstrument.id);
+      await expect(form.getByRole('combobox', { name: 'Инструмент', exact: true })).toHaveValue(
+        firstInstrument.id,
+      );
     }
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(unchanged);
     await check.check();
@@ -1379,7 +1385,9 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
       'Комиссия, USD',
     ]) {
       await expect(
-        form.getByLabel(label, { exact: true }),
+        label === 'Инструмент' || label === 'Тип сделки'
+          ? form.getByRole('combobox', { name: label, exact: true })
+          : form.getByLabel(label, { exact: true }),
         'A denied retry provides no evidence about the earlier committed request',
       ).toBeDisabled();
     }
