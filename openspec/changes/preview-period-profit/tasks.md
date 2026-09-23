@@ -2,7 +2,7 @@
 
 - [x] 1.1 Audit target, current specs, deployment and reusable accounting; record keep/simplify/defer inventory and 57 passing baseline flow tests.
 - [x] 1.2 Independently review the bounded contract, valuation timing, precision, snapshot/privacy and stale UI behavior (Sol review, no blocker; review reset and boundary help incorporated).
-- [ ] 1.3 Add executable pure, real PostgreSQL and focused HTTPS Playwright acceptance cases mapping PROFIT scenarios; demonstrate genuine predecessor API/UI failure before product implementation.
+- [x] 1.3 Add executable pure, real PostgreSQL and focused HTTPS Playwright acceptance cases mapping PROFIT scenarios; demonstrate genuine predecessor API/UI failure before product implementation.
 
 ## 2. Implementation
 

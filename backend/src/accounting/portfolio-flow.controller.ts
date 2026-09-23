@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { PortfolioFlowService } from './portfolio-flow.service';
@@ -6,6 +6,12 @@ import { PortfolioFlowService } from './portfolio-flow.service';
 @Controller('accounting/portfolio')
 export class PortfolioFlowController {
   constructor(private readonly flows: PortfolioFlowService) {}
+
+  @Post('profit-preview')
+  @HttpCode(200)
+  previewProfit(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {
+    return this.flows.previewProfit(owner.userId, input);
+  }
 
   @Get('cash-flow-journal')
   getJournal(@CurrentUser() owner: OwnerIdentity) {

@@ -35,7 +35,7 @@ function flowCommand(
   };
 }
 
-function seedForeignFlow(): { flowId: string; marker: string; ownerId: string } {
+function seedForeignFlow(): { flowId: string; ownerId: string } {
   const flowId = randomUUID();
   const ownerId = '22222222-2222-4222-8222-222222222222';
   const originRequestId = randomUUID();
@@ -243,10 +243,7 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     });
     await expect(result).toBeVisible();
     const definitionValue = (label: string) =>
-      result
-        .locator('dt')
-        .getByText(label, { exact: true })
-        .locator('xpath=following-sibling::dd[1]');
+      result.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]');
     await expect(definitionValue('Прибыль, USD')).toHaveText('0');
     await expect(definitionValue('Вводы, USD')).toHaveText('1000');
     await expect(definitionValue('Выводы, USD')).toHaveText('0');
@@ -257,6 +254,33 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     await expect(result).toContainText('Ревизия журнала: 1');
     await expect(result).toContainText('Оценка вручную');
     await expect(result).toContainText('Потоки не сверены');
+
+    // A delivery failure after a genuine backend calculation must hide the old result.
+    let finishFailed: () => void = () => {};
+    const failedFinished = new Promise<void>((resolve) => {
+      finishFailed = resolve;
+    });
+    await page.route(
+      `**${previewEndpoint}`,
+      async (route) => {
+        try {
+          const actual = await route.fetch();
+          expect(actual.status()).toBe(200);
+          await route.abort('failed');
+        } finally {
+          finishFailed();
+        }
+      },
+      { times: 1 },
+    );
+    try {
+      await calculate.click();
+      await expect(page.getByRole('alert')).toBeVisible();
+      await expect(result).toBeHidden();
+    } finally {
+      await failedFinished;
+      await page.unroute(`**${previewEndpoint}`);
+    }
 
     await closingInput.fill('2100');
     await expect(result).toBeHidden();
@@ -323,7 +347,7 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
       profitUsd: '-100',
     });
     await expect(result).toBeVisible();
-    await expect(result).toContainText('-100');
+    await expect(definitionValue('Прибыль, USD')).toHaveText('-100');
   } finally {
     await expectAdmissionDelta(admissionsBefore, [
       {

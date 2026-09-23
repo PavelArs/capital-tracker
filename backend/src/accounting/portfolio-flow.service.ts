@@ -4,6 +4,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import type { PortfolioFlowJournal } from '../entities/portfolio-flow-journal.entity';
 import type { PortfolioFlowVersion } from '../entities/portfolio-flow-version.entity';
 import { parseDecimal, parseUuid } from './input';
+import { parseProfitPreview, projectPeriodProfit } from './period-profit';
 import { type FlowVersion, projectFlowPeriod } from './portfolio-flow';
 import {
   type FlowCreate,
@@ -164,18 +165,7 @@ export class PortfolioFlowService {
     const owner = parseUuid(ownerId);
     const query = parseFlowPeriod(raw);
     return this.read(async (manager) => {
-      const journal = await this.journal(manager, owner);
-      if (
-        !journal ||
-        query.from < journal.coverageFrom.toISOString() ||
-        (query.journalRevision !== undefined && query.journalRevision !== journal.currentRevision)
-      )
-        throw conflict();
-      const { summary, items } = projectFlowPeriod(
-        await this.heads(manager, owner),
-        query.from,
-        query.to,
-      );
+      const { journal, summary, items } = await this.period(manager, owner, query);
       const end = query.offset + query.limit;
       return {
         from: query.from,
@@ -186,6 +176,27 @@ export class PortfolioFlowService {
         summary,
         items: items.slice(query.offset, end),
         nextOffset: end < items.length ? end : null,
+      };
+    });
+  }
+
+  async previewProfit(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseProfitPreview(raw);
+    return this.read(async (manager) => {
+      const { journal, summary } = await this.period(manager, owner, input);
+      return {
+        from: input.from,
+        to: input.to,
+        coverageFrom: journal.coverageFrom.toISOString(),
+        journalRevision: journal.currentRevision,
+        basis: 'manual-usd-valuations' as const,
+        flowBasis: basis.basis,
+        completeness: basis.completeness,
+        openingValueUsd: input.openingValueUsd,
+        closingValueUsd: input.closingValueUsd,
+        flows: summary,
+        profitUsd: projectPeriodProfit(input.openingValueUsd, input.closingValueUsd, summary),
       };
     });
   }
@@ -213,6 +224,24 @@ export class PortfolioFlowService {
         nextBeforeVersion: rows.length > query.limit ? items[items.length - 1].version : null,
       };
     });
+  }
+
+  private async period(
+    manager: EntityManager,
+    owner: string,
+    query: { from: string; to: string; journalRevision?: number },
+  ) {
+    const journal = await this.journal(manager, owner);
+    if (
+      !journal ||
+      query.from < journal.coverageFrom.toISOString() ||
+      (query.journalRevision !== undefined && query.journalRevision !== journal.currentRevision)
+    )
+      throw conflict();
+    return {
+      journal,
+      ...projectFlowPeriod(await this.heads(manager, owner), query.from, query.to),
+    };
   }
 
   private async journal(manager: EntityManager, owner: string, lock = false) {
