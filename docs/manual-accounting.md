@@ -74,7 +74,11 @@ A correction replaces the entire position set; it does not add a trade or increa
 quantities. Every previous snapshot remains available through bounded history.
 Current and historical positions include immutable instrument labels even beyond
 the picker page. Empty account creation is allowed, empty opening replacement is not.
-CSV, operations/FIFO, transfers, valuation and returns are separate future slices.
+The separate [USD trade journal](usd-trade-journal.md) requires an explicitly attested
+empty origin and no opening history. Once initialized, it blocks new opening writes
+under the same account lock; old opening receipts retain their replay semantics.
+An aggregate opening cannot be converted into ordered acquisition lots. CSV,
+carry-in lots, transfers, valuation and returns remain separate future slices.
 
 ## Verification scope
 

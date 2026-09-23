@@ -23,14 +23,14 @@
 
 ## 4. Russian journal UI and real release acceptance
 
-- [ ] 4.1 Add bounded journal API/components to protected account detail: explicit eligibility/coverage, separate opening versus journal revision labels, unchecked attestation, exact gross/fee/time/order form and paginated owned instrument picker.
-- [ ] 4.2 Add explicit full correction/void and current summary/lots/sales/matches/version views with honest Russian precision/completeness labels; no cash/return/tax claims.
-- [ ] 4.3 Preserve request keys across ambiguity, handle receipts by reading current state, preserve stale drafts with explicit reload/review, disable in-flight edits and guard route/request races and revision-drift pagination.
-- [ ] 4.4 Run maintained actual HTTPS/Chromium journey for mandatory FIFO, fee/provenance checks, restart persistence, correction and original version; cover security/raw types/literal labels/replay/races/rollback and zero provider requests without mocking auth/backend/database.
-- [ ] 4.5 Retain all predecessor security, financial, quota, migration, configuration and artifact oracles; do not clear admission state mid-case or weaken generic route quotas for expanded tests.
+- [x] 4.1 Add bounded journal API/components to protected account detail: explicit eligibility/coverage, separate opening versus journal revision labels, unchecked attestation, exact gross/fee/time/order form and paginated owned instrument picker.
+- [x] 4.2 Add explicit full correction/void and current summary/lots/sales/matches/version views with honest Russian precision/completeness labels; no cash/return/tax claims.
+- [x] 4.3 Preserve request keys across ambiguity, handle receipts by reading current state, preserve stale drafts with explicit reload/review, disable in-flight edits and guard route/request races and revision-drift pagination.
+- [x] 4.4 Run maintained actual HTTPS/Chromium journey for mandatory FIFO, fee/provenance checks, restart persistence, correction and original version; cover security/raw types/literal labels/replay/races/rollback and zero provider requests without mocking auth/backend/database.
+- [x] 4.5 Retain all predecessor security, financial, quota, migration, configuration and artifact oracles; do not clear admission state mid-case or weaken generic route quotas for expanded tests.
 
 ## 5. Independent review, verification and archive
 
-- [ ] 5.1 Independent contexts review arithmetic/conservation, schema/transactions/read isolation and frontend receipt/draft/concurrency behavior; resolve concrete findings with regression evidence.
-- [ ] 5.2 Run actual frozen install, production high/critical audit, backend/frontend lint/build/source tests, strict OpenSpec validation and complete isolated release-image acceptance; record actual counts/statuses/images, limitations and synthetic cleanup without production requests.
-- [ ] 5.3 Document bounded USD journal behavior, eligibility/caps/allocation and remaining full-goal work, map all scenarios to real evidence, then archive only after verification passes. No production-readiness or full-accounting-completion claim.
+- [x] 5.1 Independent contexts review arithmetic/conservation, schema/transactions/read isolation and frontend receipt/draft/concurrency behavior; resolve concrete findings with regression evidence.
+- [x] 5.2 Run actual frozen install, production high/critical audit, backend/frontend lint/build/source tests, strict OpenSpec validation and complete isolated release-image acceptance; record actual counts/statuses/images, limitations and synthetic cleanup without production requests.
+- [x] 5.3 Document bounded USD journal behavior, eligibility/caps/allocation and remaining full-goal work, map all scenarios to real evidence, then archive only after verification passes. No production-readiness or full-accounting-completion claim.

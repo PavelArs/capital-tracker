@@ -56,7 +56,10 @@ SHALL reference users rather than the removable singleton binding. Opening reque
 SHALL contain a raw JSON integer expectedRevision and 1..100 distinct owned instruments.
 The system SHALL serialize on the account, replay an existing request before CAS,
 atomically append the complete next snapshot and update current pointer, preserving
-all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be exposed.
+all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be exposed. New opening writes SHALL refuse 409 after an explicit
+trade journal exists, under the same owned account lock used by journal initialization.
+Existing request replay SHALL retain its original semantics. Journal eligibility SHALL
+require absence of ALL opening history, not merely a NULL current pointer.
 
 #### Scenario: OPEN-003-A Retries and competing replacements preserve provenance
 - **WHEN** identical requests race, changed payload reuses a key, or different keys race on one expectedRevision
@@ -74,6 +77,12 @@ all old revisions. Replay MUST NOT rewind the pointer. No DELETE SHALL be expose
 - **WHEN** an empty account receives expectedRevision 0 or saved history is requested
 - **THEN** initialization creates revision 1 and replacements contain the entire position set rather than adding quantities
 - **AND** descending history uses exclusive revision cursor default 10 / max 20, at most 100 positions per snapshot
+
+#### Scenario: OPEN-003-C Journal dependency protects the opening baseline
+- **WHEN** a journal has been explicitly initialized, even if all its trades are void
+- **THEN** a new opening write returns 409 without creating a snapshot or moving the pointer
+- **AND** the account UI explains journal dependency instead of offering a misleading empty-opening editor
+- **AND** an opening-versus-initialization race commits exactly one model under the common account lock
 
 ### Requirement: OPEN-004 Owner isolation and data-preserving extension
 New accounting state SHALL start empty in additive migration 13 and preserve prior

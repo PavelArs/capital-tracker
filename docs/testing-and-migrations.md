@@ -186,10 +186,10 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies thirteen migrations: eight historic migrations, the additive
+uuid-ossp and applies fourteen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
-request admission ledger, and four manual-accounting tables. A populated fully
-migrated database is idempotent. The twelfth and thirteenth migrations preserve
+request admission ledger, four manual-accounting tables and three USD journal tables. A populated fully
+migrated database is idempotent. The twelfth through fourteenth migrations preserve
 all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
@@ -217,7 +217,9 @@ row, adds an empty request ledger and replays without changes. The populated
 twelve-to-thirteen fixture also preserves live admission scopes and every old
 schema/sequence definition, creating four empty accounting tables. The MFA upgrade must preserve users, owner/password and financial rows,
 revoke old password-only session rows, create no implicit enrollment and remain
-idempotent. Current binaries require all thirteen migrations. Owner bootstrap must
+idempotent. The populated thirteen-to-fourteen fixture preserves all preceding
+financial, opening, authentication and admission rows/schema and adds three empty
+journal tables. Current binaries require all fourteen migrations. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret
@@ -259,3 +261,23 @@ those of the exact release image. Artifact checks compare the complete effective
 policy. Actual process restart, direct health and upstream evidence remain required.
 Production Compose/images do not inherit the test cadence. Full retained acceptance
 validates this fixture-only refactor; no artificial failure is manufactured.
+
+## USD trade acceptance
+
+See [USD trade journal](usd-trade-journal.md) for exact inputs, empty-origin eligibility,
+FIFO allocation, immutable corrections and workload caps. The independent
+usd-trades-db.cjs fixture executes the compiled production service against real
+PostgreSQL, including distinct-process competing sales, deferred-COMMIT rollback,
+replay at exact caps and read-only repeatable-read projections during a concurrent
+correction. Migration acceptance retains every preceding upgrade and adds a populated
+13-to-14 preservation rehearsal; no opening is converted into a lot.
+
+The complete 2026-09-23 gate passed 101 Chromium cases in 21.7 minutes, one worker and
+zero retries: all 85 preceding cases and 16 USD cases. Actual forms/authentication,
+HTTPS, both backend replicas and PostgreSQL exercise exact results, provenance,
+restart, denied writes and uncertain-response recovery. Four independently reviewed
+UI regressions pass, including a real committed response whose delivery is aborted
+and an actual CSRF-denied retry. No application response or authentication is mocked.
+The [archived verification](../openspec/changes/archive/2026-09-23-record-usd-fifo-trades/verification.md)
+retains genuine earlier failures, exact images, source/audit results and limitations.
+This is local evidence; hosted CI and final release/security/recovery gates remain.

@@ -26,7 +26,9 @@ errors. See [dependency security](docs/dependency-security.md) for the dated res
 and remaining lower-severity findings.
 The verified [manual accounting](docs/manual-accounting.md) slice passed real
 PostgreSQL checks and all 85 HTTPS Chromium cases, including 74 retained cases.
-USD trades/FIFO are the next bounded slice; full release hardening remains.
+The [USD trade journal](docs/usd-trade-journal.md) passed all 101 HTTPS Chromium
+cases (85 retained and 16 new), plus real PostgreSQL and migration checks.
+CSV import and full release hardening remain incremental work.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
@@ -61,8 +63,8 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 Use the disposable HTTPS acceptance stack below for complete authenticated checks.
 For source development, configure a separate disposable PostgreSQL/Redis instance,
 run explicit migrations and provision its owner as described in
-[owner authentication](docs/owner-authentication.md). The CLI requires all thirteen migrations, a protected server MFA key and confirmed CLI
-enrollment; the additive manual-accounting migration preserves existing data.
+[owner authentication](docs/owner-authentication.md). The CLI requires all fourteen migrations, a protected server MFA key and confirmed CLI
+enrollment; the additive accounting migrations preserve existing data.
 
 `FRONTEND_URL` must be the exact HTTPS browser origin, without a trailing slash or
 path. Use `VITE_API_URL=/api` through an HTTPS proxy forwarding to the backend.

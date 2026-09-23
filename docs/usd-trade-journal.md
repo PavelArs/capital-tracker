@@ -5,10 +5,11 @@ from legacy balances. It calculates recorded acquisition cost and realized journ
 results. It does not calculate market value, portfolio return, cash balances or tax
 liability. It never calls a provider or infers trades from blockchain observations.
 
-The active [OpenSpec change](../openspec/changes/record-usd-fifo-trades/verification.md)
-records actual verification, pending checks and independent review findings. Until
-its full release-image run passes and it is archived, this slice is not verified
-for release. No production migration or deployment has been performed.
+The [verification record](../openspec/changes/archive/2026-09-23-record-usd-fifo-trades/verification.md)
+records actual RED/GREEN and resolved independent review findings. All 101 HTTPS
+Chromium cases passed without retries, including 85 retained cases and 16 USD cases,
+alongside real PostgreSQL and migration prerequisites. Full release hardening remains;
+no production migration or deployment has been performed.
 
 ## Coverage and identity
 

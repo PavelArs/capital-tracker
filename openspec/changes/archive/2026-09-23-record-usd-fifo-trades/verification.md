@@ -1,7 +1,8 @@
 # Verification: record-usd-fifo-trades
 
-Status: genuine acceptance RED observed; backend and PostgreSQL checks pass.
-Frontend and complete release-image acceptance remain pending; not archive-ready.
+Status: verified locally and archived on2026-09-23. Genuine acceptance RED preceded behavior
+implementation. Source, PostgreSQL, focused16 and complete101 HTTPS/Chromium cases
+pass. See Final release gate below; earlier pending statements record the chronology.
 
 Predecessor manual openings completed85/85 real Chromium cases, all PG/CLI/migration
 prerequisites and independent review, then actual archive e2080aa on2026-09-23.
@@ -170,5 +171,63 @@ Final integrated source gates exited0:
 backend/frontend lint/build,737 backend tests/24 suites,81 frontend tests/10 files,
 183 engineering tests/2 suites and101 real-E2E cases discovered. Existing77/29 lint
 warnings and the existing bundle-size warning remain. Discovery is not execution.
+The183 engineering tests are included in the737 backend total and were also invoked
+separately through the required engineering command; these counts must not be added.
 Final frontend image before focused acceptance:
 sha256:ebf4d8ce70cd660fc854459c6c84519fec7d54ab087a8019fc8f37f57a6234ad.
+
+Final focused execution: `caffeinate -is node /private/tmp/capital-usd-trades-focused.cjs`
+exited0, all16 cases passed in4.0 minutes, one Chromium worker and zero retries.
+Log: /private/tmp/capital-usd-focused-final.log. Both initial predecessor RED tests,
+all10 expanded journal journeys and all4 frontend review regressions pass on the
+final backend17283e22 and frontendebf4d8ce images. This includes actual UI250/100/0.5,
+correction230/100, exact fee/residual/loss/provenance, real replicas and COMMIT500,
+literal labels, pinned reads, lost-response replay after both409 and403, and the
+ambiguous-initialization opening guard. Auth/backend/PG were real; only external
+providers were stubbed. Deliberate network faults either abort an actual committed
+response or omit CSRF on a real retry; no own response is fabricated. Owned cleanup
+completed and prior financial/factor/admission/provider assertions passed.
+The full maintained gate ran separately, with the final result below.
+
+## Final release gate
+
+On2026-09-23, `caffeinate -is pnpm test:e2e` exited0 (session21411):
+/private/tmp/capital-usd-release-full.log. All101 Chromium cases passed in21.7 minutes,
+one worker and zero retries:85 retained cases plus16 USD cases. No case was skipped,
+assertion weakened or retry used to conceal a failure. The complete run also passed
+actual provider TLS/authority isolation, fresh14/replay and populated8..13 migration
+upgrades, every unsafe-history refusal, real accounting/session/MFA/request-limit
+PostgreSQL races/rollback/expiry, owner CLI,27 HTTP startup refusals, release-artifact
+and real two-client/two-backend HTTPS topology prerequisites.
+
+The full gate tested the same final product source as commit62e8f26. Later uncommitted
+changes were documentation/checklists plus the preserved unrelated owner Nginx edit.
+Exact tested images reported by the artifact checks:
+- backend sha256:17283e22fdc410782a31ebdd86e627e8c07cb576fd1f0b82ffb9bc87e39fc2c3
+- frontend sha256:ebf4d8ce70cd660fc854459c6c84519fec7d54ab087a8019fc8f37f57a6234ad
+
+The run started with host Node22.21.1/pnpm10.33.0 and retained release-image Node22.21.1.
+During execution an external host update removed the old Node installation and changed
+global pnpm. The existing test process completed successfully. New documentation/CLI
+checks use the compatible available Node22.23.2 and a temporary wrapper around the
+verified cached pnpm10.33.0; repository pins and lockfile were not changed.
+
+The harness completed cleanup and passed ISO-005-C. Independent Docker reads found
+no owned Compose containers/networks or matching direct probes. Owner Nginx remains
+SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432,
+mode0644,size1348; lock remains13e4fbf1d1effcf66367ef7829885eb53b339cb9f52ab43854ca2e4ba77c4e73.
+Only synthetic PostgreSQL/provider data was used; owner data and original folders
+were not accessed or removed. No production deployment or remote push occurred.
+
+Independent arithmetic/backend/schema/fixture/UI reviews are resolved. All four UI
+regressions pass in both focused and full runs. Frozen install/high-threshold audit
+and source gates above remain the actual results:737 backend tests/24 suites,
+81 frontend tests/10 files,183 engineering tests/2 suites included in the backend
+total and separately invoked. Existing77/29 lint warnings, bundle warning and2 moderate
+Router advisories remain documented; no high/critical production advisory was reported.
+Hosted CI, another browser engine, image/SAST/DAST/full ASVS and backup/restore are not
+claimed. CSV, broader accounting and release hardening remain future incremental work.
+
+Actual OpenSpec1.2.0 `archive record-usd-fifo-trades --yes` exited0: six requirements
+added, two modified and none removed. All tasks were complete. Canonical Purpose and
+links to the preserved API/persistence contract were filled after generated sync.
