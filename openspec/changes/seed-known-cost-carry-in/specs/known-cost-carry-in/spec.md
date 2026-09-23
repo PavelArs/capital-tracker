@@ -122,6 +122,12 @@ The UI SHALL disclose that full document reload/tab closure discards local recov
 - **THEN** obsolete previews cannot initialize, drafts remain explicit, and original-key retry after real authentication/CSRF recovery returns its original receipt without another baseline
 - **AND** current data comes from fresh reads, and full reload is not misrepresented as persistent recovery of an unknown key
 
+#### Scenario: CARRY-005-B Persistent coverage guidance does not duplicate an action alert
+- **GIVEN** an opening with unknown cost and its always-visible carry-in eligibility explanation
+- **WHEN** an opening replacement receives a real stale-revision409
+- **THEN** the action conflict is the single urgent alert and retains the explicit review/unchanged-draft workflow
+- **AND** the unknown-cost explanation remains a visible non-urgent note, still refuses initialization/sales of those holdings and never presents unknown cost as zero
+
 ### Requirement: CARRY-006 Private bounded extension preserves existing data
 All carry-in routes SHALL require actual full owner authentication and existing
 Origin/CSRF/source/quota controls; foreign identities SHALL use generic404. Strict

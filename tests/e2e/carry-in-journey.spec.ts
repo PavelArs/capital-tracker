@@ -243,8 +243,11 @@ test('CARRY-001-B / CARRY-005-A: literal labels, edited consent, delayed preview
     const unknown = fingerprint(['auth_sessions', 'auth_request_limits']);
     await page.getByRole('button', { name: 'Обновить начальные лоты', exact: true }).click();
     await expect(
-      section.getByRole('alert').filter({ hasText: 'Неизвестная стоимость не считается нулевой' }),
+      section.getByRole('note').filter({ hasText: 'Неизвестная стоимость не считается нулевой' }),
     ).toBeVisible();
+    await expect(
+      section.getByRole('alert').filter({ hasText: 'Неизвестная стоимость не считается нулевой' }),
+    ).toHaveCount(0);
     await expect(initializeButton(page)).toHaveCount(0);
     expect(await api.result('GET', path, 200)).toMatchObject({
       eligible: false,

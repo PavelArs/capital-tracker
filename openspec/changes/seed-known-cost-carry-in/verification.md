@@ -257,3 +257,63 @@ and unchanged database fingerprint, startup/refusal and CLI-read-only oracles.
 Both CJS files passed node --check. No product/security behavior or expected financial
 result changed; this is a fixture version update, not acceptance RED. Runner cleanup
 completed. The complete gate must be rerun before any release-pass claim.
+
+## Full release result and accessibility regression — 2026-09-23
+
+At524647f, `caffeinate -is pnpm test:e2e` completed exit1:132/133 Chromium passed,
+one failed in28.8m,1worker0retries. Log `/private/tmp/capital-carry-in-release-final.log`;
+artifacts `/private/tmp/capital-carry-in-release-failed-artifacts`. All provider TLS,
+fresh16/replay/populated8..15 upgrade/legacy refusal, PostgreSQL, owner CLI/session/MFA,
+27 startup refusal and artifact/topology prerequisites passed. Exact rebuilt images:
+
+- Backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315
+- Frontend sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c
+
+`manual-opening.spec.ts:301` expected a single alert after actual stale-opening409;
+the browser exposed two: the correct action conflict and the new persistent carry-in
+unknown-cost explanation. The unchanged predecessor assertion caught an accessibility
+regression, not a financial failure or setup error. Intermediate root status messages
+mistakenly relied on latest test indexes and missed this earlier failure; corrected
+to the owner once the terminal summary was inspected. No complete-pass claim stands.
+
+The independent gpt-6-luna reviewer agreed that persistent eligibility context belongs
+in a visible non-urgent note, retaining unknown-cost refusal/text and genuine action/
+accepted-recovery alerts. This also follows the distinction in the
+[W3C alert guidance](https://www.w3.org/WAI/ARIA/apg/patterns/alert/) between attention-
+requiring messages and excessive interruptions. Added CARRY-005-B and changed only
+the new carry-in guidance assertion to require a visible note and no matching alert;
+the original stale-opening conflict/financial/privacy checks remain unchanged.
+No product fix is yet claimed here. Focused genuine RED/GREEN is recorded below once run.
+
+Independent synthetic container/network inventories were empty after runner cleanup;
+owner Nginx SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432
+and lock SHA256aa2588325aacdc54e8437d3500c7d2df580cc20cd061d1e3727f30f0dcc1e4f8
+were unchanged. Archive tasks remain incomplete.
+
+### CARRY-005-B observed RED, minimal fix and focused GREEN
+
+`caffeinate -is node /private/tmp/capital-carry-in-note-red.cjs` checked both exact
+release image IDs above and used no rebuild. Exit1, two intended failures: note was
+absent in the unknown-cost case and the unchanged opening conflict still exposed two
+alerts. Log `/private/tmp/capital-carry-in-note-red.log`; preserved artifacts
+`/private/tmp/capital-carry-in-note-red-artifacts`. Both used real password/MFA,
+PostgreSQL and HTTPS; neither failed on setup, imports or fixtures.
+
+The sole product edit changes the persistent unknown-cost paragraph from alert to
+note and applies existing visible warning styling. Its text, server refusal, consent,
+and real error/recovery alerts are unchanged. A separate reviewer checked the exact
+product/spec/test diff and reported no blocker; it performed no runtime verification.
+
+`caffeinate -is node /private/tmp/capital-carry-in-note-green.cjs tests/e2e/manual-opening.spec.ts:260 tests/e2e/carry-in-journey.spec.ts:144`
+rebuilt only frontend and passed2/2 Chromium in25.3s,1worker0retries, exit0. Log
+`/private/tmp/capital-carry-in-note-green.log`. Backend image remains36856553e640;
+exact frontend sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a.
+Independent container/network inventories were empty, and owner Nginx/lock hashes
+were unchanged again. No financial or predecessor opening assertion was weakened.
+
+Frontend lint/build/95 tests across10 files passed, exit0
+(`/private/tmp/capital-carry-in-note-frontend.log`); existing29 lint warnings and
+bundle-size warning remain. Strict E2E TypeScript and OpenSpec13/13 passed, exit0
+(`capital-carry-in-note-tsc.log`, `capital-carry-in-note-spec.log`, /private/tmp).
+Unchanged backend/dependency checks remain as recorded. Complete release rerun is
+still required; this focused result does not close archive tasks.

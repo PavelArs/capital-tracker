@@ -116,7 +116,33 @@ fixture; all migration16/upgrades/refusals passed first. Log capital-carry-in-re
 Three prerequisite counts (auth-limits DB, startup state/show) updated16; independent
 cheap-model review confirms no other oracle changed. This is not behaviorRED.
 
-NEXT: commit fixture/evidence repair, rerun complete pnpm test:e2e. Do not rerun prior
-source checks for these count-only test changes. Confirm exact image digests,
-cleanup/owner files and terminal exit before marking4.5/6.2/6.3 and archiving6.4.
-Full brief remains unfinished; no production or folder consolidation authorization.
+Full release524647f finished exit1:132 passed/1 failed in28.8m,1worker0retries.
+Log /private/tmp/capital-carry-in-release-final.log; failure artifacts preserved in
+/private/tmp/capital-carry-in-release-failed-artifacts. All DB/CLI/startup/artifact
+prerequisites passed. OPEN-003-A manual-opening.spec.ts:301 expected one alert after
+real409 but saw opening conflict + persistent unknown-cost CarryIn alert. Root's
+intermediate no-failure updates missed the earlier failure in tailed logs; corrected
+explicitly to user. Always scan complete summaries, not only latest test indexes.
+Cleanup independently empty; owner Nginx/lock hashes unchanged.
+
+Reviewed fix: unknown-cost eligibility guidance becomes a visible role=note with
+warning styling; preserve text/refusals and actual conflict/recovery alerts. Cheap
+independent review supports this semantic correction. CARRY-005-B and a strict note/
+no-duplicate-alert assertion added before product changes. Existing opening test is
+unchanged. Actual unchanged-image RED finished exit1 with both intended failures:
+/private/tmp/capital-carry-in-note-red.log, runner capital-carry-in-note-red.cjs.
+Backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315;
+frontend sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c.
+One product line changed unknown-cost to visible role=note; exact diff independently
+reviewed without blocker. Focused GREEN finished exit0,2/2 in25.3s; log
+/private/tmp/capital-carry-in-note-green.log. Frontend image now
+sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a.
+Frontend lint/build95/10, E2E TypeScript, OpenSpec13 passed. Cleanup independently
+empty, owner Nginx/lock hashes unchanged. NEXT: full release rerun, still no archive.
+
+Next slice preparation is isolated in worktree historical-accounting-design, branch
+refactor/historical-accounting-design: e65529a reviewed OpenSpec proposal/design/
+4 requirements/15 tasks,6390ac8 root pure/query test oracles,0a6efa2 independent
+gpt-6-luna two initial real HTTPS/browser tests. No product implementation/RED yet.
+Dependency is verified carry-in archival. Do not integrate/run it prematurely.
+Full brief remains unfinished. Never deploy or consolidate incomplete work.

@@ -372,7 +372,7 @@ export function CarryIn({
       )}
       {state?.opening && <CarryInOpening opening={state.opening} />}
       {state?.ineligibilityReason === 'unknown-cost' && (
-        <p role="alert">
+        <p role="note" className="manual-coverage-warning">
           В начальных позициях есть неизвестная себестоимость. Перенос в FIFO и продажи этих
           остатков пока недоступны. Неизвестная стоимость не считается нулевой; сохранённые позиции
           доступны без изменений.
