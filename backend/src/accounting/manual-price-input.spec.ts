@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { BadRequestException } from '@nestjs/common';
 import {
   parsePriceHistoryQuery,
   parsePricePageQuery,
@@ -54,7 +55,7 @@ describe('PRICE-EXACT / BOUND strict manual price commands', () => {
     { observedAt: '2025-01-01' },
     { observedAt: '2025-01-01T00:00:00.0001Z' },
   ])('rejects invalid or unreviewed input %p', (changes) => {
-    expect(() => parsePriceSet({ ...base, ...changes })).toThrow();
+    expect(() => parsePriceSet({ ...base, ...changes })).toThrow(BadRequestException);
   });
   it('accepts cap revision so an original command can be checked for replay', () => {
     expect(parsePriceSet({ ...base, expectedRevision: 10000 }).expectedRevision).toBe(10000);
@@ -62,14 +63,14 @@ describe('PRICE-EXACT / BOUND strict manual price commands', () => {
   it('void has no price field and preserves the exact intended point', () => {
     const { priceUsd: _price, ...input } = base;
     expect(parsePriceVoid(input)).toEqual({ ...input, observedAt: '2025-01-01T00:00:00.000Z' });
-    expect(() => parsePriceVoid(base)).toThrow();
-    expect(() => parsePriceVoid({ ...input, assertReviewed: false })).toThrow();
+    expect(() => parsePriceVoid(base)).toThrow(BadRequestException);
+    expect(() => parsePriceVoid({ ...input, assertReviewed: false })).toThrow(BadRequestException);
   });
   it.each([undefined, null, [], 'price', Object.create({ ...base })])(
     'rejects non-plain input %p',
     (raw) => {
-      expect(() => parsePriceSet(raw)).toThrow();
-      expect(() => parsePriceVoid(raw)).toThrow();
+      expect(() => parsePriceSet(raw)).toThrow(BadRequestException);
+      expect(() => parsePriceVoid(raw)).toThrow(BadRequestException);
     },
   );
 });
@@ -96,7 +97,7 @@ describe('PRICE-PAGES strict effective and immutable history queries', () => {
     { limit: '1.0' },
     { unexpected: '1' },
   ])('rejects malformed or unpinned pages %p', (input) => {
-    expect(() => parsePricePageQuery(input)).toThrow();
+    expect(() => parsePricePageQuery(input)).toThrow(BadRequestException);
   });
   it('normalizes immutable timestamp history', () => {
     expect(parsePriceHistoryQuery({ observedAt: base.observedAt })).toEqual({

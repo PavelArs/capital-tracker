@@ -58,7 +58,7 @@ No persistence/provider. Russian /period-profit page with review/stale-result gu
 111 pure cases, four PG families plus eight retained flow families, three HTTPS
 cases passed. Full146 E2E was NOT run. Detailed evidence is in its archive.
 
-## Current conventional XIRR slice
+## Completed conventional XIRR slice
 
 preview-conventional-xirr implemented/reviewed/scoped GREEN; archived
 2026-09-23-preview-conventional-xirr. All10tasks complete; canonical17/17strict,
@@ -106,8 +106,19 @@ and cases retained; xirr-preview-db.cjs added to existing full runner.
 All worktrees retained, including xirr-acceptance/xirr-ui. Agent dependency symlinks
 removed. Reuse carry_docs_review Luna(simple), historical_ui Sol(complex/review);
 gate_acceptance quota-limited untilSep29: do not retry/purchase.
-Next: select a small persisted/automatic valuation or DBprice/history
-contract. Whole brief still needs TWR, transfers/swaps/rewards, DBprices/history/
+Active next slice: record-manual-usd-prices, specified cdde4d8. Root acceptance
+8b6dd1c (pure input + real PG); migration runner/count expectations806fee5.
+No product changes yet; awaiting genuine predecessor API/UI RED. Root owns
+backend/migration18/PG/shared runner, Luna acceptance in prices-acceptance worktree,
+Sol UI in prices-ui worktree. Frozen active design: per-instrument manualUSD/unit
+exact points, immutable set/void versions, owner instrument lockRC/CAS/replay,
+RR READ ONLY effective pages/history,10000cap, Russian review/recovery UI.
+No providers/dependencies. PG fixture covers fresh18/populated17 upgrade and
+actual two-pool race/RR checks. Baseline433/9 pass2.745s; strict18spec+change pass.
+Predecessor XIRR images listed above unchanged. Prepared RED harness
+/private/tmp/capital-prices-predecessor-red.cjs checks image identity; not yet run.
+No Docker running at this checkpoint. Browser acceptance draft under review.
+Whole brief still needs TWR, transfers/swaps/rewards, DBprices/history/
 charts, blockchains/reconciliation, optionalAI, releasehardening/backuprestore/
 consolidation. Conventional manual XIRR is partial support; do not move/delete
 original projects before the whole verified refactor and consolidation preflight.
