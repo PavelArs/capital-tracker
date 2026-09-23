@@ -6,6 +6,17 @@ const { createHash, randomUUID } = require('node:crypto');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
+const numerical = require('/app/backend/dist/accounting/xirr.js');
+const realProjectXirr = numerical.projectXirr;
+const observedRunners = [];
+let solveEntries = 0;
+// Observe entry, then execute the unchanged real numerical implementation.
+// No query, calculation result or authentication response is replaced.
+numerical.projectXirr = (...args) => {
+  solveEntries++;
+  assert.ok(observedRunners.every(runner => !runner.isTransactionActive && runner.isReleased), 'Every actual read transaction is released before numerical entry');
+  return realProjectXirr(...args);
+};
 const { PortfolioFlowService } = require('/app/backend/dist/accounting/portfolio-flow.service.js');
 const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
@@ -26,7 +37,14 @@ function sourceFor(statements) {
     options.logging = ['query'];
     options.logger = { logQuery: query => statements.push(query), logQueryError() {}, logQuerySlow() {}, logSchemaBuild() {}, logMigration() {}, log() {} };
   }
-  return new DataSource(options);
+  const source = new DataSource(options);
+  const create = source.createQueryRunner.bind(source);
+  source.createQueryRunner = (...args) => {
+    const runner = create(...args);
+    observedRunners.push(runner);
+    return runner;
+  };
+  return source;
 }
 async function fingerprint(source, oldOnly = false) {
   const rows = [];
@@ -154,6 +172,7 @@ async function main() {
     assert.equal(voided.profitUsd, '110');
     assert.ok(Math.abs(Number(voided.xirr.annualRate) - 1 / 9) <= 1e-10);
     assert.equal(await fingerprint(source, true), old, 'No prior accounting/authentication rows changed');
+    assert.ok(solveEntries >= 6, 'Pass-through observation reached the real solver for successful previews');
     console.log('PASS XIRR-SNAPSHOT actual concurrent correction, per-instance429, coherent old snapshot, release and current correction/void');
   } finally {
     if (reader.isInitialized) await reader.destroy();
