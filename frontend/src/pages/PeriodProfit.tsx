@@ -1,20 +1,41 @@
 import { type ProfitPreview, periodProfitApi } from '@api/period-profit.api';
+import {
+  type XirrPreview,
+  type XirrUnavailableReason,
+  xirrPreviewApi,
+} from '@api/xirr-preview.api';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './PeriodProfit.css';
 
-function previewError(error: unknown): string {
-  if (!isAxiosError(error)) return 'Не удалось рассчитать прибыль. Попробуйте ещё раз.';
+type PreviewMode = 'profit' | 'xirr';
+type PreviewResult =
+  | { mode: 'profit'; preview: ProfitPreview }
+  | { mode: 'xirr'; preview: XirrPreview };
+
+const unavailableReason: Record<XirrUnavailableReason, string> = {
+  'insufficient-cash-flows': 'Недостаточно денежных потоков в разные моменты для расчёта XIRR.',
+  'one-sided-cash-flows': 'Для расчёта XIRR нужны отрицательный и положительный потоки.',
+  'unsupported-pattern': 'Порядок денежных потоков не поддерживается для расчёта XIRR.',
+  'too-many-cash-flow-dates': 'Более 64 ненулевых моментов потоков: расчёт XIRR недоступен.',
+  'outside-supported-range': 'Ставка за пределами поддерживаемого диапазона.',
+  'numerical-failure': 'Не удалось надёжно определить ставку XIRR для этих потоков.',
+};
+
+function previewError(error: unknown, mode: PreviewMode): string {
+  const operation = mode === 'profit' ? 'прибыль' : 'XIRR';
+  if (!isAxiosError(error)) return `Не удалось рассчитать ${operation}. Попробуйте ещё раз.`;
   const status = error.response?.status;
   if (status === 400) return 'Проверьте даты, оценки USD и подтверждение.';
   if (status === 409)
     return 'Журнал внешних потоков не создан или период начинается до его границы учёта. Проверьте журнал и даты.';
   if (status === 401) return 'Сеанс завершён. Войдите снова и выполните новый расчёт.';
   if (status === 403) return 'Запрос отклонён. Проверьте сеанс и выполните новый расчёт.';
+  if (status === 429) return 'Расчёт XIRR уже выполняется. Попробуйте ещё раз позже.';
   if (!error.response) return 'Не удалось получить ответ. Выполните новый расчёт.';
-  return 'Не удалось рассчитать прибыль. Выполните новый расчёт.';
+  return `Не удалось рассчитать ${operation}. Выполните новый расчёт.`;
 }
 
 function PeriodProfitOwner() {
@@ -25,7 +46,7 @@ function PeriodProfitOwner() {
   const [reviewed, setReviewed] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState<ProfitPreview | null>(null);
+  const [result, setResult] = useState<PreviewResult | null>(null);
   const generation = useRef(0);
   const mounted = useRef(false);
 
@@ -46,8 +67,7 @@ function PeriodProfitOwner() {
     setPending(false);
   };
 
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const runPreview = async (mode: PreviewMode) => {
     if (!reviewed || pending || !from || !to || openingValueUsd === '' || closingValueUsd === '')
       return;
     const request = ++generation.current;
@@ -56,13 +76,23 @@ function PeriodProfitOwner() {
     setError('');
     setPending(true);
     try {
-      const preview = await periodProfitApi.preview(input);
-      if (mounted.current && generation.current === request) setResult(preview);
+      if (mode === 'profit') {
+        const preview = await periodProfitApi.preview(input);
+        if (mounted.current && generation.current === request) setResult({ mode, preview });
+      } else {
+        const preview = await xirrPreviewApi.preview(input);
+        if (mounted.current && generation.current === request) setResult({ mode, preview });
+      }
     } catch (failure) {
-      if (mounted.current && generation.current === request) setError(previewError(failure));
+      if (mounted.current && generation.current === request) setError(previewError(failure, mode));
     } finally {
       if (mounted.current && generation.current === request) setPending(false);
     }
+  };
+
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void runPreview('profit');
   };
 
   const canSubmit =
@@ -83,7 +113,9 @@ function PeriodProfitOwner() {
         </p>
         <p>
           Прибыль = оценка в конце − оценка в начале − внешние вводы + внешние выводы. Оценка
-          вручную; потоки не сверены. Это не расчёт доходности или текущего денежного остатка.
+          вручную; потоки не сверены. Эта формула показывает прибыль, а XIRR отдельно оценивает
+          годовую доходность по времени внешних потоков. Ни один расчёт не показывает текущий
+          денежный остаток.
         </p>
         <p>
           <Link to="/capital-flows">Проверить журнал внешних потоков и границу учёта</Link>
@@ -163,9 +195,19 @@ function PeriodProfitOwner() {
             />
             Я проверил оценки и внешние потоки
           </label>
-          <button className="profit-button" type="submit" disabled={!canSubmit}>
-            Рассчитать прибыль
-          </button>
+          <div className="profit-actions">
+            <button className="profit-button" type="submit" disabled={!canSubmit}>
+              Рассчитать прибыль
+            </button>
+            <button
+              className="profit-button"
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => void runPreview('xirr')}
+            >
+              Рассчитать XIRR
+            </button>
+          </div>
         </form>
       </section>
 
@@ -180,29 +222,55 @@ function PeriodProfitOwner() {
         <section className="profit-card" aria-label="Результат расчёта">
           <h2>Результат расчёта</h2>
           <p>Оценка вручную. Потоки не сверены. Это временный расчёт для ревизии журнала.</p>
-          <p>Ревизия журнала: {result.journalRevision}</p>
+          <p>Ревизия журнала: {result.preview.journalRevision}</p>
           <p>Исправления и аннулирования потоков изменят следующий расчёт за этот период.</p>
-          <p>Граница учёта потоков: {result.coverageFrom}</p>
+          <p>Граница учёта потоков: {result.preview.coverageFrom}</p>
           <dl className="profit-result">
             <dt>Начало периода (UTC)</dt>
-            <dd>{result.from}</dd>
+            <dd>{result.preview.from}</dd>
             <dt>Конец периода (UTC)</dt>
-            <dd>{result.to}</dd>
+            <dd>{result.preview.to}</dd>
             <dt>Оценка в начале, USD</dt>
-            <dd>{result.openingValueUsd}</dd>
+            <dd>{result.preview.openingValueUsd}</dd>
             <dt>Оценка в конце, USD</dt>
-            <dd>{result.closingValueUsd}</dd>
+            <dd>{result.preview.closingValueUsd}</dd>
             <dt>Вводы, USD</dt>
-            <dd>{result.flows.contributionsUsd}</dd>
+            <dd>{result.preview.flows.contributionsUsd}</dd>
             <dt>Выводы, USD</dt>
-            <dd>{result.flows.withdrawalsUsd}</dd>
+            <dd>{result.preview.flows.withdrawalsUsd}</dd>
             <dt>Чистые вводы, USD</dt>
-            <dd>{result.flows.netContributionsUsd}</dd>
+            <dd>{result.preview.flows.netContributionsUsd}</dd>
             <dt>Количество потоков</dt>
-            <dd>{result.flows.flowCount}</dd>
+            <dd>{result.preview.flows.flowCount}</dd>
             <dt>Прибыль, USD</dt>
-            <dd>{result.profitUsd}</dd>
+            <dd>{result.preview.profitUsd}</dd>
           </dl>
+        </section>
+      )}
+
+      {result?.mode === 'xirr' && (
+        <section className="profit-card" aria-label="Доходность XIRR">
+          <h2>Доходность XIRR</h2>
+          <p>
+            Приблизительная годовая ставка по ручным оценкам и внешним потокам. Оценка вручную.
+            Потоки не сверены. Это годовая ставка, а не прогноз.
+          </p>
+          <p>
+            ACT/365F по времени UTC до миллисекунды. Поддерживаются ставки от −99.9999% до 100000%
+            годовых и не более 64 ненулевых моментов денежных потоков после объединения совпадающих
+            моментов.
+          </p>
+          {result.preview.xirr.status === 'available' ? (
+            <dl className="profit-result">
+              <dt>XIRR, % годовых</dt>
+              <dd>{result.preview.xirr.annualPercent}</dd>
+            </dl>
+          ) : (
+            <p>{unavailableReason[result.preview.xirr.reason]}</p>
+          )}
+          {result.preview.xirr.shortPeriod && (
+            <p>Короткий период: годовая ставка не является прогнозом.</p>
+          )}
         </section>
       )}
     </div>
