@@ -101,10 +101,13 @@ capital-usd-audit-live.log (2moderate, nohighcritical; lockunchanged). Initial s
 install cache/noTTY and registryDNS attempts failed, not counted as passing.
 
 Existing agents reused because platform thread limit prevents new spawn:
-- audit_security owns frontend in usd-trades-frontend. Initial214bec4+6be9da9 integrated,
-  lint/build/81tests pass; now fixing two independently reproduced review defects.
+- audit_security owns frontend in usd-trades-frontend. Initial214bec4+6be9da9 and
+  d5c4628 UIreviewfix integrated; lint/build/81tests pass. bfd90df adds the final
+  denied-retry ambiguity classifier, now independently reviewed and runtime pending.
 - gate_acceptance authored expandedHTTPS2c71d72, distinctrace6aece32, UIregressionsf8d2ea5,
-  allintegrated (main728ff6b).99discovered; fullruntimepending. NoDockerbyagents.
+  plus5eb748e canonical labels,98f2925 form readiness,d8cbc62 combobox selectors,
+  a609197 deniedretryregression andecc954d initambiguity; allintegrated.101discovered;
+  fullruntimepending. NoDockerbyagents.
 - provider_feasibility independently reviewed backend/DDL/PG/UI/docs; staticUI findings
   nowconfirmedrealRED. Noownedworkactive; canreuseforfixreview.
 Root owns integration, DDL/shared fixtures/evidence and all Docker; do not run Docker
@@ -117,8 +120,31 @@ Savedartifacts /private/tmp/capital-usd-ui-review-red-artifacts. Frontend pre-fi
 e39d4b2f442bf087612ddae5287361f7c40075e04e473e113eb18fd8b2c5a182; backendsame17283e.
 TRADE-006-C/D explicitlyspecifytargetreview andexactambiguouscommand; noassertionsweakened.
 Rootfocused wrapper /private/tmp/capital-usd-trades-focused.cjs usescurrentbuiltimages,
-optionalgrep argument. Other12newcases nowrunning capital-usd-focused-first.log;
-fixes will rebuild onlyafterthisrunends. Rootfullsource/build/imageGREEN+archivepending.
+optionalgrep argument. Other12newcases finished capital-usd-focused-first.log exit1,
+9PASS/3fail8.3m: all3hadhelperinstrumentlookup beforeformreadiness, notfinancefailure.
+Artifacts capital-usd-first-focused-artifacts. Readinessfix98f2925 and rolelocatorfix
+d8cbc62 preserveeveryassertion. InstalledPlaywright labelengine includesSELECToptiontext;
+actualARIAcombobox names remain correct. Do notclaimthoseinitialtimeoutsareproductRED.
+Firstfiximage273759401e554923f8de4312051c5cd9c5ac4e83fbcf58545030616d9324f4ee.
+capital-usd-ui-first-fix-regressions.log exit1: onepassed; twoSELECTlocatorfailures.
+Correctedrerun capital-usd-ui-denied-retry-red.log exit1: original2regressionsPASS;
+new403case real201commit/responseabort thenactualCSRF403 expecteddisabledactualenabled.
+50.6s; artifacts capital-usd-denied-retry-red-artifacts. OnlyafterthisactualRED did
+bfd90df changeclassifier: priorunknown clears only2xx orcommandPOST409, not400/404/
+401/403/429/read409. Independentpipeline reviewfound409onlyaftertradeServicereplay.
+Extra initialization regression againstretainedpre-fix e39d image exited1 using
+/private/tmp/capital-usd-init-old-image.cjs: openingSaveexpecteddisabledactualenabled
+afteractualinitcommit/responseabort. Logcapital-usd-init-prefixed-evidence.log.
+Wrapper restored2737594 tag in finally. Thisextra test was authored
+afterthefirstfix; reportit asretrospectivepre-fixevidence, notpreimplementationATDD.
+Finalfixbfd90df integrated90a438e plusrootcommentclarification aboutCSRFpreflight.
+Independentreviewno remainingbehavioralblocker. Finalfrontendimage
+ebf4d8ce70cd660fc854459c6c84519fec7d54ab087a8019fc8f37f57a6234ad.
+Finalsourcegate capital-usd-final-source-gates.log exit0: strict11,lint/build737backend/
+81frontend,183engineering,101testdiscovery. All16USDcases nowrunning session32698,
+capital-usd-focused-final.log. Do notbuild/runDockerconcurrently. Thencomplete101case
+release gate; rootfullimageGREEN+archivepending. Whiletestsrun, providerpreparesONLY
+/private/tmp/capital-csv-next-contract.md for bounded nextslice afterUSDarchive.
 
 Remaining full goal: CSV/carry-in/owned transfers/flows, performance/XIRR/TWR, DB-first
 price/FX/history, sixchain adapters/reconciliation, optional explicitfree AI, immutable

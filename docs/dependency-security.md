@@ -5,6 +5,17 @@ Scope: pnpm production dependencies. Development tools, operating-system/image
 packages, application exploitability and production deployment require separate
 verification.
 
+Rechecked on **2026-09-23** during `record-usd-fifo-trades`: frozen install and the
+required high/critical audit both exited **0**. The full registry JSON report exited
+**1** and still lists the two moderate Router advisories below, with **0 high,
+0 critical, 2 moderate, 0 low** across **329** production dependencies. Current
+lockfile SHA-256 is
+`13e4fbf1d1effcf66367ef7829885eb53b339cb9f52ab43854ca2e4ba77c4e73`.
+Local evidence: `/private/tmp/capital-usd-frozen-live.log`,
+`/private/tmp/capital-usd-audit-live.log`, `/private/tmp/capital-usd-audit-current.json`.
+Initial sandbox registry/cache failures were not counted as passing verification;
+the successful runs used the actual registry and existing pnpm cache.
+
 ## Baseline and current verification status
 
 The actual pre-change `pnpm audit --prod --json` registry response reported

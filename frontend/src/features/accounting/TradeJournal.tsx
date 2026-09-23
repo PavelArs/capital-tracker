@@ -216,7 +216,8 @@ export function TradeJournal({
       // Only this exact POST's application 409 resolves a prior unknown outcome:
       // current guards emit 401/403/429, and the service checks the saved receipt
       // before mutable conflicts. Parser/proxy 400 or visibility 404 do not prove
-      // whether the earlier attempt committed. Read-request errors never enter here.
+      // whether the earlier attempt committed. Journal reads are handled by load;
+      // the client's current CSRF preflight has no 409 outcome.
       const refused = status !== undefined && status >= 400 && status < 500;
       const ambiguousResult = previouslyAmbiguous ? status !== 409 : !refused;
       if (retry.current) retry.current.ambiguous = ambiguousResult;

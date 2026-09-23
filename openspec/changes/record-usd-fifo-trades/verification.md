@@ -113,3 +113,62 @@ cleanup completed; retained screenshots/traces are in
 Pre-fix backend17283e22fdc410782a31ebdd86e627e8c07cb576fd1f0b82ffb9bc87e39fc2c3,
 frontend e39d4b2f442bf087612ddae5287361f7c40075e04e473e113eb18fd8b2c5a182.
 The fixes and complete release acceptance remain pending. Do not archive yet.
+
+The other12 new cases ran separately on the same pre-fix images:
+`caffeinate -is node /private/tmp/capital-usd-trades-focused.cjs '^(?!.*regression)'`.
+Exit1,9 passed/3 failed in8.3 minutes: /private/tmp/capital-usd-focused-first.log.
+All three failures waited for nonexistent instrument pagination before the journal
+form had rendered; their later snapshots contain the desired instrument. No financial
+or security assertion failed in those cases because their trade-entry prerequisite
+had not completed. Fixture98f2925 replaces network-idle/count assumptions with actual
+form/picker readiness and increasing option counts after bounded pagination; no
+financial expectations, quotas or application behavior changed. Artifacts retained at
+/private/tmp/capital-usd-first-focused-artifacts. The9 passed cases include precision,
+fees/residual/loss, authorization/raw types, real two-replica races, immutable receipts,
+historical rejection and actual deferred HTTP COMMIT500 privacy/rollback/retry.
+
+Fixd5c4628 is integrated and source-checked. Independent review identified one further
+path: a pre-controller403/429 on a later replay must not clear prior ambiguity about
+an earlier committed request. Independent regressiona609197 now exercises a real
+committed correction/aborted delivery and real missing-CSRF403; its GREEN is pending.
+The current regression image is frontend
+273759401e554923f8de4312051c5cd9c5ac4e83fbcf58545030616d9324f4ee.
+Label-only commit5eb748e aligns fixture/test scenario references with the final spec;
+assertions and runtime behavior are unchanged.
+
+The first fix run exposed two remaining test locator errors: wrapped SELECT label text
+includes option text in the installed Playwright label engine, whereas its actual ARIA
+combobox name is correct. Narrow fixtured8cbc62 uses exact named combobox roles for
+the two selects, preserving all seven disabled-control checks and exact selected UUID
+assertions. /private/tmp/capital-usd-ui-first-fix-regressions.log exited1 with one pass
+and two missing-selector failures; those failures were not treated as behavior RED.
+
+With corrected selectors, /private/tmp/capital-usd-ui-denied-retry-red.log exited1:
+two original UI regression cases passed, and the new denied-retry case failed exactly
+as intended: after an actual committed correction/lost response and real CSRF403,
+the instrument control was enabled instead of remaining disabled. The run took50.6s.
+Artifacts: /private/tmp/capital-usd-denied-retry-red-artifacts. Only then was fixbfd90df
+implemented: previous ambiguity survives all failures except successful receipt or an
+authoritative409 from the exact original POST. Independent review traced the current
+guards, filter, proxy and replay-before-conflict service ordering; no pre-controller409
+path exists. Journal GET409 never resolves a pending write. Current CSRF preflight
+can propagate an error but has no409 outcome. No new endpoint/error framework was added.
+All frontend findings are resolved in source; runtime GREEN of the final fix is pending.
+
+An additional initialization-ambiguity test, ecc954d, was authored after the first UI
+fix. It was checked retrospectively against the retained pre-fix frontend imagee39d4b2:
+`caffeinate -is node /private/tmp/capital-usd-init-old-image.cjs` exited1 at the intended
+assertion, opening Save expected disabled/actual enabled after actual initialization201
+and aborted response delivery. This is retrospective pre-fix evidence, not a claim
+that this extra test preceded implementation. Log: /private/tmp/capital-usd-init-prefixed-evidence.log;
+artifacts: /private/tmp/capital-usd-init-prefixed-artifacts. The wrapper cleaned the
+synthetic stack and restored the current2737594 image tag in finally.
+
+Final integrated source gates exited0:
+`pnpm verify:baseline && pnpm test:engineering && pnpm exec playwright test --list`.
+/private/tmp/capital-usd-final-source-gates.log records strict11-item OpenSpec validation,
+backend/frontend lint/build,737 backend tests/24 suites,81 frontend tests/10 files,
+183 engineering tests/2 suites and101 real-E2E cases discovered. Existing77/29 lint
+warnings and the existing bundle-size warning remain. Discovery is not execution.
+Final frontend image before focused acceptance:
+sha256:ebf4d8ce70cd660fc854459c6c84519fec7d54ab087a8019fc8f37f57a6234ad.

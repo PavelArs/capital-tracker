@@ -146,6 +146,7 @@ No provider, legacy observation or external-flow mutation SHALL occur.
 - **WHEN** a stale revision-pinned read returns 409 and the owner refreshes and reviews the journal
 - **THEN** unchanged explicit retry still sends the complete original command, including its original request key, target and expected revision
 - **AND** the API returns the original receipt with 200, no duplicate version is created and a fresh current-state read supplies the displayed results
+- **AND** a replay refused by authentication, CSRF or admission does not establish the original outcome; the unresolved command, draft and target remain protected for a later exact replay
 - **AND** an ambiguous initialization keeps the opening editor blocked until current journal state is known
 
 #### Scenario: TRADE-006-B Retained security and privacy
