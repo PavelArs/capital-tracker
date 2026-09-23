@@ -297,7 +297,11 @@ Stable Russian acceptance labels: heading `Начальные лоты FIFO`; gr
 `Лот 1`, `Лот 2`, etc. Each group labels `Инструмент`,
 `Дата и время приобретения (UTC)`, `Порядок в этот момент`, `Исходное количество`,
 `Исходная стоимость, USD` and `Количество на начало учета`. Reuse the existing
-explicit UTC datetime-local conversion and strict server timestamp parsing.
+explicit ISO timestamp text input with a UTC example such as `2025-01-01T00:00:00Z`,
+and strict explicit-offset server parsing; current forms have no datetime-local
+converter. Do not silently apply the browser timezone. Instrument choices include
+all labeled positions from the pinned opening (at most100), independently of global
+instrument discovery pagination; use UUID values, not symbol identity.
 Actions: `Добавить лот`, `Проверить начальные лоты`,
 `Начать журнал с начальными лотами`, `Повторить исходную инициализацию`.
 Review checkbox: `Подтверждаю исходные данные лотов и понимаю, что начальные лоты пока нельзя изменить.`
