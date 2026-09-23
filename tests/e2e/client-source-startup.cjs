@@ -182,7 +182,7 @@ async function main() {
     const { rows: [state] } = await client.query(`SELECT
       (SELECT count(*) FROM migrations) AS migrations,
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
-    assert.equal(Number(state.migrations), 15, 'Run after the actual preserved fifteen migrations');
+    assert.equal(Number(state.migrations), 16, 'Run after the actual preserved sixteen migrations');
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
     const before = await fingerprint(client);
     for (const [name, value] of invalid) {
@@ -199,7 +199,7 @@ async function main() {
     assert.equal(shown.signal, null);
     safeOutput(shown.stdout + shown.stderr);
     assert.equal(shown.status, 0, 'Migration CLI must work without the HTTP-only setting');
-    assert.equal((shown.stdout.match(/^\[X\] /gm) ?? []).length, 15);
+    assert.equal((shown.stdout.match(/^\[X\] /gm) ?? []).length, 16);
     assert.ok(!(shown.stdout + shown.stderr).includes('TRUSTED_PROXY_IPS'));
     assert.equal(await fingerprint(client), before, 'Read-only CLI inspection preserves all database state');
     console.log('PASS PROXY-001-B actual migration CLI works with HTTP proxy configuration absent');

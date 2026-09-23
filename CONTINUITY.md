@@ -111,7 +111,12 @@ strict E2E TypeScript passed. Frozen install/live audit/frontend lint/build95/10
 629.42kB bundle warning. See active verification for actual commands/results/reviews.
 No new product code since46ce63f; previously recorded902/28 backend checks remain valid.
 
-NEXT: commit reviewed test/doc improvements, then run complete pnpm test:e2e including
-carry-in-db and all133 browser cases. Confirm exact image digests, cleanup/owner files,
-traceability and actual terminal exit before marking4.5/6.2/6.3 and archiving6.4.
-Do not archive incomplete work or consolidate folders. Full brief remains unfinished.
+Full release attempt89846b3 stopped before browsers at stale15-count auth-limit
+fixture; all migration16/upgrades/refusals passed first. Log capital-carry-in-release-full.log.
+Three prerequisite counts (auth-limits DB, startup state/show) updated16; independent
+cheap-model review confirms no other oracle changed. This is not behaviorRED.
+
+NEXT: commit fixture/evidence repair, rerun complete pnpm test:e2e. Do not rerun prior
+source checks for these count-only test changes. Confirm exact image digests,
+cleanup/owner files and terminal exit before marking4.5/6.2/6.3 and archiving6.4.
+Full brief remains unfinished; no production or folder consolidation authorization.

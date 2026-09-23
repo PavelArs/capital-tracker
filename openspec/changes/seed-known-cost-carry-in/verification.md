@@ -243,3 +243,17 @@ All log paths in this paragraph are under /private/tmp.
 
 The complete release gate is next. Do not treat focused tests as proof that all
 predecessor browser/security/CLI/startup cases passed on this release.
+
+## Full release attempt and fixture prerequisite repair — 2026-09-23
+
+At89846b3, `caffeinate -is pnpm test:e2e` exited1 before browser execution:
+`/private/tmp/capital-carry-in-release-full.log`. Provider TLS, fresh16/replay,
+all populated upgrades including15-to16 and unsafe legacy refusals passed. The
+old auth-limits DB fixture stopped at its hardcoded15-migration prerequisite.
+A targeted scan also found both startup fixture count/show assertions still15.
+Root changed only those three counts to16 and the matching descriptive word.
+An independent gpt-6-luna review confirmed agreement with the exact16-name ledger
+and unchanged database fingerprint, startup/refusal and CLI-read-only oracles.
+Both CJS files passed node --check. No product/security behavior or expected financial
+result changed; this is a fixture version update, not acceptance RED. Runner cleanup
+completed. The complete gate must be rerun before any release-pass claim.
