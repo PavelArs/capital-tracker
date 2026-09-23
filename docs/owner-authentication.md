@@ -27,7 +27,7 @@ and extends sessions, and the twelfth adds only the request admission
 ledger. The MFA migration revokes preceding session records, leaves users and
 financial rows intact, and does not enroll anyone. The request-limit migration
 preserves all existing owner, MFA, session and portfolio rows and is replay-safe.
-Current binaries require the fully migrated fourteen-migration schema. An owner without confirmed enrollment cannot log in.
+Current binaries require all current explicit migrations, including the additive accounting tables. An owner without confirmed enrollment cannot log in.
 
 The owner CLI uses explicit `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD` and
 `DB_NAME` settings, with no implicit `.env` loading. Supply them through the trusted
@@ -344,7 +344,8 @@ two-replica path and record the expected ledger deltas.
 | Cross-site writes | Exact configured HTTPS Origin and bound CSRF, no implicit proxy trust | Broader browser/proxy review and XSS defenses |
 | Guessing or session exhaustion | Persisted owner/challenge MFA limits and transactional session caps | Shared password/IP limits and operational capacity tests |
 | Credential or output leakage | Argon2id, encrypted factors, hashed recovery codes, private CLI outputs, safe errors and redaction | Full secret/image/log scanning and backup/restore exercises |
-| Malicious provider/import/news content | Isolated acceptance denies live egress | SSRF allowlists, exact accounting/import validation, CSV/XSS defenses and AI isolation |
+| Malicious CSV content | Strict bounded UTF-8/parser/input validation, literal React rendering, private retained originals and generic storage errors; see [CSV import](csv-imports.md) | Full expanded release verification, broader XSS/CSP and resource-exhaustion review |
+| Malicious provider/news content | Isolated acceptance denies live egress | SSRF allowlists, provider validation and AI isolation |
 | Dependency or CI compromise | Pinned dependencies/actions, isolated image tests and disabled rollout | Dependency/image/static scans and immutable artifact promotion |
 | Stolen backup, host or device | Factor key separated from database; no real credentials used in acceptance | Encrypted backups, least privilege and host/device hardening |
 

@@ -41,7 +41,8 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-Root expanded CSV HTTPS run active: PTY44484, /private/tmp/capital-csv-journey-first.log.
+No Docker run active after focused followups; root awaits test-harness correction.
+Last log /private/tmp/capital-csv-final-regressions.log (2 PASS, 3 harness failures).
 Runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
 
 ## Completed and archived
@@ -102,21 +103,30 @@ Initial7 realHTTPS cases PASS (1.5m, one worker, zero retries), including securi
 and declared/chunked wire limits. Full gate not run; no archive. Expanded9 CSV
 journey/command cases now running after three intended UI regression REDs.
 
-Real UI REDs before fixes: lost accepted command after actual401/password+MFA
-(/private/tmp/capital-csv-401-red.log); explicitCSVrefresh stale parent and newfile
-oldmapping (/private/tmp/capital-csv-draft-review-red.log), three intended failures.
-Artifact copies are adjacent *-artifacts directories. Owner cleanup completed.
-Integrated independent command tests ca346b8, seven UI tests d1907ca, authfix9c4a285.
-Authfix95 tests/build/lint passed in author worktree; independent review ongoing.
-Root working CsvImports diff fixes parent refresh and new-file workflow plus stale
-revision guards. Literal source-key whitespace is still unchanged awaiting RED.
-Root strengthened valid multipart denied-auth tests; runtime rerun pending.
+Current HEAD12e718c (plus owner-auth docs pending). Shared auth and refresh/newfile
+fixes independently reviewed and runtimeGREEN; seven main UIjourneys pass, selected
+manual correction/void alsoPASS. Literal source-key actualRED then spanprewrapfix;
+first visiblekeyoracle nowpasses, laterfixturepreview correctlyrejects duplicate
+account chronology. QAfixing secondrow order1 preservingeveryfinancialassertion.
+Commands2bothPASS afterindependentlyreviewed exactexpectedkeysorting correction:
+actualtworeplica hashes/replay andboth realdeferredCOMMIT rollback+originalkeyretry.
+Logs/details in active verification.md. Artifacts copies under /private/tmp.
 
-Agents: gate_acceptance owns csv-import-journey.spec.ts/csv-import-fixtures.ts, now
-adding whitespace and parent manual-target regressions; audit_security reviews
-shared auth plus root CsvImports fixes; provider_feasibility reviews test oracles.
-Root owns Docker/migration/lock/sharedfixtures/integration and CsvImports repairs.
-No other agent may edit root files or run Docker. Worktrees retained.
+Latest fivefocusedchecks /private/tmp/capital-csv-final-regressions.log exit1:
+PASS latepreviewdifferentaccount andvalidmultipart authnegatives; 3testharnessfailures:
+literalfixturechronology; pinnedread routealreadyhandled; acceptedreadfailure locator
+matches2correctalerts. Gateagent owns corrections and final lost-upload/File recovery
+case; no productfix inferred. Don't weakenoracles orclaimfullgreen.
+Rootsourcegate /private/tmp/capital-csv-final-source-gates.log exit0: strict12,
+backend859/26, frontend95/10, bothlint/build; existing77/29warnings retained.
+Currentfrontend releasee973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f.
+
+Agents: gate_acceptance test-only2files csv-import-journey.spec.ts/csv-import-fixtures.ts;
+audit_security independentfinalreview (reported separateunknownuploadcoveragegap);
+provider_feasibility read-only nextsmallcarryin-slice planning. Docs f0a47ca integrated
+ba68ad0; active design/spec explicitly documentsinapp/SPA recovery lifetime and full
+reloadloss, reviewconfirmedbriefdoesn'trequirebrowserpersistentkeys. FullCSVreleasegate
+~123casesstillpending, noarchive. Root ownsDocker/migrations/lock/sharedfixtures.
 
 CSV scope remains UTF8<=256KiB/100rows, explicitowned UUID/USD/decimal/time/order/fee,
 whole-batch atomic acceptance/provenance/conditional rollback,1000/10000journalcaps.
