@@ -1,7 +1,8 @@
 # Manual period profit preview
 
-Implementation/verification is in progress under `preview-period-profit`; this
-guide describes its specified contract, not a completed release.
+Implemented and locally verified under `preview-period-profit`. Exact scenarios,
+commands and limitations are in the [archived verification](../openspec/changes/archive/2026-09-23-preview-period-profit/verification.md).
+This is not a production rollout or completion of the whole performance roadmap.
 
 The Russian **Прибыль за период** page (`/period-profit`) calculates:
 
@@ -11,8 +12,8 @@ Supply the total portfolio value in USD at both boundaries and review the extern
 flow journal. Opening value is **immediately before** any flow exactly at the start.
 Closing value is **immediately before** any flow exactly at the end. The interval
 includes its start and excludes its end, `[from,to)`. Times have explicit zones and
-are returned/displayed in UTC. For example, opening1000 + contribution1000 with
-closing2000 produces profit0. A withdrawal increases the formula's result because
+are returned/displayed in UTC. For example, opening 1000 + contribution 1000 with
+closing 2000 produces profit 0. A withdrawal increases the formula's result because
 that value has left the portfolio without itself being an investment loss.
 
 This is a temporary calculation using **manual total valuations** and
@@ -32,7 +33,7 @@ silently recovered or posted after login.
 
 ## API
 
-Authenticated `POST /accounting/portfolio/profit-preview`, status200. Existing
+Authenticated `POST /accounting/portfolio/profit-preview`, status 200. Existing
 password/MFA, CSRF, Origin and private no-store rules apply. Body:
 
 ```json
@@ -45,11 +46,12 @@ password/MFA, CSRF, Origin and private no-store rules apply. Body:
 }
 ```
 
-Amounts are nonnegative decimal strings, including zero, with at most48 integer
-and30 fractional digits. Negative manual valuations are unsupported and rejected,
+Amounts are nonnegative decimal strings, including zero, with at most 48 integer
+and 30 fractional digits. Negative manual valuations are unsupported and rejected,
 never converted to zero. Positive duration and explicit-zone valid timestamps
-are required (1970–9999, at most millisecond precision). Unknown fields, missing review, JSON numeric amounts, signs and
-exponents are400. An absent journal or start before coverage is409.
+are required (1970–9999, at most millisecond precision). Unknown fields, missing
+review, JSON numeric amounts, signs and exponents are 400. An absent journal or
+start before coverage is 409.
 
 Response contains `from`, `to`, `coverageFrom`, `journalRevision`, canonical
 `openingValueUsd`/`closingValueUsd`, `profitUsd`, and `flows` with
@@ -59,7 +61,8 @@ contains `basis: manual-usd-valuations`, `flowBasis: owner-declared-usd-flows`,
 input precision without rounding. All monetary fields remain exact strings.
 
 One read-only repeatable-read snapshot reads the complete eligible current flow
-set; the preview is unpaginated. Household income, asset trades and unrelated owners do not contribute.
+set; the preview is unpaginated. Household income, asset trades and unrelated
+owners do not contribute.
 No schema migration, provider call or stored valuation is introduced. XIRR, TWR,
 marked values, gains by lot, signed portfolio valuations and charts remain future
 contracts; profit here is an absolute USD amount, not a percentage or tax report.

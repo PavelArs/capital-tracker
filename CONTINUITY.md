@@ -41,45 +41,46 @@ Historical archivedf69c059: sourcec8873bb, fivePGfamilies and9targetedHTTPS; ful
 run deliberately stopped peruser beforeChromium,exit1, neverclaimfullGREEN. See
 openspec/changes/archive/2026-09-23-{seed-known-cost-carry-in,inspect-historical-accounting}/verification.md.
 
-## Latest external USD flow slice
+External flows archivedd6305e1: canonical external-usd-flows spec, immutable reviewed
+USD origin/contributions/withdrawals/corrections/voids, exactscale30 [from,to),
+owner locking/CAS/RR. Migration17 iscurrent. 996backend/95frontendunits;8PGfamilies,
+fresh17/populated16upgrades;6targetedHTTPS. Prior144fullsuiteNOT run. See
+openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md.
 
-Completed/archived record-external-usd-flows on2026-09-23 aftertargetedGREEN.
-See openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md.
-Supportedarchive synchronized5new/1modified/0removedrequirements; all14tasksdone,
-canonicalstrict15/15pass andopenspec listempty. Allpreviousscenarioheadingsretained.
-Backend37980b5; finalproductfixea7cceb. Explicit owner-reviewed contributions/
-withdrawals only, exactscale30 [from,to), immutablecorrection/terminalvoid/receipts,
-ownerjournal locking/CAS/RR. Separatefromholdings/trades/returns, unreconciledcoverage.
-Migration17 adds onlyportfolio_flow_journals/portfolio_flow_versions. No dependencies.
-Root backend/puretest/migration; Luna initialAPI/UI/privacy/docs; SolPG andcomplexUI/
-recovery. Independent Sol rootbackendreviewatbb5f941 foundnoblocker. RootUIreview
-found mixedoldhistory/newflowID; genuine delayedrealresponseRED then2linefixea7cceb;
-independentSolclosure andactualGREEN.
+## Latest manual period profit slice
 
-Genuine predecessorRED at49d6d99: init201vs404/missingRussianheading,exit1; log
-/private/tmp/capital-flow-predecessor-red.log. Initialpostimplementationfailedruns
-had incorrectfixtureisolation/error-envelope/selectlocator oracles, corrected
-without changingproduct/weakeningfinancialassertions. Detailedresults inverification.
-New flow-only testfixture guardedexactsyntheticDB/user clears ONLYtwoflowtables
-betweenindependentcases, nevermidjourney; neededowneroriginnotperaccountscope.
+preview-period-profit implemented, independently reviewed and verified with scoped checks;
+archive synchronization pending. Productsourcec4ae371, backend43681aa. Guide
+docs/period-profit-preview.md; evidence openspec/changes/preview-period-profit/verification.md.
+POST /accounting/portfolio/profit-preview (200), bodystrictfrom/to/nonnegativeexact
+openingValueUsd/closingValueUsd/assertReviewedtrue; noownerinput. Completecurrent
+ownerflows inoneRRREADONLY snapshot; missing/beforecoverage409, invalid400.
+Exactprofit=closing-opening-contributions+withdrawals; same[from,to)boundary.
+Manualvaluationsbeforeflowsateachboundary, unreconciledflowstatusandrevision.
+No persistence/migration/deps/providers/rates. Russian /period-profit page,
+reviewresetonedit, noautopost/storage, late/errorresponsescan'trestoreoldresult.
 
-Verified: backend996/32units; frontend95/10existingunits; builds,lint77/29existing
-warnings,strictE2ETSC,frozeninstall,audit0high/critical(2existingmoderateRouter).
-ActualPG eightflowfamilies inclprocessraces/lockwait/deferredCOMMITrollback/RR/maxcaps/
-SQLconstraints; fullfresh17/replay/upgrades8..16/unsafelegacyrefusals andretained
-historicalPG. Logcapital-flow-migrations-focused.log,exit0.
-SixdistincttargetedHTTPS: API/privacy passunchangedbackend inpartialrerun; final
-UI/recovery+retainedhistoricalUI/carryCSV passed4/4in53.4s,exit0 at ea7cceb. No144
-fullbrowserclaim. Logs /private/tmp/capital-flow-{focused-rerun,final-focused}.log.
-Finalbackendsha256:b8a8f25490603eeaaad904b2d762cd188045cd81c45b97c813d7c72c14066f28
-Finalfrontendsha256:d169e6d8d0ef9d96fba34dfa3dcaa4d9799832bc4991f75b53fee811124c571c
-Containers/networksindependentlyempty; hashes/modeunchanged. NoownerDB/production.
+RootBE/pure/PG; Luna2browsercases+docsreview inprofit-acceptance worktree;
+SolUIinprofit-ui, independentlyreviewedrootbackendnoblocker. RootreviewedUI,
+addedaccessibleboundaryhelp/copy;badtestoraclesfixedwithoutweakeningassertions.
+GenuinepredecessorRED2/2(200vs404/missingheading), beforenewproduct. Log
+/private/tmp/capital-profit-predecessor-red.log, exit1, originalflowimagesverified.
+Pure111/3(54new+57retained)pass, BEbuild/lint77existingwarnings. UI95/10existing
+unitspassedbySol; finalmainFE TS/build/lint29existingwarnings+bundlewarningpass.
+RealPG4profitfamilies(coverage,61effectiveflowssnapshot/foreign/readonly,
+actualtwo-connectionRRbarrier,1000maximumamounts)+8retainedflowfamiliespass;
+/private/tmp/capital-profit-db-focused.log,exit0. No fullmigrationmatrixrepeat.
+FinalHTTPS3/3in36.8s,1worker0retries:2profit+retainedFLOW-004-A, actualMFA/HTTPS/PG;
+/private/tmp/capital-profit-focused.log exit0. No full146suite/fullBEunitclaim.
+Backendsha256:24a9827a93bae8615bc84feb90f6351f3730e6d4ed77319f459e07b524cdacfb
+Frontendsha256:1a5a83094e97866982fb28e84038286c5b74264565a1eca745759e6e61e2c6be
+OwnerNginx/lock/modepreserved;syntheticcontainers/networksempty. NoownerDB/prod.
+NewrealPGfixturewiredintoexistingfullrunner. All prior tests retained.
 
-Allworktreesretained includingflow-acceptance,flow-postgres,flow-ui. Temporary
-dependencysymlinksremoved byagents. carry_docs_reviewLuna finaldocscheckcomplete;
-historical_uiSol complete; gate_acceptance quota-limited untilSep29(donotretry/purchase).
-
-Next whole-brief work: periodvaluations/profit/XIRR/TWR, transfers/swaps/rewards,
-DBprices/history/charts, blockchains/reconciliation, optionalAI,releasehardening/
-backuprestore/consolidation. Selectanotherboundedcontract and genuineATDDslice.
-Do notmove/deleteoriginalor duplicateprojectfoldersyet.
+Allworktreesretained includingprofit-acceptance/profit-ui siblings. Agenttemporary
+dependencysymlinksremoved. Reusecarry_docs_reviewLuna(simple) /historical_uiSol
+(complex/review);gate_acceptancequota-limiteduntilSep29(donotretry/purchase).
+Next whole-brief work: persisted/automatic valuations, XIRR/TWR, transfers/swaps/
+rewards, DBprices/history/charts, blockchains/reconciliation, optionalAI,
+releasehardening/backuprestore/consolidation. Profitpreviewisoneboundedmanualstep,
+not wholeperformancecompletion. Selectnextsmallcontract; don'tmove/deleteoriginals.

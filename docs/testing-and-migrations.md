@@ -357,3 +357,15 @@ runner includes `external-usd-flows-db.cjs` for CI. Browser flow cases alone use
 an exact synthetic-database-guarded fixture to clear the two new flow tables
 between independent cases, because an owner can have only one immutable origin.
 No case resets its own accounting or admission state midway through a journey.
+
+## Manual period profit
+
+See [manual period profit](period-profit-preview.md). The focused contract uses 54
+new pure cases and 57 retained flow cases, four actual PostgreSQL profit families
+plus the eight retained flow families, and just two new HTTPS Playwright cases
+plus one retained flow journey. The browser cases cover actual password/MFA,
+private calculation, strict inputs, exact values, manual review, late responses
+and delivery failure; they never fabricate backend or authentication responses.
+The verified focused browser run passed 3/3 in 36.8s, one worker and zero retries.
+The full CI runner also includes `period-profit-db.cjs`; no existing test is removed.
+No migration is added; the fresh guarded fixture uses existing migration 17.

@@ -12,11 +12,11 @@
 
 ## 3. Review and focused verification
 
-- [ ] 3.1 Independently review backend and UI; fix findings without weakening assertions.
-- [ ] 3.2 Run scoped pure tests, type checks, backend/frontend lint/build, real PostgreSQL profit and retained flow characterization; record actual results and data-preservation evidence.
-- [ ] 3.3 Run focused real HTTPS Playwright API/privacy/UI/lateness plus retained flow journey, without a full E2E run; record genuine RED/GREEN, image/source identity and cleanup.
+- [x] 3.1 Independently review backend and UI; fix findings without weakening assertions.
+- [x] 3.2 Run scoped pure tests, type checks, backend/frontend lint/build, real PostgreSQL profit and retained flow characterization; record actual results and data-preservation evidence.
+- [x] 3.3 Run focused real HTTPS Playwright API/privacy/UI/lateness plus retained flow journey, without a full E2E run; record genuine RED/GREEN, image/source identity and cleanup.
 
 ## 4. Documentation and archive
 
-- [ ] 4.1 Document usage, limitations, scenario-to-check manifest, actual results/unrun checks and continuity; confirm owner edit/lock preserved.
+- [x] 4.1 Document usage, limitations, scenario-to-check manifest, actual results/unrun checks and continuity; confirm owner edit/lock preserved.
 - [ ] 4.2 Validate OpenSpec strictly, archive using the supported command, then confirm synchronized canonical specs and no active change.
