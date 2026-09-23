@@ -7,11 +7,19 @@ import { CsvImportController } from './csv-import.controller';
 import { CsvImportService } from './csv-import.service';
 import { CsvUploadInterceptor } from './csv-upload.interceptor';
 import { HistoricalAccountingService } from './historical-accounting.service';
+import { PortfolioFlowController } from './portfolio-flow.controller';
+import { PortfolioFlowService } from './portfolio-flow.service';
 import { TradeController } from './trade.controller';
 import { TradeService } from './trade.service';
 
 @Module({
-  controllers: [AccountingController, TradeController, CsvImportController, CarryInController],
+  controllers: [
+    AccountingController,
+    TradeController,
+    CsvImportController,
+    CarryInController,
+    PortfolioFlowController,
+  ],
   providers: [
     AccountingService,
     TradeService,
@@ -19,6 +27,7 @@ import { TradeService } from './trade.service';
     CsvUploadInterceptor,
     CarryInService,
     HistoricalAccountingService,
+    PortfolioFlowService,
   ],
 })
 export class AccountingModule {}
