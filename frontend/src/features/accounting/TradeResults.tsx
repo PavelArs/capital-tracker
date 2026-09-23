@@ -43,6 +43,7 @@ export function TradeResults({
   accountId,
   journal,
   disabled,
+  mutationDisabled,
   onCorrect,
   onVoid,
   onStale,
@@ -50,6 +51,7 @@ export function TradeResults({
   accountId: string;
   journal: Journal;
   disabled: boolean;
+  mutationDisabled: boolean;
   onCorrect: (trade: TradeVersion) => void;
   onVoid: (trade: TradeVersion) => void;
   onStale: () => void;
@@ -264,10 +266,18 @@ export function TradeResults({
                   <div className="trade-actions">
                     {trade.kind !== 'void' && (
                       <>
-                        <button type="button" disabled={busy} onClick={() => onCorrect(trade)}>
+                        <button
+                          type="button"
+                          disabled={busy || mutationDisabled}
+                          onClick={() => onCorrect(trade)}
+                        >
                           Исправить
                         </button>
-                        <button type="button" disabled={busy} onClick={() => onVoid(trade)}>
+                        <button
+                          type="button"
+                          disabled={busy || mutationDisabled}
+                          onClick={() => onVoid(trade)}
+                        >
                           Аннулировать
                         </button>
                       </>

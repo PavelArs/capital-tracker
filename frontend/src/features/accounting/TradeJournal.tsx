@@ -20,7 +20,7 @@ type Operation =
   | { kind: 'create'; input: TradeCommand }
   | { kind: 'correct'; tradeId: string; input: TradeCommand }
   | { kind: 'void'; tradeId: string; input: VoidCommand };
-type Retry = { signature: string; operation: Operation };
+type Retry = { signature: string; operation: Operation; ambiguous: boolean };
 function errorMessage(error: unknown) {
   if (isAxiosError(error) && error.response?.status === 409)
     return 'Операция не согласуется с журналом. Проверьте актуальную ревизию, границу покрытия, порядок сделок, доступное количество на дату продажи и лимиты. Черновик сохранён.';
@@ -62,7 +62,7 @@ export function TradeJournal({
   eligibilityRef.current = onEligibility;
 
   const load = useCallback(
-    async (reviewTradeId?: string) => {
+    async (reviewTradeId?: string, selectedVersion?: number) => {
       const request = ++sequence.current;
       setLoading(true);
       setReviewReady(false);
@@ -78,6 +78,14 @@ export function TradeJournal({
           (!next.journal || latestTarget.journalRevision > next.journal.journalRevision)
         ) {
           throw new Error('Journal changed during target review');
+        }
+        if (
+          latestTarget &&
+          selectedVersion !== undefined &&
+          latestTarget.version !== selectedVersion
+        ) {
+          setNeedsReview(true);
+          setReviewed(false);
         }
         setState(next);
         setReviewTarget(latestTarget);
@@ -109,11 +117,13 @@ export function TradeJournal({
   }, [load]);
 
   function edit(next: TradeDraft) {
+    if (retry.current?.ambiguous || writeLock.current) return;
     retry.current = null;
     setDraft(next);
     setError(null);
   }
   function select(trade: TradeVersion, kind: 'correct' | 'void') {
+    if (retry.current?.ambiguous || writeLock.current) return;
     retry.current = null;
     setTarget(trade);
     setMode(kind);
@@ -134,6 +144,7 @@ export function TradeJournal({
     }
   }
   function cancel() {
+    if (retry.current?.ambiguous || writeLock.current) return;
     retry.current = null;
     setMode('create');
     setTarget(null);
@@ -158,7 +169,7 @@ export function TradeJournal({
     if (writing || writeLock.current) return;
     setError(null);
     setReviewed(false);
-    await load(target?.tradeId);
+    await load(target?.tradeId, target?.version);
   }
 
   async function send(operation: Operation) {
@@ -200,6 +211,9 @@ export function TradeJournal({
       }
     } catch (error) {
       if (!active.current) return;
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      const ambiguousResult = status === undefined || status >= 500;
+      if (retry.current) retry.current.ambiguous = ambiguousResult;
       setError(errorMessage(error));
       if (isAxiosError(error) && error.response?.status === 409) {
         setNeedsReview(true);
@@ -208,9 +222,16 @@ export function TradeJournal({
         setHideResults(true);
         await load(
           operation.kind === 'correct' || operation.kind === 'void' ? operation.tradeId : undefined,
+          target?.version,
         );
       } else {
-        eligibilityRef.current(state ? state.journal !== null : null);
+        eligibilityRef.current(
+          ambiguousResult && operation.kind === 'initialize'
+            ? null
+            : state
+              ? state.journal !== null
+              : null,
+        );
       }
     } finally {
       writeLock.current = false;
@@ -221,6 +242,10 @@ export function TradeJournal({
   function initialize(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!assertEmpty || !state?.eligible || disabled) return;
+    if (retry.current?.ambiguous) {
+      void send(retry.current.operation);
+      return;
+    }
     const signature = JSON.stringify({
       kind: 'initialize',
       coverageFrom: coverage,
@@ -229,6 +254,7 @@ export function TradeJournal({
     if (retry.current?.signature !== signature)
       retry.current = {
         signature,
+        ambiguous: false,
         operation: {
           kind: 'initialize',
           input: { requestId: newRequestId(), coverageFrom: coverage, assertEmpty: true },
@@ -239,6 +265,10 @@ export function TradeJournal({
   function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!state?.journal || disabled) return;
+    if (retry.current?.ambiguous) {
+      void send(retry.current.operation);
+      return;
+    }
     if (
       !/^(0|[1-9][0-9]*)$/.test(draft.orderWithinTimestamp) ||
       Number(draft.orderWithinTimestamp) > 2147483647
@@ -260,6 +290,7 @@ export function TradeJournal({
       };
       retry.current = {
         signature,
+        ambiguous: false,
         operation:
           mode === 'void'
             ? { kind: 'void', tradeId: target!.tradeId, input: identity }
@@ -270,6 +301,7 @@ export function TradeJournal({
     }
     void send(retry.current.operation);
   }
+  const ambiguous = retry.current?.ambiguous === true;
   const targetUnavailable =
     needsReview && target !== null && (!reviewTarget || reviewTarget.kind === 'void');
   const disabled =
@@ -300,6 +332,24 @@ export function TradeJournal({
       >
         Обновить журнал
       </button>
+      {ambiguous && (
+        <div className="manual-coverage-warning">
+          <p>
+            Результат исходного запроса неизвестен. Пока он не разрешён, черновик и цель изменения
+            заблокированы. Обновление и подтверждение просмотра не меняют исходный запрос.
+          </p>
+          <button
+            type="button"
+            className="manual-button"
+            disabled={writing || openingBusy || loading}
+            onClick={() => {
+              if (retry.current?.ambiguous) void send(retry.current.operation);
+            }}
+          >
+            Повторить исходный запрос
+          </button>
+        </div>
+      )}
       {receipt && (
         <p role="status" className="manual-feedback manual-feedback--success">
           {'trade' in receipt ? (
@@ -329,9 +379,11 @@ export function TradeJournal({
                 : reviewTarget.side === 'buy'
                   ? 'покупка'
                   : 'продажа'}
-              ; {reviewTarget.quantity}; валовая сумма {reviewTarget.grossUsd} USD; комиссия{' '}
-              {reviewTarget.feeUsd} USD; {reviewTarget.occurredAt}, порядок{' '}
-              {reviewTarget.orderWithinTimestamp}.
+              ; инструмент {reviewTarget.instrumentName}
+              {reviewTarget.instrumentSymbol ? ` (${reviewTarget.instrumentSymbol})` : ''}, UUID{' '}
+              {reviewTarget.instrumentId}; количество {reviewTarget.quantity}; валовая сумма{' '}
+              {reviewTarget.grossUsd} USD; комиссия {reviewTarget.feeUsd} USD;{' '}
+              {reviewTarget.occurredAt}, порядок {reviewTarget.orderWithinTimestamp}.
             </p>
           )}
           {targetUnavailable && (
@@ -347,7 +399,7 @@ export function TradeJournal({
               disabled={!reviewReady || loading || writing || targetUnavailable}
               onChange={(event) => {
                 setReviewed(event.target.checked);
-                if (event.target.checked) retry.current = null;
+                if (event.target.checked && !retry.current?.ambiguous) retry.current = null;
               }}
             />
             Я проверил актуальную версию журнала и хочу сохранить черновик.
@@ -365,8 +417,10 @@ export function TradeJournal({
                 <input
                   type="text"
                   value={coverage}
+                  disabled={ambiguous}
                   required
                   onChange={(event) => {
+                    if (retry.current?.ambiguous) return;
                     retry.current = null;
                     setCoverage(event.target.value);
                   }}
@@ -376,7 +430,9 @@ export function TradeJournal({
                 <input
                   type="checkbox"
                   checked={assertEmpty}
+                  disabled={ambiguous}
                   onChange={(event) => {
+                    if (retry.current?.ambiguous) return;
                     retry.current = null;
                     setAssertEmpty(event.target.checked);
                   }}
@@ -423,7 +479,7 @@ export function TradeJournal({
               <button
                 type="button"
                 className="manual-button manual-button--secondary"
-                disabled={writing || loading}
+                disabled={writing || loading || ambiguous}
                 onClick={cancel}
               >
                 Отменить аннулирование
@@ -436,10 +492,11 @@ export function TradeJournal({
               onSubmit={save}
               instruments={instruments}
               selected={target}
-              disabled={disabled}
+              disabled={disabled || (ambiguous && retry.current?.operation.kind === 'initialize')}
+              lockDraft={ambiguous}
               correction={mode === 'correct'}
               onCancel={cancel}
-              cancelDisabled={writing || loading}
+              cancelDisabled={writing || loading || ambiguous}
             />
           )}
           {!hideResults && !loading && (
@@ -448,6 +505,7 @@ export function TradeJournal({
               accountId={accountId}
               journal={journal}
               disabled={writing || openingBusy || (needsReview && !reviewed)}
+              mutationDisabled={ambiguous}
               onCorrect={(trade) => select(trade, 'correct')}
               onVoid={(trade) => select(trade, 'void')}
               onStale={stale}

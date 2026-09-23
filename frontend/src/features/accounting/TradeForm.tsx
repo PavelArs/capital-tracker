@@ -24,6 +24,7 @@ export function TradeForm({
   instruments,
   selected,
   disabled,
+  lockDraft,
   correction,
   onCancel,
   cancelDisabled,
@@ -34,6 +35,7 @@ export function TradeForm({
   instruments: Instrument[];
   selected: TradeVersion | null;
   disabled: boolean;
+  lockDraft: boolean;
   correction: boolean;
   onCancel: () => void;
   cancelDisabled: boolean;
@@ -47,6 +49,7 @@ export function TradeForm({
           <label>
             Инструмент
             <select
+              disabled={lockDraft}
               value={draft.instrumentId}
               onChange={(event) => update({ instrumentId: event.target.value })}
               required
@@ -69,6 +72,7 @@ export function TradeForm({
           <label>
             Тип сделки
             <select
+              disabled={lockDraft}
               value={draft.side}
               onChange={(event) => update({ side: event.target.value === 'sell' ? 'sell' : 'buy' })}
             >
@@ -79,6 +83,7 @@ export function TradeForm({
           <label>
             Дата и время сделки (UTC)
             <input
+              disabled={lockDraft}
               value={draft.occurredAt}
               onChange={(event) => update({ occurredAt: event.target.value })}
               required
@@ -87,6 +92,7 @@ export function TradeForm({
           <label>
             Порядок в этот момент
             <input
+              disabled={lockDraft}
               inputMode="numeric"
               value={draft.orderWithinTimestamp}
               onChange={(event) => update({ orderWithinTimestamp: event.target.value })}
@@ -96,6 +102,7 @@ export function TradeForm({
           <label>
             Количество
             <input
+              disabled={lockDraft}
               inputMode="decimal"
               value={draft.quantity}
               onChange={(event) => update({ quantity: event.target.value })}
@@ -105,6 +112,7 @@ export function TradeForm({
           <label>
             Валовая сумма, USD
             <input
+              disabled={lockDraft}
               inputMode="decimal"
               value={draft.grossUsd}
               onChange={(event) => update({ grossUsd: event.target.value })}
@@ -114,6 +122,7 @@ export function TradeForm({
           <label>
             Комиссия, USD
             <input
+              disabled={lockDraft}
               inputMode="decimal"
               value={draft.feeUsd}
               onChange={(event) => update({ feeUsd: event.target.value })}
