@@ -159,6 +159,14 @@ Nonzero cursor requires batchState; every supplied state must match snapshot or 
 nextAfterOrdinal is last returned ordinal when more remain, otherwise null. Draft is
 empty. Rollback between pages invalidates continuation; unrelated edits do not.
 
+Protected account detail exposes heading `Импорт CSV`, file input label `Файл CSV`,
+button `Загрузить CSV`, combobox `Разделитель` with options `Запятая (,)` and
+`Точка с запятой (;)`, button `Просмотреть исходные строки`, and source table caption
+`Исходные строки`. These accessible labels anchor the maintained initial journey.
+Successful upload shows the retained filename; inspection shows all literal rows
+and their physical start lines. Full mapping/preview/rollback follows the same
+protected view and the specified explicit-review/unknown-outcome rules.
+
 ## 4. Bounded error vocabulary and HTTP boundaries
 
 Inspection structural codes (also preview structural batch codes), fixed precedence:

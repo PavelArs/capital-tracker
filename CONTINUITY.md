@@ -81,9 +81,13 @@ Hosted CI, second browser, image/SAST/DAST/full ASVS and backup/restore remain u
 
 ## Now and next
 
-Finalize strict archive validation/diff and commit USD docs/archive, excluding owner
-nginx.conf. Then propose import-usd-trades-csv with the actual installed workflow.
-No CSV product/schema/dependency/test implementation has begun. Full authorization
+USD archive and documentation committed97a7a2d; strict11/diff passed. Actual-label
+Docker checks found no owned Compose or client-source probes. New active change
+import-usd-trades-csv: proposalcd6ec20; independently reviewed design/persistence/parser
+decision integratedeafe9c0. Actual CLI artifact instructions/status/apply used;
+all artifacts ready, strict12 passed,2/28 tasks complete (predecessor and design review).
+Final scenarios/API/schema/UI labels are frozen for independent test authorship.
+No CSV product/schema/dependency implementation has begun. Full authorization
 covers ordinary incremental implementation; no extra user approval is needed.
 
 Independent temporary design inputs under /private/tmp:
@@ -94,7 +98,11 @@ Independent temporary design inputs under /private/tmp:
 - capital-csv-parser-decision.md: official csv-parse7.0.2 MIT/CJS/no-runtime-deps and
   actual installed Nest/Multer upload research; runtime parser proof still pending.
 - capital-csv-persistence-contract.md: exact DTO/three-table/canonical tuple freeze.
-Read all before authoring final artifacts; resolve minor wording consistency first.
+Final artifacts in openspec/changes/import-usd-trades-csv supersede these temporary
+memos. Additional capital-csv-test-plan.md maps independent unit/PG/HTTPS ownership.
+New worktrees csv-design (design committed), csv-acceptance (QA), csv-backend (reserved).
+Next: maintained2-case real predecessor-image RED, independent parser tests, then
+bounded implementation. Root alone runs Docker and must check exact predecessor IDs.
 
 CSV scope: UTF8 up to256KiB/100rows, inspect before mapping, explicit owned UUID/USD/
 decimal/time/order/fee settings, preview errors, whole-batch atomic confirmation,
