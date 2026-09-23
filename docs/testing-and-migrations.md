@@ -408,3 +408,21 @@ the existing UI case with failed-refresh-after-save assertions, only that case
 was repeated:1/1 in13.5s against identical images. All requests exercise actual
 password/MFA/backend/PostgreSQL; delayed/lost delivery follows real `route.fetch()`.
 No existing E2E case or CI gate was removed. See the [verification record](../openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md).
+
+
+## Historical account valuation
+
+See [historical valuation](historical-valuation.md). The selected pure command
+`pnpm --dir backend test --runInBand --coverage=false historical-valuation
+historical-accounting manual-price-input` passed123 cases/4 suites (31 new,
+92 retained). The new `historical-valuation-db.cjs` passed four scenario families
+against actual PostgreSQL; retained `historical-accounting-db.cjs` also passed,
+protecting the extracted caller-owned read loader. No migration was added;
+fresh isolated fixtures use existing migration18.
+
+Only three HTTPS cases were selected: new VAL-API and VAL-UI plus retained
+HIST-004-A UI snapshot. They passed3/3 in37.8s, one worker and zero retries, with
+real password/MFA/backend/PostgreSQL and external-provider-only stubs. The full
+runner includes the new PG fixture and discovers both new browser cases; all old
+cases remain. See the [verification record](../openspec/changes/archive/2026-09-23-value-historical-account/verification.md)
+for the exact filter, predecessor RED, image IDs, reviews and unrun checks.

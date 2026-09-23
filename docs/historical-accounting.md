@@ -34,6 +34,7 @@ Nothing is automatically persisted in browser storage.
 The endpoint uses one read-only PostgreSQL REPEATABLE READ transaction. Historical
 review changes no accounting rows, receipts or import bytes and makes no external
 provider calls. Normal authenticated session/admission bookkeeping still applies.
-No migration, provider, dependency or deployment change is introduced. Price history,
-cash-flow classification, performance, baseline amendment and production readiness
-remain separate work.
+No migration, provider, dependency or deployment change is introduced. See separate guides for [manual price history](manual-usd-prices.md),
+[historical account valuation](historical-valuation.md) and
+[external USD flows](external-usd-flows.md). This historical endpoint continues to
+return quantities and cost; market value is exposed by the valuation endpoint.

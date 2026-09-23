@@ -1,9 +1,9 @@
 # Historical account valuation
 
 The account-detail section “Оценка счёта на дату” combines reconstructed holdings
-with saved manual USD unit prices at the selected instant. The active
-[value-historical-account change](../openspec/changes/value-historical-account/verification.md)
-tracks implementation and verification; it is not archived yet.
+with saved manual USD unit prices at the selected instant. The
+[verification record](../openspec/changes/archive/2026-09-23-value-historical-account/verification.md)
+records exact arithmetic, real PostgreSQL and three selected HTTPS checks.
 
 Enter an ISO timestamp including its time-zone offset and request the calculation.
 The view uses effective trades up to and including the normalized UTC instant and
