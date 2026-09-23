@@ -1049,3 +1049,292 @@ test('CSV-002-A / CSV-006-A regression: exact source keys with leading spaces st
   ]);
   assertQuota();
 });
+
+test('CSV-006-B: a delayed real preview for another account cannot replace the currently selected account', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const otherAccount = await api.account();
+  await api.initialize(otherAccount.id);
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const batch = await uploadInBrowser(page, account.id);
+  await inspectAndMap(page, account.id, batch, instrument.id);
+  const before = fingerprint(['auth_sessions', 'auth_request_limits']);
+  const path = `/api/accounting/accounts/${account.id}/csv-imports/${batch}/preview`;
+  const pattern = `**${path}`;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  await page.route(
+    pattern,
+    async (route) => {
+      held = true;
+      await gate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  const pending = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+  pending.catch(() => {});
+  try {
+    await page.getByRole('button', { name: 'Проверить импорт', exact: true }).click();
+    await expect.poll(() => held).toBe(true);
+    await navigateToAccount(page, otherAccount.id);
+    await expect(page).toHaveURL(new RegExp(`/manual-accounts/${otherAccount.id}$`));
+    release();
+    const response = await pending;
+    expect(response.status()).toBe(200);
+    expect(await response.json()).toMatchObject({ batchId: batch, canConfirm: true });
+    await response.finished();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(
+      page.getByRole('region', { name: 'Предпросмотр импорта', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole('combobox', { name: 'Сохранённая партия CSV', exact: true }),
+    ).toHaveValue('');
+    await expect(page.getByRole('region', { name: 'Партия CSV', exact: true })).toHaveCount(0);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
+  } finally {
+    release();
+    await pending.catch(() => {});
+    await page.unroute(pattern);
+  }
+  expect(retainedState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV command whose response was lost', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  await api.create(account.id, tradeInput(instrument.id, 0));
+  const sale = await api.create(
+    account.id,
+    tradeInput(instrument.id, 1, { side: 'sell', quantity: '0.5', grossUsd: '100' }),
+  );
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const imported = [{ ...buy, time: '2025-01-05T00:00:00Z' }];
+  const batch = await uploadInBrowser(page, account.id, imported);
+  await inspectAndMap(page, account.id, batch, instrument.id, imported);
+  await previewInBrowser(
+    page,
+    account.id,
+    batch,
+    {
+      grossBuysUsd: '200',
+      buyFeesUsd: '0',
+      grossSalesUsd: '100',
+      sellFeesUsd: '0',
+      netSalesUsd: '100',
+      consumedCostUsd: '50',
+      realizedUsd: '50',
+      remainingCostUsd: '150',
+    },
+    2,
+  );
+  const readPath = `/api/accounting/accounts/${account.id}/trades/${sale.trade.tradeId}/matches`;
+  const writePath = `/api/accounting/accounts/${account.id}/csv-imports/${batch}/confirm`;
+  const readPattern = `**${readPath}?*`;
+  const writePattern = `**${writePath}`;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let held = false;
+  let lost = false;
+  let receipt: CsvReceipt | undefined;
+  const commands: CsvConfirm[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === writePath)
+      commands.push(request.postDataJSON() as CsvConfirm);
+  });
+  await page.route(
+    readPattern,
+    async (route) => {
+      expect(new URL(route.request().url()).searchParams.get('journalRevision')).toBe('2');
+      held = true;
+      await gate;
+      await route.continue();
+    },
+    { times: 1 },
+  );
+  await page.route(
+    writePattern,
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      receipt = readCsvReceipt(await response.json());
+      assertCommitted(receipt);
+      lost = true;
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  const staleRead = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === readPath,
+    { timeout: 15_000 },
+  );
+  staleRead.catch(() => {});
+  try {
+    await page
+      .getByRole('table', { name: 'Сделки журнала', exact: true })
+      .getByRole('row')
+      .filter({ hasText: sale.trade.tradeId })
+      .getByRole('button', { name: 'Распределение FIFO', exact: true })
+      .click();
+    await expect.poll(() => held).toBe(true);
+    await page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click();
+    await expect.poll(() => lost).toBe(true);
+    await expect(retryButton(page)).toBeEnabled();
+    const committed = fingerprint(['auth_sessions', 'auth_request_limits']);
+    release();
+    expect((await staleRead).status()).toBe(409);
+    await expect(page.getByRole('region', { name: 'Журнал изменился', exact: true })).toBeVisible();
+    await expect(retryButton(page)).toBeEnabled();
+    await expect(page.getByLabel('Файл CSV', { exact: true })).toBeDisabled();
+    expect(commands).toHaveLength(1);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(committed);
+    const replay = await browserPost(
+      page,
+      `/accounts/${account.id}/csv-imports/${batch}/confirm`,
+      () => retryButton(page).click(),
+    );
+    expect(replay.status()).toBe(200);
+    expect(readCsvReceipt(await replay.json())).toEqual(receipt);
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+    await expect(retryButton(page)).toHaveCount(0);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(committed);
+  } finally {
+    release();
+    await staleRead.catch(() => {});
+    await page.unroute(readPattern);
+    await page.unroute(writePattern);
+    expect(providerRequests()).toEqual(providers);
+    assertQuota();
+  }
+  expect(retainedState()).toBe(prior);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+});
+
+test('CSV-006-B: an accepted CSV receipt followed by a lost parent read blocks new writes until successful current-state review', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const batch = await uploadInBrowser(page, account.id);
+  await inspectAndMap(page, account.id, batch, instrument.id);
+  await previewInBrowser(page, account.id, batch, {
+    ...emptySummary,
+    grossBuysUsd: '100',
+    remainingCostUsd: '100',
+  });
+  const readPath = `/api/accounting/accounts/${account.id}/trade-journal`;
+  const pattern = `**${readPath}`;
+  const writePath = `/api/accounting/accounts/${account.id}/csv-imports/${batch}/confirm`;
+  let writes = 0;
+  let lostRead = false;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === writePath) writes++;
+  });
+  await page.route(
+    pattern,
+    async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      expect((await response.json()).journal.journalRevision).toBe(1);
+      lostRead = true;
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  try {
+    const accepted = await browserPost(
+      page,
+      `/accounts/${account.id}/csv-imports/${batch}/confirm`,
+      () => page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click(),
+    );
+    expect(accepted.status()).toBe(201);
+    const receipt = readCsvReceipt(await accepted.json());
+    assertCommitted(receipt);
+    await expect.poll(() => lostRead).toBe(true);
+    const csvRegion = page.getByRole('region', { name: 'Импорт CSV', exact: true });
+    await expect(csvRegion.getByRole('alert')).toContainText('Запрос принят');
+    await expect(
+      csvRegion.getByRole('status').filter({ hasText: receipt.requestId }),
+    ).toBeVisible();
+    await expect(retryButton(page)).toHaveCount(0);
+    await expect(page.getByLabel('Файл CSV', { exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole('button', { name: 'Сохранить сделку', exact: true }),
+    ).toBeDisabled();
+    expect(writes).toBe(1);
+    const committed = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const refresh = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === readPath && response.request().method() === 'GET',
+    );
+    await page.getByRole('button', { name: 'Обновить состояние CSV', exact: true }).click();
+    const refreshed = await refresh;
+    expect(refreshed.status()).toBe(200);
+    expect((await refreshed.json()).journal.journalRevision).toBe(1);
+    await expectJournalSummary(page, {
+      ...emptySummary,
+      grossBuysUsd: '100',
+      remainingCostUsd: '100',
+    });
+    const review = page.getByRole('checkbox', {
+      name: 'Я проверил актуальную версию журнала и хочу сохранить черновик.',
+      exact: true,
+    });
+    await expect(review).toBeEnabled();
+    await review.check();
+    await expect(page.getByLabel('Файл CSV', { exact: true })).toBeEnabled();
+    expect(writes).toBe(1);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(committed);
+  } finally {
+    await page.unroute(pattern);
+    expect(providerRequests()).toEqual(providers);
+    assertQuota();
+  }
+  expect(retainedState()).toBe(prior);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+});

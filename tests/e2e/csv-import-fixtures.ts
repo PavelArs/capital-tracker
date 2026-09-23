@@ -438,12 +438,18 @@ export async function hasVisibleLiteral(
         (element) => !element.closest('select'),
       );
       return candidates.some((element) => {
+        const style = getComputedStyle(element);
+        if (
+          style.display === 'none' ||
+          style.visibility === 'hidden' ||
+          element.getClientRects().length === 0
+        )
+          return false;
         const directText = [...element.childNodes]
           .filter((node) => node.nodeType === Node.TEXT_NODE)
           .map((node) => node.textContent)
           .join('');
         if (directText.includes(JSON.stringify(expected.source))) return true;
-        const style = getComputedStyle(element);
         return (
           ['pre', 'pre-wrap', 'break-spaces'].includes(style.whiteSpace) &&
           (directText === expected.source || directText.includes(expected.contextualText))
