@@ -15,10 +15,12 @@ complex implementation/security/review. Earlier continuation reused stronger age
 without a cheaper override; this was acknowledged to the user. Avoid redundant full
 runs and large log output. Give short periodic Russian updates. Preferences saved.
 
-Agent state: audit_security and provider_feasibility completed; gate_acceptance hit
-its usage limit before expanded browser tests. Its committed PG tests are integrated.
-Root wrote the remaining browser tests locally; do not claim independent authorship
-or independent final review of those additions. No new agents were launched.
+Agent state: final security review by audit_security found no product/schema blocker;
+two test-oracle gaps were strengthened and independently closed. New gpt-6-luna
+carry_docs_review performed bounded read-only documentation review and confirmed all
+five fixes. Both are completed. gate_acceptance remains usage-limited; never attribute
+root-written expanded tests to it. All worktrees are retained, including detached
+carry-in-release-review at46ce63f for stable review.
 
 Preserve unstaged frontend/nginx.conf, mode0644/1348 bytes, SHA256:
 115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432.
@@ -73,7 +75,8 @@ heading. Log /private/tmp/capital-carry-in-predecessor-red.log, preserved RED ar
 Integrated independent components: pure tests5eaae87, services36c6ed6, root shared
 7175f50, PG1188947/96f4d2b, frontend e31a0d8. Audit reviewed shared domain, migration16,
 entities and frontend without blockers. Root subsequently added migration fixtures,
-expanded browser tests and the JSON413 fix; final independent review is still needed.
+expanded browser tests and the JSON413 fix; final independent review is now complete.
+Review-driven changes only strengthen tests and correct documentation.
 
 Migration16/entities and populated15 fixture are implemented. Fresh16/replay/all
 populated8..15/unsafe legacy refusals passed. Opening, USD, CSV and8 carry-in PG
@@ -102,9 +105,13 @@ sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c.
 No Docker run is active. Independent inventory found no synthetic containers/networks;
 owner Nginx/lock hashes unchanged. E2E strict TypeScript exit0. Preserve this evidence.
 
-NEXT: independently review new filter/migration fixtures/acceptance;
-finish user/engineering doc consistency (docs/known-cost-carry-in.md is a draft),
-run remaining integrated frozen-install/audit/frontend/source checks and complete
-pnpm test:e2e (includes carry-in-db). Verify owner files/cleanup and traceability,
-then archive only after every required task is complete. No full carry-in release gate,
-archive or full-target completion is claimed. Preserve all worktrees and owner data.
+READY: focused stronger2 passed25.9s, /private/tmp/capital-carry-in-review-focused.log,
+strict E2E TypeScript passed. Frozen install/live audit/frontend lint/build95/10 passed;
+0 high/critical,2 existing moderate Router findings, unchanged77/29 lint warnings and
+629.42kB bundle warning. See active verification for actual commands/results/reviews.
+No new product code since46ce63f; previously recorded902/28 backend checks remain valid.
+
+NEXT: commit reviewed test/doc improvements, then run complete pnpm test:e2e including
+carry-in-db and all133 browser cases. Confirm exact image digests, cleanup/owner files,
+traceability and actual terminal exit before marking4.5/6.2/6.3 and archiving6.4.
+Do not archive incomplete work or consolidate folders. Full brief remains unfinished.

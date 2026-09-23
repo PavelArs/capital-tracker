@@ -34,13 +34,13 @@
 ## 5. Refactor and independently review
 
 - [x] 5.1 Refactor only where passing characterization supports a simpler shared design; remove duplicated baseline reads/calculation branches without manufacturing RED for unchanged behavior.
-- [ ] 5.2 Independently review complete source/schema/client diff against exact spec scenarios and unchanged old contracts; challenge partial-lot rounding, replay ordering, auth/privacy, stale UI intent and migrations.
-- [ ] 5.3 Resolve every blocking finding with a regression and actual result; any new behavior fix requires genuine intended RED before GREEN, and test-fixture corrections retain independent financial/security expectations.
-- [ ] 5.4 Review user/engineering documentation for limits, known/unknown costs, baseline immutability and later amendment requirement, browser recovery lifetime and old-binary migration compatibility; make no tax/complete-product/production claim.
+- [x] 5.2 Independently review complete source/schema/client diff against exact spec scenarios and unchanged old contracts; challenge partial-lot rounding, replay ordering, auth/privacy, stale UI intent and migrations.
+- [x] 5.3 Resolve every blocking finding with a regression and actual result; any new behavior fix requires genuine intended RED before GREEN, and test-fixture corrections retain independent financial/security expectations.
+- [x] 5.4 Review user/engineering documentation for limits, known/unknown costs, baseline immutability and later amendment requirement, browser recovery lifetime and old-binary migration compatibility; make no tax/complete-product/production claim.
 
 ## 6. Verify and archive this bounded slice
 
-- [ ] 6.1 Run frozen install, production high/critical dependency gate, OpenSpec strict validation, lint/type/build/unit checks and E2E TypeScript checks on the integrated commit; document existing warnings separately.
+- [x] 6.1 Run frozen install, production high/critical dependency gate, OpenSpec strict validation, lint/type/build/unit checks and E2E TypeScript checks on the integrated commit; document existing warnings separately.
 - [ ] 6.2 Run the complete pinned-image `pnpm test:e2e` gate through fresh16/replay/all populated upgrades/refusals, PostgreSQL probes and actual HTTPS Playwright with one worker and zero retries; record counts, commit, image digests, logs and exit status.
 - [ ] 6.3 Confirm synthetic cleanup, unchanged owner Nginx/lockfile expectations and no production/provider side effects; reconcile all specification/test/implementation/evidence links and disclose any genuinely unrun checks.
 - [ ] 6.4 Mark tasks only on observed evidence, sync the complete reviewed deltas with the supported OpenSpec archive command, and validate canonical specs again; then select the next small requirement gap without claiming the whole brief complete.

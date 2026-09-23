@@ -130,7 +130,9 @@ the schema. Validate upgrades and recovery on an isolated copy.
 
 The verified [CSV import slice](csv-imports.md) adds reviewed purchases/sales to this
 same journal, retaining original evidence and conditional whole-batch rollback. Its
-complete 124-case HTTPS suite and actual PostgreSQL/migration checks passed. Acquisition-lot carry-in, crypto swaps,
+complete 124-case HTTPS suite and actual PostgreSQL/migration checks passed.
+Known-cost acquisition-lot carry-in is documented in [known-cost carry-in](known-cost-carry-in.md).
+Crypto swaps,
 token-denominated fees, owned transfers, external contributions/withdrawals, valuations,
 returns and reconciliation remain separate incremental work. This journal does not
 establish complete investment history or make legacy observations part of its results.

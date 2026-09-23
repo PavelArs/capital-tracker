@@ -64,9 +64,13 @@ export type InitialLots = {
   nextAfterOrdinal: number | null;
 };
 
-export function retainedRows(accountId: string, extraExcluded: string[] = []): unknown {
+export function retainedRows(
+  accountId: string,
+  extraExcluded: string[] = [],
+  extraAccountTables: string[] = [],
+): unknown {
   uuid(accountId);
-  const mutable = [...tradeTables, baselineTable];
+  const mutable = [...tradeTables, baselineTable, ...extraAccountTables];
   // Discover only tables that actually exist on either image. Preserve every other
   // account's journal/baseline, as well as all opening, CSV, owner and MFA rows.
   const tables = rows<{ tablename: string }>(

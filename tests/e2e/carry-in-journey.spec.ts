@@ -273,6 +273,8 @@ test('CARRY-005-A: accepted receipt survives lost current reads and blocks write
   const data = await fixture(page);
   const { api, account, path } = data;
   const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
   await fillAndPreview(page, data);
@@ -320,6 +322,13 @@ test('CARRY-005-A: accepted receipt survives lost current reads and blocks write
   } finally {
     await page.unroute(pattern);
     expect(providerRequests()).toEqual(providers);
+    expectAdmissionDelta(admissions, [
+      {
+        scope: 'csrf-ip',
+        subject: await hostSubject(),
+        hits: browserCsrfAdmissions() - csrfBefore,
+      },
+    ]);
     assertQuota();
   }
 });

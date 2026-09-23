@@ -186,10 +186,11 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies fifteen migrations: eight historic migrations, the additive
+uuid-ossp and applies sixteen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
-request admission ledger, four manual-accounting tables, three USD journal tables and three CSV import tables. A populated fully
-migrated database is idempotent. The twelfth through fifteenth migrations preserve
+request admission ledger, four manual-accounting tables, three USD journal tables,
+three CSV import tables and the carry-in baseline table/journal opening reference. A populated fully
+migrated database is idempotent. The twelfth through sixteenth migrations preserve
 all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
@@ -221,7 +222,12 @@ idempotent. The populated thirteen-to-fourteen fixture preserves all preceding
 financial, opening, authentication and admission rows/schema and adds three empty
 journal tables. The populated fourteen-to-fifteen fixture also preserves real buy/sell,
 correction/void and replay history while adding three empty CSV import tables.
-Current binaries require all fifteen migrations. Owner bootstrap must
+The populated fifteen-to-sixteen fixture also retains CSV draft/committed/rolled-back
+originals, settings, commands and provenance, with every previous journal column
+unchanged and the new nullable opening reference explicitly NULL.
+Current binaries require all sixteen migrations. Old images cannot interpret a new
+carry-in origin: do not mix old/new binaries or assume binary rollback is safe after
+initialization. No destructive down migration is provided. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret

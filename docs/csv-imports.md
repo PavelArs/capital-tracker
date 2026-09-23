@@ -161,5 +161,5 @@ and historical legacy refusals remain; application startup never migrates implic
 An application rollback retains these tables and originals. Do not use a destructive
 down migration as import rollback. See [testing and migrations](testing-and-migrations.md).
 
-Acquisition-lot carry-in, crypto swaps/token fees, contributions/withdrawals, transfers,
+Crypto swaps/token fees, contributions/withdrawals, transfers,
 blockchain matching, valuations, performance and reconciliation remain later slices.

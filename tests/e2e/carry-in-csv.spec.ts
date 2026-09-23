@@ -75,7 +75,7 @@ test('CARRY-004-A: real manual and browser CSV sales agree250/100; correction, r
   expect(await api.result('POST', manualPath, 200, manualCommand)).toEqual(manualOrigin);
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(manualBeforeReplay);
 
-  const prior = retainedRows(account.id, csvTables);
+  const prior = retainedRows(account.id, [], csvTables);
   const providers = providerRequests();
   const admissions = ledger();
   const csrfBefore = browserCsrfAdmissions();
@@ -172,7 +172,7 @@ test('CARRY-004-A: real manual and browser CSV sales agree250/100; correction, r
       { kind: 'create', version: 1 },
     ]);
   } finally {
-    expect(retainedRows(account.id, csvTables)).toEqual(prior);
+    expect(retainedRows(account.id, [], csvTables)).toEqual(prior);
     expect(providerRequests()).toEqual(providers);
     expectAdmissionDelta(admissions, [
       {

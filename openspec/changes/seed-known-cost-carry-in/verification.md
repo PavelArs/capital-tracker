@@ -4,7 +4,7 @@ Status: CSV predecessor verified/archived; independently reviewed carry-in API/U
 acceptance demonstrated genuine missing-feature RED against its exact release images.
 Carry-in is implemented and has source, real PostgreSQL and focused HTTPS GREEN
 evidence below. A JSON transport defect was reproduced and fixed with real HTTPS GREEN. The
-complete release gate and final independent review remain pending.
+complete release gate remains pending; final independent review is recorded below.
 
 ## Traceability and evidence to collect
 
@@ -211,3 +211,35 @@ fix still require independent final review. Full133-case release acceptance, cur
 frozen-install/dependency gate, remaining documentation review and archival are NOT
 complete. Nine focused cases are not a claim that all predecessor browser scenarios
 were rerun on the new image.
+
+## Final independent review and source readiness — 2026-09-23
+
+Security/data-integrity reviewer independently inspected detached46ce63f, building on
+its previous source/schema/client review. No product, migration or filter blocker.
+It requested two stronger test oracles: preserve other accounts' CSV original/command/
+link rows, and assert exact auth-ledger deltas in accepted-receipt/read-loss coverage.
+Root applied both without changing any financial/replay expected result. The reviewer
+then checked the exact three test diffs and confirmed both findings closed. No runtime
+checks are attributed to that read-only review.
+
+A separate explicitly selected gpt-6-luna context reviewed bounded documentation.
+Root corrected stale deferred-carry-in claims, explicit cumulative-offset wording,
+migration16 preservation/count and old-binary compatibility. That context reviewed
+all five revised guides and confirmed closure; it ran no tests.
+
+Actual strengthened focused run: `/private/tmp/capital-carry-in-review-focused.log`,
+exit0,2/2 Chromium in25.9s,1worker0retries on the same release images as above. Strict
+E2E TypeScript passed (`capital-carry-in-review-tsc.log`). These are passing stronger
+characterizations, not a manufactured behavior RED. Product code is unchanged from
+46ce63f and retains the recorded902/28 backend checks, backend build/lint and strict13.
+
+Remaining source gates were executed at integrated46ce63f: frozen lockfile install
+exit0 (`capital-carry-in-frozen-install.log`), live production high/critical audit
+exit0 (`capital-carry-in-final-audit.log`),0 high/critical and2 existing moderate Router
+findings; frontend lint/build/95 tests across10 files exit0
+(`capital-carry-in-final-frontend.log`). Existing77 backend/29 frontend warnings and
+629.42kB frontend bundle warning are retained, not hidden. No dependency/pin change.
+All log paths in this paragraph are under /private/tmp.
+
+The complete release gate is next. Do not treat focused tests as proof that all
+predecessor browser/security/CLI/startup cases passed on this release.

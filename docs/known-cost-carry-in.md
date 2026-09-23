@@ -16,8 +16,10 @@ For original quantity Q, cost C and carried quantity R, prior disposal is Q-R an
 prior allocated cost is floor(C*(Q-R)/Q). Calculations use exact scale30 integer
 atoms. Carried quantities and remaining costs must match every opening position
 exactly; a one-atom mismatch is refused. Known zero cost is allowed. Unknown cost
-remains unsupported and never becomes zero. Future allocations retain original Q/C
-and the previous allocation offset, including residual atoms.
+remains unsupported and never becomes zero. For subsequent cumulative disposal q,
+cost allocated from the baseline is floor(C*(D+q)/Q)-A, where D=Q-R and A=floor(C*D/Q).
+Successive matches use cumulative differences; final disposal consumes the remaining
+carried cost. Original Q/C and residual allocation are preserved.
 
 The owner reviews reconciliation and explicitly acknowledges that the baseline
 cannot yet be amended or deleted. Initialization pins the opening revision and
