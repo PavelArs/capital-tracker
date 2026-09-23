@@ -1,6 +1,6 @@
 ## 1. Contract and acceptance
 
-- [ ] 1.1 Independently review proposal/design/scenarios and strict-validate the change; record baseline, preservation and keep/reuse decisions.
+- [x] 1.1 Independently review proposal/design/scenarios and strict-validate the change; record baseline, preservation and keep/reuse decisions.
 - [ ] 1.2 Write `historical-valuation.spec.ts` pure arithmetic/input acceptance, `historical-valuation-db.cjs` actual PostgreSQL coverage/snapshot/preservation checks, and two focused `historical-valuation.spec.ts` HTTPS API/UI cases; demonstrate real missing-route/UI RED before product changes (VAL-EXACT/GAPS/PRIVATE/UI).
 
 ## 2. Implementation
