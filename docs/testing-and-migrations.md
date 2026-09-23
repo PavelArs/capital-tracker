@@ -382,6 +382,10 @@ It covers 139 cases across four suites: 28 XIRR cases and 111 retained cases.
 The real PostgreSQL checks are `xirr-preview-db.cjs` and retained
 `period-profit-db.cjs`; the real HTTPS Playwright checks are
 `xirr-preview.spec.ts` and `period-profit.spec.ts` (four cases total). The E2E
-runner is wired for these checks. PostgreSQL and HTTPS results are pending; the
-four browser cases have not yet been reported as passing. The XIRR feature adds
-no migration.
+runner is wired for these checks. The focused PostgreSQL run passed three XIRR
+and four retained profit families. The four HTTPS cases passed in 47.4s, one
+worker and zero retries. No migration is added; fresh fixtures use migration17.
+`xirr-benchmark.cjs` separately exercises64 dates spanning1970–9999 in the pinned
+backend image:4,564ms with506 timer ticks on this host, without a latency SLA.
+See the [verification record](../openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md)
+for actual commands, predecessor failures, image identities and unrun checks.

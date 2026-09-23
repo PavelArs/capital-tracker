@@ -146,3 +146,22 @@ addition: zero high/critical findings and the same two moderate Router findings
 above. No advisory suppression or paid scanning service was added. Commands and
 logs are recorded in the [CSV verification record](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/verification.md); image/static/dynamic
 scans and the Router follow-up remain separate release requirements.
+
+## XIRR runtime dependency — 2026-09-23
+
+`preview-conventional-xirr` declares backend `decimal.js@10.6.0` directly in
+production dependencies. It previously existed only in the frontend development
+graph through jsdom. No existing resolution or override changes: the lockfile
+adds only the backend importer entry. Frozen installation and the required
+`pnpm audit:production` both exited **0**. The actual full `pnpm audit --prod --json`
+report exited **1**: **0 high, 0 critical, 2 moderate, 0 low** across **331**
+production dependencies. The same two Router findings above remain unsuppressed.
+
+Audited lockfile SHA-256:
+`6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
+Local evidence: `/private/tmp/capital-xirr-frozen.log`,
+`/private/tmp/capital-xirr-audit.log`, `/private/tmp/capital-xirr-audit-current.json`.
+An initial offline dependency-add attempt failed because registry metadata was
+not cached; the subsequent exact-version registry install succeeded. That failed
+attempt is not counted as verification. Image scanning and production approval
+remain separate release requirements.

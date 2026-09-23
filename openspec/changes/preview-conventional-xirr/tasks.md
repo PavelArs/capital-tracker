@@ -11,11 +11,11 @@
 
 ## 3. Independent review and verification
 
-- [ ] 3.1 Independently review numerical backend and UI, fix findings and benchmark maximum64-date/wide-horizon workload without weakening assertions.
-- [ ] 3.2 Run relevant pure/type/build/lint checks, actual PostgreSQL XIRR and retained profit fixtures; frozen install and production dependency audit.
-- [ ] 3.3 Run two new real HTTPS cases plus retained profit cases; record source/images, actual RED/GREEN, cleanup and explicitly unrun broad checks.
+- [x] 3.1 Independently review numerical backend and UI, fix findings and benchmark maximum64-date/wide-horizon workload without weakening assertions.
+- [x] 3.2 Run relevant pure/type/build/lint checks, actual PostgreSQL XIRR and retained profit fixtures; frozen install and production dependency audit.
+- [x] 3.3 Run two new real HTTPS cases plus retained profit cases; record source/images, actual RED/GREEN, cleanup and explicitly unrun broad checks.
 
 ## 4. Evidence and archive
 
-- [ ] 4.1 Update guide, dependency notes, verification matrix and continuity; verify owner edit and unrelated work remain intact.
+- [x] 4.1 Update guide, dependency notes, verification matrix and continuity; verify owner edit and unrelated work remain intact.
 - [ ] 4.2 Strictly validate and archive via supported OpenSpec command; confirm synchronized specs and empty active changes.

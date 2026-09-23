@@ -1,8 +1,9 @@
 # Annual XIRR preview
 
-**Verification pending; implementation available.** Targeted PostgreSQL and HTTPS
-verification under `preview-conventional-xirr` is pending. This guide describes
-the behavior, not a completed or verified release.
+Implemented and verified with targeted numerical, PostgreSQL and real HTTPS
+checks. See the [verification record](../openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md).
+This is a limited manual preview; automatic valuations and general cash-flow
+patterns remain outside its supported scope.
 
 The XIRR action on **Прибыль за период** estimates an annualized rate from the
 reviewed manual opening and closing portfolio values and the owner-declared USD
@@ -32,9 +33,9 @@ nonzero dates, both signs, and one transition from negative flows to positive
 flows. Up to 64 nonzero dates are supported, including the valuation boundaries;
 records are never silently truncated. The annual rate range is inclusive from
 `-0.999999` to `1000`. The rate is approximate to an absolute annual-decimal
-tolerance of `1e-10`; very small rates may round to zero. At least two nonzero
-effective instants less than 365 actual days apart make the period short, even
-when the selected window itself is longer. Annualization over a short period can
+tolerance of `1e-10`; very small rates may round to zero. With at least two nonzero
+effective instants, a span from the first to the last of less than 365 actual days
+makes the period short, even when the selected window itself is longer. Annualization over a short period can
 be especially sensitive to small valuation or timing differences and is not a
 forecast.
 
@@ -65,5 +66,4 @@ are not queued. This limit applies separately to each replica, not globally.
 
 The implementation uses the runtime dependency
 [`decimal.js` 10.6.0](https://mikemcl.github.io/decimal.js/) for approximate rate
-math while retaining money amounts as exact strings/atoms. Verification remains
-pending.
+math while retaining money amounts as exact strings/atoms.
