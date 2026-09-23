@@ -1,3 +1,4 @@
+import type { CarryInCurrentLot, CarryInMatch, CarryInOrigin } from './carry-in.api';
 import apiClient from './client';
 
 export interface TradeExecution {
@@ -26,13 +27,13 @@ export interface TradeSummary {
   realizedUsd: string;
   remainingCostUsd: string;
 }
-export interface Journal extends JournalOrigin {
+export type Journal = (JournalOrigin | CarryInOrigin) & {
   journalRevision: number;
   activeTradeCount: number;
   versionCount: number;
   limits: { activeTrades: number; versions: number };
   summary: TradeSummary;
-}
+};
 export interface JournalState {
   accountId: string;
   eligible: boolean;
@@ -90,6 +91,8 @@ export interface TradeMatch {
   quantity: string;
   costUsd: string;
 }
+export type JournalLot = TradeLot | CarryInCurrentLot;
+export type JournalMatch = TradeMatch | CarryInMatch;
 export interface TradePage<T> {
   journalRevision: number;
   items: T[];
@@ -138,9 +141,9 @@ export const tradesApi = {
         params: pageParams(revision, offset),
       })
     ).data,
-  lots: async (id: string, revision: number, offset = 0): Promise<TradePage<TradeLot>> =>
+  lots: async (id: string, revision: number, offset = 0): Promise<TradePage<JournalLot>> =>
     (
-      await apiClient.get<TradePage<TradeLot>>(`${accountPath(id)}/trade-lots`, {
+      await apiClient.get<TradePage<JournalLot>>(`${accountPath(id)}/trade-lots`, {
         params: pageParams(revision, offset),
       })
     ).data,
@@ -159,9 +162,9 @@ export const tradesApi = {
     tradeId: string,
     revision: number,
     offset = 0,
-  ): Promise<TradePage<TradeMatch>> =>
+  ): Promise<TradePage<JournalMatch>> =>
     (
-      await apiClient.get<TradePage<TradeMatch>>(`${tradePath(id, tradeId)}/matches`, {
+      await apiClient.get<TradePage<JournalMatch>>(`${tradePath(id, tradeId)}/matches`, {
         params: pageParams(revision, offset),
       })
     ).data,

@@ -489,8 +489,8 @@ export default function ManualAccountDetail() {
           />
           {journalStatus === true ? (
             <p className="manual-coverage-warning">
-              Начальные позиции нельзя заменять после открытия журнала сделок. Пустое начало
-              остаётся основой журнала даже после аннулирования всех сделок.
+              Начальные позиции нельзя заменять после открытия журнала сделок. Подтверждённая основа
+              журнала сохраняется даже после аннулирования всех сделок.
             </p>
           ) : (
             <section className="manual-card" aria-labelledby="manual-opening-heading">

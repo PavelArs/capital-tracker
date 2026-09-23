@@ -10,6 +10,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
@@ -44,6 +45,9 @@ export function TradeJournal({
   const [writing, setWriting] = useState(false);
   const [csvBlocked, setCsvBlocked] = useState(false);
   const csvLock = useRef(false);
+  const [carryInBlocked, setCarryInBlocked] = useState(false);
+  const carryInLock = useRef(false);
+  const knownJournal = useRef<boolean | null>(null);
   const [coverage, setCoverage] = useState(() => new Date().toISOString());
   const [assertEmpty, setAssertEmpty] = useState(false);
   const [draft, setDraft] = useState<TradeDraft>(emptyTradeDraft);
@@ -95,7 +99,8 @@ export function TradeJournal({
         setReviewReady(true);
         setHideResults(false);
         setEpoch((current) => current + 1);
-        eligibilityRef.current(next.journal !== null);
+        knownJournal.current = next.journal !== null;
+        eligibilityRef.current(carryInLock.current ? null : knownJournal.current);
         return true;
       } catch (error) {
         if (active.current && request === sequence.current) {
@@ -116,7 +121,17 @@ export function TradeJournal({
     csvLock.current = blocked;
     setCsvBlocked(blocked);
   }, []);
-  const refreshAfterCsv = useCallback(async () => {
+  const blockForCarryIn = useCallback((blocked: boolean) => {
+    if (carryInLock.current === blocked) return;
+    carryInLock.current = blocked;
+    setCarryInBlocked(blocked);
+    const uncertainOrigin =
+      retry.current?.ambiguous && retry.current.operation.kind === 'initialize';
+    eligibilityRef.current(
+      blocked || writeLock.current || uncertainOrigin ? null : knownJournal.current,
+    );
+  }, []);
+  const refreshAfterExternalWrite = useCallback(async () => {
     setHideResults(true);
     setReviewed(false);
     setReviewReady(false);
@@ -137,13 +152,15 @@ export function TradeJournal({
   }, [load]);
 
   function edit(next: TradeDraft) {
-    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current || carryInLock.current)
+      return;
     retry.current = null;
     setDraft(next);
     setError(null);
   }
   function select(trade: TradeVersion, kind: 'correct' | 'void') {
-    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current || carryInLock.current)
+      return;
     retry.current = null;
     setTarget(trade);
     setMode(kind);
@@ -164,7 +181,8 @@ export function TradeJournal({
     }
   }
   function cancel() {
-    if (retry.current?.ambiguous || writeLock.current || csvLock.current) return;
+    if (retry.current?.ambiguous || writeLock.current || csvLock.current || carryInLock.current)
+      return;
     retry.current = null;
     setMode('create');
     setTarget(null);
@@ -193,7 +211,7 @@ export function TradeJournal({
   }
 
   async function send(operation: Operation) {
-    if (writeLock.current || openingBusy || csvLock.current) return;
+    if (writeLock.current || openingBusy || csvLock.current || carryInLock.current) return;
     const previouslyAmbiguous = retry.current?.ambiguous === true;
     writeLock.current = true;
     setWriting(true);
@@ -337,14 +355,14 @@ export function TradeJournal({
     loading ||
     !state ||
     (needsReview && (!reviewed || !reviewReady || targetUnavailable));
-  const disabled = manualDisabled || csvBlocked;
+  const disabled = manualDisabled || csvBlocked || carryInBlocked;
   const journal = state?.journal;
   return (
     <section className="manual-card trade-journal" aria-labelledby="trade-journal-heading">
       <h2 id="trade-journal-heading">Журнал сделок в USD</h2>
       <p className="manual-muted">
-        Журнал доступен только при явно подтверждённом пустом начале, без истории начальных позиций.
-        Он не восстанавливает покупки из текущего баланса.
+        Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов. Общий
+        баланс не восстанавливает историю покупок автоматически.
       </p>
       {loading && <p role="status">Загрузка журнала…</p>}
       {error && (
@@ -369,7 +387,7 @@ export function TradeJournal({
           <button
             type="button"
             className="manual-button"
-            disabled={writing || openingBusy || loading || csvBlocked}
+            disabled={writing || openingBusy || loading || csvBlocked || carryInBlocked}
             onClick={() => {
               if (retry.current?.ambiguous) void send(retry.current.operation);
             }}
@@ -424,7 +442,14 @@ export function TradeJournal({
             <input
               type="checkbox"
               checked={reviewed}
-              disabled={!reviewReady || loading || writing || targetUnavailable || csvBlocked}
+              disabled={
+                !reviewReady ||
+                loading ||
+                writing ||
+                targetUnavailable ||
+                csvBlocked ||
+                carryInBlocked
+              }
               onChange={(event) => {
                 setReviewed(event.target.checked);
                 if (event.target.checked && !retry.current?.ambiguous) retry.current = null;
@@ -478,9 +503,8 @@ export function TradeJournal({
           </form>
         ) : (
           <p>
-            У счёта есть история начальных позиций. Перенос таких остатков в FIFO пока не
-            поддерживается: общая себестоимость не определяет порядок покупок. Существующие позиции
-            сохранены.
+            У счёта есть история начальных позиций. Для открытия журнала требуется отдельно
+            проверить исходные лоты с известной себестоимостью. Существующие позиции сохранены.
           </p>
         ))}
       {journal && (
@@ -507,7 +531,7 @@ export function TradeJournal({
               <button
                 type="button"
                 className="manual-button manual-button--secondary"
-                disabled={writing || loading || ambiguous || csvBlocked}
+                disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
                 onClick={cancel}
               >
                 Отменить аннулирование
@@ -524,7 +548,7 @@ export function TradeJournal({
               lockDraft={ambiguous}
               correction={mode === 'correct'}
               onCancel={cancel}
-              cancelDisabled={writing || loading || ambiguous || csvBlocked}
+              cancelDisabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
             />
           )}
           {!hideResults && !loading && (
@@ -533,7 +557,7 @@ export function TradeJournal({
               accountId={accountId}
               journal={journal}
               disabled={writing || openingBusy || (needsReview && !reviewed)}
-              mutationDisabled={ambiguous || csvBlocked}
+              mutationDisabled={ambiguous || csvBlocked || carryInBlocked}
               onCorrect={(trade) => select(trade, 'correct')}
               onVoid={(trade) => select(trade, 'void')}
               onStale={stale}
@@ -544,13 +568,22 @@ export function TradeJournal({
             accountId={accountId}
             journalRevision={journal.journalRevision}
             instruments={instruments}
-            parentBusy={writing || openingBusy || ambiguous}
-            parentBlocked={manualDisabled || ambiguous}
+            parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
+            parentBlocked={manualDisabled || ambiguous || carryInBlocked}
             onBlocked={blockForCsv}
-            onJournalRefresh={refreshAfterCsv}
+            onJournalRefresh={refreshAfterExternalWrite}
           />
         </>
       )}
+      <CarryIn
+        key={accountId}
+        accountId={accountId}
+        hasJournal={state ? state.journal !== null : null}
+        parentBusy={writing || openingBusy || ambiguous || csvBlocked}
+        parentBlocked={manualDisabled || ambiguous || csvBlocked}
+        onBlocked={blockForCarryIn}
+        onJournalRefresh={refreshAfterExternalWrite}
+      />
     </section>
   );
 }

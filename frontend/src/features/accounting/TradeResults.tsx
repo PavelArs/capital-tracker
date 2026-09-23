@@ -1,7 +1,7 @@
 import {
   type Journal,
-  type TradeLot,
-  type TradeMatch,
+  type JournalLot,
+  type JournalMatch,
   type TradePage,
   type TradeRealization,
   type TradeVersion,
@@ -57,9 +57,9 @@ export function TradeResults({
   onStale: () => void;
 }) {
   const [trades, setTrades] = useState<TradePage<TradeVersion> | null>(null);
-  const [lots, setLots] = useState<TradePage<TradeLot> | null>(null);
+  const [lots, setLots] = useState<TradePage<JournalLot> | null>(null);
   const [sales, setSales] = useState<TradePage<TradeRealization> | null>(null);
-  const [matches, setMatches] = useState<TradePage<TradeMatch> | null>(null);
+  const [matches, setMatches] = useState<TradePage<JournalMatch> | null>(null);
   const [versions, setVersions] = useState<TradeVersions | null>(null);
   const [saleId, setSaleId] = useState<string | null>(null);
   const [versionId, setVersionId] = useState<string | null>(null);
@@ -188,6 +188,12 @@ export function TradeResults({
       <section aria-label="Итоги журнала">
         <h3>Итоги журнала</h3>
         <dl className="trade-summary">
+          {journal.originKind === 'known-cost-carry-in' && (
+            <>
+              <dt>Начальная учётная стоимость, USD</dt>
+              <dd>{journal.carryInCostUsd}</dd>
+            </>
+          )}
           <dt>Сумма покупок, USD</dt>
           <dd>{journal.summary.grossBuysUsd}</dd>
           <dt>Комиссии покупок, USD</dt>
@@ -311,7 +317,11 @@ export function TradeResults({
           <caption>Открытые лоты</caption>
           <thead>
             <tr>
-              <th>Покупка / версия</th>
+              <th>
+                {journal.originKind === 'known-cost-carry-in'
+                  ? 'Источник лота'
+                  : 'Покупка / версия'}
+              </th>
               <th>Инструмент</th>
               <th>Исходное количество</th>
               <th>Исходная стоимость, USD</th>
@@ -321,11 +331,27 @@ export function TradeResults({
           </thead>
           <tbody>
             {lots?.items.map((lot) => (
-              <tr key={lot.buyTradeId}>
+              <tr key={'sourceKind' in lot ? `carry-in:${lot.lotId}` : `buy:${lot.buyTradeId}`}>
                 <td>
-                  {lot.buyTradeId}
-                  <br />
-                  Версия {lot.buyVersion}
+                  {'sourceKind' in lot ? (
+                    <>
+                      Начальный лот {lot.ordinal}
+                      <br />
+                      {lot.lotId}
+                      <br />
+                      Ревизия позиций {lot.openingRevision}
+                      <br />
+                      {lot.acquiredAt}, порядок {lot.orderWithinTimestamp}
+                      <br />
+                      На начало учета: {lot.carriedQuantity}; стоимость {lot.carriedCostUsd} USD
+                    </>
+                  ) : (
+                    <>
+                      {lot.buyTradeId}
+                      <br />
+                      Версия {lot.buyVersion}
+                    </>
+                  )}
                 </td>
                 <td>
                   <Instrument trade={lot} />
@@ -393,23 +419,41 @@ export function TradeResults({
               <thead>
                 <tr>
                   <th>Продажа / версия</th>
-                  <th>Покупка / версия</th>
+                  <th>
+                    {journal.originKind === 'known-cost-carry-in'
+                      ? 'Источник лота'
+                      : 'Покупка / версия'}
+                  </th>
                   <th>Количество</th>
                   <th>Себестоимость, USD</th>
                 </tr>
               </thead>
               <tbody>
                 {matches?.items.map((match) => (
-                  <tr key={`${match.sellTradeId}:${match.buyTradeId}`}>
+                  <tr
+                    key={`${match.sellTradeId}:${'sourceKind' in match ? `carry-in:${match.lotId}` : `buy:${match.buyTradeId}`}`}
+                  >
                     <td>
                       {match.sellTradeId}
                       <br />
                       Версия {match.sellVersion}
                     </td>
                     <td>
-                      {match.buyTradeId}
-                      <br />
-                      Версия {match.buyVersion}
+                      {'sourceKind' in match ? (
+                        <>
+                          Начальный лот {match.ordinal}
+                          <br />
+                          {match.lotId}
+                          <br />
+                          Ревизия позиций {match.openingRevision}
+                        </>
+                      ) : (
+                        <>
+                          {match.buyTradeId}
+                          <br />
+                          Версия {match.buyVersion}
+                        </>
+                      )}
                     </td>
                     <td>{match.quantity}</td>
                     <td>{match.costUsd}</td>
