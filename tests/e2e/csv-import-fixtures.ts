@@ -2,7 +2,14 @@ import { createHash } from 'node:crypto';
 import { type Locator, type Page, expect } from '@playwright/test';
 import { rows, uuid } from './manual-opening-fixtures';
 import { fingerprint } from './mfa-fixtures';
-import { type Summary, browserPost, tradeApi, tradeTables } from './usd-trades-fixtures';
+import {
+  type Summary,
+  type TradeVersion,
+  browserPost,
+  readTradeVersion,
+  tradeApi,
+  tradeTables,
+} from './usd-trades-fixtures';
 
 export const csvTables = [
   'account_csv_imports',
@@ -341,4 +348,81 @@ export async function expectCsvSummary(
 }
 export function retryButton(page: Page): Locator {
   return page.getByRole('button', { name: 'Повторить исходный запрос CSV', exact: true });
+}
+
+export async function expectJournalSummary(page: Page, summary: Summary): Promise<void> {
+  const names: Record<keyof Summary, string> = {
+    grossBuysUsd: 'Сумма покупок, USD',
+    buyFeesUsd: 'Комиссии покупок, USD',
+    grossSalesUsd: 'Сумма продаж, USD',
+    sellFeesUsd: 'Комиссии продаж, USD',
+    netSalesUsd: 'Чистая выручка, USD',
+    consumedCostUsd: 'Списанная себестоимость, USD',
+    realizedUsd: 'Реализованный результат по журналу сделок',
+    remainingCostUsd: 'Остаточная учётная стоимость',
+  };
+  const target = page.getByRole('region', { name: 'Итоги журнала', exact: true });
+  for (const [key, label] of Object.entries(names))
+    await expect(
+      target
+        .locator('dt')
+        .filter({ hasText: new RegExp(`^${label}$`) })
+        .locator('xpath=following-sibling::dd[1]'),
+    ).toHaveText(summary[key as keyof Summary]);
+}
+export type CsvProvenance = {
+  ordinal: number;
+  startLine: number;
+  tradeId: string;
+  createVersion: TradeVersion;
+  rollbackVersion: TradeVersion | null;
+};
+export async function provenanceInBrowser(
+  page: Page,
+  account: string,
+  batch: string,
+): Promise<CsvProvenance[]> {
+  const pending = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        `/api/accounting/accounts/${account}/csv-imports/${batch}/rows` &&
+      response.request().method() === 'GET',
+  );
+  await page.getByRole('button', { name: 'Показать происхождение сделок', exact: true }).click();
+  const response = await pending;
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.batchId).toBe(batch);
+  expect(body.nextAfterOrdinal).toBeNull();
+  expect(Array.isArray(body.items)).toBe(true);
+  const items: CsvProvenance[] = body.items.map((row: Record<string, unknown>) => {
+    expect(Object.keys(row).sort()).toEqual(
+      ['ordinal', 'startLine', 'tradeId', 'createVersion', 'rollbackVersion'].sort(),
+    );
+    expect(Number.isInteger(row.ordinal) && Number(row.ordinal) >= 1).toBe(true);
+    expect(Number.isInteger(row.startLine) && Number(row.startLine) >= 2).toBe(true);
+    return {
+      ordinal: Number(row.ordinal),
+      startLine: Number(row.startLine),
+      tradeId: uuid(row.tradeId),
+      createVersion: readTradeVersion(row.createVersion),
+      rollbackVersion: row.rollbackVersion === null ? null : readTradeVersion(row.rollbackVersion),
+    };
+  });
+  const table = page.getByRole('table', {
+    name: 'Происхождение импортированных сделок',
+    exact: true,
+  });
+  await expect(table.locator('tbody tr')).toHaveCount(items.length);
+  for (const item of items) {
+    const row = table.getByRole('row').filter({ hasText: item.tradeId });
+    await expect(
+      row.getByRole('cell', { name: `${item.ordinal} / ${item.startLine}`, exact: true }),
+    ).toBeVisible();
+    await expect(row).toContainText(item.createVersion.instrumentId);
+    await expect(row).toContainText(
+      `Количество ${item.createVersion.quantity}; валовая сумма ${item.createVersion.grossUsd} USD; комиссия ${item.createVersion.feeUsd} USD`,
+    );
+  }
+  return items;
 }
