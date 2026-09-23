@@ -186,10 +186,10 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies fourteen migrations: eight historic migrations, the additive
+uuid-ossp and applies fifteen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
-request admission ledger, four manual-accounting tables and three USD journal tables. A populated fully
-migrated database is idempotent. The twelfth through fourteenth migrations preserve
+request admission ledger, four manual-accounting tables, three USD journal tables and three CSV import tables. A populated fully
+migrated database is idempotent. The twelfth through fifteenth migrations preserve
 all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
@@ -219,7 +219,9 @@ schema/sequence definition, creating four empty accounting tables. The MFA upgra
 revoke old password-only session rows, create no implicit enrollment and remain
 idempotent. The populated thirteen-to-fourteen fixture preserves all preceding
 financial, opening, authentication and admission rows/schema and adds three empty
-journal tables. Current binaries require all fourteen migrations. Owner bootstrap must
+journal tables. The populated fourteen-to-fifteen fixture also preserves real buy/sell,
+correction/void and replay history while adding three empty CSV import tables.
+Current binaries require all fifteen migrations. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
 
 The application Compose file requires an explicit host `MFA_KEY_FILE` and non-secret
@@ -281,3 +283,27 @@ and an actual CSRF-denied retry. No application response or authentication is mo
 The [archived verification](../openspec/changes/archive/2026-09-23-record-usd-fifo-trades/verification.md)
 retains genuine earlier failures, exact images, source/audit results and limitations.
 This is local evidence; hosted CI and final release/security/recovery gates remain.
+
+## CSV import acceptance
+
+The active `import-usd-trades-csv` change adds bounded private originals, explicit
+mapping, whole-history preview, atomic acceptance and conditional batch rollback.
+The independent `csv-import-db.cjs` fixture runs the compiled production services
+against real PostgreSQL: strict limits and SQL ownership, sale-first FIFO, replay,
+process races sharing the manual account lock, coherent read-only snapshots and
+complete-write witnesses for deferred COMMIT failure. All prior migration and
+manual/USD fixtures remain in the same `pnpm test:e2e` entry point.
+
+CSV Playwright cases use actual HTTPS, PostgreSQL, password/MFA and both application
+replicas. They cover Russian forms, immutable originals/provenance after restart,
+exact proxy and multipart boundaries, private errors/logs and response-loss recovery.
+A lost response is produced only after the actual server has committed; an independent
+SQL witness checks the receipt before delivery is aborted. Denied retries reach the
+real CSRF/session checks. Request scheduling may be delayed to exercise stale reads;
+application and authentication responses are never fabricated.
+
+The active change's verification.md records completed focused checks and genuine
+review regressions. Full expanded release verification and archive are still pending.
+A full browser document reload clears ephemeral command recovery; tests distinguish
+it from in-app data refresh and SPA navigation, including session-expiry login.
+Neither local acceptance nor this documentation authorizes production deployment.

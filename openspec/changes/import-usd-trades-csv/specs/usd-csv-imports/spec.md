@@ -166,8 +166,11 @@ without cash/market/return/tax claims. Confirmation SHALL require a current vali
 preview and explicit action; there SHALL be no automatic mutation retry.
 Late responses SHALL NOT overwrite another draft/account or enable obsolete preview.
 An unresolved command SHALL keep its complete original key/settings/target/revision
-across refresh, stale reads and denied retries, with edits locked and exact explicit
+across in-app data refresh, SPA navigation, stale reads and denied retries, with edits locked and exact explicit
 replay available. Only an accepted receipt or proved post-replay conflict SHALL resolve it.
+Recovery is ephemeral to the loaded browser document. The UI SHALL explain that a
+full document reload or tab closure discards that local command and SHALL NOT imply
+that saved batch discovery reconstructs an unknown request key.
 
 #### Scenario: CSV-006-A Real UI imports, restarts and inspects retained evidence
 - **GIVEN** actual password/MFA login through release HTTPS
@@ -178,6 +181,7 @@ replay available. Only an accepted receipt or proved post-replay conflict SHALL 
 #### Scenario: CSV-006-B Ambiguous confirm and rollback preserve original commands
 - **WHEN** an actual committed confirm or rollback response is lost, a real retry is refused403, and the owner refreshes or encounters stale reads
 - **THEN** mapping/file/target remain protected, later explicit retry sends the original complete command and receives its original200 receipt without another version range
+- **AND** an actual401 retry followed by real password/MFA login and SPA return retains that same original command without automatic submission
 - **AND** current results come from fresh reads rather than the old receipt, and new work requires successful current-state review
 - **AND** stale preview responses after edits/account navigation cannot enable confirmation or replace the active account state
 

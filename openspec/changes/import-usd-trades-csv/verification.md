@@ -170,3 +170,48 @@ selection. Literal source-key whitespace remains a separate pending regression.
 The auth worktree source checks passed 95 tests/10 files, build and lint with retained
 warnings. Actual integrated expanded HTTPS verification is running; no GREEN claim
 is inferred from its source tests.
+
+## Integrated review fixes and additional evidence — 2026-09-23
+
+At42ac520, `node /private/tmp/capital-csv-http-run.cjs
+ tests/e2e/csv-import-journey.spec.ts tests/e2e/csv-import-commands.spec.ts` exited1:
+7 UI cases passed and 2 command cases failed, 2.1 minutes, one worker, zero retries.
+Log `/private/tmp/capital-csv-journey-first.log`; artifacts
+`/private/tmp/capital-csv-journey-first-artifacts`. The three previously demonstrated
+UI defects are GREEN. Complete sale-first250/100/0.5 import/provenance/restart/rollback,
+lost-confirm and lost-rollback actual403/original200 recovery, and late unchanged
+requests after draft edits all passed. Tested frontend:
+`sha256:beb9db4ca91dc02fa92521463015b546b0af5a2b1ea7044770c8604363dfd358`.
+
+Both command failures were the same test-oracle ordering bug: sorted actual keys
+were compared with an unsorted expected five-key list. Root and independent reviewer
+confirmed the exact allowlist; d2b82b3 only reordered expected keys. No financial,
+privacy or provenance assertion was removed. This failure is not product RED.
+
+The next actual filtered run, `/private/tmp/capital-csv-literal-and-commands.log`,
+exited1: both command cases passed, and the new literal-source regression failed
+at its intended visible-whitespace oracle (41.2 seconds for all three cases).
+This proves actual two-replica canonical hash equality/replay and both real deferred
+COMMIT failure paths: complete-write sequence witnesses, private generic500,
+unchanged transactional fingerprints and successful original-key201 then200 retry.
+The whitespace case reached valid uploaded/inspected/mapped source keys TOKEN and
+leading-space TOKEN, but the latter collapsed visually. Artifacts are preserved
+at `/private/tmp/capital-csv-literal-red-artifacts`. Only after that genuine RED,
+root added pre-wrap spans to source mapping labels and accepted settings.
+
+A separate selected-manual-target case passed (one case,14.0 seconds) in
+`/private/tmp/capital-csv-literal-red.log`: correction and void preserve draft/target,
+show every field of its changed current version and require explicit review before
+one CAS write. The original grep matched that case only; despite the historical log
+filename, it did not execute the whitespace case or establish its RED.
+
+Independent read-only review approved auth lifecycle/generation changes, explicit
+CSV refresh, stale economic revision guards and clearing a newly selected file's old
+workflow. It also checked docs against input/parser/persistence and confirmed that
+document-lifetime recovery is an explicit client boundary, not server-replay weakening.
+Actual root frontend95 tests/10 files, lint (29 retained warnings), and build exit0;
+logs `/private/tmp/capital-csv-root-frontend-tests.log`,
+`/private/tmp/capital-csv-root-frontend-lint.log`,
+`/private/tmp/capital-csv-review-fixes-build.log`. Strict OpenSpec12 passed.
+These checks precede the small literal rendering repair and remaining read-failure
+regressions. Full release verification remains pending.

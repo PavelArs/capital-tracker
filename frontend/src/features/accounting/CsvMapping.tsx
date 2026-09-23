@@ -169,7 +169,9 @@ export function CsvMapping({
       <div className="manual-form-grid">
         {sourceKeys(document, draft.columns.instrument).map((source) => (
           <label key={source}>
-            {`Инструмент для ${source}`}
+            <span>
+              Инструмент для <span className="csv-source-key">{source}</span>
+            </span>
             <select
               value={draft.instruments.find((item) => item.source === source)?.instrumentId ?? ''}
               onChange={(event) =>
@@ -207,7 +209,9 @@ export function CsvMapping({
       <div className="manual-form-grid">
         {sourceKeys(document, draft.columns.side).map((source) => (
           <label key={source}>
-            {`Тип сделки для ${source}`}
+            <span>
+              Тип сделки для <span className="csv-source-key">{source}</span>
+            </span>
             <select
               value={draft.sides.find((item) => item.source === source)?.side ?? ''}
               onChange={(event) => {

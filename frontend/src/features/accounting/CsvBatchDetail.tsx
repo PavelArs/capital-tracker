@@ -77,12 +77,13 @@ export function CsvBatchDetail({
           <ul>
             {settings.mapping.instruments.map((item) => (
               <li key={item.source}>
-                {item.source} → {item.instrumentId}
+                <span className="csv-source-key">{item.source}</span> → {item.instrumentId}
               </li>
             ))}
             {settings.mapping.sides.map((item) => (
               <li key={item.source}>
-                {item.source} → {item.side === 'buy' ? 'Покупка' : 'Продажа'}
+                <span className="csv-source-key">{item.source}</span> →{' '}
+                {item.side === 'buy' ? 'Покупка' : 'Продажа'}
               </li>
             ))}
           </ul>

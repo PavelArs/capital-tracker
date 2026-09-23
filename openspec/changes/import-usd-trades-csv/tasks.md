@@ -27,16 +27,16 @@
 - [x] 4.4 Implement reviewed conditional whole-batch rollback, imported-head checks, valid remaining-lot reallocation and immutable replay; no partial void, delete or terminal reactivation.
 - [x] 4.5 Wire raw private controllers and route-local sanitized Nest upload with frozen part/field/file limits; coordinator pins existing1MiB edge cap without changing rewrite/security-header inheritance or global JSON limits.
 - [x] 4.6 Prove CSV-003/004/005 through actual PG: exact250/100, source-sale-first order, distinct-process import/manual races, old receipts, exact caps, conditional200-to100 rollback and coherent read barriers.
-- [ ] 4.7 Prove real deferred COMMIT rollback for both confirmation and rollback with independent post-write witness, complete table fingerprints and explicit original-key retry; HTTP500/logs must remain private.
+- [x] 4.7 Prove real deferred COMMIT rollback for both confirmation and rollback with independent post-write witness, complete table fingerprints and explicit original-key retry; HTTP500/logs must remain private.
 
 ## 5. Russian journey and real HTTPS acceptance
 
 - [x] 5.1 Add protected upload/source inspection with exact Russian labels and bounded literal cells; reuse the existing CSRF client and real browser FormData without a second parser.
 - [ ] 5.2 Add explicit columns/owned UUIDs/side/decimal/time/USD mapping, ignored columns, all row errors and current/candidate exact results before confirm; invalidate obsolete previews and disclose format/dedup/cap limits.
-- [ ] 5.3 Add batch discovery/detail/provenance and reviewed conditional rollback with before/after summaries; distinguish immutable receipts/versions from current journal results.
+- [x] 5.3 Add batch discovery/detail/provenance and reviewed conditional rollback with before/after summaries; distinguish immutable receipts/versions from current journal results.
 - [ ] 5.4 Preserve complete unknown upload/confirm/rollback commands across lost responses, denied retries, refresh and route changes; disable edits, require explicit replay/review and never auto-submit.
 - [ ] 5.5 Run independent real HTTPS/UI CSV-001..007 journeys and transport negatives, including chunked edge cap, Cyrillic filename, private raw sources, current auth/CSRF/owner bounds, restart and zero accounting provider calls.
-- [ ] 5.6 Run actual committed-response-loss/CSRF403 regressions for confirm and rollback; require original200 replay without another version range and fresh current-state display. No own response/auth/database mock.
+- [x] 5.6 Run actual committed-response-loss/CSRF403 regressions for confirm and rollback; require original200 replay without another version range and fresh current-state display. No own response/auth/database mock.
 
 ## 6. Independent review, complete verification and archive
 

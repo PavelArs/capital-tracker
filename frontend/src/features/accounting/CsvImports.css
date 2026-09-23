@@ -14,7 +14,8 @@
   overflow-wrap: anywhere;
 }
 .csv-literal th,
-.csv-literal td {
+.csv-literal td,
+.csv-source-key {
   white-space: pre-wrap;
 }
 .csv-summary-line {

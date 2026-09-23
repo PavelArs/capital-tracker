@@ -130,7 +130,13 @@ or authoritative 409 from the exact POST after accepted receipt lookup. Read 409
 resolves it. All confirm/rollback 409 paths obey that ordering, including absent journal.
 A known receipt followed by failed current GET remains visible and blocks resubmission
 until a fresh read. Upload uncertainty retains exact bytes/account for reupload, not a
-new selected file. Route changes isolate state and prevent stale async updates.
+new selected file. Route changes isolate state and prevent stale async updates. Recovery remains in
+memory for the loaded document, including in-app refresh and SPA login after 401; a
+full browser reload or tab closure clears it and the UI discloses that boundary.
+Saved batch discovery does not reconstruct an unknown request key. Unauthorized
+navigation uses the existing AuthProvider/PrivateRoute lifecycle, with request and
+authentication generations preventing late old-session denials from clearing a new
+login. It never automatically resends a mutation.
 
 ### 6. Existing security boundaries, bounded transport
 
