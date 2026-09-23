@@ -389,3 +389,22 @@ worker and zero retries. No migration is added; fresh fixtures use migration17.
 backend image:4,564ms with506 timer ticks on this host, without a latency SLA.
 See the [verification record](../openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md)
 for actual commands, predecessor failures, image identities and unrun checks.
+
+## Manual USD price history
+
+See [manual USD price points](manual-usd-prices.md). Current schema is migration18;
+existing fixture current-version assertions include its exact migration name.
+`manual-usd-prices-db.cjs` is part of the full runner and verifies fresh18,
+populated17 upgrade preservation, immutable correction/void/replay, two-pool CAS,
+RR consistency, exact values, ownership and cap constraints. The retained migration
+suite also passed: supported previous8–16 upgrades to18, fresh/replay, config/lock
+checks and unsafe legacy refusals. No migration is run against owner data.
+
+Focused command `pnpm --dir backend test --runInBand --coverage=false
+manual-price-input.spec input.spec accounting.service.spec` passed488 cases/10
+suites (55 new,433 retained). New two-case `manual-usd-prices.spec.ts` plus retained
+OPEN-001-A/OPEN-002-A passed3/3 in44.7s, one worker/zero retries. After strengthening
+the existing UI case with failed-refresh-after-save assertions, only that case
+was repeated:1/1 in13.5s against identical images. All requests exercise actual
+password/MFA/backend/PostgreSQL; delayed/lost delivery follows real `route.fetch()`.
+No existing E2E case or CI gate was removed. See the [verification record](../openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md).

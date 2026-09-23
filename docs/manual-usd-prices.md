@@ -1,8 +1,9 @@
 # Manual USD price points
 
-Implementation and verification are pending under `record-manual-usd-prices`.
+Implemented and verified with scoped unit, real PostgreSQL and HTTPS checks.
+See the [verification record](../openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md).
 
-The planned **Ручные цены** screen records an owner-reviewed USD price per unit
+The **Ручные цены** screen records an owner-reviewed USD price per unit
 for an existing manual instrument. Select by its UUID: equal symbols do not mean
 the same asset, network, or token. Prices are manual declarations, not verified
 provider observations, acquisition costs, or whole-portfolio values.
@@ -19,6 +20,8 @@ creates a reviewed void, removing the point from the effective list without
 deleting its history. Repair a wrong timestamp by voiding that point and saving
 one at the intended time. The two commands are separate explicit actions. A later
 set can restore a voided point.
+To inspect an excluded point, enter its timestamp and select
+**История указанной даты**; absence from the effective list does not erase history.
 
 Revision conflicts require an explicit refresh and new review. After uncertain
 delivery, retry the unchanged command to recover its original receipt; do not

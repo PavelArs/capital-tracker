@@ -35,92 +35,70 @@ Never weaken correct financial assertions or claim failed/partial/full runs pass
 Root exclusively operates tests/e2e/compose.yml projectcapital-tracker-e2e, PGtmpfs.
 Use caffeinate -is forlongruns. Never productionCompose. NoactiveDocker/run now.
 
-## Verified preceding slices
+## Completed slices and evidence
 
-Carry-in archived1667502: 133/133 fullChromium28.9m plus allmigration16/PG/auth gates.
-Historical archivedf69c059: sourcec8873bb, fivePGfamilies and9targetedHTTPS; full140
-run deliberately stopped peruser beforeChromium,exit1, neverclaimfullGREEN. See
-openspec/changes/archive/2026-09-23-{seed-known-cost-carry-in,inspect-historical-accounting}/verification.md.
+Historical accounting, external flows, manual profit and conventional XIRR are
+archived under openspec/changes/archive/2026-09-23-*. XIRR archive92a3039 has17
+canonical specs;139 pure cases and4 targeted HTTPS passed. Earlier full133 suite
+passed at carry-in; historical full140 attempt was stopped per user, never GREEN.
+Manual profit/XIRR use reviewed valuations and effective owner flows; no automatic
+valuation. Use archive verification.md files for exact old results and image IDs.
 
-External flows archivedd6305e1: canonical external-usd-flows spec, immutable reviewed
-USD origin/contributions/withdrawals/corrections/voids, exactscale30 [from,to),
-owner locking/CAS/RR. Migration17 iscurrent. 996backend/95frontendunits;8PGfamilies,
-fresh17/populated16upgrades;6targetedHTTPS. Prior144fullsuiteNOT run. See
-openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md.
+## Current manual USD price slice
 
-## Preceding manual period profit
+record-manual-usd-prices implemented, independently reviewed, scoped GREEN;
+archive pending. Contract cdde4d8, acceptance8b6dd1c/ad96a36, backend978247d,
+UIac9f408, root history-access fixb01bced, final strengthened acceptanceb00a1cc.
+Guide docs/manual-usd-prices.md; evidence active change verification.md.
 
-Archived dfa1f64 at 2026-09-23-preview-period-profit; productsource c4ae371.
-Canonical period-profit-preview; exact closing-opening-contributions+withdrawals
-from reviewed manual values and complete owner flows in one RR READ ONLY snapshot.
-Strict body, nonnegative exact strings, [from,to), 409 outside journal coverage.
-No persistence/provider. Russian /period-profit page with review/stale-result guards.
-111 pure cases, four PG families plus eight retained flow families, three HTTPS
-cases passed. Full146 E2E was NOT run. Detailed evidence is in its archive.
+Additive migration1790080000000 (current18), one manual_usd_price_versions table.
+Per-owner/instrument UUID book, exact USD/unit price strings48int/30frac, canonical
+UTCms1970..9999. Append-only set/void,10000version cap, READ COMMITTED owned
+instrument lock before replay/CAS. Original receipt replay before stale/cap check.
+Set/correct/void/restore preserve old rows; zero is explicit, missing stays absent.
+RR READ ONLY effective pages pin currentRevision, immutable per-instant history.
+No providers, currency mapping, interpolation, automatic valuations or new deps.
+Protected /manual-prices UI: paged instrument catalog, review on save/void, history
+including excluded points by timestamp, exact unknown-outcome request retry,
+successful-save/failed-refresh distinction, stale selection/auth guards.
 
-## Completed conventional XIRR slice
+Root backend/migration/PG/shared runner; Luna two browser cases in prices-acceptance
+worktree, Sol UI in prices-ui worktree and independent backend review: no blocker.
+Root independently reviewed UI and corrected type/history access; Luna PG test
+review added persisted state assertions after races. Worktree symlinks removed.
 
-preview-conventional-xirr implemented/reviewed/scoped GREEN; archived
-2026-09-23-preview-conventional-xirr. All10tasks complete; canonical17/17strict,
-active changes empty; previous16canonical specs unchanged.
-Source dae9260, backend f820e25, UI1fd4d2c, testcounter/benchmark a784593.
-Guide docs/xirr-preview.md; current evidence
-openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md.
-POST /accounting/portfolio/xirr-preview reuses the reviewed manual body and adds
-xirr to the same-snapshot profit payload; old profit response unchanged. Negative
-opening/contributions, positive withdrawals/terminal, exact UTC-ms aggregation,
-ACT/365F. Only negative-then-positive patterns, 2..64 nonzero instants, inclusive
-rate[-0.999999,1000], tolerance1e-10, 12-decimal rate and exact100x publishedpercent.
-Unavailable has null rates and specific reason. Decimal96 precision, bounded80
-iterations/yields, one active request per process with429, finally release.
-DB snapshot is committed/released before solver. No migration/provider/writes.
-UI explicit XIRR action, same review/generation guard, approximate/manual/
-unreconciled labels, ACT/365F/bounds/datecap, short actual-horizon warning.
+Actual predecessor RED: pendingMFA expected401 got404; missing newUIheading.
+2failed, exit1, real previous images verified before product edits; log
+/private/tmp/capital-prices-predecessor-red.log. No missing-module RED claim.
 
-Root backend/pure/PG; Luna browser acceptance/docs in xirr-acceptance worktree;
-Sol UI in xirr-ui and independent backend numerical/snapshot review (no blocker).
-Root reviewed UI/oracles. Genuine predecessor APIRED200vs404, clean UIREDmissing
-button; logs /private/tmp/capital-xirr-{predecessor-red,ui-red}.log. Initial UI
-wait also expired a quota row: not counted as clean RED; direct assertion rerun.
+488 unit cases/10 suites (55new+433retained),2.743s; backend build/lint pass with77
+existing warnings. Main frontend build/lint pass with29existing warnings andbundle
+warning; Sol95Vitest/10files pass. Scoped E2E strictTS pass. Auditproduction exit0,
+2existingmoderateRouter findings, no lock change; logcapital-prices-audit.log.
+HostNode22.23.2; images pinned22.21.1. No new dependency/frozen-install cycle.
 
-139 pure cases/4 suites (28new+111retained),2.693s; BEbuild/lint77existingwarnings.
-MainFEbuild/lint29existingwarnings+bundlewarning, scopedE2ETS pass; Sol ran existing
-95frontendunits/10files. Frozen install and requiredproductionaudit exit0, fullJSON
-exit1:2existingmoderateRouter,0high/critical/low,331proddeps. docs/dependency-security.md.
-PG16.10/fresh17migrations:3XIRR+4retainedprofit families pass; actual two-pool
-snapshot/correction/429/read-only/all-row checks and real solver-entry observation.
-Initial PG test expected >=6 solver entries but has5successfulcalls; fixed to
-exactly5, financial assertions unchanged; final exit0. Logs
-/private/tmp/capital-xirr-db-initial-failed.log and
-/private/tmp/capital-xirr-db-focused.log.
-64date1970..9999 benchmark in pinnedNode22.21.1image:4564ms,506timerticks, no SLA.
+PG log /private/tmp/capital-prices-db-focused.log exit0:5price families, fresh18,
+populated17 upgrade/rerun preserving all oldrows/openingreceipt, actual two-pool
+CAS/replay and pausedRR, exactvalues/constraints/cap. Retained migrations.cjs also
+passed: config/lock/refusal, fresh/replay, previous8..16 upgrades/schema/session/
+MFA preservation. Initial PG failure was helper not catching synchronous400;
+442b861 wraps action in async callback, same expected statuses, no productchange.
+Initialfailurelog /private/tmp/capital-prices-db-initial-failed.log retained.
 
-HTTPS4/4 in47.4s,1worker0retries:2XIRR+2retainedprofit, actualMFA/HTTPS/PG.
-/private/tmp/capital-xirr-focused.log exit0. Source dae9260; images:
-BEsha256:ab4db35ed693eb1dfc70541d9d3a17d86d45b57ef531fde7966ca0dd04092505
-FEsha256:953f485238c2e57cef42f69f385633823c0936a3c880f5424e7e38374fbc5043
-Owner Nginx mode/hash preserved; synthetic containers/networks empty. Nofullunit/
-fullE2E/upgrade matrix/release scans/hostedCI/production claim. Existing CI gates
-and cases retained; xirr-preview-db.cjs added to existing full runner.
+HTTPS3/3 in44.7s atb01bced:2prices+retainedOPEN001A/002A. Then strengthened only
+PRICE-UI failed-refresh acceptance atb00a1cc:1/1 in13.5s, identical images.
+Logs /private/tmp/capital-prices-focused.log andcapital-prices-ui-recovery.log.
+Real TLS/password/MFA/app/PostgreSQL, external providers only stubbed; delayed or
+aborted response delivery always uses actualroute.fetch first. Images:
+BEsha256:16266828034a018b39ec611733c062415da7e5d2001ee19a054385c620fa3dfd
+FEsha256:45a1f6056008cddc1162ebb52681475af63863922a673bcff947b79fac08c9db
+No fullbackend/fullE2E/hostedCI/release scans/production run. All oldcases retained;
+fullrunner includes pricePG fixture, oldcurrentmigration assertions updated to18.
 
-All worktrees retained, including xirr-acceptance/xirr-ui. Agent dependency symlinks
-removed. Reuse carry_docs_review Luna(simple), historical_ui Sol(complex/review);
-gate_acceptance quota-limited untilSep29: do not retry/purchase.
-Active next slice: record-manual-usd-prices, specified cdde4d8. Root acceptance
-8b6dd1c (pure input + real PG); migration runner/count expectations806fee5.
-Genuine predecessor RED observed: pendingMFA API expected401 received404; missing
-newUIheading. Log /private/tmp/capital-prices-predecessor-red.log, exit1,2failed.
-Root backend implementing; Sol UI implementing after RED GO. Root owns
-backend/migration18/PG/shared runner, Luna acceptance in prices-acceptance worktree,
-Sol UI in prices-ui worktree. Frozen active design: per-instrument manualUSD/unit
-exact points, immutable set/void versions, owner instrument lockRC/CAS/replay,
-RR READ ONLY effective pages/history,10000cap, Russian review/recovery UI.
-No providers/dependencies. PG fixture covers fresh18/populated17 upgrade and
-actual two-pool race/RR checks. Baseline433/9 pass2.745s; strict18spec+change pass.
-Predecessor XIRR images listed above unchanged. Prepared RED harness
-/private/tmp/capital-prices-predecessor-red.cjs verified predecessor identity before the run.
-No Docker running at this checkpoint. Browser acceptance ad96a36 integrated after independent root review.
-Whole brief still needs TWR, transfers/swaps/rewards, DBprices/history/
-charts, blockchains/reconciliation, optionalAI, releasehardening/backuprestore/
-consolidation. Conventional manual XIRR is partial support; do not move/delete
-original projects before the whole verified refactor and consolidation preflight.
+Next after archive: small historical valuation from reconstructed holdings and
+stored exact-time manual prices, with missing prices visible; don't infer past
+holdings from today's balances. Whole brief still needs automatic prices/history/
+charts, TWR, transfers/swaps/rewards, blockchain reconciliation, optionalAI and
+release/backup-restore hardening before consolidation. No move/delete originals.
+Reuse carry_docs_review Luna(simple) and historical_ui Sol(complex/review).
+gate_acceptance is quota-limited untilSep29; do not retry/purchase.

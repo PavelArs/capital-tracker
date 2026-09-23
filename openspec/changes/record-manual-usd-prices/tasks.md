@@ -11,9 +11,9 @@
 
 ## 3. Review and scoped verification
 
-- [ ] 3.1 Independently review backend/schema/UI/test oracles; resolve concrete findings without weakening assertions.
-- [ ] 3.2 Run relevant input/retained units, build/lint/types, fresh18/populated17-to18 real PostgreSQL and targeted critical HTTPS cases.
-- [ ] 3.3 Record actual RED/GREEN source/images, migration preservation, owner edit, cleanup and explicitly unrun broad checks; update guide/testing/continuity.
+- [x] 3.1 Independently review backend/schema/UI/test oracles; resolve concrete findings without weakening assertions.
+- [x] 3.2 Run relevant input/retained units, build/lint/types, fresh18/populated17-to18 real PostgreSQL and targeted critical HTTPS cases.
+- [x] 3.3 Record actual RED/GREEN source/images, migration preservation, owner edit, cleanup and explicitly unrun broad checks; update guide/testing/continuity.
 
 ## 4. Archive
 
