@@ -140,7 +140,7 @@ async function seed(source, accounting) {
 }
 
 async function originsAndOwnership(source, accounting, trade, fixture) {
-  stage = 'TRADE-001 explicit origins, opening history, owner isolation';
+  stage = 'TRADE-001-A / TRADE-001-B / TRADE-006-B explicit origins, opening history, owner isolation';
   const { owner, other, instruments: [instrument], foreignAccount, foreignInstrument } = fixture;
   const account = await newAccount(accounting, owner, 'Explicit empty origin');
   assert.deepEqual(await trade.getJournal(owner, account), { accountId: account, eligible: true,
@@ -187,11 +187,11 @@ async function originsAndOwnership(source, accounting, trade, fixture) {
     await status(() => trade.initialize(owner, opened, origin()), 409);
     await source.query('UPDATE manual_accounts SET "currentRevision"=1 WHERE id=$1', [opened]);
   }
-  console.log('PASS TRADE-001 explicit empty origin, zero/unknown/history exclusion, owner boundaries and blocked opening writes');
+  console.log('PASS TRADE-001-A / TRADE-001-B / TRADE-006-B explicit empty origin, zero/unknown/history exclusion, owner boundaries and blocked opening writes');
 }
 
 async function fifoVectors(source, accounting, trade, fixture) {
-  stage = 'TRADE-002 exact FIFO, fees, residual allocation and provenance';
+  stage = 'TRADE-003-A / TRADE-003-B exact FIFO, fees, residual allocation and provenance';
   const { owner, instruments: [instrument, sameSymbol] } = fixture;
   let retained;
   for (const fees of [false, true]) {
@@ -259,12 +259,12 @@ async function fifoVectors(source, accounting, trade, fixture) {
   assert.equal((await trade.getJournal(owner, wide)).journal.summary.remainingCostUsd, '1' + '9'.repeat(48) + '.' + '9'.repeat(29) + '8');
   const smallSale = (await trade.create(owner, wide, command(instrument, 2, { side: 'sell', grossUsd: '1' }))).value;
   assert.equal((await trade.listMatches(owner, wide, smallSale.trade.tradeId)).items[0].costUsd, '1');
-  console.log('PASS TRADE-002 mandatory fee/profit vectors, independent residual atoms, negative net, wide products and exact identity provenance');
+  console.log('PASS TRADE-003-A / TRADE-003-B mandatory fee/profit vectors, independent residual atoms, negative net, wide products and exact identity provenance');
   return retained;
 }
 
 async function historyAndValidation(source, accounting, trade, fixture, retained) {
-  stage = 'TRADE-003 corrections, immutable receipts, raw types, prefix validation and pages';
+  stage = 'TRADE-002-B / TRADE-004-A / TRADE-004-B / TRADE-005-A corrections, immutable receipts, raw types, prefix validation and pages';
   const { owner, instruments: [instrument], foreignAccount, foreignInstrument } = fixture;
   const { account, inputs, receipts } = retained;
   const first = receipts[0].trade.tradeId;
@@ -346,11 +346,11 @@ async function historyAndValidation(source, accounting, trade, fixture, retained
   await status(() => trade.void(owner, account, reused.value.trade.tradeId,
     { requestId: randomUUID(), expectedJournalRevision: 7 }), 409);
   await status(() => accounting.saveOpening(owner, account, opening(instrument)), 409);
-  console.log('PASS TRADE-003 full atomic validation, historical prefix, old receipts, terminal void, canonical replay and revision-pinned pages');
+  console.log('PASS TRADE-002-B / TRADE-004-A / TRADE-004-B / TRADE-005-A full atomic validation, historical prefix, old receipts, terminal void, canonical replay and revision-pinned pages');
 }
 
 async function fullCorrection(source, accounting, trade, fixture) {
-  stage = 'TRADE-003 complete correction changes both instrument queues and terminal empty journal';
+  stage = 'TRADE-004-A / TRADE-004-B complete correction changes both instrument queues and terminal empty journal';
   const { owner, instruments: [firstInstrument, secondInstrument] } = fixture;
   const account = await newJournal(accounting, trade, owner, 'Every execution field changes');
   const originalInput = command(firstInstrument, 0, { quantity: '2', grossUsd: '10' });
@@ -380,11 +380,11 @@ async function fullCorrection(source, accounting, trade, fixture) {
   assert.equal((await trade.listTrades(owner, account)).items.length, 2, 'Both terminal void heads remain visible');
   await status(() => accounting.saveOpening(owner, account, opening(firstInstrument)), 409);
   assert.equal(await fingerprint(source), before);
-  console.log('PASS TRADE-003 full correction recomputes both queues, request scope is per account, all voids retain origin/history');
+  console.log('PASS TRADE-004-A / TRADE-004-B full correction recomputes both queues, request scope is per account, all voids retain origin/history');
 }
 
 async function sqlConstraints(source, fixture) {
-  stage = 'TRADE-005 finite SQL, composite ownership and deferred heads';
+  stage = 'TRADE-002-B / TRADE-004-C / TRADE-006-B finite SQL, composite ownership and deferred heads';
   const { owner, other, foreignAccount, foreignInstrument } = fixture;
   const [version] = await source.query('SELECT * FROM account_trade_versions ORDER BY "createdAt" LIMIT 1');
   const before = await fingerprint(source);
@@ -462,7 +462,7 @@ async function sqlConstraints(source, fixture) {
     finally { await runner.release(); }
   }
   assert.equal(await fingerprint(source), before);
-  console.log('PASS TRADE-005 real finite/composite/RESTRICT SQL boundaries and deferred head integrity; old owner binding is not a history parent');
+  console.log('PASS TRADE-002-B / TRADE-004-C / TRADE-006-B real finite/composite/RESTRICT SQL boundaries and deferred head integrity; old owner binding is not a history parent');
 }
 
 async function workerMain() {
@@ -579,7 +579,7 @@ async function processRace(source, account, commands) {
 }
 
 async function races(source, accounting, trade, fixture) {
-  stage = 'TRADE-001/004 real two-process initialization, opening and revision contention';
+  stage = 'TRADE-001-B / TRADE-004-B real two-process initialization, opening and revision contention';
   const { owner, instruments: [instrument] } = fixture;
   for (const collision of [false, true]) {
     const account = await newAccount(accounting, owner, `Origin race ${collision}`);
@@ -622,7 +622,7 @@ async function races(source, accounting, trade, fixture) {
 
   // Both purchases remain financially valid and have distinct chronology. Only
   // the stale expected revision can reject the second command after the lock wait.
-  stage = 'TRADE-004 distinct-chronology buys isolate the concurrent CAS boundary';
+  stage = 'TRADE-004-B distinct-chronology buys isolate the concurrent CAS boundary';
   const casAccount = await newJournal(accounting, trade, owner, 'Distinct-order CAS race');
   const buys = [command(instrument, 0, { orderWithinTimestamp: 0, grossUsd: '10' }),
     command(instrument, 0, { orderWithinTimestamp: 1, grossUsd: '20' })];
@@ -643,7 +643,7 @@ async function races(source, accounting, trade, fixture) {
   assert.equal(bought.journalRevision, 2); assert.equal(bought.versionCount, 2); assert.equal(bought.activeTradeCount, 2);
   assert.equal(bought.summary.remainingCostUsd, '30');
 
-  stage = 'TRADE-004 distinct-order competing sales cannot overspend one owned unit';
+  stage = 'TRADE-004-B distinct-order competing sales cannot overspend one owned unit';
   const saleAccount = await newJournal(accounting, trade, owner, 'Competing sale race');
   const purchase = (await trade.create(owner, saleAccount, command(instrument, 0))).value;
   const sales = [1, 2].map(order => command(instrument, 1,
@@ -693,11 +693,11 @@ async function races(source, accounting, trade, fixture) {
   const beforeSaleReplay = await fingerprint(source);
   assert.deepEqual(await trade.create(owner, saleAccount, refreshedSale), { created: false, value: recovered.value });
   assert.equal(await fingerprint(source), beforeSaleReplay);
-  console.log('PASS TRADE-004 observed two-process waits, independent CAS, exact competing-sale conservation and rejected-key reuse; opening/init remains exclusive');
+  console.log('PASS TRADE-001-B / TRADE-004-B observed two-process waits, independent CAS, exact competing-sale conservation and rejected-key reuse; opening/init remains exclusive');
 }
 
 async function deferredCommitFailure(source, accounting, trade, fixture) {
-  stage = 'TRADE-004 actual deferred COMMIT failure after all trade writes';
+  stage = 'TRADE-004-C actual deferred COMMIT failure after all trade writes';
   const { owner, instruments: [instrument] } = fixture;
   const account = await newJournal(accounting, trade, owner, 'Deferred trade commit fixture');
   const input = command(instrument, 0, { quantity: '987654321.123456789', grossUsd: '876543210.987654321' });
@@ -739,11 +739,11 @@ async function deferredCommitFailure(source, accounting, trade, fixture) {
   const retry = await trade.create(owner, account, input);
   assert.equal(retry.created, true); assert.equal(retry.value.journalRevision, 1);
   assert.deepEqual(await trade.create(owner, account, input), { created: false, value: retry.value });
-  console.log('PASS TRADE-004 true deferred COMMIT rollback, one nontransactional stage marker and explicit retry exactly once');
+  console.log('PASS TRADE-004-C true deferred COMMIT rollback, one nontransactional stage marker and explicit retry exactly once');
 }
 
 async function repeatableRead(source, accounting, trade, fixture) {
-  stage = 'TRADE-004 observed reader scheduling barrier and real concurrent correction';
+  stage = 'TRADE-005-A observed reader scheduling barrier and real concurrent correction';
   const { owner, instruments: [instrument] } = fixture;
   const account = await newJournal(accounting, trade, owner, 'Coherent snapshot fixture');
   const input = command(instrument, 0);
@@ -785,11 +785,11 @@ async function repeatableRead(source, accounting, trade, fixture) {
       finally { await stopWorkers([reader, writer]); }
     }
   }
-  console.log('PASS TRADE-004 observed real RR/read-only SQL and label-read barrier across actual committed service corrections; old response is coherent');
+  console.log('PASS TRADE-005-A observed real RR/read-only SQL and label-read barrier across actual committed service corrections; old response is coherent');
 }
 
 async function capacity(source, accounting, trade, fixture) {
-  stage = 'TRADE-003 complete valid synthetic histories at active/version caps';
+  stage = 'TRADE-004-C complete valid synthetic histories at active/version caps';
   const { owner, instruments: [instrument] } = fixture;
   const activeAccount = await newJournal(accounting, trade, owner, '1000 active trades fixture');
   const activeInput = command(instrument, 0, { grossUsd: '1' });
@@ -874,7 +874,7 @@ async function capacity(source, accounting, trade, fixture) {
   const newest = await trade.listVersions(owner, versionAccount, first.trade.tradeId, { limit: '20' });
   assert.equal(newest.items.length, 20); assert.equal(newest.items[0].version, 10000); assert.equal(newest.nextBeforeVersion, 9981);
   assert.deepEqual((await trade.listVersions(owner, versionAccount, first.trade.tradeId, { beforeVersion: '2' })).items, [first.trade]);
-  console.log('PASS TRADE-003 valid 1000-active and 10000-version histories, final legal production recomputation, bounded pages and replay before caps');
+  console.log('PASS TRADE-004-C valid 1000-active and 10000-version histories, final legal production recomputation, bounded pages and replay before caps');
 }
 
 async function main() {

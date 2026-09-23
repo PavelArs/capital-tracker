@@ -249,7 +249,7 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
   assertQuota();
 });
 
-test('TRADE-003-A/B: real fee, residual and negative-net projections preserve exact buy/sell version provenance', async ({
+test('TRADE-003-A / TRADE-003-B: real fee, residual and negative-net projections preserve exact buy/sell version provenance', async ({
   page,
 }) => {
   const { api, account, instrument } = await fixture(page);
@@ -686,7 +686,7 @@ test('TRADE-001-B / TRADE-004-B: actual upstream replicas serialize identical re
   expect(providerRequests()).toEqual(providers);
 });
 
-test('TRADE-004-A / TRADE-005-A: immutable receipts precede live CAS, pages reject revision drift and old-prefix failure preserves every row', async ({
+test('TRADE-004-A / TRADE-004-B / TRADE-005-A: immutable receipts precede live CAS, pages reject revision drift and old-prefix failure preserves every row', async ({
   page,
 }) => {
   const { api, account, instrument } = await fixture(page);
@@ -845,7 +845,7 @@ test('TRADE-004-C / TRADE-006-B: real deferred HTTP COMMIT failure is private, r
   expect(providerRequests()).toEqual(providers);
 });
 
-test('TRADE-006-A/B: literal instrument labels and a real409 keep the draft until explicit current-journal review', async ({
+test('TRADE-006-A / TRADE-006-B: literal instrument labels and a real409 keep the draft until explicit current-journal review', async ({
   page,
 }) => {
   const api = await tradeApi(page);
@@ -1012,7 +1012,7 @@ test('TRADE-004-B / TRADE-006-A: a real committed response lost in transport ret
   assertQuota();
 });
 
-test('TRADE-006-A regression: manual refresh of a selected target requires explicit review of its unseen correction before correction or void', async ({
+test('TRADE-006-C regression: manual refresh of a selected target requires explicit review of its unseen correction before correction or void', async ({
   page,
 }) => {
   const api = await tradeApi(page);
@@ -1141,7 +1141,7 @@ test('TRADE-006-A regression: manual refresh of a selected target requires expli
   assertQuota();
 });
 
-test('TRADE-004-B / TRADE-006-A regression: lost correction followed by pinned409 and explicit review replays the original command exactly once', async ({
+test('TRADE-004-B / TRADE-006-D regression: lost correction followed by pinned409 and explicit review replays the original command exactly once', async ({
   page,
 }) => {
   const { api, account, instrument } = await fixture(page);

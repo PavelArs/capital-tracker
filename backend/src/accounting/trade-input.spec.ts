@@ -49,7 +49,7 @@ function rejects(run: () => unknown): void {
   throw new Error('Expected raw accounting input to be refused with HTTP 400');
 }
 
-describe('TRADE-001 literal empty-origin attestation', () => {
+describe('TRADE-001-A literal empty-origin attestation', () => {
   it('normalizes the explicit coverage and request ID without inventing an opening or revision', () => {
     expect(
       parseJournalInitialization({
@@ -66,7 +66,7 @@ describe('TRADE-001 literal empty-origin attestation', () => {
   );
 });
 
-describe('TRADE-002 command shape and raw identity boundaries', () => {
+describe('TRADE-002-B command shape and raw identity boundaries', () => {
   it.each(parsers)('%s rejects all absent mandatory fields', (_name, parse, valid) => {
     for (const field of Object.keys(valid)) {
       const incomplete: Record<string, unknown> = { ...valid };
@@ -155,7 +155,7 @@ describe('TRADE-002 command shape and raw identity boundaries', () => {
   });
 });
 
-describe('TRADE-002 exact amounts before any persistence or typmod rounding', () => {
+describe('TRADE-002-A / TRADE-002-B exact amounts before persistence or typmod rounding', () => {
   it.each(executionParsers)(
     '%s retains scale30, above-2^53 values and full48/30 extrema',
     (_name, parse) => {
@@ -245,7 +245,7 @@ describe('TRADE-002 exact amounts before any persistence or typmod rounding', ()
   );
 });
 
-describe('TRADE-001/002 strict Gregorian instants and integer boundaries', () => {
+describe('TRADE-001-A / TRADE-002-A / TRADE-002-B Gregorian instants and integer boundaries', () => {
   const instantParsers = [
     [
       'coverage',
@@ -351,7 +351,7 @@ describe('TRADE-001/002 strict Gregorian instants and integer boundaries', () =>
   });
 });
 
-describe('TRADE-005 bounded revision-pinned page and immutable-history query syntax', () => {
+describe('TRADE-005-A bounded revision-pinned page and immutable-history query syntax', () => {
   it('applies defaults without inventing a live revision or history cursor', () => {
     expect(parseTradePageQuery({})).toEqual({ offset: 0, limit: 50 });
     expect(parseTradePageQuery({ offset: '0' })).toEqual({ offset: 0, limit: 50 });

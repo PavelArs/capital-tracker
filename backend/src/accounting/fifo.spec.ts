@@ -30,7 +30,7 @@ function trade(
   };
 }
 
-describe('TRADE-003 independently specified FIFO amounts and provenance', () => {
+describe('TRADE-003-A / TRADE-003-B independently specified FIFO amounts and provenance', () => {
   it('returns exact empty projections without fictitious mixed-instrument quantity', () => {
     expect(calculateFifo([])).toEqual({
       summary: {
@@ -377,7 +377,7 @@ describe('TRADE-003 independently specified FIFO amounts and provenance', () => 
   });
 });
 
-describe('TRADE-002/004 invalid effective history', () => {
+describe('TRADE-002-A / TRADE-004-A invalid effective history', () => {
   it('rejects a negative chronological prefix even if later purchases restore holdings', () => {
     expect(() => calculateFifo([trade(1, 'buy', '2', '20'), trade(0, 'sell', '1', '10')])).toThrow(
       FifoHistoryError,
