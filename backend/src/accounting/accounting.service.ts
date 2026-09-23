@@ -171,6 +171,11 @@ export class AccountingService {
         if (previous.canonicalPayload !== payload) throw conflict();
         return { created: false, value: await this.openingView(manager, owner, previous) };
       }
+      const [journal] = await manager.query(
+        'SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
+        [owner, id],
+      );
+      if (journal) throw conflict();
       if ((account.currentRevision ?? 0) !== value.expectedRevision) throw conflict();
       const instruments: { id: string }[] = await manager.query(
         'SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND id=ANY($2::uuid[])',
