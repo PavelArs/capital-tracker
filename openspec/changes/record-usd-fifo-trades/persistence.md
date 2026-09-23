@@ -209,3 +209,21 @@ unknown-field, decimal, UUID, instant and integer rules remain unchanged.
 These function names are a bounded implementation seam for independent tests, not a
 new framework. Author expected values independently before helpers; an unavailable
 module/import is a prerequisite failure, never claimed behavioral RED.
+
+### Read-service query seam
+
+`TradeService` takes `DataSource` in its constructor and exposes these read methods:
+
+- `getJournal(ownerId, accountId)`.
+- `listTrades(ownerId, accountId, rawQuery: unknown = {})`.
+- `listLots(ownerId, accountId, rawQuery: unknown = {})`.
+- `listRealizations(ownerId, accountId, rawQuery: unknown = {})`.
+- `listMatches(ownerId, accountId, tradeId, rawQuery: unknown = {})`.
+- `listVersions(ownerId, accountId, tradeId, rawQuery: unknown = {})`.
+
+The service validates each raw query exactly once with the frozen page/history parser.
+Controllers pass the unknown query object and owner/path IDs without implicit query
+conversion. Direct PostgreSQL fixtures pass the same canonical raw string query values
+as HTTP requests; numeric internal-call exceptions are not supported. Omitted queries
+use the documented defaults. This seam does not change the existing AccountingService
+read methods or their typed numeric query contract.
