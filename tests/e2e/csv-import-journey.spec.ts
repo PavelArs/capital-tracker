@@ -10,9 +10,12 @@ import {
   type CsvConfirm,
   type CsvReceipt,
   assertCommitted,
+  buy,
   csvFixture,
   csvRows,
+  csvSource,
   emptySummary,
+  expectCsvSummary,
   inspectAndMap,
   navigateToAccount,
   previewInBrowser,
@@ -32,7 +35,7 @@ import {
   recoveryFactor,
   test,
 } from './mfa-fixtures';
-import { browserPost, trackBrowserRequests } from './usd-trades-fixtures';
+import { browserPost, trackBrowserRequests, tradeInput } from './usd-trades-fixtures';
 
 test('CSV-006-B regression: a committed confirm with a lost response survives actual session expiry,401, real MFA and SPA return', async ({
   page,
@@ -176,4 +179,206 @@ test('CSV-006-B regression: a committed confirm with a lost response survives ac
   ]);
   // Original existing financial/accounting rows are also retained; recovery is checked exactly above.
   expect(retainedState(['owner_mfa_recovery'])).toBe(prior);
+});
+
+test('CSV-004-A / CSV-006-A regression: explicit CSV refresh reviews the new journal revision and safely reallocates200 to100', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const batch = await uploadInBrowser(page, account.id);
+  await inspectAndMap(page, account.id, batch, instrument.id);
+  await previewInBrowser(page, account.id, batch, {
+    ...emptySummary,
+    grossBuysUsd: '100',
+    remainingCostUsd: '100',
+  });
+  const acceptedResponse = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${batch}/confirm`,
+    () => page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click(),
+  );
+  expect(acceptedResponse.status()).toBe(201);
+  const accepted = readCsvReceipt(await acceptedResponse.json());
+  assertCommitted(accepted);
+  const reviewCheck = page.getByRole('checkbox', {
+    name: 'Я проверил последствия отката всей партии',
+    exact: true,
+  });
+  await expect(reviewCheck).toBeEnabled();
+  // The outside writes are real authenticated API requests, with distinct chronology.
+  await api.create(
+    account.id,
+    tradeInput(instrument.id, 1, { occurredAt: '2025-01-03T00:00:00.000Z', grossUsd: '200' }),
+  );
+  await api.create(
+    account.id,
+    tradeInput(instrument.id, 2, {
+      side: 'sell',
+      occurredAt: '2025-01-04T00:00:00.000Z',
+      grossUsd: '300',
+    }),
+  );
+  const beforeRefresh = fingerprint(['auth_sessions', 'auth_request_limits']);
+  const refreshed = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        `/api/accounting/accounts/${account.id}/csv-imports/${batch}` &&
+      response.request().method() === 'GET',
+  );
+  await page.getByRole('button', { name: 'Обновить состояние CSV', exact: true }).click();
+  const response = await refreshed;
+  expect(response.status()).toBe(200);
+  expect((await response.json()).rollbackReview).toMatchObject({
+    journalRevision: 3,
+    eligible: true,
+    reason: null,
+  });
+  await expectCsvSummary(page, 'До отката', {
+    grossBuysUsd: '300',
+    buyFeesUsd: '0',
+    grossSalesUsd: '300',
+    sellFeesUsd: '0',
+    netSalesUsd: '300',
+    consumedCostUsd: '100',
+    realizedUsd: '200',
+    remainingCostUsd: '200',
+  });
+  await expectCsvSummary(page, 'После отката', {
+    grossBuysUsd: '200',
+    buyFeesUsd: '0',
+    grossSalesUsd: '300',
+    sellFeesUsd: '0',
+    netSalesUsd: '300',
+    consumedCostUsd: '200',
+    realizedUsd: '100',
+    remainingCostUsd: '0',
+  });
+  await expect(
+    reviewCheck,
+    'CSV refresh must reconcile the parent journal revision before explicit rollback review',
+  ).toBeEnabled();
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeRefresh);
+  const rollback = page.getByRole('button', { name: 'Откатить партию CSV', exact: true });
+  await expect(rollback).toBeDisabled();
+  await reviewCheck.check();
+  const result = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${batch}/rollback`,
+    () => rollback.click(),
+  );
+  expect(result.status()).toBe(201);
+  const receipt = readCsvReceipt(await result.json());
+  expect(receipt).toMatchObject({
+    kind: 'rollback',
+    rowCount: 1,
+    firstJournalRevision: 4,
+    lastJournalRevision: 4,
+  });
+  assertCommitted(receipt);
+  expect((await api.state(account.id)).journal).toMatchObject({
+    journalRevision: 4,
+    activeTradeCount: 2,
+    versionCount: 4,
+    summary: { realizedUsd: '100', remainingCostUsd: '0' },
+  });
+  expect((await api.lots(account.id)).items).toEqual([]);
+  const evidence = (await api.result(
+    'GET',
+    `/accounts/${account.id}/csv-imports/${batch}/rows`,
+    200,
+  )) as { items: { createVersion: { version: number }; rollbackVersion: { version: number } }[] };
+  expect(evidence.items).toHaveLength(1);
+  expect(evidence.items[0]).toMatchObject({
+    createVersion: { version: 1 },
+    rollbackVersion: { version: 2 },
+  });
+  expect(retainedState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('CSV-006-B regression: choosing a new unuploaded file cannot confirm the previously inspected batch under the new filename', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const first = await uploadInBrowser(page, account.id, [buy], 'Первая партия.csv');
+  await inspectAndMap(page, account.id, first, instrument.id);
+  await previewInBrowser(page, account.id, first, {
+    ...emptySummary,
+    grossBuysUsd: '100',
+    remainingCostUsd: '100',
+  });
+  const firstState = fingerprint(['auth_sessions', 'auth_request_limits']);
+  const replacement = [{ ...buy, gross: '200' }];
+  await page
+    .getByLabel('Файл CSV', { exact: true })
+    .setInputFiles({
+      name: 'Новая партия.csv',
+      mimeType: 'text/csv',
+      buffer: csvSource(replacement),
+    });
+  await expect(page.getByText('Выбранный файл: Новая партия.csv', { exact: true })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Предпросмотр импорта', exact: true })).toHaveCount(
+    0,
+  );
+  for (const label of ['Проверить импорт', 'Подтвердить импорт CSV']) {
+    const action = page.getByRole('button', { name: label, exact: true });
+    await expect
+      .poll(async () => (await action.count()) === 0 || (await action.isDisabled()), {
+        message: 'The new displayed file must not retain an actionable old batch mapping/preview',
+      })
+      .toBe(true);
+  }
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(firstState);
+  const second = await uploadInBrowser(page, account.id, replacement, 'Новая партия.csv');
+  expect(second).not.toBe(first);
+  await inspectAndMap(page, account.id, second, instrument.id, replacement);
+  await previewInBrowser(page, account.id, second, {
+    ...emptySummary,
+    grossBuysUsd: '200',
+    remainingCostUsd: '200',
+  });
+  const response = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${second}/confirm`,
+    () => page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click(),
+  );
+  expect(response.status()).toBe(201);
+  const accepted = readCsvReceipt(await response.json());
+  expect(accepted.batchId).toBe(second);
+  assertCommitted(accepted);
+  expect(
+    rows(`SELECT id,state FROM account_csv_imports WHERE "accountId"='${account.id}' ORDER BY id`),
+  ).toEqual(
+    [
+      { id: first, state: 'draft' },
+      { id: second, state: 'committed' },
+    ].sort((a, b) => a.id.localeCompare(b.id)),
+  );
+  expect((await api.state(account.id)).journal).toMatchObject({
+    journalRevision: 1,
+    activeTradeCount: 1,
+    summary: { grossBuysUsd: '200', remainingCostUsd: '200' },
+  });
+  expect(retainedState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
 });
