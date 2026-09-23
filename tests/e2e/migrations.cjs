@@ -28,13 +28,15 @@ const previousNineName = 'capital_tracker_previous_nine_e2e';
 const previousTenName = 'capital_tracker_previous_ten_e2e';
 const previousElevenName = 'capital_tracker_previous_eleven_e2e';
 const previousTwelveName = 'capital_tracker_previous_twelve_e2e';
+const previousThirteenName = 'capital_tracker_previous_thirteen_e2e';
+const tradeTables = ['account_trade_journals', 'account_trades', 'account_trade_versions'];
 const accountingTables = [
   'manual_accounts', 'accounting_instruments',
   'account_opening_snapshots', 'account_opening_positions',
 ];
 const testDatabases = [
   freshName, legacyName, emptyLegacyName, previousName,
-  previousNineName, previousTenName, previousElevenName, previousTwelveName,
+  previousNineName, previousTenName, previousElevenName, previousTwelveName, previousThirteenName,
 ];
 let stage = 'isolated configuration';
 const migrationNames = [
@@ -51,6 +53,7 @@ const migrationNames = [
   'AddOwnerMfa1790010000000',
   'AddAuthRequestLimits1790020000000',
   'AddManualOpeningPositions1790030000000',
+  'AddUsdTradeJournal1790040000000',
 ];
 
 function connection(database) {
@@ -143,15 +146,15 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirteen migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly fourteen migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
-    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables]) {
+    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables]) {
       assert.ok(tables.includes(table), `Missing current table ${table}`);
     }
     assert.equal((await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count, 0);
-    for (const table of accountingTables) {
+    for (const table of [...accountingTables, ...tradeTables]) {
       assert.equal((await client.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count, 0);
     }
     const owner = await seedOwner(client, 'fresh-migration@example.invalid');
@@ -260,7 +263,7 @@ async function verifyLegacy(database, empty = false) {
 
 async function createPreviousSchema(client, target, previousCount) {
   assert.ok(testDatabases.includes(target));
-  assert.ok([8, 9, 10, 11, 12].includes(previousCount));
+  assert.ok([8, 9, 10, 11, 12, 13].includes(previousCount));
   await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   const migrationClasses = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
@@ -318,11 +321,11 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       before.rows.migrations, 'Preserve previous migration records');
     assert.deepEqual((await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows.map(({name}) => name), migrationNames);
     const addedTables = [...(previousCount === 8 ? ['owner_auth'] : []),
-      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables];
+      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables];
     assert.deepEqual(after.rows.owner_mfa, [], 'No implicit MFA enrollment');
     assert.deepEqual(after.rows.owner_mfa_recovery, [], 'No implicit recovery codes');
     assert.deepEqual(after.rows.auth_request_limits, [], 'Migration creates no request admissions');
-    for (const table of accountingTables) assert.deepEqual(after.rows[table], [], 'No implicit opening state');
+    for (const table of [...accountingTables, ...tradeTables]) assert.deepEqual(after.rows[table], [], 'No implicit opening state');
     // Only the additive tables' schema/index/constraint entries may differ.
     for (const [kind, tableKey] of [['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename']]) {
       assert.deepEqual(after[kind].filter((row) => !addedTables.includes(row[tableKey])), before[kind].filter((row) => !addedTables.includes(row[tableKey])), `Preserve previous ${kind}`);
@@ -443,11 +446,58 @@ async function seedPreviousEleven(client, cipher) {
   };
 }
 
+async function seedPreviousThirteen(client) {
+  // Valid predecessor rows are inserted in this freshly created allowlisted DB.
+  // The current service may require migration14, so it cannot construct a13 fixture.
+  const owners = (await client.query('SELECT id FROM users ORDER BY email')).rows;
+  assert.equal(owners.length, 2);
+  await client.query('BEGIN');
+  try {
+    for (const [index, { id: owner }] of owners.entries()) {
+      const account = randomUUID(), instrument = randomUUID(), otherInstrument = randomUUID();
+      const accountRequest = randomUUID();
+      const name = `Preserved manual account ${index}`;
+      await client.query(`INSERT INTO manual_accounts(id,"ownerId","requestId","canonicalPayload",name,"currentRevision","createdAt")
+        VALUES($1,$2,$3,$4,$5,NULL,'2025-01-01T00:00:00Z')`,
+      [account, owner, accountRequest, JSON.stringify({ name }), name]);
+      for (const [offset, id] of [instrument, otherInstrument].entries()) {
+        const instrumentName = `Preserved manual instrument ${index}-${offset}`;
+        await client.query(`INSERT INTO accounting_instruments(id,"ownerId","requestId","canonicalPayload",name,symbol,namespace,"createdAt")
+          VALUES($1,$2,$3,$4,$5,'SAME','manual','2025-01-01T00:00:00Z')`,
+        [id, owner, randomUUID(), JSON.stringify({ name: instrumentName, symbol: 'SAME' }), instrumentName]);
+      }
+      for (const revision of [1, 2]) {
+        const asOf = `2025-01-0${revision}T00:00:00.000Z`;
+        const positions = [
+          { instrumentId: instrument, quantity: revision === 1 ? '9007199254740993.000000000000000001' : '1',
+            costStatus: 'known', totalCostUsd: revision === 1 ? '123.450000000000000001' : '0' },
+          { instrumentId: otherInstrument, quantity: '0.000000000000000000000000000001',
+            costStatus: 'unknown', totalCostUsd: null },
+        ].sort((a, b) => a.instrumentId.localeCompare(b.instrumentId));
+        await client.query(`INSERT INTO account_opening_snapshots("ownerId","accountId",revision,"requestId","canonicalPayload","asOf","createdAt")
+          VALUES($1,$2,$3,$4,$5,$6,$6)`, [owner, account, revision, randomUUID(),
+          JSON.stringify({ expectedRevision: revision - 1, asOf, positions }), asOf]);
+        for (const position of positions) {
+          await client.query(`INSERT INTO account_opening_positions("ownerId","accountId",revision,"instrumentId",quantity,"costStatus","totalCostUsd")
+            VALUES($1,$2,$3,$4,$5,$6,$7)`, [owner, account, revision, position.instrumentId,
+            position.quantity, position.costStatus, position.totalCostUsd]);
+        }
+      }
+      await client.query('UPDATE manual_accounts SET "currentRevision"=2 WHERE id=$1', [account]);
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  }
+}
+
 async function verifyPopulatedAuthUpgrade(previousCount) {
-  assert.ok([11, 12].includes(previousCount));
-  const target = previousCount === 11 ? previousElevenName : previousTwelveName;
-  const scenario = previousCount === 11 ? 'LIMIT-006-A' : 'OPEN-004-B';
-  const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []), ...accountingTables];
+  assert.ok([11, 12, 13].includes(previousCount));
+  const target = previousCount === 11 ? previousElevenName : previousCount === 12 ? previousTwelveName : previousThirteenName;
+  const scenario = previousCount === 11 ? 'LIMIT-006-A' : previousCount === 12 ? 'OPEN-004-B' : 'TRADE-005-A';
+  const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []),
+    ...(previousCount < 13 ? accountingTables : []), ...tradeTables];
   stage = `${scenario} previous${previousCount} schema and populated fixture`;
   const client = new Client(connection(target));
   const directory = mkdtempSync(join(tmpdir(), 'capital-migration-mfa-'));
@@ -463,7 +513,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     const cipher = new MfaCipher(new ConfigService({ MFA_KEY_FILE: file, MFA_KEY_ID: 'migration-fixture' }));
     const verifyFactors = await seedPreviousEleven(client, cipher);
     await verifyFactors();
-    if (previousCount === 12) {
+    if (previousCount >= 12) {
       for (const [scope, hits, seconds] of [
         ['csrf-ip', 29, 60], ['login-ip', 5, 60], ['mfa-ip', 3, 60], ['login-account', 9, 600],
       ]) {
@@ -478,8 +528,12 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
         WHERE "expiresAt">clock_timestamp() AND hits>0`)).rows[0].count, 4,
       'Predecessor contains live nonzero admissions for every policy');
     }
+    if (previousCount === 13) await seedPreviousThirteen(client);
     const before = await snapshot(client);
     assert.equal(before.rows.migrations.length, previousCount);
+    if (previousCount === 13) {
+      for (const table of accountingTables) assert.ok(before.rows[table].length >= 2, 'Both owners have retained accounting history');
+    }
     for (const table of addedTables) assert.equal(before.rows[table], undefined, 'Additive table absent before upgrade');
     for (const table of ['users', 'assets', 'liabilities', 'crypto_wallets', 'user_currency_preferences']) {
       assert.equal(before.rows[table].length, 2, `Both principals have populated ${table}`);
@@ -514,7 +568,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), index === 11 ? '1790020000000' : '1790030000000');
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
@@ -538,7 +592,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.equal(replay.status, 0);
     assert.deepEqual(await snapshot(client), after, 'Replay is identical across all schema, data, sessions and migration state');
     await verifyFactors();
-    console.log(`PASS ${scenario} populated${previousCount}-to13 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
+    console.log(`PASS ${scenario} populated${previousCount}-to14 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
     finally { rmSync(directory, { recursive: true, force: true }); }
@@ -582,6 +636,7 @@ async function main() {
   stage = 'MFA-MIG-001 previous10 upgrade and session revocation'; await verifyAdditiveOwnerUpgrade(10);
   await verifyPopulatedAuthUpgrade(11);
   await verifyPopulatedAuthUpgrade(12);
+  await verifyPopulatedAuthUpgrade(13);
 }
 
 main().catch(() => {
