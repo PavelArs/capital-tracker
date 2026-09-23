@@ -619,7 +619,81 @@ async function races(source, accounting, trade, fixture) {
   assert.equal(stored.length, 2);
   assert.ok(stored.some(row => row.requestId === first.requestId));
   assert.ok(stored.some(row => row.requestId === outcomes.find(row => row.ok).result.value.trade.requestId));
-  console.log('PASS TRADE-004 distinct processes, observed shared account waits, one CAS winner and exact replay; opening/init is mutually exclusive');
+
+  // Both purchases remain financially valid and have distinct chronology. Only
+  // the stale expected revision can reject the second command after the lock wait.
+  stage = 'TRADE-004 distinct-chronology buys isolate the concurrent CAS boundary';
+  const casAccount = await newJournal(accounting, trade, owner, 'Distinct-order CAS race');
+  const buys = [command(instrument, 0, { orderWithinTimestamp: 0, grossUsd: '10' }),
+    command(instrument, 0, { orderWithinTimestamp: 1, grossUsd: '20' })];
+  const buyResults = await processRace(source, casAccount, buys.map(input =>
+    ({ service: 'trade', method: 'create', args: [owner, casAccount, input] })));
+  assert.equal(buyResults.filter(row => row.ok).length, 1);
+  assert.equal(buyResults.find(row => !row.ok).status, 409);
+  assert.equal(buyResults.find(row => row.ok).result.created, true);
+  const rejectedBuy = buys[buyResults.findIndex(row => !row.ok)];
+  const buyRows = await source.query('SELECT "requestId" FROM account_trade_versions WHERE "accountId"=$1', [casAccount]);
+  assert.deepEqual(buyRows, [{ requestId: buyResults.find(row => row.ok).result.value.trade.requestId }]);
+  const beforeBuyRetry = await fingerprint(source);
+  await status(() => trade.create(owner, casAccount, rejectedBuy), 409);
+  assert.equal(await fingerprint(source), beforeBuyRetry);
+  assert.equal((await trade.create(owner, casAccount, { ...rejectedBuy, expectedJournalRevision: 1 })).created, true,
+    'A rejected CAS request reserves no key and becomes legal after explicit revision refresh');
+  const bought = (await trade.getJournal(owner, casAccount)).journal;
+  assert.equal(bought.journalRevision, 2); assert.equal(bought.versionCount, 2); assert.equal(bought.activeTradeCount, 2);
+  assert.equal(bought.summary.remainingCostUsd, '30');
+
+  stage = 'TRADE-004 distinct-order competing sales cannot overspend one owned unit';
+  const saleAccount = await newJournal(accounting, trade, owner, 'Competing sale race');
+  const purchase = (await trade.create(owner, saleAccount, command(instrument, 0))).value;
+  const sales = [1, 2].map(order => command(instrument, 1,
+    { side: 'sell', orderWithinTimestamp: order, quantity: '0.75', grossUsd: '90' }));
+  const saleResults = await processRace(source, saleAccount, sales.map(input =>
+    ({ service: 'trade', method: 'create', args: [owner, saleAccount, input] })));
+  assert.equal(saleResults.filter(row => row.ok).length, 1);
+  assert.equal(saleResults.find(row => !row.ok).status, 409);
+  const wonSale = saleResults.find(row => row.ok).result;
+  assert.equal(wonSale.created, true);
+  const rejectedSale = sales[saleResults.findIndex(row => !row.ok)];
+  const sold = (await trade.getJournal(owner, saleAccount)).journal;
+  assert.equal(sold.journalRevision, 2); assert.equal(sold.versionCount, 2); assert.equal(sold.activeTradeCount, 2);
+  assert.deepEqual(sold.summary, { grossBuysUsd: '100', buyFeesUsd: '0', grossSalesUsd: '90',
+    sellFeesUsd: '0', netSalesUsd: '90', consumedCostUsd: '75', realizedUsd: '15', remainingCostUsd: '25' });
+  const remaining = (await trade.listLots(owner, saleAccount)).items;
+  assert.equal(remaining.length, 1);
+  assert.deepEqual([remaining[0].buyTradeId, remaining[0].remainingQuantity, remaining[0].remainingCostUsd],
+    [purchase.trade.tradeId, '0.25', '25']);
+  const saleRows = await source.query(`SELECT "requestId",side,quantity::text AS quantity,version
+    FROM account_trade_versions WHERE "accountId"=$1 ORDER BY "journalRevision"`, [saleAccount]);
+  assert.deepEqual(saleRows, [
+    { requestId: purchase.trade.requestId, side: 'buy', quantity: '1.' + '0'.repeat(30), version: 1 },
+    { requestId: wonSale.value.trade.requestId, side: 'sell', quantity: '0.75' + '0'.repeat(28), version: 1 },
+  ]);
+  assert.equal((await source.query('SELECT count(*)::int AS count FROM account_trades WHERE "accountId"=$1', [saleAccount]))[0].count, 2);
+  assert.equal((await trade.listRealizations(owner, saleAccount)).items.length, 1);
+
+  const beforeSaleRetry = await fingerprint(source);
+  await status(() => trade.create(owner, saleAccount, rejectedSale), 409);
+  await status(() => trade.create(owner, saleAccount, { ...rejectedSale, expectedJournalRevision: 2 }), 409);
+  assert.equal(await fingerprint(source), beforeSaleRetry,
+    'Both stale CAS and refreshed-but-oversold retries leave the losing key unreserved');
+  // Replenish before either sale, so the original rejected execution becomes
+  // valid irrespective of which order won. Its only changed field is the revision.
+  await trade.create(owner, saleAccount, command(instrument, 2, { quantity: '0.5', grossUsd: '50',
+    occurredAt: '2025-01-01T12:00:00.000Z', orderWithinTimestamp: 0 }));
+  const refreshedSale = { ...rejectedSale, expectedJournalRevision: 3 };
+  const recovered = await trade.create(owner, saleAccount, refreshedSale);
+  assert.equal(recovered.created, true); assert.equal(recovered.value.journalRevision, 4);
+  assert.equal(recovered.value.trade.requestId, rejectedSale.requestId);
+  const completed = (await trade.getJournal(owner, saleAccount)).journal;
+  assert.equal(completed.activeTradeCount, 4); assert.equal(completed.versionCount, 4);
+  assert.deepEqual(completed.summary, { grossBuysUsd: '150', buyFeesUsd: '0', grossSalesUsd: '180',
+    sellFeesUsd: '0', netSalesUsd: '180', consumedCostUsd: '150', realizedUsd: '30', remainingCostUsd: '0' });
+  assert.deepEqual((await trade.listLots(owner, saleAccount)).items, []);
+  const beforeSaleReplay = await fingerprint(source);
+  assert.deepEqual(await trade.create(owner, saleAccount, refreshedSale), { created: false, value: recovered.value });
+  assert.equal(await fingerprint(source), beforeSaleReplay);
+  console.log('PASS TRADE-004 observed two-process waits, independent CAS, exact competing-sale conservation and rejected-key reuse; opening/init remains exclusive');
 }
 
 async function deferredCommitFailure(source, accounting, trade, fixture) {
