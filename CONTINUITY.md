@@ -19,7 +19,7 @@ gate_acceptance and provider_feasibility. All worktrees remain retained.
 Preserve unstaged frontend/nginx.conf: SHA256
 115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432,
 mode0644, size1348. Current lock SHA256:
-13e4fbf1d1effcf66367ef7829885eb53b339cb9f52ab43854ca2e4ba77c4e73.
+aa2588325aacdc54e8437d3500c7d2df580cc20cd061d1e3727f30f0dcc1e4f8. (csv-parse7.0.2 addition)
 
 ## Runtime and workflow
 
@@ -41,7 +41,8 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-No Docker run is active now. Only external providers are stubbed.
+Root HTTPS focused run active: PTY14067, /private/tmp/capital-csv-http-focused-first.log.
+Runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
 
 ## Completed and archived
 
@@ -81,43 +82,49 @@ Hosted CI, second browser, image/SAST/DAST/full ASVS and backup/restore remain u
 
 ## Now and next
 
-USD archive and documentation committed97a7a2d; strict11/diff passed. Actual-label
-Docker checks found no owned Compose or client-source probes. New active change
-import-usd-trades-csv: proposalcd6ec20; independently reviewed design/persistence/parser
-decision integratedeafe9c0. Actual CLI artifact instructions/status/apply used;
-all artifacts ready, strict12 passed;4/28 tasks complete after genuine acceptance RED.
-Final scenarios/API/schema/UI labels are frozen for independent test authorship.
-CSV behavioral implementation is now released after genuine RED. Full authorization
-covers ordinary incremental implementation; no extra user approval is needed.
+Active import-usd-trades-csv; all artifacts ready/strict12; genuine initial RED
+recorded12eb619 on exact USD images, intended API404/missingheading, real auth/PG
+preservation. Test initialcommitd435a86, independent122 boundaries126240d,
+root input/parser/dependency63611f7, schema/proxy03ec6bc, backend3c11a38,
+module/populated migration5ea3354, PGfixture755189a, HTTPsecuritydeb8611, UI83398d0.
+Current task/evidence file has exact executed checks and pending items.
 
-Independent temporary design inputs under /private/tmp:
-- capital-csv-next-contract.md: initial memo, superseded where refinements differ.
-- capital-csv-contract-root.md and capital-csv-proposal.md: coordinator decisions.
-- capital-csv-acceptance-review.md: concrete independent acceptance matrix.
-- capital-csv-security-review.md: transaction and security review.
-- capital-csv-parser-decision.md: official csv-parse7.0.2 MIT/CJS/no-runtime-deps and
-  actual installed Nest/Multer upload research; runtime parser proof still pending.
-- capital-csv-persistence-contract.md: exact DTO/three-table/canonical tuple freeze.
-Final artifacts in openspec/changes/import-usd-trades-csv supersede these temporary
-memos. Additional capital-csv-test-plan.md maps independent unit/PG/HTTPS ownership.
-New worktrees csv-design (design committed), csv-acceptance (QA), csv-backend (reserved).
-Maintained2-case RED actually finished exit1 with exactly upload404/missing-heading
-failures on verified predecessor images, no rebuild. Log:
-/private/tmp/capital-csv-predecessor-red.log; artifacts capital-csv-red-artifacts.
-Real MFA/PG/prior-data/provider oracles passed; independent cleanup reads empty.
-Now: backend agent owns five service/controller/helper files in csv-backend; independent
-parser tests in csv-boundary-tests and PG fixture in csv-acceptance. Root owns parser,
-input, dependency, migration15, shared wiring/proxy/frontend and all Docker runs.
+Backend full859tests/26suites, lint/build pass. Release backend image:
+sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46.
+Actual fresh15/replay/populated8..14/refusal plus retained manual/USD PG pass:
+/private/tmp/capital-csv-migration-regression-2.log. Initial attempt failed because
+test helper lacked14 allowlist, fixed without changing expected behavior.
+Actual CSV PG nine families pass /private/tmp/capital-csv-pg-first.log: exactFIFO,
+whole-batch/replay, conditional rollback, process races, genuine deferred COMMIT,
+RR barriers, SQL limits and valid caps. Root fixed fixture's foreign-journal seed
+to retain all protected prior rows; no assertions weakened.
+Frontend build/lint81tests pass; initial2 realHTTPS cases already passed in currently
+running7-case focused set (security+wire remaining). Full gate not run; no archive.
 
-CSV scope: UTF8 up to256KiB/100rows, inspect before mapping, explicit owned UUID/USD/
-decimal/time/order/fee settings, preview errors, whole-batch atomic confirmation,
-private original/provenance and conditional atomic rollback. Preserve1000/10000caps.
-No implicit origin/carry-in or semantic dedup of changed/overlapping exports. Replayed
-accepted commands precede reparse/parser support/live state. Version usd-csv-v1 is
-explicit. Rows pin batchState; detail live rollbackReview uses coherent RR. Valid
-rollback reallocation is allowed when every remaining prefix holds; show before/after.
-Parser/transport choices need actual source/HTTP proof. Root owns dependency/migration15.
-Initial genuine CSV RED passed its intended failure criteria; no CSV GREEN claim yet.
+Open frontend review findings require maintained runtime regressions before repair:
+1. CSV refresh does not refresh parent unless recovering an accepted command.
+2. New unuploaded file leaves old selected batch/inspection/mapping usable.
+3. Exact source-key whitespace collapses visually.
+4. Shared client401 hard navigation loses in-memory original commands. Root will
+replace hard reload with minimal AuthProvider unauthorized SPA handling ONLY after
+actual401 recovery RED. Full browser document reload is not persistent storage;
+clarify in-app refresh scope while retaining denied401 command guarantees.
+
+Agents reused: gate_acceptance owns new csv-import-journey.spec.ts/optionalfixtures,
+prioritizes401 genuineRED then fullRussianFIFO/rollback/lostresponse403/stale review.
+audit_security owns new csv-import-commands.spec.ts actualreplica/hash and deferred
+COMMIT HTTP500/privacy. provider_feasibility prepares401 integration design only.
+Root owns migration/lock/sharedfixtures/Docker/integration and all subsequent repairs.
+Worktrees csv-acceptance, csv-backend, csv-frontend retained; no concurrency edits.
+Root wire test independently reviewed; exact1MiB/oneover ContentLength+chunked,
+fingerprint includesALLtables includingauthsessions on edge413. Follow-up security
+strengthening: send validmultipart underdeniedauth ratherthanJSON; wait currentrun
+before editing its live test files.
+
+CSV scope remains UTF8<=256KiB/100rows, explicitowned UUID/USD/decimal/time/order/fee,
+whole-batch atomic acceptance/provenance/conditional rollback,1000/10000journalcaps.
+Originalbytesimmutable, sha+bytesexactdedup,256retainedfiles; no overlappingsemantic
+dedup, openingconversion, carry-in or full-refactor completion claim.
 
 Remaining full goal after CSV: carry-in/owned transfers/flows, performance XIRR/TWR,
 DB-first price/FX/history, six-chain adapters/reconciliation, explicit optional free

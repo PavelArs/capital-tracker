@@ -266,7 +266,7 @@ async function verifyLegacy(database, empty = false) {
 
 async function createPreviousSchema(client, target, previousCount) {
   assert.ok(testDatabases.includes(target));
-  assert.ok([8, 9, 10, 11, 12, 13].includes(previousCount));
+  assert.ok([8, 9, 10, 11, 12, 13, 14].includes(previousCount));
   await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   const migrationClasses = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))

@@ -777,7 +777,8 @@ async function coherentReads(source, svc, fixture) {
 
 async function sqlIntegrity(source, svc, fixture) {
   stage = 'CSV-001-A / CSV-003-C / CSV-007-A actual byte/state/range/composite PostgreSQL constraints';
-  const { owner, other, foreignAccount, instruments: [instrument] } = fixture;
+  const { owner, other, instruments: [instrument] } = fixture;
+  const foreignAccount = await newJournal(svc, other, 'SQL foreign import integrity');
   const account = await newJournal(svc, owner, 'SQL import integrity');
   const value = await batch(svc, owner, account, instrument, [execution(instrument)]);
   const accepted = await confirm(svc, owner, value, 0);

@@ -20,13 +20,13 @@ was made to demonstrate those design claims; runtime verification remains requir
 
 | Scenarios | Planned executable evidence | Current result |
 | --- | --- | --- |
-| CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine expected RED: two failures; GREEN pending |
+| CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine RED recorded; both initial cases GREEN in current focused run, expanded journey pending |
 | CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests passed; HTTPS transport pending |
-| CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Not written/run |
-| CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Not written/run |
-| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Not written/run |
-| CSV-TRADE-001 | All retained manual/USD source/PG/HTTPS characterization plus atomic range assertions | CSV not run; predecessor passed |
-| CSV-MIG-001 | Release-image fresh15/replay and populated14-to15 plus all older upgrade/refusal cases | Not written/run |
+| CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Real production-service PG nine families passed; HTTP supplements pending |
+| CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Real PG RR barriers and state-pinned provenance passed; replica HTTPS pending |
+| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Focused seven-case HTTPS run active; full journey/regressions pending |
+| CSV-TRADE-001 | All retained manual/USD source/PG/HTTPS characterization plus atomic range assertions | Retained manual/USD PG and859 backend assertions pass; full HTTPS pending |
+| CSV-MIG-001 | Release-image fresh15/replay and populated14-to15 plus all older upgrade/refusal cases | Actual fresh15/replay/populated8..14 upgrades and unsafe-history refusals passed |
 
 ## Initial genuine acceptance RED — 2026-09-23
 
@@ -77,3 +77,53 @@ and lock diff contain only that addition. Frozen install exit0
 (`/private/tmp/capital-csv-dependency-audit.log`): two existing moderate vulnerabilities,
 zero high/critical. Existing ignored Nest build-script warning remains. Host runs
 Node22.23.2; release-image Node22.21.1 verification remains pending.
+
+## Integrated source and real PostgreSQL — 2026-09-23
+
+Coordinator reviewed the backend agent's five-file diff (9fae5d3, integrated3c11a38).
+The minimal EntityManager extraction preserves manual SQL/projections/canonical field
+order, account-lock/CAS/replay and caller-owned transaction semantics. Independent
+context reviewed root parser/input and schema/entities/proxy03ec6bc without blockers.
+No claim that SQL jsonb-object checks validate the complete mapping or that foreign
+keys alone enforce transactional row counts/state equivalence.
+
+Actual integrated backend build and full lint exit0;77 retained warnings. Full backend
+Jest exit0:859 tests/26 suites,9.932s (`/private/tmp/capital-csv-backend-integrated-tests.log`).
+Exact release backend built with Node22.21.1 from5ea3354:
+sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46.
+Build log `/private/tmp/capital-csv-backend-image-build.log`, exit0.
+
+Actual targeted runner `node /private/tmp/capital-csv-pg-run.cjs migrations
+manual-opening-db usd-trades-db` under the documented PATH/caffeinate, exit0; log
+`/private/tmp/capital-csv-migration-regression-2.log`. Fresh15, identical replay, all
+prior8..13 upgrades/refusals and new populated14-to15 passed. The14 fixture creates
+real two-principal journal history using production manual commands against exactly
+the first14 migrations: corrections, terminal voids, original accepted replay and
+independent90/60 FIFO. Upgrade preserves every prior row/schema/index/constraint and
+sequence definition, authentic factor envelopes, used/unused recovery, session classes
+and live admissions. Only the migration sequence advances. Retained manual and USD
+PG suites passed including exact extremes, real process races, RR barriers and COMMIT.
+First attempt `/private/tmp/capital-csv-migration-regression.log` exited1 before
+constructing the14 fixture because createPreviousSchema still allowed only8..13;
+extended that explicit test allowlist to14. No product or expected outcome changed.
+
+Independent PG fixture9e3f0d7 integrated755189a. Coordinator repaired one setup conflict
+before execution: SQL ownership probes now create a separate foreign journal instead
+of mutating the preexisting foreign journal that the unchanged preservation oracle
+protects. Actual `node /private/tmp/capital-csv-pg-run.cjs csv-import-db` exit0, log
+`/private/tmp/capital-csv-pg-first.log`: nine production-service PG families passed,
+including whole-candidate sale-first250/100, immutable source/provenance, historical
+unsupported-version receipt fixture, rollback200-to100, distinct-process observed
+account-lock waits, real deferred COMMIT complete-write witnesses and exact retry,
+RR/read-only concurrent-writer barriers, SQL constraints and valid row/history/file
+caps. Historical receipt construction is explicitly isolated fixture setup, not
+current writer acceptance of an unsupported parser. All prior captured rows remain.
+Both targeted runners cleaned their owned containers/networks; independent final
+cleanup reads will be repeated after the currently active HTTPS run.
+
+Frontend69b98a3 integrated83398d0: build/lint81 retained tests passed in its worktree;
+no runtime success inferred from those checks. Independent review found stale parent
+revision on CSV refresh, retained old workflow after new file selection, and collapsed
+source-key whitespace. Root also identified global401 full-navigation recovery loss.
+Maintained real regressions are being authored before repairs; these remain open.
+No full slice GREEN or archive until those and all required gates pass.
