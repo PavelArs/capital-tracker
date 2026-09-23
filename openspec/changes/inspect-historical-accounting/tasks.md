@@ -8,7 +8,7 @@
 - [x] 2.1 Write real HTTPS API and password/MFA Russian-browser acceptance for the exact100/200/450 timeline, carry-in boundary and read-only review; preserve existing data/auth/provider checks (HIST-001-A, HIST-002-A, HIST-004).
 - [x] 2.2 Execute new missing-route/UI assertions against exact verified carry-in images without product rebuild; record intended failures, not setup/type/import errors.
 - [x] 2.3 Write independent pure projection/input vectors for correction time/voids, fees/atoms/original allocation, known zero, full supported bounds, strict query handling and aggregate-before-page semantics (HIST-001-B, HIST-002, HIST-003).
-- [ ] 2.4 Write actual PostgreSQL read-only/ownership/revision and concurrent RR barrier probes, plus real browser late-input/account and pinned409 cases; retain every predecessor assertion (HIST-003, HIST-004).
+- [x] 2.4 Write actual PostgreSQL read-only/ownership/revision and concurrent RR barrier probes, plus real browser late-input/account and pinned409 cases; retain every predecessor assertion (HIST-003, HIST-004).
 
 ## 3. Implement the read-only vertical slice
 
@@ -19,8 +19,8 @@
 
 ## 4. Refactor and review
 
-- [ ] 4.1 Simplify only where needed, retaining passing characterization for existing behaviors; document reconstruction, coverage and cumulative-totals limits.
-- [ ] 4.2 Obtain independent integrated code/test review for exact arithmetic, RR ownership, auth/privacy and stale UI handling; resolve blocking findings with appropriate regression evidence.
+- [x] 4.1 Simplify only where needed, retaining passing characterization for existing behaviors; document reconstruction, coverage and cumulative-totals limits.
+- [x] 4.2 Obtain independent integrated code/test review for exact arithmetic, RR ownership, auth/privacy and stale UI handling; resolve blocking findings with appropriate regression evidence.
 
 ## 5. Verify and archive
 

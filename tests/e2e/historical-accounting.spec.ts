@@ -220,7 +220,10 @@ test('HIST-001-A / HIST-002-A: exact history timeline and carry-in boundary', as
 test('HIST-004-A: UI snapshot shows exact quantity and cost', async ({ page }) => {
   const api = await tradeApi(page);
   const account = await api.account(`Historical UI ${randomUUID()}`);
-  const instrument = await api.instrument(`Historical UI TOKEN ${randomUUID()}`, 'HIST');
+  const instrument = await api.instrument(
+    `<img src=x onerror="window.historyLabelExecuted=true"> ${randomUUID()}`,
+    'HIST',
+  );
   await api.initialize(account.id);
   await api.create(
     account.id,
@@ -278,6 +281,8 @@ test('HIST-004-A: UI snapshot shows exact quantity and cost', async ({ page }) =
     const position = section.getByRole('row').filter({ hasText: instrument.name });
     await expect(position.getByRole('cell', { name: '1', exact: true })).toBeVisible();
     await expect(position.getByRole('cell', { name: '100', exact: true })).toBeVisible();
+    await expect(page.locator('img[src="x"]')).toHaveCount(0);
+    expect(await page.evaluate(() => Reflect.get(window, 'historyLabelExecuted'))).toBeUndefined();
   } finally {
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(retained);
     expectAdmissionDelta(admissions, [

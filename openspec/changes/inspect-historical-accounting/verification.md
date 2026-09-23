@@ -1,9 +1,9 @@
 # Verification: historical accounting snapshot
 
-Status: carry-in prerequisite archived at1667502 after full133/133 GREEN. Prepared
-specifications and acceptance tests integrated at11b18f1; genuine missing-route/UI
-RED observed below. Backend implementation is in progress; focused unit checks and
-build passed. No historical PostgreSQL/browser GREEN or full release is claimed.
+Status: historical backend and Russian view implemented after genuine predecessor
+RED. Actual PostgreSQL acceptance and source checks passed; independent backend
+review finding reproduced and fixed with RED/GREEN. Browser integration and complete
+release verification remain pending. The bounded change is not ready for archival.
 
 ## Artifact review — 2026-09-23
 
@@ -132,3 +132,33 @@ component tests were removed to follow the external-provider-only mocking bounda
 all predecessor frontend tests are retained. Real HTTPS journeys remain mandatory.
 Do not infer a final frontend count from the author's earlier intermediate98-test
 log; integrated source verification below records its actual result.
+
+## Integrated source checks — 2026-09-23
+
+After the saved-history correction, backend lint/build/tests all exited0;939/939
+in30suites,10.45s,77 existing lint warnings. Frontend lint/build/tests all exited0;
+95/95 in10files,2.82s,29 existing lint warnings and existing bundle-size warning.
+Logs `/private/tmp/capital-historical-backend-final-{lint,build,tests}.log` and
+`/private/tmp/capital-historical-frontend-{lint,build,tests}.log`. Existing frontend
+tests are unchanged; no own-backend test double was added to the final change.
+
+Frozen install exited0 with unchanged lockfile; the first restricted attempt refused
+a module-directory replacement because its normal store was inaccessible, then the
+exact same frozen command succeeded with normal store access and no package update.
+Live `pnpm audit:production` exited0: zero high/critical, two existing moderate
+Router findings unchanged. Logs `capital-historical-frozen-install.log` and
+`capital-historical-audit.log` under/private/tmp. No advisory suppression or upgrade.
+
+## Browser acceptance integration and review
+
+Independent gpt-6-luna authored two additional real browser cases in6fa53f6,
+integrated as11ac0dc: account-switch late-response invalidation and51-position
+carry-in pages with an actual competing trade, pinned409, successful refreshed
+continuation and observed parent-revision invalidation with the correction draft
+retained. Root review corrected setup chronology, baseline-plus-buy quantity2,
+preview allowlist and nested journal shape before runtime; no incorrect oracle
+was accepted. Existing assertions were retained. Root strengthened the initial UI
+case with a literal hostile instrument label and explicit no-execution assertions.
+All seven new browser cases still require execution. Strict E2E TypeScript passed,
+exit0 (`/private/tmp/capital-historical-e2e-tsc.log`). The source guide records
+coverage, reconstruction/cumulative-total limits, revision conflicts and no writes.
