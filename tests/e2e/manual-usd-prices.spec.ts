@@ -318,9 +318,29 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   await editPrice.fill('110');
   await expect(review).not.toBeChecked();
   await review.check();
+  let loseRefresh = true;
+  await page.route(`${endpoint}**`, async (route) => {
+    if (loseRefresh && route.request().method() === 'GET') {
+      loseRefresh = false;
+      await route.fetch(); // Preserve the actual read; lose only response delivery.
+      await route.abort();
+      return;
+    }
+    await route.continue();
+  });
+  const lostRefresh = page.waitForEvent(
+    'requestfailed',
+    (request) => new URL(request.url()).pathname === endpoint && request.method() === 'GET',
+  );
   const corrected = await browserPost(page, priceBook(firstInstrument.id), () => save.click());
   expect(corrected.status()).toBe(201);
   expect(await corrected.json()).toMatchObject({ revision: 2, priceUsd: '110' });
+  await lostRefresh;
+  await expect(page.getByRole('status').filter({ hasText: 'Команда сохранена.' })).toBeVisible();
+  await expect(save).toBeDisabled();
+  const recoveredRead = await browserGet(page, firstInstrument.id, () => load.click());
+  expect(recoveredRead.status()).toBe(200);
+  expect(await recoveredRead.json()).toMatchObject({ currentRevision: 2 });
 
   await page.getByRole('button', { name: 'История', exact: true }).click();
   const historyRegion = page.getByRole('region', { name: 'История цены', exact: true });
