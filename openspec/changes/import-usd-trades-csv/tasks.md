@@ -7,10 +7,10 @@
 
 ## 2. Independent boundaries and strict parser
 
-- [ ] 2.1 Independently author csv-input/csv-parser tests for CSV-001-B and CSV-002-A/B/C: UTF-8/base64url/Unicode, exact and one-over caps, quotes/newlines/start lines, raw nested input, declared decimal/time modes, missing/overflow values and no valid-subset result. Missing imports are never claimed RED.
-- [ ] 2.2 Coordinator pins backend csv-parse7.0.2 in the actual manifest/lock, verifies frozen install and production audit, and records existing findings without changing package/runtime pins or owner work.
-- [ ] 2.3 Implement pure source/filename/settings/query validation and real-library inspection/normalization through the frozen seams, with no amount Number conversion, parser coercion, skipped records or custom CSV grammar.
-- [ ] 2.4 Characterize the actual parser at supported byte/record/column/cell limits and physical-line boundaries, including multibyte/BOM/quoted CRLF. Resolve any library discovery explicitly without weakening oracles.
+- [x] 2.1 Independently author csv-input/csv-parser tests for CSV-001-B and CSV-002-A/B/C: UTF-8/base64url/Unicode, exact and one-over caps, quotes/newlines/start lines, raw nested input, declared decimal/time modes, missing/overflow values and no valid-subset result. Missing imports are never claimed RED.
+- [x] 2.2 Coordinator pins backend csv-parse7.0.2 in the actual manifest/lock, verifies frozen install and production audit, and records existing findings without changing package/runtime pins or owner work.
+- [x] 2.3 Implement pure source/filename/settings/query validation and real-library inspection/normalization through the frozen seams, with no amount Number conversion, parser coercion, skipped records or custom CSV grammar.
+- [x] 2.4 Characterize the actual parser at supported byte/record/column/cell limits and physical-line boundaries, including multibyte/BOM/quoted CRLF. Resolve any library discovery explicitly without weakening oracles.
 
 ## 3. Shared ledger seam and additive persistence
 

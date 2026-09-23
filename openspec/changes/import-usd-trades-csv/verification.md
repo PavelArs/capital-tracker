@@ -21,7 +21,7 @@ was made to demonstrate those design claims; runtime verification remains requir
 | Scenarios | Planned executable evidence | Current result |
 | --- | --- | --- |
 | CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine expected RED: two failures; GREEN pending |
-| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Not written/run |
+| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests passed; HTTPS transport pending |
 | CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Not written/run |
 | CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Not written/run |
 | CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Not written/run |
@@ -58,3 +58,22 @@ New local commands use compatible Node22.23.2 and a temporary wrapper invoking
 cached pnpm10.33.0; repository and release-image pins remain unchanged. Use
 PATH=/private/tmp/capital-task-bin:/Users/pavelars/.nvm/versions/node/v22.23.2/bin:$PATH.
 No paid service, owner DB, production deploy, remote push or original-folder removal.
+
+## Pure boundaries and dependency — 2026-09-23
+
+Independent test commitded5d97 was reviewed and integrated126240d before pure source
+implementation. Actual `pnpm --dir backend exec jest accounting/csv-input.spec.ts
+accounting/csv-parser.spec.ts --runInBand --coverage=false` passed122 tests/2 suites,
+exit0 in1.447s (`/private/tmp/capital-csv-boundary-tests.log`). Includes actual parser
+exact262144bytes,100rows,32x4096decoded-byte record, malformed final records and
+BOM/multibyte/quoted LF+CRLF physical starts. Scoped Biome passed. First implementation
+check hit compile TS2550 for Object.hasOwn under the repository lib target (0 tests);
+changed to compatible hasOwnProperty.call, preserving project configuration. This
+compile failure is not behavioral RED. No assertions changed.
+
+Actual pnpm10.33 added exact csv-parse7.0.2 with no transitive dependencies; manifest
+and lock diff contain only that addition. Frozen install exit0
+(`/private/tmp/capital-csv-frozen-install.log`), required live production audit exit0
+(`/private/tmp/capital-csv-dependency-audit.log`): two existing moderate vulnerabilities,
+zero high/critical. Existing ignored Nest build-script warning remains. Host runs
+Node22.23.2; release-image Node22.21.1 verification remains pending.
