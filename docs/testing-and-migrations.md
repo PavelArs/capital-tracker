@@ -70,6 +70,13 @@ secrets or database persistence.
 Periodic jobs are disabled with BACKGROUND_JOBS_ENABLED=false to avoid wall-clock
 races; startup fetches and explicit wallet refresh still use actual adapters.
 Production defaults keep cron enabled. This setting is not an authentication bypass.
+The synthetic profile also sets the supported EXCHANGE_RATES_CACHE_TTL to86400000ms
+(one day), retaining rates loaded by the real application throughout the bounded
+suite. The production default remains ten minutes. This makes warm-cache restart
+checks deterministic: they still require exactly two crypto constructor requests
+and zero accounting-triggered requests, without accepting arbitrary FX refreshes.
+Release-artifact checks verify that both real backend containers use this setting.
+These scenarios do not claim to verify cache-expiry behavior.
 
 Playwright uses one Chromium worker and zero retries. Reports/traces/screenshots
 contain synthetic data only. The retained portfolio cases cover direct anonymous denial

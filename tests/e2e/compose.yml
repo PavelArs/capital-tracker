@@ -16,6 +16,9 @@ x-backend: &backend
     DB_NAME: capital_tracker_e2e
     REDIS_HOST: redis
     REDIS_PORT: "6379"
+    # Keep real startup-loaded rates warm throughout the bounded acceptance gate.
+    # Warm-cache restart cases do not assert expiry; accounting permits zero calls.
+    EXCHANGE_RATES_CACHE_TTL: "86400000"
     FRONTEND_URL: https://127.0.0.1:8443
     MFA_KEY_FILE: /run/secrets/ct-mfa-key
     MFA_KEY_ID: acceptance-only

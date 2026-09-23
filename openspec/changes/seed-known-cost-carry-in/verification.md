@@ -317,3 +317,33 @@ bundle-size warning remain. Strict E2E TypeScript and OpenSpec13/13 passed, exit
 (`capital-carry-in-note-tsc.log`, `capital-carry-in-note-spec.log`, /private/tmp).
 Unchanged backend/dependency checks remain as recorded. Complete release rerun is
 still required; this focused result does not close archive tasks.
+
+## Deterministic warm-cache fixture — 2026-09-23
+
+Full rerun atc20e465 (`/private/tmp/capital-carry-in-release-verified.log`) encountered
+CSV-001-A restart failure: the provider list included a fiat-rate startup fetch when
+the real Redis entry crossed its default600000ms lifetime. The existing startup
+helper intentionally expects exactly two crypto constructor requests with a warm
+cache. Application accounting made no new provider call; the failing assertion was
+restart setup, not a changed financial result. Root stopped only the owned Playwright
+process with SIGINT after identifying the failure, allowing runner finally cleanup.
+Terminal exit1:62 passed,1 failed,1 interrupted,69 not run,14.6m. This is an incomplete,
+failed gate. Artifacts: `/private/tmp/capital-carry-in-cache-failed-artifacts`.
+
+Independent review confirmed that explicit warm-cache fixture configuration preserves
+this test's contract. The synthetic Compose anchor now sets the supported
+EXCHANGE_RATES_CACHE_TTL=86400000; both real replicas retain rates obtained by actual
+startup throughout the bounded suite. Production remains at its existing default.
+Artifact checks require that actual environment value and exact replica equality.
+No CSV test, provider expected array, backend adapter, authentication or production
+configuration changed. These warm-cache cases do not claim expiry-behavior coverage.
+
+`caffeinate -is node /private/tmp/capital-carry-in-cache-focused.cjs` asserted exact
+backend36856553e640/frontendf81445af15fe images without rebuilding and passed the
+unchanged CSV/restart case,1/1 Chromium in18.4s, exit0,1worker0retries. Log
+`/private/tmp/capital-carry-in-cache-focused.log`. Actual startup/Redis/PostgreSQL/MFA
+and strengthened artifact checks were used. This is fixture determinism with retained
+strict characterization, not a manufactured new-feature RED. Independent exact-diff
+review found no weakened oracle. Artifact script syntax passed; source checks remain
+valid because product code is unchanged. Owner Nginx/lock hashes remained unchanged.
+The complete gate must restart from the beginning before archival.

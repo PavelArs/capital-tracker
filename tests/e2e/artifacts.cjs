@@ -29,6 +29,7 @@ assert.deepEqual(Object.keys(proxy.NetworkSettings.Networks).sort(),
   ['capital-tracker-e2e_clients', 'capital-tracker-e2e_ingress', 'capital-tracker-e2e_isolated']);
 assert.equal(proxy.NetworkSettings.Networks['capital-tracker-e2e_isolated'].IPAddress, '172.30.91.2');
 assert.ok(backend.Config.Env.includes('TRUSTED_PROXY_IPS=["172.30.91.2"]'));
+assert.ok(backend.Config.Env.includes('EXCHANGE_RATES_CACHE_TTL=86400000'));
 const replica = inspect(docker(...compose, 'ps', '-q', 'backend-replica'));
 assert.equal(replica.Image, backend.Image);
 assert.deepEqual([...replica.Config.Env].sort(), [...backend.Config.Env].sort());

@@ -46,103 +46,79 @@ none rejected. Use caffeinate -is for long runs. Current active run is listed be
 
 ## Verified predecessor
 
-Twelve archived slices cover baseline/release harness, CLI owner, opaque sessions,
-mandatory MFA, preserved checkout, dependencies, source trust, auth limits, exact
-openings, USD FIFO trades and reviewed CSV import. Full evidence is in each archive.
-Latest archive83ce99d: openspec/changes/archive/2026-09-23-import-usd-trades-csv.
-Actual source2ddfc58/product12e718c full gate:124/124 Chromium in26.4m,1worker0retries,
-exit0 plus migrations15/PG/auth/artifact/topology. Log capital-csv-release-full.log
-under /private/tmp. Canonical strict12 passed. No production release claim.
-Exact CSV predecessor images retained as historical evidence:
-backend sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46
-frontend sha256:e973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f
-Last dependency gate had0 high/critical,2 moderate Router findings; not refreshed
-for the active slice. Hosted CI, second browser and backup/restore remain unrun.
+CSV archive83ce99d: openspec/changes/archive/2026-09-23-import-usd-trades-csv.
+Source2ddfc58/product12e718c: full124/124 Chromium26.4m,1worker0retries,exit0;
+all migrations15/PG/auth/artifact prerequisites passed. Canonical strict12 passed.
+Full brief, hosted CI, other browsers, backup/restore and production remain unverified.
 
-## Active seed-known-cost-carry-in
+## Current carry-in slice
 
-Read proposal/design/persistence/spec deltas/tasks/verification in its change folder.
-Known-cost current opening only; explicit original Q/C/R; exact original cumulative
-allocation offsets; no invented historical trades or double holdings. Shared owned
-account lock, replay before mutable checks, caller-owned RR baseline reads, explicit
-carry-in provenance. Baseline amendment remains required later work. Old binaries
-cannot interpret new carry-in origins: no mixed-version or safe rollback claim.
+Read openspec/changes/seed-known-cost-carry-in/{proposal,design,persistence,specs,
+tasks,verification}.md (actual individual paths). Known-cost current opening only;
+explicit original Q/C/R, original cumulative allocation, immutable origin/baseline,
+shared account lock and caller-owned RR reads. No inferred history or double holdings.
+Old binaries cannot interpret carry-in origins; no mixed-version/binary rollback claim.
+Migration16 is additive; no owner-data rewrite or destructive down. Amendments deferred.
 
-Actual predecessor RED at859e9b7, recordedcc186bc: exact CSV images/no rebuild,
-real password/MFA/opening/PostgreSQL; expected201/actual404 and missing Russian
-heading. Log /private/tmp/capital-carry-in-predecessor-red.log, preserved RED artifacts.
+Genuine exact-CSV-image RED at859e9b7 recordedcc186bc: missing API201/404 and missing
+Russian heading, actual password/MFA/PG. Shared services/domain/migration/frontend
+integrated by46ce63f. JSON102401-byte413 defect had actual unit/HTTPS500 RED and narrow
+filter fix. Full backend902/28, frontend95/10, lint/build, strict E2ETSC, frozen install
+and live production dependency audit passed (0 high/critical,2 existing moderate).
+Existing77/29 lint and bundle warnings retained. Detailed commands/images/logs/reviews
+are in verification.md; do not redo unchanged checks without cause.
 
-Integrated independent components: pure tests5eaae87, services36c6ed6, root shared
-7175f50, PG1188947/96f4d2b, frontend e31a0d8. Audit reviewed shared domain, migration16,
-entities and frontend without blockers. Root subsequently added migration fixtures,
-expanded browser tests and the JSON413 fix; final independent review is now complete.
-Review-driven changes only strengthen tests and correct documentation.
+Independent critical review confirmed source/schema/UI; strengthened other-account
+CSV fingerprints and exact admission deltas at89846b3. Simple docs/count reviews
+actually used gpt-6-luna. Product unchanged until the one-line note fix below.
 
-Migration16/entities and populated15 fixture are implemented. Fresh16/replay/all
-populated8..15/unsafe legacy refusals passed. Opening, USD, CSV and8 carry-in PG
-families passed across runs. Logs /private/tmp/capital-carry-in-pg-{first,second,third}.log;
-third exit0. Initial fixture repairs only changed stale migration15 count and allowed
-ONLY the new journal.openingRevision nullable integer; all old columns/rows retained.
-PG backend image: sha256:ce10d4b64c06b11e3f4f71294f7ae3bf3c9d286f0dc684be3081d342f54e0186.
+Release attempts and actual outcomes:
+-89846b3 full gate stopped before browsers on stale15 migration count. Three counts
+ updated16 at524647f, independently reviewed without changed financial/security oracle.
+-524647f full gate:132 passed/1 failed in28.8m,exit1; all prerequisites passed.
+ OPEN-003-A got2 alerts instead of1: actual stale409 + persistent unknown-cost guidance.
+ Log capital-carry-in-release-final.log; artifacts capital-carry-in-release-failed-artifacts.
+ Earlier root updates missed the earlier failure by tailing latest tests; user corrected.
+ Always scan COMPLETE passed/failed counts with /private/tmp/capital-release-progress.py.
+-c20e465 fixes ONLY unknown-cost paragraph role=note + visible warning style; text/
+ refusals/action alerts unchanged. CARRY-005-B and note/no-alert assertion added.
+ Actual unchanged-image RED2/2 failures, then focused2/2 GREEN25.3s,exit0;
+ logs capital-carry-in-note-{red,green}.log. Exact diff independently reviewed.
+ Frontend lint/build95/10, E2ETSC and OpenSpec13 passed after fix.
+-c20e465 next full gate hit CSV warm-cache restart after real Redis10-minute expiry.
+ Deliberately interrupted ONLY owned Playwright, runner finally cleanup completed.
+ Exit1:62passed/1failed/1interrupted/69unrun,14.6m; log capital-carry-in-release-verified.log;
+ artifacts capital-carry-in-cache-failed-artifacts. Never claim this gate passed.
 
-Original2 real HTTPS tests passed31.2s. Expanded tests cover actual401/MFA/SPA replay,
-route/CSRF privacy, stale and late consent, literal labels/unknown costs, accepted
-receipt/read loss, manual/CSV250/100/correction230/rollback/bytes, deferred HTTP COMMIT.
-Their intermediate fixture errors are recorded honestly in verification.md.
+Now synthetic Compose alone explicitly sets supported EXCHANGE_RATES_CACHE_TTL86400000;
+actual artifact check asserts both replica environments. Exact provider expectations
+unchanged:2 constructor calls/zero accounting calls. Production default unchanged.
+Independent review approved fixture determinism, no expiry coverage claim. Exact-image
+focused CSV case passed1/1 in18.4s,exit0, capital-carry-in-cache-focused.log.
+All logs/artifact folders above are under /private/tmp. Owner hashes unchanged.
+Current images:
+backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315
+frontend sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a
 
-Genuine JSON defect:102401-byte body expected413/actual500 via real HTTPS. Added
-CARRY-006-B boundary/privacy scenario and unit RED. Narrow Error/type/status filter
-fix preserves private generic500 for unrelated errors.39/39 admission tests passed.
-Full backend902/28 passed11.333s; lint passed, strict OpenSpec13 passed. Logs:
-/private/tmp/capital-carry-in-{json-unit-red,json-unit-green,backend-final-tests,
-backend-final-lint,spec-final,e2e-tsc-final}.log (individual filenames, no literal braces).
-New backend build passed, image:
-sha256:60d3225df079dd372d698846b63dfc3ea15244d3fd446c33538afa2a1c6dd1e4.
+NEXT: run complete gate on fixture correction; record real terminal result/images,
+independent cleanup/hashes, close4.5/6.2/6.3 and archive6.4 only after success. Use
+supported openspec archive --yes to sync all reviewed deltas, then fix canonical
+purpose/relative links and validate again. Never deploy or consolidate incomplete work.
 
-NOW: all9 carry-in Playwright cases completed exit0 in2.0m,1worker0retries,
-/private/tmp/capital-carry-in-http-integrated.log. Exact backend digest above; frontend
-sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c.
-No Docker run is active. Independent inventory found no synthetic containers/networks;
-owner Nginx/lock hashes unchanged. E2E strict TypeScript exit0. Preserve this evidence.
+## Next slice prepared independently, not implemented
 
-READY: focused stronger2 passed25.9s, /private/tmp/capital-carry-in-review-focused.log,
-strict E2E TypeScript passed. Frozen install/live audit/frontend lint/build95/10 passed;
-0 high/critical,2 existing moderate Router findings, unchanged77/29 lint warnings and
-629.42kB bundle warning. See active verification for actual commands/results/reviews.
-No new product code since46ce63f; previously recorded902/28 backend checks remain valid.
-
-Full release attempt89846b3 stopped before browsers at stale15-count auth-limit
-fixture; all migration16/upgrades/refusals passed first. Log capital-carry-in-release-full.log.
-Three prerequisite counts (auth-limits DB, startup state/show) updated16; independent
-cheap-model review confirms no other oracle changed. This is not behaviorRED.
-
-Full release524647f finished exit1:132 passed/1 failed in28.8m,1worker0retries.
-Log /private/tmp/capital-carry-in-release-final.log; failure artifacts preserved in
-/private/tmp/capital-carry-in-release-failed-artifacts. All DB/CLI/startup/artifact
-prerequisites passed. OPEN-003-A manual-opening.spec.ts:301 expected one alert after
-real409 but saw opening conflict + persistent unknown-cost CarryIn alert. Root's
-intermediate no-failure updates missed the earlier failure in tailed logs; corrected
-explicitly to user. Always scan complete summaries, not only latest test indexes.
-Cleanup independently empty; owner Nginx/lock hashes unchanged.
-
-Reviewed fix: unknown-cost eligibility guidance becomes a visible role=note with
-warning styling; preserve text/refusals and actual conflict/recovery alerts. Cheap
-independent review supports this semantic correction. CARRY-005-B and a strict note/
-no-duplicate-alert assertion added before product changes. Existing opening test is
-unchanged. Actual unchanged-image RED finished exit1 with both intended failures:
-/private/tmp/capital-carry-in-note-red.log, runner capital-carry-in-note-red.cjs.
-Backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315;
-frontend sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c.
-One product line changed unknown-cost to visible role=note; exact diff independently
-reviewed without blocker. Focused GREEN finished exit0,2/2 in25.3s; log
-/private/tmp/capital-carry-in-note-green.log. Frontend image now
-sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a.
-Frontend lint/build95/10, E2E TypeScript, OpenSpec13 passed. Cleanup independently
-empty, owner Nginx/lock hashes unchanged. NEXT: full release rerun, still no archive.
-
-Next slice preparation is isolated in worktree historical-accounting-design, branch
-refactor/historical-accounting-design: e65529a reviewed OpenSpec proposal/design/
-4 requirements/15 tasks,6390ac8 root pure/query test oracles,0a6efa2 independent
-gpt-6-luna two initial real HTTPS/browser tests. No product implementation/RED yet.
-Dependency is verified carry-in archival. Do not integrate/run it prematurely.
-Full brief remains unfinished. Never deploy or consolidate incomplete work.
+Worktree capital-tracker-worktrees/historical-accounting-design, branch
+refactor/historical-accounting-design. New inspect-historical-accounting proposal/
+design/4requirements/15tasks e65529a; pure/query test oracles6390ac8; independent
+initial API/UI tests0a6efa2; root HTTP privacy tests a7e1471; independent PG probe
+82a8baa with root final review ee07ba6. All changes isolated from active release.
+Cheap agent gpt-6-luna authored/reviewed bounded tasks; root caught and corrected
+missing trade fingerprints, UI CSRF bookkeeping and a quantity2 expected-value bug.
+Strict E2ETSC/scoped Biome/PG syntax passed, no historical runtime or product code yet.
+Temporary dependency symlinks were removed; main dependencies unchanged.
+Future interface: HistoricalAccountingService(source).getSnapshot(owner,account,raw).
+Pure interfaces: projectHistoricalAccounting(heads,baseline,at), parseHistoricalQuery.
+Do not integrate or run next-feature RED before carry-in is verified/archived. Then
+reconcile canonical specs, integrate prepared commits, run exact carry-in-image missing
+API/UI RED without rebuild, implement incrementally. PG100+1000 bound and late-response
+UI cases still need coverage. Full target remains substantially unfinished.
