@@ -42,16 +42,26 @@ import {
 
 async function fillTrade(page: Page, input: TradeInput): Promise<void> {
   const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
-  await page.waitForLoadState('networkidle');
+  await expect(form).toBeVisible();
   const instrument = form.getByLabel('Инструмент', { exact: true });
-  for (
-    let loaded = 0;
-    (await instrument.locator(`option[value="${input.instrumentId}"]`).count()) === 0;
-    loaded++
-  ) {
+  await expect(instrument).toBeVisible();
+  await expect(instrument).toBeEnabled();
+  const option = instrument.locator(`option[value="${input.instrumentId}"]`);
+  const more = page.getByRole('button', { name: 'Показать еще инструменты', exact: true });
+  for (let loaded = 0; ; loaded++) {
+    // A response can settle before React renders the form or its first options.
+    // Wait for the actual desired option or usable pagination, not network idleness.
+    await expect
+      .poll(
+        async () =>
+          (await option.count()) > 0 || ((await more.isVisible()) && (await more.isEnabled())),
+      )
+      .toBe(true);
+    if ((await option.count()) > 0) break;
     expect(loaded, 'Synthetic instrument discovery stays bounded').toBeLessThan(10);
-    await page.getByRole('button', { name: 'Показать еще инструменты', exact: true }).click();
-    await page.waitForLoadState('networkidle');
+    const previousCount = await instrument.locator('option').count();
+    await more.click();
+    await expect.poll(() => instrument.locator('option').count()).toBeGreaterThan(previousCount);
   }
   await instrument.selectOption(input.instrumentId);
   await form
