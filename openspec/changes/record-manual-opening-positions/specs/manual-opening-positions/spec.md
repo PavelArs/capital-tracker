@@ -10,7 +10,8 @@ full-owner session/CSRF protection, parameterized owner-scoped access and no pro
 - **GIVEN** an owner logged in through actual password and MFA forms
 - **WHEN** the owner creates a manual account and opening positions through Russian protected pages
 - **THEN** quantity 9007199254740993.000000000000000001 with known total USD cost 123.450000000000000001 and quantity 0.000000000000000001 with unknown cost survive API/PostgreSQL/restart/reload exactly as strings
-- **AND** legacy financial rows and provider request counts remain unchanged
+- **AND** legacy financial rows remain unchanged and accounting page/API operations make no provider requests before or after restart
+- **AND** the retained startup price warmup is measured separately as exactly one existing BTC/ETH CoinGecko request per restarted backend, without attributing it to accounting operations
 
 #### Scenario: OPEN-001-B Identity and bounded discovery remain explicit
 - **WHEN** two instruments share a symbol and one instrument is reused across two manual accounts

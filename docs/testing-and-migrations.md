@@ -18,6 +18,9 @@ are asserted, and the client verifies HTTPS certificates. The helper's direct HT
 mode is restricted to negative trusted/untrusted-peer tests using existing images.
 Fixed synthetic subnets are checked for overlap with unrelated Docker networks
 before startup; a collision aborts without changing those networks.
+The synthetic two-server upstream uses a 64 KiB shared Nginx zone so all workers
+share routing state. Readiness still proves both real backend addresses through
+the access log; it never substitutes a successful sibling for the other replica.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -34,6 +37,9 @@ the fixed `capital-tracker-e2e` Compose project defined in tests/e2e/compose.yml
 Its PostgreSQL data is tmpfs and synthetic; every run resets that project.
 It never invokes the production Compose file. Only 127.0.0.1:8443 is published.
 Stop an interrupted run with `pnpm test:e2e:down` (synthetic data is discarded).
+On macOS, run `caffeinate -is pnpm test:e2e` to prevent sleep for the duration of
+the command (the system-sleep assertion requires AC power). Sleep invalidates
+wall-clock session and CLI timing checks; a suspended run is not acceptance evidence.
 
 The browser origin is exactly `https://127.0.0.1:8443`, matching backend
 `FRONTEND_URL`; the built client uses `VITE_API_URL=/api`. Substituting `localhost`

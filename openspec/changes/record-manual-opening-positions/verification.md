@@ -93,3 +93,36 @@ Frozen offline install and required high-threshold audit both exited0 in
 capital-manual-frozen.log and capital-manual-audit.log. Two known moderate Router
 findings remain visible and unsuppressed; lockfile is unchanged. Full release-image
 verification still remains; no archive or full product completion is claimed.
+
+## First full image run: failed, retained evidence
+
+`pnpm test:e2e` exited1 in capital-manual-image-first.log:77 passed,8 failed,1.5h.
+All real PostgreSQL/migration/CLI/artifact prerequisites ran before browser checks.
+First traces/report are retained under /private/tmp/capital-manual-first-artifacts.
+This run is not full acceptance and the change stays active.
+
+One new case reached its final provider assertion after all exact UI/PG/history
+checks passed: two existing constructor CoinGecko BTC/ETH warmups were wrongly
+included in the expected zero accounting delta. Independent code/trace review
+confirmed CryptoPricesService startup behavior predates this change. Commit dbe3311
+now requires the complete provider log unchanged before restart, exactly two known
+warmup records at restart, and the complete new log unchanged afterward. It does
+not filter requests or weaken amount, history or accounting-provider assertions.
+OPEN-001-A now states this distinction explicitly.
+
+Another new case failed before its body in selectBackend('both'). The synthetic
+upstream lacked shared worker state; a64KiB zone is added while preserving the real
+two-address routing oracle, identity rules, retry-off and production template.
+[Nginx zone documentation](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#zone)
+confirms the supported shared-state behavior. Per-worker distribution is a plausible
+historical cause, not proven after container cleanup; real rerun is required.
+
+Five retained failures contain618/899-second trace gaps coinciding with local system
+sleep; another recovery400/401 mismatch shows the backend Date jumping899 seconds
+after issuing a five-minute pending cookie. No authentication assertion is changed.
+System evidence is /private/tmp/capital-manual-sleep-evidence.log; independent triage
+and complete awake rerun are required. macOS caffeinate -is will keep the next command
+awake without changing application clocks, timeouts or system sleep settings.
+
+After failure, Docker read checks found zero owned Compose containers/networks.
+Owner Nginx retained its original SHA256/mode0644/1348bytes; lockfile hash unchanged.

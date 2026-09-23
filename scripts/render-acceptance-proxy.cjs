@@ -16,6 +16,7 @@ function renderAcceptanceProxy(mode = 'both') {
     .replaceAll('http://127.0.0.1:3001', 'http://frontend:80');
   return `# Synthetic fixture: no automatic upstream replay, no credentials in routing evidence.
 upstream acceptance_backend {
+    zone acceptance_backend 64k;
 ${servers.map(server => `    server ${server};`).join('\n')}
 }
 proxy_next_upstream off;

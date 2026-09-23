@@ -64,33 +64,43 @@ No full production-readiness or availability guarantee is claimed.
 
 ## Now and next
 
-Active record-manual-opening-positions integrated; prioradmissionarchive e34b88d.
-Actual precedingimageRED153109e: realMFA API201expected/404actual andmissingRussianpage,
-logcapital-manual-opening-behavior-red.log exit1; nofuturetables orownbackendmock.
-Rootstoragef537161 fouradditivetables/migration13; typedaccountingbackend d646507,
-independentPG/upgradetests aab92f9. FocusedPGsecondlogexit0, populated12preservesallrows/
-schema/seq+liveadmissions; exactnumeric/null/composite/race/deferredcommitchecks pass.
-FirstPGsetup failedCompose start_interval requiresstart_period; fixture repeatsimage30s,
-retains actualimagehealthpolicy except2s/2s cadence, independentlyartifactverified.
-FocusedrealMFAAPI exit0/1case14s capital-manual-opening-api-first.log; backendimage
-sha256:9efd443953ddd723844aca23da46a9de6b016ffbc16b443ed65a933b3f35ce47. UIimage stillold.
-Backend build/125boundarytests pass; root strengthened100/101distinctpositions and256raw
-length. Source independentreview no blocker, rawbodytypeObject→servicevalidationonce.
-Frontend client12retainedtests pass; fullcurrentbaseline notrun untilUIintegration.
+Active record-manual-opening-positions implemented and independently reviewed, not archived.
+Current integrated source base1258a50 plus dbe3311 provider-oracle correction.
+Actual preceding-image RED153109e: real MFA API201expected/404actual and missing
+Russian page, capital-manual-opening-behavior-red.log exit1. Four additive tables,
+migration13, exact-string inputs, immutable account-locked opening revisions and
+Russian UI are integrated. Focused real PG migration/race/rollback checks passed
+(capital-manual-opening-pg-second.log); initial real MFA API passed1case14s.
+Root strengthened100/101 distinct positions and256 raw characters;126 new boundary
+checks pass. Full baseline capital-manual-baseline-first.log exit0:667 backend22suites,
+81 frontend10files, both lint/build and10 strict OpenSpec items. Frozen install and
+high-threshold audit exit0; two previously documented moderate findings remain.
 
-Parallel: manual_opening_frontend gpt6luna ownsnewpages/API/components in ownworktree;
-gate_acceptance ownsnewmanual-opening.spec/fixtures in manual-opening-acceptance;
-audit_security independentread-onlyUI/clientreview; provider_feasibility completedPG
-and independentbackend/DDLreview. Rootownsmigrations/AppModule/App/Layout/client/shared
-fixtures/lock/deployment. Next integrateUI+expandedQA afterreview, runfullsource/frozen/
-audit andactualHTTPS74retained+new tests; onlythenarchive. OwnerNginxpreserved/unstaged.
-Currentchanges NOTfullyverified; noarchiveyet. docs/manual-accounting.md describes
-boundedmanualpositions, notCSV/FIFO/prices/aggregation. Evidenceinactiveverification.md.
+First full image run capital-manual-image-first.log exited1:77/85 passed,8 failed,
+1.5h. Cleanup verified: no synthetic Compose containers/networks remain; owner Nginx
+hash/mode and lock unchanged. First artifacts copied to
+/private/tmp/capital-manual-first-artifacts. Manual exact UI/DB/history assertions
+passed but a whole-run provider count incorrectly included two retained startup
+warmups. Corrected oracle now separately requires zero accounting calls and exactly
+two known restart calls, with matching spec clarification and independent review.
+One manual test failed before its body in real both-backend routing readiness;
+synthetic Nginx shared upstream zone added, actual two-address oracle unchanged.
+Candidate per-worker routing cause is not claimed proven without lost container log.
+Five retained failures show618/899s trace gaps matching macOS sleep; recovery401
+shows a899s server clock jump after login, expiring its real pending session.
+Independent triage is finishing. Never relax authentication expiry assertions.
+Full rerun will use macOS caffeinate -is for command lifetime. No GREEN/archive yet.
 
-Later required: CSV/trades/FIFO/fees, ownedtransfers/flows, performance/XIRR/TWR,
-DB-firstprice/FX/history, sixchainadapters/reconciliation, optionalexplicitfreeAI,
-immutableimagepromotion/security/backuprestore andfinalrequirementsaudit; onlythen
-oldrepoconsolidation/confirmedduplicatecleanup. Fullgoal remainsopen.
+Parallel artifact-only worktree usd-trades-spec prepares record-usd-fifo-trades:
+explicit declared-empty origin, bounded USD journal/corrections/void and exact FIFO.
+No trade code or schema implemented. Research and independent acceptance notes are
+/private/tmp/capital-usd-trades-next-review.md and capital-usd-trades-acceptance-notes.md.
+Root owns migrations/shared fixtures/dependencies/deployment; agents own bounded
+worktrees. Current manual must verify/archive before next implementation and RED.
 
-Worktreesretained; do notstage node_modules symlinks. Reuseidleagents viafollowup_task.
-Noapprovalrejectionoccurred. NoDocker runningafterfocusedAPI cleanup; nextfullrunrootonly.
+Later required: CSV/carry-in/FIFO/fees, owned transfers/flows, performance/XIRR/TWR,
+DB-first price/FX/history, six chain adapters/reconciliation, optional explicit free AI,
+immutable image promotion/security/backup restore and final requirements audit;
+only then old-repo consolidation and confirmed duplicate cleanup. Full goal open.
+Worktrees retained; never stage node_modules symlinks. Reuse idle agents.
+No approval rejection, production access/deployment, user data change or removal.
