@@ -51,12 +51,21 @@ escalation; authorized isolated read succeeded, no approval rejection.
 
 ## RED
 
-Pending real predecessor run. Verified prior accepted images:
+Actual `/private/tmp/capital-valuation-red.cjs` exited1 against verified prior
+accepted images, source16bb252 plus copied typed acceptance draft. Two expected
+behavioral failures: anonymous valuation GET expected401 received404 (new route
+absent); new heading missing after10s. Playwright1worker,0retries. Raw log
+`/private/tmp/capital-valuation-red.log`; synthetic artifacts retained in
+`/private/tmp/capital-valuation-red-artifacts`. Product files remained unchanged
+until both failures were observed. Final test commitc208044 refines bookkeeping
+and selectors, retaining both RED assertions. Previous accepted images:
 BEsha256:16266828034a018b39ec611733c062415da7e5d2001ee19a054385c620fa3dfd
 FEsha256:45a1f6056008cddc1162ebb52681475af63863922a673bcff947b79fac08c9db.
 Missing TypeScript modules are not counted as behavioral RED.
 
 ## GREEN and final review
 
-Pending. Record actual results, image IDs, source commit, failed attempts and final
-cleanup before archive; do not turn this plan into evidence without execution.
+Initial new backend check: `pnpm --dir backend test --runInBand --coverage=false
+historical-valuation historical-accounting manual-price-input` exited0,123tests/4
+suites,1.944s (31new+92retained). Backend build and scoped Biome passed.
+Real PG/HTTPS, UI integration, final independent review and archive remain pending.

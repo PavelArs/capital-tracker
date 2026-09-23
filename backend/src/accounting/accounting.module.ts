@@ -7,6 +7,8 @@ import { CsvImportController } from './csv-import.controller';
 import { CsvImportService } from './csv-import.service';
 import { CsvUploadInterceptor } from './csv-upload.interceptor';
 import { HistoricalAccountingService } from './historical-accounting.service';
+import { HistoricalValuationController } from './historical-valuation.controller';
+import { HistoricalValuationService } from './historical-valuation.service';
 import { ManualPriceController } from './manual-price.controller';
 import { ManualPriceService } from './manual-price.service';
 import { PortfolioFlowController } from './portfolio-flow.controller';
@@ -22,6 +24,7 @@ import { TradeService } from './trade.service';
     CarryInController,
     PortfolioFlowController,
     ManualPriceController,
+    HistoricalValuationController,
   ],
   providers: [
     AccountingService,
@@ -32,6 +35,7 @@ import { TradeService } from './trade.service';
     HistoricalAccountingService,
     PortfolioFlowService,
     ManualPriceService,
+    HistoricalValuationService,
   ],
 })
 export class AccountingModule {}
