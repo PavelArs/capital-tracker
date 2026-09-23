@@ -5,6 +5,7 @@ import {
   type Position,
   accountingApi,
 } from '@api/accounting.api';
+import { TradeJournal } from '@features/accounting/TradeJournal';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -90,6 +91,11 @@ export default function ManualAccountDetail() {
   const [asOf, setAsOf] = useState(defaultAsOf);
   const [instrumentName, setInstrumentName] = useState('');
   const [instrumentSymbol, setInstrumentSymbol] = useState('');
+  const [journalGuard, setJournalGuard] = useState<{
+    accountId: string;
+    openingRevision: number;
+    hasJournal: boolean | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [instrumentsLoading, setInstrumentsLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -115,6 +121,19 @@ export default function ManualAccountDetail() {
     () => routeRef.current.id === id && routeRef.current.generation === routeGeneration,
     [id, routeGeneration],
   );
+
+  const openingRevision = account?.currentRevision ?? 0;
+  const handleJournalEligibility = useCallback(
+    (hasJournal: boolean | null) => {
+      if (isCurrentRoute()) setJournalGuard({ accountId: id, openingRevision, hasJournal });
+    },
+    [id, openingRevision, isCurrentRoute],
+  );
+  const journalStatus =
+    journalGuard?.accountId === id && journalGuard.openingRevision === openingRevision
+      ? journalGuard.hasJournal
+      : null;
+  const openingBlocked = journalStatus !== false;
 
   const instrumentById = useMemo(() => {
     const map = new Map(instruments.map((instrument) => [instrument.id, instrument]));
@@ -295,7 +314,7 @@ export default function ManualAccountDetail() {
 
   async function saveOpening(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!account || account.id !== id) return;
+    if (!account || account.id !== id || openingBlocked) return;
     if (draft.length < 1 || draft.length > 100) {
       setError('Добавьте от 1 до 100 позиций.');
       return;
@@ -400,7 +419,7 @@ export default function ManualAccountDetail() {
         <>
           <header className="manual-page__header">
             <h1>{account.name}</h1>
-            <p>Текущая ревизия: {account.currentRevision}</p>
+            <p>Текущая ревизия: {account.currentRevision} (начальные позиции)</p>
           </header>
 
           <div className="manual-coverage-warning" role="note">
@@ -461,165 +480,190 @@ export default function ManualAccountDetail() {
             </section>
           )}
 
-          <section className="manual-card" aria-labelledby="manual-opening-heading">
-            <h2 id="manual-opening-heading">Начальные позиции</h2>
-            <p className="manual-muted">
-              Сохранение заменяет весь текущий список позиций и создает новую ревизию.
+          <TradeJournal
+            key={`${id}:${account.currentRevision}`}
+            accountId={id}
+            instruments={instruments}
+            openingBusy={saving}
+            onEligibility={handleJournalEligibility}
+          />
+          {journalStatus === true ? (
+            <p className="manual-coverage-warning">
+              Начальные позиции нельзя заменять после открытия журнала сделок. Пустое начало
+              остаётся основой журнала даже после аннулирования всех сделок.
             </p>
-            <form className="manual-form" onSubmit={saveOpening}>
-              <div className="manual-field manual-date-field">
-                <label htmlFor="manual-as-of">Дата и время начала учета (UTC)</label>
-                <input
-                  id="manual-as-of"
-                  name="asOf"
-                  type="text"
-                  inputMode="text"
-                  autoComplete="off"
-                  disabled={saving}
-                  placeholder="2026-09-22T12:30:00.000Z"
-                  value={asOf}
-                  onChange={(event) => {
-                    setAsOf(event.target.value);
-                    setError(null);
-                  }}
-                />
-                <small>
-                  Укажите точное время с часовым поясом UTC, например 2026-09-22T12:30:00.000Z.
-                </small>
-              </div>
-
-              <div className="manual-position-list">
-                {draft.map((position, index) => {
-                  const selected = instrumentById.get(position.instrumentId);
-                  return (
-                    <fieldset className="manual-position" key={position.key}>
-                      <legend>Позиция {index + 1}</legend>
-                      <div className="manual-position__grid">
-                        <div className="manual-field">
-                          <label htmlFor={`position-instrument-${index}`}>Инструмент</label>
-                          <select
-                            id={`position-instrument-${index}`}
-                            disabled={saving}
-                            value={position.instrumentId}
-                            onChange={(event) =>
-                              updateDraft(index, { instrumentId: event.target.value })
-                            }
-                          >
-                            <option value="">Выберите инструмент</option>
-                            {selected && !instruments.some((item) => item.id === selected.id) && (
-                              <option value={selected.id}>
-                                {selected.name}
-                                {selected.symbol ? ` (${selected.symbol})` : ''}
-                              </option>
-                            )}
-                            {instruments.map((instrument) => (
-                              <option key={instrument.id} value={instrument.id}>
-                                {instrument.name}
-                                {instrument.symbol ? ` (${instrument.symbol})` : ''}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="manual-field">
-                          <label htmlFor={`position-quantity-${index}`}>Количество</label>
-                          <input
-                            id={`position-quantity-${index}`}
-                            type="text"
-                            inputMode="decimal"
-                            autoComplete="off"
-                            disabled={saving}
-                            value={position.quantity}
-                            onChange={(event) =>
-                              updateDraft(index, { quantity: event.target.value })
-                            }
-                          />
-                        </div>
-                        <div className="manual-field">
-                          <label htmlFor={`position-cost-status-${index}`}>Себестоимость</label>
-                          <select
-                            id={`position-cost-status-${index}`}
-                            disabled={saving}
-                            value={position.costStatus}
-                            onChange={(event) =>
-                              updateDraft(index, {
-                                costStatus: event.target.value as PositionDraft['costStatus'],
-                              })
-                            }
-                          >
-                            <option value="known">Известна</option>
-                            <option value="unknown">Неизвестна</option>
-                          </select>
-                        </div>
-                        {position.costStatus === 'known' && (
-                          <div className="manual-field">
-                            <label htmlFor={`position-cost-${index}`}>
-                              Общая себестоимость, USD
-                            </label>
-                            <input
-                              id={`position-cost-${index}`}
-                              type="text"
-                              inputMode="decimal"
-                              autoComplete="off"
-                              disabled={saving}
-                              value={position.totalCostUsd}
-                              onChange={(event) =>
-                                updateDraft(index, { totalCostUsd: event.target.value })
-                              }
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <button
-                        className="manual-button manual-button--danger"
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          setDraft((current) =>
-                            current.filter((_, itemIndex) => itemIndex !== index),
-                          )
-                        }
-                      >
-                        Удалить позицию
-                      </button>
-                    </fieldset>
-                  );
-                })}
-              </div>
-              <div className="manual-actions">
-                <button
-                  className="manual-button manual-button--secondary"
-                  type="button"
-                  disabled={saving || draft.length >= 100}
-                  onClick={() =>
-                    setDraft((current) => [
-                      ...current,
-                      {
-                        key: newRequestId(),
-                        instrumentId: '',
-                        quantity: '',
-                        costStatus: 'known',
-                        totalCostUsd: '',
-                      },
-                    ])
-                  }
-                >
-                  Добавить позицию
-                </button>
-                <button
-                  className="manual-button"
-                  type="submit"
-                  disabled={saving || (conflictPending && !conflictReviewed)}
-                >
-                  {saving ? 'Сохранение…' : 'Сохранить начальные позиции'}
-                </button>
-              </div>
-            </form>
-            {instruments.length === 0 && !instrumentsLoading && (
+          ) : (
+            <section className="manual-card" aria-labelledby="manual-opening-heading">
+              <h2 id="manual-opening-heading">Начальные позиции</h2>
               <p className="manual-muted">
-                Сначала создайте инструмент ниже или загрузите следующую страницу списка.
+                Сохранение заменяет весь текущий список позиций и создает новую ревизию.
               </p>
-            )}
-          </section>
+              {openingBlocked && (
+                <p role="status">
+                  Ожидается проверка состояния журнала перед сохранением начальных позиций.
+                </p>
+              )}
+              <form className="manual-form" onSubmit={saveOpening}>
+                <fieldset
+                  disabled={saving || openingBlocked}
+                  style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
+                >
+                  <div className="manual-field manual-date-field">
+                    <label htmlFor="manual-as-of">Дата и время начала учета (UTC)</label>
+                    <input
+                      id="manual-as-of"
+                      name="asOf"
+                      type="text"
+                      inputMode="text"
+                      autoComplete="off"
+                      disabled={saving}
+                      placeholder="2026-09-22T12:30:00.000Z"
+                      value={asOf}
+                      onChange={(event) => {
+                        setAsOf(event.target.value);
+                        setError(null);
+                      }}
+                    />
+                    <small>
+                      Укажите точное время с часовым поясом UTC, например 2026-09-22T12:30:00.000Z.
+                    </small>
+                  </div>
+
+                  <div className="manual-position-list">
+                    {draft.map((position, index) => {
+                      const selected = instrumentById.get(position.instrumentId);
+                      return (
+                        <fieldset className="manual-position" key={position.key}>
+                          <legend>Позиция {index + 1}</legend>
+                          <div className="manual-position__grid">
+                            <div className="manual-field">
+                              <label htmlFor={`position-instrument-${index}`}>Инструмент</label>
+                              <select
+                                id={`position-instrument-${index}`}
+                                disabled={saving}
+                                value={position.instrumentId}
+                                onChange={(event) =>
+                                  updateDraft(index, { instrumentId: event.target.value })
+                                }
+                              >
+                                <option value="">Выберите инструмент</option>
+                                {selected &&
+                                  !instruments.some((item) => item.id === selected.id) && (
+                                    <option value={selected.id}>
+                                      {selected.name}
+                                      {selected.symbol ? ` (${selected.symbol})` : ''}
+                                    </option>
+                                  )}
+                                {instruments.map((instrument) => (
+                                  <option key={instrument.id} value={instrument.id}>
+                                    {instrument.name}
+                                    {instrument.symbol ? ` (${instrument.symbol})` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div className="manual-field">
+                              <label htmlFor={`position-quantity-${index}`}>Количество</label>
+                              <input
+                                id={`position-quantity-${index}`}
+                                type="text"
+                                inputMode="decimal"
+                                autoComplete="off"
+                                disabled={saving}
+                                value={position.quantity}
+                                onChange={(event) =>
+                                  updateDraft(index, { quantity: event.target.value })
+                                }
+                              />
+                            </div>
+                            <div className="manual-field">
+                              <label htmlFor={`position-cost-status-${index}`}>Себестоимость</label>
+                              <select
+                                id={`position-cost-status-${index}`}
+                                disabled={saving}
+                                value={position.costStatus}
+                                onChange={(event) =>
+                                  updateDraft(index, {
+                                    costStatus: event.target.value as PositionDraft['costStatus'],
+                                  })
+                                }
+                              >
+                                <option value="known">Известна</option>
+                                <option value="unknown">Неизвестна</option>
+                              </select>
+                            </div>
+                            {position.costStatus === 'known' && (
+                              <div className="manual-field">
+                                <label htmlFor={`position-cost-${index}`}>
+                                  Общая себестоимость, USD
+                                </label>
+                                <input
+                                  id={`position-cost-${index}`}
+                                  type="text"
+                                  inputMode="decimal"
+                                  autoComplete="off"
+                                  disabled={saving}
+                                  value={position.totalCostUsd}
+                                  onChange={(event) =>
+                                    updateDraft(index, { totalCostUsd: event.target.value })
+                                  }
+                                />
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            className="manual-button manual-button--danger"
+                            type="button"
+                            disabled={saving}
+                            onClick={() =>
+                              setDraft((current) =>
+                                current.filter((_, itemIndex) => itemIndex !== index),
+                              )
+                            }
+                          >
+                            Удалить позицию
+                          </button>
+                        </fieldset>
+                      );
+                    })}
+                  </div>
+                  <div className="manual-actions">
+                    <button
+                      className="manual-button manual-button--secondary"
+                      type="button"
+                      disabled={saving || draft.length >= 100}
+                      onClick={() =>
+                        setDraft((current) => [
+                          ...current,
+                          {
+                            key: newRequestId(),
+                            instrumentId: '',
+                            quantity: '',
+                            costStatus: 'known',
+                            totalCostUsd: '',
+                          },
+                        ])
+                      }
+                    >
+                      Добавить позицию
+                    </button>
+                    <button
+                      className="manual-button"
+                      type="submit"
+                      disabled={saving || (conflictPending && !conflictReviewed)}
+                    >
+                      {saving ? 'Сохранение…' : 'Сохранить начальные позиции'}
+                    </button>
+                  </div>
+                </fieldset>
+              </form>
+              {instruments.length === 0 && !instrumentsLoading && (
+                <p className="manual-muted">
+                  Сначала создайте инструмент ниже или загрузите следующую страницу списка.
+                </p>
+              )}
+            </section>
+          )}
 
           <section className="manual-card" aria-labelledby="manual-instrument-heading">
             <h2 id="manual-instrument-heading">Инструменты</h2>
