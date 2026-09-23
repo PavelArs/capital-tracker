@@ -32,14 +32,14 @@
 ## 5. Russian journey and real HTTPS acceptance
 
 - [x] 5.1 Add protected upload/source inspection with exact Russian labels and bounded literal cells; reuse the existing CSRF client and real browser FormData without a second parser.
-- [ ] 5.2 Add explicit columns/owned UUIDs/side/decimal/time/USD mapping, ignored columns, all row errors and current/candidate exact results before confirm; invalidate obsolete previews and disclose format/dedup/cap limits.
+- [x] 5.2 Add explicit columns/owned UUIDs/side/decimal/time/USD mapping, ignored columns, all row errors and current/candidate exact results before confirm; invalidate obsolete previews and disclose format/dedup/cap limits.
 - [x] 5.3 Add batch discovery/detail/provenance and reviewed conditional rollback with before/after summaries; distinguish immutable receipts/versions from current journal results.
-- [ ] 5.4 Preserve complete unknown upload/confirm/rollback commands across lost responses, denied retries, refresh and route changes; disable edits, require explicit replay/review and never auto-submit.
-- [ ] 5.5 Run independent real HTTPS/UI CSV-001..007 journeys and transport negatives, including chunked edge cap, Cyrillic filename, private raw sources, current auth/CSRF/owner bounds, restart and zero accounting provider calls.
+- [x] 5.4 Preserve complete unknown upload/confirm/rollback commands across lost responses, denied retries, refresh and route changes; disable edits, require explicit replay/review and never auto-submit.
+- [x] 5.5 Run independent real HTTPS/UI CSV-001..007 journeys and transport negatives, including chunked edge cap, Cyrillic filename, private raw sources, current auth/CSRF/owner bounds, restart and zero accounting provider calls.
 - [x] 5.6 Run actual committed-response-loss/CSRF403 regressions for confirm and rollback; require original200 replay without another version range and fresh current-state display. No own response/auth/database mock.
 
 ## 6. Independent review, complete verification and archive
 
-- [ ] 6.1 Independently review parser/transport privacy, strict errors, ownership/provenance, transaction/replay/read isolation, arithmetic oracles and frontend state; resolve findings with regression evidence.
+- [x] 6.1 Independently review parser/transport privacy, strict errors, ownership/provenance, transaction/replay/read isolation, arithmetic oracles and frontend state; resolve findings with regression evidence.
 - [ ] 6.2 Run actual frozen install, high/critical audit, source lint/build/tests, strict OpenSpec, migration/PG and complete expanded release-image HTTPS suite with all101 predecessor cases unchanged; record commands, exits, counts, exact images and cleanup.
 - [ ] 6.3 Update user/engineering docs and verification evidence consistently, disclose supported limits and remaining full goal, then archive only after required checks pass. No hosted CI, production or full-refactor completion claim from local slice results.

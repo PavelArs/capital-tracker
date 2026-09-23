@@ -251,3 +251,28 @@ All product behavior remains unchanged from12e718c. Owned cleanup completed; ear
 independent Docker inventories were empty, and final cleanup checks remain required
 at the full gate. Lost-upload File recovery is the final independent coverage addition
 before complete release verification; the slice remains active.
+
+## Final added journey checks — 2026-09-23
+
+Independent0c59959 integrated5ddbd9c, actual lost-upload case exit0,1/1 Chromium,
+14.3 seconds (`/private/tmp/capital-csv-upload-loss.log`). The real native multipart
+File reaches the application untouched. Chromium CDP pauses its actual201 response;
+its body and an independent PostgreSQL exact-byte/hash/single-row witness precede
+failing delivery. SPA remount retains the File/filename and locks editing; normal
+explicit browser retry returns200 and the identical identity without changing any
+journal rows. No multipart reconstruction, fabricated response or authentication bypass.
+
+Independent215365c integrated31aa287, actual format case exit0,1/1 Chromium,
+13.5 seconds (`/private/tmp/capital-csv-format.log`). Real semicolon/BOM/CRLF source:
+wrong decimal/time choices show all invalid rows with null whole-candidate/hash;
+explicit decimal comma and fixed UTC+03 leave the genuinely empty alternate-fee row
+invalid; selecting the original zero-fee column permits exact normalized UTC trades,
+250 realized/100 remaining/0.5 quantity and actual atomic confirmation. Every preview
+preserves all business tables. Stored bytes/settings and created-version provenance
+match independent expected values; providers/admissions retain explicit oracles.
+
+Both use one worker and zero retries, frontend e9730220 image above and unchanged
+0c239e1e backend; cleanup completed. Independent final review found no blocker in
+these two tests and closed the separate File-valued recovery coverage gap. All101
+predecessor *.spec.ts files are unchanged by this slice; six new CSV test files add
+23 cases. The full124-case release gate is next, not yet claimed successful.
