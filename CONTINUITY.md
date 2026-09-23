@@ -44,7 +44,16 @@ passed at carry-in; historical full140 attempt was stopped per user, never GREEN
 Manual profit/XIRR use reviewed valuations and effective owner flows; no automatic
 valuation. Use archive verification.md files for exact old results and image IDs.
 
-## Current manual USD price slice
+## Active historical valuation slice
+
+value-historical-account: contract660c6ce, pure/PGacceptancebaf0304/e57d5fb.
+Root backend/PG, Luna valuation-acceptance worktree(twoHTTPS), Sol valuation-ui
+worktree(waiting genuineRED). No product edits yet. Real predecessor images match
+last verified manual-price slice. Baseline92/3passes; auditproductionexit0 with
+2existingmoderate. Strict19items passes; spec/test review done.
+Read active change design/tasks/verification for contract/check manifest.
+
+## Previous manual USD price slice
 
 record-manual-usd-prices implemented, independently reviewed, scoped GREEN;
 archived2026-09-23-record-manual-usd-prices,9/9tasks. Strict18canonical specs pass,
