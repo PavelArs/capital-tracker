@@ -41,6 +41,13 @@ of request identity. Replay occurs before live CAS/cap checks and returns its or
 receipt, never a current-state projection or pointer mutation. Another account has
 an independent key namespace. Initialization and trade keys can have the same UUID.
 
+Canonical JSON field order is fixed for independent durable fixtures: initialization
+`{coverageFrom,assertEmpty:true}`; create `{kind:'create',expectedJournalRevision,...Execution}`;
+correction `{kind:'correct',tradeId,expectedJournalRevision,...Execution}`; void
+`{kind:'void',tradeId,expectedJournalRevision}`. Execution fields occur in the order
+`instrumentId,side,occurredAt,orderWithinTimestamp,quantity,grossUsd,feeUsd`.
+The correction/void target key is `tradeId`; requestId is never in this payload.
+
 Malformed input and buy gross-plus-fee overflow are 400, with no request-key reservation; absent/foreign account, instrument or target trade is generic
 404 with no identity disclosure. A valid owned account without a journal, stale CAS,
 pre-coverage execution, occupied effective chronology key, oversold historical prefix,
