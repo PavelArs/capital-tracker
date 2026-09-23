@@ -603,8 +603,8 @@ test('TRADE-001-B / TRADE-004-B: actual upstream replicas serialize identical re
   expect(same.map((response) => response.status()).sort()).toEqual([200, 201]);
   const bought = readReceipt(await same[0].json());
   expect(readReceipt(await same[1].json())).toEqual(bought);
-  const candidates = ['150', '160'].map((grossUsd) =>
-    tradeInput(instrument.id, 1, { side: 'sell', grossUsd }),
+  const candidates = ['150', '160'].map((grossUsd, index) =>
+    tradeInput(instrument.id, 1, { side: 'sell', grossUsd, orderWithinTimestamp: index + 1 }),
   );
   const competing = await raceTradeReplicas(
     account.id,
