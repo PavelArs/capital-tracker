@@ -2,8 +2,8 @@
 
 - [x] 1.1 Verify/archive the USD predecessor with all101 real HTTPS cases, retain exact image IDs and reconcile all modified canonical requirements without removing old scenarios.
 - [x] 1.2 Independently review source inspection, exact format/mapping, whole-candidate semantics, tuple hashes, replay ordering, conditional rollback, transport privacy and schema before test authorship.
-- [ ] 1.3 Author maintained independent CSV-001-A/CSV-006-A HTTPS/UI tests using actual current password/MFA and initialized journal, without future CSV tables/helpers as prerequisites.
-- [ ] 1.4 Run those tests against exact verified USD images; record expected upload201/actual404 and missing protected UI, actual command/exit/images, unchanged prior rows/providers and owned cleanup. Only then change product behavior.
+- [x] 1.3 Author maintained independent CSV-001-A/CSV-006-A HTTPS/UI tests using actual current password/MFA and initialized journal, without future CSV tables/helpers as prerequisites.
+- [x] 1.4 Run those tests against exact verified USD images; record expected upload201/actual404 and missing protected UI, actual command/exit/images, unchanged prior rows/providers and owned cleanup. Only then change product behavior.
 
 ## 2. Independent boundaries and strict parser
 

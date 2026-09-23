@@ -85,9 +85,9 @@ USD archive and documentation committed97a7a2d; strict11/diff passed. Actual-lab
 Docker checks found no owned Compose or client-source probes. New active change
 import-usd-trades-csv: proposalcd6ec20; independently reviewed design/persistence/parser
 decision integratedeafe9c0. Actual CLI artifact instructions/status/apply used;
-all artifacts ready, strict12 passed,2/28 tasks complete (predecessor and design review).
+all artifacts ready, strict12 passed;4/28 tasks complete after genuine acceptance RED.
 Final scenarios/API/schema/UI labels are frozen for independent test authorship.
-No CSV product/schema/dependency implementation has begun. Full authorization
+CSV behavioral implementation is now released after genuine RED. Full authorization
 covers ordinary incremental implementation; no extra user approval is needed.
 
 Independent temporary design inputs under /private/tmp:
@@ -101,8 +101,13 @@ Independent temporary design inputs under /private/tmp:
 Final artifacts in openspec/changes/import-usd-trades-csv supersede these temporary
 memos. Additional capital-csv-test-plan.md maps independent unit/PG/HTTPS ownership.
 New worktrees csv-design (design committed), csv-acceptance (QA), csv-backend (reserved).
-Next: maintained2-case real predecessor-image RED, independent parser tests, then
-bounded implementation. Root alone runs Docker and must check exact predecessor IDs.
+Maintained2-case RED actually finished exit1 with exactly upload404/missing-heading
+failures on verified predecessor images, no rebuild. Log:
+/private/tmp/capital-csv-predecessor-red.log; artifacts capital-csv-red-artifacts.
+Real MFA/PG/prior-data/provider oracles passed; independent cleanup reads empty.
+Now: backend agent owns five service/controller/helper files in csv-backend; independent
+parser tests in csv-boundary-tests and PG fixture in csv-acceptance. Root owns parser,
+input, dependency, migration15, shared wiring/proxy/frontend and all Docker runs.
 
 CSV scope: UTF8 up to256KiB/100rows, inspect before mapping, explicit owned UUID/USD/
 decimal/time/order/fee settings, preview errors, whole-batch atomic confirmation,
@@ -112,7 +117,7 @@ accepted commands precede reparse/parser support/live state. Version usd-csv-v1 
 explicit. Rows pin batchState; detail live rollbackReview uses coherent RR. Valid
 rollback reallocation is allowed when every remaining prefix holds; show before/after.
 Parser/transport choices need actual source/HTTP proof. Root owns dependency/migration15.
-New genuine CSV RED must execute against exact verified USD images before behavior.
+Initial genuine CSV RED passed its intended failure criteria; no CSV GREEN claim yet.
 
 Remaining full goal after CSV: carry-in/owned transfers/flows, performance XIRR/TWR,
 DB-first price/FX/history, six-chain adapters/reconciliation, explicit optional free
