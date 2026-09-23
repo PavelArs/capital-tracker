@@ -26,6 +26,19 @@ an independent Python Decimal calculation confirmed the1100-lot maximum literal.
 Production modules do not exist yet: no Jest success or module-error RED is claimed.
 Actual missing-feature RED must come from the HTTPS/browser tests on verified images.
 
+An independent gpt-6-luna author prepared two actual API/UI cases in
+`tests/e2e/historical-accounting.spec.ts` (0a6efa2). Root review strengthened retained
+rows to include all trade tables and replaced the UI's incorrect unchanged-CSRF
+assumption with the exact existing navigation-admission delta. The author applied
+both; corrected120/320/230 and carry-in250/100 expectations remain unchanged.
+Root also prepared `historical-accounting-security.spec.ts` for actual anonymous/
+pending denial, foreign ownership, strict raw query errors, unavailable coverage and
+exact empty-journal shape, with no business/provider changes. All E2E TypeScript
+passed strict checking, exit0 (`/private/tmp/capital-historical-draft-tsc.log`), using
+symlinks to existing main-checkout dependencies; no install or product change.
+Scoped Biome passed. None of these browser cases has run yet: carry-in archival is
+delayed by its independently reproduced unknown-cost alert regression and full rerun.
+
 | Scenarios | Planned executable evidence |
 | --- | --- |
 | HIST-001-A, HIST-002-A | `tests/e2e/historical-accounting.spec.ts`: actual owner/password/MFA, HTTPS API/UI, PostgreSQL; exact chronological100/300/100 costs and250/230 realized, inclusive baseline boundary |
