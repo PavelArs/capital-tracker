@@ -33,6 +33,9 @@ preview/confirmation, retained source provenance and conditional rollback to the
 journal. All 124 HTTPS Chromium cases passed (101 retained and 23 new), together
 with real PostgreSQL and migration checks. Full release hardening and the remaining
 accounting scope are still pending.
+The active [known-cost opening lots](docs/known-cost-carry-in.md) change has passed
+real PostgreSQL checks and nine focused HTTPS scenarios; its complete release gate,
+final independent review and archival remain pending.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.

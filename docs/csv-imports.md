@@ -11,8 +11,9 @@ release hardening remain incomplete; this feature does not authorize production 
 ## Supported history and source
 
 Import only purchases and sales into an existing, explicitly initialized
-[USD trade journal](usd-trade-journal.md). Its declared empty origin and coverage
-instant still apply. Aggregate manual openings, unknown acquisition cost, cash
+[USD trade journal](usd-trade-journal.md). Its explicit origin and coverage instant
+still apply; the active [known-cost carry-in change](known-cost-carry-in.md) supplies
+reviewed immutable baseline lots to the same calculation. Aggregate manual openings, unknown acquisition cost, cash
 balances and legacy wallet observations are not converted into acquisition lots.
 The importer makes no provider calls and calculates recorded costs and realized
 journal results, not market value, investment returns or taxes.

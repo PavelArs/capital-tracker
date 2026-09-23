@@ -13,7 +13,7 @@ no production migration or deployment has been performed.
 
 ## Coverage and identity
 
-The owner must explicitly confirm an empty beginning and enter its UTC coverage
+For a declared-empty origin, the owner explicitly confirms an empty beginning and enters its UTC coverage
 instant. Only accounts without a current opening and without any opening history
 are eligible. A known zero opening, unknown cost or a manually cleared pointer does
 not establish empty history. Aggregate opening cost cannot determine FIFO order.
@@ -21,8 +21,9 @@ not establish empty history. Aggregate opening cost cannot determine FIFO order.
 Initialization and opening replacement lock the same account. At most one can win.
 Once initialized, a journal retains its origin permanently, even after every trade
 is void. New opening replacements are then refused; pre-existing request receipts
-retain their original replay semantics. Accounts with opening history remain usable
-for opening corrections and show why journal carry-in is not supported yet.
+retain their original replay semantics. Accounts with a current all-known-cost opening
+can use explicit [original acquisition lots](known-cost-carry-in.md) in the active
+carry-in change. Unknown or aggregate cost alone does not establish that evidence.
 
 Instrument UUIDs establish identity, including instruments with identical symbols.
 Select an existing instrument to reuse it. Labels do not establish a blockchain,

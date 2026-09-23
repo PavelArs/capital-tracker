@@ -2,7 +2,9 @@
 
 Status: CSV predecessor verified/archived; independently reviewed carry-in API/UI
 acceptance demonstrated genuine missing-feature RED against its exact release images.
-Carry-in implementation is now ready to begin. No carry-in GREEN is claimed.
+Carry-in is implemented and has source, real PostgreSQL and focused HTTPS GREEN
+evidence below. A JSON transport defect was reproduced and fixed with real HTTPS GREEN. The
+complete release gate and final independent review remain pending.
 
 ## Traceability and evidence to collect
 
@@ -76,3 +78,136 @@ opening/import/other-account rows, admissions and provider counts. Owned cleanup
 completed; independent read-only Docker container/network inventories were empty.
 The two maintained tests had already passed scoped strict TypeScript, Biome and
 Playwright discovery before execution. Missing modules/build failures are not RED.
+
+## Reviewed domain/service source — 2026-09-23
+
+Independent test19bc3f9 (integrated5eaae87) was separately reviewed without oracle
+blocker before domain implementation. Service/API dac62c3 was reviewed and integrated
+36c6ed6; root shared domain/baseline/manual-CSV/opening projector integration7175f50
+received independent review without blocking findings. No old test assertion changed.
+
+Actual backend build exit0 (`/private/tmp/capital-carry-in-backend-first-build.log`);
+full Jest898 tests/28 suites exit0 in10.457s
+(`/private/tmp/capital-carry-in-backend-tests-first.log`). Focused new input/FIFO plus
+retained FIFO58 tests/3 suites passed in1.94s
+(`/private/tmp/capital-carry-in-pure-first.log`). Scoped backend Biome passed after
+correcting an initial workspace-root invocation where the binary was unavailable.
+That tooling error is not behaviorRED. Independent reviewer also built the combined
+service/shared source successfully. At that point these were source checks only;
+subsequent migration/PG/HTTP results are recorded below.
+
+## Additive storage and real PostgreSQL results — 2026-09-23
+
+Reviewed frontend4e51d43 is integrated ase31a0d8; its recorded build/lint and95
+frontend tests passed. Root added migration16/entities and populated15 upgrade
+fixtures, preserving all predecessor checks. New backend release build succeeded:
+`sha256:ce10d4b64c06b11e3f4f71294f7ae3bf3c9d286f0dc684be3081d342f54e0186`.
+
+Actual isolated commands use `caffeinate -is node /private/tmp/capital-csv-pg-run.cjs`
+with production service modules, synchronize:false and temporary PostgreSQL16.10:
+
+- `migrations manual-opening-db usd-trades-db csv-import-db carry-in-db`:
+  log `/private/tmp/capital-carry-in-pg-first.log`, exit1. All fresh16/replay,
+  populated8..15 upgrade/preservation and unsafe legacy refusals passed. The next
+  opening fixture stopped on its stale15 migration-count prerequisite.
+- `manual-opening-db usd-trades-db csv-import-db carry-in-db`:
+  log `/private/tmp/capital-carry-in-pg-second.log`, exit1. Opening suite passed;
+  USD SQL metadata assertion still expected every journal column to be non-null.
+- After narrowly updating the count to16, asserting the exact new migration name
+  and allowing ONLY account_trade_journals.openingRevision to be nullable integer,
+  `usd-trades-db csv-import-db carry-in-db` completed exit0:
+  `/private/tmp/capital-carry-in-pg-third.log`. Retained USD and CSV suites and all
+  eight carry-in families passed: strict reconciliation, original allocation phase,
+  manual/CSV250/100 and correction230, exact rollback/replay, independent-process
+  account-lock races, deferred COMMIT complete-write witness/rollback, actual SQL
+  integrity, five coherent RR read barriers,100 baseline lots plus1000 active trades.
+
+No financial/security expected amounts or prior-column constraints were weakened.
+These setup-contract repairs are not new behavior RED. Fixtures preserved all prior
+financial/authentication rows, original CSV bytes and historical receipts. Each
+runner removed its synthetic containers/network. Expanded browser/security coverage
+and the complete release gate remain pending; this is not archive approval.
+
+## Focused HTTPS and browser evidence — 2026-09-23
+
+`caffeinate -is node /private/tmp/capital-carry-in-http-run.cjs` verified the backend
+image above and preserved owner Nginx while building frontend. Real migrations,
+seeded password/MFA, HTTPS/proxy and PostgreSQL were used, one worker, zero retries.
+
+- `/private/tmp/capital-carry-in-http-first.log`: exit0,2/2 Chromium in31.2s.
+  Original independent RED cases now pass exact250/100/0.5, revision0, immutable
+  provenance and restart, plus separate unchecked Russian owner consent.
+- Common setup was extracted to `tests/e2e/carry-in-fixtures.ts`; the original
+  acceptance/financial assertions are retained. Root authored the expanded tests
+  after the QA agent hit its usage limit; do not call that work independently authored.
+- `/private/tmp/capital-carry-in-http-expanded.log`: exit1,5 passed/2 failed in1.9m.
+  Original2, actual401/MFA/SPA original-key recovery and both route/privacy groups
+  passed. Two fixture assumptions failed: consent is disabled/unchecked, not removed;
+  baseline-page URLs include query parameters, so an exact glob did not inject loss.
+  Corrected to assert both disabled and unchecked consent, and match the real URL.
+- `/private/tmp/capital-carry-in-http-targeted.log`: exit1,2 passed/1 failed in36.6s.
+  Late response/edit/stale opening/unknown cost and accepted-receipt/read-loss passed.
+  CSV helper was called without its explicit sale vector, so it expected its default
+  buy source. Passing the independently fixed sale vector retains exact source cells.
+- `/private/tmp/capital-carry-in-http-last-focused.log`: exit1,2 passed/1 failed in37.5s.
+  Manual/CSV250/100, correction230, baseline rollback, exact original bytes/receipts,
+  and actual deferred HTTP COMMIT500 with complete-write witness/rollback all passed.
+  The new102401-byte JSON probe exposed a genuine product defect: expected413,
+  actual500. No expected accounting or privacy assertion was changed.
+
+### JSON size refusal regression
+
+CARRY-006-B makes the existing102400-byte envelope boundary explicit: a valid padded
+preview at the bound remains200/read-only; one excess byte is a fixed private413.
+The installed raw-body implementation creates an Error with type entity.too.large
+and status413; the global Nest filter previously reclassified all non-HttpException
+errors as500. No body limit, dependency or authentication rule is changed.
+
+Focused unit RED `/private/tmp/capital-carry-in-json-unit-red.log`: exit1, expected413
+received500 (1 failed,3 passed,35 unrelated cases filtered out). The minimal filter
+fix recognizes only that Error/type/status combination and returns fixed public text;
+unrelated status-like errors retain generic500. Full request-admission suite GREEN:
+`/private/tmp/capital-carry-in-json-unit-green.log`, exit0,39/39. This new filter change
+and root-authored acceptance/migration fixtures still require independent final review.
+
+### Scenario links
+
+- CARRY-001/002: `carry-in-red.spec.ts`, `carry-in-journey.spec.ts`,
+  `carry-in-security.spec.ts`, `carry-in-db.cjs`, backend carry-in input/FIFO tests.
+- CARRY-003: real process races and complete-write COMMIT witnesses in
+  `carry-in-db.cjs`; actual private HTTP500/retry in `carry-in-security.spec.ts`.
+- CARRY-004: `carry-in-csv.spec.ts`, retained original RED cases and real snapshot
+  barriers in `carry-in-db.cjs`.
+- CARRY-005: `carry-in-journey.spec.ts` and original Russian consent acceptance.
+- CARRY-006-A/B: `carry-in-security.spec.ts`, request-admission filter tests,
+  `carry-in-db.cjs`; CARRY-MIG-001: `migrations.cjs` populated15-to16 preservation.
+
+These focused runs do not replace the complete release gate, independent review or
+canonical archival. Owner Nginx/lock hashes stayed unchanged after completed runners.
+
+## Integrated focused GREEN — 2026-09-23
+
+`caffeinate -is node /private/tmp/capital-carry-in-http-run.cjs` with all four
+carry-in spec files completed exit0:9/9 Chromium,2.0m,1worker0retries. Log
+`/private/tmp/capital-carry-in-http-integrated.log`. This includes the exact102400-byte
+read-only preview,102401-byte413 refusal and original-key retry, alongside every
+new financial, privacy, recovery and COMMIT assertion described above.
+
+Exact release images used:
+- Backend sha256:60d3225df079dd372d698846b63dfc3ea15244d3fd446c33538afa2a1c6dd1e4
+- Frontend sha256:c4a616a5391df772b6a5f8ad5f3f8e2f6e2713b7dc4b260f86a9811004d7f55c
+
+Full backend Jest902/28 passed11.333s, backend lint passed with existing77 warnings,
+strict OpenSpec13/13 and strict E2E TypeScript passed. Logs respectively:
+`capital-carry-in-backend-final-tests.log`, `capital-carry-in-backend-final-lint.log`,
+`capital-carry-in-spec-final.log`, `capital-carry-in-e2e-tsc-final.log`, in /private/tmp.
+The Docker build compiled the integrated backend successfully. Earlier reviewed
+frontend build/lint95 tests remain recorded above; no new final frontend/audit gate
+is claimed. Independent read-only Docker inventory after cleanup found no synthetic
+containers or networks. Owner Nginx/lock SHA256 remained exactly as in CONTINUITY.md.
+
+The root-authored test additions, populated migration fixture and new global filter
+fix still require independent final review. Full133-case release acceptance, current
+frozen-install/dependency gate, remaining documentation review and archival are NOT
+complete. Nine focused cases are not a claim that all predecessor browser scenarios
+were rerun on the new image.

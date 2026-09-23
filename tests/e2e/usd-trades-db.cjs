@@ -392,7 +392,9 @@ async function sqlConstraints(source, fixture) {
     FROM information_schema.columns WHERE table_schema='public' AND table_name=ANY($1)`, [tradeTables]);
   assert.ok(columns.length > 0);
   for (const column of columns) {
-    assert.equal(column.is_nullable, 'NO');
+    const carryInReference = column.table_name === 'account_trade_journals' && column.column_name === 'openingRevision';
+    assert.equal(column.is_nullable, carryInReference ? 'YES' : 'NO');
+    if (carryInReference) assert.equal(column.data_type, 'integer');
     if (['quantity', 'grossUsd', 'feeUsd'].includes(column.column_name)) {
       assert.equal(column.data_type, 'numeric'); assert.equal(column.numeric_precision, 78); assert.equal(column.numeric_scale, 30);
     }
@@ -895,8 +897,9 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 15); assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
+    assert.equal(migrations.length, 16); assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
     assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');
+    assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     for (const table of tradeTables) assert.deepEqual(await rows(source, table), []);
     const { accounting, trade } = services(source);
     const fixture = await seed(source, accounting);

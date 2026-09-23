@@ -141,3 +141,12 @@ rollout SHALL be performed to verify this change.
 - **THEN** documented401/403/404/400 refusals expose no private baseline and preserve accounting plus the documented authentication bookkeeping boundaries
 - **AND** actual fresh16/replay, populated15-to16 and every prior upgrade/refusal pass in isolated release images with unchanged old financial/security assertions
 - **AND** SQL finite/composite/RESTRICT constraints, private canaries, workload boundaries and zero accounting provider requests have independent evidence
+
+#### Scenario: CARRY-006-B JSON transport bounds return a private client refusal
+- **GIVEN** a valid reviewed lot preview padded with JSON whitespace to exactly102400 UTF-8 bytes
+- **WHEN** the authenticated owner submits that preview through the real HTTPS application
+- **THEN** it returns200 without persisting accounting data
+- **WHEN** an initialization body exceeds102400 bytes by one
+- **THEN** the actual parser refusal returns413 with a fixed public message, never500 or submitted body/parser detail
+- **AND** every accounting row is unchanged and the original request key remains available for explicit bounded retry
+- **AND** unrelated errors containing status-like fields still receive the existing generic500 response

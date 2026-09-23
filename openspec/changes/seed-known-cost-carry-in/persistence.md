@@ -140,7 +140,8 @@ Malformed envelope/type/array/UUID/date/amount/order, duplicate normalized chron
 R>Q, missing/false/wrong-type attestation or lot count outside 1..100 returns 400.
 A foreign/absent account/instrument is generic 404. Existing initialization, stale
 opening, unknown cost, absent current opening or complete reconciliation failure is409.
-Storage failure is generic 500; the unchanged JSON transport cap may return 413.
+Storage failure is generic 500; exceeding the unchanged JSON transport cap returns413
+with a fixed public message, without reflecting parser details or submitted content.
 No original private values, canonical payload or SQL detail is logged/reflected.
 
 ## 4. Canonical replay and transaction order

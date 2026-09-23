@@ -355,6 +355,49 @@ describe('LIMIT-005 actual exception filter response boundaries', () => {
     return { logger, actual: new GlobalExceptionFilter(logger as unknown as PinoLogger) };
   }
 
+  it('CARRY-006-B preserves the JSON parser413 without exposing its private details', () => {
+    const c = context('login');
+    const { actual, logger } = filter();
+    const error = Object.assign(new Error('private-marker-body-content'), {
+      type: 'entity.too.large',
+      status: 413,
+      statusCode: 413,
+      body: 'private-marker-body-content',
+      limit: 102400,
+      length: 102401,
+    });
+    actual.catch(error, c.ctx);
+    expect(c.response.status).toHaveBeenCalledWith(413);
+    expect(c.response.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        statusCode: 413,
+        message: 'Payload too large',
+        error: 'PayloadTooLargeError',
+      }),
+    );
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(JSON.stringify([c.response.json.mock.calls, logger.warn.mock.calls])).not.toContain(
+      'private-marker',
+    );
+  });
+
+  it.each([
+    Object.assign(new Error('private-marker'), { status: 413 }),
+    Object.assign(new Error('private-marker'), { type: 'entity.too.large', status: 500 }),
+    { message: 'private-marker', type: 'entity.too.large', status: 413 },
+  ])('CARRY-006-B keeps unrelated status-like errors private500', (error) => {
+    const c = context('login');
+    const { actual, logger } = filter();
+    actual.catch(error, c.ctx);
+    expect(c.response.status).toHaveBeenCalledWith(500);
+    expect(c.response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ message: 'Internal server error' }),
+    );
+    expect(JSON.stringify([c.response.json.mock.calls, logger.error.mock.calls])).not.toContain(
+      'private-marker',
+    );
+  });
+
   it.each([1, 42, 600])(
     'writes typed admission Retry-After %s as an actual response header',
     (seconds) => {

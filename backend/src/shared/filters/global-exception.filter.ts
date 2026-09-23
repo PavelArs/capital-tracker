@@ -81,6 +81,22 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       return { status, message: status === 404 ? 'Not Found' : message, error };
     }
 
+    // Express's body parser reports this before Nest can create an HttpException.
+    // Recognize only its size refusal; never reflect submitted content or parser details.
+    if (
+      exception instanceof Error &&
+      'type' in exception &&
+      exception.type === 'entity.too.large' &&
+      'status' in exception &&
+      exception.status === HttpStatus.PAYLOAD_TOO_LARGE
+    ) {
+      return {
+        status: HttpStatus.PAYLOAD_TOO_LARGE,
+        message: 'Payload too large',
+        error: 'PayloadTooLargeError',
+      };
+    }
+
     // Handle non-HTTP exceptions
     return {
       status: HttpStatus.INTERNAL_SERVER_ERROR,

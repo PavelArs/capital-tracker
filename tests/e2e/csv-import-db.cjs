@@ -995,7 +995,8 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 15); assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');
+    assert.equal(migrations.length, 16); assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');
+    assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     for (const table of csvTables) assert.deepEqual(await rows(source, table), []);
     const svc = services(source);
     const fixture = await seed(source, svc);

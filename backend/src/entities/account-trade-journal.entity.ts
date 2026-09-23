@@ -15,7 +15,10 @@ export class AccountTradeJournal {
   canonicalPayload!: string;
 
   @Column('text')
-  originKind!: 'declared-empty';
+  originKind!: 'declared-empty' | 'known-cost-carry-in';
+
+  @Column({ type: 'integer', nullable: true })
+  openingRevision!: number | null;
 
   @Column({ type: 'timestamptz', precision: 3 })
   coverageFrom!: Date;
