@@ -1,13 +1,13 @@
 ## 1. Contract and acceptance
 
 - [x] 1.1 Audit requirements, dependencies, deployment and reuse; run baseline111 pure cases and independently review numerical/security contract.
-- [ ] 1.2 Write pure numerical oracles, real PostgreSQL snapshot/busy checks and two critical HTTPS cases; demonstrate genuine predecessor API/UI RED before implementation.
+- [x] 1.2 Write pure numerical oracles, real PostgreSQL snapshot/busy checks and two critical HTTPS cases; demonstrate genuine predecessor API/UI RED before implementation.
 
 ## 2. Implementation
 
-- [ ] 2.1 Declare pinned runtime Decimal dependency and implement exact preparation plus bounded async solver (XIRR-YEAR/FLOWS/ORACLES/UNAVAILABLE).
-- [ ] 2.2 Add private same-snapshot API, release DB before CPU, enforce/release per-process busy slot while preserving profit characterization (XIRR-SNAPSHOT/PRIVATE).
-- [ ] 2.3 Extend the reviewed Russian form with explicit XIRR, unavailable/annualization messages and shared stale-result protection (XIRR-UI/LATE).
+- [x] 2.1 Declare pinned runtime Decimal dependency and implement exact preparation plus bounded async solver (XIRR-YEAR/FLOWS/ORACLES/UNAVAILABLE).
+- [x] 2.2 Add private same-snapshot API, release DB before CPU, enforce/release per-process busy slot while preserving profit characterization (XIRR-SNAPSHOT/PRIVATE).
+- [x] 2.3 Extend the reviewed Russian form with explicit XIRR, unavailable/annualization messages and shared stale-result protection (XIRR-UI/LATE).
 
 ## 3. Independent review and verification
 

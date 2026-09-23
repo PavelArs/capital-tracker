@@ -172,7 +172,7 @@ async function main() {
     assert.equal(voided.profitUsd, '110');
     assert.ok(Math.abs(Number(voided.xirr.annualRate) - 1 / 9) <= 1e-10);
     assert.equal(await fingerprint(source, true), old, 'No prior accounting/authentication rows changed');
-    assert.ok(solveEntries >= 6, 'Pass-through observation reached the real solver for successful previews');
+    assert.equal(solveEntries, 5, 'Only empty, baseline, pending snapshot, corrected and voided previews enter the real solver');
     console.log('PASS XIRR-SNAPSHOT actual concurrent correction, per-instance429, coherent old snapshot, release and current correction/void');
   } finally {
     if (reader.isInitialized) await reader.destroy();
