@@ -12,4 +12,4 @@
 
 - [x] 3.1 Independently review backend/SQL/arithmetic and UI diffs; address findings without weakening financial/security assertions.
 - [x] 3.2 Run changed/retained relevant unit checks, real PG valuation and retained historical fixtures, selected new HTTPS cases plus one retained historical browser journey, builds/lints, production dependency gate and strict OpenSpec. Record actual commands/results/images, failed attempts and unrun suites; full E2E not required.
-- [ ] 3.3 Update concise user/verification docs and continuity, verify no schema/lock/owner-Nginx changes and isolated cleanup, then archive with installed OpenSpec and verify canonical synchronization.
+- [x] 3.3 Update concise user/verification docs and continuity, verify no schema/lock/owner-Nginx changes and isolated cleanup, then archive with installed OpenSpec and verify canonical synchronization.

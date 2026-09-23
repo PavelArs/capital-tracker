@@ -54,10 +54,10 @@ value. All existing price/accounting contracts remain unchanged by valuation.
 ## Current historical valuation slice
 
 value-historical-account implemented, independently reviewed and targeted GREEN;
-archive finalization is the remaining step in this turn. Contract660c6ce,
+archived2026-09-23-value-historical-account with7/7tasks. Contract660c6ce,
 acceptancebaf0304/e57d5fb/c208044, backend4edac35, UI9bc3209, finalb90e65e.
-Read active change design/tasks/verification until archived; guide
-docs/historical-valuation.md. Current strict19items pass (18specs+1change).
+Read archived change design/tasks/verification; guide docs/historical-valuation.md.
+Strict19canonical specs pass, active changes empty;18 prior specs unchanged.
 
 GET /accounting/accounts/:id/valuation?at=ISO accepts only at; own account historical
 positions and exact-time manual prices in one RR READ ONLY snapshot. Shared
@@ -101,8 +101,8 @@ release scan/production run this slice. Old cases and CI gates preserved.
 
 ## Next
 
-Finish actual archive and canonical sync now. Then choose next small database-first
-historical coverage/chart slice using this account valuation foundation. Whole brief
+Choose the next small database-first historical coverage/chart slice using this
+account valuation foundation. Whole brief
 still needs automatic prices/history/charts, multi-account valuation, TWR, transfers/
 swaps/rewards, blockchain reconciliation, optionalAI and release/backup-restore
 hardening before consolidation. Do not move/delete original folders now.

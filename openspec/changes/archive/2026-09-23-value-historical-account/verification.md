@@ -1,7 +1,7 @@
 # Historical account valuation verification
 
 Status: implementation independently reviewed; selected verification GREEN.
-Archive synchronization is the final task.
+Archived and canonical requirements synchronized; all7 tasks complete.
 
 ## Scope and reviewed check manifest
 
@@ -143,3 +143,18 @@ access/deployment occurred.
 
 Final labeled Docker container/network inventories returned empty after successful
 cleanup. Nginx/lock hashes and Nginx0644/1348 were rechecked unchanged.
+
+## Actual archive
+
+OpenSpec1.2.0 `OPENSPEC_TELEMETRY=0 openspec archive value-historical-account --yes`
+exited0, adding4 requirements to the new canonical historical-account-valuation
+spec and moving this change to2026-09-23-value-historical-account. The CLI reported
+6/7 tasks because the last task itself includes archive/sync; that checkbox was
+completed only after actual synchronization. No implementation/check was skipped.
+The generated purpose placeholder was filled without changing requirements.
+
+Final strict validation passed19/19 canonical specs, active changes are empty.
+All18 prior canonical specs are byte-for-byte unchanged; new requirements match
+the archived delta exactly. All guide archive links resolve. Final diff check
+passes, isolated containers/networks are absent, owner Nginx remains the only
+unrelated unstaged modification. No production action was taken.
