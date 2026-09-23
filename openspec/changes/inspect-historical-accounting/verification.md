@@ -50,6 +50,15 @@ checks passed; no PostgreSQL runtime result is claimed. The probe expects
 Missing future service is a prerequisite error before creating its fixture database.
 Real100+1000 bounds and expanded late-response UI checks still need implementation.
 
+Independent `historical-accounting-journey.spec.ts` preparation153d979 adds one actual
+delayed-response scenario with a preserved unsaved correction. Root verified existing
+form selectors and strengthened its no-write oracle to forbid every accounting POST,
+not just a POST to the new read route. It delays actual `route.fetch()` output without
+inventing backend data. Scoped Biome and strict E2E TypeScript passed, exit0
+(`/private/tmp/capital-historical-journey-tsc.log`); temporary dependency links removed.
+The case has not run. Account-switch and real pinned-pagination409 browser coverage,
+plus real PostgreSQL100+1000 bounds, remain outstanding before final verification.
+
 | Scenarios | Planned executable evidence |
 | --- | --- |
 | HIST-001-A, HIST-002-A | `tests/e2e/historical-accounting.spec.ts`: actual owner/password/MFA, HTTPS API/UI, PostgreSQL; exact chronological100/300/100 costs and250/230 realized, inclusive baseline boundary |

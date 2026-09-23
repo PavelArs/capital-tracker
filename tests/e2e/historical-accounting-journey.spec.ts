@@ -8,7 +8,7 @@ import {
 } from './admission-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
 import { fingerprint, test } from './mfa-fixtures';
-import { tradeApi, tradeInput, trackBrowserRequests } from './usd-trades-fixtures';
+import { trackBrowserRequests, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 test('HIST-004-A: a late history response cannot replace edited intent or the unsaved correction', async ({
   page,
@@ -40,12 +40,13 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
   const assertQuota = trackBrowserRequests(page, api);
   const historyPath = `/api/accounting/accounts/${account.id}/trade-journal/history`;
   const historyRequests: string[] = [];
-  const historyPosts: string[] = [];
+  const accountingPosts: string[] = [];
   page.on('request', (request) => {
     const url = new URL(request.url());
+    if (request.method() === 'POST' && url.pathname.startsWith('/api/accounting/'))
+      accountingPosts.push(url.href);
     if (url.pathname !== historyPath) return;
     if (request.method() === 'GET') historyRequests.push(url.href);
-    if (request.method() === 'POST') historyPosts.push(url.href);
   });
   const pattern = `**${historyPath}?*`;
   let release = () => {};
@@ -89,8 +90,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     );
     const delayed = page.waitForResponse(
       (response) =>
-        new URL(response.url()).pathname === historyPath &&
-        response.request().method() === 'GET',
+        new URL(response.url()).pathname === historyPath && response.request().method() === 'GET',
       { timeout: 15_000 },
     );
     delayed.catch(() => {});
@@ -120,8 +120,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
 
     const refreshed = page.waitForResponse(
       (response) =>
-        new URL(response.url()).pathname === historyPath &&
-        response.request().method() === 'GET',
+        new URL(response.url()).pathname === historyPath && response.request().method() === 'GET',
       { timeout: 15_000 },
     );
     await page.getByRole('button', { name: 'Показать учётный срез', exact: true }).click();
@@ -152,7 +151,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     await expect(page.getByRole('button', { name: 'Сохранить сделку', exact: true })).toBeEnabled();
     await expect(selected).toBeVisible();
     expect(historyRequests).toHaveLength(2);
-    expect(historyPosts).toEqual([]);
+    expect(accountingPosts).toEqual([]);
   } finally {
     release();
     await page.unroute(pattern);
