@@ -53,7 +53,7 @@ async function fingerprint(source, excluded = []) {
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 }
-async function refusal(action, status) { await assert.rejects(action, error => error?.getStatus?.() === status); }
+async function refusal(action, status) { await assert.rejects(async () => action(), error => error?.getStatus?.() === status); }
 async function checkedRead(source, statements, action) {
   const before = await fingerprint(source);
   const index = statements.length;
