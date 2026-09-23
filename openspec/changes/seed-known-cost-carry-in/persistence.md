@@ -2,7 +2,8 @@
 
 Design only; implementation requires the CSV archive and genuine predecessor API/UI
 RED. This companion specifies a bounded first baseline, not complete accounting or
-baseline amendment. Root owns migration/DDL and final contract freeze. Approved design choices and remaining seam freeze work are collected in §9.
+baseline amendment. Root owns migration/DDL. Approved design choices and the reviewed implementation
+seams are frozen below; executable acceptance still precedes new behavior.
 
 ## 1. Scope and unchanged contracts
 
@@ -174,7 +175,7 @@ accepted replay before the journal dependency refusal.
 
 ## 5. Stored evidence and additive migration16
 
-Recommended migration name `AddKnownCostCarryIn1790060000000`. Preserve all preceding
+Migration name `AddKnownCostCarryIn1790060000000`. Preserve all preceding
 rows/tables/indexes/constraints, except the explicitly widened origin-kind constraint
 and new nullable journal link/indexes. No historical migration edits, backfill,
 extension, startup migration or destructive down behavior. Populated15 fixtures must
@@ -292,14 +293,63 @@ command persistence. Prior ambiguity survives reads and denied 401/403/429/400/4
 only accepted receipt or exact original POST 409 after replay lookup resolves it.
 A known receipt followed by failed fresh reads stays blocked until current review.
 
+Stable Russian acceptance labels: heading `Начальные лоты FIFO`; grouped fieldsets
+`Лот 1`, `Лот 2`, etc. Each group labels `Инструмент`,
+`Дата и время приобретения (UTC)`, `Порядок в этот момент`, `Исходное количество`,
+`Исходная стоимость, USD` and `Количество на начало учета`. Reuse the existing
+explicit UTC datetime-local conversion and strict server timestamp parsing.
+Actions: `Добавить лот`, `Проверить начальные лоты`,
+`Начать журнал с начальными лотами`, `Повторить исходную инициализацию`.
+Review checkbox: `Подтверждаю исходные данные лотов и понимаю, что начальные лоты пока нельзя изменить.`
+Review starts unchecked and remains separate from successful arithmetic preview.
+Use stable role/label locators; labels are product text, not hidden test bypasses.
+
 ## 8. Minimal service/test seam
 
 Proposed `CarryInService(DataSource)` methods: `state(ownerId,accountId)`,
 `preview(ownerId,accountId,raw)`, `initialize(ownerId,accountId,raw)` returning
 `{created,value:CarryInOrigin}`, and `listLots(ownerId,accountId,rawQuery={})`.
 Raw bodies/queries parse once in service; no global implicit coercion exceptions.
-Controller owns no arithmetic/transactions. Input helper names and the extended pure
-FIFO signature must be frozen with independent test authors before implementation.
+Controller owns no arithmetic/transactions. Frozen shared seams:
+
+- `carry-in-input.ts` exports normalized `CarryInLotInput`, `CarryInPreviewInput`
+  (`expectedOpeningRevision,lots`), `CarryInInitializationInput` (adds `requestId` and
+  literal `assertReviewed:true`) and `CarryInLotsQuery` (`afterOrdinal,limit`).
+  Parsers are `parseCarryInPreview(raw)`, `parseCarryInInitialization(raw)` and
+  `parseCarryInLotsQuery(raw={})`. Preserve old input parsers and canonical payloads.
+- `fifo.ts` exports `FifoCarryInInput` with `lotId,openingRevision,ordinal,
+  instrumentId,instrumentName,instrumentSymbol,acquiredAt,orderWithinTimestamp,
+  originalQuantity,originalCostUsd,carriedQuantity`, and the exact new Lot/Match
+  variants in section6. Inputs are normalized, readonly evidence.
+- Preserve the one-argument `calculateFifo(trades):FifoResult` signature. Add the
+  two-argument overload `calculateFifo(trades,initialLots):CarryInFifoResult`, whose
+  lots/matches are old/new unions and whose summary/realizations remain unchanged.
+  Both overloads execute one algorithm; no copied empty-origin implementation.
+- A pure `deriveCarryInAmounts(Q,C,R)` helper in `fifo.ts` accepts canonical strings
+  and returns canonical `priorDisposedQuantity,priorAllocatedCostUsd,carriedCostUsd`.
+  Preview and seeding share this single cumulative-floor calculation. Keep pure code
+  independent of Nest/TypeORM; use existing `FifoHistoryError` for invalid history.
+- `trade-journal.store.ts` exports
+  `readBaseline(manager,ownerId,accountId,journal):Promise<readonly FifoCarryInInput[]>`.
+  Extend `JournalRow` into empty (`openingRevision:null`) and carry-in
+  (`openingRevision:number`) discriminated variants. An empty origin returns `[]`;
+  a carry-in selects explicit fields with owned labels, pins openingRevision and
+  sorts by ordinal, using only the caller's active transaction/snapshot manager.
+  Missing/malformed or more-than100 saved carry-in rows fail safely, never fall
+  back to empty inventory. Manual/CSV calculations receive the baseline explicitly.
+- Origin receipt projection reads count/cost from those same immutable rows. No
+  mutable pointer, separate timed query or global manager participates in replay.
+
+Migration16 uses explicit names: journal `account_trade_journals_origin_check`,
+`account_trade_journals_opening_fk` and `account_trade_journals_opening_key`.
+New baseline constraints share prefix `account_carry_in_lots_` with suffixes `pkey`,
+`identity_key`, `ordinal_key`, `chronology_key`, `owner_fk`, `journal_fk`, `position_fk`,
+`ordinal_check`, `opening_revision_check`, `order_check`, `quantities_check`,
+`cost_check`, `acquired_at_check` and `created_at_check`.
+The sole replaced predecessor constraint is the generated quoted
+`account_trade_journals_originKind_check`; verify its actual populated15 catalog
+name before executing DDL. Preserve every other original constraint, including
+originKind NOT NULL, request/account identity, revision and time checks.
 
 Required real tests cover original-versus-rebased partial allocation; exact opening
 reconciliation/knownzero/unknown refusal; acquisition at boundary before same-time
@@ -321,10 +371,11 @@ user authorization:
 4. One baseline table and journal link; the documented cross-row invariants stay
    application-enforced within the common lock, without speculative trigger framework.
 
-Before implementation, independently review this full wire/schema contract against
-root specifications, freeze input/pure-calculation helper signatures with test authors,
-and confirm the exact migration constraint names. No competing alternative interface
-is intended; these are remaining review tasks, not permission to guess during coding.
+Independent architecture review approved the wire/schema and section8 seams.
+Acceptance review must confirm its test oracles against the complete specification
+before implementation. Verify the predecessor generated constraint name against the
+actual database catalog during migration rehearsal; do not assume an unobserved name
+as successful runtime evidence.
 
 Initial baseline correction is deliberately unsupported, not solved forever by an
 immutable origin. Before claiming the full brief complete, a follow-up must distinguish
