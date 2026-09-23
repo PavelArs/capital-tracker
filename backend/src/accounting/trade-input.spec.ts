@@ -60,7 +60,7 @@ describe('TRADE-001 literal empty-origin attestation', () => {
     ).toEqual(initialization);
   });
 
-  it.each([undefined, null, false, 'true', 'false', 1, 0, [], {}, { valueOf: true }])(
+  it.each<unknown>([undefined, null, false, 'true', 'false', 1, 0, [], {}, { valueOf: true }])(
     'refuses nonliteral-true attestation %#',
     (assertEmpty) => rejects(() => parseJournalInitialization({ ...initialization, assertEmpty })),
   );
