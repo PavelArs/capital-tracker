@@ -1,7 +1,8 @@
 # Verification: import-usd-trades-csv
 
 Status: genuine predecessor-image CSV RED demonstrated; implementation now in progress.
-GREEN, expanded migration/PG/browser verification and archive remain pending.
+Source, migration/PG and initial HTTPS checks passed. Expanded browser verification,
+review fixes, the complete release gate and archive remain pending.
 
 Predecessor record-usd-fifo-trades was actually archived in97a7a2d on2026-09-23 after
 all101 real Chromium cases passed in21.7 minutes, one worker and zero retries, plus
@@ -21,10 +22,10 @@ was made to demonstrate those design claims; runtime verification remains requir
 | Scenarios | Planned executable evidence | Current result |
 | --- | --- | --- |
 | CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine RED recorded; both initial cases GREEN in current focused run, expanded journey pending |
-| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests passed; HTTPS transport pending |
+| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests and initial transport/wire HTTPS passed |
 | CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Real production-service PG nine families passed; HTTP supplements pending |
 | CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Real PG RR barriers and state-pinned provenance passed; replica HTTPS pending |
-| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Focused seven-case HTTPS run active; full journey/regressions pending |
+| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Focused seven-case HTTPS passed; three genuine UI regression failures recorded, fixes under verification |
 | CSV-TRADE-001 | All retained manual/USD source/PG/HTTPS characterization plus atomic range assertions | Retained manual/USD PG and859 backend assertions pass; full HTTPS pending |
 | CSV-MIG-001 | Release-image fresh15/replay and populated14-to15 plus all older upgrade/refusal cases | Actual fresh15/replay/populated8..14 upgrades and unsafe-history refusals passed |
 
@@ -127,3 +128,45 @@ revision on CSV refresh, retained old workflow after new file selection, and col
 source-key whitespace. Root also identified global401 full-navigation recovery loss.
 Maintained real regressions are being authored before repairs; these remain open.
 No full slice GREEN or archive until those and all required gates pass.
+
+## Focused HTTPS and review regression RED — 2026-09-23
+
+Actual `node /private/tmp/capital-csv-http-run.cjs` with the documented PATH and
+caffeinate completed exit0: 7/7 Chromium cases, 1.5 minutes, one worker, zero retries.
+Log: `/private/tmp/capital-csv-http-focused-first.log`. Includes the original two
+missing-feature cases now GREEN, four private multipart/security cases and actual
+Nginx exact-1-MiB/one-over probes using both Content-Length and chunked transmission.
+Backend image is the 0c239e1e image above; frontend image:
+`sha256:58fe842863dc1095e70c3b776c97d86711e8dce4a305434aa72ea651fcef1866`.
+All calls use real release applications, session/MFA, TLS proxy and PostgreSQL.
+Only external providers are stubbed. Fresh15, artifact/topology and owned cleanup
+completed. Later auth-negative test strengthening sends a valid multipart body
+rather than JSON at the upload route; that strengthening still needs execution.
+
+Independent maintained UI regressions then demonstrated three real defects against
+that unchanged frontend, before the respective fixes:
+
+- `csv-import-journey.spec.ts` actual accepted201 confirmation was observed in
+  PostgreSQL, delivery aborted, original retry received an actual401 after isolated
+  session expiry, and real password plus issued recovery MFA succeeded. The original
+  retry button was then missing because document navigation discarded the command.
+  `/private/tmp/capital-csv-401-red.log`, exit1, one intended failure;
+  artifacts `/private/tmp/capital-csv-401-red-artifacts`.
+- Explicit CSV refresh after an external journal revision advance left the rollback
+  review checkbox disabled: child detail refreshed but the parent journal did not.
+- Choosing a new unuploaded file left the old batch mapping/preview actionable under
+  the new filename. The required cleared/disabled workflow oracle failed.
+  Both were run with `node /private/tmp/capital-csv-http-run.cjs
+  tests/e2e/csv-import-journey.spec.ts --grep 'explicit CSV refresh|new unuploaded'`:
+  `/private/tmp/capital-csv-draft-review-red.log`, exit1, two intended failures;
+  artifacts `/private/tmp/capital-csv-draft-review-red-artifacts`.
+
+These are behavioral failures after successful real setup, not missing imports,
+compilation failures or mocked application responses. Each isolated run completed
+owned cleanup. Fixes preserve the original commands and assertions: SPA unauthorized
+navigation with stale-session response guards; explicit parent refresh with revision
+checks on late previews and commands; clearing old source/mapping/detail on file
+selection. Literal source-key whitespace remains a separate pending regression.
+The auth worktree source checks passed 95 tests/10 files, build and lint with retained
+warnings. Actual integrated expanded HTTPS verification is running; no GREEN claim
+is inferred from its source tests.

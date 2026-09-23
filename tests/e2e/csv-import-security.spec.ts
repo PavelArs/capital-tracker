@@ -351,9 +351,10 @@ test('CSV-007-A: every import route denies anonymous/pending access and invalid 
     const base = basePath(account.id);
     const batch = `${base}/${saved.batchId}`;
     const mapped = settings(instrument.id);
+    const deniedUpload = multipart(parts());
     const endpoints = [
       { method: 'GET', path: base },
-      { method: 'POST', path: base, data: {} },
+      { method: 'POST', path: base, data: deniedUpload.data },
       { method: 'GET', path: batch },
       { method: 'GET', path: `${batch}/rows` },
       { method: 'POST', path: `${batch}/inspect`, data: { delimiter: ',' } },
@@ -387,7 +388,13 @@ test('CSV-007-A: every import route denies anonymous/pending access and invalid 
         const response = await client.request.fetch(endpoint.path, {
           method: endpoint.method,
           data: endpoint.data,
-          headers: { Origin: origin, 'X-CSRF-Token': client.csrf },
+          headers: {
+            Origin: origin,
+            'X-CSRF-Token': client.csrf,
+            ...(endpoint.method === 'POST' && endpoint.path === base
+              ? { 'Content-Type': deniedUpload.contentType }
+              : {}),
+          },
         });
         expect(response.status(), `${endpoint.method} private route denies non-full session`).toBe(
           401,
@@ -404,7 +411,13 @@ test('CSV-007-A: every import route denies anonymous/pending access and invalid 
     for (const endpoint of endpoints.filter((e) => e.method === 'POST')) {
       for (const headers of deniedHeaders) {
         count(api);
-        const response = await api.request.post(endpoint.path, { data: endpoint.data, headers });
+        const response = await api.request.post(endpoint.path, {
+          data: endpoint.data,
+          headers: {
+            ...headers,
+            ...(endpoint.path === base ? { 'Content-Type': deniedUpload.contentType } : {}),
+          },
+        });
         expect(response.status()).toBe(403);
         noStore(response);
       }

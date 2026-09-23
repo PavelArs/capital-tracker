@@ -93,9 +93,11 @@ export function CsvImports({
   const listGeneration = useRef(0);
   const selection = useRef(selected);
   const previousRevision = useRef(journalRevision);
+  const currentRevision = useRef(journalRevision);
   const callbacks = useRef({ onBlocked, onJournalRefresh, parentBusy, parentBlocked });
   callbacks.current = { onBlocked, onJournalRefresh, parentBusy, parentBlocked };
   selection.current = selected;
+  currentRevision.current = journalRevision;
 
   const list = useCallback(
     async (cursor?: string) => {
@@ -141,11 +143,7 @@ export function CsvImports({
     previousRevision.current = journalRevision;
     setPreview(null);
     setRollbackReviewed(false);
-    if (!recoveries.has(accountId)) {
-      generation.current++;
-      setReading(false);
-    }
-  }, [accountId, journalRevision]);
+  }, [journalRevision]);
 
   function invalidate() {
     generation.current++;
@@ -154,7 +152,7 @@ export function CsvImports({
     setRollbackReviewed(false);
     setError(null);
   }
-  async function loadDetail(batchId: string, accepted?: Recovery) {
+  async function loadDetail(batchId: string, accepted?: Recovery, refreshJournal = false) {
     const request = ++generation.current;
     setReading(true);
     setPreview(null);
@@ -162,7 +160,8 @@ export function CsvImports({
     setRows(null);
     setDetail(null);
     setError(null);
-    const needsJournal = accepted !== undefined && accepted.operation.kind !== 'upload';
+    const needsJournal =
+      refreshJournal || (accepted !== undefined && accepted.operation.kind !== 'upload');
     const [batchResult, journalResult] = await Promise.allSettled([
       csvImportsApi.detail(accountId, batchId),
       needsJournal ? callbacks.current.onJournalRefresh() : Promise.resolve(true),
@@ -247,8 +246,11 @@ export function CsvImports({
     setError(null);
     try {
       const value = await csvImportsApi.preview(accountId, selected, settings);
-      if (live.current && request === generation.current)
-        setPreview({ value, settings, generation: request });
+      if (live.current && request === generation.current) {
+        if (value.journalRevision === currentRevision.current)
+          setPreview({ value, settings, generation: request });
+        else setError('Журнал изменился. Обновите состояние CSV и повторно проверьте импорт.');
+      }
     } catch (error) {
       if (live.current && request === generation.current) setError(message(error));
     } finally {
@@ -316,7 +318,8 @@ export function CsvImports({
       reading ||
       !preview?.value.canConfirm ||
       !preview.value.previewHash ||
-      preview.generation !== generation.current
+      preview.generation !== generation.current ||
+      preview.value.journalRevision !== currentRevision.current
     )
       return;
     void send({
@@ -338,7 +341,8 @@ export function CsvImports({
       parentBlocked ||
       reading ||
       !rollbackReviewed ||
-      !detail?.rollbackReview.eligible
+      !detail?.rollbackReview.eligible ||
+      detail.rollbackReview.journalRevision !== currentRevision.current
     )
       return;
     void send({
@@ -437,9 +441,16 @@ export function CsvImports({
           accept=".csv,text/csv"
           disabled={locked}
           onChange={(event) => {
-            if (recoveries.has(accountId)) return;
+            if (recoveries.has(accountId) || callbacks.current.parentBlocked) return;
             invalidate();
             setFile(event.target.files?.[0] ?? null);
+            selection.current = null;
+            setSelected(null);
+            setDetail(null);
+            setInspection(null);
+            setMapping(emptyCsvMapping());
+            setRows(null);
+            setReceipt(null);
           }}
         />
       </label>
@@ -505,7 +516,11 @@ export function CsvImports({
           onClick={() => {
             selection.current = refreshBatch;
             setSelected(refreshBatch);
-            void loadDetail(refreshBatch, recovery?.phase === 'accepted' ? recovery : undefined);
+            void loadDetail(
+              refreshBatch,
+              recovery?.phase === 'accepted' ? recovery : undefined,
+              true,
+            );
           }}
         >
           Обновить состояние CSV
@@ -577,7 +592,8 @@ export function CsvImports({
               reading ||
               !preview.value.canConfirm ||
               !preview.value.previewHash ||
-              preview.generation !== generation.current
+              preview.generation !== generation.current ||
+              preview.value.journalRevision !== journalRevision
             }
             onClick={confirm}
           >

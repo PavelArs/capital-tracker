@@ -41,7 +41,7 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-Root HTTPS focused run active: PTY14067, /private/tmp/capital-csv-http-focused-first.log.
+Root expanded CSV HTTPS run active: PTY44484, /private/tmp/capital-csv-journey-first.log.
 Runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
 
 ## Completed and archived
@@ -98,28 +98,25 @@ Actual CSV PG nine families pass /private/tmp/capital-csv-pg-first.log: exactFIF
 whole-batch/replay, conditional rollback, process races, genuine deferred COMMIT,
 RR barriers, SQL limits and valid caps. Root fixed fixture's foreign-journal seed
 to retain all protected prior rows; no assertions weakened.
-Frontend build/lint81tests pass; initial2 realHTTPS cases already passed in currently
-running7-case focused set (security+wire remaining). Full gate not run; no archive.
+Initial7 realHTTPS cases PASS (1.5m, one worker, zero retries), including security
+and declared/chunked wire limits. Full gate not run; no archive. Expanded9 CSV
+journey/command cases now running after three intended UI regression REDs.
 
-Open frontend review findings require maintained runtime regressions before repair:
-1. CSV refresh does not refresh parent unless recovering an accepted command.
-2. New unuploaded file leaves old selected batch/inspection/mapping usable.
-3. Exact source-key whitespace collapses visually.
-4. Shared client401 hard navigation loses in-memory original commands. Root will
-replace hard reload with minimal AuthProvider unauthorized SPA handling ONLY after
-actual401 recovery RED. Full browser document reload is not persistent storage;
-clarify in-app refresh scope while retaining denied401 command guarantees.
+Real UI REDs before fixes: lost accepted command after actual401/password+MFA
+(/private/tmp/capital-csv-401-red.log); explicitCSVrefresh stale parent and newfile
+oldmapping (/private/tmp/capital-csv-draft-review-red.log), three intended failures.
+Artifact copies are adjacent *-artifacts directories. Owner cleanup completed.
+Integrated independent command tests ca346b8, seven UI tests d1907ca, authfix9c4a285.
+Authfix95 tests/build/lint passed in author worktree; independent review ongoing.
+Root working CsvImports diff fixes parent refresh and new-file workflow plus stale
+revision guards. Literal source-key whitespace is still unchanged awaiting RED.
+Root strengthened valid multipart denied-auth tests; runtime rerun pending.
 
-Agents reused: gate_acceptance owns new csv-import-journey.spec.ts/optionalfixtures,
-prioritizes401 genuineRED then fullRussianFIFO/rollback/lostresponse403/stale review.
-audit_security owns new csv-import-commands.spec.ts actualreplica/hash and deferred
-COMMIT HTTP500/privacy. provider_feasibility prepares401 integration design only.
-Root owns migration/lock/sharedfixtures/Docker/integration and all subsequent repairs.
-Worktrees csv-acceptance, csv-backend, csv-frontend retained; no concurrency edits.
-Root wire test independently reviewed; exact1MiB/oneover ContentLength+chunked,
-fingerprint includesALLtables includingauthsessions on edge413. Follow-up security
-strengthening: send validmultipart underdeniedauth ratherthanJSON; wait currentrun
-before editing its live test files.
+Agents: gate_acceptance owns csv-import-journey.spec.ts/csv-import-fixtures.ts, now
+adding whitespace and parent manual-target regressions; audit_security reviews
+shared auth plus root CsvImports fixes; provider_feasibility reviews test oracles.
+Root owns Docker/migration/lock/sharedfixtures/integration and CsvImports repairs.
+No other agent may edit root files or run Docker. Worktrees retained.
 
 CSV scope remains UTF8<=256KiB/100rows, explicitowned UUID/USD/decimal/time/order/fee,
 whole-batch atomic acceptance/provenance/conditional rollback,1000/10000journalcaps.
