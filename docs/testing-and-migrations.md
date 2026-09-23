@@ -8,6 +8,27 @@ not establish production readiness.
 
 ## Reproducible checks
 
+For incremental work, use a reviewed check list based on the changed code and its
+critical risks. The owner changed this policy on2026-09-23: a full browser suite is
+not mandatory for every change. Run relevant unit/integration tests, actual PostgreSQL
+probes and the affected critical Playwright journeys. Record the exact selection and
+what was not run. Keep the existing full runner and CI gates for broader regression
+and release checks; a targeted result must not be described as a full release pass.
+
+Within an initialized isolated acceptance stack, Playwright accepts concrete files
+or file:line selectors, for example:
+
+```sh
+pnpm exec playwright test tests/e2e/historical-accounting.spec.ts --workers=1
+```
+
+This command needs the real synthetic HTTPS/authentication/PostgreSQL environment
+described below; it does not create that environment itself. `pnpm test:e2e` still
+builds, runs and cleans up the complete suite. Test-pyramid review is separate work:
+retain critical browser paths, move suitable permutations to lower levels, and remove
+redundant cases only after equivalent assertions are demonstrably covered. No tests
+or CI gates were deleted as part of the policy change.
+
 The isolated proxy runs the actual `deploy/nginx.conf` template with only synthetic
 domain, certificate path and upstream authority substitutions. Its `/api/` routing
 and forwarding policy are therefore exercised by all browser tests. Two additional

@@ -15,12 +15,12 @@ complex implementation/security/review. Earlier continuation reused stronger age
 without a cheaper override; this was acknowledged to the user. Avoid redundant full
 runs and large log output. Give short periodic Russian updates. Preferences saved.
 
-Agent state: final security review by audit_security found no product/schema blocker;
-two test-oracle gaps were strengthened and independently closed. New gpt-6-luna
-carry_docs_review performed bounded read-only documentation review and confirmed all
-five fixes. Both are completed. gate_acceptance remains usage-limited; never attribute
-root-written expanded tests to it. All worktrees are retained, including detached
-carry-in-release-review at46ce63f for stable review.
+Agent state: carry-in critical review was completed by audit_security; historical
+backend independently reviewed by historical_ui (explicit gpt-6-sol), with one
+saved-history error finding reproduced/fixed/closed. Root reviewed its frontend.
+carry_docs_review (explicit gpt-6-luna) authored browser boundaries and reviewed docs/
+targeted selection. All worktrees retained. gate_acceptance remains usage-limited;
+never attribute root-written tests to it. No active worker owns main product files.
 
 Preserve unstaged frontend/nginx.conf, mode0644/1348 bytes, SHA256:
 115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432.
@@ -54,9 +54,9 @@ role correction and deterministic synthetic warm-cache lifetime. No failed run i
 release evidence. All old scenarios retained; archive6new/10modified/0removed.
 No owner DB, production deployment, paid service, folder deletion or remote push.
 
-## Current historical-accounting slice
+## Verified historical-accounting slice
 
-Read openspec/changes/inspect-historical-accounting/{proposal,design,specs,tasks,
+Read openspec/changes/archive/2026-09-23-inspect-historical-accounting/{proposal,design,specs,tasks,
 verification}.md and docs/historical-accounting.md. Current-effective restated
 per-account positions/cumulative FIFO at explicit instant, not past knowledge,
 observed balances, prices or investment returns. No migration/dependency/provider.
@@ -93,15 +93,25 @@ Log /private/tmp/capital-historical-focused.log; independent cleanupempty andhas
 unchanged. Seven cases cover timeline/carryboundary/privacy/literalHTML/lateinput/
 accountswitch/realpinned409+successfulpage/observedrevision and parentcorrection.
 
-NOW: ready for complete pnpm test:e2e (140browsercases plus allold/newPGprerequisites),
-log /private/tmp/capital-historical-release.log. Do not archive on focused success.
-Root alone owns Docker. No product changes while gate runs. Read terminal exit plus
-COMPLETE pass/failcounts, notlatesttestindex. Helper capital-release-progress.py LOG140.
-NEXT: record actual fullresult/images, independentcleanup+hashes, close5.2/5.3onlyon
-success, supported openspec archive --yes, fix canonicalpurpose/links, validateagain.
-Fulltarget still substantially unfinished: price/history/providerreconciliation,
-cashflows/transfers/swaps/rewards/performance, AI, releasehardening/consolidation.
-Do not move/delete original or duplicate folders before WHOLE verifiedrefactor.
+USER POLICY UPDATE2026-09-23: default to targeted verification, not fullE2E for every
+change; later review E2Epyramid and move appropriate coverage down before deleting
+redundantcases. AGENTS/config/testingguide updated. Existingtests/CIGates intact.
+Full b7bf7fc run deliberately stopped perowner duringclient-source-startup, before
+Chromium, exit1; all migration/old+newPG/CLI/session/MFAfamilies hadpassed first.
+Log /private/tmp/capital-historical-release.log. Do notclaimfull140GREEN.
+Additional exact-image retained CARRY001A+004A criticaltests passed2/2in33.2s exit0,
+capital-historical-critical-regression.log. New7+retained2=9targetedcases; all5PG
+families and sourcechecks passed. Independently confirmedcleanupempty, hashesmatch.
+NoactiveDocker/run remains. Productimagesunchangedafterc8873bb.
+DONE: supportedOpenSpecarchive inspect-historical-accounting --yes succeeded,
+4newcanonicalrequirements and0previousrequirementschanged/removed; strict14/14
+passed. Noactivechange
+remains in main after archival. Targetedverification scope isexplicitabove.
+Fulltarget still substantiallyunfinished: price/history/providerreconciliation,
+cashflows/transfers/swaps/rewards/performance,AI,releasehardening/consolidation.
+Nextsmallengineeringtask: review E2Ecriticaljourneys/duplicatedpermutations and plan
+coveragepreserving moves tolowerlevels; userasked thislater, no testsdeletednow.
+Do notmove/delete originalor duplicatefoldersbefore WHOLEverifiedrefactor.
 
 Retained worktrees: historical-accounting-design HEADa639c25 (prepared commitsnow
 integrated), historical-ui HEAD14e6fbc (integrated), historical-browser-boundaries

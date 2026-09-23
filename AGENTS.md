@@ -38,5 +38,12 @@ that fit the task rather than introducing unnecessary abstractions.
 Maintain concise CONTINUITY.md with goal, constraints, decisions, done/now/next,
 open questions and evidence. Never record secrets. Read docs/brownfield-audit.md
 before database upgrades: explicit migration preflight refuses unsafe legacy history.
-Run real isolated verification with `pnpm test:e2e`; see docs/testing-and-migrations.md.
+Default to verification scoped to the changed code and its critical risks: relevant
+unit/integration checks, real PostgreSQL and selected critical HTTPS Playwright cases.
+Record the selected scenarios, rationale, actual results and unrun checks. A full E2E
+run is not required for every incremental change (owner instruction2026-09-23).
+Keep `pnpm test:e2e` for broad regression/release verification when justified; existing
+CI gates stay intact. Review the E2E pyramid separately: move suitable coverage down
+before removing redundant cases, preserving critical financial/authentication paths.
+See docs/testing-and-migrations.md for the isolated environment and commands.
 Never use the production Compose file for tests or alter the owner Nginx edit.

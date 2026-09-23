@@ -129,7 +129,13 @@ are unchanged. Existing auth/deployment dependencies and provider quotas are unc
 No migration, data rewrite, dependency or deployment change. Implement only after the
 carry-in slice is verified and archived. Demonstrate missing API/UI acceptance on
 those exact images, implement and independently review, then run source checks and
-the full existing PostgreSQL/HTTPS release gate before archival. Reverting this
+the reviewed targeted PostgreSQL/HTTPS acceptance manifest before archival. Under the
+owner's2026-09-23 instruction, this manifest contains all seven historical HTTPS
+cases, all five historical PostgreSQL families, and retained critical CARRY-001-A
+initialization/restart plus CARRY-004-A manual/CSV/correction/rollback cases. A complete
+140-case browser rerun is not required for this bounded read-only slice; it remains
+unrun and is not claimed as release evidence. No existing test or CI gate is removed.
+Reverting this
 read-only slice leaves journal data intact; prior carry-in binary compatibility
 restrictions still apply. No production deployment is authorized.
 

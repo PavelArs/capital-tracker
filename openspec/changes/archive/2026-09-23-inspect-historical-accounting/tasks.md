@@ -25,5 +25,5 @@
 ## 5. Verify and archive
 
 - [x] 5.1 Run frozen install, production dependency gate, strict OpenSpec, source lint/type/build/unit checks and strict E2E type checking; retain visible existing warnings.
-- [ ] 5.2 Run full pinned-image PostgreSQL/HTTPS Playwright release gate with1worker/0retries; record commit/images/counts/exit, independent synthetic cleanup and unchanged owner files.
-- [ ] 5.3 Reconcile specs/tests/implementation/actual evidence, mark only observed completion, use supported OpenSpec archive and validate canonical specs; leave production/consolidation and remaining brief requirements explicitly unfinished.
+- [x] 5.2 Complete the owner-authorized targeted manifest: all seven new HTTPS cases, five real historical PostgreSQL families, and retained CARRY-001-A initialization/restart plus CARRY-004-A manual/CSV/correction/rollback;1worker/0retries. Record commit/images/counts/exit, independent cleanup/owner files, and disclose the stopped full gate without counting it as complete success.
+- [x] 5.3 Reconcile specs/tests/implementation/actual evidence, mark only observed completion, use supported OpenSpec archive and validate canonical specs; leave production/consolidation and remaining brief requirements explicitly unfinished.

@@ -1,9 +1,10 @@
 # Historical account positions
 
-The active `inspect-historical-accounting` change adds the Russian account-detail
+The verified `inspect-historical-accounting` slice adds the Russian account-detail
 section “Учётный срез на дату”. Its
-[verification record](../openspec/changes/inspect-historical-accounting/verification.md)
-separates observed checks from pending release acceptance.
+[verification record](../openspec/changes/archive/2026-09-23-inspect-historical-accounting/verification.md)
+records nine selected HTTPS cases and real PostgreSQL/source checks. The full
+140-case browser suite was not rerun under the owner-authorized targeted policy.
 
 Enter an ISO timestamp with a time-zone offset, then explicitly request a snapshot.
 The response shows the normalized UTC instant, declared accounting coverage and

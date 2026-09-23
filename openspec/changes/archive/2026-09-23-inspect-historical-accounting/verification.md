@@ -2,8 +2,10 @@
 
 Status: historical backend and Russian view implemented after genuine predecessor
 RED. Actual PostgreSQL acceptance and source checks passed; independent backend
-review finding reproduced and fixed with RED/GREEN. All seven focused HTTPS cases passed; the complete
-release gate remains pending. The bounded change is not ready for archival.
+review finding reproduced and fixed with RED/GREEN. All nine selected HTTPS cases and five PostgreSQL
+families passed under the owner-authorized targeted manifest. The complete browser
+gate was deliberately stopped and is not successful release evidence. This bounded
+slice was archived with the supported CLI; the full target and production remain incomplete.
 
 ## Artifact review — 2026-09-23
 
@@ -71,7 +73,8 @@ coverage were outstanding. They were subsequently added; actual results follow b
 Record actual predecessor source/images and intended missing-route/UI RED before
 product changes. Unit/service doubles cannot substitute for database/browser checks.
 Retain original receipts/import bytes and documented authentication/admission deltas.
-The final release gate must run the complete existing suite, not only new scenarios.
+The original plan required a complete browser rerun; the owner changed this on
+2026-09-23 to targeted verification. The reviewed final selection is recorded below.
 Hosted CI, other browser engines, backup/restore and production remain unrun unless
 separately evidenced. There are no new migration or provider checks in this slice.
 
@@ -187,4 +190,64 @@ Independent documentation/max-fixture review confirmed expected decimal literals
 counts and bounded scope. It flagged stale present-tense preparation notes; those
 were reconciled into dated past-tense history without changing actual results.
 Canonical+active strict OpenSpec passed14/14, exit0
-(`/private/tmp/capital-historical-spec-validation.log`). Full release gate pending.
+(`/private/tmp/capital-historical-spec-validation.log`). Targeted closure follows the later owner instruction below.
+
+## Owner-authorized targeted verification — 2026-09-23
+
+After the full run began, the owner instructed that every change no longer needs all
+tests, and that a later test-pyramid review should retain critical E2E and move or
+remove redundant cases with appropriate lower-level coverage. AGENTS/config/design/
+tasks now reflect this explicit scope change; product acceptance assertions are
+unchanged. Existing tests and CI gates remain intact. This is not a response to a
+failing product assertion and is not a claim that an incomplete gate passed.
+
+The full `caffeinate -is pnpm test:e2e` run atb7bf7fc was deliberately stopped during
+client-source-startup prerequisites, before Chromium began. Only the identified
+synthetic runner child received SIGINT; parent finally cleanup completed, terminal
+exit1. Log `/private/tmp/capital-historical-release.log`. Migration/provider and all
+PG families (including retained opening/USD/CSV/carry and new history) plus owner CLI,
+session/MFA/expiry had printed their passing results before cancellation; remaining
+startup/browser work was not completed. Independent container/network inventories
+were empty, owner Nginx and lock hashes unchanged. No production or owner DB access.
+
+A separate independent review selected two retained critical browser scenarios beyond
+the already passing seven historical cases: CARRY-001-A (original initialization,
+exact sale and restart provenance) and CARRY-004-A (manual/browser CSV parity,
+correction, rollback, original receipts/bytes). These cover shared baseline/FIFO
+readers and existing write journeys affected by module/UI integration. All five
+historical PG families and source checks already passed. The two retained cases are
+run on the same exact images without rebuilding; their actual result follows below.
+A full140-case browser run, hosted CI, other browser engines and production remain
+unrun. Test-pyramid restructuring is future work; no case is deleted here.
+
+## Targeted manifest complete — 2026-09-23
+
+`caffeinate -is node /private/tmp/capital-historical-critical-regression.cjs` asserted
+backend1f6ce77cba5a/frontendacf24293ebd6 exact full image IDs above and used --no-build.
+It executed actual `pnpm exec playwright test tests/e2e/carry-in-red.spec.ts:136
+tests/e2e/carry-in-csv.spec.ts --workers=1` inside the real migrated/seeded synthetic
+HTTPS/MFA/PostgreSQL stack. Both retained critical cases passed,2/2 in33.2s, zero
+retries, terminal exit0. Log `/private/tmp/capital-historical-critical-regression.log`;
+synthetic artifacts `/private/tmp/capital-historical-critical-regression-artifacts`.
+
+The completed selected manifest is7new+2retained=9distinct Chromium cases, plus
+five historical PG families, source checks and independent reviews recorded above.
+No failed assertion was weakened or excluded to obtain this result. The full140-case
+browser run was not completed under the owner's revised verification instruction.
+Independent post-terminal synthetic container/network inventories were empty. Owner
+Nginx remained0644/1348bytes with its unchanged hash, and the lock hash remained
+unchanged. No production deployment, paid service, owner data change or consolidation.
+
+## Supported archival — 2026-09-23
+
+`OPENSPEC_TELEMETRY=0 openspec archive inspect-historical-accounting --yes` exited0
+and created the historical-accounting canonical capability with four new requirements
+and zero modified/removed predecessor requirements. It moved the change to
+2026-09-23-inspect-historical-accounting. Only task5.3 (archival itself) remained
+unchecked during the command; it was completed after successful archival and final
+canonical validation. The generated canonical purpose was replaced with the scoped
+purpose and an actual design link. No product/test assertion changed during closure.
+Canonical `openspec validate --all --strict --no-interactive` passed14/14 specs,
+exit0; `/private/tmp/capital-historical-archive-validation.log`. No active change
+remains in this checkout. Hosted CI, other browsers, backup/restore, full-product
+completion and production/consolidation remain outside the completed slice.

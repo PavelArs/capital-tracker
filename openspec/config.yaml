@@ -18,4 +18,5 @@ rules:
     - Link scenarios to executable tests and actual RED/GREEN evidence.
     - Preserve passing characterization tests for pure refactors without artificial RED.
     - Require independent review and real PostgreSQL/HTTPS Playwright for affected critical journeys.
+    - Default to a reviewed risk-based check manifest; full E2E is not mandatory per incremental change under the owner's 2026-09-23 instruction. Record unrun checks and preserve critical coverage.
     - Archive only after required verification passes; record blockers honestly.

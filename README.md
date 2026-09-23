@@ -37,6 +37,11 @@ The verified [known-cost opening lots](docs/known-cost-carry-in.md) slice passed
 133 HTTPS Chromium cases (124 retained and nine new), real PostgreSQL/migration
 checks and independent review. Remaining accounting/history/provider work and full
 release hardening are still pending.
+The [historical accounting view](docs/historical-accounting.md) reconstructs exact
+positions and FIFO cost at a selected instant from the current corrected journal.
+Its targeted verification passed seven new and two retained critical HTTPS cases,
+plus real PostgreSQL checks; the complete 140-case browser suite was not rerun under
+the owner's updated testing policy. Remaining product and release work is pending.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
