@@ -186,15 +186,15 @@ export function TradeResults({
       <section aria-label="Итоги журнала">
         <h3>Итоги журнала</h3>
         <dl className="trade-summary">
-          <dt>Валовая сумма покупок, USD</dt>
+          <dt>Сумма покупок, USD</dt>
           <dd>{journal.summary.grossBuysUsd}</dd>
           <dt>Комиссии покупок, USD</dt>
           <dd>{journal.summary.buyFeesUsd}</dd>
-          <dt>Валовая сумма продаж, USD</dt>
+          <dt>Сумма продаж, USD</dt>
           <dd>{journal.summary.grossSalesUsd}</dd>
           <dt>Комиссии продаж, USD</dt>
           <dd>{journal.summary.sellFeesUsd}</dd>
-          <dt>Чистая сумма продаж, USD</dt>
+          <dt>Чистая выручка, USD</dt>
           <dd>{journal.summary.netSalesUsd}</dd>
           <dt>Списанная себестоимость, USD</dt>
           <dd>{journal.summary.consumedCostUsd}</dd>
