@@ -369,3 +369,19 @@ and delivery failure; they never fabricate backend or authentication responses.
 The verified focused browser run passed 3/3 in 36.8s, one worker and zero retries.
 The full CI runner also includes `period-profit-db.cjs`; no existing test is removed.
 No migration is added; the fresh guarded fixture uses existing migration 17.
+
+## Conventional XIRR preview
+
+See [XIRR preview](xirr-preview.md). The scoped pure command is:
+
+```sh
+pnpm --dir backend test --runInBand --coverage=false xirr.spec period-profit.spec portfolio-flow.spec portfolio-flow-input.spec
+```
+
+It covers 139 cases across four suites: 28 XIRR cases and 111 retained cases.
+The real PostgreSQL checks are `xirr-preview-db.cjs` and retained
+`period-profit-db.cjs`; the real HTTPS Playwright checks are
+`xirr-preview.spec.ts` and `period-profit.spec.ts` (four cases total). The E2E
+runner is wired for these checks. PostgreSQL and HTTPS results are pending; the
+four browser cases have not yet been reported as passing. The XIRR feature adds
+no migration.

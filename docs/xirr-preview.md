@@ -1,8 +1,8 @@
 # Annual XIRR preview
 
-**Draft:** implementation and verification are pending under
-`preview-conventional-xirr`. This guide describes the specified behavior; it does
-not claim a completed release.
+**Verification pending; implementation available.** Targeted PostgreSQL and HTTPS
+verification under `preview-conventional-xirr` is pending. This guide describes
+the behavior, not a completed or verified release.
 
 The XIRR action on **Прибыль за период** estimates an annualized rate from the
 reviewed manual opening and closing portfolio values and the owner-declared USD
@@ -32,9 +32,10 @@ nonzero dates, both signs, and one transition from negative flows to positive
 flows. Up to 64 nonzero dates are supported, including the valuation boundaries;
 records are never silently truncated. The annual rate range is inclusive from
 `-0.999999` to `1000`. The rate is approximate to an absolute annual-decimal
-tolerance of `1e-10`; very small rates may round to zero. A selected period under
-365 actual days is identified as short. Annualization over a short period can be
-especially sensitive to small valuation or timing differences and is not a
+tolerance of `1e-10`; very small rates may round to zero. At least two nonzero
+effective instants less than 365 actual days apart make the period short, even
+when the selected window itself is longer. Annualization over a short period can
+be especially sensitive to small valuation or timing differences and is not a
 forecast.
 
 When the supported calculation cannot return a rate, it returns no numeric rate
@@ -62,7 +63,7 @@ read trade costs or household income, or call external providers. One XIRR reque
 may be active per backend process; excess concurrent requests receive `429` and
 are not queued. This limit applies separately to each replica, not globally.
 
-The numerical implementation is specified to use
+The implementation uses the runtime dependency
 [`decimal.js` 10.6.0](https://mikemcl.github.io/decimal.js/) for approximate rate
-math while retaining money amounts as exact strings/atoms. This is a planned
-runtime dependency for the change, not a claim that verification has completed.
+math while retaining money amounts as exact strings/atoms. Verification remains
+pending.
