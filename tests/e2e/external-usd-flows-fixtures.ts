@@ -4,7 +4,7 @@ import { test as authenticatedTest, query } from './mfa-fixtures';
 // Unlike per-account journals, there is only one external-flow origin per owner.
 // Each independent synthetic case needs its own empty ledger. Never clear it
 // within a journey or touch the preceding financial/authentication tables.
-export const test = authenticatedTest.extend<{ isolatedFlowJournal: void }>({
+export const test = authenticatedTest.extend<{ isolatedFlowJournal: undefined }>({
   isolatedFlowJournal: [
     async ({ mfa }, use) => {
       expect(mfa).toBeDefined();
@@ -16,7 +16,7 @@ export const test = authenticatedTest.extend<{ isolatedFlowJournal: void }>({
           TRUNCATE portfolio_flow_versions, portfolio_flow_journals;
         END IF;
       END $$`);
-      await use();
+      await use(undefined);
     },
     { auto: true },
   ],

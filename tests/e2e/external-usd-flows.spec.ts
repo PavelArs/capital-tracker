@@ -341,7 +341,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       createdAt: expect.any(String),
     });
 
-    const direction = page.getByLabel('Направление', { exact: true });
+    const direction = page.getByRole('combobox', { name: 'Направление', exact: true });
     await direction.selectOption({ label: 'Ввод' });
     await page.getByLabel('Момент операции (ISO)', { exact: true }).fill('2025-01-02T00:00:00Z');
     const amount = page.getByLabel('Сумма, USD', { exact: true });
@@ -555,6 +555,52 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
         .filter({ has: page.getByRole('button', { name: 'Исправить', exact: true }) }),
     ).toHaveCount(52);
     await expect(amount).toHaveValue('1300');
+
+    // A newly selected flow must never be labelled with another flow's old versions.
+    const oldHistory = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === versionsPath,
+    );
+    await row.getByRole('button', { name: 'Версии', exact: true }).click();
+    expect((await oldHistory).status()).toBe(200);
+    const historyPanel = page
+      .getByRole('heading', { name: 'Версии потока', exact: true })
+      .locator('..');
+    await expect(historyPanel.getByRole('cell', { name: '1000', exact: true })).toBeVisible();
+    const other = page
+      .getByRole('row')
+      .filter({ hasNotText: created.flow.flowId })
+      .filter({ has: page.getByRole('button', { name: 'Версии', exact: true }) })
+      .first();
+    const otherId = await other.getByRole('cell').first().innerText();
+    let releaseHistory: () => void = () => {};
+    let historyFetched = false;
+    const historyGate = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    const historyPattern = `**${periodPath}/${otherId}/versions*`;
+    await page.route(historyPattern, async (route) => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      expect(await response.json()).toMatchObject({ flowId: otherId, items: [{ amountUsd: '1' }] });
+      historyFetched = true;
+      await historyGate;
+      await route.fulfill({ response });
+    });
+    try {
+      await other.getByRole('button', { name: 'Версии', exact: true }).click();
+      await expect.poll(() => historyFetched).toBe(true);
+      await expect(historyPanel.getByRole('cell', { name: '1000', exact: true })).toHaveCount(0);
+      const nextHistory = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === `${periodPath}/${otherId}/versions`,
+      );
+      releaseHistory();
+      await nextHistory;
+      await expect(historyPanel.getByRole('cell', { name: '1', exact: true })).toHaveCount(2);
+      await expect(amount).toHaveValue('1300');
+    } finally {
+      releaseHistory();
+      await page.unroute(historyPattern);
+    }
   } finally {
     expect(oldFinancialFingerprint(), 'Flow UI preserves every prior financial row').toBe(
       priorFinancialRows,
