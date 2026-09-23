@@ -6,6 +6,7 @@ import { CarryInService } from './carry-in.service';
 import { CsvImportController } from './csv-import.controller';
 import { CsvImportService } from './csv-import.service';
 import { CsvUploadInterceptor } from './csv-upload.interceptor';
+import { HistoricalAccountingService } from './historical-accounting.service';
 import { TradeController } from './trade.controller';
 import { TradeService } from './trade.service';
 
@@ -17,6 +18,7 @@ import { TradeService } from './trade.service';
     CsvImportService,
     CsvUploadInterceptor,
     CarryInService,
+    HistoricalAccountingService,
   ],
 })
 export class AccountingModule {}

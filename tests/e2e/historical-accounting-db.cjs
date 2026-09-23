@@ -614,6 +614,61 @@ async function coherentRead(source, svc, f) {
   }
 }
 
+async function supportedMaxima(source, svc, f) {
+  stage = 'HIST-003-B all100 baseline lots and1000 maximum-precision active trades';
+  const { owner, firstInstrument: instrument } = f;
+  const account = await newAccount(svc, owner, 'Historical supported maxima');
+  await svc.accounting.saveOpening(owner, account, {
+    requestId: randomUUID(), expectedRevision: 0, asOf: coverageFrom,
+    positions: [{ instrumentId: instrument, quantity: '100', costStatus: 'known', totalCostUsd: '100' }],
+  });
+  await svc.carry.initialize(owner, account, {
+    requestId: randomUUID(), expectedOpeningRevision: 1, assertReviewed: true,
+    lots: Array.from({ length: 100 }, (_, index) => lot(instrument, index, { originalCostUsd: '1' })),
+  });
+  const maximum = `${'9'.repeat(48)}.${'9'.repeat(30)}`;
+  const seeded = Array.from({ length: 999 }, (_, index) => {
+    const fields = execution(instrument, 'buy', coverageFrom, index, maximum, maximum);
+    return { id: randomUUID(), requestId: randomUUID(), revision: index + 1, order: index,
+      payload: JSON.stringify({ kind: 'create', expectedJournalRevision: index, ...fields }) };
+  });
+  // Valid fixture history only in the guarded fresh synthetic database. The final
+  // actual service command validates/recomputes all1000 heads plus immutable lots.
+  await source.transaction(async (manager) => {
+    await manager.query(`INSERT INTO account_trades(id,"ownerId","accountId","currentVersion","createdAt")
+      SELECT x.id,$1,$2,1,clock_timestamp() FROM jsonb_to_recordset($3::jsonb) AS x(id uuid)`,
+      [owner, account, JSON.stringify(seeded)]);
+    await manager.query(`INSERT INTO account_trade_versions("ownerId","accountId","tradeId",version,"journalRevision","requestId",
+      "canonicalPayload",kind,"instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd","createdAt")
+      SELECT $1,$2,x.id,1,x.revision,x."requestId",x.payload,'create',$4,'buy',$5::timestamptz,x."order",$6::numeric,$6::numeric,0,clock_timestamp()
+      FROM jsonb_to_recordset($3::jsonb) AS x(id uuid,"requestId" uuid,revision integer,"order" integer,payload text)`,
+      [owner, account, JSON.stringify(seeded), instrument, coverageFrom, maximum]);
+    await manager.query('UPDATE account_trade_journals SET "currentRevision"=999 WHERE "ownerId"=$1 AND "accountId"=$2', [owner, account]);
+  });
+  const last = await svc.trade.create(owner, account, {
+    requestId: randomUUID(), expectedJournalRevision: 999,
+    ...execution(instrument, 'buy', coverageFrom, 999, maximum, maximum),
+  });
+  assert.equal(last.value.journalRevision, 1000);
+  const before = await fingerprint(source);
+  const snapshot = await at(svc, owner, account, coverageFrom, { limit: '1' });
+  // Independently checked with Python Decimal(precision100), not production helpers.
+  const buys = '999999999999999999999999999999999999999999999999999.999999999999999999999999999';
+  const total = '1000000000000000000000000000000000000000000000000099.999999999999999999999999999';
+  assert.equal(snapshot.journalRevision, 1000);
+  assert.equal(snapshot.initialCostUsd, '100');
+  assert.deepEqual(snapshot.summary, summary({ grossBuysUsd: buys, remainingCostUsd: total }));
+  assert.deepEqual(snapshot.items, [{ instrumentId: instrument, instrumentName: 'First same-symbol instrument',
+    instrumentSymbol: 'SAME', quantity: total, costUsd: total }]);
+  assert.equal(snapshot.nextOffset, null, 'Aggregate all1100 lots before limit1');
+  const empty = await at(svc, owner, account, coverageFrom, { offset: '1', limit: '1', journalRevision: '1000' });
+  assert.deepEqual(empty.items, []);
+  assert.deepEqual(empty.summary, snapshot.summary);
+  assert.equal(empty.initialCostUsd, '100');
+  assert.equal(empty.nextOffset, null);
+  assert.equal(await fingerprint(source), before, 'Maximum-bound historical reads preserve every row');
+}
+
 async function main() {
   sentinel();
   if (!require('node:fs').existsSync(historyModule)) {
@@ -661,7 +716,7 @@ async function main() {
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     const svc = services(source);
     const fixture = await seed(source, svc);
-    for (const run of [coverageAndFailures, pagesAndRevision, coherentRead]) {
+    for (const run of [coverageAndFailures, pagesAndRevision, coherentRead, supportedMaxima]) {
       await run(source, svc, fixture);
     }
     console.log('PASS HIST-002/003 synthetic production-service PostgreSQL acceptance');

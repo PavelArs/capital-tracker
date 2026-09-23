@@ -1,11 +1,15 @@
 import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
+import { HistoricalAccountingService } from './historical-accounting.service';
 import { TradeService } from './trade.service';
 
 @Controller('accounting/accounts/:id')
 export class TradeController {
-  constructor(private readonly trades: TradeService) {}
+  constructor(
+    private readonly trades: TradeService,
+    private readonly history: HistoricalAccountingService,
+  ) {}
 
   @Post('trade-journal')
   async initialize(
@@ -60,6 +64,15 @@ export class TradeController {
   @Get('trade-journal')
   getJournal(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
     return this.trades.getJournal(owner.userId, id);
+  }
+
+  @Get('trade-journal/history')
+  getHistory(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('id') id: string,
+    @Query() query: unknown,
+  ) {
+    return this.history.getSnapshot(owner.userId, id, query);
   }
 
   @Get('trades')

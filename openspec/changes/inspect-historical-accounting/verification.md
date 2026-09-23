@@ -1,8 +1,9 @@
 # Verification: historical accounting snapshot
 
-Status: proposal preparation only in an isolated worktree while the prerequisite
-carry-in release gate runs. No historical-accounting product change or acceptance
-execution has occurred. None of the planned checks below is a successful result.
+Status: carry-in prerequisite archived at1667502 after full133/133 GREEN. Prepared
+specifications and acceptance tests integrated at11b18f1; genuine missing-route/UI
+RED observed below. Backend implementation is in progress; focused unit checks and
+build passed. No historical PostgreSQL/browser GREEN or full release is claimed.
 
 ## Artifact review — 2026-09-23
 
@@ -72,3 +73,25 @@ Retain original receipts/import bytes and documented authentication/admission de
 The final release gate must run the complete existing suite, not only new scenarios.
 Hosted CI, other browser engines, backup/restore and production remain unrun unless
 separately evidenced. There are no new migration or provider checks in this slice.
+
+## Exact predecessor behavior RED — 2026-09-23
+
+At11b18f1 (only new specification/acceptance code), command
+`caffeinate -is node /private/tmp/capital-historical-predecessor-red.cjs` checked the
+exact verified backend36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315
+and frontendf81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a
+image IDs, used --no-build, actual migrations/seed, PostgreSQL and HTTPS password/MFA.
+Terminal exit1: two intended failures. HIST-001-A API expected200 received404 at
+historical-accounting.spec.ts:118; HIST-004-A expected the Russian history heading
+visible at:243, but it did not exist. Fixture, actual authentication, retained-row,
+admission/provider assertions completed; finally cleaned up the synthetic project.
+Log `/private/tmp/capital-historical-predecessor-red.log`; synthetic failure artifacts
+`/private/tmp/capital-historical-red-artifacts`. This is feature RED, not an import or
+compile failure. Product implementation started only after the terminal result.
+
+Initial backend projection/input implementation passed37/37 tests in2suites,2.667s,
+exit0 (`pnpm --dir backend test --runInBand historical-accounting`); backend build
+exit0 (`/private/tmp/capital-historical-backend-build.log`). Scoped Biome passed.
+A real PostgreSQL maximum fixture now covers100 original lots plus1000 current buys
+at maximum input precision; expected values independently checked with Python Decimal
+precision100. It is wired into the existing full acceptance runner and has not run yet.
