@@ -426,3 +426,30 @@ export async function provenanceInBrowser(
   }
   return items;
 }
+
+export async function hasVisibleLiteral(
+  locator: Locator,
+  source: string,
+  contextualText: string,
+): Promise<boolean> {
+  return locator.evaluate(
+    (root, expected) => {
+      const candidates = [root, ...root.querySelectorAll('*')].filter(
+        (element) => !element.closest('select'),
+      );
+      return candidates.some((element) => {
+        const directText = [...element.childNodes]
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent)
+          .join('');
+        if (directText.includes(JSON.stringify(expected.source))) return true;
+        const style = getComputedStyle(element);
+        return (
+          ['pre', 'pre-wrap', 'break-spaces'].includes(style.whiteSpace) &&
+          (directText === expected.source || directText.includes(expected.contextualText))
+        );
+      });
+    },
+    { source, contextualText },
+  );
+}

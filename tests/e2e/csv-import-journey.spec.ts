@@ -19,6 +19,7 @@ import {
   example,
   expectCsvSummary,
   expectJournalSummary,
+  hasVisibleLiteral,
   inspectAndMap,
   navigateToAccount,
   previewInBrowser,
@@ -780,6 +781,267 @@ test('CSV-006-B: late real preview and inspection responses cannot revive an edi
       await page.unroute(pattern);
     }
   }
+  expect(retainedState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correction or void until the changed target is explicitly reviewed', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const bought = await api.create(account.id, tradeInput(instrument.id, 0));
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const imported = [{ ...buy, time: '2025-01-05T00:00:00Z', gross: '50' }];
+  const batch = await uploadInBrowser(page, account.id, imported);
+  await inspectAndMap(page, account.id, batch, instrument.id, imported);
+  await previewInBrowser(
+    page,
+    account.id,
+    batch,
+    { ...emptySummary, grossBuysUsd: '150', remainingCostUsd: '150' },
+    1,
+  );
+  const accepted = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${batch}/confirm`,
+    () => page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click(),
+  );
+  expect(accepted.status()).toBe(201);
+  assertCommitted(readCsvReceipt(await accepted.json()));
+  const savedCsv = csvRows(account.id);
+  const table = page.getByRole('table', { name: 'Сделки журнала', exact: true });
+  const bodyWrites: unknown[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname.startsWith(
+        `/api/accounting/accounts/${account.id}/trades/${bought.trade.tradeId}/`,
+      )
+    )
+      bodyWrites.push(request.postDataJSON());
+  });
+  for (const [index, kind] of (['correct', 'void'] as const).entries()) {
+    await table
+      .getByRole('row')
+      .filter({ hasText: bought.trade.tradeId })
+      .getByRole('button', { name: kind === 'correct' ? 'Исправить' : 'Аннулировать', exact: true })
+      .click();
+    const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+    if (kind === 'correct')
+      await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('120');
+    const external = await api.correct(
+      account.id,
+      bought.trade.tradeId,
+      tradeInput(instrument.id, index === 0 ? 2 : 4, {
+        orderWithinTimestamp: 0,
+        grossUsd: index === 0 ? '200' : '300',
+      }),
+    );
+    const beforeRefresh = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const refreshed = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+          `/api/accounting/accounts/${account.id}/csv-imports/${batch}` &&
+        response.request().method() === 'GET',
+    );
+    await page.getByRole('button', { name: 'Обновить состояние CSV', exact: true }).click();
+    expect((await refreshed).status()).toBe(200);
+    const review = page.getByRole('region', { name: 'Журнал изменился', exact: true });
+    await expect(review).toBeVisible();
+    for (const text of [
+      `Текущая версия выбранной сделки: ${external.trade.version}`,
+      instrument.id,
+      `количество ${external.trade.quantity}`,
+      `валовая сумма ${external.trade.grossUsd} USD`,
+      `комиссия ${external.trade.feeUsd} USD`,
+      external.trade.occurredAt,
+      'порядок 0',
+    ])
+      await expect(review).toContainText(text);
+    const action = page.getByRole('button', {
+      name: kind === 'correct' ? 'Сохранить сделку' : 'Подтвердить аннулирование',
+      exact: true,
+    });
+    await expect(action).toBeDisabled();
+    if (kind === 'correct')
+      await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('120');
+    else
+      await expect(
+        page.getByText(`Аннулировать сделку ${bought.trade.tradeId}, версия 3?`, { exact: false }),
+      ).toBeVisible();
+    expect(bodyWrites).toHaveLength(index);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeRefresh);
+    await review
+      .getByRole('checkbox', {
+        name: 'Я проверил актуальную версию журнала и хочу сохранить черновик.',
+        exact: true,
+      })
+      .check();
+    const result = await browserPost(
+      page,
+      `/accounts/${account.id}/trades/${bought.trade.tradeId}/${kind === 'correct' ? 'corrections' : 'voids'}`,
+      () => action.click(),
+    );
+    expect(result.status()).toBe(201);
+    expect(bodyWrites).toHaveLength(index + 1);
+    expect(bodyWrites[index]).toMatchObject({
+      expectedJournalRevision: index === 0 ? 3 : 5,
+      ...(kind === 'correct' ? { grossUsd: '120' } : {}),
+    });
+    expect(csvRows(account.id)).toEqual(savedCsv);
+  }
+  expect(
+    (await api.versions(account.id, bought.trade.tradeId)).items.map((row) => [
+      row.version,
+      row.kind,
+      row.grossUsd,
+    ]),
+  ).toEqual([
+    [5, 'void', '300'],
+    [4, 'correct', '300'],
+    [3, 'correct', '120'],
+    [2, 'correct', '200'],
+    [1, 'create', '100'],
+  ]);
+  expect((await api.state(account.id)).journal).toMatchObject({
+    journalRevision: 6,
+    activeTradeCount: 1,
+    versionCount: 6,
+    summary: { grossBuysUsd: '50', remainingCostUsd: '50' },
+  });
+  expect(retainedState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('CSV-002-A / CSV-006-A regression: exact source keys with leading spaces stay visibly distinct while mapping and reviewing saved settings', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await csvFixture(page);
+  const second = await api.instrument();
+  const prior = retainedState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const source = [buy, { ...buy, source: ' TOKEN', gross: '200' }];
+  const batch = await uploadInBrowser(page, account.id, source);
+  const inspection = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${batch}/inspect`,
+    () => page.getByRole('button', { name: 'Просмотреть исходные строки', exact: true }).click(),
+  );
+  expect(inspection.status()).toBe(200);
+  expect((await inspection.json()).rows.map((row: { cells: string[] }) => row.cells[0])).toEqual([
+    'TOKEN',
+    ' TOKEN',
+  ]);
+  const mapping = page.getByRole('group', {
+    name: 'Сопоставление колонок и значений',
+    exact: true,
+  });
+  for (const [index, field] of [
+    'Инструмент',
+    'Тип сделки',
+    'Дата сделки',
+    'Порядок в одну дату',
+    'Количество',
+    'Валовая сумма USD',
+    'Комиссия USD',
+  ].entries()) {
+    await mapping
+      .getByRole('combobox', { name: `Колонка: ${field}`, exact: true })
+      .selectOption(String(index));
+  }
+  const instrumentLabels = mapping.locator('label').filter({ hasText: 'Инструмент для' });
+  await expect(instrumentLabels).toHaveCount(2);
+  // Whitespace is meaningful source identity, not decorative label formatting.
+  // Either visible quoting or preserved whitespace must distinguish this second key.
+  expect(
+    await hasVisibleLiteral(instrumentLabels.nth(1), ' TOKEN', 'Инструмент для  TOKEN'),
+    'A leading-space source must not collapse into the same visible TOKEN label',
+  ).toBe(true);
+  for (const [index, id] of [instrument.id, second.id].entries()) {
+    const select = instrumentLabels.nth(index).getByRole('combobox');
+    const option = select.locator(`option[value="${id}"]`);
+    const more = mapping.getByRole('button', {
+      name: 'Загрузить ещё инструменты для CSV',
+      exact: true,
+    });
+    for (let loaded = 0; ; loaded++) {
+      await expect
+        .poll(
+          async () =>
+            (await option.count()) > 0 || ((await more.isVisible()) && (await more.isEnabled())),
+        )
+        .toBe(true);
+      if (await option.count()) break;
+      expect(loaded).toBeLessThan(10);
+      const count = await select.locator('option').count();
+      await more.click();
+      await expect
+        .poll(
+          async () =>
+            (await option.count()) > 0 || (await select.locator('option').count()) > count,
+        )
+        .toBe(true);
+    }
+    await select.selectOption(id);
+  }
+  await mapping
+    .getByRole('combobox', { name: 'Тип сделки для buy', exact: true })
+    .selectOption('buy');
+  await mapping
+    .getByRole('checkbox', { name: 'Валовые суммы и комиссии выражены в USD', exact: true })
+    .check();
+  await previewInBrowser(page, account.id, batch, {
+    ...emptySummary,
+    grossBuysUsd: '300',
+    remainingCostUsd: '300',
+  });
+  const accepted = await browserPost(
+    page,
+    `/accounts/${account.id}/csv-imports/${batch}/confirm`,
+    () => page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click(),
+  );
+  expect(accepted.status()).toBe(201);
+  assertCommitted(readCsvReceipt(await accepted.json()));
+  const batchRegion = page.getByRole('region', { name: 'Партия CSV', exact: true });
+  await batchRegion.getByText('Сохранённое сопоставление', { exact: true }).click();
+  const savedKey = batchRegion.locator('li').filter({ hasText: second.id });
+  await expect(savedKey).toHaveCount(1);
+  expect(await hasVisibleLiteral(savedKey, ' TOKEN', ` TOKEN → ${second.id}`)).toBe(true);
+  expect(
+    rows<{ value: unknown }>(
+      `SELECT "acceptedSettings"->'mapping'->'instruments' AS value FROM account_csv_imports WHERE id='${batch}'`,
+    )[0].value,
+  ).toEqual([
+    { source: ' TOKEN', instrumentId: second.id },
+    { source: 'TOKEN', instrumentId: instrument.id },
+  ]);
+  expect(
+    (await api.lots(account.id)).items
+      .map((row) => [row.instrumentId, row.remainingQuantity, row.remainingCostUsd])
+      .sort(),
+  ).toEqual(
+    [
+      [instrument.id, '1', '100'],
+      [second.id, '1', '200'],
+    ].sort(),
+  );
   expect(retainedState()).toBe(prior);
   expect(providerRequests()).toEqual(providers);
   expectAdmissionDelta(admissions, [
