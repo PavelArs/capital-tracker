@@ -402,6 +402,11 @@ async function timelineAndPrivacy(source, flows, owner, statements) {
       { created: false, value: receipt.value },
       'Original immutable receipt replays exactly',
     );
+    assert.equal(
+      JSON.stringify(replay.value),
+      JSON.stringify(receipt.value),
+      'Original receipt JSON remains byte-for-byte stable',
+    );
   }
   await refusal(
     () => flows.correct(owner.timeline, b.value.flow.flowId, command(5, 'withdrawal', jan3, '251')),
@@ -430,6 +435,13 @@ async function timelineAndPrivacy(source, flows, owner, statements) {
   const withTwin = await flows.list(owner.timeline, period());
   assert.equal(withTwin.summary.flowCount, 3);
   assert.ok(withTwin.items.some((item) => item.flowId === twin.value.flow.flowId));
+  const lateOriginReplay = await flows.initialize(owner.timeline, init);
+  assert.equal(lateOriginReplay.created, false);
+  assert.equal(
+    JSON.stringify(lateOriginReplay.value),
+    JSON.stringify(acceptedOrigin.value),
+    'Origin receipt remains stable after later flow versions',
+  );
 
   await flows.initialize(owner.foreign, origin());
   const old = await fingerprint(source);
@@ -621,11 +633,11 @@ async function rollbackAfterWrites(source, flows, owner, statements) {
   assert.equal(failureCode, 'P0001', 'Only the synthetic deferred COMMIT trigger may reject');
   const attempted = statements.slice(start);
   assert.ok(
-    attempted.some((sql) => /INSERT\s+INTO\s+portfolio_flow_versions/i.test(sql)),
+    attempted.some((sql) => /INSERT\s+INTO\s+"?portfolio_flow_versions"?/i.test(sql)),
     'Version insert reached PostgreSQL',
   );
   assert.ok(
-    attempted.some((sql) => /UPDATE\s+portfolio_flow_journals/i.test(sql)),
+    attempted.some((sql) => /UPDATE\s+"?portfolio_flow_journals"?/i.test(sql)),
     'Journal advance reached PostgreSQL',
   );
   assert.ok(
