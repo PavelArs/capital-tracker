@@ -8,7 +8,7 @@ import {
   type FifoTrade,
   calculateFifo,
 } from './fifo';
-import { parseDecimal, parseUuid } from './input';
+import { parseUuid } from './input';
 import {
   type TradeCreateInput,
   type TradePageQuery,
@@ -21,49 +21,26 @@ import {
   parseTradeVoid,
 } from './trade-input';
 
-type Kind = 'create' | 'correct' | 'void';
-interface AccountRow {
-  id: string;
-  currentRevision: number | null;
-}
-interface JournalRow {
-  accountId: string;
-  requestId: string;
-  canonicalPayload: string;
-  originKind: 'declared-empty';
-  coverageFrom: Date;
-  createdAt: Date;
-  currentRevision: number;
-}
-interface VersionRow {
-  tradeId: string;
-  version: number;
-  journalRevision: number;
-  requestId: string;
-  canonicalPayload: string;
-  kind: Kind;
-  createdAt: Date;
-  instrumentId: string;
-  instrumentName: string;
-  instrumentSymbol: string | null;
-  side: 'buy' | 'sell';
-  occurredAt: Date;
-  orderWithinTimestamp: number;
-  quantity: string;
-  grossUsd: string;
-  feeUsd: string;
-}
+import {
+  type JournalRow,
+  type TradeKind as Kind,
+  type TradeVersion,
+  type VersionRow,
+  advanceJournal,
+  appendTradeVersion,
+  projectTradeVersion,
+  readJournal,
+  readOwnedAccount,
+  readTradeHeads,
+  versionSelect,
+} from './trade-journal.store';
+export type { TradeVersion } from './trade-journal.store';
+
 export interface JournalOrigin {
   accountId: string;
   requestId: string;
   originKind: 'declared-empty';
   coverageFrom: string;
-  createdAt: string;
-}
-export interface TradeVersion extends FifoTrade {
-  journalRevision: number;
-  requestId: string;
-  kind: Kind;
   createdAt: string;
 }
 export interface TradeReceipt {
@@ -91,9 +68,6 @@ interface CurrentSnapshot {
   fifo: FifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
-const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol"
-  FROM account_trade_versions v JOIN accounting_instruments i
-  ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"`;
 
 function execution(value: Execution): Execution {
   return {
@@ -113,25 +87,6 @@ function origin(row: JournalRow): JournalOrigin {
     originKind: row.originKind,
     coverageFrom: row.coverageFrom.toISOString(),
     createdAt: row.createdAt.toISOString(),
-  };
-}
-function version(row: VersionRow): TradeVersion {
-  return {
-    tradeId: row.tradeId,
-    version: row.version,
-    journalRevision: row.journalRevision,
-    requestId: row.requestId,
-    kind: row.kind,
-    createdAt: row.createdAt.toISOString(),
-    instrumentId: row.instrumentId,
-    instrumentName: row.instrumentName,
-    instrumentSymbol: row.instrumentSymbol,
-    side: row.side,
-    occurredAt: row.occurredAt.toISOString(),
-    orderWithinTimestamp: row.orderWithinTimestamp,
-    quantity: parseDecimal(row.quantity, true),
-    grossUsd: parseDecimal(row.grossUsd, true),
-    feeUsd: parseDecimal(row.feeUsd, false),
   };
 }
 function receipt(accountId: string, trade: TradeVersion): TradeReceipt {
@@ -164,8 +119,8 @@ export class TradeService {
     const value = parseJournalInitialization(input);
     const payload = JSON.stringify({ coverageFrom: value.coverageFrom, assertEmpty: true });
     return this.source.transaction(async (manager) => {
-      const account = await this.account(manager, owner, id, true);
-      const previous = await this.journal(manager, owner, id);
+      const account = await readOwnedAccount(manager, owner, id, true);
+      const previous = await readJournal(manager, owner, id);
       if (previous) {
         if (previous.requestId !== value.requestId || previous.canonicalPayload !== payload)
           throw conflict();
@@ -226,8 +181,8 @@ export class TradeService {
       ...fields,
     });
     return this.source.transaction(async (manager) => {
-      await this.account(manager, owner, id, true);
-      const journal = await this.journal(manager, owner, id);
+      await readOwnedAccount(manager, owner, id, true);
+      const journal = await readJournal(manager, owner, id);
       if (!journal) throw conflict();
       const [previous]: VersionRow[] = await manager.query(
         `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
@@ -235,9 +190,9 @@ export class TradeService {
       );
       if (previous) {
         if (previous.canonicalPayload !== payload) throw conflict();
-        return { created: false, value: receipt(id, version(previous)) };
+        return { created: false, value: receipt(id, projectTradeVersion(previous)) };
       }
-      const heads = await this.heads(manager, owner, id);
+      const heads = await readTradeHeads(manager, owner, id);
       const current =
         target === undefined ? undefined : heads.find((head) => head.tradeId === target);
       if (target !== undefined && !current) throw new NotFoundException();
@@ -277,45 +232,12 @@ export class TradeService {
         kind,
       };
       calculate([...heads.filter((head) => head.tradeId !== tradeId), next]);
-      if (kind === 'create') {
-        await manager.query(
-          `INSERT INTO account_trades (id,"ownerId","accountId","currentVersion","createdAt")
-          VALUES ($1,$2,$3,1,clock_timestamp())`,
-          [tradeId, owner, id],
-        );
-      }
-      const [saved]: VersionRow[] = await manager.query(
-        `INSERT INTO account_trade_versions
-        ("ownerId","accountId","tradeId",version,"journalRevision","requestId","canonicalPayload",kind,
-        "instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd","createdAt")
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,clock_timestamp()) RETURNING *`,
-        [
-          owner,
-          id,
-          tradeId,
-          next.version,
-          next.journalRevision,
-          value.requestId,
-          payload,
-          kind,
-          next.instrumentId,
-          next.side,
-          next.occurredAt,
-          next.orderWithinTimestamp,
-          next.quantity,
-          next.grossUsd,
-          next.feeUsd,
-        ],
-      );
-      await manager.query(
-        'UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
-        [owner, id, tradeId, next.version],
-      );
-      await manager.query(
-        'UPDATE account_trade_journals SET "currentRevision"=$3 WHERE "ownerId"=$1 AND "accountId"=$2',
-        [owner, id, next.journalRevision],
-      );
-      return { created: true, value: receipt(id, version({ ...saved, ...labels })) };
+      const saved = await appendTradeVersion(manager, owner, id, {
+        ...next,
+        canonicalPayload: payload,
+      });
+      await advanceJournal(manager, owner, id, next.journalRevision);
+      return { created: true, value: receipt(id, saved) };
     });
   }
 
@@ -323,8 +245,8 @@ export class TradeService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     return this.read(async (manager) => {
-      const account = await this.account(manager, owner, id);
-      const journal = await this.journal(manager, owner, id);
+      const account = await readOwnedAccount(manager, owner, id);
+      const journal = await readJournal(manager, owner, id);
       if (!journal) {
         const ineligible =
           account.currentRevision !== null || (await this.hasOpening(manager, owner, id));
@@ -335,7 +257,7 @@ export class TradeService {
           journal: null,
         };
       }
-      const heads = await this.heads(manager, owner, id);
+      const heads = await readTradeHeads(manager, owner, id);
       const fifo = calculate(heads);
       return {
         accountId: id,
@@ -391,8 +313,8 @@ export class TradeService {
     const target = parseUuid(tradeId);
     const query = parseTradeHistoryQuery(rawQuery);
     return this.read(async (manager) => {
-      await this.account(manager, owner, id);
-      if (!(await this.journal(manager, owner, id))) throw conflict();
+      await readOwnedAccount(manager, owner, id);
+      if (!(await readJournal(manager, owner, id))) throw conflict();
       const [trade] = await manager.query(
         'SELECT id FROM account_trades WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
         [owner, id, target],
@@ -403,7 +325,7 @@ export class TradeService {
         AND ($4::int IS NULL OR v.version<$4) ORDER BY v.version DESC LIMIT $5`,
         [owner, id, target, query.beforeVersion ?? null, query.limit + 1],
       );
-      const items = rows.slice(0, query.limit).map(version);
+      const items = rows.slice(0, query.limit).map(projectTradeVersion);
       return {
         tradeId: target,
         items,
@@ -421,14 +343,14 @@ export class TradeService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     return this.read(async (manager) => {
-      await this.account(manager, owner, id);
-      const journal = await this.journal(manager, owner, id);
+      await readOwnedAccount(manager, owner, id);
+      const journal = await readJournal(manager, owner, id);
       if (
         !journal ||
         (query.journalRevision !== undefined && query.journalRevision !== journal.currentRevision)
       )
         throw conflict();
-      const heads = await this.heads(manager, owner, id);
+      const heads = await readTradeHeads(manager, owner, id);
       return project({ journal, heads, fifo: calculate(heads) });
     });
   }
@@ -438,44 +360,11 @@ export class TradeService {
       return run(manager);
     });
   }
-  private async account(
-    manager: EntityManager,
-    owner: string,
-    id: string,
-    lock = false,
-  ): Promise<AccountRow> {
-    const [account]: AccountRow[] = await manager.query(
-      `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`,
-      [owner, id],
-    );
-    if (!account) throw new NotFoundException();
-    return account;
-  }
-  private async journal(
-    manager: EntityManager,
-    owner: string,
-    id: string,
-  ): Promise<JournalRow | undefined> {
-    const [journal]: JournalRow[] = await manager.query(
-      'SELECT * FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
-      [owner, id],
-    );
-    return journal;
-  }
   private async hasOpening(manager: EntityManager, owner: string, id: string): Promise<boolean> {
     const [row]: { present: boolean }[] = await manager.query(
       'SELECT EXISTS(SELECT 1 FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2) AS present',
       [owner, id],
     );
     return row.present;
-  }
-  private async heads(manager: EntityManager, owner: string, id: string): Promise<TradeVersion[]> {
-    const rows: VersionRow[] = await manager.query(
-      `${versionSelect} JOIN account_trades t ON t."ownerId"=v."ownerId" AND t."accountId"=v."accountId"
-      AND t.id=v."tradeId" AND t."currentVersion"=v.version
-      WHERE v."ownerId"=$1 AND v."accountId"=$2 ORDER BY v."occurredAt",v."orderWithinTimestamp",v."tradeId"`,
-      [owner, id],
-    );
-    return rows.map(version);
   }
 }
