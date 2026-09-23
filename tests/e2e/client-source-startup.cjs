@@ -199,7 +199,7 @@ async function main() {
     assert.equal(shown.signal, null);
     safeOutput(shown.stdout + shown.stderr);
     assert.equal(shown.status, 0, 'Migration CLI must work without the HTTP-only setting');
-    assert.equal((shown.stdout.match(/^\[X\] /gm) ?? []).length, 16);
+    assert.equal((shown.stdout.match(/^\[X\] /gm) ?? []).length, 17);
     assert.ok(!(shown.stdout + shown.stderr).includes('TRUSTED_PROXY_IPS'));
     assert.equal(await fingerprint(client), before, 'Read-only CLI inspection preserves all database state');
     console.log('PASS PROXY-001-B actual migration CLI works with HTTP proxy configuration absent');

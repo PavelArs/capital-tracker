@@ -727,8 +727,9 @@ async function main() {
     await source.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 16);
+    assert.equal(migrations.length, 17);
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
+    assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     const svc = services(source);
     const fixture = await seed(source, svc);
     for (const run of [coverageAndFailures, pagesAndRevision, coherentRead, supportedMaxima, invalidSavedHistory]) {

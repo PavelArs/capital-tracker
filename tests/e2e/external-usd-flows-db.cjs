@@ -855,6 +855,7 @@ async function main() {
       rollbackAfterWrites,
       readBarrier,
       capacity,
+      storageConstraints,
     ])
       await run(source, flows, owners, statements);
     assert.equal(
@@ -866,6 +867,143 @@ async function main() {
   } finally {
     if (source.isInitialized) await source.destroy();
   }
+}
+
+async function storageConstraints(source, _flows, owner) {
+  stage = 'FLOW-MIG-001 actual SQL exact finite fields and owner/history constraints';
+  const before = await fingerprint(source);
+  const reject = async (sql, values, codes = ['23514']) => {
+    const runner = source.createQueryRunner();
+    let code;
+    try {
+      await runner.connect();
+      await runner.startTransaction();
+      try {
+        await runner.query(sql, values);
+      } catch (error) {
+        code = error?.driverError?.code ?? error?.code;
+      }
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+    }
+    assert.ok(
+      codes.includes(code),
+      'PostgreSQL rejects the intended constraint, not incidental fixture SQL',
+    );
+  };
+  const columns =
+    await source.query(`SELECT column_name,numeric_precision,numeric_scale,datetime_precision
+    FROM information_schema.columns WHERE table_name='portfolio_flow_versions'`);
+  assert.deepEqual(
+    columns.find((row) => row.column_name === 'amountUsd'),
+    {
+      column_name: 'amountUsd',
+      numeric_precision: 78,
+      numeric_scale: 30,
+      datetime_precision: null,
+    },
+  );
+  assert.equal(columns.find((row) => row.column_name === 'occurredAt').datetime_precision, 3);
+  const [first] = await source.query(
+    'SELECT p.* FROM portfolio_flow_versions p WHERE p."ownerId"=$1 AND p.version=1 AND EXISTS (SELECT 1 FROM portfolio_flow_versions c WHERE c."ownerId"=p."ownerId" AND c."flowId"=p."flowId" AND c.version=2) LIMIT 1',
+    [owner.timeline],
+  );
+  const fields = [
+    'ownerId',
+    'flowId',
+    'version',
+    'journalRevision',
+    'requestId',
+    'canonicalPayload',
+    'kind',
+    'direction',
+    'occurredAt',
+    'amountUsd',
+    'createdAt',
+    'previousVersion',
+  ];
+  const insert = `INSERT INTO portfolio_flow_versions (${fields.map((key) => `"${key}"`).join(',')})
+    VALUES (${fields.map((_, index) => `$${index + 1}`).join(',')})`;
+  const invalidVersion = (patch, codes) => {
+    const row = {
+      ...first,
+      flowId: randomUUID(),
+      requestId: randomUUID(),
+      journalRevision: 100,
+      ...patch,
+    };
+    return reject(
+      insert,
+      fields.map((key) => row[key]),
+      codes,
+    );
+  };
+  for (const amountUsd of ['0', '-1', 'NaN']) await invalidVersion({ amountUsd });
+  for (const amountUsd of ['Infinity', '-Infinity', '1'.repeat(49)])
+    await invalidVersion({ amountUsd }, ['22003', '23514']);
+  for (const occurredAt of [
+    'infinity',
+    '-infinity',
+    '1969-12-31T23:59:59Z',
+    '10000-01-01T00:00:00Z',
+  ])
+    await invalidVersion({ occurredAt });
+  for (const patch of [
+    { direction: 'transfer' },
+    { kind: 'correct' },
+    { version: 2, kind: 'correct', previousVersion: null },
+    { version: 2, kind: 'correct', previousVersion: 2 },
+    { journalRevision: 10001 },
+    { createdAt: 'infinity' },
+  ])
+    await invalidVersion(patch);
+  await invalidVersion({ version: 2, kind: 'correct', previousVersion: 1 }, ['23503']);
+  await invalidVersion(
+    {
+      ownerId: owner.foreign,
+      flowId: first.flowId,
+      version: 2,
+      kind: 'correct',
+      previousVersion: 1,
+    },
+    ['23503'],
+  );
+  await invalidVersion({ ownerId: randomUUID() }, ['23503']);
+  await invalidVersion({ requestId: first.requestId }, ['23505']);
+  await invalidVersion({ journalRevision: first.journalRevision }, ['23505']);
+  await reject(
+    'DELETE FROM portfolio_flow_journals WHERE "ownerId"=$1',
+    [owner.timeline],
+    ['23503'],
+  );
+  await reject('DELETE FROM users WHERE id=$1', [owner.timeline], ['23503']);
+  await reject(
+    'DELETE FROM portfolio_flow_versions WHERE "ownerId"=$1 AND "flowId"=$2 AND version=1',
+    [owner.timeline, first.flowId],
+    ['23503'],
+  );
+  for (const coverageFrom of ['infinity', '1969-12-31T23:59:59Z', '10000-01-01T00:00:00Z'])
+    await reject('UPDATE portfolio_flow_journals SET "coverageFrom"=$2 WHERE "ownerId"=$1', [
+      owner.timeline,
+      coverageFrom,
+    ]);
+  await reject('UPDATE portfolio_flow_journals SET "currentRevision"=10001 WHERE "ownerId"=$1', [
+    owner.timeline,
+  ]);
+  const { AddExternalUsdFlows1790070000000 } = require(migrationPath);
+  await assert.rejects(
+    () => new AddExternalUsdFlows1790070000000().down(),
+    /explicit recovery plan/,
+  );
+  assert.equal(
+    await fingerprint(source),
+    before,
+    'SQL rejection and refused down preserve all rows',
+  );
+  console.log(
+    'PASS FLOW-MIG-001 actual SQL finite/positive precision, owner/history uniqueness, RESTRICT and refused down',
+  );
 }
 
 const watchdog = setTimeout(() => {
