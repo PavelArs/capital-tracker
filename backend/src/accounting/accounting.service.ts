@@ -5,16 +5,16 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 import {
   parseAccount,
-  parseDecimal,
   parseHistoryQuery,
   parseInstrument,
   parseListQuery,
   parseOpening,
   parseUuid,
 } from './input';
+import { type SnapshotRow, projectOpening } from './opening.store';
 
 interface AccountRow {
   id: string;
@@ -28,14 +28,6 @@ interface InstrumentRow {
   name: string;
   symbol: string | null;
   namespace: 'manual';
-  createdAt: Date;
-  canonicalPayload: string;
-}
-interface SnapshotRow {
-  accountId: string;
-  revision: number;
-  requestId: string;
-  asOf: Date;
   createdAt: Date;
   canonicalPayload: string;
 }
@@ -169,7 +161,7 @@ export class AccountingService {
       );
       if (previous) {
         if (previous.canonicalPayload !== payload) throw conflict();
-        return { created: false, value: await this.openingView(manager, owner, previous) };
+        return { created: false, value: await projectOpening(manager, owner, previous) };
       }
       const [journal] = await manager.query(
         'SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
@@ -207,7 +199,7 @@ export class AccountingService {
         'UPDATE manual_accounts SET "currentRevision"=$3 WHERE "ownerId"=$1 AND id=$2',
         [owner, id, revision],
       );
-      return { created: true, value: await this.openingView(manager, owner, snapshot) };
+      return { created: true, value: await projectOpening(manager, owner, snapshot) };
     });
   }
 
@@ -256,7 +248,7 @@ export class AccountingService {
         'SELECT * FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2 AND revision=$3',
         [owner, id, row.currentRevision],
       );
-      currentOpening = await this.openingView(this.source.manager, owner, snapshot);
+      currentOpening = await projectOpening(this.source.manager, owner, snapshot);
     }
     return { ...accountView(row), currentOpening };
   }
@@ -285,36 +277,11 @@ export class AccountingService {
       [owner, id, query.beforeRevision ?? null, query.limit + 1],
     );
     const items = await Promise.all(
-      rows.slice(0, query.limit).map((row) => this.openingView(this.source.manager, owner, row)),
+      rows.slice(0, query.limit).map((row) => projectOpening(this.source.manager, owner, row)),
     );
     return {
       items,
       nextCursor: rows.length > query.limit ? items[items.length - 1].revision : null,
-    };
-  }
-
-  private async openingView(
-    manager: EntityManager,
-    owner: string,
-    snapshot: SnapshotRow,
-  ): Promise<Opening> {
-    const rows: Position[] = await manager.query(
-      `SELECT p."instrumentId",i.name AS "instrumentName",i.symbol AS "instrumentSymbol",p.quantity,p."costStatus",p."totalCostUsd"
-      FROM account_opening_positions p JOIN accounting_instruments i ON i."ownerId"=p."ownerId" AND i.id=p."instrumentId"
-      WHERE p."ownerId"=$1 AND p."accountId"=$2 AND p.revision=$3 ORDER BY p."instrumentId"`,
-      [owner, snapshot.accountId, snapshot.revision],
-    );
-    return {
-      accountId: snapshot.accountId,
-      revision: snapshot.revision,
-      requestId: snapshot.requestId,
-      asOf: snapshot.asOf.toISOString(),
-      createdAt: snapshot.createdAt.toISOString(),
-      positions: rows.map((row) => ({
-        ...row,
-        quantity: parseDecimal(row.quantity, true),
-        totalCostUsd: row.totalCostUsd === null ? null : parseDecimal(row.totalCostUsd, false),
-      })),
     };
   }
 }

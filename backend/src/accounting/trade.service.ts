@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
 import {
+  type CarryInFifoResult,
   type Execution,
+  type FifoCarryInInput,
   FifoHistoryError,
   type FifoResult,
   type FifoTrade,
@@ -29,6 +32,7 @@ import {
   advanceJournal,
   appendTradeVersion,
   projectTradeVersion,
+  readBaseline,
   readJournal,
   readOwnedAccount,
   readTradeHeads,
@@ -53,7 +57,7 @@ export interface JournalState {
   eligible: boolean;
   ineligibilityReason: 'opening-history' | 'already-initialized' | null;
   journal:
-    | (JournalOrigin & {
+    | ((JournalOrigin | CarryInOrigin) & {
         journalRevision: number;
         activeTradeCount: number;
         versionCount: number;
@@ -65,7 +69,7 @@ export interface JournalState {
 interface CurrentSnapshot {
   journal: JournalRow;
   heads: TradeVersion[];
-  fifo: FifoResult;
+  fifo: CarryInFifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
 
@@ -80,7 +84,7 @@ function execution(value: Execution): Execution {
     feeUsd: value.feeUsd,
   };
 }
-function origin(row: JournalRow): JournalOrigin {
+function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): JournalOrigin {
   return {
     accountId: row.accountId,
     requestId: row.requestId,
@@ -92,9 +96,15 @@ function origin(row: JournalRow): JournalOrigin {
 function receipt(accountId: string, trade: TradeVersion): TradeReceipt {
   return { accountId, journalRevision: trade.journalRevision, trade };
 }
-function calculate(heads: readonly (FifoTrade & { kind: Kind })[]): FifoResult {
+function calculate(
+  heads: readonly (FifoTrade & { kind: Kind })[],
+  baseline: readonly FifoCarryInInput[],
+): CarryInFifoResult {
   try {
-    return calculateFifo(heads.filter((head) => head.kind !== 'void'));
+    return calculateFifo(
+      heads.filter((head) => head.kind !== 'void'),
+      baseline,
+    );
   } catch (error) {
     if (error instanceof FifoHistoryError) throw conflict();
     throw error;
@@ -122,7 +132,11 @@ export class TradeService {
       const account = await readOwnedAccount(manager, owner, id, true);
       const previous = await readJournal(manager, owner, id);
       if (previous) {
-        if (previous.requestId !== value.requestId || previous.canonicalPayload !== payload)
+        if (
+          previous.originKind !== 'declared-empty' ||
+          previous.requestId !== value.requestId ||
+          previous.canonicalPayload !== payload
+        )
           throw conflict();
         return { created: false, value: origin(previous) };
       }
@@ -134,6 +148,7 @@ export class TradeService {
         VALUES ($1,$2,$3,$4,'declared-empty',$5,clock_timestamp(),0) RETURNING *`,
         [owner, id, value.requestId, payload, value.coverageFrom],
       );
+      if (row.originKind !== 'declared-empty') throw new Error('Invalid saved empty origin');
       return { created: true, value: origin(row) };
     });
   }
@@ -231,7 +246,8 @@ export class TradeService {
         requestId: value.requestId,
         kind,
       };
-      calculate([...heads.filter((head) => head.tradeId !== tradeId), next]);
+      const baseline = await readBaseline(manager, owner, id, journal);
+      calculate([...heads.filter((head) => head.tradeId !== tradeId), next], baseline);
       const saved = await appendTradeVersion(manager, owner, id, {
         ...next,
         canonicalPayload: payload,
@@ -258,13 +274,16 @@ export class TradeService {
         };
       }
       const heads = await readTradeHeads(manager, owner, id);
-      const fifo = calculate(heads);
+      const baseline = await readBaseline(manager, owner, id, journal);
+      const fifo = calculate(heads, baseline);
       return {
         accountId: id,
         eligible: false,
         ineligibilityReason: 'already-initialized',
         journal: {
-          ...origin(journal),
+          ...(journal.originKind === 'declared-empty'
+            ? origin(journal)
+            : projectCarryInOrigin(journal, baseline)),
           journalRevision: journal.currentRevision,
           activeTradeCount: heads.filter((head) => head.kind !== 'void').length,
           versionCount: journal.currentRevision,
@@ -351,7 +370,8 @@ export class TradeService {
       )
         throw conflict();
       const heads = await readTradeHeads(manager, owner, id);
-      return project({ journal, heads, fifo: calculate(heads) });
+      const baseline = await readBaseline(manager, owner, id, journal);
+      return project({ journal, heads, fifo: calculate(heads, baseline) });
     });
   }
   private read<T>(run: (manager: EntityManager) => Promise<T>): Promise<T> {

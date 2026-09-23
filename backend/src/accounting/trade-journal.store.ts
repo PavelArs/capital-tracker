@@ -1,6 +1,11 @@
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
-import { type Execution, type FifoTrade } from './fifo';
+import {
+  type Execution,
+  type FifoCarryInInput,
+  type FifoTrade,
+  deriveCarryInAmounts,
+} from './fifo';
 import { parseDecimal } from './input';
 
 export type TradeKind = 'create' | 'correct' | 'void';
@@ -8,15 +13,19 @@ export interface AccountRow {
   id: string;
   currentRevision: number | null;
 }
-export interface JournalRow {
+interface JournalFields {
   accountId: string;
   requestId: string;
   canonicalPayload: string;
-  originKind: 'declared-empty';
   coverageFrom: Date;
   createdAt: Date;
   currentRevision: number;
 }
+export type JournalRow = JournalFields &
+  (
+    | { originKind: 'declared-empty'; openingRevision: null }
+    | { originKind: 'known-cost-carry-in'; openingRevision: number }
+  );
 export interface VersionRow {
   tradeId: string;
   version: number;
@@ -87,6 +96,45 @@ export async function readJournal(
     [owner, id],
   );
   return journal;
+}
+
+/** Load immutable initial inventory inside the caller's existing transaction. */
+export async function readBaseline(
+  manager: EntityManager,
+  owner: string,
+  id: string,
+  journal: JournalRow,
+): Promise<readonly FifoCarryInInput[]> {
+  if (journal.originKind === 'declared-empty') return [];
+  if (!manager.queryRunner?.isTransactionActive)
+    throw new Error('Baseline read requires transaction');
+  if (!Number.isSafeInteger(journal.openingRevision) || journal.openingRevision < 1)
+    throw new Error('Invalid saved carry-in origin');
+  const rows: (Omit<FifoCarryInInput, 'acquiredAt'> & { acquiredAt: Date })[] = await manager.query(
+    `SELECT l.id AS "lotId",l."openingRevision",l.ordinal,l."instrumentId",
+      i.name AS "instrumentName",i.symbol AS "instrumentSymbol",l."acquiredAt",
+      l."orderWithinTimestamp",l."originalQuantity",l."originalCostUsd",
+      l."remainingQuantity" AS "carriedQuantity"
+    FROM account_carry_in_lots l JOIN accounting_instruments i
+      ON i."ownerId"=l."ownerId" AND i.id=l."instrumentId"
+    WHERE l."ownerId"=$1 AND l."accountId"=$2 AND l."openingRevision"=$3
+    ORDER BY l.ordinal LIMIT 101`,
+    [owner, id, journal.openingRevision],
+  );
+  if (rows.length < 1 || rows.length > 100) throw new Error('Invalid saved carry-in lots');
+  return rows.map((row, index) => {
+    if (row.ordinal !== index + 1 || row.acquiredAt > journal.coverageFrom)
+      throw new Error('Invalid saved carry-in chronology');
+    const lot: FifoCarryInInput = {
+      ...row,
+      acquiredAt: row.acquiredAt.toISOString(),
+      originalQuantity: parseDecimal(row.originalQuantity, true),
+      originalCostUsd: parseDecimal(row.originalCostUsd, false),
+      carriedQuantity: parseDecimal(row.carriedQuantity, true),
+    };
+    deriveCarryInAmounts(lot.originalQuantity, lot.originalCostUsd, lot.carriedQuantity);
+    return lot;
+  });
 }
 export async function readTradeHeads(
   manager: EntityManager,

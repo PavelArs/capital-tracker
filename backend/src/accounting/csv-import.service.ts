@@ -19,6 +19,7 @@ import {
 import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
 import {
   type Execution,
+  type FifoCarryInInput,
   FifoHistoryError,
   type FifoSummary,
   type FifoTrade,
@@ -32,6 +33,7 @@ import {
   advanceJournal,
   appendTradeVersion,
   projectTradeVersion,
+  readBaseline,
   readJournal,
   readOwnedAccount,
   readTradeHeads,
@@ -362,8 +364,9 @@ export class CsvImportService {
       const batch = await this.batch(manager, owner, id, target);
       if (journal.currentRevision !== input.expectedJournalRevision) throw conflict();
       const heads = await readTradeHeads(manager, owner, id);
+      const baseline = await readBaseline(manager, owner, id, journal);
       const links = await this.links(manager, owner, id, target);
-      const review = this.rollbackReview(batch, journal, heads, links);
+      const review = this.rollbackReview(batch, journal, heads, links, baseline);
       if (!review.eligible) throw conflict();
       for (const link of links) {
         const original = heads.find((h) => h.tradeId === link.tradeId);
@@ -441,6 +444,7 @@ export class CsvImportService {
         [owner, id, target],
       );
       const heads = await readTradeHeads(manager, owner, id);
+      const baseline = await readBaseline(manager, owner, id, journal);
       const links = await this.links(manager, owner, id, target);
       const confirmed = commands.find((c) => c.kind === 'confirm');
       const rolledBack = commands.find((c) => c.kind === 'rollback');
@@ -449,7 +453,7 @@ export class CsvImportService {
         acceptedSettings: batch.acceptedSettings,
         confirmReceipt: confirmed ? receipt(confirmed) : null,
         rollbackReceipt: rolledBack ? receipt(rolledBack) : null,
-        rollbackReview: this.rollbackReview(batch, journal, heads, links),
+        rollbackReview: this.rollbackReview(batch, journal, heads, links, baseline),
       };
     });
   }
@@ -519,7 +523,8 @@ export class CsvImportService {
     );
     if (owned.length !== ids.length) throw new NotFoundException();
     const instruments = new Map(owned.map((i) => [i.id, i]));
-    const summaryBefore = calculateFifo(active(heads)).summary;
+    const baseline = await readBaseline(manager, owner, id, journal);
+    const summaryBefore = calculateFifo(active(heads), baseline).summary;
     const document = parseCsvSource(sourceBytes(batch), settings.format.delimiter);
     const normalized = document.valid
       ? normalizeCsvRows(document, settings)
@@ -555,7 +560,7 @@ export class CsvImportService {
       if (journal.currentRevision + added.length > 10000) add('version-cap');
       if (!duplicate && candidate.length <= 1000) {
         try {
-          candidateSummary = calculateFifo(candidate).summary;
+          candidateSummary = calculateFifo(candidate, baseline).summary;
         } catch (error) {
           if (error instanceof FifoHistoryError) add('insufficient-holdings');
           else throw error;
@@ -610,9 +615,10 @@ export class CsvImportService {
     journal: JournalRow,
     heads: TradeVersion[],
     links: LinkRow[],
+    baseline: readonly FifoCarryInInput[],
   ) {
     const current = active(heads);
-    const summaryBefore = calculateFifo(current).summary;
+    const summaryBefore = calculateFifo(current, baseline).summary;
     let reason:
       | 'not-committed'
       | 'modified-trade'
@@ -634,7 +640,10 @@ export class CsvImportService {
     else {
       const removed = new Set(links.map((l) => l.tradeId));
       try {
-        summaryAfter = calculateFifo(current.filter((h) => !removed.has(h.tradeId))).summary;
+        summaryAfter = calculateFifo(
+          current.filter((h) => !removed.has(h.tradeId)),
+          baseline,
+        ).summary;
       } catch (error) {
         if (error instanceof FifoHistoryError) reason = 'insufficient-holdings';
         else throw error;

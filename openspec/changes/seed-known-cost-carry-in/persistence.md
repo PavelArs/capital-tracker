@@ -116,6 +116,8 @@ lots,reconciliation,carryInCostUsd}`.
   a missing instrument has carriedQuantity/carriedCostUsd strings `0`. Actual opening-position costs
   are never null here because an unknown-cost opening is already ineligible.
 - `issues` has `{code,instrumentId,ordinal}`; irrelevant location fields are null.
+  Acquisition-after-coverage uses ordinal with instrumentId:null; reconciliation
+  issues use the instrument UUID with ordinal:null.
   Order: `acquisition-after-coverage` by ordinal, then `extra-instrument`,
   `missing-instrument`, `quantity-mismatch`, `cost-mismatch`, each by instrument UUID.
   Missing/extra instruments do not also receive derivative quantity/cost issues.
