@@ -1,7 +1,8 @@
 # CSV import persistence and API contract
 
 Normative companion to design.md and the usd-csv-imports specifications. This is
-the implementation contract; runtime acceptance remains to be demonstrated.
+the verified implementation contract; verification.md records actual RED/GREEN,
+independent review, complete local release results and remaining release limitations.
 
 ## 1. Shared types and input conventions
 

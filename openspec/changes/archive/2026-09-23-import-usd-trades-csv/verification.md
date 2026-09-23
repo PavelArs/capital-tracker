@@ -1,8 +1,9 @@
 # Verification: import-usd-trades-csv
 
-Status: genuine predecessor-image CSV RED demonstrated; implementation now in progress.
-Source, migration/PG and initial HTTPS checks passed. Expanded browser verification,
-review fixes, the complete release gate and archive remain pending.
+Status: implementation, independent review and complete local release verification
+passed. All 124 real HTTPS Chromium cases passed, including 101 retained cases and
+23 new CSV cases; actual migration/PostgreSQL/authentication prerequisites passed.
+The full refactor, hosted release gates and production rollout remain incomplete.
 
 Predecessor record-usd-fifo-trades was actually archived in97a7a2d on2026-09-23 after
 all101 real Chromium cases passed in21.7 minutes, one worker and zero retries, plus
@@ -19,14 +20,14 @@ whole-candidate source ordering, conditional rollback reallocation, state-pinned
 provenance and versioned replay-before-parse. No product/schema/dependency change
 was made to demonstrate those design claims; runtime verification remains required.
 
-| Scenarios | Planned executable evidence | Current result |
+| Scenarios | Executable evidence | Current result |
 | --- | --- | --- |
-| CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine RED recorded; both initial cases GREEN in current focused run, expanded journey pending |
-| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests and initial transport/wire HTTPS passed |
-| CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Real production-service PG nine families passed; HTTP supplements pending |
-| CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Real PG RR barriers and state-pinned provenance passed; replica HTTPS pending |
-| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | Focused seven-case HTTPS passed; three genuine UI regression failures recorded, fixes under verification |
-| CSV-TRADE-001 | All retained manual/USD source/PG/HTTPS characterization plus atomic range assertions | Retained manual/USD PG and859 backend assertions pass; full HTTPS pending |
+| CSV-001-A / CSV-006-A | Maintained predecessor-image real MFA upload/UI RED, then full journey GREEN | Genuine predecessor RED retained; initial and expanded journeys GREEN in complete124-case run |
+| CSV-001-B / CSV-002 | Independent csv-input/csv-parser tests plus actual Nest/HTTPS transport and format cases | Independent122 input/parser tests and all real transport/format/wire HTTPS passed |
+| CSV-001-C / CSV-003 / CSV-004 | Production CsvImportService with real PG exact vectors, races, caps, provenance, deferred COMMIT and retry | Real production-service PG nine families and two-replica/deferred-COMMIT HTTPS supplements passed |
+| CSV-005 | Real RR read barriers and state-pinned provenance; replica hash equality and stale preview denial | Real PG RR/state-pinned barriers and replica HTTPS hash/stale-command checks passed |
+| CSV-006 / CSV-007 | Real Russian browser and private HTTPS/auth/CSRF/owner/log tests, actual transport faults | All23 CSV HTTPS cases passed; genuine UI regressions and reviewed fixes retained below |
+| CSV-TRADE-001 | All retained manual/USD source/PG/HTTPS characterization plus atomic range assertions | Retained manual/USD PG,859 backend tests and all101 predecessor HTTPS cases passed |
 | CSV-MIG-001 | Release-image fresh15/replay and populated14-to15 plus all older upgrade/refusal cases | Actual fresh15/replay/populated8..14 upgrades and unsafe-history refusals passed |
 
 ## Initial genuine acceptance RED — 2026-09-23
@@ -273,8 +274,7 @@ match independent expected values; providers/admissions retain explicit oracles.
 
 Both use one worker and zero retries, frontend e9730220 image above and unchanged
 0c239e1e backend; cleanup completed. Independent final review found no blocker in
-these two tests and closed the separate File-valued recovery coverage gap. All101
-predecessor *.spec.ts files are unchanged by this slice; six new CSV test files add
+these two tests and closed the separate File-valued recovery coverage gap. The predecessor *.spec.ts files containing101 cases are unchanged by this slice; six new CSV test files add
 23 cases. The full124-case release gate is next, not yet claimed successful.
 
 ## Traceability clarification before archive — 2026-09-23
@@ -285,3 +285,45 @@ the delta: CSV-001/001-B already specified the one-MiB multipart-envelope bounda
 and real declared/chunked refusal. No source behavior, numerical expectation or test
 assertion changed. The scenario distinguishes multipart body bytes from HTTP headers
 and chunk framing, and claims response privacy only; CSV-007-A retains log checks.
+
+## Complete integrated local release gate — 2026-09-23
+
+At integrated source2ddfc58 (product source12e718c), ran
+`PATH=/private/tmp/capital-task-bin:/Users/pavelars/.nvm/versions/node/v22.23.2/bin:$PATH caffeinate -is pnpm test:e2e`.
+Log `/private/tmp/capital-csv-release-full.log`; actual terminal exit0.
+All124 Chromium cases passed in26.4m, one worker and zero retries:
+101 unchanged predecessor cases plus23 maintained CSV cases across six new files.
+Later source changes during the run were documentation/traceability only.
+
+The same entry point passed actual provider TLS/proxy checks, fresh15/replay,
+populated8..14 upgrades and unsafe-history refusals; request-limit, opening, USD and
+nine-family CSV PostgreSQL probes; CLI/session/MFA/expiry and27 startup refusals;
+image-content, synthetic-network and checkout-preservation checks. All traffic
+followed real HTTPS/backend/authentication/PostgreSQL; only external providers were
+stubbed. Real post-COMMIT delivery faults and delayed requests never fabricated
+application or authentication responses.
+
+Verified exact release images:
+- backend `sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46`
+- frontend `sha256:e973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f`
+
+Source verification remains exit0:859 backend tests/26 suites,95 frontend tests/10
+files, both lint/build and strict OpenSpec12. All E2E TypeScript checks passed.
+Frozen install and the required production audit passed with0 high/critical and
+2 existing moderate Router findings. Retained77 backend/29 frontend lint warnings
+and the approximately606.7kB bundle warning are not silently removed.
+
+Owned synthetic cleanup completed and subsequent read-only Docker inventories
+found no acceptance containers/networks or source probes. Owner Nginx remained
+SHA256 `115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432`,0644,
+1348bytes. Lock remained `aa2588325aacdc54e8437d3500c7d2df580cc20cd061d1e3727f30f0dcc1e4f8`.
+No owner database, production deployment, paid service, remote push or project-folder
+delete occurred. Hosted CI, second browser engine, complete ASVS/scanning and
+backup/restore/application promotion remain unrun and required for the full release.
+
+Actual OpenSpec1.2.0 `archive import-usd-trades-csv --yes` succeeded on2026-09-23:
+all28 tasks complete; seven requirements added, two modified, none removed. The
+canonical migration count is15 and every predecessor scenario remains. Canonical
+CSV purpose and archived contract links were completed after CLI synchronization.
+Post-archive strict canonical validation passed12 items, exit0. CLI-generated extra
+EOF blank lines were removed without changing any requirement or scenario.

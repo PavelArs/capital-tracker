@@ -344,7 +344,7 @@ two-replica path and record the expected ledger deltas.
 | Cross-site writes | Exact configured HTTPS Origin and bound CSRF, no implicit proxy trust | Broader browser/proxy review and XSS defenses |
 | Guessing or session exhaustion | Persisted owner/challenge MFA limits and transactional session caps | Shared password/IP limits and operational capacity tests |
 | Credential or output leakage | Argon2id, encrypted factors, hashed recovery codes, private CLI outputs, safe errors and redaction | Full secret/image/log scanning and backup/restore exercises |
-| Malicious CSV content | Strict bounded UTF-8/parser/input validation, literal React rendering, private retained originals and generic storage errors; see [CSV import](csv-imports.md) | Full expanded release verification, broader XSS/CSP and resource-exhaustion review |
+| Malicious CSV content | Strict bounded UTF-8/parser/input validation, literal React rendering, private retained originals and generic storage errors; see [CSV import](csv-imports.md) | Broader XSS/CSP and resource-exhaustion review |
 | Malicious provider/news content | Isolated acceptance denies live egress | SSRF allowlists, provider validation and AI isolation |
 | Dependency or CI compromise | Pinned dependencies/actions, isolated image tests and disabled rollout | Dependency/image/static scans and immutable artifact promotion |
 | Stolen backup, host or device | Factor key separated from database; no real credentials used in acceptance | Encrypted backups, least privilege and host/device hardening |

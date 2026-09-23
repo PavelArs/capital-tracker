@@ -1,10 +1,11 @@
 # Reviewed CSV imports into the USD journal
 
-CSV import is the active incremental accounting slice. This guide describes its
-implemented contract; final integrated acceptance and archive are still pending.
-The [active specification](../openspec/changes/import-usd-trades-csv/specs/usd-csv-imports/spec.md)
-and [persistence contract](../openspec/changes/import-usd-trades-csv/persistence.md)
-define the exact API and verification requirements. The full refactor and production
+The verified CSV slice passed all 124 real HTTPS Chromium cases, including 101
+retained cases, plus PostgreSQL and migration checks. The
+[current specification](../openspec/specs/usd-csv-imports/spec.md),
+[persistence contract](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/persistence.md)
+and [verification record](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/verification.md)
+define the exact API, supported limits and observed results. The full refactor and production
 release hardening remain incomplete; this feature does not authorize production migration.
 
 ## Supported history and source

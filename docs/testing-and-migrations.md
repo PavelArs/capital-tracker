@@ -286,7 +286,7 @@ This is local evidence; hosted CI and final release/security/recovery gates rema
 
 ## CSV import acceptance
 
-The active `import-usd-trades-csv` change adds bounded private originals, explicit
+The verified `import-usd-trades-csv` slice adds bounded private originals, explicit
 mapping, whole-history preview, atomic acceptance and conditional batch rollback.
 The independent `csv-import-db.cjs` fixture runs the compiled production services
 against real PostgreSQL: strict limits and SQL ownership, sale-first FIFO, replay,
@@ -302,8 +302,10 @@ SQL witness checks the receipt before delivery is aborted. Denied retries reach 
 real CSRF/session checks. Request scheduling may be delayed to exercise stale reads;
 application and authentication responses are never fabricated.
 
-The active change's verification.md records completed focused checks and genuine
-review regressions. Full expanded release verification and archive are still pending.
+The [archived verification](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/verification.md)
+records genuine RED, review regressions and their resolution. The complete local
+release gate passed all 124 Chromium cases (101 retained and 23 new), with one worker
+and zero retries, plus all real migration/PostgreSQL/authentication prerequisites.
 A full browser document reload clears ephemeral command recovery; tests distinguish
 it from in-app data refresh and SPA navigation, including session-expiry login.
 Neither local acceptance nor this documentation authorizes production deployment.

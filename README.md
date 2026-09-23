@@ -30,8 +30,9 @@ The [USD trade journal](docs/usd-trade-journal.md) passed all 101 HTTPS Chromium
 cases (85 retained and 16 new), plus real PostgreSQL and migration checks.
 The [reviewed CSV import](docs/csv-imports.md) slice adds explicit mapping, whole-batch
 preview/confirmation, retained source provenance and conditional rollback to the USD
-journal. Its final integrated verification is in progress; full release hardening
-and the remaining accounting scope are still pending.
+journal. All 124 HTTPS Chromium cases passed (101 retained and 23 new), together
+with real PostgreSQL and migration checks. Full release hardening and the remaining
+accounting scope are still pending.
 Original project folders/data remain untouched.
 
 Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.

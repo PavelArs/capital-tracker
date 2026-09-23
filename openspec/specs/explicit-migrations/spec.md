@@ -21,7 +21,7 @@ pre-existing application schema before mutating application tables or migration 
 #### Scenario: ISO-001 Fresh PostgreSQL migration and replay
 - **GIVEN** an empty isolated PostgreSQL database and the release backend image
 - **WHEN** the explicit migration command runs twice
-- **THEN** all fourteen migrations are recorded exactly once and current tables exist
+- **THEN** all fifteen migrations are recorded exactly once and current tables exist
 - **AND** the second run preserves data and migration records
 
 #### Scenario: ISO-002 Unsafe prior schema is refused before mutation
@@ -57,3 +57,10 @@ pre-existing application schema before mutating application tables or migration 
 - **THEN** every prior row, column/index/constraint, enum/extension and migration sequence state is preserved except the one new migration ledger increment
 - **AND** the three new journal tables are empty, no origin/lot/owner is invented and replay changes nothing
 - **AND** all prior upgrade semantics and destructive-history preflight refusals remain enforced
+
+#### Scenario: CSV-MIG-001 Populated journal predecessor remains identical
+- **GIVEN** a populated fourteen-migration isolated schema with explicit journal origins, corrected/void trade history, known/unknown openings and live financial/owner/MFA/session/admission data
+- **WHEN** actual migration15 and replay run through the release image
+- **THEN** every preceding row, column/index/constraint, enum/extension and prior migration sequence state is preserved except the one new migration ledger increment
+- **AND** three empty import tables appear with exact byte/state/range/composite identity constraints, no original or accounting entry is invented, and replay changes nothing
+- **AND** fresh installation, every previous populated upgrade and all unsafe historical preflight refusals retain their existing assertions

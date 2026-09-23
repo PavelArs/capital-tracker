@@ -83,6 +83,13 @@ be unique owner/account/requestId across create/correct/void; canonical payload 
 kind, target, expected revision and execution. Receipts SHALL be immutable, never rewind
 heads, and never claim to be current state. Limits SHALL be 1,000 active trades and
 10,000 versions including voids; rejected commands consume no key or capacity.
+Single-trade commands SHALL retain their existing behavior. An explicitly accepted
+CSV command MAY append N consecutive version ordinals in one atomic transaction,
+advancing the current journal revision by N only at commit. Its complete candidate
+history SHALL be validated as a whole; source-row order MUST NOT become economic
+chronology or imply separately committed intermediate FIFO snapshots. Batch command
+identity SHALL remain separate from server-generated individual version keys.
+The same active/version bounds SHALL apply without truncation or partial acceptance.
 
 #### Scenario: TRADE-004-A Historical changes rebuild or roll back fully
 - **GIVEN** the mandatory three-trade history
@@ -106,6 +113,12 @@ heads, and never claim to be current state. Limits SHALL be 1,000 active trades 
 - **AND** an independent nontransactional fixture probe proves the post-write path occurred; removal of the fixture allows explicit same-key retry once
 - **WHEN** a command would create active trade 1001 or immutable version 10001
 - **THEN** it returns 409 without partial mutation; exact boundaries 1000 and 10000 work, void history still counts and prior replay still works
+
+#### Scenario: CSV-TRADE-001 Atomic version ranges preserve single-command semantics
+- **WHEN** a source-ordered batch lists a sale before its chronologically earlier purchases
+- **THEN** the complete valid candidate commits all N versions together and current reads see the final revision rather than an invalid provisional source prefix
+- **AND** source links and the immutable batch receipt identify the complete accepted revision range
+- **AND** every existing manual command, exact allocation, replay-before-CAS, cap, correction/void and coherent-read assertion remains passing across the internal persistence extraction
 
 ### Requirement: TRADE-005 Coherent bounded derived reads
 Every derived response SHALL identify its calculation journalRevision and obtain

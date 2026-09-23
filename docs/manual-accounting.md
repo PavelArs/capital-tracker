@@ -77,8 +77,9 @@ the picker page. Empty account creation is allowed, empty opening replacement is
 The separate [USD trade journal](usd-trade-journal.md) requires an explicitly attested
 empty origin and no opening history. Once initialized, it blocks new opening writes
 under the same account lock; old opening receipts retain their replay semantics.
-An aggregate opening cannot be converted into ordered acquisition lots. CSV,
-carry-in lots, transfers, valuation and returns remain separate future slices.
+An aggregate opening cannot be converted into ordered acquisition lots. Reviewed
+[CSV imports](csv-imports.md) are available for the explicit empty-origin journal.
+Carry-in lots, transfers, valuation and returns remain separate future slices.
 
 ## Verification scope
 

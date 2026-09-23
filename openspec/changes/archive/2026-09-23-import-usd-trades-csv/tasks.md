@@ -14,7 +14,7 @@
 
 ## 3. Shared ledger seam and additive persistence
 
-- [ ] 3.1 Extract only caller-owned EntityManager journal/head/label/prepared-append primitives; preserve every existing passing manual/USD characterization and CSV-TRADE-001 without artificial RED.
+- [x] 3.1 Extract only caller-owned EntityManager journal/head/label/prepared-append primitives; preserve every existing passing manual/USD characterization and CSV-TRADE-001 without artificial RED.
 - [x] 3.2 Coordinator adds three typed import mappings and AddUsdCsvImports1790050000000 migration15 with exact byte/state/range/composite RESTRICT constraints; no historical migration or prior row rewrite.
 - [x] 3.3 Extend actual migration acceptance for fresh15/replay and populated14-to15 CSV-MIG-001 while preserving all old upgrades, schema/row/sequence comparisons and unsafe-history refusals.
 - [x] 3.4 Independently exercise SQL byte/null/state/range/identity boundaries, retained originals and exact provenance using production service and isolated PostgreSQL.
@@ -41,5 +41,5 @@
 ## 6. Independent review, complete verification and archive
 
 - [x] 6.1 Independently review parser/transport privacy, strict errors, ownership/provenance, transaction/replay/read isolation, arithmetic oracles and frontend state; resolve findings with regression evidence.
-- [ ] 6.2 Run actual frozen install, high/critical audit, source lint/build/tests, strict OpenSpec, migration/PG and complete expanded release-image HTTPS suite with all101 predecessor cases unchanged; record commands, exits, counts, exact images and cleanup.
-- [ ] 6.3 Update user/engineering docs and verification evidence consistently, disclose supported limits and remaining full goal, then archive only after required checks pass. No hosted CI, production or full-refactor completion claim from local slice results.
+- [x] 6.2 Run actual frozen install, high/critical audit, source lint/build/tests, strict OpenSpec, migration/PG and complete expanded release-image HTTPS suite with all101 predecessor cases unchanged; record commands, exits, counts, exact images and cleanup.
+- [x] 6.3 Update user/engineering docs and verification evidence consistently, disclose supported limits and remaining full goal, then archive only after required checks pass. No hosted CI, production or full-refactor completion claim from local slice results.

@@ -41,20 +41,24 @@ needs actual acceptance RED; pure refactors retain passing characterization.
 Root alone runs synthetic capital-tracker-e2e using tests/e2e/compose.yml, PG tmpfs.
 Never production Compose or an owner DB. Docker/registry escalations were approved;
 none rejected. Use caffeinate -is for long macOS runs; it is not a closed-lid guarantee.
-ACTIVE: complete CSV release gate `caffeinate -is pnpm test:e2e`, started at source
-2ddfc58, PTY74345; log /private/tmp/capital-csv-release-full.log. Migration/PG and
-startup prerequisites passed;124 Chromium cases are running,1worker0retries.
-Do not claim final success/archive until terminal exit and cleanup are observed.
-Focused runner /private/tmp/capital-csv-http-run.cjs; only external providers are stubbed.
+No Docker run is active. Complete CSV `pnpm test:e2e` at source2ddfc58 finished
+exit0:124/124 Chromium,26.4m,1worker0retries, plus all migration/PG/CLI/auth/startup
+and image/network prerequisites. Log /private/tmp/capital-csv-release-full.log.
+Independent cleanup inventory empty; owner Nginx/lock hashes above preserved.
+Prepared next runner /private/tmp/capital-carry-in-predecessor-red.cjs asserts exact
+CSV image IDs and does not rebuild; execute only after reviewed test integration.
 
 ## Completed and archived
 
-Eleven slices: audit/baseline, isolated release acceptance, CLI owner, opaque sessions,
+Twelve slices: audit/baseline, isolated release acceptance, CLI owner, opaque sessions,
 checkout preservation, mandatory MFA, dependency remediation, trusted client source,
-persisted auth request limits, exact manual openings and exact USD FIFO trades.
+persisted auth request limits, exact manual openings, exact USD FIFO trades and
+reviewed atomic USD CSV imports.
 Manual archive: 2026-09-23-record-manual-opening-positions (e2080aa), full85 GREEN.
-Latest actual archive: 2026-09-23-record-usd-fifo-trades; six added requirements,
-two modified, none removed. Complete history/evidence is in its verification.md.
+USD archive: 2026-09-23-record-usd-fifo-trades; six added requirements,
+two modified, none removed. Latest archive:2026-09-23-import-usd-trades-csv;
+seven added requirements, two modified, none removed. Each verification.md retains
+actual RED/GREEN, independent review and unrun release limitations.
 
 USD product source verified at62e8f26; later changes are docs/spec sync and preserved
 owner Nginx. Explicit attested empty origin, no opening-history conversion, exact
@@ -85,8 +89,8 @@ Hosted CI, second browser, image/SAST/DAST/full ASVS and backup/restore remain u
 
 ## Now and next
 
-CSV change `import-usd-trades-csv`:25/28 tasks checked. Full gate and final archive
-remain. Active proposal/design/persistence/specs/tasks/verification contain the exact
+CSV change `import-usd-trades-csv`:28/28 tasks, verified and actually archived
+through OpenSpec1.2.0 with canonical sync. Archived artifacts contain the exact
 contract, complete RED/GREEN history and independent review. Genuine missing API/UI
 RED preceded implementation; no assertion was weakened to force success.
 
@@ -100,7 +104,7 @@ E2E strict TypeScript exit0 /private/tmp/capital-csv-e2e-types.log. Frozen insta
 and required audit passed;2 existing moderate,0 high/critical. Lock only adds
 csv-parse7.0.2. Real PG nine CSV families and all migration upgrades passed.
 
-All23 new CSV cases have passed focused execution and during the ongoing full gate.
+All23 new CSV cases passed focused execution and the complete124-case full gate.
 Focus logs include capital-csv-final-regressions-2.log (3/3,36.7s),
 capital-csv-upload-loss.log (1/1,14.3s), capital-csv-format.log (1/1,13.5s),
 capital-csv-literal-and-commands.log (2 commands passed, intended literal RED),
@@ -108,26 +112,26 @@ capital-csv-journey-first.log (7 UI passed,2 exact-key-order fixture failures).
 Earlier actual401/refresh/new-file/literal RED led to reviewed product fixes.
 Later fixture repairs preserved exact financial/security assertions; read verification.
 
-Finish PTY74345/log, inspect terminal count/exit and independent Docker cleanup,
-owner Nginx hash and lock/status. If complete124 succeeds, finish3.1/6.2/6.3,
-update current docs/evidence, sync full deltas via actual `openspec archive
-import-usd-trades-csv --yes`, and strict-validate canonical specs. Preserve every
-historical failure and old scenario. No final pass or archive claim before observation.
+CSV full gate completed with exit0 and124/124 cases. Actual archive command passed
+with seven added/two modified/no removed requirements. Purpose/contract links and
+current docs were synchronized; strict canonical validation follows the archive.
+Hosted CI, release/security/recovery gates and the full target brief remain incomplete.
 
 Next isolated specification: `seed-known-cost-carry-in` in worktree
 ../capital-tracker-worktrees/carry-in-design, branch refactor/carry-in-design.
 CLI-created artifacts,29 tasks and verification manifest; strict13 passed.
 Provider contract616cb3f integrated there asd090939; full reviewed artifacts saved
-in d3d278e. Worktree clean; no product code or database change.
+in d3d278e with follow-up e815052/c8303d5/5ba0ff0. Worktree clean; no product code or database change.
 Audit reviewed shared parser/FIFO-overload/readBaseline seams, schema/provenance;
 QA approved independent scenarios; exact Russian locators and all shared seams are frozen. Known-cost current-opening baseline
 uses explicit original Q/C/R with cumulative allocation offsets; no inferred lots,
 unknown-cost zeroing, fabricated buys or second ledger. Baseline amendment deferred
 explicitly to a later required slice, not silently excluded from the whole brief.
 
-After actual CSV archive, reconcile draft deltas against archived canonical specs,
-commit/integrate only reviewed artifacts, author independent carry-in API/UI tests
-and demonstrate genuine RED against exact CSV images before product changes.
+Next: reconcile draft deltas against archived canonical specs and integrate reviewed
+artifacts. QA authored two maintained API/UI tests in549edce; independent pure tests
+in19bc3f9 are reviewed separately. Integrate tests and demonstrate genuine RED against
+the exact CSV images before any carry-in product change. No carry-in runtime RED yet.
 Then parallelize bounded acceptance/backend/frontend worktrees with root sole DDL,
 shared fixture and runtime ownership. Preserve exact old empty-origin projections.
 

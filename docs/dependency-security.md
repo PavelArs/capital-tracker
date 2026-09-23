@@ -136,13 +136,13 @@ unknown-route redirects and login/MFA/logout flows before adopting it.
 
 ## CSV parser addition — 2026-09-23
 
-The active CSV slice adds exact backend `csv-parse@7.0.2`, with no transitive
+The verified CSV slice adds exact backend `csv-parse@7.0.2`, with no transitive
 runtime dependencies or new override. The maintained parser's actual UTF-8,
 quoting, physical-line and size boundaries have independent tests; dependency
-selection alone is not validation. See the active change's `parser-decision.md`.
+selection alone is not validation. See the [parser decision](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/parser-decision.md).
 
 The frozen install and `pnpm audit:production` completed successfully after this
 addition: zero high/critical findings and the same two moderate Router findings
 above. No advisory suppression or paid scanning service was added. Commands and
-logs are recorded in the CSV change's verification record; image/static/dynamic
+logs are recorded in the [CSV verification record](../openspec/changes/archive/2026-09-23-import-usd-trades-csv/verification.md); image/static/dynamic
 scans and the Router follow-up remain separate release requirements.
