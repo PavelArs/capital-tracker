@@ -937,7 +937,7 @@ test('CSV-002-A / CSV-006-A regression: exact source keys with leading spaces st
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
-  const source = [buy, { ...buy, source: ' TOKEN', gross: '200' }];
+  const source = [buy, { ...buy, source: ' TOKEN', order: 1, gross: '200' }];
   const batch = await uploadInBrowser(page, account.id, source);
   const inspection = await browserPost(
     page,
@@ -1169,7 +1169,8 @@ test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV c
   const gate = new Promise<void>((resolve) => {
     release = resolve;
   });
-  let held = false;
+  let held = 0;
+  let responseReceived = false;
   let lost = false;
   let receipt: CsvReceipt | undefined;
   const commands: CsvConfirm[] = [];
@@ -1181,11 +1182,13 @@ test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV c
     readPattern,
     async (route) => {
       expect(new URL(route.request().url()).searchParams.get('journalRevision')).toBe('2');
-      held = true;
+      held++;
+      expect(held, 'Exactly one real pinned read is held').toBe(1);
       await gate;
       await route.continue();
     },
-    { times: 1 },
+    // Keep this handler registered while suspended. Removing the final one-shot
+    // route in Playwright1.63 automatically continues other in-flight routes.
   );
   await page.route(
     writePattern,
@@ -1203,7 +1206,12 @@ test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV c
     (response) => new URL(response.url()).pathname === readPath,
     { timeout: 15_000 },
   );
-  staleRead.catch(() => {});
+  staleRead.then(
+    () => {
+      responseReceived = true;
+    },
+    () => {},
+  );
   try {
     await page
       .getByRole('table', { name: 'Сделки журнала', exact: true })
@@ -1211,11 +1219,15 @@ test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV c
       .filter({ hasText: sale.trade.tradeId })
       .getByRole('button', { name: 'Распределение FIFO', exact: true })
       .click();
-    await expect.poll(() => held).toBe(true);
+    await expect.poll(() => held).toBe(1);
     await page.getByRole('button', { name: 'Подтвердить импорт CSV', exact: true }).click();
     await expect.poll(() => lost).toBe(true);
     await expect(retryButton(page)).toBeEnabled();
     const committed = fingerprint(['auth_sessions', 'auth_request_limits']);
+    expect(held).toBe(1);
+    expect(responseReceived, 'The real read must remain suspended until explicit release').toBe(
+      false,
+    );
     release();
     expect((await staleRead).status()).toBe(409);
     await expect(page.getByRole('region', { name: 'Журнал изменился', exact: true })).toBeVisible();
@@ -1295,7 +1307,9 @@ test('CSV-006-B: an accepted CSV receipt followed by a lost parent read blocks n
     assertCommitted(receipt);
     await expect.poll(() => lostRead).toBe(true);
     const csvRegion = page.getByRole('region', { name: 'Импорт CSV', exact: true });
-    await expect(csvRegion.getByRole('alert')).toContainText('Запрос принят');
+    await expect(csvRegion.getByRole('alert').filter({ hasText: 'Запрос принят' })).toContainText(
+      'Запрос принят',
+    );
     await expect(
       csvRegion.getByRole('status').filter({ hasText: receipt.requestId }),
     ).toBeVisible();
