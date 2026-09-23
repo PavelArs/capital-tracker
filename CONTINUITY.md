@@ -44,87 +44,66 @@ Root alone operates synthetic capital-tracker-e2e with tests/e2e/compose.yml and
 PostgreSQL tmpfs. Never production Compose or an owner DB. Docker escalations approved;
 none rejected. Use caffeinate -is for long runs. Current active run is listed below.
 
-## Verified predecessor
+## Verified carry-in predecessor
 
-CSV archive83ce99d: openspec/changes/archive/2026-09-23-import-usd-trades-csv.
-Source2ddfc58/product12e718c: full124/124 Chromium26.4m,1worker0retries,exit0;
-all migrations15/PG/auth/artifact prerequisites passed. Canonical strict12 passed.
-Full brief, hosted CI, other browsers, backup/restore and production remain unverified.
+Archive1667502: openspec/changes/archive/2026-09-23-seed-known-cost-carry-in.
+Source59863bf/productc20e465 full133/133 Chromium28.9m,1worker0retries,exit0;
+all migration16/PG/auth/artifact prerequisites passed; canonical strict13 passed.
+Its verification records genuine RED, earlier failed gates, the one-line guidance
+role correction and deterministic synthetic warm-cache lifetime. No failed run is
+release evidence. All old scenarios retained; archive6new/10modified/0removed.
+No owner DB, production deployment, paid service, folder deletion or remote push.
 
-## Current carry-in slice
+## Current historical-accounting slice
 
-Read openspec/changes/archive/2026-09-23-seed-known-cost-carry-in/{proposal,design,persistence,specs,
-tasks,verification}.md (actual individual paths). Known-cost current opening only;
-explicit original Q/C/R, original cumulative allocation, immutable origin/baseline,
-shared account lock and caller-owned RR reads. No inferred history or double holdings.
-Old binaries cannot interpret carry-in origins; no mixed-version/binary rollback claim.
-Migration16 is additive; no owner-data rewrite or destructive down. Amendments deferred.
+Read openspec/changes/inspect-historical-accounting/{proposal,design,specs,tasks,
+verification}.md and docs/historical-accounting.md. Current-effective restated
+per-account positions/cumulative FIFO at explicit instant, not past knowledge,
+observed balances, prices or investment returns. No migration/dependency/provider.
+One caller-owned readonly REPEATABLE READ; complete-prefix calculation before UUID
+aggregation/paging, immutable original baseline, strict query/pinned revision.
+Russian view preserves parent drafts, invalidates input/account/observed-revision
+changes and ignores late responses. Real409 clears pages and needs explicit refresh.
 
-Genuine exact-CSV-image RED at859e9b7 recordedcc186bc: missing API201/404 and missing
-Russian heading, actual password/MFA/PG. Shared services/domain/migration/frontend
-integrated by46ce63f. JSON102401-byte413 defect had actual unit/HTTPS500 RED and narrow
-filter fix. Full backend902/28, frontend95/10, lint/build, strict E2ETSC, frozen install
-and live production dependency audit passed (0 high/critical,2 existing moderate).
-Existing77/29 lint and bundle warnings retained. Detailed commands/images/logs/reviews
-are in verification.md; do not redo unchanged checks without cause.
+Prepared design/test commits integrated11b18f1 only after carry-in archival. Genuine
+exact-predecessor RED:2failures API200/404 and missing Russian heading, real HTTPS/
+MFA/PG. Log /private/tmp/capital-historical-predecessor-red.log, synthetic artifacts
+capital-historical-red-artifacts. Root backend85c7581; independent Sol frontend
+b104603/14e6fbc integratedf5e88fd/42b6805. New mocked-API component tests removed;
+all oldfrontend tests retained and real browser coverage added instead.
 
-Independent critical review confirmed source/schema/UI; strengthened other-account
-CSV fingerprints and exact admission deltas at89846b3. Simple docs/count reviews
-actually used gpt-6-luna. Product unchanged until the one-line note fix below.
+Independent Sol backend review found saved-history400/500vs409 classification gap.
+Real PostgreSQL RED against unchangedbb9e33image: expected409/non-HTTPerror;
+capital-historical-invalid-confirmed-red.log exit1. Narrow typed validation fix
+ab48ba0; independent exact-diff closure, actual PGGREEN including full bounds.
+Arbitrary SQL/programming errors remain500, caller input400, old callers unchanged.
+Luna independently authored/reviewed browser boundaries and docs. Root corrected
+fixture chronology and arithmetic before runtime; merged11ac0dc. Full traceability
+and all prior intermediate findings/results are in verification.md.
 
-Release attempts and actual outcomes:
--89846b3 full gate stopped before browsers on stale15 migration count. Three counts
- updated16 at524647f, independently reviewed without changed financial/security oracle.
--524647f full gate:132 passed/1 failed in28.8m,exit1; all prerequisites passed.
- OPEN-003-A got2 alerts instead of1: actual stale409 + persistent unknown-cost guidance.
- Log capital-carry-in-release-final.log; artifacts capital-carry-in-release-failed-artifacts.
- Earlier root updates missed the earlier failure by tailing latest tests; user corrected.
- Always scan COMPLETE passed/failed counts with /private/tmp/capital-release-progress.py.
--c20e465 fixes ONLY unknown-cost paragraph role=note + visible warning style; text/
- refusals/action alerts unchanged. CARRY-005-B and note/no-alert assertion added.
- Actual unchanged-image RED2/2 failures, then focused2/2 GREEN25.3s,exit0;
- logs capital-carry-in-note-{red,green}.log. Exact diff independently reviewed.
- Frontend lint/build95/10, E2ETSC and OpenSpec13 passed after fix.
--c20e465 next full gate hit CSV warm-cache restart after real Redis10-minute expiry.
- Deliberately interrupted ONLY owned Playwright, runner finally cleanup completed.
- Exit1:62passed/1failed/1interrupted/69unrun,14.6m; log capital-carry-in-release-verified.log;
- artifacts capital-carry-in-cache-failed-artifacts. Never claim this gate passed.
+Source checks after correction: backend939/30, frontend95/10, lint/build exit0;
+77/29existingwarnings and bundlewarning. Frozeninstall and live high/critical audit
+exit0 (2existingmoderateRouter findings). StrictE2ETSC and OpenSpec14/14 exit0.
+Five realPG families passed, including readonlyRR process barrier, foreign/coverage/
+zero/stale pages,100baseline+1000max-precision trades and invalidsaved409.
+Focused7/7 HTTPS Chromium1.4m,1worker0retries,terminalexit0 atc8873bb, exactimages:
+backend sha256:1f6ce77cba5ad9444ccb8d3a6ba769fc722560bf9145401651f418054a33388f
+frontend sha256:acf24293ebd64f3cbc9425c7e86504402c55109a849a9ac0f46630e7b1d2cc95
+Log /private/tmp/capital-historical-focused.log; independent cleanupempty andhashes
+unchanged. Seven cases cover timeline/carryboundary/privacy/literalHTML/lateinput/
+accountswitch/realpinned409+successfulpage/observedrevision and parentcorrection.
 
-Now synthetic Compose alone explicitly sets supported EXCHANGE_RATES_CACHE_TTL86400000;
-actual artifact check asserts both replica environments. Exact provider expectations
-unchanged:2 constructor calls/zero accounting calls. Production default unchanged.
-Independent review approved fixture determinism, no expiry coverage claim. Exact-image
-focused CSV case passed1/1 in18.4s,exit0, capital-carry-in-cache-focused.log.
-All logs/artifact folders above are under /private/tmp. Owner hashes unchanged.
-Current images:
-backend sha256:36856553e640b6906894d3e70dc8122548b31e7b84a699777344699e008da315
-frontend sha256:f81445af15fe1c9f48c39ee13118bbdd0e00c8060d91676a72fcbed8f1868c0a
+NOW: ready for complete pnpm test:e2e (140browsercases plus allold/newPGprerequisites),
+log /private/tmp/capital-historical-release.log. Do not archive on focused success.
+Root alone owns Docker. No product changes while gate runs. Read terminal exit plus
+COMPLETE pass/failcounts, notlatesttestindex. Helper capital-release-progress.py LOG140.
+NEXT: record actual fullresult/images, independentcleanup+hashes, close5.2/5.3onlyon
+success, supported openspec archive --yes, fix canonicalpurpose/links, validateagain.
+Fulltarget still substantially unfinished: price/history/providerreconciliation,
+cashflows/transfers/swaps/rewards/performance, AI, releasehardening/consolidation.
+Do not move/delete original or duplicate folders before WHOLE verifiedrefactor.
 
-COMPLETE: full gate at59863bf passed133/133 Chromium28.9m,1worker0retries,
-terminal exit0, /private/tmp/capital-carry-in-release-complete.log. All prerequisite
-PG/migration/auth/artifact checks passed. Independent cleanup inventories empty;
-owner Nginx and lock hashes match. No active synthetic run or containers remain.
-Supported openspec archive seed-known-cost-carry-in --yes succeeded2026-09-23:
-6new and10modified requirements, zero removals; predecessor scenarios retained.
-Canonical purpose and archive links updated. No new product changes after c20e465;
-59863bf is synthetic fixture determinism. Never consolidate incomplete work.
-
-## Next slice prepared independently, not implemented
-
-Worktree capital-tracker-worktrees/historical-accounting-design, branch
-refactor/historical-accounting-design. New inspect-historical-accounting proposal/
-design/4requirements/15tasks e65529a; pure/query test oracles6390ac8; independent
-initial API/UI tests0a6efa2; root HTTP privacy tests a7e1471; independent PG probe
-82a8baa with root review ee07ba6; late-response/correction browser case153d979,
-root all-accounting-POST guard and strict E2ETSC review a639c25. Worktree HEADa639c25.
-All changes isolated from active release.
-Cheap agent gpt-6-luna authored/reviewed bounded tasks; root caught and corrected
-missing trade fingerprints, UI CSRF bookkeeping and a quantity2 expected-value bug.
-Strict E2ETSC/scoped Biome/PG syntax passed, no historical runtime or product code yet.
-Temporary dependency symlinks were removed; main dependencies unchanged.
-Future interface: HistoricalAccountingService(source).getSnapshot(owner,account,raw).
-Pure interfaces: projectHistoricalAccounting(heads,baseline,at), parseHistoricalQuery.
-Do not integrate or run next-feature RED before carry-in is verified/archived. Then
-reconcile canonical specs, integrate prepared commits, run exact carry-in-image missing
-API/UI RED without rebuild, implement incrementally. PG100+1000 bound, account-switch and pinned409
-UI cases still need coverage. All prepared browser/PG/pure cases remain unexecuted. Full target remains substantially unfinished.
+Retained worktrees: historical-accounting-design HEADa639c25 (prepared commitsnow
+integrated), historical-ui HEAD14e6fbc (integrated), historical-browser-boundaries
+HEAD6fa53f6 (integrated), plus priorworktrees. Temporarydependency symlinksremoved.
+No active agent should mutate main duringgate; gate_acceptance isusage-limited.

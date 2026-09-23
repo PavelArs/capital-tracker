@@ -2,8 +2,8 @@
 
 Status: historical backend and Russian view implemented after genuine predecessor
 RED. Actual PostgreSQL acceptance and source checks passed; independent backend
-review finding reproduced and fixed with RED/GREEN. Browser integration and complete
-release verification remain pending. The bounded change is not ready for archival.
+review finding reproduced and fixed with RED/GREEN. All seven focused HTTPS cases passed; the complete
+release gate remains pending. The bounded change is not ready for archival.
 
 ## Artifact review — 2026-09-23
 
@@ -24,7 +24,7 @@ interfaces. They cover complete prefixes, effective-time correction, terminal vo
 fee atoms, original partial-lot coordinates, known zero, UUID aggregation,100+1000
 maximum-precision inventory and strict query normalization. Scoped Biome passed;
 an independent Python Decimal calculation confirmed the1100-lot maximum literal.
-Production modules do not exist yet: no Jest success or module-error RED is claimed.
+At preparation time production modules were absent: no Jest success or module-error RED was claimed.
 Actual missing-feature RED must come from the HTTPS/browser tests on verified images.
 
 An independent gpt-6-luna author prepared two actual API/UI cases in
@@ -37,8 +37,8 @@ pending denial, foreign ownership, strict raw query errors, unavailable coverage
 exact empty-journal shape, with no business/provider changes. All E2E TypeScript
 passed strict checking, exit0 (`/private/tmp/capital-historical-draft-tsc.log`), using
 symlinks to existing main-checkout dependencies; no install or product change.
-Scoped Biome passed. None of these browser cases has run yet: carry-in archival is
-delayed by its independently reproduced unknown-cost alert regression and full rerun.
+Scoped Biome passed. At that preparation stage browser cases were unrun while the
+carry-in prerequisite was awaiting its alert correction and complete release rerun.
 
 The independent author also prepared `historical-accounting-db.cjs` (82a8baa): actual
 production service + fresh synthetic PostgreSQL, guarded absent fixture database,
@@ -46,10 +46,11 @@ full-row fingerprints across reads/refusals, UUID pages/stale revision and separ
 reader/writer processes with a real query barrier. Root review corrected the second
 instrument's independent expected quantity2 (original draft incorrectly said1),
 narrowed claimed coverage to HIST-002/003 and removed unused boilerplate. Syntax/diff
-checks passed; no PostgreSQL runtime result is claimed. The probe expects
+checks passed at that stage; the later PostgreSQL results are recorded below. The probe expects
 `HistoricalAccountingService(source).getSnapshot(ownerId, accountId, rawQuery)`.
 Missing future service is a prerequisite error before creating its fixture database.
-Real100+1000 bounds and expanded late-response UI checks still need implementation.
+At that stage real100+1000 bounds and expanded late-response UI checks were pending;
+they were subsequently implemented and reviewed before execution.
 
 Independent `historical-accounting-journey.spec.ts` preparation153d979 adds one actual
 delayed-response scenario with a preserved unsaved correction. Root verified existing
@@ -57,8 +58,8 @@ form selectors and strengthened its no-write oracle to forbid every accounting P
 not just a POST to the new read route. It delays actual `route.fetch()` output without
 inventing backend data. Scoped Biome and strict E2E TypeScript passed, exit0
 (`/private/tmp/capital-historical-journey-tsc.log`); temporary dependency links removed.
-The case has not run. Account-switch and real pinned-pagination409 browser coverage,
-plus real PostgreSQL100+1000 bounds, remain outstanding before final verification.
+At that stage the case was unrun and account-switch, pinned409 and PostgreSQL100+1000
+coverage were outstanding. They were subsequently added; actual results follow below.
 
 | Scenarios | Planned executable evidence |
 | --- | --- |
@@ -94,7 +95,8 @@ exit0 (`pnpm --dir backend test --runInBand historical-accounting`); backend bui
 exit0 (`/private/tmp/capital-historical-backend-build.log`). Scoped Biome passed.
 A real PostgreSQL maximum fixture now covers100 original lots plus1000 current buys
 at maximum input precision; expected values independently checked with Python Decimal
-precision100. It is wired into the existing full acceptance runner and has not run yet.
+precision100. It was wired into the existing full acceptance runner; its subsequent passing result
+is recorded under Backend and independent review below.
 
 ## Backend and independent review — 2026-09-23
 
@@ -159,6 +161,30 @@ retained. Root review corrected setup chronology, baseline-plus-buy quantity2,
 preview allowlist and nested journal shape before runtime; no incorrect oracle
 was accepted. Existing assertions were retained. Root strengthened the initial UI
 case with a literal hostile instrument label and explicit no-execution assertions.
-All seven new browser cases still require execution. Strict E2E TypeScript passed,
+All seven cases were integrated before their execution below. Strict E2E TypeScript passed,
 exit0 (`/private/tmp/capital-historical-e2e-tsc.log`). The source guide records
 coverage, reconstruction/cumulative-total limits, revision conflicts and no writes.
+
+## Focused HTTPS GREEN — 2026-09-23
+
+Atc8873bb, `caffeinate -is node /private/tmp/capital-historical-focused.cjs` built
+the production images and passed7/7 Chromium cases in1.4m, one worker/zero retries,
+terminal exit0. Log `/private/tmp/capital-historical-focused.log`; synthetic artifacts
+`/private/tmp/capital-historical-focused-artifacts`. Tests used real password/MFA,
+HTTPS reverse proxy, protected backend, migration16 and PostgreSQL. Only external
+providers were stubbed. Route delays forwarded actual fetched backend responses.
+
+Exact images: backend sha256:1f6ce77cba5ad9444ccb8d3a6ba769fc722560bf9145401651f418054a33388f;
+frontend sha256:acf24293ebd64f3cbc9425c7e86504402c55109a849a9ac0f46630e7b1d2cc95.
+Independent post-terminal Docker container/network inventories were empty. Owner
+Nginx SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432
+and lock SHA256aa2588325aacdc54e8437d3500c7d2df580cc20cd061d1e3727f30f0dcc1e4f8
+were unchanged. Exact financial/receipt fingerprints, admission deltas and zero
+provider/write assertions passed, including the real pinned409, successful final
+page, account switch, edited instant, observed revision and literal hostile label.
+
+Independent documentation/max-fixture review confirmed expected decimal literals,
+counts and bounded scope. It flagged stale present-tense preparation notes; those
+were reconciled into dated past-tense history without changing actual results.
+Canonical+active strict OpenSpec passed14/14, exit0
+(`/private/tmp/capital-historical-spec-validation.log`). Full release gate pending.

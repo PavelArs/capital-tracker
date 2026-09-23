@@ -15,7 +15,7 @@
 - [x] 3.1 Implement strict query normalization and exact complete-prefix position projection using existing decimal/date/page/FIFO helpers; no schema or existing-wire change (HIST-001..003).
 - [x] 3.2 Add the protected thin route and focused service using one read-only RR transaction for all owned journal/baseline/head/label reads, with private400/404/409 behavior (HIST-002..004).
 - [x] 3.3 Add the isolated Russian form/results with explicit UTC/coverage/revision labels, pinned pages, request invalidation and preserved parent draft/correction state (HIST-004).
-- [ ] 3.4 Run pure tests, actual PostgreSQL and focused HTTPS acceptance to GREEN; record exact counts/commands and resolve genuine failures without weakening financial/security assertions.
+- [x] 3.4 Run pure tests, actual PostgreSQL and focused HTTPS acceptance to GREEN; record exact counts/commands and resolve genuine failures without weakening financial/security assertions.
 
 ## 4. Refactor and review
 
@@ -24,6 +24,6 @@
 
 ## 5. Verify and archive
 
-- [ ] 5.1 Run frozen install, production dependency gate, strict OpenSpec, source lint/type/build/unit checks and strict E2E type checking; retain visible existing warnings.
+- [x] 5.1 Run frozen install, production dependency gate, strict OpenSpec, source lint/type/build/unit checks and strict E2E type checking; retain visible existing warnings.
 - [ ] 5.2 Run full pinned-image PostgreSQL/HTTPS Playwright release gate with1worker/0retries; record commit/images/counts/exit, independent synthetic cleanup and unchanged owner files.
 - [ ] 5.3 Reconcile specs/tests/implementation/actual evidence, mark only observed completion, use supported OpenSpec archive and validate canonical specs; leave production/consolidation and remaining brief requirements explicitly unfinished.
