@@ -269,11 +269,11 @@ async function exactImportedHistory(
   expect(provenance.items).toHaveLength(3);
   for (const [index, row] of provenance.items.entries()) {
     expect(Object.keys(row).sort()).toEqual([
+      'createVersion',
       'ordinal',
+      'rollbackVersion',
       'startLine',
       'tradeId',
-      'createVersion',
-      'rollbackVersion',
     ]);
     expect([row.ordinal, row.startLine, row.rollbackVersion]).toEqual([index + 1, index + 2, null]);
     const created = readTradeVersion(row.createVersion);
