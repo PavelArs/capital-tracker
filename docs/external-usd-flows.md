@@ -43,5 +43,5 @@ counted safely.
 Storage is additive migration17: it creates an owner-scoped journal and immutable
 version rows without rewriting or backfilling prior accounting, authentication,
 trade, opening or import data. No production migration or deployment is authorized.
-See the [active verification record](../openspec/changes/record-external-usd-flows/verification.md)
+See the [archived verification record](../openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md)
 for the current checks, evidence and explicitly unrun work.

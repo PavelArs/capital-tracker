@@ -22,4 +22,4 @@
 
 - [x] 4.1 Independently review integrated source/schema/tests and classify every finding; resolve blockers with evidence, retain passing characterization while simplifying code.
 - [x] 4.2 Run targeted source/type/build/unit, frozen install/audit, OpenSpec and real PostgreSQL/HTTPS manifest; record actual commits/images/counts/exits, unrun full suite, cleanup and owner Nginx/lock preservation.
-- [ ] 4.3 Reconcile user/engineering docs, scope and migration limitations; archive using supported OpenSpec only after required targeted verification passes, sync complete deltas and validate canonical specs. Whole target/consolidation/production remain unfinished.
+- [x] 4.3 Reconcile user/engineering docs, scope and migration limitations; archive using supported OpenSpec only after required targeted verification passes, sync complete deltas and validate canonical specs. Whole target/consolidation/production remain unfinished.

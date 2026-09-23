@@ -43,7 +43,10 @@ openspec/changes/archive/2026-09-23-{seed-known-cost-carry-in,inspect-historical
 
 ## Latest external USD flow slice
 
-Change record-external-usd-flows, preparing supportedarchive aftertargetedGREEN.
+Completed/archived record-external-usd-flows on2026-09-23 aftertargetedGREEN.
+See openspec/changes/archive/2026-09-23-record-external-usd-flows/verification.md.
+Supportedarchive synchronized5new/1modified/0removedrequirements; all14tasksdone,
+canonicalstrict15/15pass andopenspec listempty. Allpreviousscenarioheadingsretained.
 Backend37980b5; finalproductfixea7cceb. Explicit owner-reviewed contributions/
 withdrawals only, exactscale30 [from,to), immutablecorrection/terminalvoid/receipts,
 ownerjournal locking/CAS/RR. Separatefromholdings/trades/returns, unreconciledcoverage.
@@ -73,7 +76,7 @@ Finalfrontendsha256:d169e6d8d0ef9d96fba34dfa3dcaa4d9799832bc4991f75b53fee811124c
 Containers/networksindependentlyempty; hashes/modeunchanged. NoownerDB/production.
 
 Allworktreesretained includingflow-acceptance,flow-postgres,flow-ui. Temporary
-dependencysymlinksremoved byagents. carry_docs_reviewLuna finaldocscheckpending;
+dependencysymlinksremoved byagents. carry_docs_reviewLuna finaldocscheckcomplete;
 historical_uiSol complete; gate_acceptance quota-limited untilSep29(donotretry/purchase).
 
 Next whole-brief work: periodvaluations/profit/XIRR/TWR, transfers/swaps/rewards,

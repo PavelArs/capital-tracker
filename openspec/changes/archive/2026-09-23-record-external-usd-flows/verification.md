@@ -1,6 +1,6 @@
 # Verification: external USD flows
 
-Status: required targeted verification and independent review complete; ready for supported OpenSpec archival. Whole project/release remains incomplete.
+Status: completed and archived after required targeted verification and independent review. Whole project/release remains incomplete.
 
 ## Baseline and scope
 
@@ -184,3 +184,11 @@ Final simpler-model read-only audit found no spec/acceptance/migration-count
 mismatch. The two document findings were an inventory separator (corrected)
 and the active evidence link (retargeted during archival). Archive remains the
 last task; it will be checked only after the supported command succeeds.
+
+Supported `openspec archive record-external-usd-flows --yes` succeeded:5added
+requirements,1modified migration requirement,0removed/renamed. The CLI reported
+13/14 because the final task includes archival itself; only that self-referential
+task remained, and it was marked complete after actual success. All earlier
+canonical requirement/scenario headings are retained. Post-archive strict
+validation passed15/15, active changes are empty, all14tasks checked and every
+prior canonical requirement/scenario heading was programmatically retained.
