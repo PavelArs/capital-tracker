@@ -12,6 +12,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
+import { HistoricalAccounting } from './HistoricalAccounting';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
 import { accountingError, newRequestId } from './feedback';
@@ -575,6 +576,10 @@ export function TradeJournal({
           />
         </>
       )}
+      <HistoricalAccounting
+        accountId={accountId}
+        journalRevision={journal?.journalRevision ?? null}
+      />
       <CarryIn
         key={accountId}
         accountId={accountId}
