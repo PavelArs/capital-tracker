@@ -1,8 +1,8 @@
 # Verification: known-cost carry-in
 
-Status: isolated specification preparation. No carry-in product implementation,
-acceptance execution, migration or GREEN is claimed. The current CSV full release
-gate must complete and its change must be archived before predecessor RED.
+Status: CSV predecessor verified/archived; independently reviewed carry-in API/UI
+acceptance demonstrated genuine missing-feature RED against its exact release images.
+Carry-in implementation is now ready to begin. No carry-in GREEN is claimed.
 
 ## Traceability and evidence to collect
 
@@ -45,3 +45,34 @@ Exit0 confirmed the quoted replacement target
 createdAt and currentRevision checks. No schema/row mutation or owner DB access.
 The migration has not been written or executed. Independent API/UI acceptance is
 being authored in its own worktree; RED execution still awaits verified CSV archive.
+
+## Verified predecessor and canonical reconciliation — 2026-09-23
+
+CSV archive83ce99d followed actual complete124/124 Chromium GREEN in26.4m,
+one worker/zero retries, all migration/PG/auth prerequisites, terminal exit0 and
+independently confirmed synthetic cleanup. Exact predecessor backend/frontend:
+`sha256:0c239e1e9b2994bd5468bc50ea9ededccf619b44022caf29e84999c18be99e46` /
+`sha256:e973022048dc5f18608e381d93bcb7a49753efc0653ef37eb04c97164f4fdb4f`.
+Every modified carry-in requirement was reconciled against those actual canonical
+specs; all preceding scenario IDs remain. No product/schema change accompanied the
+carry-in artifact integration. API/UI tests still require actual predecessor RED.
+
+## Genuine predecessor-image RED — 2026-09-23
+
+At source859e9b7, before any carry-in product/schema change, ran
+`PATH=/private/tmp/capital-task-bin:/Users/pavelars/.nvm/versions/node/v22.23.2/bin:$PATH caffeinate -is node /private/tmp/capital-carry-in-predecessor-red.cjs`.
+The runner asserted both exact CSV image IDs above, used `--no-build`, actual fresh15
+migrations, real owner/password/MFA and opening APIs, release artifacts/topology and
+PostgreSQL. Log `/private/tmp/capital-carry-in-predecessor-red.log`; preserved synthetic
+failure artifacts `/private/tmp/capital-carry-in-red-artifacts`. Exit1: two tests,
+two intended failures, one worker, zero retries.
+
+- `carry-in-red.spec.ts:276`: real POST /trade-journal/carry-in expected201, received404.
+- `carry-in-red.spec.ts:396`: protected heading `Начальные лоты FIFO` was absent after
+  actual authentication and an existing known-cost opening were created successfully.
+
+Neither failure depended on a future table/module. Finally checks preserved prior
+opening/import/other-account rows, admissions and provider counts. Owned cleanup
+completed; independent read-only Docker container/network inventories were empty.
+The two maintained tests had already passed scoped strict TypeScript, Biome and
+Playwright discovery before execution. Missing modules/build failures are not RED.

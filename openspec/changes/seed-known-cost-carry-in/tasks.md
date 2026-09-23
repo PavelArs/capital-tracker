@@ -1,13 +1,13 @@
 ## 1. Freeze the reviewed scope and predecessor
 
-- [ ] 1.1 Finish and archive `import-usd-trades-csv` with its actual full release gate, reconcile every modified requirement against the resulting canonical specs, and record the exact predecessor commit/images.
+- [x] 1.1 Finish and archive `import-usd-trades-csv` with its actual full release gate, reconcile every modified requirement against the resulting canonical specs, and record the exact predecessor commit/images.
 - [x] 1.2 Independently review proposal, scenarios and persistence contract; freeze input/FIFO/baseline-reader interfaces, SQL constraint names and unchanged empty-origin projections before acceptance authorship (CARRY-001..006).
-- [ ] 1.3 Record a scenario-to-test verification manifest and genuine baseline results; preserve all existing financial/security characterization assertions and the owner Nginx edit.
+- [x] 1.3 Record a scenario-to-test verification manifest and genuine baseline results; preserve all existing financial/security characterization assertions and the owner Nginx edit.
 
 ## 2. Write independent acceptance before new behavior
 
-- [ ] 2.1 Write real HTTPS API and Russian browser acceptance for opening2/cost300 -> original100/200 lots -> sale1.5/gross450 -> realized250/remaining100/quantity0.5, including revision0, no invented buy totals and retained opening evidence (CARRY-001-A).
-- [ ] 2.2 Run those new assertions against the exact archived CSV release images without rebuilding product code; record missing carry-in API/UI failures rather than build, import or fixture errors.
+- [x] 2.1 Write real HTTPS API and Russian browser acceptance for opening2/cost300 -> original100/200 lots -> sale1.5/gross450 -> realized250/remaining100/quantity0.5, including revision0, no invented buy totals and retained opening evidence (CARRY-001-A).
+- [x] 2.2 Run those new assertions against the exact archived CSV release images without rebuilding product code; record missing carry-in API/UI failures rather than build, import or fixture errors.
 - [ ] 2.3 Write independent pure arithmetic/input oracles for original4/cost2 atoms/remaining3 -> allocations[1,0,1], zero cost, boundary-time ordering, UUID identity, exact reconciliation, raw/derived bounds and100-lot limits (CARRY-002-A/B).
 - [ ] 2.4 Write actual PostgreSQL contract probes for ownership, additive populated15 preservation, SQL bounds/FKs, shared-lock races, exact replay, deferred COMMIT rollback and snapshot/page consistency (CARRY-003-A/B, CARRY-006-A, CARRY-MIG-001).
 - [ ] 2.5 Write browser/HTTPS tests for stale previews/opening changes, literal labels, unknown costs, original-command recovery after real response loss/auth denial, foreign identity/CSRF/mass assignment and no provider calls (CARRY-001-B, CARRY-005-A, CARRY-006-A).
