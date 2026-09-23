@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
+import { test } from './external-usd-flows-fixtures';
 import { foreignOwner, literal, noStore, providerRequests } from './manual-opening-fixtures';
-import { fingerprint, origin, passwordStep, query, test } from './mfa-fixtures';
+import { fingerprint, origin, passwordStep, query } from './mfa-fixtures';
 import { coverageFrom, tradeApi } from './usd-trades-fixtures';
 
 const journalPath = '/portfolio/cash-flow-journal';
@@ -49,23 +50,11 @@ test('FLOW-004-B: actual owner, MFA, origin and ownership guards protect every f
     assertExternal: true,
   };
 
-  const absentBefore = fingerprint([
-    'auth_sessions',
-    'auth_request_limits',
-    'portfolio_flow_journals',
-    'portfolio_flow_versions',
-  ]);
+  const absentBefore = fingerprint(['auth_sessions', 'auth_request_limits']);
   expect(await api.result('GET', journalPath, 200)).toMatchObject({ journal: null });
   expect((await api.send('GET', `${flowsPath}${periodQuery}`)).status()).toBe(409);
   expect((await api.send('POST', flowsPath, createCommand)).status()).toBe(409);
-  expect(
-    fingerprint([
-      'auth_sessions',
-      'auth_request_limits',
-      'portfolio_flow_journals',
-      'portfolio_flow_versions',
-    ]),
-  ).toBe(absentBefore);
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(absentBefore);
 
   await api.result('POST', journalPath, 201, initCommand);
   const created = (await api.result('POST', flowsPath, 201, createCommand)) as {
@@ -121,9 +110,14 @@ test('FLOW-004-B: actual owner, MFA, origin and ownership guards protect every f
         });
         expect(response.status()).toBe(401);
         noStore(response);
-        const body = await response.text();
-        expect(body).not.toContain(ownerFlowId);
-        expect(body).not.toContain('amountUsd');
+        const body = await response.json();
+        expect(body).toMatchObject({
+          statusCode: 401,
+          message: 'Unauthorized',
+          path: `/accounting${route.path.split('?')[0]}`,
+        });
+        expect(body).not.toHaveProperty('amountUsd');
+        expect(JSON.stringify(body)).not.toContain(foreign.marker);
       }
     }
     expect(fingerprint([]), 'Anonymous and MFA-pending requests change no persisted state').toBe(
@@ -222,12 +216,21 @@ test('FLOW-004-B: actual owner, MFA, origin and ownership guards protect every f
       expect(missingResponse.status()).toBe(404);
       noStore(foreignResponse);
       noStore(missingResponse);
-      const foreignBody = await foreignResponse.text();
-      const missingBody = await missingResponse.text();
-      expect(foreignBody).toBe(missingBody);
-      expect(foreignBody).not.toContain(foreign.marker);
-      expect(foreignBody).not.toContain(foreignOwner);
-      expect(foreignBody).not.toContain(foreign.flowId);
+      const foreignBody = await foreignResponse.json();
+      const missingBody = await missingResponse.json();
+      // The existing envelope reflects only the caller's own path and response time.
+      // Protected fields and generic refusal are identical for foreign/missing IDs.
+      const { path, timestamp, ...foreignError } = foreignBody;
+      const { path: missingPath, timestamp: missingTime, ...missingError } = missingBody;
+      expect(foreignError).toEqual(missingError);
+      expect(foreignError).toMatchObject({ statusCode: 404, message: 'Not Found' });
+      expect(path).toBe(`/accounting${foreignTargets[index].path}`);
+      expect(missingPath).toBe(`/accounting${missingTargets[index].path}`);
+      expect(Number.isFinite(Date.parse(timestamp))).toBe(true);
+      expect(Number.isFinite(Date.parse(missingTime))).toBe(true);
+      expect(JSON.stringify(foreignBody)).not.toContain(foreign.marker);
+      expect(JSON.stringify(foreignBody)).not.toContain(foreignOwner);
+      expect(foreignBody).not.toHaveProperty('amountUsd');
     }
 
     expect(

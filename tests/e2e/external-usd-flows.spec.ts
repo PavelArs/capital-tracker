@@ -7,9 +7,9 @@ import {
   ledger,
   ledgerState,
 } from './admission-fixtures';
+import { test } from './external-usd-flows-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
 import { fingerprint } from './mfa-fixtures';
-import { test } from './mfa-fixtures';
 import {
   browserPost,
   coverageFrom,
@@ -447,6 +447,114 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     });
     await expect(page.getByText('1000', { exact: true })).toBeVisible();
     expect(page.url()).toContain('/capital-flows');
+
+    // Keep an unsaved correction while a real completed read is delivered late.
+    await row.getByRole('button', { name: 'Исправить', exact: true }).click();
+    await amount.fill('1300');
+    let releaseRead: () => void = () => {};
+    let readFetched = false;
+    const readGate = new Promise<void>((resolve) => {
+      releaseRead = resolve;
+    });
+    const pattern = `**${periodPath}?*`;
+    await page.route(
+      pattern,
+      async (route) => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        expect((await response.json()).summary.contributionsUsd).toBe('1200');
+        readFetched = true;
+        await readGate;
+        await route.fulfill({ response });
+      },
+      { times: 1 },
+    );
+    try {
+      await page.getByRole('button', { name: 'Показать потоки', exact: true }).click();
+      await expect.poll(() => readFetched).toBe(true);
+      await page
+        .getByLabel('Конец периода (ISO, не включительно)', { exact: true })
+        .fill('2025-01-06T00:00:00.000Z');
+      const delivered = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === periodPath,
+      );
+      releaseRead();
+      await delivered;
+      await expect(page.getByText('Количество потоков: 1', { exact: true })).toHaveCount(0);
+      await expect(amount).toHaveValue('1300');
+    } finally {
+      releaseRead();
+      await page.unroute(pattern);
+    }
+
+    // Only browser pagination/intent belongs here; arithmetic permutations are below E2E.
+    for (let revision = 2; revision < 52; revision++) {
+      await api.result(
+        'POST',
+        '/portfolio/cash-flows',
+        201,
+        flowCommand(revision, 'contribution', '2025-01-03T00:00:00.000Z', '1'),
+      );
+    }
+    const refresh = page.getByRole('button', { name: 'Обновить состояние потоков', exact: true });
+    await refresh.click();
+    await expect(save).toBeEnabled();
+    const periodRead = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === periodPath,
+    );
+    await page.getByRole('button', { name: 'Показать потоки', exact: true }).click();
+    expect(await (await periodRead).json()).toMatchObject({
+      journalRevision: 52,
+      summary: { contributionsUsd: '1250', flowCount: 51 },
+      nextOffset: 50,
+    });
+    const next = page.getByRole('button', { name: 'Следующая страница', exact: true });
+    await expect(next).toBeVisible();
+    await api.result(
+      'POST',
+      '/portfolio/cash-flows',
+      201,
+      flowCommand(52, 'withdrawal', '2025-01-04T00:00:00.000Z', '2'),
+    );
+    const staleRead = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === periodPath,
+    );
+    await next.click();
+    const stale = await staleRead;
+    expect(new URL(stale.url()).searchParams.get('journalRevision')).toBe('52');
+    expect(stale.status()).toBe(409);
+    await expect(next).toHaveCount(0);
+    await expect(page.getByRole('alert').filter({ hasText: 'Журнал изменился' })).toBeVisible();
+    await expect(amount).toHaveValue('1300');
+    await expect(save).toBeDisabled();
+    await refresh.click();
+    await expect(save).toBeEnabled();
+    const currentRead = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === periodPath,
+    );
+    await page.getByRole('button', { name: 'Показать потоки', exact: true }).click();
+    expect(await (await currentRead).json()).toMatchObject({
+      journalRevision: 53,
+      summary: {
+        contributionsUsd: '1250',
+        withdrawalsUsd: '2',
+        netContributionsUsd: '1248',
+        flowCount: 52,
+      },
+    });
+    const continuation = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === periodPath,
+    );
+    await next.click();
+    const last = await continuation;
+    expect(last.status()).toBe(200);
+    expect(await last.json()).toMatchObject({ journalRevision: 53, nextOffset: null });
+    await expect(
+      page
+        .getByRole('row')
+        .filter({ has: page.getByRole('button', { name: 'Исправить', exact: true }) }),
+    ).toHaveCount(52);
+    await expect(amount).toHaveValue('1300');
   } finally {
     expect(oldFinancialFingerprint(), 'Flow UI preserves every prior financial row').toBe(
       priorFinancialRows,
