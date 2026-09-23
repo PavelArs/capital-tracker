@@ -214,7 +214,7 @@ async function maxima(db, s, f) {
       orderWithinTimestamp: i, originalQuantity: '1', originalCostUsd: '1', remainingQuantity: '1' })) });
   const maximum = `${'9'.repeat(48)}.${'9'.repeat(30)}`;
   const seeded = Array.from({ length: 999 }, (_, i) => ({ id: randomUUID(), requestId: randomUUID(), revision: i + 1,
-    order: i, payload: JSON.stringify({ kind: 'create', ...execution(first, i, { quantity: maximum, grossUsd: maximum }) }) }));
+    order: i, payload: JSON.stringify({ kind: 'create', expectedJournalRevision: i, instrumentId: first, side: 'buy', occurredAt: at, orderWithinTimestamp: i, quantity: maximum, grossUsd: maximum, feeUsd: '0' }) }));
   // Valid bulk fixture only in guarded synthetic database; final service write recomputes all history.
   await db.transaction(async (m) => {
     await m.query(`INSERT INTO account_trades(id,"ownerId","accountId","currentVersion","createdAt")

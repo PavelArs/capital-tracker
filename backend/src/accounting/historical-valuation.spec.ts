@@ -31,7 +31,9 @@ describe('VAL-EXACT/PRECISION/GAPS exact derived valuation', () => {
       missingPriceCount: 0,
       pricedSubtotalUsd: '150',
       totalValueUsd: '150',
-      items: [{ ...position(), price: { priceUsd: '300', observedAt: at, revision: 1 }, valueUsd: '150' }],
+      items: [
+        { ...position(), price: { priceUsd: '300', observedAt: at, revision: 1 }, valueUsd: '150' },
+      ],
     });
     expect(projectValuation(positions, [price(first, '320', 2)]).totalValueUsd).toBe('160');
     expect(prices[0].priceUsd).toBe('300');
@@ -41,9 +43,16 @@ describe('VAL-EXACT/PRECISION/GAPS exact derived valuation', () => {
     const positions = [position(), position(second, '2')];
     const missing = projectValuation(positions, [price()]);
     expect(missing).toEqual({
-      completeness: 'incomplete', missingPriceCount: 1, pricedSubtotalUsd: '150', totalValueUsd: null,
+      completeness: 'incomplete',
+      missingPriceCount: 1,
+      pricedSubtotalUsd: '150',
+      totalValueUsd: null,
       items: [
-        { ...positions[0], price: { priceUsd: '300', observedAt: at, revision: 1 }, valueUsd: '150' },
+        {
+          ...positions[0],
+          price: { priceUsd: '300', observedAt: at, revision: 1 },
+          valueUsd: '150',
+        },
         { ...positions[1], price: null, valueUsd: null },
       ],
     });
@@ -57,7 +66,11 @@ describe('VAL-EXACT/PRECISION/GAPS exact derived valuation', () => {
 
   it('distinguishes no positions from all prices missing and ignores unrelated price UUIDs', () => {
     expect(projectValuation([], [price()])).toEqual({
-      completeness: 'complete', missingPriceCount: 0, pricedSubtotalUsd: '0', totalValueUsd: '0', items: [],
+      completeness: 'complete',
+      missingPriceCount: 0,
+      pricedSubtotalUsd: '0',
+      totalValueUsd: '0',
+      items: [],
     });
     expect(projectValuation([position()], [price(second)]).totalValueUsd).toBeNull();
   });
@@ -65,12 +78,21 @@ describe('VAL-EXACT/PRECISION/GAPS exact derived valuation', () => {
   it.each([
     [atom, atom, `0.${'0'.repeat(59)}1`],
     ['0.1', '0.2', '0.02'],
-    ['1.000000000000000000000000000001', '1.000000000000000000000000000001',
-      '1.000000000000000000000000000002000000000000000000000000000001'],
-    [maximum, maximum,
-      '999999999999999999999999999999999999999999999999999999999999999999999999999998000000000000000000.000000000000000000000000000000000000000000000000000000000001'],
-    ['1000000000000000000000000000000000000000000000000099.999999999999999999999999999', maximum,
-      '1000000000000000000000000000000000000000000000000099999999999999999999999999997999999999999999999999.999999999999999999999999999900000000000000000000000000001'],
+    [
+      '1.000000000000000000000000000001',
+      '1.000000000000000000000000000001',
+      '1.000000000000000000000000000002000000000000000000000000000001',
+    ],
+    [
+      maximum,
+      maximum,
+      '999999999999999999999999999999999999999999999999999999999999999999999999999998000000000000000000.000000000000000000000000000000000000000000000000000000000001',
+    ],
+    [
+      '1000000000000000000000000000000000000000000000000099.999999999999999999999999999',
+      maximum,
+      '1000000000000000000000000000000000000000000000000099999999999999999999999999997999999999999999999999.999999999999999999999999999900000000000000000000000000001',
+    ],
   ])('preserves exact product of %s and %s', (quantity, priceUsd, expected) => {
     // Extreme expected products independently checked using Python Decimal precision220.
     const result = projectValuation([position(first, quantity)], [price(first, priceUsd)]);
@@ -94,11 +116,25 @@ describe('VAL-PRIVATE strict valuation query', () => {
     expect(parseValuationQuery(Object.assign(Object.create(null), { at }))).toEqual({ at });
   });
   it.each<unknown>([
-    null, undefined, [], 'date', {}, { at: [at, at] }, { at: null }, { at: 1735948800000 },
-    { at: '2025-01-04' }, { at: '2025-01-04T00:00:00' }, { at: '2025-02-30T00:00:00Z' },
-    { at: '2025-01-04T00:00:00.0001Z' }, { at: '2025-01-04T00:00:00+14:01' },
-    { at: '1969-12-31T23:59:59Z' }, { at, offset: '0' }, { at, limit: '50' },
-    { at, journalRevision: '0' }, { at, ownerId: first }, { at, pricePolicy: 'latest' },
+    null,
+    undefined,
+    [],
+    'date',
+    {},
+    { at: [at, at] },
+    { at: null },
+    { at: 1735948800000 },
+    { at: '2025-01-04' },
+    { at: '2025-01-04T00:00:00' },
+    { at: '2025-02-30T00:00:00Z' },
+    { at: '2025-01-04T00:00:00.0001Z' },
+    { at: '2025-01-04T00:00:00+14:01' },
+    { at: '1969-12-31T23:59:59Z' },
+    { at, offset: '0' },
+    { at, limit: '50' },
+    { at, journalRevision: '0' },
+    { at, ownerId: first },
+    { at, pricePolicy: 'latest' },
     Object.assign(Object.create({ extra: '1' }), { at }),
   ])('rejects malformed or unallowlisted raw query %#', (input) => {
     expect(() => parseValuationQuery(input)).toThrow(BadRequestException);
