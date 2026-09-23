@@ -2,7 +2,7 @@
 
 - [x] 1.1 Audit existing income/metrics/accounting, canonical specs, prior verified images and deployment boundaries; define the external USD-only declaration scope without inferred holdings/profit (FLOW-001).
 - [x] 1.2 Independently review classification, intervals, immutable keys, owner locking/RR, storage, privacy and UI recovery; freeze the design and targeted verification manifest (FLOW-001..005).
-- [ ] 1.3 Write independent pure input/period tests and real HTTPS API/Russian UI acceptance; demonstrate missing-route/UI RED against exact archived predecessor images before product code.
+- [x] 1.3 Write independent pure input/period tests and real HTTPS API/Russian UI acceptance; demonstrate missing-route/UI RED against exact archived predecessor images before product code.
 - [ ] 1.4 Write focused real PostgreSQL probes for origins/command races, exact replay/CAS, caps/atomic rollback, snapshot/owner isolation and fresh/populated16 migration preservation. Put raw/arithmetic permutations below browser level.
 
 ## 2. Implement the exact isolated ledger

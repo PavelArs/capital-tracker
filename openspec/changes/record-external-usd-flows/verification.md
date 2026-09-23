@@ -1,7 +1,6 @@
 # Verification: external USD flows
 
-Status: design/acceptance preparation only. No new product implementation or behavioral
-RED/GREEN has occurred. Checkboxes reflect audit/artifact review, not execution.
+Status: acceptance RED confirmed before product implementation. No flow GREEN is claimed.
 
 ## Baseline and scope
 
@@ -44,3 +43,18 @@ only latest-schema fixture counts; retain pinned predecessor assertions unchange
 Record exact commands/results/images and expected RED failures as they occur. A missing
 module/compile/fixture error is not the intended feature RED. All tests/implementation
 and the complete canonical migration delta must agree before supported archival.
+
+## Genuine predecessor RED
+
+At49d6d99, `caffeinate -is node /private/tmp/capital-flow-predecessor-red.cjs`
+ran exactly `pnpm exec playwright test tests/e2e/external-usd-flows.spec.ts --workers=1`
+against the exact predecessor image IDs above (checked live before startup), actual
+HTTPS/password/MFA/backend and fresh synthetic PostgreSQL16 schema. Both cases failed
+for the intended feature absence: FLOW-001-A initialization expected201/received404;
+FLOW-004-A Russian heading missing. No compile/fixture failure was counted as RED.
+Terminal exit1; log /private/tmp/capital-flow-predecessor-red.log, synthetic failure
+artifacts /private/tmp/capital-flow-predecessor-red-artifacts. Isolated containers and
+networks independently confirmed empty after finally cleanup; both owner hashes match.
+Luna independently authored initial browser acceptance70209bf (integratedd901dbf);
+root reviewed financial oracles and wrote exact pure boundaries49d6d99. Pure tests
+were authored before production modules; missing-module failure is not behavior RED.

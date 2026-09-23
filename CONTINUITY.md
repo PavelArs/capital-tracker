@@ -117,3 +117,17 @@ Retained worktrees: historical-accounting-design HEADa639c25 (prepared commitsno
 integrated), historical-ui HEAD14e6fbc (integrated), historical-browser-boundaries
 HEAD6fa53f6 (integrated), plus priorworktrees. Temporarydependency symlinksremoved.
 No active agent should mutate main duringgate; gate_acceptance isusage-limited.
+
+## Active external USD flows
+
+Active change record-external-usd-flows; artifacts28353e8, initial acceptance49d6d99.
+Frozen design separates explicit owner-reviewed USD contributions/withdrawals from
+trades/holdings/returns, exact scale30/[from,to), immutable correction/void/replay,
+owner journal lock and RR reads. Additive migration17 owned by root.
+Actual predecessor two-case RED confirmed:201vs404 and missing Russian heading,
+exit1; capital-flow-predecessor-red.log; exact historical images above. Resources
+cleaned and owner hashes unchanged. No new product implementation yet.
+Sol PG probe68cb060 pending root review/integration; Luna authors single privacy
+case in flow-acceptance; flow-ui worktree created for independent complex frontend.
+Root owns backend/migration/shared runner; targeted manifest in verification.md.
+Do not run full E2E by default. Whole brief/consolidation still incomplete.
