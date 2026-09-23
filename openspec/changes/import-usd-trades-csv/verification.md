@@ -276,3 +276,12 @@ Both use one worker and zero retries, frontend e9730220 image above and unchange
 these two tests and closed the separate File-valued recovery coverage gap. All101
 predecessor *.spec.ts files are unchanged by this slice; six new CSV test files add
 23 cases. The full124-case release gate is next, not yet claimed successful.
+
+## Traceability clarification before archive — 2026-09-23
+
+Independent review confirmed that the maintained wire test's CSV-007-B ID needed
+an explicit scenario header. Added that name and its exact existing assertions to
+the delta: CSV-001/001-B already specified the one-MiB multipart-envelope boundary
+and real declared/chunked refusal. No source behavior, numerical expectation or test
+assertion changed. The scenario distinguishes multipart body bytes from HTTP headers
+and chunk framing, and claims response privacy only; CSV-007-A retains log checks.

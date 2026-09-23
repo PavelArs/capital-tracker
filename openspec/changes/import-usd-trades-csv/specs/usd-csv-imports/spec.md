@@ -199,3 +199,11 @@ No source/filename/amount/parser exception SHALL enter public failures or logs.
 - **AND** invalid Origin/CSRF does not touch sessions; valid authorization may change only documented session/admission bookkeeping before a controller refusal
 - **AND** SQL cross-owner/account/version references fail constraints and private canaries remain absent from backend/proxy logs and failure bodies
 - **AND** all previous financial/authentication assertions remain and accounting flows make zero provider requests, with retained startup warmups measured separately
+
+#### Scenario: CSV-007-B Trusted-edge multipart boundary preserves private state
+- **GIVEN** a real full-owner session, initialized journal and valid small UTF-8 source inside a multipart body with bounded fields and additional MIME overhead
+- **WHEN** the exact1048576-byte multipart body is uploaded with Content-Length, then replayed byte-identically using chunked transfer
+- **THEN** the first response is201 and the replay200 with the same immutable source identity and no-store, with one draft source and an unchanged journal
+- **WHEN** a1048577-byte multipart body is submitted using either transfer form
+- **THEN** the real proxy returns413, every persisted application/authentication row remains unchanged, and neither private source text nor filename is echoed
+- **AND** auth-admission state and provider requests remain unchanged
