@@ -11,6 +11,7 @@ import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
 import ManualAccountDetail from '@pages/ManualAccountDetail';
 import ManualAccounts from '@pages/ManualAccounts';
+import CapitalFlows from '@pages/CapitalFlows';
 import Settings from '@pages/Settings';
 import React, { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
@@ -50,6 +51,7 @@ function AppRoutes() {
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
+        <Route path="capital-flows" element={<CapitalFlows />} />
         <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
