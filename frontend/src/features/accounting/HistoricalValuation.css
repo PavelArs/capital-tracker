@@ -38,6 +38,11 @@
   margin: 0;
 }
 
+.historical-valuation__results dd {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+
 .historical-valuation__table-wrap {
   max-width: 100%;
   overflow-x: auto;

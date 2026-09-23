@@ -315,6 +315,15 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
     await expect(summaryValue(section, 'Оценённая часть, USD')).toHaveText('150');
     await expect(section.getByText(first.name, { exact: false })).toBeVisible();
     await expect(section.locator('script')).toHaveCount(0);
+    const valuationTable = section.getByRole('table', { name: 'Оценка позиций', exact: true });
+    const firstPosition = valuationTable.getByRole('row').filter({ hasText: first.id });
+    const secondPosition = valuationTable.getByRole('row').filter({ hasText: second.id });
+    await expect(firstPosition.getByRole('cell').nth(1)).toHaveText('0.5');
+    await expect(firstPosition.getByRole('cell').nth(2)).toHaveText('50');
+    await expect(firstPosition.getByText('300', { exact: true })).toBeVisible();
+    await expect(firstPosition.getByRole('cell').nth(4)).toHaveText('150');
+    await expect(secondPosition.getByRole('cell').nth(3)).toHaveText('Нет точной цены');
+    await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('—');
 
     const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
     const tradeRow = tradeTable.getByRole('row').filter({ hasText: firstTrade.trade.tradeId });
@@ -349,6 +358,10 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
     await expect(section.getByText('Стоимость позиций, USD', { exact: true })).toBeVisible();
     await expect(summaryValue(section, 'Стоимость позиций, USD')).toHaveText('150');
     await expect(section.getByText(second.name, { exact: false })).toBeVisible();
+    await expect(
+      secondPosition.getByRole('cell').nth(3).getByText('0', { exact: true }),
+    ).toBeVisible();
+    await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('0');
 
     const pattern = `**${path}?*`;
     let release = () => {};

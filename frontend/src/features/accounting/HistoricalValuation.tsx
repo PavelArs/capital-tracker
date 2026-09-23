@@ -198,7 +198,7 @@ export function HistoricalValuation({
                       <td>
                         {item.price ? (
                           <>
-                            {item.price.priceUsd}
+                            <span>{item.price.priceUsd}</span>
                             <small>
                               Ручная цена на {item.price.observedAt}, ревизия {item.price.revision}
                             </small>
