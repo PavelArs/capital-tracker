@@ -60,10 +60,12 @@ cases passed. Full146 E2E was NOT run. Detailed evidence is in its archive.
 
 ## Current conventional XIRR slice
 
-preview-conventional-xirr implemented/reviewed/scoped GREEN; archive pending.
+preview-conventional-xirr implemented/reviewed/scoped GREEN; archived
+2026-09-23-preview-conventional-xirr. All10tasks complete; canonical17/17strict,
+active changes empty; previous16canonical specs unchanged.
 Source dae9260, backend f820e25, UI1fd4d2c, testcounter/benchmark a784593.
 Guide docs/xirr-preview.md; current evidence
-openspec/changes/preview-conventional-xirr/verification.md.
+openspec/changes/archive/2026-09-23-preview-conventional-xirr/verification.md.
 POST /accounting/portfolio/xirr-preview reuses the reviewed manual body and adds
 xirr to the same-snapshot profit payload; old profit response unchanged. Negative
 opening/contributions, positive withdrawals/terminal, exact UTC-ms aggregation,
@@ -89,8 +91,8 @@ PG16.10/fresh17migrations:3XIRR+4retainedprofit families pass; actual two-pool
 snapshot/correction/429/read-only/all-row checks and real solver-entry observation.
 Initial PG test expected >=6 solver entries but has5successfulcalls; fixed to
 exactly5, financial assertions unchanged; final exit0. Logs
-/private/tmp/capital-xirr-db-{initial-failed,focused}.log (actual initial log is
-/private/tmp/capital-xirr-db-initial-failed.log; final capital-xirr-db-focused.log).
+/private/tmp/capital-xirr-db-initial-failed.log and
+/private/tmp/capital-xirr-db-focused.log.
 64date1970..9999 benchmark in pinnedNode22.21.1image:4564ms,506timerticks, no SLA.
 
 HTTPS4/4 in47.4s,1worker0retries:2XIRR+2retainedprofit, actualMFA/HTTPS/PG.
@@ -104,7 +106,7 @@ and cases retained; xirr-preview-db.cjs added to existing full runner.
 All worktrees retained, including xirr-acceptance/xirr-ui. Agent dependency symlinks
 removed. Reuse carry_docs_review Luna(simple), historical_ui Sol(complex/review);
 gate_acceptance quota-limited untilSep29: do not retry/purchase.
-Next after archive: select a small persisted/automatic valuation or DBprice/history
+Next: select a small persisted/automatic valuation or DBprice/history
 contract. Whole brief still needs TWR, transfers/swaps/rewards, DBprices/history/
 charts, blockchains/reconciliation, optionalAI, releasehardening/backuprestore/
 consolidation. Conventional manual XIRR is partial support; do not move/delete

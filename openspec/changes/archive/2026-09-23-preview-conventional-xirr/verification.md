@@ -1,7 +1,7 @@
 # Conventional XIRR verification
 
-Status: implemented, independently reviewed and verified with scoped checks.
-Archive is the remaining administrative step.
+Status: implemented, independently reviewed, verified with scoped checks and
+archived as `2026-09-23-preview-conventional-xirr`. All ten tasks complete.
 
 Baseline dfa1f64: only owner `frontend/nginx.conf` modified; active changes empty
 before this change; OpenSpec1.2.0. Existing guarded GHCR workflow and brownfield
@@ -135,3 +135,19 @@ The intentionally changed lock hash is
 Original projects, user data, deployment pipeline and worktrees remain intact;
 no remote push, production action or directory removal. The whole target brief
 remains substantially incomplete; this slice supplies conventional manual XIRR.
+
+## Archive verification
+
+`OPENSPEC_TELEMETRY=0 openspec archive preview-conventional-xirr --yes` exited0,
+synchronized four requirements and archived the change. Its9/10 warning referred
+only to task4.2 (perform and verify this archive); implementation/review/verification
+were already complete. That final task was marked complete after the actual
+command, canonical validation and synchronization checks.
+
+Strict validation passed17/17 before archive (16specs plus change) and17/17 after
+archive (17canonical specs). `openspec list --json` returned `{"changes":[]}`.
+SHA-256 comparison confirms all16 pre-existing canonical specs unchanged; new
+canonical requirements exactly equal the reviewed delta. Replaced only the new
+generated Purpose placeholder and normalized its final newline. Luna independently
+checked the final evidence/docs: reported no result contradiction, only the
+archive-status bookkeeping subsequently corrected here. Git diff check passes.

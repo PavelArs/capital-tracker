@@ -18,4 +18,4 @@
 ## 4. Evidence and archive
 
 - [x] 4.1 Update guide, dependency notes, verification matrix and continuity; verify owner edit and unrelated work remain intact.
-- [ ] 4.2 Strictly validate and archive via supported OpenSpec command; confirm synchronized specs and empty active changes.
+- [x] 4.2 Strictly validate and archive via supported OpenSpec command; confirm synchronized specs and empty active changes.
