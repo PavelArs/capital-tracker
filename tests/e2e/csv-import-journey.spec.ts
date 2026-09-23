@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect } from '@playwright/test';
 import {
   browserCsrfAdmissions,
@@ -15,6 +16,7 @@ import {
   csvFixture,
   csvRows,
   csvSource,
+  csvTables,
   emptySummary,
   example,
   expectCsvSummary,
@@ -29,12 +31,13 @@ import {
   retryButton,
   uploadInBrowser,
 } from './csv-import-fixtures';
-import { providerRequests, rows } from './manual-opening-fixtures';
+import { providerRequests, rows, uuid } from './manual-opening-fixtures';
 import {
   completeFactor,
   cookie,
   fingerprint,
   hashToken,
+  origin,
   owner,
   query,
   recoveryFactor,
@@ -1344,6 +1347,135 @@ test('CSV-006-B: an accepted CSV receipt followed by a lost parent read blocks n
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(committed);
   } finally {
     await page.unroute(pattern);
+    expect(providerRequests()).toEqual(providers);
+    assertQuota();
+  }
+  expect(retainedState()).toBe(prior);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+});
+
+test('CSV-001-A / CSV-006-B: a lost committed upload preserves its actual File across SPA remount and replays identical bytes into the same draft', async ({
+  page,
+}) => {
+  const { api, account } = await csvFixture(page);
+  const prior = retainedState();
+  const journalBefore = fingerprint(['auth_sessions', 'auth_request_limits', ...csvTables]);
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  await page.goto(`/manual-accounts/${account.id}`);
+  await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
+  const source = csvSource(example);
+  const filename = 'Потерянная загрузка 📒.csv';
+  const expectedHash = createHash('sha256').update(source).digest('hex');
+  await page
+    .getByLabel('Файл CSV', { exact: true })
+    .setInputFiles({ name: filename, mimeType: 'text/csv', buffer: source });
+  const path = `/api/accounting/accounts/${account.id}/csv-imports`;
+  type Identity = { batchId: string; sha256: string; byteLength: number; createdAt: string };
+  type PausedResponse = {
+    requestId: string;
+    request: { method: string; url: string };
+    responseStatusCode?: number;
+  };
+  let uploads = 0;
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === path) {
+      expect(request.headers()['content-type']).toMatch(/^multipart\/form-data; boundary=/);
+      uploads++;
+    }
+  });
+  // Browser File multipart bodies are not reliably exposed by postDataBuffer.
+  // Pause the actual upstream response instead; the native upload is never reconstructed.
+  const transport = await page.context().newCDPSession(page);
+  let intercepted: PausedResponse | undefined;
+  const onResponse = (event: PausedResponse) => {
+    intercepted = event;
+  };
+  transport.on('Fetch.requestPaused', onResponse);
+  try {
+    await transport.send('Fetch.enable', {
+      patterns: [{ urlPattern: `${origin}${path}`, requestStage: 'Response' }],
+    });
+    await page.getByRole('button', { name: 'Загрузить CSV', exact: true }).click();
+    await expect.poll(() => intercepted !== undefined).toBe(true);
+    const paused = intercepted!;
+    expect(paused.request.method).toBe('POST');
+    expect(paused.request.url).toBe(`${origin}${path}`);
+    expect(paused.responseStatusCode).toBe(201);
+    const body = await transport.send('Fetch.getResponseBody', { requestId: paused.requestId });
+    const identity = JSON.parse(
+      body.base64Encoded ? Buffer.from(body.body, 'base64').toString('utf8') : body.body,
+    ) as Identity;
+    expect(Object.keys(identity).sort()).toEqual(['batchId', 'byteLength', 'createdAt', 'sha256']);
+    uuid(identity.batchId);
+    expect(identity.sha256).toBe(expectedHash);
+    expect(identity.byteLength).toBe(source.length);
+    expect(
+      rows(
+        `SELECT id,filename,sha256,state,"byteLength",encode("originalBytes",'hex') AS bytes FROM account_csv_imports WHERE "accountId"='${account.id}'`,
+      ),
+    ).toEqual([
+      {
+        id: identity.batchId,
+        filename,
+        sha256: expectedHash,
+        state: 'draft',
+        byteLength: source.length,
+        bytes: source.toString('hex'),
+      },
+    ]);
+    // Actual201 and committed byte-for-byte PG evidence precede the delivery fault.
+    await transport.send('Fetch.failRequest', {
+      requestId: paused.requestId,
+      errorReason: 'ConnectionReset',
+    });
+    await transport.send('Fetch.disable');
+    await expect(retryButton(page)).toBeEnabled();
+    expect(uploads).toBe(1);
+    const afterUpload = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const savedSources = csvRows(account.id);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits', ...csvTables])).toBe(journalBefore);
+    await navigateToAccount(page, account.id);
+    await expect(retryButton(page)).toBeEnabled();
+    await expect(page.getByLabel('Файл CSV', { exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Загрузить CSV', exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole('combobox', { name: 'Сохранённая партия CSV', exact: true }),
+    ).toBeDisabled();
+    await expect(page.getByText(`Выбранный файл: ${filename}`, { exact: true })).toBeVisible();
+    expect(uploads).toBe(1);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterUpload);
+    const replay = await browserPost(page, `/accounts/${account.id}/csv-imports`, () =>
+      retryButton(page).click(),
+    );
+    expect(replay.status()).toBe(200);
+    expect(await replay.json()).toEqual(identity);
+    expect(uploads).toBe(2);
+    await expect(retryButton(page)).toHaveCount(0);
+    await expect(
+      page.getByRole('combobox', { name: 'Сохранённая партия CSV', exact: true }),
+    ).toHaveValue(identity.batchId);
+    // Same identity plus exact single retained row proves real byte-equal upload replay.
+    expect(csvRows(account.id)).toEqual(savedSources);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterUpload);
+    expect((await api.state(account.id)).journal).toMatchObject({
+      journalRevision: 0,
+      activeTradeCount: 0,
+      versionCount: 0,
+      summary: emptySummary,
+    });
+    expect(fingerprint(['auth_sessions', 'auth_request_limits', ...csvTables])).toBe(journalBefore);
+  } finally {
+    transport.off('Fetch.requestPaused', onResponse);
+    try {
+      await transport.send('Fetch.disable');
+    } finally {
+      await transport.detach();
+    }
     expect(providerRequests()).toEqual(providers);
     assertQuota();
   }
