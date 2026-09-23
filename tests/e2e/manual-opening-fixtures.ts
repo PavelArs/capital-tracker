@@ -297,7 +297,7 @@ export function accountRows(accountId: string): unknown {
   };
 }
 
-export function providerRequests(): unknown {
+export function providerRequests(): { method: string; url: string }[] {
   const result: unknown = JSON.parse(
     compose([
       'exec',
@@ -314,7 +314,11 @@ export function providerRequests(): unknown {
     ]),
   );
   expect(Array.isArray(result)).toBe(true);
-  return result;
+  return (result as unknown[]).map((value) => {
+    const row = record(value);
+    keys(row, ['method', 'url']);
+    return { method: text(row.method), url: text(row.url) };
+  });
 }
 
 export function backendLogs(): string {

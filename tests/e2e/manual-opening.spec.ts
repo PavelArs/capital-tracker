@@ -204,7 +204,18 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
   ]);
   const admissionsAfterWrites = ledgerState();
   const beforeRestart = accountRows(account.id);
+  expect(providerRequests(), 'Manual creation, saving and reads make no provider requests').toEqual(
+    providersBefore,
+  );
   await restartBackends();
+  // CryptoPricesService already warms its cache once in each process constructor.
+  // Characterize only that exact lifecycle delta; manual flows still permit none.
+  const startupRequest = {
+    method: 'GET',
+    url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
+  };
+  const providersAfterRestart = [...providersBefore, startupRequest, startupRequest];
+  await expect.poll(() => providerRequests(), { timeout: 10_000 }).toEqual(providersAfterRestart);
   await page.reload();
   await expect(current.getByRole('cell', { name: quantities[0], exact: true })).toBeVisible();
   expect(await api.detail(account.id)).toEqual({
@@ -241,7 +252,9 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
     preserved,
   );
   expect(ledgerState()).toBe(admissionsAfterWrites);
-  expect(providerRequests()).toEqual(providersBefore);
+  expect(providerRequests(), 'Reload, replacement and history make no provider requests').toEqual(
+    providersAfterRestart,
+  );
 });
 
 test('OPEN-003-A / OPEN-004-A: literal labels and a real stale form require explicit Russian conflict review', async ({
