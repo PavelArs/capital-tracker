@@ -30,7 +30,9 @@ import {
   noStore,
   priorState,
   raceTradeReplicas,
+  readOrigin,
   readReceipt,
+  readState,
   restartWithExactProviderWarmup,
   trackBrowserRequests,
   tradeApi,
@@ -1423,6 +1425,100 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
     ]);
     expect(tradeRows(account.id)).toEqual(committedRows);
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterCommit);
+  } finally {
+    await page.unroute(pattern);
+  }
+  expect(priorState()).toBe(before);
+  expect(providerRequests()).toEqual(providers);
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  assertQuota();
+});
+
+test('TRADE-006-D regression: ambiguous initialization keeps the opening editor blocked until the current journal is known', async ({
+  page,
+}) => {
+  const api = await tradeApi(page);
+  const account = await api.account();
+  const before = priorState();
+  const providers = providerRequests();
+  const admissions = ledger();
+  const csrfBefore = browserCsrfAdmissions();
+  const assertQuota = trackBrowserRequests(page, api);
+  const originalOpeningRows = accountRows(account.id);
+  await page.goto(`/manual-accounts/${account.id}`);
+  const opening = page.getByRole('region', { name: 'Начальные позиции', exact: true });
+  const saveOpening = opening.getByRole('button', {
+    name: 'Сохранить начальные позиции',
+    exact: true,
+  });
+  await expect(
+    saveOpening,
+    'The known eligible predecessor state permits editing an opening',
+  ).toBeEnabled();
+  await page.getByLabel('Дата начала журнала (UTC)', { exact: true }).fill(coverageFrom);
+  await page.getByRole('checkbox', { name: 'Позиции были пустыми', exact: true }).check();
+  const path = `/api/accounting/accounts/${account.id}/trade-journal`;
+  const pattern = `**${path}`;
+  let lost = false;
+  await page.route(
+    pattern,
+    async (route) => {
+      // Actual initialization commits, then only its response delivery is lost.
+      const response = await route.fetch();
+      expect(response.status()).toBe(201);
+      const receipt = readOrigin(await response.json());
+      expect(receipt.accountId).toBe(account.id);
+      expect(
+        rows<{ currentRevision: number; requestId: string }>(`SELECT "currentRevision","requestId"
+      FROM account_trade_journals WHERE "accountId"='${account.id}'`),
+      ).toEqual([{ currentRevision: 0, requestId: receipt.requestId }]);
+      lost = true;
+      await route.abort('connectionreset');
+    },
+    { times: 1 },
+  );
+  try {
+    await page.getByRole('button', { name: 'Открыть журнал', exact: true }).click();
+    await expect.poll(() => lost).toBe(true);
+    await expect(page.getByRole('alert')).toContainText(/[А-Яа-я]/);
+    await expect(opening).toBeVisible();
+    await expect(
+      saveOpening,
+      'An unresolved initialization cannot restore stale opening eligibility',
+    ).toBeDisabled();
+    await expect(
+      opening.getByLabel('Дата и время начала учета (UTC)', { exact: true }),
+    ).toBeDisabled();
+    await expect(
+      opening
+        .getByRole('group', { name: 'Позиция 1', exact: true })
+        .getByLabel('Количество', { exact: true }),
+    ).toBeDisabled();
+    expect(accountRows(account.id)).toEqual(originalOpeningRows);
+    const afterCommit = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const current = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === path && response.request().method() === 'GET',
+    );
+    await page.getByRole('button', { name: 'Обновить журнал', exact: true }).click();
+    const known = await current;
+    expect(known.status()).toBe(200);
+    expect(readState(await known.json()).journal).toMatchObject({
+      accountId: account.id,
+      journalRevision: 0,
+      activeTradeCount: 0,
+      versionCount: 0,
+    });
+    await expect(opening).toHaveCount(0);
+    await expect(
+      page.getByText('Начальные позиции нельзя заменять после открытия журнала сделок.', {
+        exact: false,
+      }),
+    ).toBeVisible();
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterCommit);
+    expect(accountRows(account.id)).toEqual(originalOpeningRows);
   } finally {
     await page.unroute(pattern);
   }
