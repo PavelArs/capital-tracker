@@ -192,7 +192,7 @@ realizations follow the chronology already specified above.
 Inputs are normalized active canonical executions for one account, at most 1,000
 trades. The helper does not mutate the supplied array or records and sorts by explicit
 execution chronology. It exports `FifoHistoryError` for a negative historical prefix
-or duplicate effective chronology. The helper enforces the 1,000-effective-trade
+or duplicate effective chronology, and for exceeding the 1,000-effective-trade
 bound. It uses pure BigInt arithmetic without database or Nest dependencies; it does
 not coerce or validate raw HTTP input types. Coverage, ownership, request identity,
 CAS and transaction handling remain service responsibilities.
