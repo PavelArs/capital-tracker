@@ -14,6 +14,18 @@ terminal/empty-page nextOffset rules. This is a read-only artifact review, not r
 verification. Installed OpenSpec1.2.0 strict validation passed14 items (exit0), including
 the still-active carry-in prerequisite; all four new artifacts are apply-ready.
 
+## Acceptance preparation — not executed
+
+Root prepared `historical-accounting.spec.ts` and
+`historical-accounting-input.spec.ts` under backend/src/accounting, against proposed
+`projectHistoricalAccounting(heads, baseline, at)` and `parseHistoricalQuery(raw)`
+interfaces. They cover complete prefixes, effective-time correction, terminal void,
+fee atoms, original partial-lot coordinates, known zero, UUID aggregation,100+1000
+maximum-precision inventory and strict query normalization. Scoped Biome passed;
+an independent Python Decimal calculation confirmed the1100-lot maximum literal.
+Production modules do not exist yet: no Jest success or module-error RED is claimed.
+Actual missing-feature RED must come from the HTTPS/browser tests on verified images.
+
 | Scenarios | Planned executable evidence |
 | --- | --- |
 | HIST-001-A, HIST-002-A | `tests/e2e/historical-accounting.spec.ts`: actual owner/password/MFA, HTTPS API/UI, PostgreSQL; exact chronological100/300/100 costs and250/230 realized, inclusive baseline boundary |
