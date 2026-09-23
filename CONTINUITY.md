@@ -67,24 +67,47 @@ Independent Docker checks confirm no owned Compose containers/networks/direct pr
 Nginx/lock hashes and file mode unchanged. No Docker run active at archive.
 Hosted CI, second browser, image/SAST/DAST/fullASVS and backup/restore remain unrun.
 
-## Next bounded change (prepared, not implemented)
+## Active bounded change (backend verified, frontend in progress)
 
 record-usd-fifo-trades: explicit attested empty origin, USD buys/sells/fees, exact
 BigInt FIFO cumulative allocation, complete immutable corrections/terminal voids,
 full-history validation and coherent revision-pinned reads. No opening-to-lot conversion.
-Spec worktree usd-trades-spec commits66a7459,87106a3,990d61e,ac0eeec. Reconcile canonical
-manual archive then integrate artifacts; no trade code/schema exists yet.
-Independent initial HTTP/UI RED tests99b5789 in usd-trades-acceptance; actual RED NOT
-run. Root wrapper /private/tmp/capital-usd-trades-red.cjs ready for verified old images.
-Preimplementation unit tests27c7ee5 in usd-trades-boundaries: independent arithmetic/
-raw boundaries, syntax/Biome checked; runtime/typechecking awaits helpers, not fakeRED.
-Gate authors usd-trades-db-tests fixture+migration13-to14 checks, runtime unrun.
-Root UI plan /private/tmp/capital-usd-trades-frontend-plan.md independently reviewed;
-empty usd-trades-frontend worktree ready. All worktrees retained; never stage dependency
-symlinks. Read frozen persistence seam before implementation.
+Artifacts integrated and reconciled after manual archive. Maintained tests99b5789
+observed two genuine real-MFA/HTTPS RED cases on the exact predecessor images:
+initialization expected201/actual404 and absent protected Russian journal heading.
+capital-usd-trades-red.log exit1; cleanup and prior rows/providers preserved.
+Initial RED wrapper now uses mutable acceptance tags; do not repeat an old-image claim
+without pinning predecessor digests. No fake unavailable-import RED was run.
 
-After actual2-case RED: root DDL/entities/shared wiring/UI, audit backend service,
-provider pure FIFO/parsers, gate independent PG/migration/HTTPS. Review before integrate.
+Integrated pure helpers92e4c12, independent tests27c7ee5, PGfixturedfbef7a and backend
+81587f2 (main ab73279). Root migration14 adds three tables, typed entities and module
+wiring; shared fixtures/harness now expect14. No historical migration changed.
+capital-usd-source-first.log exit0:196/4 suites including70 new arithmetic/parser tests.
+capital-usd-migrations-first.log exit0: fresh14/replay/all unsafe refusals and populated
+8/9/10/11/12/13 upgrades preserve rows/schema. First13-to14 log has old scenario label;
+source corrected toTRADE-MIG-001 with unchanged assertions.
+capital-usd-pg-first.log exit0: complete actual production-service/PG vectors, caps,
+cross-process races, deferred-COMMIT rollback/retry and coherent RR/read-only reads;
+retained manual-opening PG all pass. Backend image17283e22fdc410782a31ebdd86e627e8c07cb576fd1f0b82ffb9bc87e39fc2c3.
+All three logs are in /private/tmp; owned Compose cleanup completed. Nginx/lock preserved.
+Independent backend/schema review found no blocker. Full backend lint/build passed,
+737/24 source tests and183/2 engineering tests passed, strict11 OpenSpec items passed:
+/private/tmp/capital-usd-backend-baseline.log exit0. Reviewer identified a fixture gap:
+same-chronology buy race does not isolate CAS or prove competing-sale overspend;
+provider agent now adds distinct-order sale race in usd-trades-db-tests. Task3.5 pending.
+
+Existing agents reused because platform thread limit prevents new spawn:
+- audit_security owns frontend in usd-trades-frontend: API, journal/forms/results,
+  minimal account detail/CSS integration; implement explicit ambiguity/receipt/draft guards.
+- gate_acceptance owns expanded real HTTPS tests in usd-trades-acceptance, including
+  financial UI, private boundaries, two-backend races and actual HTTP deferred rollback.
+- provider_feasibility independently reviews backend/DDL and PG-fixture validity;
+  owns only usd-trades-db.cjs for the additional independent race oracle.
+Root owns integration, DDL/shared fixtures/evidence and all Docker; do not run Docker
+from agents. Root UI plan /private/tmp/capital-usd-trades-frontend-plan.md independently
+reviewed. All worktrees retained; never stage dependency symlinks. Read persistence.md.
+Full source/image/Playwright verification, frontend review and archive remain pending.
+
 Remaining full goal: CSV/carry-in/owned transfers/flows, performance/XIRR/TWR, DB-first
 price/FX/history, sixchain adapters/reconciliation, optional explicitfree AI, immutable
 promotion/security/backuprestore and final requirements audit; then consolidation.

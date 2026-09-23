@@ -495,7 +495,7 @@ async function seedPreviousThirteen(client) {
 async function verifyPopulatedAuthUpgrade(previousCount) {
   assert.ok([11, 12, 13].includes(previousCount));
   const target = previousCount === 11 ? previousElevenName : previousCount === 12 ? previousTwelveName : previousThirteenName;
-  const scenario = previousCount === 11 ? 'LIMIT-006-A' : previousCount === 12 ? 'OPEN-004-B' : 'TRADE-005-A';
+  const scenario = previousCount === 11 ? 'LIMIT-006-A' : previousCount === 12 ? 'OPEN-004-B' : 'TRADE-MIG-001';
   const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []),
     ...(previousCount < 13 ? accountingTables : []), ...tradeTables];
   stage = `${scenario} previous${previousCount} schema and populated fixture`;

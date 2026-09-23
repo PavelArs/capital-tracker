@@ -542,7 +542,8 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 13); assert.equal(migrations[12].name, 'AddManualOpeningPositions1790030000000');
+    assert.equal(migrations.length, 14); assert.equal(migrations[12].name, 'AddManualOpeningPositions1790030000000');
+    assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
     for (const table of tables) assert.deepEqual(await rows(source, table), []);
     const [owner, other] = await seed(source);
     const legacy = await fingerprint(source, 'legacy');

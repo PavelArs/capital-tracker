@@ -8,15 +8,15 @@
 ## 2. Exact inputs, arithmetic and additive persistence
 
 - [x] 2.1 Write independent pure boundary/allocation tests for TRADE-002/003 before helpers: mandatory 250/100, fees 245/101, negative net/loss, >2^53, scale 30, 48/30 extrema, gross-plus-fee overflow, [0,0,1,0,1,0,1], conservation, split cumulative allocations and wide sums; never calculate expected values with the production helper.
-- [ ] 2.2 Implement strict raw parsers, signed atom formatting and bounded pure FIFO using BigInt and documented cumulative allocation; no dependency or generic framework.
-- [ ] 2.3 Coordinator adds the three tables/typed mappings and migration 14 per persistence.md, including composite RESTRICT identity FKs, deferred head FK, finite numeric/time checks and exact bounds; no previous row/schema rewrite or backfill.
-- [ ] 2.4 Extend isolated migration acceptance for fresh fourteen/replay and populated thirteen-to-fourteen preservation, keeping every prior populated upgrade and unsafe-history refusal oracle.
+- [x] 2.2 Implement strict raw parsers, signed atom formatting and bounded pure FIFO using BigInt and documented cumulative allocation; no dependency or generic framework.
+- [x] 2.3 Coordinator adds the three tables/typed mappings and migration 14 per persistence.md, including composite RESTRICT identity FKs, deferred head FK, finite numeric/time checks and exact bounds; no previous row/schema rewrite or backfill.
+- [x] 2.4 Extend isolated migration acceptance for fresh fourteen/replay and populated thirteen-to-fourteen preservation, keeping every prior populated upgrade and unsafe-history refusal oracle.
 
 ## 3. Atomic service and coherent protected API
 
-- [ ] 3.1 Implement explicit eligible journal initialization and common account-lock opening guard; test NULL pointer with retained history and real two-process opening/init race.
-- [ ] 3.2 Implement complete create/correct/terminal-void commands, shared trade key namespace, replay-before-CAS, caps, full-history validation and atomic version/head/journal commit.
-- [ ] 3.3 Implement repeatable-read current projections, bounded revision-pinned pages and immutable version pages, with owner-scoped labels and exact response contracts.
+- [x] 3.1 Implement explicit eligible journal initialization and common account-lock opening guard; test NULL pointer with retained history and real two-process opening/init race.
+- [x] 3.2 Implement complete create/correct/terminal-void commands, shared trade key namespace, replay-before-CAS, caps, full-history validation and atomic version/head/journal commit.
+- [x] 3.3 Implement repeatable-read current projections, bounded revision-pinned pages and immutable version pages, with owner-scoped labels and exact response contracts.
 - [ ] 3.4 Wire private controllers into existing accounting/session/CSRF/quota boundaries and retain Russian-safe existing generic error handling without logging private inputs.
 - [ ] 3.5 Independently exercise actual production service with isolated PostgreSQL: duplicate/CAS/two-process competing-sale races, historical prefix refusal, all correction fields, chronology collisions, exact caps and old replay receipts.
 - [ ] 3.6 Prove coherent concurrent reads and deferred-COMMIT rollback after version/head/state writes using a disposable fixture and independent stage probe; verify failed-key reuse and secret-free generic HTTP failure. No product fault endpoint.

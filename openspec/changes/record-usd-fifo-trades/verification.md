@@ -1,6 +1,7 @@
 # Verification: record-usd-fifo-trades
 
-Status: genuine acceptance RED observed; implementation starting. No GREEN claim.
+Status: genuine acceptance RED observed; backend and PostgreSQL checks pass.
+Frontend and complete release-image acceptance remain pending; not archive-ready.
 
 Predecessor manual openings completed85/85 real Chromium cases, all PG/CLI/migration
 prerequisites and independent review, then actual archive e2080aa on2026-09-23.
@@ -31,7 +32,47 @@ containers/networks. Owner Nginx hash remained
 No owner data, original folder or production deployment was touched.
 
 Preimplementation unit tests27c7ee5 were independently reviewed; source syntax,
-scoped Biome and independent integer arithmetic literals passed. Runtime/full typing
-await actual helpers; unavailable imports were never executed or claimed RED.
-Independent PG/migration fixturesdfbef7a are syntax checked, runtime UNRUN. Expanded
-HTTPS acceptance, source build/tests, PG/image GREEN, review and archive remain pending.
+scoped Biome and independent integer arithmetic literals passed. Unavailable imports
+were never executed or claimed RED. Pure helpers92e4c12 and backend81587f2 were then
+integrated. The mixed raw-attestation table needed an explicit `it.each<unknown>`
+annotation; no assertion or expected value changed.
+
+Focused verification on2026-09-23 (Node22.21.1, all terminal exit0):
+- `pnpm --dir backend exec jest src/accounting/fifo.spec.ts
+  src/accounting/trade-input.spec.ts src/accounting/input.spec.ts
+  src/accounting/accounting.service.spec.ts --runInBand --coverage=false`:
+  196 tests/4 suites, including70 new independent arithmetic/parser tests.
+  Log: /private/tmp/capital-usd-source-first.log.
+- `caffeinate -is node /private/tmp/capital-usd-trades-pg.cjs migrations.cjs`:
+  actual fresh14/replay, all retained unsafe-history refusals and populated upgrades
+  from8/9/10/11/12/13 passed. Populated13 preserves existing manual and authentication
+  rows/schema and adds empty journal tables. Log: /private/tmp/capital-usd-migrations-first.log.
+  The first log used TRADE-005-A for the13-to14 scenario; source label is now corrected
+  to TRADE-MIG-001, with identical assertions.
+- `caffeinate -is node /private/tmp/capital-usd-trades-pg.cjs
+  usd-trades-db.cjs manual-opening-db.cjs`: independently authored fixturesdfbef7a
+  exercise compiled production services and real PostgreSQL. All exact FIFO vectors,
+  provenance, raw/owner failures, correction/void/replay, historical-prefix validation,
+  finite/composite/deferred constraints,1000-active/10000-version limits, distinct-process
+  lock/CAS/opening-init races, deferred-COMMIT rollback and original-key retry passed.
+  Five current projections demonstrated actual read-only repeatable-read SQL with an
+  observational process barrier while another actual service committed a correction;
+  no query or result was mocked. All retained manual-opening PG cases also passed.
+  Prior financial/authentication rows were preserved. Log: /private/tmp/capital-usd-pg-first.log.
+  Built backend image: sha256:17283e22fdc410782a31ebdd86e627e8c07cb576fd1f0b82ffb9bc87e39fc2c3.
+
+The isolated wrappers completed owned Compose cleanup. Owner Nginx and lockfile
+hashes remain unchanged. Independent backend/schema review found no blocker in
+owner predicates, lock ordering, replay-before-CAS, complete history or read isolation.
+Root has wired TradeController/TradeService into AccountingModule; actual HTTPS
+verification of that integration still awaits the complete frontend/image run.
+Independent fixture review identified that the existing two-command buy race shares
+a chronology key: its loser could fail chronology validation rather than stale CAS.
+It also does not prove the required competing-sale/no-overspend case. A separate
+distinct-order sell race is being added; task3.5 remains incomplete until it passes.
+Full backend lint/build,737 tests/24 suites,183 engineering tests/2 suites and strict
+OpenSpec11-item validation passed: /private/tmp/capital-usd-backend-baseline.log exit0.
+The PG trade fixture preserves populated users/owner-auth and all existing financial
+rows; it does not seed live session/MFA/admission rows. Populated migration preservation
+already tests those states; trade-write preservation awaits the real authenticated
+HTTPS cases. Expanded HTTPS acceptance, frontend gates/review and archive remain pending.
