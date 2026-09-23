@@ -366,9 +366,13 @@ shared trade-journal persistence helper as needed. No framework or test-only end
 
 ### Pure boundary seams for independent characterization
 
-`csv-input.ts` exports `decodeDisplayName(raw:unknown):string` and
+`csv-input.ts` exports `validateDisplayName(raw:unknown):string`,
+`decodeDisplayName(raw:unknown):string` (decodes canonical base64url then reuses the
+same raw filename validator for direct-service/transport consistency), and
 `validateCsvSource(raw:unknown):Buffer` (returns the original validated Buffer, no
-mutation/BOM stripping), plus `parseCsvInspect`, `parseCsvPreview`, `parseCsvConfirm`,
+mutation/BOM stripping). Wrong type, empty source or malformed UTF-8/NUL/bareCR throws
+safe400; a Buffer exceeding262144 bytes throws safe413. Also export
+`parseCsvInspect`, `parseCsvPreview`, `parseCsvConfirm`,
 `parseCsvRollback`, `parseCsvListQuery` and `parseCsvRowsQuery`. Each parse function
 takes unknown once and returns its normalized strict input type from this contract.
 Query parsers take raw string properties, not fixture-only number exceptions.
@@ -376,7 +380,7 @@ Confirm parsing accepts bounded version syntax; support checking occurs after re
 
 `csv-parser.ts` exports `parseCsvSource(bytes:Buffer, delimiter:','|';')` returning
 exactly the inspection discriminated union without batchId. It independently validates
-source bytes before parsing, using the shared validator; invalid bytes throw safe 400,
+source bytes before parsing, using the shared validator and its400/413 distinction,
 whereas structural errors use the documented valid:false union. It also exports
 `normalizeCsvRows(document, settings)` for a valid parsed document and normalized
 Settings, returning `{rows,rowErrors,batchErrors,ignoredColumns}` as defined above.
