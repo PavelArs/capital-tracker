@@ -9,8 +9,6 @@ const atom = '0.000000000000000000000000000001';
 const totals = (contributionsUsd = '0', withdrawalsUsd = '0') => ({
   contributionsUsd,
   withdrawalsUsd,
-  netContributionsUsd: '0',
-  flowCount: 0,
 });
 
 describe('PROFIT-CAPITAL / EXACT exact period profit', () => {
