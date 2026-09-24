@@ -44,7 +44,7 @@ const errors: Record<string, string> = {
 };
 export const csvError = (code: string) =>
   errors[code] ?? 'Данные не прошли проверку. Проверьте исходный файл и сопоставление.';
-const summaryLabels: Record<keyof TradeSummary, string> = {
+const summaryLabels = {
   grossBuysUsd: 'Покупки без комиссий',
   buyFeesUsd: 'Комиссии покупок',
   grossSalesUsd: 'Продажи до комиссий',
@@ -53,18 +53,36 @@ const summaryLabels: Record<keyof TradeSummary, string> = {
   consumedCostUsd: 'Списанная себестоимость',
   realizedUsd: 'Реализованный результат',
   remainingCostUsd: 'Остаточная себестоимость',
-};
+} as const;
 export function CsvSummary({ title, summary }: { title: string; summary: TradeSummary }) {
   return (
     <section aria-label={title}>
       <h4>{title}</h4>
       <dl className="trade-summary">
-        {(Object.keys(summaryLabels) as Array<keyof TradeSummary>).map((key) => (
-          <div className="csv-summary-line" key={key}>
-            <dt>{summaryLabels[key]}, USD</dt>
-            <dd>{summary[key]}</dd>
-          </div>
-        ))}
+        {(Object.keys(summaryLabels) as Array<keyof typeof summaryLabels>).map((key) => {
+          const coverage =
+            key === 'consumedCostUsd'
+              ? summary.basisCoverage?.consumed
+              : key === 'realizedUsd'
+                ? summary.basisCoverage?.realized
+                : key === 'remainingCostUsd'
+                  ? summary.basisCoverage?.remaining
+                  : undefined;
+          return (
+            <div className="csv-summary-line" key={key}>
+              <dt>{summaryLabels[key]}, USD</dt>
+              <dd>
+                {summary[key] ?? 'Неизвестно'}
+                {summary[key] === null && coverage && (
+                  <small>
+                    Известная часть: {coverage.knownSubtotalUsd} USD; неизвестных частей:{' '}
+                    {coverage.unknownCount}.
+                  </small>
+                )}
+              </dd>
+            </div>
+          );
+        })}
       </dl>
     </section>
   );

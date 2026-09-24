@@ -1,7 +1,10 @@
 import {
+  type BasisCoverage,
   type Journal,
   type JournalLot,
   type JournalMatch,
+  type RewardCurrentLot,
+  type RewardMatch,
   type TradePage,
   type TradeRealization,
   type TradeVersion,
@@ -48,6 +51,9 @@ function isCarryInLot(lot: JournalLot): lot is Extract<JournalLot, { sourceKind:
 function isTransferLot(lot: JournalLot): lot is TransferCurrentLot {
   return 'sourceKind' in lot && lot.sourceKind === 'transfer';
 }
+function isRewardLot(lot: JournalLot): lot is RewardCurrentLot {
+  return 'sourceKind' in lot && lot.sourceKind === 'reward';
+}
 function isCarryInMatch(
   match: JournalMatch,
 ): match is Extract<JournalMatch, { sourceKind: 'carry-in' }> {
@@ -56,10 +62,15 @@ function isCarryInMatch(
 function isTransferMatch(match: JournalMatch): match is TransferMatch {
   return 'sourceKind' in match && match.sourceKind === 'transfer';
 }
+function isRewardMatch(match: JournalMatch): match is RewardMatch {
+  return 'sourceKind' in match && match.sourceKind === 'reward';
+}
 function originIdentity(origin: TransferOrigin) {
   return origin.kind === 'trade'
     ? `${origin.tradeId}:v${origin.version}`
-    : `${origin.lotId}:r${origin.openingRevision}`;
+    : origin.kind === 'carry-in'
+      ? `${origin.lotId}:r${origin.openingRevision}:o${origin.ordinal}`
+      : `${origin.rewardId}:v${origin.version}`;
 }
 function transferFragmentKey(value: {
   origin: TransferOrigin;
@@ -77,14 +88,14 @@ function transferFragmentKey(value: {
     value.intervalEnd,
   ].join(':');
 }
-function TransferFragment({
+function OriginFragment({
   origin,
   arrival,
   intervalStart,
   intervalEnd,
 }: {
   origin: TransferOrigin;
-  arrival: { transferId: string; version: number };
+  arrival?: { transferId: string; version: number };
   intervalStart: string;
   intervalEnd: string;
 }) {
@@ -96,18 +107,40 @@ function TransferFragment({
         <>
           Сделка {origin.tradeId}, версия {origin.version}
         </>
-      ) : (
+      ) : origin.kind === 'carry-in' ? (
         <>
           Начальный лот {origin.lotId}, ревизия позиций {origin.openingRevision}, лот{' '}
           {origin.ordinal}
+        </>
+      ) : (
+        <>
+          Вознаграждение {origin.rewardId}, версия {origin.version}
         </>
       )}
       <br />
       Приобретено {origin.acquiredAt}, порядок {origin.orderWithinTimestamp}
       <br />
-      Получено переводом {arrival.transferId}, версия {arrival.version}
-      <br />
+      {arrival && (
+        <>
+          Получено переводом {arrival.transferId}, версия {arrival.version}
+          <br />
+        </>
+      )}
       Интервал исходного лота: {intervalStart}–{intervalEnd}
+    </>
+  );
+}
+
+function Cost({ value, coverage }: { value: string | null; coverage?: BasisCoverage }) {
+  return (
+    <>
+      {value ?? 'Неизвестно'}
+      {value === null && coverage && (
+        <small>
+          Известная часть: {coverage.knownSubtotalUsd} USD; неизвестных частей:{' '}
+          {coverage.unknownCount}.
+        </small>
+      )}
     </>
   );
 }
@@ -278,19 +311,49 @@ export function TradeResults({
           <dt>Чистая выручка, USD</dt>
           <dd>{journal.summary.netSalesUsd}</dd>
           <dt>Списанная себестоимость, USD</dt>
-          <dd>{journal.summary.consumedCostUsd}</dd>
+          <dd>
+            <Cost
+              value={journal.summary.consumedCostUsd}
+              coverage={journal.summary.basisCoverage?.consumed}
+            />
+          </dd>
           <dt>Реализованный результат по журналу сделок</dt>
-          <dd>{journal.summary.realizedUsd}</dd>
+          <dd>
+            <Cost
+              value={journal.summary.realizedUsd}
+              coverage={journal.summary.basisCoverage?.realized}
+            />
+          </dd>
           <dt>Остаточная учётная стоимость</dt>
-          <dd>{journal.summary.remainingCostUsd}</dd>
+          <dd>
+            <Cost
+              value={journal.summary.remainingCostUsd}
+              coverage={journal.summary.basisCoverage?.remaining}
+            />
+          </dd>
           {journal.transferSummary && (
             <>
               <dt>Полученная себестоимость переводов, USD</dt>
-              <dd>{journal.transferSummary.receivedBasisUsd}</dd>
+              <dd>
+                <Cost
+                  value={journal.transferSummary.receivedBasisUsd}
+                  coverage={journal.transferSummary.basisCoverage?.received}
+                />
+              </dd>
               <dt>Отправленная себестоимость переводов, USD</dt>
-              <dd>{journal.transferSummary.sentBasisUsd}</dd>
+              <dd>
+                <Cost
+                  value={journal.transferSummary.sentBasisUsd}
+                  coverage={journal.transferSummary.basisCoverage?.sent}
+                />
+              </dd>
               <dt>Учётная стоимость комиссий переводов, USD</dt>
-              <dd>{journal.transferSummary.feeConsumedBasisUsd}</dd>
+              <dd>
+                <Cost
+                  value={journal.transferSummary.feeConsumedBasisUsd}
+                  coverage={journal.transferSummary.basisCoverage?.fee}
+                />
+              </dd>
               {journal.transferSummary.fees.map((fee) => (
                 <div key={fee.instrumentId}>
                   <dt>
@@ -298,10 +361,45 @@ export function TradeResults({
                     {fee.instrumentSymbol ? ` (${fee.instrumentSymbol})` : ''}
                   </dt>
                   <dd>
-                    {fee.quantity}; учётная стоимость {fee.consumedBasisUsd} USD
+                    {fee.quantity}; учётная стоимость{' '}
+                    {fee.consumedBasisUsd === null ? 'Неизвестно' : `${fee.consumedBasisUsd} USD`}
+                    {fee.consumedBasisUsd === null && fee.knownBasisSubtotalUsd !== undefined && (
+                      <small>
+                        Известная часть: {fee.knownBasisSubtotalUsd} USD; количество с неизвестной
+                        себестоимостью: {fee.unknownCostQuantity}.
+                      </small>
+                    )}
                   </dd>
                 </div>
               ))}
+            </>
+          )}
+          {journal.rewardSummary && (
+            <>
+              <dt>Активные вознаграждения</dt>
+              <dd>{journal.rewardSummary.activeCount}</dd>
+              <dt>Заявленная себестоимость вознаграждений, USD</dt>
+              <dd>
+                {journal.rewardSummary.declaredBasisUsd ?? 'Неизвестно'}
+                {journal.rewardSummary.declaredBasisUsd === null && (
+                  <small>
+                    Известная часть: {journal.rewardSummary.knownBasisSubtotalUsd} USD; неизвестных
+                    значений: {journal.rewardSummary.unknownBasisCount}.
+                  </small>
+                )}
+              </dd>
+              <dt>Заявленный доход от вознаграждений, USD</dt>
+              <dd>
+                {journal.rewardSummary.declaredIncomeUsd ?? 'Неизвестно'}
+                {journal.rewardSummary.declaredIncomeUsd === null && (
+                  <small>
+                    Известная часть по уточнённым видам:{' '}
+                    {journal.rewardSummary.knownIncomeSubtotalUsd} USD; неизвестных значений:{' '}
+                    {journal.rewardSummary.unknownIncomeCount}; неуточнённых видов:{' '}
+                    {journal.rewardSummary.unclassifiedCount}.
+                  </small>
+                )}
+              </dd>
             </>
           )}
           {journal.revisionBudget && (
@@ -422,7 +520,8 @@ export function TradeResults({
           <thead>
             <tr>
               <th>
-                {journal.originKind === 'known-cost-carry-in' || lots?.items.some(isTransferLot)
+                {journal.originKind === 'known-cost-carry-in' ||
+                lots?.items.some((lot) => isTransferLot(lot) || isRewardLot(lot))
                   ? 'Источник лота'
                   : 'Покупка / версия'}
               </th>
@@ -439,16 +538,24 @@ export function TradeResults({
                 key={
                   isTransferLot(lot)
                     ? `transfer:${transferFragmentKey(lot)}`
-                    : isCarryInLot(lot)
-                      ? `carry-in:${lot.lotId}`
-                      : `buy:${lot.buyTradeId}`
+                    : isRewardLot(lot)
+                      ? `reward:${lot.origin.rewardId}:v${lot.origin.version}:${lot.intervalStart}:${lot.intervalEnd}`
+                      : isCarryInLot(lot)
+                        ? `carry-in:${lot.lotId}`
+                        : `buy:${lot.buyTradeId}`
                 }
               >
                 <td>
                   {isTransferLot(lot) ? (
-                    <TransferFragment
+                    <OriginFragment
                       origin={lot.origin}
                       arrival={lot.arrival}
+                      intervalStart={lot.intervalStart}
+                      intervalEnd={lot.intervalEnd}
+                    />
+                  ) : isRewardLot(lot) ? (
+                    <OriginFragment
+                      origin={lot.origin}
                       intervalStart={lot.intervalStart}
                       intervalEnd={lot.intervalEnd}
                     />
@@ -475,10 +582,18 @@ export function TradeResults({
                 <td>
                   <Instrument trade={lot} />
                 </td>
-                <td>{isTransferLot(lot) ? lot.origin.originalQuantity : lot.originalQuantity}</td>
-                <td>{isTransferLot(lot) ? lot.origin.originalCostUsd : lot.originalCostUsd}</td>
+                <td>
+                  {isTransferLot(lot) || isRewardLot(lot)
+                    ? lot.origin.originalQuantity
+                    : lot.originalQuantity}
+                </td>
+                <td>
+                  {(isTransferLot(lot) || isRewardLot(lot)
+                    ? lot.origin.originalCostUsd
+                    : lot.originalCostUsd) ?? 'Неизвестно'}
+                </td>
                 <td>{lot.remainingQuantity}</td>
-                <td>{lot.remainingCostUsd}</td>
+                <td>{lot.remainingCostUsd ?? 'Неизвестно'}</td>
               </tr>
             ))}
           </tbody>
@@ -512,8 +627,16 @@ export function TradeResults({
                 </td>
                 <td>{sale.quantity}</td>
                 <td>{sale.netUsd}</td>
-                <td>{sale.consumedCostUsd}</td>
-                <td>{sale.realizedUsd}</td>
+                <td>
+                  {sale.consumedCostUsd ?? 'Неизвестно'}
+                  {sale.basisCoverage && (
+                    <small>
+                      Известная часть: {sale.basisCoverage.knownConsumedCostUsd} USD; неизвестных
+                      лотов: {sale.basisCoverage.unknownMatchCount}.
+                    </small>
+                  )}
+                </td>
+                <td>{sale.realizedUsd ?? 'Неизвестно'}</td>
                 <td>
                   <button
                     type="button"
@@ -540,7 +663,7 @@ export function TradeResults({
                   <th>Продажа / версия</th>
                   <th>
                     {journal.originKind === 'known-cost-carry-in' ||
-                    matches?.items.some(isTransferMatch)
+                    matches?.items.some((match) => isTransferMatch(match) || isRewardMatch(match))
                       ? 'Источник лота'
                       : 'Покупка / версия'}
                   </th>
@@ -554,9 +677,11 @@ export function TradeResults({
                     key={
                       isTransferMatch(match)
                         ? `${match.sellTradeId}:transfer:${transferFragmentKey(match)}`
-                        : isCarryInMatch(match)
-                          ? `${match.sellTradeId}:carry-in:${match.lotId}`
-                          : `${match.sellTradeId}:buy:${match.buyTradeId}`
+                        : isRewardMatch(match)
+                          ? `${match.sellTradeId}:reward:${match.origin.rewardId}:v${match.origin.version}:${match.intervalStart}:${match.intervalEnd}`
+                          : isCarryInMatch(match)
+                            ? `${match.sellTradeId}:carry-in:${match.lotId}`
+                            : `${match.sellTradeId}:buy:${match.buyTradeId}`
                     }
                   >
                     <td>
@@ -566,9 +691,15 @@ export function TradeResults({
                     </td>
                     <td>
                       {isTransferMatch(match) ? (
-                        <TransferFragment
+                        <OriginFragment
                           origin={match.origin}
                           arrival={match.arrival}
+                          intervalStart={match.intervalStart}
+                          intervalEnd={match.intervalEnd}
+                        />
+                      ) : isRewardMatch(match) ? (
+                        <OriginFragment
+                          origin={match.origin}
                           intervalStart={match.intervalStart}
                           intervalEnd={match.intervalEnd}
                         />
@@ -589,7 +720,7 @@ export function TradeResults({
                       )}
                     </td>
                     <td>{match.quantity}</td>
-                    <td>{match.costUsd}</td>
+                    <td>{match.costUsd ?? 'Неизвестно'}</td>
                   </tr>
                 ))}
               </tbody>

@@ -5,7 +5,9 @@ export interface ValuationPosition {
   instrumentName: string;
   instrumentSymbol: string | null;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
+  knownCostSubtotalUsd?: string;
+  unknownCostQuantity?: string;
   price: { priceUsd: string; observedAt: string; revision: number } | null;
   valueUsd: string | null;
 }

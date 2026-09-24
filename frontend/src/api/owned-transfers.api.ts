@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { TransferArrival, TransferOrigin } from './trades.api';
+import type { BasisCoverage, TransferArrival, TransferOrigin } from './trades.api';
 
 export interface TransferMovement {
   instrumentId: string;
@@ -73,7 +73,7 @@ export interface TransferAllocationItem {
   kind: 'principal' | 'fee';
   instrumentId: string;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
   origin: TransferOrigin;
   intervalStart: string;
   intervalEnd: string;
@@ -85,10 +85,11 @@ export interface TransferAllocation {
   version: number;
   fromJournalRevision: number;
   toJournalRevision: number;
-  principalBasisUsd: string;
-  feeConsumedBasisUsd: string;
+  principalBasisUsd: string | null;
+  feeConsumedBasisUsd: string | null;
   items: TransferAllocationItem[];
   nextOffset: number | null;
+  basisCoverage?: { principal: BasisCoverage; fee: BasisCoverage };
 }
 
 const path = '/accounting/transfers';

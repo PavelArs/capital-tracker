@@ -23,22 +23,44 @@ export interface TradeSummary {
   grossSalesUsd: string;
   sellFeesUsd: string;
   netSalesUsd: string;
-  consumedCostUsd: string;
-  realizedUsd: string;
-  remainingCostUsd: string;
+  consumedCostUsd: string | null;
+  realizedUsd: string | null;
+  remainingCostUsd: string | null;
+  basisCoverage?: {
+    consumed: BasisCoverage;
+    remaining: BasisCoverage;
+    realized: BasisCoverage;
+  };
+}
+export interface BasisCoverage {
+  knownSubtotalUsd: string;
+  unknownCount: number;
+}
+export interface RewardSummary {
+  activeCount: number;
+  declaredBasisUsd: string | null;
+  declaredIncomeUsd: string | null;
+  knownBasisSubtotalUsd: string;
+  knownIncomeSubtotalUsd: string;
+  unknownBasisCount: number;
+  unknownIncomeCount: number;
+  unclassifiedCount: number;
 }
 export interface TransferFeeSummary {
   instrumentId: string;
   instrumentName: string;
   instrumentSymbol: string | null;
   quantity: string;
-  consumedBasisUsd: string;
+  consumedBasisUsd: string | null;
+  knownBasisSubtotalUsd?: string;
+  unknownCostQuantity?: string;
 }
 export interface TransferSummary {
-  receivedBasisUsd: string;
-  sentBasisUsd: string;
-  feeConsumedBasisUsd: string;
+  receivedBasisUsd: string | null;
+  sentBasisUsd: string | null;
+  feeConsumedBasisUsd: string | null;
   fees: TransferFeeSummary[];
+  basisCoverage?: { received: BasisCoverage; sent: BasisCoverage; fee: BasisCoverage };
 }
 export interface RevisionBudget {
   used: number;
@@ -51,6 +73,7 @@ export type Journal = (JournalOrigin | CarryInOrigin) & {
   limits: { activeTrades: number; versions: number };
   summary: TradeSummary;
   transferSummary?: TransferSummary;
+  rewardSummary?: RewardSummary;
   revisionBudget?: RevisionBudget;
 };
 export interface JournalState {
@@ -99,8 +122,9 @@ export interface TradeRealization {
   grossUsd: string;
   feeUsd: string;
   netUsd: string;
-  consumedCostUsd: string;
-  realizedUsd: string;
+  consumedCostUsd: string | null;
+  realizedUsd: string | null;
+  basisCoverage?: { knownConsumedCostUsd: string; unknownMatchCount: number };
 }
 export interface TradeMatch {
   sellTradeId: string;
@@ -113,6 +137,17 @@ export interface TradeMatch {
 export interface TransferArrival {
   transferId: string;
   version: number;
+}
+export interface RewardOrigin {
+  accountId: string;
+  kind: 'reward';
+  rewardId: string;
+  version: number;
+  category: 'staking' | 'airdrop' | 'other' | 'unclassified';
+  acquiredAt: string;
+  orderWithinTimestamp: number;
+  originalQuantity: string;
+  originalCostUsd: string | null;
 }
 export type TransferOrigin =
   | {
@@ -135,7 +170,29 @@ export type TransferOrigin =
       orderWithinTimestamp: number;
       originalQuantity: string;
       originalCostUsd: string;
-    };
+    }
+  | RewardOrigin;
+export interface RewardCurrentLot {
+  sourceKind: 'reward';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: RewardOrigin;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string | null;
+}
+export interface RewardMatch {
+  sourceKind: 'reward';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: RewardOrigin;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string | null;
+}
 export interface TransferCurrentLot {
   sourceKind: 'transfer';
   instrumentId: string;
@@ -146,7 +203,7 @@ export interface TransferCurrentLot {
   intervalStart: string;
   intervalEnd: string;
   remainingQuantity: string;
-  remainingCostUsd: string;
+  remainingCostUsd: string | null;
 }
 export interface TransferMatch {
   sourceKind: 'transfer';
@@ -157,10 +214,10 @@ export interface TransferMatch {
   intervalStart: string;
   intervalEnd: string;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
 }
-export type JournalLot = TradeLot | CarryInCurrentLot | TransferCurrentLot;
-export type JournalMatch = TradeMatch | CarryInMatch | TransferMatch;
+export type JournalLot = TradeLot | CarryInCurrentLot | RewardCurrentLot | TransferCurrentLot;
+export type JournalMatch = TradeMatch | CarryInMatch | RewardMatch | TransferMatch;
 export interface TradePage<T> {
   journalRevision: number;
   items: T[];

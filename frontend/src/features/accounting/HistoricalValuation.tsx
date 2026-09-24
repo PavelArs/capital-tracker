@@ -194,7 +194,15 @@ export function HistoricalValuation({
                         <small>{item.instrumentId}</small>
                       </td>
                       <td>{item.quantity}</td>
-                      <td>{item.costUsd}</td>
+                      <td>
+                        {item.costUsd ?? 'Неизвестно'}
+                        {item.costUsd === null && item.knownCostSubtotalUsd !== undefined && (
+                          <small>
+                            Известная часть: {item.knownCostSubtotalUsd} USD; количество с
+                            неизвестной себестоимостью: {item.unknownCostQuantity}.
+                          </small>
+                        )}
+                      </td>
                       <td>
                         {item.price ? (
                           <>

@@ -5,7 +5,9 @@ function allocationKey(item: TransferAllocationItem): string {
   const identity =
     origin.kind === 'trade'
       ? `${origin.tradeId}:v${origin.version}`
-      : `${origin.lotId}:r${origin.openingRevision}:o${origin.ordinal}`;
+      : origin.kind === 'carry-in'
+        ? `${origin.lotId}:r${origin.openingRevision}:o${origin.ordinal}`
+        : `${origin.rewardId}:v${origin.version}`;
   return [
     item.kind,
     item.instrumentId,
@@ -29,10 +31,14 @@ function AllocationOrigin({ item }: { item: TransferAllocationItem }) {
         <span>
           Сделка {origin.tradeId}, версия {origin.version}
         </span>
-      ) : (
+      ) : origin.kind === 'carry-in' ? (
         <span>
           Начальный лот {origin.lotId}, ревизия позиций {origin.openingRevision}, лот{' '}
           {origin.ordinal}
+        </span>
+      ) : (
+        <span>
+          Вознаграждение {origin.rewardId}, версия {origin.version}
         </span>
       )}
       <br />
@@ -70,9 +76,25 @@ export function TransferAllocationDetails({
       </p>
       <dl className="trade-summary">
         <dt>Себестоимость переданного актива, USD</dt>
-        <dd>{allocation.principalBasisUsd}</dd>
+        <dd>
+          {allocation.principalBasisUsd ?? 'Неизвестно'}
+          {allocation.principalBasisUsd === null && allocation.basisCoverage && (
+            <small>
+              Известная часть: {allocation.basisCoverage.principal.knownSubtotalUsd} USD;
+              неизвестных частей: {allocation.basisCoverage.principal.unknownCount}.
+            </small>
+          )}
+        </dd>
         <dt>Списанная себестоимость комиссии, USD</dt>
-        <dd>{allocation.feeConsumedBasisUsd}</dd>
+        <dd>
+          {allocation.feeConsumedBasisUsd ?? 'Неизвестно'}
+          {allocation.feeConsumedBasisUsd === null && allocation.basisCoverage && (
+            <small>
+              Известная часть: {allocation.basisCoverage.fee.knownSubtotalUsd} USD; неизвестных
+              частей: {allocation.basisCoverage.fee.unknownCount}.
+            </small>
+          )}
+        </dd>
       </dl>
       {allocation.items.length === 0 && <p>В текущем переводе нет распределённых лотов.</p>}
       <ol>
@@ -80,7 +102,7 @@ export function TransferAllocationDetails({
           <li key={allocationKey(item)} style={{ overflowWrap: 'anywhere' }}>
             <span>
               {item.kind === 'principal' ? 'Получателю' : 'Комиссия'}: {item.quantity},
-              себестоимость {item.costUsd} USD.
+              себестоимость {item.costUsd === null ? 'Неизвестно' : `${item.costUsd} USD`}.
             </span>
             <br />
             <AllocationOrigin item={item} />

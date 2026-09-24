@@ -171,12 +171,65 @@ export function HistoricalAccounting({
             <dt>Чистая выручка, USD</dt>
             <dd>{snapshot.summary.netSalesUsd}</dd>
             <dt>Списанная себестоимость, USD</dt>
-            <dd>{snapshot.summary.consumedCostUsd}</dd>
+            <dd>
+              {snapshot.summary.consumedCostUsd ?? 'Неизвестно'}
+              {snapshot.summary.consumedCostUsd === null && snapshot.summary.basisCoverage && (
+                <small>
+                  Известная часть: {snapshot.summary.basisCoverage.consumed.knownSubtotalUsd} USD;
+                  неизвестных частей: {snapshot.summary.basisCoverage.consumed.unknownCount}.
+                </small>
+              )}
+            </dd>
             <dt>Реализованный результат по журналу, USD</dt>
-            <dd>{snapshot.summary.realizedUsd}</dd>
+            <dd>
+              {snapshot.summary.realizedUsd ?? 'Неизвестно'}
+              {snapshot.summary.realizedUsd === null && snapshot.summary.basisCoverage && (
+                <small>
+                  Известная часть: {snapshot.summary.basisCoverage.realized.knownSubtotalUsd} USD;
+                  продаж с неполной себестоимостью:{' '}
+                  {snapshot.summary.basisCoverage.realized.unknownCount}.
+                </small>
+              )}
+            </dd>
             <dt>Остаточная учётная стоимость, USD</dt>
-            <dd>{snapshot.summary.remainingCostUsd}</dd>
+            <dd>
+              {snapshot.summary.remainingCostUsd ?? 'Неизвестно'}
+              {snapshot.summary.remainingCostUsd === null && snapshot.summary.basisCoverage && (
+                <small>
+                  Известная часть: {snapshot.summary.basisCoverage.remaining.knownSubtotalUsd} USD;
+                  неизвестных лотов: {snapshot.summary.basisCoverage.remaining.unknownCount}.
+                </small>
+              )}
+            </dd>
           </dl>
+          {snapshot.rewardSummary && (
+            <dl className="trade-summary">
+              <dt>Активные вознаграждения на момент UTC</dt>
+              <dd>{snapshot.rewardSummary.activeCount}</dd>
+              <dt>Заявленная себестоимость вознаграждений, USD</dt>
+              <dd>
+                {snapshot.rewardSummary.declaredBasisUsd ?? 'Неизвестно'}
+                {snapshot.rewardSummary.declaredBasisUsd === null && (
+                  <small>
+                    Известная часть: {snapshot.rewardSummary.knownBasisSubtotalUsd} USD; неизвестных
+                    значений: {snapshot.rewardSummary.unknownBasisCount}.
+                  </small>
+                )}
+              </dd>
+              <dt>Заявленный доход от вознаграждений, USD</dt>
+              <dd>
+                {snapshot.rewardSummary.declaredIncomeUsd ?? 'Неизвестно'}
+                {snapshot.rewardSummary.declaredIncomeUsd === null && (
+                  <small>
+                    Известная часть по уточнённым видам:{' '}
+                    {snapshot.rewardSummary.knownIncomeSubtotalUsd} USD; неизвестных значений:{' '}
+                    {snapshot.rewardSummary.unknownIncomeCount}; неуточнённых видов:{' '}
+                    {snapshot.rewardSummary.unclassifiedCount}.
+                  </small>
+                )}
+              </dd>
+            </dl>
+          )}
           {visible.items.length === 0 ? (
             <p>На выбранный момент учётных позиций нет.</p>
           ) : (
@@ -200,7 +253,15 @@ export function HistoricalAccounting({
                       </td>
                       <td>{item.instrumentId}</td>
                       <td>{item.quantity}</td>
-                      <td>{item.costUsd}</td>
+                      <td>
+                        {item.costUsd ?? 'Неизвестно'}
+                        {item.costUsd === null && item.knownCostSubtotalUsd !== undefined && (
+                          <small>
+                            Известная часть: {item.knownCostSubtotalUsd} USD; количество с
+                            неизвестной себестоимостью: {item.unknownCostQuantity}.
+                          </small>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

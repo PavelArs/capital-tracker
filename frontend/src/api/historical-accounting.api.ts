@@ -1,12 +1,14 @@
 import apiClient from './client';
-import type { TradeSummary } from './trades.api';
+import type { RewardSummary, TradeSummary } from './trades.api';
 
 export interface HistoricalPosition {
   instrumentId: string;
   instrumentName: string;
   instrumentSymbol: string | null;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
+  knownCostSubtotalUsd?: string;
+  unknownCostQuantity?: string;
 }
 
 export interface HistoricalSnapshot {
@@ -19,6 +21,7 @@ export interface HistoricalSnapshot {
   openingRevision: number | null;
   initialCostUsd: string;
   summary: TradeSummary;
+  rewardSummary?: RewardSummary;
   items: HistoricalPosition[];
   nextOffset: number | null;
 }
