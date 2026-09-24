@@ -29,38 +29,27 @@ Preview SHALL rebuild the complete candidate connected component using the store
 history and its current pinned journal revision, without mutating any participant. Transfer
 commands are not CSV-importable under this requirement. The preview identity SHALL become stale
 when any upstream connected revision changes; no partial or truncated recipient history may be
-shown.
+shown. Candidate connected prefix/capacity failures SHALL retain the invalid-preview
+envelope with `connected-history`/`connected-capacity` batch errors respectively;
+invalid saved history SHALL return409 rather than a fabricated current summary.
 
 #### Scenario: CSV-002-A Inspection supports deliberate mapping without guessing
-- **WHEN** the owner inspects comma or semicolon data containing doubled quotes, quoted delimiter/newlines,
-  optional BOM and mixed LF/CRLF endings
-- **THEN** every source ordinal/start line and literal cell is correct before mappings exist, including
-  ignored formula-looking text
-- **AND** explicit decimal comma plus a fixed offset normalizes exact strings and UTC instants
-  independently of browser/server timezone
-- **AND** equally named instruments remain distinct UUID choices; ignored columns and actual total-USD/fee
-  interpretation are shown before confirmation
+- **WHEN** the owner inspects comma or semicolon data containing doubled quotes, quoted delimiter/newlines, optional BOM and mixed LF/CRLF endings
+- **THEN** every source ordinal/start line and literal cell is correct before mappings exist, including ignored formula-looking text
+- **AND** explicit decimal comma plus a fixed offset normalizes exact strings and UTC instants independently of browser/server timezone
+- **AND** equally named instruments remain distinct UUID choices; ignored columns and actual total-USD/fee interpretation are shown before confirmation
 
 #### Scenario: CSV-002-B A bad final row never creates a partial preview or import
-- **WHEN** the final record has malformed quotes/width, a101st row,33rd column,4097-byte cell,
-  empty/duplicate header or blank record
-- **THEN** inspection returns a bounded structural error without a successful prefix and economic preview
-  has no candidate/hash
-- **WHEN** a mapped row has missing fee, mixed/grouped/exponent decimal, excess precision, zero
-  gross/quantity, impossible calendar date, missing/extra offset, unsupported currency or
-  buy-basis overflow
-- **THEN** every source row remains represented, that execution is null with stable errors, no subset FIFO
-  is presented and no accounting row/key is written
-- **AND** exact100-row/32-column/4096-byte boundaries, leap days, offset date crossings and
-  supported30-place amounts are exercised with independent expectations
+- **WHEN** the final record has malformed quotes/width, a101st row,33rd column,4097-byte cell, empty/duplicate header or blank record
+- **THEN** inspection returns a bounded structural error without a successful prefix and economic preview has no candidate/hash
+- **WHEN** a mapped row has missing fee, mixed/grouped/exponent decimal, excess precision, zero gross/quantity, impossible calendar date, missing/extra offset, unsupported currency or buy-basis overflow
+- **THEN** every source row remains represented, that execution is null with stable errors, no subset FIFO is presented and no accounting row/key is written
+- **AND** exact100-row/32-column/4096-byte boundaries, leap days, offset date crossings and supported30-place amounts are exercised with independent expectations
 
 #### Scenario: CSV-002-C Mapping is raw, explicit and owner scoped
-- **WHEN** mapping contains coerced indexes, unknown server fields, duplicate source keys/indexes,
-  missing/unused observed keys, wrong assertion or a foreign instrument
-- **THEN** the documented400, structured nonconfirmable preview or generic404 occurs without guessing,
-  dropping rows or disclosing foreign identity
-- **AND** source keys remain exact case/Unicode strings, including safe prototype-like names, and
-  map-array reordering/UUID case normalize equivalently
+- **WHEN** mapping contains coerced indexes, unknown server fields, duplicate source keys/indexes, missing/unused observed keys, wrong assertion or a foreign instrument
+- **THEN** the documented400, structured nonconfirmable preview or generic404 occurs without guessing, dropping rows or disclosing foreign identity
+- **AND** source keys remain exact case/Unicode strings, including safe prototype-like names, and map-array reordering/UUID case normalize equivalently
 
 #### Scenario: TRANSFER-CSV-PREVIEW Candidate trades use connected transferred basis
 - **GIVEN** an initialized source and recipient connected by an effective transfer of an original FIFO lot
@@ -95,35 +84,24 @@ writes. Every affected account row SHALL be locked in sorted UUID order after th
 advisory lock, shared with trade, carry-in and transfer writers.
 
 #### Scenario: CSV-003-A Out-of-source-order history commits exact mandatory FIFO
-- **GIVEN** a file physically lists sale1.5/gross450 at t3, then buy1/gross100 at t1 and buy1/gross200 at
-  t2, all fees0
+- **GIVEN** a file physically lists sale1.5/gross450 at t3, then buy1/gross100 at t1 and buy1/gross200 at t2, all fees0
 - **WHEN** a valid preview is explicitly confirmed
-- **THEN** all three trades commit together, realized result is250, remaining quantity/cost0.5/100, and
-  source links identify the exact created versions
+- **THEN** all three trades commit together, realized result is250, remaining quantity/cost0.5/100, and source links identify the exact created versions
 - **AND** journal revision advances by3 with no separately visible intermediate accepted state
-- **AND** equal-looking legitimate rows with distinct explicit chronology remain separate rather than
-  being skipped as duplicates
+- **AND** equal-looking legitimate rows with distinct explicit chronology remain separate rather than being skipped as duplicates
 
 #### Scenario: CSV-003-B Concurrent commands and old receipts cannot duplicate acceptance
-- **WHEN** actual processes race identical confirmation or distinct import/manual sales at the same
-  revision with distinct chronology
-- **THEN** identical commands commit once and replay200, distinct commands have one winner and one409, and
-  no historical overspend or losing-key reservation occurs
-- **AND** accepted exact confirmation replays its original receipt before later corrections, rollback,
-  parser-support checks or exhausted caps, without rewinding heads/state
-- **AND** a changed accepted key's mapping, kind, target, revision or hash conflicts, while another key
-  cannot accept an already committed/rolled-back file
+- **WHEN** actual processes race identical confirmation or distinct import/manual sales at the same revision with distinct chronology
+- **THEN** identical commands commit once and replay200, distinct commands have one winner and one409, and no historical overspend or losing-key reservation occurs
+- **AND** accepted exact confirmation replays its original receipt before later corrections, rollback, parser-support checks or exhausted caps, without rewinding heads/state
+- **AND** a changed accepted key's mapping, kind, target, revision or hash conflicts, while another key cannot accept an already committed/rolled-back file
 
 #### Scenario: CSV-003-C A whole batch must fit and commit completely
-- **WHEN** N rows would exceed active/version caps, have duplicate normalized chronology, predate coverage
-  or create a negative historical prefix
-- **THEN** the new confirmation returns409 with every accounting/batch row unchanged, including when final
-  inventory would be nonnegative
+- **WHEN** N rows would exceed active/version caps, have duplicate normalized chronology, predate coverage or create a negative historical prefix
+- **THEN** the new confirmation returns409 with every accounting/batch row unchanged, including when final inventory would be nonnegative
 - **AND** exact caps succeed; accepted replay still works at capacity and no smaller subset is imported
 - **WHEN** a real deferred COMMIT failure occurs after every version/head/link/receipt/state write
-- **THEN** an independent stage witness proves that path, HTTP returns private generic500, every
-  transactional write rolls back and explicit original-key retry succeeds once after the fixture
-  is removed
+- **THEN** an independent stage witness proves that path, HTTP returns private generic500, every transactional write rolls back and explicit original-key retry succeeds once after the fixture is removed
 
 #### Scenario: TRANSFER-CSV-COMMIT Accepted batch restates recipient atomically
 - **GIVEN** a batch changes a source lot already transferred and sold by a connected recipient
@@ -151,24 +129,17 @@ revision semantics, and each other affected participant advances once; the journ
 budget remains distinct from saved trade versionCount.
 
 #### Scenario: CSV-004-A Reviewed reallocation is safe when remaining lots cover sales
-- **GIVEN** imported A buys1 for100, later manual B buys1 for200, and a later manual sale1/gross300
-  realizes200 using A
+- **GIVEN** imported A buys1 for100, later manual B buys1 for200, and a later manual sale1/gross300 realizes200 using A
 - **WHEN** the untouched import is rolled back at its reviewed current revision
-- **THEN** the sale reallocates to B, current realized becomes100 and remaining quantity/cost become0,
-  while A's original evidence and one terminal void remain
-- **AND** detail shows coherent exact before/after results and the UI explains that remaining FIFO matches
-  are recomputed
-- **AND** rolling back the mandatory three-row batch removes it atomically rather than rejecting its
-  intermediate source prefix
+- **THEN** the sale reallocates to B, current realized becomes100 and remaining quantity/cost become0, while A's original evidence and one terminal void remain
+- **AND** detail shows coherent exact before/after results and the UI explains that remaining FIFO matches are recomputed
+- **AND** rolling back the mandatory three-row batch removes it atomically rather than rejecting its intermediate source prefix
 
 #### Scenario: CSV-004-B Unsafe or failed rollback changes nothing
-- **WHEN** an imported row was corrected/manually voided, remaining chronological inventory would be
-  negative, version capacity is insufficient or the reviewed revision is stale
+- **WHEN** an imported row was corrected/manually voided, remaining chronological inventory would be negative, version capacity is insufficient or the reviewed revision is stale
 - **THEN**409 preserves all source, trade, link, command and batch state without partial undo
-- **AND** a real deferred COMMIT failure after all void/link/state writes also rolls everything back;
-  original-key retry commits once after removing the isolated fixture
-- **AND** accepted rollback replay returns its original receipt before later journal changes without
-  appending duplicate voids; same-file upload stays terminal
+- **AND** a real deferred COMMIT failure after all void/link/state writes also rolls everything back; original-key retry commits once after removing the isolated fixture
+- **AND** accepted rollback replay returns its original receipt before later journal changes without appending duplicate voids; same-file upload stays terminal
 
 #### Scenario: TRANSFER-CSV-ROLLBACK Cannot strand dependent recipient history
 - **GIVEN** an accepted batch supplies basis later transferred to a recipient sale
@@ -197,21 +168,15 @@ truncated connected ledger.
 
 #### Scenario: CSV-005-A Real concurrent reads never mix journal versions
 - **WHEN** a real correction overlaps preview or rollback detail through a controlled database read barrier
-- **THEN** each complete response equals one old or new coherent revision, including labels and both
-  summaries, never a mixed result
-- **AND** repeated equivalent previews on two replicas at one revision have identical hashes independent
-  of random IDs or clock
-- **AND** stale/tampered hashes or a hash paired with a newer expected revision cannot confirm; explicit
-  re-preview is required
+- **THEN** each complete response equals one old or new coherent revision, including labels and both summaries, never a mixed result
+- **AND** repeated equivalent previews on two replicas at one revision have identical hashes independent of random IDs or clock
+- **AND** stale/tampered hashes or a hash paired with a newer expected revision cannot confirm; explicit re-preview is required
 
 #### Scenario: CSV-005-B Provenance pages cannot silently cross rollback
 - **WHEN** a committed source-row page is followed by rollback before its continuation
-- **THEN** the old supplied batchState returns409 without mixed rows; explicit restarted pagination shows
-  all immutable create and rollback versions
-- **AND** unrelated manual journal edits do not invalidate immutable source provenance, while they
-  invalidate stale live rollback review
-- **AND** nonzero ordinal cursors require state, malformed bounds fail400 and no list/detail response
-  serializes original bytes
+- **THEN** the old supplied batchState returns409 without mixed rows; explicit restarted pagination shows all immutable create and rollback versions
+- **AND** unrelated manual journal edits do not invalidate immutable source provenance, while they invalidate stale live rollback review
+- **AND** nonzero ordinal cursors require state, malformed bounds fail400 and no list/detail response serializes original bytes
 
 #### Scenario: TRANSFER-CSV-SNAPSHOT Pinned recipient preview cannot mix revisions
 - **GIVEN** a connected CSV preview is read while a real source correction commits after its database

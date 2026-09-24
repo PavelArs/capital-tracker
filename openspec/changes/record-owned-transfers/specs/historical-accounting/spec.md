@@ -16,25 +16,17 @@ adding covered purchases, sales, realized gain or external flows. The selected a
 SHALL reflect the complete connected replay.
 
 #### Scenario: HIST-001-A Purchases, sale and amount correction
-- **GIVEN** empty coverage2025-01-01T00:00:00Z, buy1/cost100 onJan2, buy1/cost200 onJan3 and
-  sale1.5/gross450 onJan4, all at00:00:00Z with zero fees
+- **GIVEN** empty coverage2025-01-01T00:00:00Z, buy1/cost100 onJan2, buy1/cost200 onJan3 and sale1.5/gross450 onJan4, all at00:00:00Z with zero fees
 - **WHEN** the owner reads2025-01-02T23:59:59.999Z,2025-01-03T00:00:00Z and2025-01-04T00:00:00Z
-- **THEN** position quantity/cost is respectively1/100,2/300 and0.5/100, and cumulative realized gain is0,0
-  and250 with consumed cost200 atJan4
+- **THEN** position quantity/cost is respectively1/100,2/300 and0.5/100, and cumulative realized gain is0,0 and250 with consumed cost200 atJan4
 - **WHEN** the first buy is corrected to120 and the same instants are read again
-- **THEN** their costs are120,320 and100, Jan4 realized gain is230, the new journal revision is explicit,
-  and original command receipts are byte-for-byte unchanged
+- **THEN** their costs are120,320 and100, Jan4 realized gain is230, the new journal revision is explicit, and original command receipts are byte-for-byte unchanged
 
 #### Scenario: HIST-001-B Effective time, voids and exact amounts
-- **GIVEN** valid effective history containing fees, partial lots and values finer than binary
-  floating-point precision
-- **WHEN** a buy correction moves it across a queried boundary without invalidating later sales, or a
-  covered sale is voided
-- **THEN** each snapshot uses the corrected execution time and excludes void heads, preserves exact
-  fee/partial-lot allocation, and does not use version creation time as execution time
-- **AND** for the HIST-001-A trades with the first buy already corrected to120, voiding the sale restores
-  quantity2/cost320 and realized0; neither correction nor read changes the immutable baseline or
-  old receipts
+- **GIVEN** valid effective history containing fees, partial lots and values finer than binary floating-point precision
+- **WHEN** a buy correction moves it across a queried boundary without invalidating later sales, or a covered sale is voided
+- **THEN** each snapshot uses the corrected execution time and excludes void heads, preserves exact fee/partial-lot allocation, and does not use version creation time as execution time
+- **AND** for the HIST-001-A trades with the first buy already corrected to120, voiding the sale restores quantity2/cost320 and realized0; neither correction nor read changes the immutable baseline or old receipts
 
 #### Scenario: TRANSFER-HIST-EFFECTIVE Transfer is inclusive without synthetic trade totals
 - **GIVEN** a lot is moved between two covered accounts exactly at a queried instant and a later sale
@@ -55,15 +47,14 @@ selected prefix even when the requested page is empty.
 A historical response SHALL load the connected ledger once inside its single read-only
 REPEATABLE READ transaction. Its revision pin SHALL cover the connected history on which the
 selected account result depends; an upstream trade, CSV or transfer change SHALL invalidate a
-continuation for that account.
+continuation for that account. Derived position offsets SHALL accept0..99999 with
+limit1..100 and the same revision-pin rules, without truncating connected positions.
 
 #### Scenario: HIST-003-A Pagination preserves identity and totals
 - **GIVEN** two different instruments with the same symbol, each having remaining lots, and limit1
 - **WHEN** the owner requests the first and pinned next page at the same instant
-- **THEN** each UUID appears exactly once in ascending order, both pages carry identical complete totals
-  and initial cost, and the last nextOffset is null
-- **AND** a valid offset beyond all positions returns empty items with those same totals; a continuation
-  without revision is400
+- **THEN** each UUID appears exactly once in ascending order, both pages carry identical complete totals and initial cost, and the last nextOffset is null
+- **AND** a valid offset beyond all positions returns empty items with those same totals; a continuation without revision is400
 - **WHEN** a trade changes between those page requests
 - **THEN** the old pinned continuation is409 rather than a mixed financial snapshot
 
@@ -71,8 +62,7 @@ continuation for that account.
 - **GIVEN** real PostgreSQL and a paused read after establishing its snapshot
 - **WHEN** a competing correction commits before the read loads all heads/baseline/labels
 - **THEN** the response is wholly the old state and revision; a new read is wholly the committed state
-- **AND**100 carry-in lots plus1000 active trades remain calculable with82-digit derived bounds,
-without an early query/page limit or numeric rounding
+- **AND**100 carry-in lots plus1000 active trades remain calculable with82-digit derived bounds, without an early query/page limit or numeric rounding
 
 #### Scenario: TRANSFER-HIST-PIN Upstream edit invalidates dependent history page
 - **GIVEN** a recipient history page is pinned while its position depends on a source lot transferred from
@@ -80,6 +70,5 @@ without an early query/page limit or numeric rounding
 - **WHEN** an upstream source correction commits after the first page
 - **THEN** the old recipient continuation returns409 rather than mixing revisions, and an explicit new read
   uses one complete connected snapshot
-- **AND** a connected result containing more than10,000 instrument positions can read its final position
-  at offset99999 with limit1, while an out-of-range offset is empty with the complete unchanged
-  totals
+- **AND** a connected result containing1101 distinct instrument positions can read its final position
+  at pinned offset1100 with limit1; a valid offset99999 is empty with complete unchanged totals

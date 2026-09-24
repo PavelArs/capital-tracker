@@ -5,8 +5,10 @@ retained actualPG trade/carry-in and two HTTPS journeys. Actual transfer command
 are absent. Existing FIFO, CSV and historical stores replay one account; incoming
 basis cannot be snapshotted permanently because source corrections must propagate.
 
-This design is a review draft. Delta specs, detailed wire contract and independent
-acceptance must be completed before product implementation. No transfer RED yet.
+The draft received an independent financial/architecture review. Its coverage, fee
+labels and allocation paging findings are incorporated in persistence.md and the
+delta specs. Executable acceptance and genuine RED are still required before
+product implementation. This document is not verification evidence.
 
 ## Goals / Non-Goals
 
@@ -18,7 +20,7 @@ rewards, unknown-cost journal conversion, chain observations, transfer CSV impor
 chart periods/layout, production or original-folder consolidation. These remain
 in the full goal rather than being declared delivered by this change.
 
-## Decisions proposed for independent review
+## Decisions
 
 ### Economic representation
 
@@ -27,7 +29,8 @@ manual accounts. `quantity` is the amount credited to the receiver. A separately
 declared `feeInstrumentId` and `feeQuantity` are consumed from the sender AFTER the
 principal debit and BEFORE the receiver credit. Zero fee requires null fee identity;
 positive fee may use the principal instrument or another owned held instrument.
-No fee is charged to the receiver. No synthetic buy/sell or external USD flow.
+No fee is charged to the receiver. The movement is at or after both accounts'
+coverageFrom; historical reads at that instant include principal and fee atomically. No synthetic buy/sell or external USD flow.
 
 Fee USD output is the removed historical cost basis, explicitly labelled as such;
 it is not an inferred market fee value or tax result. Trade realized P/L stays
@@ -83,14 +86,14 @@ unchanged, with legal gaps after transfer/remote invalidations. Existing CSV pre
 hash includes currentRevision, so upstream changes invalidate old previews naturally.
 
 Acquire an owner-scoped pg_advisory_xact_lock before ANY economic account-row lock
-in trade/carry-in/CSV/transfer mutation paths. Lock involved account rows in sorted
+in trade/carry-in/CSV/transfer and legacy opening mutation paths. Lock involved account rows in sorted
 UUID order. Read current committed state after lock acquisition; no global manager
 escape. Existing race acceptance must witness both advisory and row waits where
 applicable, not merely lower its expected contender count. Reads use one snapshot.
 
 ### Additive persistence and routes
 
-Proposed migration20 adds owner transfer journal, transfer identities/heads and
+Additive migration20 adds owner transfer journal, transfer identities/heads and
 complete immutable versions; same owner/account/instrument compositeFKs, finite
 numeric/time checks, unique owner/request and owner/journal revision, deferred head
 integrity, terminal void and explicit downgrade refusal. Existing rows unchanged.
@@ -98,19 +101,21 @@ Store commands only, no derived cost fragments. Account pair is fixed on identit
 correction may change instrument/time/order/quantity/fee. Other identity pairs require
 a separate reviewed movement, avoiding hidden topology edits through correction.
 
-Private routes proposed: POST /accounting/transfers; POST /:id/corrections and
+Private routes: POST /accounting/transfers; POST /:id/corrections and
 /:id/voids; GET /transfers (pinned owner-transfer-journal paging of current command
 heads), /:id/versions (immutable history), /:id/allocation (current-effective derived
 principal/fee provenance with source/destination account revisions). Structural400,
 foreign/notfound404, stale/cap/history409; normal owner/MFA/CSRF/origin/no-store.
-New request exact payload/replay, transfer version and dual accountCAS field names
-still need freezing in persistence.md before tests/implementation.
+Exact payload/replay, transfer version, dual accountCAS and allocation paging fields
+are fixed in persistence.md. Allocation pages return at most100 rows, require both
+account pins after page0 and never expose only a page subtotal.
 
-Owner transfer journal counts at most1000active transfers/10000versions. Candidate
-connected component initial limits proposed:32accounts,10000active trades total,
+Owner transfer journal counts at most1000active transfers/10000versions. Affected old/new union and
+read component limits:32accounts,10000active trades total,
 100carrylots/account,1000active transfer events,100000allocation matches during replay.
-Reject capacity explicitly, never truncate a financial result. Exact limits and
-error projection require review; existing unconnected maxima remain valid.
+Reject capacity explicitly with409, never truncate a financial result. Each old
+and candidate replay separately counts principal, fee and sale matches before
+appending, stopping before the bound. Existing unconnected maxima remain valid.
 
 ### Russian workflow
 
@@ -124,7 +129,7 @@ Correction/void requires review of current transfer version and both account rev
 Show exact recorded data and separately refreshed allocation/fee basis, provenance,
 and links to account views. No localStorage, automatic submit or provider request.
 
-## Acceptance oracles to freeze
+## Acceptance oracles
 
 1. A buys1for100 and1for200. Transfer1.5 A->B plus same-asset fee0.1 leaves A0.4/basis80,
    B1.5/basis200 and fee0.1/basis20; trade gain/external flows unchanged. B sells1.2for360:
@@ -151,5 +156,7 @@ No approximation or silent partial component. Source correction can fail because
 recipient would go negative or its revision budget is exhausted; explain both honestly.
 Current prices/market fee values remain explicit gaps; this records known-cost journals.
 
-Detailed wire DTOs, bounds and modified-spec deltas are still pending independent
-review. No implementation or archive until acceptance and verification complete.
+Wire DTOs and bounds are in persistence.md. Independent review accepted the financial
+oracles and required coverage of BOTH accounts, explicit feeConsumedBasisUsd wording
+and allocation paging; all three are included. No implementation before actual RED;
+no archive until required verification passes.

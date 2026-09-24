@@ -15,8 +15,7 @@ duplicate the same inventory or fabricate an observed price.
 #### Scenario: VAL-EXACT Known historical value and corrected price
 - **GIVEN** covered buys1/cost100 and1/cost200 followed by sale1.5/gross450, and exact-time manual price300
 - **WHEN** the owner values the account at the sale instant
-- **THEN** quantity0.5, cost100 and value150 are returned with complete total150 and the used price
-  revision
+- **THEN** quantity0.5, cost100 and value150 are returned with complete total150 and the used price revision
 - **WHEN** the exact-time price is corrected to320
 - **THEN** an explicit refresh returns160 with the new price revision, while old receipts remain unchanged.
 
@@ -24,8 +23,7 @@ duplicate the same inventory or fabricate an observed price.
 - **GIVEN** quantity0.000000000000000000000000000001 and price of the same size
 - **WHEN** the account is valued at that exact price instant
 - **THEN** its nonzero value is exactly one unit at decimal scale60
-- **AND** supported maximum quantities/prices and100 carry-in lots plus1000 active trades remain exact and
-  fully included before returning the bounded complete position set.
+- **AND** supported maximum quantities/prices and100 carry-in lots plus1000 active trades remain exact and fully included before returning the bounded complete position set.
 
 #### Scenario: TRANSFER-VAL-MOVEMENT Valuation follows an effective internal move
 - **GIVEN** a known source lot is transferred to another covered account before a manual exact-time price
@@ -49,17 +47,14 @@ mixed old/new position result.
 #### Scenario: VAL-SNAPSHOT Concurrent prices and trades
 - **GIVEN** an actual PostgreSQL valuation paused after establishing its snapshot
 - **WHEN** a competing connection commits a price correction and trade correction
-- **THEN** the paused response is wholly old quantities/prices/revisions, and a new request is wholly
-  committed state.
+- **THEN** the paused response is wholly old quantities/prices/revisions, and a new request is wholly committed state.
 
 #### Scenario: VAL-PRIVATE Admission and preservation
 - **GIVEN** actual HTTPS clients and PostgreSQL fingerprints/provider counters
-- **WHEN** anonymous or MFA-pending clients read valuation, or the owner requests foreign account or
-  malformed/duplicate query
+- **WHEN** anonymous or MFA-pending clients read valuation, or the owner requests foreign account or malformed/duplicate query
 - **THEN**401,404 or400 denials expose no accounting data with private no-store behavior
 - **WHEN** the admitted owner repeats valid reads
-- **THEN** business rows and provider counters remain unchanged; only normal session/admission bookkeeping
-  can change.
+- **THEN** business rows and provider counters remain unchanged; only normal session/admission bookkeeping can change.
 
 #### Scenario: TRANSFER-VAL-SNAPSHOT Correction preserves coherent recipient value
 - **GIVEN** a real valuation snapshot is established while another connection corrects a source trade whose

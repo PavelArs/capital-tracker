@@ -15,8 +15,7 @@ unchanged. Each point SHALL include the complete connected position set up to13,
 lots without per-point paging or truncation.
 
 #### Scenario: VCH-TIMELINE Historical quantities, gaps and corrections
-- **GIVEN** coverageJan1, buy1 onJan2, buy1 onJan3, sale1.5 onJan4, and manual exact-midnight prices100
-  onJan2 and300 onJan4
+- **GIVEN** coverageJan1, buy1 onJan2, buy1 onJan3, sale1.5 onJan4, and manual exact-midnight prices100 onJan2 and300 onJan4
 - **WHEN** the owner requests Jan1 through Jan4 inclusive
 - **THEN** totals are0,100,null,150 respectively; Jan3 has missingPriceCount1 and pricedSubtotalUsd0
 - **WHEN** Jan3 receives price0 or Jan4 is corrected to320 and the series is refreshed
@@ -25,10 +24,8 @@ lots without per-point paging or truncation.
 #### Scenario: VCH-RANGE Exact interval endpoints and validation
 - **GIVEN** valid UTC or offset-equivalent instants
 - **WHEN** a36-hour period or equal endpoints are requested
-- **THEN** samples are start,start+24h,end or a single point respectively, without duplicates or local-DST
-  shifting
-- **AND** reversed, longer-than30-day, invalid, duplicate or unexpected query fields return400;
-  absent/precoverage history409 and foreign/unknown account404.
+- **THEN** samples are start,start+24h,end or a single point respectively, without duplicates or local-DST shifting
+- **AND** reversed, longer-than30-day, invalid, duplicate or unexpected query fields return400; absent/precoverage history409 and foreign/unknown account404.
 
 #### Scenario: TRANSFER-VCH-TIMELINE Points follow arrival and preserve lot identity
 - **GIVEN** an original lot moves between covered accounts between two existing chart sample instants
@@ -46,14 +43,15 @@ valuation and historical accounting endpoints SHALL retain their behavior.
 A chart request SHALL load the connected journal once inside its existing single REPEATABLE READ
 transaction, then evaluate all unchanged sample instants from that snapshot. All relevant
 source, recipient, transfer and price revisions SHALL be coherent; the established point count
-and period bounds SHALL not multiply connected-ledger queries.
+and period bounds SHALL not multiply connected-ledger queries. A series SHALL omit
+point-specific transferSummary from its top-level metadata; it SHALL NOT present
+the first sample's transfer basis as a whole-period total.
 
 #### Scenario: VCH-SNAPSHOT Concurrent restatement and supported maxima
 - **GIVEN** real PostgreSQL and a series read paused after anchoring its snapshot
 - **WHEN** another connection commits trade and price corrections before remaining reads
 - **THEN** every point in the paused series is wholly old state and a new request is wholly new state
-- **AND**31 points across100 initial lots plus1000 active trades remain exact without per-point
-database round trips or early truncation.
+- **AND**31 points across100 initial lots plus1000 active trades remain exact without per-point database round trips or early truncation.
 
 #### Scenario: VCH-PRIVATE Admission and repeated read preservation
 - **GIVEN** actual HTTPS clients, PostgreSQL fingerprints and external-provider counters
