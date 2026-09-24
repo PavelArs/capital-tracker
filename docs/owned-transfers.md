@@ -1,9 +1,8 @@
 # Owned-account transfers
 
-**Implementation and verification are pending.** The active
-[change record](../openspec/changes/record-owned-transfers/) defines the contract;
-its verification record will capture results when the slice is complete. This
-guide does not claim production availability.
+Implemented and verified with real PostgreSQL and selected HTTPS Playwright journeys.
+See the [change and evidence](../openspec/changes/archive/2026-09-24-record-owned-transfers/verification.md).
+This records already-performed movements; it does not imply production rollout.
 
 The transfer journal records a movement that has already happened between two
 manual accounts owned by the same user. It sends no funds and does not connect to
@@ -64,7 +63,7 @@ second set of mutable lots.
 Owner limits are 1,000 active transfer identities and 10,000 transfer versions.
 The affected connected component is bounded at 32 accounts, 10,000 active trades,
 1,000 active transfers, and 100 carry-in lots per account. Each replay is bounded
-at 100,000 allocation matches. Exceeding an applicable bound is an explicit
+at 100,000 allocation matches and 100,000 simultaneously held fragments. Exceeding an applicable bound is an explicit
 conflict; no financial result is silently truncated.
 
 Account journals have a separate 10,000-revision budget. A source trade uses one

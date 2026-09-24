@@ -398,9 +398,9 @@ for actual commands, predecessor failures, image identities and unrun checks.
 
 See [manual USD price points](manual-usd-prices.md). That feature added migration18;
 its archived acceptance verified fresh18 and populated17 upgrades. Current schema
-is migration19 after the additive daily display-FX tables.
-`manual-usd-prices-db.cjs` is part of the full runner and now expects fresh19,
-populated17 upgrade preservation through19, immutable correction/void/replay, two-pool CAS,
+is migration20 after the additive owned-transfer tables.
+`manual-usd-prices-db.cjs` is part of the full runner and now expects fresh20,
+populated17 upgrade preservation through20, immutable correction/void/replay, two-pool CAS,
 RR consistency, exact values, ownership and cap constraints. The retained migration
 suite also passed: supported previous8–16 upgrades to18, fresh/replay, config/lock
 checks and unsafe legacy refusals. No migration is run against owner data.
@@ -421,7 +421,7 @@ See [daily display conversion](daily-display-fx.md) and the archived
 [verification record](../openspec/changes/archive/2026-09-24-collect-daily-display-fx/verification.md).
 Migration19 adds two tables for immutable provider observations and persistent
 collection coordination. Startup does not create or synchronize them; migration
-remains an explicit CLI operation. The PostgreSQL fixture requires a fresh19
+remains an explicit CLI operation. The current PostgreSQL fixture requires a fresh20
 database and a populated18 upgrade preserving prior rows, schema, sequences and
 session data. The migration fixture also checks replay and refuses unsafe legacy
 histories.
@@ -473,7 +473,7 @@ historical-accounting manual-price-input` passed123 cases/4 suites (31 new,
 against actual PostgreSQL; retained `historical-accounting-db.cjs` also passed,
 protecting the extracted caller-owned read loader. No migration was added;
 the archived acceptance used schema18 at that time. Current fresh fixtures use
-migration19.
+migration20.
 
 Only three HTTPS cases were selected: new VAL-API and VAL-UI plus retained
 HIST-004-A UI snapshot. They passed3/3 in37.8s, one worker and zero retries, with
@@ -544,3 +544,27 @@ period changes, zero-price refresh and a delayed real response preserving the dr
 The full runner includes the new PG fixture; existing cases and CI gates remain.
 The [verification record](../openspec/changes/archive/2026-09-24-chart-account-valuations/verification.md)
 records genuine predecessor RED, independent reviews, images and unrun checks.
+
+
+## Owned-account transfers
+
+Migration20 adds only transfer journals, identities and immutable versions. The
+[transfer guide](owned-transfers.md) and [verification record](../openspec/changes/archive/2026-09-24-record-owned-transfers/verification.md)
+describe the exact scope, actual failures/fixes and successful targeted checks.
+`owned-transfers-db.cjs` tests production services on real PostgreSQL: connected
+finance/correction/void, CSV, snapshots, replay, constraints, deferred COMMIT,
+process races and account/owner capacity. Its `--limits-only` option permits a
+focused capacity rerun. `owned-transfers-bounds-db.cjs` verifies1101 priced positions,
+10001 accessible lot/match fragments, pinned allocation, coherent selected portfolio
+and once-only series loads. Both are included in the full acceptance runner.
+
+The migration fixture's `--economic-predecessors` selection verifies fresh20 plus
+populated14/15/16/18 upgrades. Native SQL constructs prior-schema economic fixtures;
+current services verify actual post-upgrade receipts/journals/CSV/carry-in results.
+It never installs new tables in the predecessor or makes production ignore absent
+schema. Manual-price fixtures separately retain populated17 upgrade coverage.
+
+Two new HTTPS cases cover protected API economics and the Russian review/create/
+ambiguous-delivery identical retry/correction/void journey. Three retained trade,
+carry-inCSV and private-history cases were selected; the whole E2E suite was not
+repeated. Only external providers are stubbed. Full suite/release gates remain.

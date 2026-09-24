@@ -42,6 +42,8 @@ function services(db) {
     carry: make('carry-in.service', 'CarryInService'),
     history: make('historical-accounting.service', 'HistoricalAccountingService'),
     valuation: make('historical-valuation.service', 'HistoricalValuationService'),
+    series: make('valuation-history.service', 'ValuationHistoryService'),
+    portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService'),
   };
 }
 async function createDatabase() {
@@ -196,6 +198,26 @@ const transfer = (from, to, instrumentId, fromRevision, toRevision, order, quant
   feeQuantity: '0',
 });
 
+async function oneComponentRead(db, action) {
+  const statements = [];
+  const original = db.createQueryRunner;
+  db.createQueryRunner = function (...args) {
+    const runner = original.apply(this, args);
+    const query = runner.query.bind(runner);
+    runner.query = (sql, ...rest) => { statements.push(sql); return query(sql, ...rest); };
+    return runner;
+  };
+  try {
+    const result = await action();
+    assert.equal(statements.filter(sql => sql === 'SET TRANSACTION READ ONLY').length, 1);
+    const tradeReads = statements.filter(sql => /SELECT/.test(sql) && sql.includes('account_trade_versions'));
+    assert.equal(tradeReads.filter(sql => /count\(\*\)/i.test(sql)).length, 1, 'One component capacity preflight');
+    assert.equal(tradeReads.filter(sql => !/count\(\*\)/i.test(sql)).length, 1, 'One trade materialization across all selected accounts or sample instants');
+    assert.equal(statements.filter(sql => /SELECT/.test(sql) && sql.includes('manual_usd_price_versions')).length, 1, 'One batched exact price read');
+    return result;
+  } finally { db.createQueryRunner = original; }
+}
+
 async function distinctPositions(db, s, owner) {
   stage = 'TRANSFER-004-C 1101 complete priced historical positions';
   const receiver = await account(s, owner, 'Many distinct positions receiver');
@@ -245,7 +267,19 @@ async function distinctPositions(db, s, owner) {
         item.valueUsd === '2',
     ),
   );
-  console.log('PASS TRANSFER-004-C 1101 priced positions and derived offset1100');
+  const beforeReads = await fingerprint(db);
+  const selected = await oneComponentRead(db, () => s.portfolio.preview(owner, { at, accountIds: [sender, receiver] }, {}));
+  assert.equal(selected.totalValueUsd, '2202', 'Principal is never double counted across selected accounts');
+  assert.equal(selected.accounts.find(row => row.accountId === sender).totalValueUsd, '0');
+  assert.equal(selected.accounts.find(row => row.accountId === receiver).items.length, 1101);
+  assert.ok(selected.accounts.every(row => !Object.hasOwn(row, 'transferSummary')), 'Selected account metadata retains explicit field selection');
+  const series = await oneComponentRead(db, () => s.series.getSeries(owner, receiver, { from: buyAt, to: at }));
+  assert.deepEqual(series.revisionBudget, { used: 1101, limit: 10000 });
+  assert.equal(Object.hasOwn(series, 'transferSummary'), false, 'No from-point summary presented as whole-series totals');
+  assert.deepEqual(series.points.map(point => [point.at, point.totalValueUsd, point.missingPriceCount]),
+    [[buyAt, null, 1000], [moveAt, null, 1101], [at, '2202', 0]]);
+  assert.equal(await fingerprint(db), beforeReads, 'Portfolio/series reads preserve every row');
+  console.log('PASS TRANSFER-004-C 1101 priced positions, offset1100, coherent series/portfolio and once-only loads');
 }
 
 async function carryInTwo(s, owner, receiver, instrumentId) {
@@ -305,6 +339,7 @@ async function wideMatches(db, s, owner) {
   });
   assert.equal(lastLot.items.length, 1, 'All 10001 held fragments remain pageable');
   assert.equal(lastLot.nextOffset, null);
+  assert.deepEqual((await s.trade.listLots(owner, receiver, { journalRevision: '10', offset: '99999' })).items, []);
   assert.equal(lastLot.items[0].sourceKind, 'transfer');
   assert.deepEqual(
     [lastLot.items[0].remainingQuantity, lastLot.items[0].remainingCostUsd],
@@ -361,6 +396,7 @@ async function wideMatches(db, s, owner) {
   });
   assert.equal(lastMatch.items.length, 1, 'All 10001 sale matches remain pageable');
   assert.equal(lastMatch.nextOffset, null);
+  assert.deepEqual((await s.trade.listMatches(owner, receiver, sale.value.trade.tradeId, { journalRevision: '11', offset: '99999' })).items, []);
   const lastSource = [...sources.slice(1)]
     .sort((a, b) => (a.accountId < b.accountId ? -1 : a.accountId > b.accountId ? 1 : 0))
     .at(-1);

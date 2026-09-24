@@ -1032,6 +1032,11 @@ async function main() {
   } finally {
     await admin.end();
   }
+  if (process.argv[2] === '--economic-predecessors') {
+    await verifyFresh();
+    for (const previousCount of [14, 15, 16, 18]) await verifyPopulatedAuthUpgrade(previousCount);
+    return;
+  }
   if (process.argv[2] === '--from18') {
     await verifyFresh();
     await verifyPopulatedAuthUpgrade(18);
