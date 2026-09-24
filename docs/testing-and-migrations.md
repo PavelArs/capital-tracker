@@ -482,6 +482,40 @@ runner includes the new PG fixture and discovers both new browser cases; all old
 cases remain. See the [verification record](../openspec/changes/archive/2026-09-23-value-historical-account/verification.md)
 for the exact filter, predecessor RED, image IDs, reviews and unrun checks.
 
+## Manual portfolio valuation preview
+
+See [manual portfolio valuation](manual-portfolio-valuation.md) and the active
+[verification record](../openspec/changes/preview-manual-portfolio-value/verification.md).
+The preview reuses migration19 without schema or dependency changes. Its explicit
+one-to-ten account selection bounds snapshot work; no catalog page is silently
+added. One read-only repeatable-read transaction covers account history and exact
+manual prices. The result makes missing coverage and price gaps explicit, makes no
+business writes, and makes no provider requests.
+
+Scoped commands:
+
+```sh
+pnpm --dir backend test --runInBand --coverage=false manual-portfolio-valuation
+pnpm exec playwright test tests/e2e/manual-portfolio-valuation.spec.ts tests/e2e/historical-valuation.spec.ts --grep 'MPV-|VAL-UI:' --workers=1
+```
+
+In the already-started isolated Compose environment, the actual PostgreSQL fixture
+can be run separately:
+
+```sh
+docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml run --rm --no-deps \
+  -v "$PWD/tests/e2e:/tests:ro" -e NODE_PATH=/app/backend/node_modules migrate \
+  env -u TRUSTED_PROXY_IPS node /tests/manual-portfolio-valuation-db.cjs
+```
+
+The fixture creates its fixed database only after verifying it is absent. Never
+point it at owner data or reuse its existing fixture. Three new PostgreSQL families
+and four retained historical-valuation families passed in
+`/private/tmp/capital-mpv-db.log`; the two MPV HTTPS cases are pending. The browser
+selection includes retained VAL-UI to check that the new
+route does not change individual account valuation. No full-suite or release-pass
+claim is made; consult the verification record for exact images and remaining gates.
+
 ## Account valuation history
 
 See [account valuation history](valuation-history.md). Targeted backend tests use:
