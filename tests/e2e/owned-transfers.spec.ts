@@ -191,8 +191,9 @@ test('TRANSFER-API: original lot basis, connected restatement, replay and privat
   expect(versions.items).toEqual([receipt.transfer]);
 
   const rowsBeforeRefusals = businessRows();
+  const { fromAccountId: _from, toAccountId: _to, ...correctionFields } = command;
   const stale = await api.send('POST', `${transfersPath}/${transferId}/corrections`, {
-    ...command,
+    ...correctionFields,
     requestId: randomUUID(),
     expectedVersion: 1,
     expectedFromJournalRevision: 3,
@@ -321,10 +322,13 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
       page.getByRole('button', { name: 'Повторить тот же запрос', exact: true }),
     ).toBeEnabled();
     expect(submitted).toHaveLength(1);
-    await page.getByRole('button', { name: 'Повторить тот же запрос', exact: true }).click();
+    const retry = await browserPost(page, transfersPath, () =>
+      page.getByRole('button', { name: 'Повторить тот же запрос', exact: true }).click(),
+    );
+    expect(retry.status()).toBe(200);
+    expect(await retry.json()).toEqual(lostReceipt);
     await expect.poll(() => submitted.length).toBe(2);
     expect(submitted[1]).toEqual(submitted[0]);
-    await expect(page.getByText('Текущий разбор лотов', { exact: true })).toBeVisible();
     expect(lostReceipt).toMatchObject({
       transfer: { kind: 'create', quantity: '1.5', feeQuantity: '0.1' },
     });
@@ -340,8 +344,11 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   const transferArticle = page.getByRole('article', { name: articleName, exact: true });
   await expect(transferArticle).toBeVisible();
   await transferArticle.getByRole('button', { name: 'Показать разбор лотов', exact: true }).click();
-  await expect(transferArticle.getByText('Списанная себестоимость комиссии, USD')).toBeVisible();
-  await expect(transferArticle.getByText('20', { exact: true })).toBeVisible();
+  await expect(transferArticle.getByText('Текущий разбор лотов', { exact: true })).toBeVisible();
+  await expect(
+    transferArticle.getByText('Списанная себестоимость комиссии, USD', { exact: true })
+      .locator('xpath=following-sibling::dd[1]'),
+  ).toHaveText('20');
 
   await transferArticle.getByRole('button', { name: 'Исправить', exact: true }).click();
   await page.getByLabel('Количество получателю', { exact: true }).fill('1.4');

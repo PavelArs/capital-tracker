@@ -115,8 +115,10 @@ Derived account-lot, sale-match and historical-position page offsets extend to
 10000 active buys plus32*100 carry-in lots; all such positions are priced, including
 those beyond the former single-account1100 maximum. Fragment lists also obey the
 100000 allocation bound plus13200 original lots, so apply a separate100000 held
-fragment cap per replay before adding any baseline, buy or credit fragment (explicit409, never inaccessible
-rows). No string input precision check is applied to a wider derived sum.
+fragment cap per replay before adding any baseline, buy or credit fragment (explicit409,
+never inaccessible rows). Count simultaneously held nonempty fragments, decrementing
+depleted/debited fragments; repeated movement is not a cumulative-creation budget.
+No string input precision check is applied to a wider derived sum.
 
 Transfer metadata placement: current state fields live inside `journal`; historical
 accounting and single-instant valuation fields are top-level. Series metadata may
@@ -204,6 +206,10 @@ Fields: `Со счёта`, `На счёт`, `Актив перевода`, `Ко
 `Проверить счета` loads both actual journal revisions for review. Submit
 `Записать перевод` is enabled only after valid review/attestation. Correction
 and void first load current version and both journals; fixed pair cannot be edited.
+Each listed command is an article labelled `Перевод <transferId>`. Its `Исправить`
+or `Отменить перевод` action loads current version/account pins, then shows
+`Сохранить исправление` or `Подтвердить отмену`. `Показать разбор лотов` explicitly
+loads current allocation. List/article identities are stable after reload.
 
 Show immutable receipt separately from `Текущий разбор лотов` and explicitly
 label `Списанная себестоимость комиссии, USD`. No market fee or gain label.

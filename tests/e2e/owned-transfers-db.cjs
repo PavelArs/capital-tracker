@@ -3,9 +3,9 @@
 // Actual production services and PostgreSQL. No repository/auth/backend mocks.
 // Missing future module/schema is a prerequisite failure, never behavioral RED.
 const assert = require('node:assert/strict');
-const { spawnSync } = require('node:child_process');
+const { fork, spawnSync } = require('node:child_process');
 const { createHash, randomUUID } = require('node:crypto');
-const { existsSync } = require('node:fs');
+const { existsSync, readdirSync } = require('node:fs');
 const { ConfigService } = require('@nestjs/config');
 const { Client } = require('pg');
 const { DataSource } = require('typeorm');
@@ -13,14 +13,16 @@ const { DataSource } = require('typeorm');
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e',
   DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_owned_transfers_e2e';
+const previousDatabase = 'capital_tracker_owned_transfers_previous_e2e';
 const coverageFrom = '2025-01-01T00:00:00.000Z';
 const at = '2025-01-06T00:00:00.000Z';
 const transferTables = ['owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions'];
 let stage = 'isolated configuration';
+const children = new Set();
 
-function source() {
+function source(name = database) {
   const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
-  const options = new TypeOrmConfigService(new ConfigService({ ...settings, DB_NAME: database })).createTypeOrmOptions();
+  const options = new TypeOrmConfigService(new ConfigService({ ...settings, DB_NAME: name })).createTypeOrmOptions();
   assert.equal(options.synchronize, false);
   assert.equal(options.migrationsRun, false);
   return new DataSource({ ...options, extra: { ...options.extra, max: 1 } });
@@ -76,6 +78,85 @@ const corrections = (saved, from, to, changes = {}) => ({ requestId: randomUUID(
   assertInternal: true, instrumentId: saved.instrumentId, occurredAt: saved.occurredAt,
   orderWithinTimestamp: saved.orderWithinTimestamp, quantity: saved.quantity,
   feeInstrumentId: saved.feeInstrumentId, feeQuantity: saved.feeQuantity, ...changes });
+
+async function createDatabase(name) {
+  assert.ok([database, previousDatabase].includes(name), 'Only this script\'s exact synthetic databases');
+  const admin = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD, database: settings.DB_NAME });
+  await admin.connect();
+  try {
+    assert.equal((await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount, 0,
+      'Never reuse or drop a pre-existing database');
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally { await admin.end(); }
+}
+function migrate(name) {
+  assert.ok([database, previousDatabase].includes(name));
+  const result = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend',
+    env: { ...process.env, ...settings, DB_NAME: name }, encoding: 'utf8', timeout: 60000 });
+  assert.equal(result.status, 0, 'Actual guarded production migration CLI');
+  return result.stdout;
+}
+async function populatedUpgrade() {
+  stage = 'TRANSFER-006-A populated19 preservation and downgrade refusal';
+  await createDatabase(previousDatabase);
+  const prior = source(previousDatabase);
+  // Only building an empty, newly created synthetic predecessor schema. No unsafe
+  // legacy upgrade bypass: the populated upgrade itself uses the guarded CLI.
+  prior.setOptions({ migrations: readdirSync('/app/backend/dist/migrations')
+    .filter(file => file.endsWith('.js') && file < '1790100000000')
+    .map(file => `/app/backend/dist/migrations/${file}`) });
+  try {
+    await prior.initialize();
+    await prior.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    await prior.runMigrations({ transaction: 'all' });
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 19);
+    const [{ id: owner }] = await prior.query(`INSERT INTO users(email,password,"emailVerified")
+      VALUES('transfer-upgrade@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+    const s = services(prior);
+    const a = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Preserved previous journal' })).value.id;
+    const instrument = (await s.accounting.createInstrument(owner,
+      { requestId: randomUUID(), name: 'Preserved previous instrument', symbol: 'SAME' })).value.id;
+    const request = randomUUID(), buy = randomUUID(), initialization = randomUUID();
+    const execution = trade(instrument, 0);
+    await prior.transaction(async manager => {
+      await manager.query(`INSERT INTO account_trade_journals
+        ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","currentRevision")
+        VALUES($1,$2,$3,$4,'declared-empty',$5,1)`,
+        [owner, a, initialization, JSON.stringify({ coverageFrom, assertEmpty: true }), coverageFrom]);
+      await manager.query('INSERT INTO account_trades(id,"ownerId","accountId","currentVersion") VALUES($1,$2,$3,1)', [buy, owner, a]);
+      await manager.query(`INSERT INTO account_trade_versions
+        ("ownerId","accountId","tradeId",version,"journalRevision","requestId","canonicalPayload",kind,
+         "instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd")
+        VALUES($1,$2,$3,1,1,$4,$5,'create',$6,'buy',$7,0,1,100,0)`,
+        [owner, a, buy, request, JSON.stringify({ kind: 'create', expectedJournalRevision: 0,
+          instrumentId: instrument, side: 'buy', occurredAt: execution.occurredAt,
+          orderWithinTimestamp: 0, quantity: '1', grossUsd: '100', feeUsd: '0' }), instrument, execution.occurredAt]);
+    });
+    await prior.query(`INSERT INTO assets("userId",name,category,amount,"currencyId",date)
+      SELECT $1,'Preserved unrelated fixture','savings',123.45,id,'2025-01-01' FROM currencies WHERE code='USD'`, [owner]);
+    const old = await fingerprint(prior, ['migrations']);
+    assert.match(migrate(previousDatabase), /Migrations applied: 1/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
+    assert.equal(await fingerprint(prior, ['migrations', ...transferTables]), old);
+    for (const table of transferTables) assert.equal((await prior.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
+    const after = await fingerprint(prior);
+    assert.match(migrate(previousDatabase), /Migrations applied: 0/);
+    assert.equal(await fingerprint(prior), after);
+    assert.equal((await journal(s, owner, a)).summary.remainingCostUsd, '100');
+    const replay = await s.trade.create(owner, a, { ...execution, requestId: request });
+    assert.equal(replay.created, false, 'Prior normalized request remains replayable');
+    assert.equal(replay.value.trade.tradeId, buy);
+    assert.equal(replay.value.trade.version, 1);
+    assert.equal(replay.value.trade.requestId, request);
+    assert.equal(replay.value.journalRevision, 1);
+    assert.equal(replay.value.trade.grossUsd, '100');
+    const { AddOwnedTransfers1790100000000 } = require('/app/backend/dist/migrations/1790100000000-AddOwnedTransfers.js');
+    await assert.rejects(() => new AddOwnedTransfers1790100000000().down(), /recovery|downgrade/i);
+    assert.equal(await fingerprint(prior), after, 'No-op/replay/refused downgrade preserve every row');
+  } finally { if (prior.isInitialized) await prior.destroy(); }
+  console.log('PASS TRANSFER-006-A populated19/fresh20/no-op/replay/preservation/downgrade');
+}
 
 async function exactAndRestatement(db, s, f) {
   stage = 'TRANSFER-001-A/003-A exact economics and immutable receipts';
@@ -237,22 +318,237 @@ async function coherentSnapshot(db, s, f) {
   console.log('PASS TRANSFER-004-B coherent source/receiver snapshot');
 }
 
+async function connectedCsv(db, s, f) {
+  stage = 'TRANSFER-003-B connected CSV preview/confirmation/rollback';
+  const a = await account(s, f.owner, 'CSV source'), b = await account(s, f.owner, 'CSV recipient');
+  const settings = side => ({ format: { delimiter: ',', decimalSeparator: '.', timestampMode: 'offset' },
+    mapping: { columns: { instrument: 0, side: 1, occurredAt: 2, order: 3, quantity: 4, grossUsd: 5, feeUsd: 6 },
+      instruments: [{ source: 'TOKEN', instrumentId: f.token }], sides: [{ source: side, side }] }, assertUsd: true });
+  const upload = async (id, side, date, gross) => {
+    const bytes = Buffer.from(`instrument,side,time,order,quantity,gross,fee\nTOKEN,${side},${date},0,1,${gross},0\n`);
+    return { bytes, batch: (await s.csv.upload(f.owner, id, { filename: 'owned-transfer.csv', bytes })).value,
+      settings: settings(side) };
+  };
+  const command = (preview, value) => ({ requestId: randomUUID(), expectedJournalRevision: preview.journalRevision,
+    parserVersion: 'usd-csv-v1', ...value.settings, previewHash: preview.previewHash });
+  const imported = await upload(a, 'buy', '2025-01-02T00:00:00.000Z', '100');
+  const sourcePreview = await s.csv.preview(f.owner, a, imported.batch.batchId, imported.settings);
+  assert.equal(sourcePreview.canConfirm, true);
+  const sourceCommand = command(sourcePreview, imported);
+  const sourceReceipt = await s.csv.confirm(f.owner, a, imported.batch.batchId, sourceCommand);
+  const [buy] = (await s.trade.listTrades(f.owner, a, {})).items;
+  await s.transfer.create(f.owner, movement(f, a, b, 1, 0,
+    { quantity: '1', feeInstrumentId: null, feeQuantity: '0' }));
+  await unchanged(db, () => s.csv.rollback(f.owner, a, imported.batch.batchId,
+    { requestId: randomUUID(), expectedJournalRevision: 2 }), 409);
+  const sale = await upload(b, 'sell', '2025-01-04T00:00:00.000Z', '300');
+  const preview = await s.csv.preview(f.owner, b, sale.batch.batchId, sale.settings);
+  assert.equal(preview.canConfirm, true, 'Real CSV sale sees received holdings');
+  assert.equal(preview.candidateSummary.realizedUsd, '200');
+  const stale = command(preview, sale);
+  await s.trade.correct(f.owner, a, buy.tradeId, trade(f.token, 2,
+    { grossUsd: '120', orderWithinTimestamp: 0 }));
+  await unchanged(db, () => s.csv.confirm(f.owner, b, sale.batch.batchId, stale), 409);
+  const refreshed = await s.csv.preview(f.owner, b, sale.batch.batchId, sale.settings);
+  assert.notEqual(refreshed.previewHash, preview.previewHash);
+  assert.equal(refreshed.journalRevision, 2);
+  assert.equal(refreshed.candidateSummary.realizedUsd, '180');
+  const saleCommand = command(refreshed, sale);
+  const saleReceipt = await s.csv.confirm(f.owner, b, sale.batch.batchId, saleCommand);
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 4);
+  assert.equal((await journal(s, f.owner, b)).journalRevision, 3);
+  assert.equal((await journal(s, f.owner, b)).versionCount, 1);
+  const rollbackInput = { requestId: randomUUID(), expectedJournalRevision: 3 };
+  const rollback = await s.csv.rollback(f.owner, b, sale.batch.batchId, rollbackInput);
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 5);
+  assert.equal((await journal(s, f.owner, b)).journalRevision, 4);
+  assert.equal((await journal(s, f.owner, b)).versionCount, 2);
+  assert.equal((await journal(s, f.owner, b)).summary.remainingCostUsd, '120');
+  assert.equal((await journal(s, f.owner, b)).summary.realizedUsd, '0');
+  const beforeReplay = await fingerprint(db);
+  assert.deepEqual(await s.csv.confirm(f.owner, a, imported.batch.batchId, sourceCommand),
+    { created: false, value: sourceReceipt.value });
+  assert.deepEqual(await s.csv.confirm(f.owner, b, sale.batch.batchId, saleCommand),
+    { created: false, value: saleReceipt.value });
+  assert.deepEqual(await s.csv.rollback(f.owner, b, sale.batch.batchId, rollbackInput),
+    { created: false, value: rollback.value });
+  const savedSources = await db.query('SELECT id,"originalBytes" FROM account_csv_imports WHERE id=ANY($1::uuid[])',
+    [[imported.batch.batchId, sale.batch.batchId]]);
+  assert.equal(savedSources.length, 2);
+  assert.deepEqual(savedSources.find(row => row.id === imported.batch.batchId).originalBytes, imported.bytes);
+  assert.deepEqual(savedSources.find(row => row.id === sale.batch.batchId).originalBytes, sale.bytes);
+  assert.equal(await fingerprint(db), beforeReplay);
+  console.log('PASS TRANSFER-003-B connected CSV exact preview/rollback/replay');
+}
+
+async function commitAndConstraints(db, s, f) {
+  stage = 'TRANSFER-003-C/006-A deferred COMMIT rollback and actual constraints';
+  const { a, b, input } = await setup(s, f, 'Commit witness');
+  const marker = `transfer_commit_${randomUUID().replaceAll('-', '')}`;
+  await db.query(`CREATE SEQUENCE ${marker}`);
+  await db.query(`CREATE FUNCTION ${marker}() RETURNS trigger LANGUAGE plpgsql AS $body$
+    BEGIN IF NEW."requestId"='${input.requestId}'::uuid THEN
+      IF NOT EXISTS(SELECT 1 FROM owned_transfers WHERE id=NEW."transferId" AND "currentVersion"=NEW.version)
+        OR NOT EXISTS(SELECT 1 FROM account_trade_journals WHERE "accountId"='${a}'::uuid AND "currentRevision"=NEW."fromJournalRevision")
+        OR NOT EXISTS(SELECT 1 FROM account_trade_journals WHERE "accountId"='${b}'::uuid AND "currentRevision"=NEW."toJournalRevision")
+        OR NOT EXISTS(SELECT 1 FROM owner_transfer_journals WHERE "ownerId"=NEW."ownerId" AND "currentRevision"=NEW."journalRevision")
+      THEN RAISE EXCEPTION 'Synthetic transfer writes incomplete'; END IF;
+      PERFORM nextval('${marker}'); RAISE EXCEPTION 'Synthetic complete transfer commit failure';
+    END IF; RETURN NULL; END $body$`);
+  await db.query(`CREATE CONSTRAINT TRIGGER ${marker} AFTER INSERT ON owned_transfer_versions
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION ${marker}()`);
+  const before = await fingerprint(db);
+  try {
+    await assert.rejects(() => s.transfer.create(f.owner, input), error =>
+      (error.driverError?.code ?? error.code) === 'P0001');
+    const [witness] = await db.query(`SELECT last_value::text AS value,is_called AS called FROM ${marker}`);
+    assert.deepEqual(witness, { value: '1', called: true }, 'All legs/heads/revisions existed before deferred failure');
+    assert.equal(await fingerprint(db), before, 'COMMIT failure rolls back all account and command rows');
+  } finally {
+    await db.query(`DROP TRIGGER ${marker} ON owned_transfer_versions`);
+    await db.query(`DROP FUNCTION ${marker}()`);
+    await db.query(`DROP SEQUENCE ${marker}`);
+  }
+  const saved = await s.transfer.create(f.owner, input);
+  assert.equal(saved.created, true, 'Failure did not reserve the request key');
+  assert.deepEqual(await s.transfer.create(f.owner, input), { created: false, value: saved.value });
+  const id = saved.value.transfer.transferId;
+  const preserved = await fingerprint(db);
+  const invalid = async (sql, values, code) => {
+    const runner = db.createQueryRunner();
+    let error;
+    try {
+      await runner.connect(); await runner.startTransaction();
+      try { await runner.query(sql, values); await runner.commitTransaction(); } catch (caught) { error = caught; }
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+    }
+    assert.equal(error?.driverError?.code ?? error?.code, code, 'Intended immediate or deferred PostgreSQL constraint');
+    assert.equal(await fingerprint(db), preserved);
+  };
+  for (const [set, value, code] of [['quantity=$2', '-1', '23514'], ['quantity=$2', 'NaN', '23514'],
+    ['quantity=$2', '9'.repeat(49), '22003'], ['"feeQuantity"=$2', '-1', '23514'],
+    ['"feeInstrumentId"=$2', null, '23514'], ['"instrumentId"=$2', f.foreignToken, '23503'],
+    ['"occurredAt"=$2', 'infinity', '23514'], ['"orderWithinTimestamp"=$2', -1, '23514']]) {
+    await invalid(`UPDATE owned_transfer_versions SET ${set} WHERE "transferId"=$1 AND version=1`, [id, value], code);
+  }
+  await invalid('UPDATE owned_transfers SET "toAccountId"="fromAccountId" WHERE id=$1', [id], '23514');
+  await invalid('UPDATE owned_transfers SET "currentVersion"=2 WHERE id=$1', [id], '23503');
+  await invalid('UPDATE owner_transfer_journals SET "currentRevision"=10001 WHERE "ownerId"=$1', [f.owner], '23514');
+  console.log('PASS TRANSFER-003-C/006-A deferred COMMIT witness/rollback/constraints/retry');
+}
+
+async function workerMain() {
+  for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
+  const db = source();
+  try {
+    await db.initialize();
+    const [{ pid }] = await db.query('SELECT pg_backend_pid() AS pid');
+    const command = new Promise(resolve => process.once('message', resolve));
+    process.send({ type: 'ready', pid, processId: process.pid });
+    const { owner, input } = await command;
+    try { process.send({ type: 'result', value: await services(db).transfer.create(owner, input) }); }
+    catch (error) { process.send({ type: 'result', status: error.getStatus?.() ?? null }); }
+  } finally { if (db.isInitialized) await db.destroy(); }
+}
+async function worker() {
+  const child = fork(__filename, ['--worker'], { env: process.env, stdio: ['ignore', 'ignore', 'inherit', 'ipc'] });
+  children.add(child);
+  let ready, result, failReady, failResult;
+  const started = new Promise((resolve, reject) => { ready = resolve; failReady = reject; });
+  const finished = new Promise((resolve, reject) => { result = resolve; failResult = reject; });
+  const closed = new Promise(resolve => child.once('exit', resolve));
+  void finished.catch(() => {});
+  let received = false;
+  child.on('message', message => {
+    if (message.type === 'ready') ready(message);
+    if (message.type === 'result') { received = true; result(message); }
+  });
+  child.on('error', error => { failReady(error); failResult(error); });
+  child.on('exit', code => {
+    children.delete(child);
+    if (!received) { const error = new Error(`Synthetic worker exited without result (${code})`); failReady(error); failResult(error); }
+  });
+  const identity = await started;
+  return { ...identity, async run(owner, input) {
+    child.send({ owner, input });
+    const [value, exitCode] = await Promise.all([finished, closed]);
+    assert.equal(exitCode, 0, 'Synthetic service worker exits cleanly');
+    return value;
+  } };
+}
+async function waitForLock(db, pid, pattern) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const rows = await db.query(`SELECT query FROM pg_stat_activity WHERE pid=$1
+      AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0`, [pid]);
+    if (rows.some(row => pattern.test(row.query))) return;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error('Expected actual PostgreSQL lock waiter was not observed');
+}
+async function processRaces(db, s, f) {
+  stage = 'TRANSFER-003-C separate process owner/row lock race and saved replay';
+  for (const identical of [false, true]) {
+    const { a, b, input } = await setup(s, f, `Race ${identical}`);
+    const lock = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME,
+      password: settings.DB_PASSWORD, database });
+    await lock.connect();
+    let firstResult, secondResult;
+    try {
+      await lock.query('BEGIN');
+      await lock.query('SELECT id FROM manual_accounts WHERE id=$1 FOR UPDATE', [a]);
+      const first = await worker(), second = await worker();
+      assert.notEqual(first.pid, second.pid);
+      assert.notEqual(first.processId, second.processId);
+      firstResult = first.run(f.owner, input);
+      await waitForLock(db, first.pid, /manual_accounts/);
+      secondResult = second.run(f.owner, identical ? input : { ...input, requestId: randomUUID() });
+      await waitForLock(db, second.pid, /pg_advisory_xact_lock/);
+      const blocked = await db.query(`SELECT pid FROM pg_stat_activity WHERE pid=ANY($1::int[])
+        AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0`, [[first.pid, second.pid]]);
+      assert.equal(blocked.length, 2, 'Both real processes are waiting at the prescribed distinct lock stages');
+      await lock.query('COMMIT');
+      const [one, two] = await Promise.all([firstResult, secondResult]);
+      assert.equal(one.value.created, true);
+      if (identical) assert.deepEqual(two.value, { created: false, value: one.value.value });
+      else assert.equal(two.status, 409);
+      assert.equal((await journal(s, f.owner, a)).journalRevision, 3);
+      assert.equal((await journal(s, f.owner, b)).journalRevision, 1);
+      assert.equal((await journal(s, f.owner, a)).summary.remainingCostUsd, '80');
+      assert.equal((await journal(s, f.owner, b)).summary.remainingCostUsd, '200');
+      assert.equal((await db.query('SELECT count(*)::int AS n FROM owned_transfers WHERE "fromAccountId"=$1', [a]))[0].n, 1);
+    } finally {
+      await lock.query('ROLLBACK'); await lock.end();
+      await Promise.allSettled([firstResult, secondResult].filter(Boolean));
+    }
+  }
+  const { a, b, first, input } = await setup(s, f, 'Passive cap');
+  const saved = (await s.transfer.create(f.owner, input)).value;
+  // Synthetic valid journal budget state: passive ticks need no local versions.
+  await db.query('UPDATE account_trade_journals SET "currentRevision"=10000 WHERE "accountId"=$1', [b]);
+  const exhausted = await journal(s, f.owner, b);
+  assert.equal(exhausted.versionCount, 0);
+  assert.deepEqual(exhausted.revisionBudget, { used: 10000, limit: 10000 });
+  const command = trade(f.token, 3, { grossUsd: '120', orderWithinTimestamp: 0 });
+  await unchanged(db, () => s.trade.correct(f.owner, a, first.trade.tradeId, command), 409);
+  assert.deepEqual(await s.transfer.create(f.owner, input), { created: false, value: saved });
+  await db.query('UPDATE account_trade_journals SET "currentRevision"=1 WHERE "accountId"=$1', [b]);
+  assert.equal((await s.trade.correct(f.owner, a, first.trade.tradeId, command)).created, true,
+    'The identical command succeeds when only the dependent budget is restored');
+  console.log('PASS TRANSFER-003-C process race/advisory and row wait/replay/passive budget');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value,
     'Exact isolated synthetic settings required');
   assert.ok(existsSync('/app/backend/dist/accounting/owned-transfer.service.js'),
     'Missing module is prerequisite failure, not behavioral RED');
-  const admin = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME,
-    password: settings.DB_PASSWORD, database: settings.DB_NAME });
-  await admin.connect();
-  try {
-    assert.equal((await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [database])).rowCount, 0,
-      'Never reuse or drop a pre-existing database');
-    await admin.query(`CREATE DATABASE "${database}"`);
-  } finally { await admin.end(); }
-  const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend',
-    env: { ...process.env, ...settings, DB_NAME: database }, encoding: 'utf8', timeout: 60000 });
-  assert.equal(migrated.status, 0, 'Actual schema20 migration');
+  await createDatabase(database);
+  assert.match(migrate(database), /Migrations applied: 20/);
+  assert.match(migrate(database), /Migrations applied: 0/);
+  await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
@@ -266,13 +562,15 @@ async function main() {
     const foreignToken = (await s.accounting.createInstrument(other.id, { requestId: randomUUID(), name: 'Foreign', symbol: 'SAME' })).value.id;
     const f = { owner: owner.id, other: other.id, token, foreignToken };
     const mutable = [...transferTables, 'manual_accounts', 'accounting_instruments', 'account_trade_journals',
-      'account_trades', 'account_trade_versions', 'manual_usd_price_versions'];
+      'account_trades', 'account_trade_versions', 'manual_usd_price_versions',
+      'account_csv_imports', 'account_csv_import_commands', 'account_csv_import_rows'];
     const preserved = await fingerprint(db, mutable);
-    for (const check of [exactAndRestatement, correctionVoidAndPrivacy, coherentSnapshot]) await check(db, s, f);
+    for (const check of [exactAndRestatement, correctionVoidAndPrivacy, coherentSnapshot, connectedCsv, commitAndConstraints, processRaces]) await check(db, s, f);
     assert.equal(await fingerprint(db, mutable), preserved, 'External flows/auth/legacy/provider tables unchanged');
   } finally { if (db.isInitialized) await db.destroy(); }
 }
 const watchdog = setTimeout(() => { console.error(`FAIL timeout at ${stage}`); process.exit(1); }, 180000);
 watchdog.unref();
-main().catch(error => { console.error(`FAIL ${stage}: ${error.message}`); process.exitCode = 1; })
-  .finally(() => clearTimeout(watchdog));
+(process.argv.includes('--worker') ? workerMain() : main())
+  .catch(error => { console.error(`FAIL ${stage}: ${error.message}`); process.exitCode = 1; })
+  .finally(() => { clearTimeout(watchdog); for (const child of children) child.kill(); });
