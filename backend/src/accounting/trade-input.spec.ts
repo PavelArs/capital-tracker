@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import {
+  parseDerivedTradePageQuery,
   parseJournalInitialization,
   parseTradeCorrection,
   parseTradeCreate,
@@ -437,5 +438,14 @@ describe('TRADE-005-A bounded revision-pinned page and immutable-history query s
       rejects(() => parseTradePageQuery(raw));
       rejects(() => parseTradeHistoryQuery(raw));
     }
+  });
+
+  it('keeps raw trade-head pages capped separately from derived pages', () => {
+    expect(
+      parseDerivedTradePageQuery({ journalRevision: '10000', offset: '99999', limit: '100' }),
+    ).toEqual({ journalRevision: 10000, offset: 99999, limit: 100 });
+    rejects(() => parseDerivedTradePageQuery({ offset: '99999' }));
+    rejects(() => parseDerivedTradePageQuery({ journalRevision: '1', offset: '100000' }));
+    rejects(() => parseTradePageQuery({ journalRevision: '1', offset: '10000' }));
   });
 });

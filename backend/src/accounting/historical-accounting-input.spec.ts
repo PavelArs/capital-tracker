@@ -11,8 +11,8 @@ describe('HIST-003/004 historical query boundary', () => {
       limit: 50,
     });
     expect(
-      parseHistoricalQuery({ at, offset: '9999', limit: '100', journalRevision: '10000' }),
-    ).toEqual({ at, offset: 9999, limit: 100, journalRevision: 10000 });
+      parseHistoricalQuery({ at, offset: '99999', limit: '100', journalRevision: '10000' }),
+    ).toEqual({ at, offset: 99999, limit: 100, journalRevision: 10000 });
     expect(parseHistoricalQuery({ at, offset: '1', limit: '1', journalRevision: '0' })).toEqual({
       at,
       offset: 1,
@@ -44,7 +44,8 @@ describe('HIST-003/004 historical query boundary', () => {
     { at, unknown: '1' },
     { at, ownerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
     { at, offset: '1' },
-    { at, offset: '10000', journalRevision: '1' },
+    { at, offset: '99999' },
+    { at, offset: '100000', journalRevision: '1' },
     { at, limit: '0' },
     { at, limit: '101' },
     { at, limit: 1 },

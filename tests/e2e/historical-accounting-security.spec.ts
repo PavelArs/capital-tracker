@@ -72,7 +72,7 @@ test('HIST-002-B / HIST-004-B: actual malformed, foreign and unavailable history
     `?at=${at}&ownerId=${foreign.accountId}`,
     `?at=${at}&unexpected=${canary}`,
     `?at=${at}&offset=1`,
-    `?at=${at}&offset=10000&journalRevision=0`,
+    `?at=${at}&offset=100000&journalRevision=0`,
     `?at=${at}&limit=0`,
     `?at=${at}&limit=101`,
     `?at=${at}&limit=1&limit=2`,
@@ -104,7 +104,8 @@ test('HIST-002-B / HIST-004-B: actual malformed, foreign and unavailable history
   const empty = await api.send('GET', `${path}?at=${at}`);
   expect(empty.status()).toBe(200);
   noStore(empty);
-  expect(await empty.json()).toEqual({
+  const emptyBody = await empty.json();
+  expect(emptyBody).toEqual({
     accountId: account.id,
     at: coverageFrom,
     coverageFrom,
@@ -126,6 +127,13 @@ test('HIST-002-B / HIST-004-B: actual malformed, foreign and unavailable history
     items: [],
     nextOffset: null,
   });
+  const farDerivedPage = await api.send(
+    'GET',
+    `${path}?at=${at}&offset=99999&limit=100&journalRevision=0`,
+  );
+  expect(farDerivedPage.status()).toBe(200);
+  noStore(farDerivedPage);
+  expect(await farDerivedPage.json()).toEqual(emptyBody);
   expect(
     fingerprint(['auth_sessions']),
     'History responses preserve all accounting and admission rows',
