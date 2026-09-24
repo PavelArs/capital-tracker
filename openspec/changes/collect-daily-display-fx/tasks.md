@@ -1,6 +1,6 @@
 ## 1. Contract and acceptance
 
-- [ ] 1.1 Independently review scope/provider evidence, record baseline and keep/simplify/remove decisions; strict-validate (DFX-1..4).
+- [x] 1.1 Independently review scope/provider evidence, record baseline and keep/simplify/remove decisions; strict-validate (DFX-1..4).
 - [ ] 1.2 Write exact/parser/cooldown tests, PG coordination/migration fixture and two focused HTTPS cases before implementation; demonstrate missing-route/UI behavioral RED (DFX-EXACT/PRECISION/COLLECT/FENCE/PRIVATE/UI/MIGRATE).
 
 ## 2. Implementation

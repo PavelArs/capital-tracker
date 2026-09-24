@@ -41,5 +41,14 @@ real fresh19 and populated18 upgrade evidence even though full matrix is unrun.
 
 ## RED / implementation / GREEN
 
+Independent contract review (Sol) corrected a fixed-window budget proposal to the
+last three actual reservation timestamps, ensuring the promised rolling24h cap.
+It also required connection-time direct DNS address validation and an explicitly
+opted-in trusted egress-proxy boundary; root incorporated both. Replay compares
+provider fields while preserving the original fetchedAt. No remaining contract
+blocker. Strict21 items (20 canonical + active change) passed. Production dependency
+audit exit0, two existing moderate findings/no high or critical; raw log
+`/private/tmp/capital-fx-audit.log`. No lock change.
+
 Pending. Missing future modules/tables are not behavioral RED; use predecessor
 images and missing protected route/UI assertions before product implementation.
