@@ -16,6 +16,7 @@ import { HistoricalAccounting } from './HistoricalAccounting';
 import { HistoricalValuation } from './HistoricalValuation';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
+import { ValuationHistory } from './ValuationHistory';
 import { accountingError, newRequestId } from './feedback';
 import './TradeJournal.css';
 
@@ -585,6 +586,7 @@ export function TradeJournal({
         accountId={accountId}
         journalRevision={journal?.journalRevision ?? null}
       />
+      <ValuationHistory accountId={accountId} journalRevision={journal?.journalRevision ?? null} />
       <CarryIn
         key={accountId}
         accountId={accountId}
