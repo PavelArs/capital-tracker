@@ -27,12 +27,31 @@ export interface TradeSummary {
   realizedUsd: string;
   remainingCostUsd: string;
 }
+export interface TransferFeeSummary {
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  quantity: string;
+  consumedBasisUsd: string;
+}
+export interface TransferSummary {
+  receivedBasisUsd: string;
+  sentBasisUsd: string;
+  feeConsumedBasisUsd: string;
+  fees: TransferFeeSummary[];
+}
+export interface RevisionBudget {
+  used: number;
+  limit: 10000;
+}
 export type Journal = (JournalOrigin | CarryInOrigin) & {
   journalRevision: number;
   activeTradeCount: number;
   versionCount: number;
   limits: { activeTrades: number; versions: number };
   summary: TradeSummary;
+  transferSummary?: TransferSummary;
+  revisionBudget?: RevisionBudget;
 };
 export interface JournalState {
   accountId: string;
@@ -91,8 +110,57 @@ export interface TradeMatch {
   quantity: string;
   costUsd: string;
 }
-export type JournalLot = TradeLot | CarryInCurrentLot;
-export type JournalMatch = TradeMatch | CarryInMatch;
+export interface TransferArrival {
+  transferId: string;
+  version: number;
+}
+export type TransferOrigin =
+  | {
+      accountId: string;
+      kind: 'carry-in';
+      lotId: string;
+      openingRevision: number;
+      ordinal: number;
+      acquiredAt: string;
+      orderWithinTimestamp: number;
+      originalQuantity: string;
+      originalCostUsd: string;
+    }
+  | {
+      accountId: string;
+      kind: 'trade';
+      tradeId: string;
+      version: number;
+      acquiredAt: string;
+      orderWithinTimestamp: number;
+      originalQuantity: string;
+      originalCostUsd: string;
+    };
+export interface TransferCurrentLot {
+  sourceKind: 'transfer';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: TransferOrigin;
+  arrival: TransferArrival;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string;
+}
+export interface TransferMatch {
+  sourceKind: 'transfer';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: TransferOrigin;
+  arrival: TransferArrival;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string;
+}
+export type JournalLot = TradeLot | CarryInCurrentLot | TransferCurrentLot;
+export type JournalMatch = TradeMatch | CarryInMatch | TransferMatch;
 export interface TradePage<T> {
   journalRevision: number;
   items: T[];
