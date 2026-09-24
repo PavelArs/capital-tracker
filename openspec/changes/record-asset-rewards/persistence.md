@@ -123,3 +123,8 @@ Frozen accessible labels (scoped to the reward section): Актив вознаг
 Attestation: Подтверждаю: это уже полученное вознаграждение, а не покупка, перевод или взнос.
 Correction: Проверить исправление -> Записать исправление. Void: Проверить отмену ->
 Отменить вознаграждение. Explicit retry: Повторить тот же запрос.
+
+Reward form accessible name: Редактор вознаграждения; review region: Проверка вознаграждения.
+Saved `<article>` accessible name: Вознаграждение <rewardId>. Its exact basis/income/category
+values use stable reward-basis/reward-income/reward-category test IDs. Unknown receipt basis
+renders Неизвестна; unknown income Неизвестен; unclassified category Вид вознаграждения не уточнён.

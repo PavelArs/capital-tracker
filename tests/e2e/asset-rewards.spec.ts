@@ -99,10 +99,9 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
 
   expect((await setPrice(api, unknownAsset.id, '5')).status()).toBe(201);
   expect((await setPrice(api, zeroAsset.id, '7')).status()).toBe(201);
+  const foreign = seedForeign();
   const providers = providerRequests();
   const rowsBeforeDenials = businessRows();
-
-  const foreign = seedForeign();
   const pendingContext = await browser.newContext({ baseURL: origin, ignoreHTTPSErrors: true });
   const pendingPage = await pendingContext.newPage();
   try {
@@ -199,7 +198,7 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
       knownBasisSubtotalUsd: '0',
       knownIncomeSubtotalUsd: '40',
       unknownBasisCount: 1,
-      unknownIncomeCount: 1,
+      unknownIncomeCount: 0,
       unclassifiedCount: 1,
     },
   });
@@ -220,14 +219,14 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
         costUsd: null,
         knownCostSubtotalUsd: '0',
         unknownCostQuantity: '2',
-        price: { priceUsd: '5' },
+        price: { priceUsd: '5', observedAt: at, revision: 1 },
         valueUsd: '10',
       }),
       expect.objectContaining({
         instrumentId: zeroAsset.id,
         quantity: '1',
         costUsd: '0',
-        price: { priceUsd: '7' },
+        price: { priceUsd: '7', observedAt: at, revision: 1 },
         valueUsd: '7',
       }),
     ]),

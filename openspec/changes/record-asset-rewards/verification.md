@@ -68,3 +68,12 @@ serial dependency without changing any oracle or claiming the later checks have 
 The immutable accepted schema20 images remain pinned and are not rebuilt for RED.
 Initial PG acceptance also now contains direct SQL constraints, deferred COMMIT witness
 and real two-PID RR/read-only snapshot scenarios; these are written but not yet run.
+
+Two HTTPS cases authored independently by Luna238fad6, integrated4cf8b12; scoped Biome
+and diff checks passed. Agent standalone TypeScript attempt lacked Node type resolution
+and was not a successful check. Root strict/noUnused TypeScript with backend Node type
+roots passed. Root pre-execution review corrected three test-only issues: fingerprint
+is captured after intentional foreign fixture seeding, unknownIncomeCount is0 for known
+income40and0 despite one unclassified subtype (distinct counters in frozen contract), and
+price assertions include the exact observed instant/revision rather than an accidental
+partial nested equality. No product code or financial expectation was changed to pass.
