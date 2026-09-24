@@ -57,6 +57,16 @@ Dependency/environment failures do not establish ATDD RED.
 | Compose, Nginx, separate images, GHCR, /opt/capital-tracker | Keep useful topology; repair release gates, immutable artifacts and backup/recovery | Preserve volumes and previous releases |
 | Obsolete docs/routes/tests/dependencies | Remove only with corresponding scoped feature removal | Inventory data first |
 
+## Scoped legacy UI retirement (2026-09-24)
+
+`retire-liabilities-editor` removes only the dedicated frontend liability editor,
+list, chart, navigation, unused adapter/types/labels and its six obsolete wrapper
+tests. Old authenticated bookmarks show a notice linking to manual accounts.
+The backend CRUD, guards, tables and rows remain; Dashboard aggregate metrics and
+its category labels remain. This does not retire the Dashboard or historical
+account-valuation chart and does not authorize data/folder deletion.
+The change's verification record contains the actual scoped acceptance evidence.
+
 ## Migration and security blockers at the audited base
 
 Independent reviewer inspected source; these are code findings, not a scan or production test:

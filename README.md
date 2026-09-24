@@ -49,7 +49,7 @@ scenarios, real PostgreSQL and populated-schema migration checks passed. It does
 not yet calculate portfolio profit, XIRR or TWR.
 Original project folders/data remain untouched.
 
-Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
+Capital tracking application with manual-account workflows and retained legacy asset, crypto-wallet and financial-metrics screens during the incremental refactor.
 
 ## Tech Stack
 
@@ -60,7 +60,8 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 
 ## Features
 
-- **Assets & Liabilities** - CRUD with Stock (balance sheet) and Flow (income) asset types, multi-currency support
+- **Legacy Assets** - CRUD with Stock (balance sheet) and Flow (income) asset types, multi-currency support
+- **Saved Liabilities** - Records and the private API are retained; the retired editor is replaced by a notice linking old bookmarks to manual accounts
 - **Crypto Wallets** - Bitcoin and Ethereum address tracking with live balance updates, ERC-20 token support
 - **Financial Metrics** - Net worth, runway, FL-ratio (passive income coverage), category distributions
 - **Dashboard** - Charts, history (30 days), dynamic currency selector
@@ -145,7 +146,7 @@ backend/src/
   migrations/     Database migrations
 
 frontend/src/
-  pages/          Route pages (Dashboard, Assets, Liabilities, Crypto, Settings)
+  pages/          Manual accounting, retained legacy screens and retired-liability notice
   components/     Reusable UI components
   features/       Feature-specific components (asset cards, wallet forms, etc.)
   contexts/       Auth, Error, Theme contexts

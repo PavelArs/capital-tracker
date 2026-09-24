@@ -1,6 +1,6 @@
 ## 1. Contract and baseline
 - [x] 1.1 Review target, keep/remove dependency inventory and existing deployment; record passing frontend and targeted backend baselines.
-- [ ] 1.2 Review concrete contract, add LIR-UI real acceptance, and demonstrate intended missing-notice failure on unchanged accepted images.
+- [x] 1.2 Review concrete contract, add LIR-UI real acceptance, and demonstrate intended missing-notice failure on unchanged accepted images.
 
 ## 2. Implementation
 - [ ] 2.1 In an isolated worktree replace protected old bookmarks with the static notice and remove only dedicated liability frontend code, labels and wrapper tests.
