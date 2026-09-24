@@ -412,11 +412,11 @@ async function main() {
     encoding: 'utf8',
     timeout: 60000,
   });
-  assert.equal(migrated.status, 0, 'Actual migration18');
+  assert.equal(migrated.status, 0, 'Actual migration19');
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 18);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 19);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('chart-owner@example.invalid','synthetic-not-a-hash',true),('chart-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);

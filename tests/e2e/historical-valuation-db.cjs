@@ -247,11 +247,11 @@ async function main() {
     await admin.query(`CREATE DATABASE "${database}"`);
   } finally { await admin.end(); }
   const migrated=spawnSync(process.execPath,['/app/backend/dist/migrate.js'],{cwd:'/app/backend',env:{...process.env,...settings,DB_NAME:database},encoding:'utf8',timeout:60000});
-  assert.equal(migrated.status,0,'Actual18 migrations');
+  assert.equal(migrated.status,0,'Actual19 migrations');
   const db=source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n,18);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n,19);
     const [owner,other]=await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('valuation-owner@example.invalid','synthetic-not-a-hash',true),('valuation-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s=services(db);

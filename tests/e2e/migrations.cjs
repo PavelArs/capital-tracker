@@ -32,6 +32,8 @@ const previousThirteenName = 'capital_tracker_previous_thirteen_e2e';
 const previousFourteenName = 'capital_tracker_previous_fourteen_e2e';
 const previousFifteenName = 'capital_tracker_previous_fifteen_e2e';
 const previousSixteenName = 'capital_tracker_previous_sixteen_e2e';
+const previousEighteenName = 'capital_tracker_previous_eighteen_e2e';
+const fxTables = ['display_fx_collection', 'display_fx_observations'];
 const priceTables = ['manual_usd_price_versions'];
 const flowTables = ['portfolio_flow_journals', 'portfolio_flow_versions'];
 const carryTables = ['account_carry_in_lots'];
@@ -43,7 +45,7 @@ const accountingTables = [
 ];
 const testDatabases = [
   freshName, legacyName, emptyLegacyName, previousName,
-  previousNineName, previousTenName, previousElevenName, previousTwelveName, previousThirteenName, previousFourteenName, previousFifteenName, previousSixteenName,
+  previousNineName, previousTenName, previousElevenName, previousTwelveName, previousThirteenName, previousFourteenName, previousFifteenName, previousSixteenName, previousEighteenName,
 ];
 let stage = 'isolated configuration';
 const migrationNames = [
@@ -65,6 +67,7 @@ const migrationNames = [
   'AddKnownCostCarryIn1790060000000',
   'AddExternalUsdFlows1790070000000',
   'AddManualUsdPrices1790080000000',
+  'AddDailyDisplayFx1790090000000',
 ];
 
 function connection(database) {
@@ -161,11 +164,11 @@ async function verifyFresh() {
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
-    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables]) {
+    for (const table of ['users', 'assets', 'liabilities', 'currencies', 'crypto_wallets', 'user_currency_preferences', 'owner_auth', 'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables, ...fxTables]) {
       assert.ok(tables.includes(table), `Missing current table ${table}`);
     }
     assert.equal((await client.query('SELECT count(*)::int AS count FROM auth_request_limits')).rows[0].count, 0);
-    for (const table of [...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables]) {
+    for (const table of [...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables, ...fxTables]) {
       assert.equal((await client.query(`SELECT count(*)::int AS count FROM ${table}`)).rows[0].count, 0);
     }
     const owner = await seedOwner(client, 'fresh-migration@example.invalid');
@@ -332,11 +335,11 @@ async function verifyAdditiveOwnerUpgrade(previousCount = 8) {
       before.rows.migrations, 'Preserve previous migration records');
     assert.deepEqual((await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows.map(({name}) => name), migrationNames);
     const addedTables = [...(previousCount === 8 ? ['owner_auth'] : []),
-      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables];
+      'auth_sessions', 'owner_mfa', 'owner_mfa_recovery', 'auth_request_limits', ...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables, ...fxTables];
     assert.deepEqual(after.rows.owner_mfa, [], 'No implicit MFA enrollment');
     assert.deepEqual(after.rows.owner_mfa_recovery, [], 'No implicit recovery codes');
     assert.deepEqual(after.rows.auth_request_limits, [], 'Migration creates no request admissions');
-    for (const table of [...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables]) assert.deepEqual(after.rows[table], [], 'No implicit opening state');
+    for (const table of [...accountingTables, ...tradeTables, ...csvTables, ...carryTables, ...flowTables, ...priceTables, ...fxTables]) assert.deepEqual(after.rows[table], [], 'No implicit opening state');
     // Only the additive tables' schema/index/constraint entries may differ.
     for (const [kind, tableKey] of [['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename']]) {
       assert.deepEqual(after[kind].filter((row) => !addedTables.includes(row[tableKey])), before[kind].filter((row) => !addedTables.includes(row[tableKey])), `Preserve previous ${kind}`);
@@ -723,12 +726,28 @@ async function seedPreviousSixteen(client, target) {
   };
 }
 
+async function seedPreviousEighteen(client) {
+  for (const { id: owner } of (await client.query('SELECT id FROM users ORDER BY email')).rows) {
+    const { rows: instruments } = await client.query('SELECT id FROM accounting_instruments WHERE "ownerId"=$1 ORDER BY id LIMIT 1', [owner]);
+    assert.equal(instruments.length, 1);
+    await client.query(`INSERT INTO portfolio_flow_journals
+      ("ownerId","requestId","canonicalPayload","coverageFrom","currentRevision")
+      VALUES ($1,$2,'synthetic-preserved-origin','2025-01-01',1)`, [owner, randomUUID()]);
+    await client.query(`INSERT INTO portfolio_flow_versions
+      ("ownerId","flowId",version,"journalRevision","requestId","canonicalPayload",kind,direction,"occurredAt","amountUsd")
+      VALUES ($1,$2,1,1,$3,'synthetic-preserved-flow','create','contribution','2025-01-02',123.45678901234567890123456789)`, [owner,randomUUID(),randomUUID()]);
+    await client.query(`INSERT INTO manual_usd_price_versions
+      ("ownerId","instrumentId",revision,"requestId","canonicalPayload",kind,"observedAt","priceUsd")
+      VALUES ($1,$2,1,$3,'synthetic-preserved-price','set','2025-01-02',0.12345678901234567890123456789)`, [owner,instruments[0].id,randomUUID()]);
+  }
+}
+
 async function verifyPopulatedAuthUpgrade(previousCount) {
-  assert.ok([11, 12, 13, 14, 15, 16].includes(previousCount));
-  const target = { 11: previousElevenName, 12: previousTwelveName, 13: previousThirteenName, 14: previousFourteenName, 15: previousFifteenName, 16: previousSixteenName }[previousCount];
-  const scenario = { 11: 'LIMIT-006-A', 12: 'OPEN-004-B', 13: 'TRADE-MIG-001', 14: 'CSV-MIG-001', 15: 'CARRY-MIG-001', 16: 'FLOW-MIG-001' }[previousCount];
+  assert.ok([11, 12, 13, 14, 15, 16, 18].includes(previousCount));
+  const target = { 11: previousElevenName, 12: previousTwelveName, 13: previousThirteenName, 14: previousFourteenName, 15: previousFifteenName, 16: previousSixteenName, 18: previousEighteenName }[previousCount];
+  const scenario = { 11: 'LIMIT-006-A', 12: 'OPEN-004-B', 13: 'TRADE-MIG-001', 14: 'CSV-MIG-001', 15: 'CARRY-MIG-001', 16: 'FLOW-MIG-001', 18: 'DFX-MIGRATE' }[previousCount];
   const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []),
-    ...(previousCount < 13 ? accountingTables : []), ...(previousCount < 14 ? tradeTables : []), ...(previousCount < 15 ? csvTables : []), ...(previousCount < 16 ? carryTables : []), ...flowTables, ...priceTables];
+    ...(previousCount < 13 ? accountingTables : []), ...(previousCount < 14 ? tradeTables : []), ...(previousCount < 15 ? csvTables : []), ...(previousCount < 16 ? carryTables : []), ...(previousCount < 17 ? flowTables : []), ...(previousCount < 18 ? priceTables : []), ...fxTables];
   stage = `${scenario} previous${previousCount} schema and populated fixture`;
   const client = new Client(connection(target));
   const directory = mkdtempSync(join(tmpdir(), 'capital-migration-mfa-'));
@@ -764,8 +783,9 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     await verifyTrades();
     const verifyCsv = previousCount >= 15 ? await seedPreviousFifteen(client, target) : async () => {};
     await verifyCsv();
-    const verifyCarry = previousCount === 16 ? await seedPreviousSixteen(client, target) : async () => {};
+    const verifyCarry = previousCount >= 16 ? await seedPreviousSixteen(client, target) : async () => {};
     await verifyCarry();
+    if (previousCount >= 18) await seedPreviousEighteen(client);
     const before = await snapshot(client);
     assert.equal(before.rows.migrations.length, previousCount);
     if (previousCount >= 13) {
@@ -824,7 +844,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
@@ -855,7 +875,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     await verifyTrades();
     await verifyCsv();
     await verifyCarry();
-    console.log(`PASS ${scenario} populated${previousCount}-to18 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
+    console.log(`PASS ${scenario} populated${previousCount}-to19 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
     finally { rmSync(directory, { recursive: true, force: true }); }
@@ -890,6 +910,12 @@ async function main() {
   } finally {
     await admin.end();
   }
+  if (process.argv[2] === '--from18') {
+    await verifyFresh();
+    await verifyPopulatedAuthUpgrade(18);
+    return;
+  }
+  assert.equal(process.argv.length, 2, 'Unknown fixture selection');
   stage = 'MIG-002 migration lock contention'; await verifyLockContention();
   stage = 'ISO-001 fresh schema and replay'; await verifyFresh();
   stage = 'ISO-002 populated destructive legacy refusal'; await verifyLegacy(legacyName);
@@ -903,6 +929,7 @@ async function main() {
   await verifyPopulatedAuthUpgrade(14);
   await verifyPopulatedAuthUpgrade(15);
   await verifyPopulatedAuthUpgrade(16);
+  await verifyPopulatedAuthUpgrade(18);
 }
 
 main().catch(() => {
