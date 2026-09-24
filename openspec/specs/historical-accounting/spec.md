@@ -6,7 +6,6 @@ instant from current effective journal versions and immutable opening lots, with
 explicit coverage and protected read-only review. The wire and consistency contract
 is recorded in the archived
 [design](../../changes/archive/2026-09-23-inspect-historical-accounting/design.md).
-
 ## Requirements
 ### Requirement: HIST-001 Restated exact account snapshots
 The system SHALL reconstruct account positions and cumulative FIFO journal totals at
@@ -16,6 +15,12 @@ calculate the complete prefix before pagination, aggregate positive remaining lo
 by instrument UUID, and return exact canonical decimal strings. It SHALL identify
 the selected instant, coverage, current journal revision and current-effective-history
 basis. Corrections and voids SHALL restate the result without changing old receipts.
+
+The effective history SHALL include recorded transfers at or before the selected instant, only
+from their arrival instant onward, and order them with same-instant account events by explicit
+chronology unique within each touched account. A transfer SHALL move position and basis without
+adding covered purchases, sales, realized gain or external flows. The selected account result
+SHALL reflect the complete connected replay.
 
 #### Scenario: HIST-001-A Purchases, sale and amount correction
 - **GIVEN** empty coverage2025-01-01T00:00:00Z, buy1/cost100 onJan2, buy1/cost200 onJan3 and sale1.5/gross450 onJan4, all at00:00:00Z with zero fees
@@ -29,6 +34,14 @@ basis. Corrections and voids SHALL restate the result without changing old recei
 - **WHEN** a buy correction moves it across a queried boundary without invalidating later sales, or a covered sale is voided
 - **THEN** each snapshot uses the corrected execution time and excludes void heads, preserves exact fee/partial-lot allocation, and does not use version creation time as execution time
 - **AND** for the HIST-001-A trades with the first buy already corrected to120, voiding the sale restores quantity2/cost320 and realized0; neither correction nor read changes the immutable baseline or old receipts
+
+#### Scenario: TRANSFER-HIST-EFFECTIVE Transfer is inclusive without synthetic trade totals
+- **GIVEN** a lot is moved between two covered accounts exactly at a queried instant and a later sale
+  consumes part of it
+- **WHEN** both account histories are read at that instant and after the sale
+- **THEN** the source is reduced and recipient increased at the inclusive boundary with original
+  basis/provenance, while trade and external-flow totals are unchanged; a read before arrival
+  excludes the received lot
 
 ### Requirement: HIST-002 Explicit accounting coverage and baseline
 The system SHALL distinguish an initialized empty journal and known-cost carry-in
@@ -58,6 +71,12 @@ instrument UUID and require a pinned journal revision for nonzero offsets. Suppl
 revision mismatch SHALL return409. Summary and initial cost SHALL describe the whole
 selected prefix even when the requested page is empty.
 
+A historical response SHALL load the connected ledger once inside its single read-only
+REPEATABLE READ transaction. Its revision pin SHALL cover the connected history on which the
+selected account result depends; an upstream trade, CSV or transfer change SHALL invalidate a
+continuation for that account. Derived position offsets SHALL accept0..99999 with
+limit1..100 and the same revision-pin rules, without truncating connected positions.
+
 #### Scenario: HIST-003-A Pagination preserves identity and totals
 - **GIVEN** two different instruments with the same symbol, each having remaining lots, and limit1
 - **WHEN** the owner requests the first and pinned next page at the same instant
@@ -71,6 +90,15 @@ selected prefix even when the requested page is empty.
 - **WHEN** a competing correction commits before the read loads all heads/baseline/labels
 - **THEN** the response is wholly the old state and revision; a new read is wholly the committed state
 - **AND**100 carry-in lots plus1000 active trades remain calculable with82-digit derived bounds, without an early query/page limit or numeric rounding
+
+#### Scenario: TRANSFER-HIST-PIN Upstream edit invalidates dependent history page
+- **GIVEN** a recipient history page is pinned while its position depends on a source lot transferred from
+  another account
+- **WHEN** an upstream source correction commits after the first page
+- **THEN** the old recipient continuation returns409 rather than mixing revisions, and an explicit new read
+  uses one complete connected snapshot
+- **AND** a connected result containing1101 distinct instrument positions can read its final position
+  at pinned offset1100 with limit1; a valid offset99999 is empty with complete unchanged totals
 
 ### Requirement: HIST-004 Protected Russian read-only review
 The system SHALL provide a Russian account-detail snapshot form with explicit ISO

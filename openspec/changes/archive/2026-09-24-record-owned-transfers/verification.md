@@ -118,3 +118,29 @@ release/backup/restore validation were not run this slice. Existing tests/CI ret
 full runner now includes both transfer PG fixtures. The full project brief remains
 incomplete, including swaps/rewards, automatic prices/history, blockchain reconciliation,
 whole-portfolio/cash, optionalAI, release hardening and final consolidation.
+
+## Archive and final consistency
+
+Installed OpenSpec1.2.0 `archive record-owned-transfers --yes` succeeded and created
+`2026-09-24-record-owned-transfers`. Its9/10 progress warning referred only to task4.2,
+which includes the archive operation and post-archive checks themselves; implementation
+and all required runtime gates were complete before this command. The CLI also emitted
+the nonblocking recommendation to split more than10 deltas. No requirement was removed.
+
+Post-archive strict validation:27canonical specs passed,0failed; `openspec list --json`
+returned an empty changes array. Exact requirement-block comparison found6added and
+19modified blocks matching their archived deltas, after normalizing repeated blank lines.
+The initial byte-substring probe failed only on a duplicate blank line in TRADE-005;
+no text or scenario differed. All14untouched requirement blocks within changed specs
+were preserved, and the other19canonical spec files were byte-identical to saved
+pre-archive SHA256 hashes. A separate Luna review confirmed no substantive mismatch
+or lost prior scenario. Replaced the CLI-generated Purpose placeholder with the real
+capability purpose. Removed CLI-added trailing blank lines to pass `git diff --check`.
+
+Final owner Nginx content/mode/size and lock hashes match the preserved values above.
+Actual Docker container and network queries for the isolated Compose project both
+returned empty inventories. No further runtime code changed after the recorded passes.
+Task4.2 is complete; all10tasks checked. CONTINUITY.md now summarizes the completed
+slice and explicitly retains the much larger unfinished whole-project scope.
+Archive log: `/private/tmp/capital-owned-transfer-archive.log`; post-archive validation:
+`/private/tmp/capital-owned-transfer-postarchive-validation.log`.

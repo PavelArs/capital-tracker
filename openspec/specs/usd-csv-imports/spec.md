@@ -67,6 +67,14 @@ exact current/candidate summary, coherent journal revision and versioned preview
 For a reviewed carry-in origin, both summaries and validation SHALL use its immutable
 original-lot baseline under CARRY-002/004 without adding baseline buys or fees.
 
+Preview SHALL rebuild the complete candidate connected component using the stored transfer
+history and its current pinned journal revision, without mutating any participant. Transfer
+commands are not CSV-importable under this requirement. The preview identity SHALL become stale
+when any upstream connected revision changes; no partial or truncated recipient history may be
+shown. Candidate connected prefix/capacity failures SHALL retain the invalid-preview
+envelope with `connected-history`/`connected-capacity` batch errors respectively;
+invalid saved history SHALL return409 rather than a fabricated current summary.
+
 #### Scenario: CSV-002-A Inspection supports deliberate mapping without guessing
 - **WHEN** the owner inspects comma or semicolon data containing doubled quotes, quoted delimiter/newlines, optional BOM and mixed LF/CRLF endings
 - **THEN** every source ordinal/start line and literal cell is correct before mappings exist, including ignored formula-looking text
@@ -85,6 +93,12 @@ original-lot baseline under CARRY-002/004 without adding baseline buys or fees.
 - **THEN** the documented400, structured nonconfirmable preview or generic404 occurs without guessing, dropping rows or disclosing foreign identity
 - **AND** source keys remain exact case/Unicode strings, including safe prototype-like names, and map-array reordering/UUID case normalize equivalently
 
+#### Scenario: TRANSFER-CSV-PREVIEW Candidate trades use connected transferred basis
+- **GIVEN** an initialized source and recipient connected by an effective transfer of an original FIFO lot
+- **WHEN** the owner previews a CSV sale of the received lot
+- **THEN** the candidate summary and FIFO matches use the original lot interval and provenance, while every
+  connected account row, transfer version and revision remains unchanged
+
 ### Requirement: CSV-003 Whole-batch atomic confirmation and replay
 Confirmation SHALL reparse immutable source/settings on the server and bind the exact
 parser version, source, account/batch, normalized rows and locked journal revision to
@@ -102,6 +116,14 @@ version ordinals; economic time/order SHALL determine FIFO. No provisional prefi
 per-row transaction SHALL reject or expose an otherwise valid complete batch.
 Caps SHALL remain1000 active trades/10000 versions. Any failure SHALL reserve no key
 and commit no partial trade, link, receipt, batch transition or pointer.
+
+Confirmation SHALL validate the accepted complete candidate history for every account affected
+by its trades through the connected transfer ledger before commit. The source account journal
+revision advances by the existing N contiguous trade range; each other affected participant
+receives one passive invalidation tick in the same transaction. The 10,000 journal-revision
+budget is separate from local trade versionCount and is checked for all participants before
+writes. Every affected account row SHALL be locked in sorted UUID order after the owner-scoped
+advisory lock, shared with trade, carry-in and transfer writers.
 
 #### Scenario: CSV-003-A Out-of-source-order history commits exact mandatory FIFO
 - **GIVEN** a file physically lists sale1.5/gross450 at t3, then buy1/gross100 at t1 and buy1/gross200 at t2, all fees0
@@ -123,6 +145,14 @@ and commit no partial trade, link, receipt, batch transition or pointer.
 - **WHEN** a real deferred COMMIT failure occurs after every version/head/link/receipt/state write
 - **THEN** an independent stage witness proves that path, HTTP returns private generic500, every transactional write rolls back and explicit original-key retry succeeds once after the fixture is removed
 
+#### Scenario: TRANSFER-CSV-COMMIT Accepted batch restates recipient atomically
+- **GIVEN** a batch changes a source lot already transferred and sold by a connected recipient
+- **WHEN** the whole candidate component is valid and within each affected journal revision budget
+- **THEN** the batch trade range and every passive recipient revision commit atomically, and the recipient
+  result reflects the recomputed original-coordinate basis
+- **WHEN** any connected prefix is negative or a participant reaches its revision ceiling
+- **THEN** no source or recipient row, receipt, batch state, head or revision changes
+
 ### Requirement: CSV-004 Conditional complete rollback preserves history
 Rollback SHALL append N terminal void versions only when every imported trade still
 has its exact initial create head, N version slots remain and the complete remaining
@@ -133,6 +163,12 @@ Prior FIFO matches to imported lots MUST NOT independently block valid reallocat
 Any modified imported head, negative remaining prefix or capacity refusal SHALL reject
 the entire operation. Originals, accepted settings, create versions and receipts SHALL
 remain private and immutable; there SHALL be no delete, restore or reimport generation.
+
+Rollback SHALL rebuild and validate the complete connected component after removing the batch
+effects. It SHALL refuse atomically if any dependent recipient history would become negative. On
+a successful rollback the importing account advances according to the existing trade rollback
+revision semantics, and each other affected participant advances once; the journal-revision
+budget remains distinct from saved trade versionCount.
 
 #### Scenario: CSV-004-A Reviewed reallocation is safe when remaining lots cover sales
 - **GIVEN** imported A buys1 for100, later manual B buys1 for200, and a later manual sale1/gross300 realizes200 using A
@@ -147,6 +183,14 @@ remain private and immutable; there SHALL be no delete, restore or reimport gene
 - **AND** a real deferred COMMIT failure after all void/link/state writes also rolls everything back; original-key retry commits once after removing the isolated fixture
 - **AND** accepted rollback replay returns its original receipt before later journal changes without appending duplicate voids; same-file upload stays terminal
 
+#### Scenario: TRANSFER-CSV-ROLLBACK Cannot strand dependent recipient history
+- **GIVEN** an accepted batch supplies basis later transferred to a recipient sale
+- **WHEN** rollback removes that basis and the recipient would have a negative historical prefix
+- **THEN** rollback is refused with all connected accounts, transfer state, original CSV bytes, receipts
+  and revisions unchanged
+- **WHEN** the complete connected component remains valid
+- **THEN** rollback commits atomically and invalidates each affected account pin once
+
 ### Requirement: CSV-005 Coherent bounded preview and provenance
 Preview and live rollbackReview SHALL read journal revision, complete history, batch
 and owned labels in one read-only REPEATABLE READ snapshot. Carry-in baseline records
@@ -159,6 +203,11 @@ as current FIFO. Batch lists SHALL use bounded exclusive UUID cursors; provenanc
 pages SHALL use bounded ordinal cursors pinned to batchState across rollback.
 Raw bytes and canonical request payloads SHALL NOT leak through metadata projections.
 
+CSV preview, confirmation review, rollback review and provenance reads that depend on transfers
+SHALL use one coherent connected-history snapshot. A trade, transfer or CSV correction affecting
+any participant SHALL invalidate its pinned results, and no nested page may calculate from a
+truncated connected ledger.
+
 #### Scenario: CSV-005-A Real concurrent reads never mix journal versions
 - **WHEN** a real correction overlaps preview or rollback detail through a controlled database read barrier
 - **THEN** each complete response equals one old or new coherent revision, including labels and both summaries, never a mixed result
@@ -170,6 +219,13 @@ Raw bytes and canonical request payloads SHALL NOT leak through metadata project
 - **THEN** the old supplied batchState returns409 without mixed rows; explicit restarted pagination shows all immutable create and rollback versions
 - **AND** unrelated manual journal edits do not invalidate immutable source provenance, while they invalidate stale live rollback review
 - **AND** nonzero ordinal cursors require state, malformed bounds fail400 and no list/detail response serializes original bytes
+
+#### Scenario: TRANSFER-CSV-SNAPSHOT Pinned recipient preview cannot mix revisions
+- **GIVEN** a connected CSV preview is read while a real source correction commits after its database
+  snapshot begins
+- **WHEN** the remaining source, transfer and recipient data are loaded
+- **THEN** the preview is wholly the old candidate revision, and the next request detects the new connected
+  revision instead of reusing that preview
 
 ### Requirement: CSV-006 Protected Russian import journey preserves intent
 The account journal SHALL provide Russian upload/inspect/map/preview/confirm and

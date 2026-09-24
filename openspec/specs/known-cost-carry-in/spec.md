@@ -6,7 +6,6 @@ inventing acquisition history or double-counting holdings. Preserve exact origin
 lot allocation, ownership, replay safety and existing manual/CSV accounting.
 The wire and storage contract is recorded in the archived
 [persistence design](../../changes/archive/2026-09-23-seed-known-cost-carry-in/persistence.md).
-
 ## Requirements
 ### Requirement: CARRY-001 Explicit known-cost opening origin
 The system SHALL allow a separately reviewed carry-in journal origin only for an owned
@@ -51,6 +50,11 @@ or profit. Raw values SHALL retain numeric(78,30) strict string boundaries; deri
 sums SHALL support82 atom digits and allocation products156. All old empty-origin
 arithmetic and1000-active/10000-version journal limits SHALL remain.
 
+When a carried lot is transferred, its original Q/C and interval coordinates SHALL continue
+unchanged through every split and return; the recipient fragment does not become a newly rebased
+carry-in or trade lot. Its availability begins only at arrival, after which FIFO uses original
+acquisition chronology and the existing carry-in allocation phase.
+
 #### Scenario: CARRY-002-A Partial original lots preserve allocation phase
 - **GIVEN** original quantity4, original basis0.000000000000000000000000000002 and remaining quantity3, matching a known opening
 - **WHEN** three subsequent unit sales consume the carried lot
@@ -63,6 +67,13 @@ arithmetic and1000-active/10000-version journal limits SHALL remain.
 - **WHEN** quantity or computed remaining cost differs from the opening by one atom, an instrument is missing/extra/foreign, chronology duplicates, or remaining quantity exceeds original
 - **THEN** documented400/404/409 or bounded preview errors preserve all tables and never distribute a difference across other lots
 - **AND** exact48/30 raw bounds, partial quantities and100-lot boundaries are independently exercised without floating-point amount arithmetic
+
+#### Scenario: TRANSFER-CARRY-INTERVAL Carried allocation phase survives movement
+- **GIVEN** an original carry-in lot4 units/cost2 atoms with1 unit already disposed, of which1 remaining
+  unit is moved and later returned
+- **WHEN** subsequent unit sales consume the returned and retained original portions
+- **THEN** the allocation phase remains[1,0,1] where applicable, carried basis is neither rebased nor
+  double counted, and the immutable opening and origin stay unchanged
 
 ### Requirement: CARRY-003 Atomic immutable initialization and replay
 Carry-in, opening replacement, empty initialization and later journal writers SHALL
@@ -79,6 +90,12 @@ writes SHALL stay blocked after initialization, while old opening receipts remai
 replayable under their existing identity rules. Normal trade correction/void and CSV
 rollback SHALL continue to validate the complete supported seeded history.
 
+Carry-in initialization and other existing opening/journal writers SHALL acquire the
+owner-scoped advisory lock before any account-row lock. Connected writer paths SHALL lock
+affected account rows in sorted UUID order, then read committed history and validate the
+complete connected component; no global manager escape or partial origin write is permitted.
+Accepted carry-in and opening receipt behavior remains unchanged.
+
 #### Scenario: CARRY-003-A Real races and old requests retain one baseline
 - **WHEN** real independent processes race the same carry-in command or carry-in against opening replacement at one expected opening revision
 - **THEN** identical commands commit once and replay200; conflicting changes produce one consistent winner and a409 without losing-key reservation
@@ -88,6 +105,13 @@ rollback SHALL continue to validate the complete supported seeded history.
 - **WHEN** a real deferred constraint fails after every origin/lot/reference write
 - **THEN** an independent nontransactional stage witness proves the complete path, HTTP returns private generic500, all transactional rows remain unchanged and no key is reserved
 - **AND** removing only the isolated failure fixture permits explicit original-key retry once, followed by immutable200 replay
+
+#### Scenario: TRANSFER-CARRY-LOCK Carry-in and connected writer use one lock order
+- **GIVEN** a real carry-in/opening writer and a competing connected transfer writer target accounts owned
+  by the same owner
+- **WHEN** each writer follows the shared owner-lock then sorted account-row lock order
+- **THEN** they serialize without deadlock or mixed baseline/history, and a rejected contender reserves no
+  key or changes any account
 
 ### Requirement: CARRY-004 One coherent baseline across journal and CSV
 Manual and CSV calculations SHALL load the same immutable baseline through their
@@ -101,8 +125,14 @@ Baseline inventory SHALL not be converted into trade heads or counted against tr
 version ordinals. Initial basis SHALL be explicit and separate from covered purchase
 totals; remaining cost SHALL include unconsumed baseline. Carry-in lots/matches SHALL
 have a tagged immutable lot/opening provenance variant, never a fake buyTradeId/version.
-All old empty-origin response shapes and receipts SHALL remain exact. New projections
+For accounts without transfer history, all old empty-origin response shapes SHALL
+remain exact. All immutable receipts SHALL remain exact. New projections
 SHALL retain bounded pages and documented current-journal revision pins.
+
+Manual and CSV calculations SHALL load transfer history and connected participant heads through
+the same caller EntityManager and snapshot as the immutable baseline. Transfers SHALL move
+carried positions between accounts without changing the baseline, creating covered buy/sale
+totals, or introducing an external flow.
 
 #### Scenario: CARRY-004-A Manual and imported sales consume identical lots
 - **GIVEN** the reviewed100/200 carry-in baseline
@@ -110,6 +140,12 @@ SHALL retain bounded pages and documented current-journal revision pins.
 - **THEN** both produce250 realized and100 remaining cost, with correct tagged lot matches and no baseline purchase totals
 - **AND** CSV preview writes nothing; its conditional rollback restores baseline quantity/cost while retaining original bytes, create/void evidence and accepted receipts
 - **AND** correcting a covered transaction recomputes the same baseline, and concurrent read barriers never mix old/new journal results
+
+#### Scenario: TRANSFER-CARRY-SNAPSHOT Baseline and received lots share one snapshot
+- **GIVEN** a covered carry-in source lot has been moved to a recipient and a manual or CSV sale consumes it
+- **WHEN** the read calculates the connected account histories
+- **THEN** source and recipient results use the same immutable carry-in interval and connected revision,
+  with no mixed snapshot, fabricated buy or changed opening evidence
 
 ### Requirement: CARRY-005 Protected Russian review preserves original intent
 The protected account UI SHALL distinguish opening evidence, carry-in initialization

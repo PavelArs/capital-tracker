@@ -18,4 +18,4 @@
 ## 4. Verify and archive
 
 - [x] 4.1 Run reviewed targeted manifest: affected unit/type/lint/build checks, real PostgreSQL constraints/migration/preservation/replay/races/snapshots, two new HTTPS cases plus selected retained critical journeys, strict OpenSpec and production audit; record actual outputs/images, warnings and unrun checks.
-- [ ] 4.2 Update owner guide/continuity and verify preserved Nginx/lock/data; archive with installed CLI only after all required checks pass, verify canonical spec deltas and cleanup isolated test resources.
+- [x] 4.2 Update owner guide/continuity and verify preserved Nginx/lock/data; archive with installed CLI only after all required checks pass, verify canonical spec deltas and cleanup isolated test resources.

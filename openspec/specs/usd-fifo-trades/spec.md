@@ -38,6 +38,10 @@ string boundaries and explicit SQL finite checks. All declared raw types and unk
 fields SHALL be validated before coercion. Effective chronology SHALL be unique per
 account and at/after coverage. Same symbols MUST NOT merge identities or account lots.
 
+Transfer events SHALL have an explicit effective UTC-millisecond instant and same-instant order
+at or after both participant coverage instants. Their chronology key SHALL be unique against
+trade and transfer events in each touched account; equal keys on disjoint accounts may commute.
+
 #### Scenario: TRADE-002-A Precision and chronology survive restart
 - **WHEN** amounts above 2^53, quantity 0.000000000000000000000000000001 and valid 48/30 boundaries are submitted in reverse chronological API order
 - **THEN** exact canonical strings survive PostgreSQL/restart and FIFO uses explicit time/order, never arrival order or UUID
@@ -49,6 +53,12 @@ account and at/after coverage. Same symbols MUST NOT merge identities or account
 - **THEN** syntax/type failures return 400 and pre-coverage returns 409 without any trade, version, head, revision or request-key write
 - **AND** buy gross plus fee overflow returns 400 before persistence without reserving a request key
 - **AND** direct PostgreSQL NaN/infinities/null identity/value writes fail constraints
+
+#### Scenario: TRANSFER-TRADE-ORDER Transfer chronology uses both account journals
+- **GIVEN** a transfer touches two covered account histories with explicit trade/transfer event order
+- **WHEN** its effective key duplicates an event in either participant account or predates either coverage
+  instant
+- **THEN** the movement is rejected atomically; the same key on disjoint accounts remains independent
 
 ### Requirement: TRADE-003 Exact inspectable FIFO and conserved fees
 The system SHALL calculate with exact scale-30 integer atoms, without floating-point
@@ -66,6 +76,14 @@ CARRY-002; it SHALL NOT create purchase, fee, sale or external-flow totals. Its 
 recorded basis SHALL be explicit, with remaining basis included in current inventory
 and tagged lot/match provenance. Existing empty-origin outputs SHALL remain exact.
 
+Transfer-created inventory SHALL retain the source lot original quantity, cost, half-open
+interval, origin trade/version or carry-in identity, and latest arrival transfer. It becomes
+available only at arrival and then participates in FIFO using its original acquisition
+time/order, then origin account/kind/id and interval start. A transfer and its separately
+declared fee-asset consumption SHALL NOT create synthetic buys, sells, trade fee totals,
+realized trade gains or external USD flows; transfer basis in/out and removed fee basis remain
+separately identified.
+
 #### Scenario: TRADE-003-A Mandatory FIFO and fees
 - **WHEN** buys of 1 for gross 100 and 1 for gross 200 precede sale of 1.5 for gross 450, all fees 0
 - **THEN** matches consume first buy 1/basis 100 and second buy 0.5/basis 100, realized is 250, and remaining quantity/cost are 0.5/100
@@ -81,6 +99,15 @@ and tagged lot/match provenance. Existing empty-origin outputs SHALL remain exac
 - **AND** equal cumulative disposal yields equal cumulative basis regardless of split pattern
 - **AND** buy gross 10/fee 2 then sale gross 1/fee 3 yields net -2 and realized -14; zero results are 0, never -0
 - **AND** derived sums beyond 48 integer digits remain exact strings without input-validator truncation
+
+#### Scenario: TRANSFER-TRADE-INTERVAL Original basis survives movement and return
+- **GIVEN** a source lot of3 quantity atoms and1 cost atom whose prefix of2 atoms is moved and1 is later
+  returned
+- **WHEN** the returned original prefix and the retained original tail are sold in FIFO order
+- **THEN** interval costs remain0 then1, every original cost atom is conserved, and no movement creates
+  trade or external-flow totals
+- **AND** received inventory is unavailable before its transfer arrival and keeps the original source
+  identity and interval
 
 ### Requirement: TRADE-004 Atomic immutable corrections, voids and receipts
 The system SHALL serialize all journal writes on the owned account row, check request
@@ -100,6 +127,16 @@ history SHALL be validated as a whole; source-row order MUST NOT become economic
 chronology or imply separately committed intermediate FIFO snapshots. Batch command
 identity SHALL remain separate from server-generated individual version keys.
 The same active/version bounds SHALL apply without truncation or partial acceptance.
+
+Trade create/correction/void SHALL replay the complete affected connected account component
+through its transfer events and reject any negative historical prefix atomically. A transfer
+create/correction/void SHALL replay the union of its old and new components and advance each
+distinct affected journal once. Existing currentRevision remains the shared CAS/pin: a local
+trade command advances its source journal once and each other affected participant once per
+command, regardless of paths. CSV keeps its contiguous N source revision range; each passive
+connected participant advances once. Local versionCount counts only persisted trade versions,
+never passive invalidation ticks. Each participant also has a separate 10,000 journal-revision
+ceiling checked before writes.
 
 #### Scenario: TRADE-004-A Historical changes rebuild or roll back fully
 - **GIVEN** the mandatory three-trade history
@@ -130,23 +167,50 @@ The same active/version bounds SHALL apply without truncation or partial accepta
 - **AND** source links and the immutable batch receipt identify the complete accepted revision range
 - **AND** every existing manual command, exact allocation, replay-before-CAS, cap, correction/void and coherent-read assertion remains passing across the internal persistence extraction
 
+#### Scenario: TRANSFER-TRADE-RESTATEMENT Correction propagates with separate revisions
+- **GIVEN** a source buy has supplied an original lot portion later transferred to a recipient and sold
+- **WHEN** the source buy is corrected and connected replay remains valid
+- **THEN** the recipient sale basis and realized result are recomputed from the original lot coordinates,
+  source currentRevision advances once, each other affected journal advances once, and recipient
+  local trade versionCount is unchanged
+- **WHEN** the correction creates an invalid historical prefix or any affected journal would exceed its
+  revision ceiling
+- **THEN** the whole command is refused without changing versions, heads, receipts or revisions
+
 ### Requirement: TRADE-005 Coherent bounded derived reads
 Every derived response SHALL identify its calculation journalRevision and obtain
 revision, heads, complete effective history and labels from one coherent snapshot.
 For a carry-in origin, its immutable baseline SHALL be loaded through the same snapshot
 manager and seed the complete calculation before pagination. New carry-in provenance
 variants SHALL not fabricate buyTradeId/buyVersion or change empty-origin field sets.
-The API SHALL follow the [API and persistence contract](../../changes/archive/2026-09-23-record-usd-fifo-trades/persistence.md) bounded envelopes: current trades/lots/realizations/
-per-sale matches default 50 / max 100 with revision-pinned offset continuation; versions
-default 10 / max 20 exclusive beforeVersion. Nonzero offset SHALL require a revision;
-stale supplied revision SHALL return 409 without partial results. FIFO calculation
-MUST NOT use a truncated page. No unbounded nested matches/history SHALL be returned.
+The API SHALL follow the [API and persistence
+contract](../../changes/archive/2026-09-23-record-usd-fifo-trades/persistence.md) bounded
+envelopes: raw persisted trade heads default50/max100 at offsets0..9999; derived lots,
+realizations and per-sale matches default50/max100 at offsets0..99999; versions default10/max20
+exclusive beforeVersion. Every continuation SHALL pin the connected journal revision; nonzero
+offset requires that revision and stale supplied revisions return409 without partial results.
+FIFO calculation MUST NOT use a truncated page. No unbounded nested matches/history SHALL be
+returned.
+
+A derived response involving transfers SHALL load the relevant connected ledger once and
+calculate all participant histories inside the caller-owned coherent snapshot. Every affected
+account result and continuation remains pinned to its currentRevision; an upstream trade or
+transfer mutation SHALL make old affected pins stale without truncating FIFO calculation.
 
 #### Scenario: TRADE-005-A Concurrent correction never mixes revisions
 - **WHEN** a real concurrent old-buy correction overlaps bounded result reads
 - **THEN** every result equals the complete old or new revision, including summary, lots and provenance, never mixed heads/costs
 - **AND** continuation at an obsolete revision returns 409; the client discards accumulated pages before explicit reload
 - **AND** owned labels remain available beyond the first instrument picker page and immutable version pages retain their original fields
+
+#### Scenario: TRANSFER-TRADE-SNAPSHOT Connected read remains one coherent revision
+- **GIVEN** a real reader has established its read-only snapshot for a connected source and recipient while
+  another connection corrects an upstream trade and commits
+- **WHEN** the reader finishes loading transfers, trade heads, labels and lot provenance
+- **THEN** it returns the complete old connected state; a later request returns the complete new state, and
+  an old affected continuation is rejected as stale
+- **AND** a sale consuming10001 original fragments can read its final match at pinned offset10000 with
+  limit1; offset99999 is accepted and empty, while a raw-head offset beyond9999 is rejected
 
 ### Requirement: TRADE-006 Protected honest Russian journal journey
 The system SHALL expose a Russian journal section in protected manual account detail,

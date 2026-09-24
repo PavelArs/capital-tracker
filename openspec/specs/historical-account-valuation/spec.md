@@ -10,6 +10,11 @@ It SHALL retain UUID identity, inclusive accounting boundaries, immutable carry-
 allocation and current-effective-history basis. Products/sums SHALL be canonical
 exact decimal strings with up to60 fractional digits, without intermediate rounding.
 
+Positions SHALL be reconstructed from the connected transfer-aware history at the selected
+instant: a received fragment is unavailable before arrival, and its quantity, original
+acquisition identity and exact basis remain those of its source lot. A movement SHALL not
+duplicate the same inventory or fabricate an observed price.
+
 #### Scenario: VAL-EXACT Known historical value and corrected price
 - **GIVEN** covered buys1/cost100 and1/cost200 followed by sale1.5/gross450, and exact-time manual price300
 - **WHEN** the owner values the account at the sale instant
@@ -22,6 +27,13 @@ exact decimal strings with up to60 fractional digits, without intermediate round
 - **WHEN** the account is valued at that exact price instant
 - **THEN** its nonzero value is exactly one unit at decimal scale60
 - **AND** supported maximum quantities/prices and100 carry-in lots plus1000 active trades remain exact and fully included before returning the bounded complete position set.
+
+#### Scenario: TRANSFER-VAL-MOVEMENT Valuation follows an effective internal move
+- **GIVEN** a known source lot is transferred to another covered account before a manual exact-time price
+  point
+- **WHEN** each account is valued at the same instant
+- **THEN** only the recipient includes the moved quantity, using the same exact price identity and original
+  lot basis, and the sum across both accounts counts that inventory once
 
 ### Requirement: VAL-2 Honest missing coverage and known zero
 The system SHALL distinguish missing/voided exact-time prices from known price0.
@@ -50,6 +62,11 @@ MFA, origin and no-store controls. Reads SHALL make no provider calls or busines
 row/receipt/import mutations. Foreign/unknown accounts SHALL return404; invalid
 IDs, duplicate dates and unexpected query keys SHALL return400.
 
+A valuation SHALL load the connected transfer ledger once in the same owner-scoped REPEATABLE
+READ snapshot as trades, carry-in baselines and manual price versions. A mutation anywhere
+upstream that affects the selected account SHALL advance its shared journal pin and prevent a
+mixed old/new position result.
+
 #### Scenario: VAL-SNAPSHOT Concurrent prices and trades
 - **GIVEN** an actual PostgreSQL valuation paused after establishing its snapshot
 - **WHEN** a competing connection commits a price correction and trade correction
@@ -61,6 +78,13 @@ IDs, duplicate dates and unexpected query keys SHALL return400.
 - **THEN**401,404 or400 denials expose no accounting data with private no-store behavior
 - **WHEN** the admitted owner repeats valid reads
 - **THEN** business rows and provider counters remain unchanged; only normal session/admission bookkeeping can change.
+
+#### Scenario: TRANSFER-VAL-SNAPSHOT Correction preserves coherent recipient value
+- **GIVEN** a real valuation snapshot is established while another connection corrects a source trade whose
+  lot was transferred
+- **WHEN** the valuation completes its connected replay and reads manual prices
+- **THEN** it returns the wholly old position/revision state, and a later request returns the wholly
+  corrected state without changing the manual price history
 
 ### Requirement: VAL-4 Russian read-only account review
 The system SHALL expose a protected Russian account-detail valuation form with
