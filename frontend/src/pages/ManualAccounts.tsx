@@ -1,5 +1,6 @@
 import { type AccountSummary, accountingApi } from '@api/accounting.api';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
+import { ManualPortfolioValuation } from '@features/manual-portfolio-valuation/ManualPortfolioValuation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './ManualAccounts.css';
@@ -156,6 +157,7 @@ export default function ManualAccounts() {
           </button>
         )}
       </section>
+      <ManualPortfolioValuation accounts={accounts} />
     </div>
   );
 }
