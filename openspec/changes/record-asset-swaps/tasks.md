@@ -5,8 +5,8 @@
 
 ## 2. Exact domain and input
 
-- [ ] 2.1 Implement swap FIFO/provenance/fee-source logic and independent completeness; pass pure oracles including old-target lots, tiny intervals, transfers and retained characterization.
-- [ ] 2.2 Implement strict complete command/query parsing and canonical replay payloads; test malformed fields, normalization, limits, fee coupling, null/zero and immutable target pins.
+- [x] 2.1 Implement swap FIFO/provenance/fee-source logic and independent completeness; pass pure oracles including old-target lots, tiny intervals, transfers and retained characterization.
+- [x] 2.2 Implement strict complete command/query parsing and canonical replay payloads; test malformed fields, normalization, limits, fee coupling, null/zero and immutable target pins.
 
 ## 3. Private connected persistence
 

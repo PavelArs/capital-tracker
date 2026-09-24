@@ -69,14 +69,14 @@ async function checkedRead(source, statements, action) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 21/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 22/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
   const source = sourceFor(database, statements);
   const other = sourceFor(database);
   try {
-    // Build a true populated predecessor17, then run the actual production CLI21.
+    // Build a true populated predecessor17, then run the actual production CLI22.
     source.setOptions({ migrations: readdirSync('/app/backend/dist/migrations').filter(file => file.endsWith('.js') && file < '1790080000000').map(file => `/app/backend/dist/migrations/${file}`) });
     await source.initialize();
     await source.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
@@ -91,14 +91,15 @@ async function main() {
     const account = (await accounts.createAccount(owners[0], { requestId: randomUUID(), name: 'Preserved' })).value;
     const opening = await accounts.saveOpening(owners[0], account.id, { requestId: randomUUID(), expectedRevision: 0, asOf: at, positions: [{ instrumentId: instruments[0].id, quantity: atom, costStatus: 'known', totalCostUsd: maximum }] });
     const beforeUpgrade = await fingerprint(source, ['migrations']);
-    assert.match(migrate(database), /Migrations applied: 4/);
-    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions']), beforeUpgrade);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 21);
+    assert.match(migrate(database), /Migrations applied: 5/);
+    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']), beforeUpgrade);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 22);
     assert.equal((await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n, 0);
+    for (const table of ['account_swaps', 'account_swap_versions']) assert.equal((await source.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     assert.match(migrate(database), /Migrations applied: 0/);
     await assert.rejects(() => new AddManualUsdPrices1790080000000().down(), /recovery plan/);
     assert.deepEqual((await accounts.getAccount(owners[0], account.id)).currentOpening, opening.value);
-    console.log('PASS PRICE-MIGRATION fresh20, populated17 upgrade/rerun, all previous rows and opening receipt preserved, downgrade refused');
+    console.log('PASS PRICE-MIGRATION fresh22, populated17 upgrade/rerun, all previous rows and opening receipt preserved, downgrade refused');
 
     await other.initialize();
     const prices = new ManualPriceService(source);

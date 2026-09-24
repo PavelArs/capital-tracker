@@ -444,11 +444,11 @@ async function main() {
     encoding: 'utf8',
     timeout: 60000,
   });
-  assert.equal(migrated.status, 0, 'Actual migration21 must succeed');
+  assert.equal(migrated.status, 0, 'Actual migration22 must succeed');
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 21);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 22);
     const fx = service(db);
     const first = await exact(db, fx);
     await concurrency(db, fx, first);

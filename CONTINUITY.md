@@ -44,7 +44,7 @@ Latest actual labeled Docker container/network inventories were empty after clea
 
 Canonical openspec/specs describe verified behavior; archived changes hold concrete
 acceptance, design, persistence and command/image evidence. Do not replay all historical
-checks to recover context. Current schema has21 additive/retained migrations; read
+checks to recover context. Archived capabilities use schema21; active swaps add22. Read
 brownfield-audit.md before any legacy upgrade because old migrations have destructive
 history and explicit preflight refuses unsafe states.
 
@@ -162,7 +162,38 @@ last checkbox is completed only after that procedure. No functional verification
 
 ## Remaining whole goal and next work
 
-Still required: swaps, broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
+Active `record-asset-swaps` is incomplete,4/12tasks done (contract+realRED, pureFIFO,input).
+Read its proposal/design/persistence/specs/tasks/verification before continuing. Root has
+implemented backend migration22/store/API/connected-loader integration6658dbc, purecore
+0e06fa9 and parser6450a57/8d0f54c. Original-lot incoming fees and preheldFIFO fees are explicit;
+consideration nullable/known0 is independently preserved. Swap result is consideration
+minus principal/fee consumed basis, separate from actual USD trade totals and external flows.
+Incoming basis equals declared gross consideration, never inferred outgoing cost or peg.
+
+Actual evidence so far: predecessor pure10/10RED and HTTPS2/2RED; root403tests/18suites
+and build/scopedBiome pass. Schema22BEimage
+sha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
+Three new PG families pass (connected correction/receipt preservation, fee/null/zero/
+allocation/lifecycle, actual deferredCOMMIT witness/rollback). SWAP-API realHTTPS passed
+1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI is authored but
+no swap frontend implementation exists yet; do not mark archive-ready. Logs/harnesses are
+/private/tmp/capital-swap-* and /private/tmp/capital-swaps-*; verification.md records scope.
+
+Next: complete populated21upgrade/directconstraints, process/cap/snapshot/connectedCSV/
+once-only-load tests; typed/rendered frontend consumers and reviewed swap editor/recovery;
+independent persistence/UI review and final scopedgates/docs/archive. Existing20fixture
+fresh counts updated21→22 with only new swap tables excluded/checkedempty in predecessor
+preservation; original predecessor schemas retained. Runner includes new mainPG fixture.
+Retained PG attempt1 exposed a reward preflight matcher conflating swap/reward queries;
+exact1per-table plus exact1swap materialization now asserted. Attempt2passed allreward/
+transfer families and fresh22/populated18auth+19+20preservation on sameBEimage. No new
+swap-specificprocess/bounds/populated21 claim. Engineering183tests/2suites, backendlint
+(77existingwarnings), strict29OpenSpecitems pass. Final synthetic inventory empty; all
+execsessions terminal, worktreesclean and Nginx/lock hashes preserved.
+Do not repeat already-passing403tests/API unless product changes justify it. No full suite,
+productionaudit/release/whole-project pass claimed for active swaps. Details in verification.md.
+
+Still required after swaps: broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional
 AI, full release/security/backup-restore hardening, final consolidation. Selected
 manual valuation is not complete all-account/cash accounting. CoinGecko permanent
@@ -170,8 +201,10 @@ history retention remains unapproved; display FX permission does not remove that
 No production rollout or folder moves/deletions now. Finish each small change through
 review/verification/archive; no broad rewrite. Chart/max-period expansion deferred.
 
-Reusable agents: carry_docs_review (Luna; capital-tracker-reward-acceptance worktree) and
-historical_ui (Sol; capital-tracker-reward-core worktree). Both finished their assigned work.
-Keep their worktrees and the unused clean capital-tracker-reward-schema worktree. gate_acceptance is quota-limited
-untilSep29; do not retry or purchase credits. Root integrates reviewed commits; agents
-do not operate shared Docker/migrations/lockfiles/deployment.
+Agents carry_docs_review(Luna) and historical_ui(Sol) both hit quota untilSep30 during
+swap implementation. Do not retry or purchase credits. Root inspected their stopped diffs,
+reviewed/committed/integrated them; their current swap-contract/swap-core worktrees are
+clean and temporary dependency symlinks removed. Earlier reward/worktrees and unused
+reward-schema worktree retained. gate_acceptance previously quota-limited untilSep29.
+Independent persistence/UI review remains pending, not silently replaced by earlier design
+review. Root alone operates shared Docker/migrations/lockfiles/deployment.

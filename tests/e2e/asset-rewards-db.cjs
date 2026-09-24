@@ -84,7 +84,7 @@ const correction = (version, revision, changes = {}) => ({ requestId: randomUUID
 const journal = async (s, owner, id) => (await s.trade.getJournal(owner, id)).journal;
 
 async function migrationPreservation() {
-  stage = 'REWARD-006 fresh21/populated20/no-op';
+  stage = 'REWARD-006 fresh22/populated20/no-op';
   await createDatabase(predecessor);
   const db = source(predecessor);
   db.setOptions({ migrations: readdirSync('/app/backend/dist/migrations').filter(file => file.endsWith('.js') && file < '1790200000000')
@@ -132,9 +132,9 @@ async function migrationPreservation() {
       VALUES($1,$2,$3,$4,$5,$6,'prior.csv','draft')`,
       [randomUUID(), owner, accountId, createHash('sha256').update(csvBytes).digest('hex'), csvBytes, csvBytes.length]);
     const before = await fingerprint(db, ['migrations']);
-    assert.match(migrate(predecessor), /Migrations applied: 1/);
-    assert.equal(await fingerprint(db, [...rewardTables, 'migrations']), before);
-    for (const table of rewardTables) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
+    assert.match(migrate(predecessor), /Migrations applied: 2/);
+    assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'migrations']), before);
+    for (const table of [...rewardTables, 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
     const s = services(db);
     const { kind: _kind, ...body } = execution;
     const replay = await s.trade.create(owner, accountId, { ...body, requestId });
@@ -147,7 +147,7 @@ async function migrationPreservation() {
     await assert.rejects(() => new AddAssetRewards1790200000000().down(), /recovery|downgrade/i);
     assert.equal(await fingerprint(db), after);
   } finally { await db.destroy(); }
-  console.log('PASS REWARD-006 populated20/fresh21 preservation, immutable prior replay, no-op, downgrade refusal');
+  console.log('PASS REWARD-006 populated20/fresh22 preservation, immutable prior replay, no-op, downgrade refusal');
 }
 
 async function economics(db, s, f) {
@@ -421,8 +421,13 @@ async function onceLoadedReadModels(db, s, f) {
   const once = () => {
     assert.equal(statements.filter(sql => /SELECT v\.\*,i\.name[\s\S]*FROM account_reward_versions/.test(sql)).length, 1,
       'One full reward materialization, not one per point or selected connected account');
-    assert.equal(statements.filter(sql => /SELECT v\."accountId",count\(\*\) FILTER/.test(sql)).length, 1,
-      'One reward capacity preflight before materialization');
+    for (const table of ['account_reward_versions', 'account_swap_versions']) {
+      const capacityReads = statements.filter(sql => /SELECT v\."accountId",count\(\*\) FILTER/.test(sql)
+        && sql.includes(`FROM ${table} v`));
+      assert.equal(capacityReads.length, 1, `One ${table} capacity preflight before materialization`);
+    }
+    assert.equal(statements.filter(sql => /SELECT v\.\*[\s\S]*FROM account_swap_versions/.test(sql)).length, 1,
+      'One swap materialization, including an empty swap history, not one per point or selected account');
     assert.equal(statements.filter(sql => /SET TRANSACTION READ ONLY/.test(sql)).length, 1);
     assert.equal(statements.filter(sql => /SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/.test(sql)).length, 1);
   };
@@ -457,13 +462,13 @@ async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 21/);
+  assert.match(migrate(database), /Migrations applied: 22/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();
   try {
     await db.initialize();
-    for (const table of rewardTables) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
+    for (const table of [...rewardTables, 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('reward-owner@example.invalid','synthetic-no-login',true),('reward-other@example.invalid','synthetic-no-login',true) RETURNING id`);
     const s = services(db);
