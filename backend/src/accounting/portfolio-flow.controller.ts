@@ -13,6 +13,12 @@ export class PortfolioFlowController {
     return this.flows.previewXirr(owner.userId, input);
   }
 
+  @Post('twr-preview')
+  @HttpCode(200)
+  previewTwr(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {
+    return this.flows.previewTwr(owner.userId, input);
+  }
+
   @Post('profit-preview')
   @HttpCode(200)
   previewProfit(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {

@@ -15,6 +15,7 @@ import {
   parseFlowVoid,
 } from './portfolio-flow-input';
 import { parseTradeHistoryQuery } from './trade-input';
+import { projectTwr } from './twr';
 import { projectXirr } from './xirr';
 
 const basis = { basis: 'owner-declared-usd-flows' as const, completeness: 'unreconciled' as const };
@@ -187,6 +188,13 @@ export class PortfolioFlowService {
     const owner = parseUuid(ownerId);
     const input = parseProfitPreview(raw);
     return (await this.valuationSnapshot(owner, input)).preview;
+  }
+
+  async previewTwr(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseProfitPreview(raw);
+    const { preview, items } = await this.valuationSnapshot(owner, input);
+    return { ...preview, twr: projectTwr(input, items) };
   }
 
   async previewXirr(ownerId: string, raw: unknown) {

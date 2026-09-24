@@ -87,6 +87,8 @@ if (command === 'down') {
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/xirr-preview-db.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/twr-preview-db.cjs');
+      compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/manual-usd-prices-db.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/historical-valuation-db.cjs');
