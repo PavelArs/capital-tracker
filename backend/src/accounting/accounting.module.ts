@@ -9,6 +9,8 @@ import { CsvUploadInterceptor } from './csv-upload.interceptor';
 import { HistoricalAccountingService } from './historical-accounting.service';
 import { HistoricalValuationController } from './historical-valuation.controller';
 import { HistoricalValuationService } from './historical-valuation.service';
+import { ManualPortfolioValuationController } from './manual-portfolio-valuation.controller';
+import { ManualPortfolioValuationService } from './manual-portfolio-valuation.service';
 import { ManualPriceController } from './manual-price.controller';
 import { ManualPriceService } from './manual-price.service';
 import { PortfolioFlowController } from './portfolio-flow.controller';
@@ -28,6 +30,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ManualPriceController,
     HistoricalValuationController,
     ValuationHistoryController,
+    ManualPortfolioValuationController,
   ],
   providers: [
     AccountingService,
@@ -40,6 +43,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ManualPriceService,
     HistoricalValuationService,
     ValuationHistoryService,
+    ManualPortfolioValuationService,
   ],
 })
 export class AccountingModule {}

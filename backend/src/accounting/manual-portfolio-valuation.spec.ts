@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseManualPortfolioRequest } from './manual-portfolio-valuation-input';
 import { type PortfolioAccount, projectManualPortfolioValue } from './manual-portfolio-valuation';
+import { parseManualPortfolioRequest } from './manual-portfolio-valuation-input';
 
 const at = '2025-01-04T00:00:00.000Z';
 const first = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
