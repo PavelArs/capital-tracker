@@ -99,7 +99,14 @@ export interface CsvDetail {
   rollbackReview: {
     journalRevision: number;
     eligible: boolean;
-    reason: 'not-committed' | 'modified-trade' | 'version-cap' | 'insufficient-holdings' | null;
+    reason:
+      | 'not-committed'
+      | 'modified-trade'
+      | 'version-cap'
+      | 'insufficient-holdings'
+      | 'connected-history'
+      | 'connected-capacity'
+      | null;
     removedTradeCount: number;
     additionalVersionCount: number;
     summaryBefore: TradeSummary;

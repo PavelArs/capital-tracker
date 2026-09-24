@@ -1,4 +1,5 @@
 import {
+  type CarryInFifoResult,
   type FifoCarryInInput,
   FifoHistoryError,
   type FifoTrade,
@@ -29,6 +30,16 @@ export function projectHistoricalAccounting(
     active.filter((head) => head.occurredAt <= at),
     baseline,
   );
+  return projectHistoricalFifo(fifo, baseline);
+}
+
+/** Aggregate all held fragments after the connected replay, before paging or pricing. */
+export function projectHistoricalFifo(
+  fifo:
+    | Pick<CarryInFifoResult, 'lots' | 'summary'>
+    | import('./owned-transfer-fifo').AccountFifoResult,
+  baseline: readonly FifoCarryInInput[],
+) {
   const totals = new Map<
     string,
     Omit<HistoricalPosition, 'quantity' | 'costUsd'> & { quantity: bigint; costUsd: bigint }

@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common';
 import { EntityManager } from 'typeorm';
+import { lockAccountingOwner } from './accounting-lock';
 import {
   type Execution,
   type FifoCarryInInput,
@@ -80,6 +81,7 @@ export async function readOwnedAccount(
   id: string,
   lock = false,
 ): Promise<AccountRow> {
+  if (lock) await lockAccountingOwner(manager, owner);
   const [account]: AccountRow[] = await manager.query(
     `SELECT id,"currentRevision" FROM manual_accounts WHERE "ownerId"=$1 AND id=$2${lock ? ' FOR UPDATE' : ''}`,
     [owner, id],

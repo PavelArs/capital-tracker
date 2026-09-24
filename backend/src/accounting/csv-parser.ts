@@ -26,7 +26,9 @@ export interface CsvIssue {
     | 'duplicate-chronology'
     | 'active-trade-cap'
     | 'version-cap'
-    | 'insufficient-holdings';
+    | 'insufficient-holdings'
+    | 'connected-history'
+    | 'connected-capacity';
   line: number | null;
   column: number | null;
 }

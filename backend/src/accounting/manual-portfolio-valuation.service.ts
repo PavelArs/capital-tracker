@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import type { ConnectedLedgerCache } from './connected-accounting.store';
 import { readHistoricalState } from './historical-accounting.store';
 import { parseUuid } from './input';
 import { type PortfolioAccount, projectManualPortfolioValue } from './manual-portfolio-valuation';
@@ -32,6 +33,7 @@ export class ManualPortfolioValuationService {
       // Resolve the complete selected set before loading or disclosing any history.
       if (rows.length !== accountIds.length) throw new NotFoundException();
       const accounts: PortfolioAccount[] = [];
+      const ledgerCache: ConnectedLedgerCache = new Map();
       for (const row of rows) {
         const metadata = {
           accountId: row.accountId,
@@ -45,7 +47,14 @@ export class ManualPortfolioValuationService {
           accounts.push({ ...metadata, coverage: 'before-coverage' });
         } else {
           // Persisted FIFO/SQL failures must remain errors, never ordinary coverage gaps.
-          const state = await readHistoricalState(manager, owner, row.accountId, at);
+          const state = await readHistoricalState(
+            manager,
+            owner,
+            row.accountId,
+            at,
+            undefined,
+            ledgerCache,
+          );
           accounts.push({
             ...metadata,
             coverage: 'covered',

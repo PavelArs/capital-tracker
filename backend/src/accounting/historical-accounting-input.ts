@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf } from './input';
-import { type TradePageQuery, parseTradePageQuery } from './trade-input';
+import { type TradePageQuery, parseDerivedTradePageQuery } from './trade-input';
 
 export interface HistoricalQuery extends TradePageQuery {
   at: string;
@@ -16,5 +16,5 @@ export function parseHistoricalQuery(input: unknown): HistoricalQuery {
   )
     throw new BadRequestException('Invalid accounting input');
   const { at, ...page } = input as Record<string, unknown>;
-  return { at: parseAsOf(at), ...parseTradePageQuery(page) };
+  return { at: parseAsOf(at), ...parseDerivedTradePageQuery(page) };
 }

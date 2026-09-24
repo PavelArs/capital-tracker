@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { lockAccountingOwner } from './accounting-lock';
 import {
   parseAccount,
   parseHistoryQuery,
@@ -150,6 +151,7 @@ export class AccountingService {
       positions: value.positions,
     });
     return this.source.transaction(async (manager) => {
+      await lockAccountingOwner(manager, owner);
       const [account]: AccountRow[] = await manager.query(
         'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 FOR UPDATE',
         [owner, id],

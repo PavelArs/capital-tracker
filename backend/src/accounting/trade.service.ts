@@ -1,21 +1,25 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { lockAccountingOwner } from './accounting-lock';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
 import {
-  type CarryInFifoResult,
-  type Execution,
-  type FifoCarryInInput,
-  FifoHistoryError,
-  type FifoResult,
-  type FifoTrade,
-  calculateFifo,
-} from './fifo';
+  advanceConnectedJournals,
+  assertRevisionCapacity,
+  connectedResult,
+  projectConnectedLedger,
+  readConnectedLedger,
+  readTradeVersionCount,
+  rethrowAccountingHistory,
+} from './connected-accounting.store';
+import { type Execution, type FifoResult } from './fifo';
 import { parseUuid } from './input';
+import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
 import {
   type TradeCreateInput,
   type TradePageQuery,
   type TradeVoidInput,
+  parseDerivedTradePageQuery,
   parseJournalInitialization,
   parseTradeCorrection,
   parseTradeCreate,
@@ -29,10 +33,8 @@ import {
   type TradeKind as Kind,
   type TradeVersion,
   type VersionRow,
-  advanceJournal,
   appendTradeVersion,
   projectTradeVersion,
-  readBaseline,
   readJournal,
   readOwnedAccount,
   readTradeHeads,
@@ -63,13 +65,15 @@ export interface JournalState {
         versionCount: number;
         limits: { activeTrades: number; versions: number };
         summary: FifoResult['summary'];
+        transferSummary?: TransferSummary;
+        revisionBudget?: { used: number; limit: number };
       })
     | null;
 }
 interface CurrentSnapshot {
   journal: JournalRow;
   heads: TradeVersion[];
-  fifo: CarryInFifoResult;
+  fifo: AccountFifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
 
@@ -95,20 +99,6 @@ function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): Jou
 }
 function receipt(accountId: string, trade: TradeVersion): TradeReceipt {
   return { accountId, journalRevision: trade.journalRevision, trade };
-}
-function calculate(
-  heads: readonly (FifoTrade & { kind: Kind })[],
-  baseline: readonly FifoCarryInInput[],
-): CarryInFifoResult {
-  try {
-    return calculateFifo(
-      heads.filter((head) => head.kind !== 'void'),
-      baseline,
-    );
-  } catch (error) {
-    if (error instanceof FifoHistoryError) throw conflict();
-    throw error;
-  }
 }
 function page<T>(snapshot: CurrentSnapshot, items: readonly T[], query: TradePageQuery) {
   const end = query.offset + query.limit;
@@ -195,66 +185,76 @@ export class TradeService {
       expectedJournalRevision: value.expectedJournalRevision,
       ...fields,
     });
-    return this.source.transaction(async (manager) => {
-      await readOwnedAccount(manager, owner, id, true);
-      const journal = await readJournal(manager, owner, id);
-      if (!journal) throw conflict();
-      const [previous]: VersionRow[] = await manager.query(
-        `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
-        [owner, id, value.requestId],
-      );
-      if (previous) {
-        if (previous.canonicalPayload !== payload) throw conflict();
-        return { created: false, value: receipt(id, projectTradeVersion(previous)) };
-      }
-      const heads = await readTradeHeads(manager, owner, id);
-      const current =
-        target === undefined ? undefined : heads.find((head) => head.tradeId === target);
-      if (target !== undefined && !current) throw new NotFoundException();
-      let nextExecution: Execution;
-      let labels: { instrumentName: string; instrumentSymbol: string | null };
-      if (fields) {
-        const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
-          'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
-          [owner, fields.instrumentId],
+    return this.source
+      .transaction(async (manager) => {
+        await lockAccountingOwner(manager, owner);
+        await readOwnedAccount(manager, owner, id);
+        const journal = await readJournal(manager, owner, id);
+        if (!journal) throw conflict();
+        const [previous]: VersionRow[] = await manager.query(
+          `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
+          [owner, id, value.requestId],
         );
-        if (!instrument) throw new NotFoundException();
-        nextExecution = fields;
-        labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
-      } else {
-        if (!current) throw new NotFoundException();
-        nextExecution = execution(current);
-        labels = {
-          instrumentName: current.instrumentName,
-          instrumentSymbol: current.instrumentSymbol,
+        if (previous) {
+          if (previous.canonicalPayload !== payload) throw conflict();
+          return { created: false, value: receipt(id, projectTradeVersion(previous)) };
+        }
+        const ledger = await readConnectedLedger(manager, owner, [id], { lock: true });
+        const heads = await readTradeHeads(manager, owner, id);
+        const current =
+          target === undefined ? undefined : heads.find((head) => head.tradeId === target);
+        if (target !== undefined && !current) throw new NotFoundException();
+        let nextExecution: Execution;
+        let labels: { instrumentName: string; instrumentSymbol: string | null };
+        if (fields) {
+          const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
+            'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
+            [owner, fields.instrumentId],
+          );
+          if (!instrument) throw new NotFoundException();
+          nextExecution = fields;
+          labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
+        } else {
+          if (!current) throw new NotFoundException();
+          nextExecution = execution(current);
+          labels = {
+            instrumentName: current.instrumentName,
+            instrumentSymbol: current.instrumentSymbol,
+          };
+        }
+        if (
+          current?.kind === 'void' ||
+          journal.currentRevision !== value.expectedJournalRevision ||
+          journal.currentRevision >= 10000
+        )
+          throw conflict();
+        if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
+        const tradeId = target ?? randomUUID();
+        const next = {
+          ...nextExecution,
+          ...labels,
+          tradeId,
+          version: (current?.version ?? 0) + 1,
+          journalRevision: journal.currentRevision + 1,
+          requestId: value.requestId,
+          kind,
         };
-      }
-      if (
-        current?.kind === 'void' ||
-        journal.currentRevision !== value.expectedJournalRevision ||
-        journal.currentRevision >= 10000
-      )
-        throw conflict();
-      if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
-      const tradeId = target ?? randomUUID();
-      const next = {
-        ...nextExecution,
-        ...labels,
-        tradeId,
-        version: (current?.version ?? 0) + 1,
-        journalRevision: journal.currentRevision + 1,
-        requestId: value.requestId,
-        kind,
-      };
-      const baseline = await readBaseline(manager, owner, id, journal);
-      calculate([...heads.filter((head) => head.tradeId !== tradeId), next], baseline);
-      const saved = await appendTradeVersion(manager, owner, id, {
-        ...next,
-        canonicalPayload: payload,
-      });
-      await advanceJournal(manager, owner, id, next.journalRevision);
-      return { created: true, value: receipt(id, saved) };
-    });
+        assertRevisionCapacity(ledger);
+        projectConnectedLedger(ledger);
+        projectConnectedLedger(ledger, {
+          accountId: id,
+          trades: [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
+            (head) => head.kind !== 'void',
+          ),
+        });
+        const saved = await appendTradeVersion(manager, owner, id, {
+          ...next,
+          canonicalPayload: payload,
+        });
+        await advanceConnectedJournals(manager, owner, ledger);
+        return { created: true, value: receipt(id, saved) };
+      })
+      .catch(rethrowAccountingHistory);
   }
 
   async getJournal(ownerId: string, accountId: string): Promise<JournalState> {
@@ -274,8 +274,9 @@ export class TradeService {
         };
       }
       const heads = await readTradeHeads(manager, owner, id);
-      const baseline = await readBaseline(manager, owner, id, journal);
-      const fifo = calculate(heads, baseline);
+      const ledger = await readConnectedLedger(manager, owner, [id]);
+      const baseline = ledger.accounts.get(id)!.initialLots;
+      const fifo = connectedResult(ledger, id, projectConnectedLedger(ledger).accounts.get(id)!);
       return {
         accountId: id,
         eligible: false,
@@ -286,9 +287,15 @@ export class TradeService {
             : projectCarryInOrigin(journal, baseline)),
           journalRevision: journal.currentRevision,
           activeTradeCount: heads.filter((head) => head.kind !== 'void').length,
-          versionCount: journal.currentRevision,
+          versionCount: await readTradeVersionCount(manager, owner, id),
           limits: { activeTrades: 1000, versions: 10000 },
           summary: fifo.summary,
+          ...(fifo.transferSummary
+            ? {
+                transferSummary: fifo.transferSummary,
+                revisionBudget: { used: journal.currentRevision, limit: 10000 },
+              }
+            : {}),
         },
       };
     });
@@ -301,20 +308,20 @@ export class TradeService {
     );
   }
   async listLots(ownerId: string, accountId: string, rawQuery: unknown = {}) {
-    const query = parseTradePageQuery(rawQuery);
+    const query = parseDerivedTradePageQuery(rawQuery);
     return this.current(ownerId, accountId, query, (snapshot) =>
       page(snapshot, snapshot.fifo.lots, query),
     );
   }
   async listRealizations(ownerId: string, accountId: string, rawQuery: unknown = {}) {
-    const query = parseTradePageQuery(rawQuery);
+    const query = parseDerivedTradePageQuery(rawQuery);
     return this.current(ownerId, accountId, query, (snapshot) =>
       page(snapshot, snapshot.fifo.realizations, query),
     );
   }
   async listMatches(ownerId: string, accountId: string, tradeId: string, rawQuery: unknown = {}) {
     const target = parseUuid(tradeId);
-    const query = parseTradePageQuery(rawQuery);
+    const query = parseDerivedTradePageQuery(rawQuery);
     return this.current(ownerId, accountId, query, (snapshot) => {
       const head = snapshot.heads.find((item) => item.tradeId === target);
       if (!head) throw new NotFoundException();
@@ -370,14 +377,15 @@ export class TradeService {
       )
         throw conflict();
       const heads = await readTradeHeads(manager, owner, id);
-      const baseline = await readBaseline(manager, owner, id, journal);
-      return project({ journal, heads, fifo: calculate(heads, baseline) });
+      const ledger = await readConnectedLedger(manager, owner, [id]);
+      const fifo = connectedResult(ledger, id, projectConnectedLedger(ledger).accounts.get(id)!);
+      return project({ journal, heads, fifo });
     });
   }
   private read<T>(run: (manager: EntityManager) => Promise<T>): Promise<T> {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      return run(manager);
+      return run(manager).catch(rethrowAccountingHistory);
     });
   }
   private async hasOpening(manager: EntityManager, owner: string, id: string): Promise<boolean> {

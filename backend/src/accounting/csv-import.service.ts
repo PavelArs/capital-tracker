@@ -6,6 +6,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { lockAccountingOwner } from './accounting-lock';
+import {
+  type ConnectedLedger,
+  advanceConnectedJournals,
+  assertRevisionCapacity,
+  projectConnectedLedger,
+  readConnectedLedger,
+  rethrowAccountingHistory,
+} from './connected-accounting.store';
 import {
   parseCsvConfirm,
   parseCsvInspect,
@@ -17,23 +26,15 @@ import {
   validateDisplayName,
 } from './csv-input';
 import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
-import {
-  type Execution,
-  type FifoCarryInInput,
-  FifoHistoryError,
-  type FifoSummary,
-  type FifoTrade,
-  calculateFifo,
-} from './fifo';
+import { type Execution, FifoHistoryError, type FifoSummary, type FifoTrade } from './fifo';
 import { parseUuid } from './input';
+import { OwnedTransferCapacityError } from './owned-transfer-fifo';
 import {
   type JournalRow,
   type TradeVersion,
   type VersionRow,
-  advanceJournal,
   appendTradeVersion,
   projectTradeVersion,
-  readBaseline,
   readJournal,
   readOwnedAccount,
   readTradeHeads,
@@ -263,91 +264,102 @@ export class CsvImportService {
     const target = parseUuid(batchId);
     const input = parseCsvConfirm(raw);
     const payload = canonical('confirm', target, input);
-    return this.source.transaction(async (manager) => {
-      await readOwnedAccount(manager, owner, id, true);
-      const replay = await this.replay(manager, owner, id, input.requestId, payload);
-      if (replay) return { created: false, value: replay };
-      const journal = await this.journal(manager, owner, id);
-      const batch = await this.batch(manager, owner, id, target, true);
-      if (
-        batch.state !== 'draft' ||
-        input.parserVersion !== PARSER_VERSION ||
-        journal.currentRevision !== input.expectedJournalRevision
-      )
-        throw conflict();
-      const heads = await readTradeHeads(manager, owner, id);
-      const { view, instruments } = await this.evaluate(
-        manager,
-        owner,
-        id,
-        batch,
-        input,
-        journal,
-        heads,
-      );
-      if (
-        view.rowErrors.length ||
-        view.batchErrors.some(
-          (e) =>
-            ![
-              'before-coverage',
-              'duplicate-chronology',
-              'active-trade-cap',
-              'version-cap',
-              'insufficient-holdings',
-            ].includes(e.code),
+    return this.source
+      .transaction(async (manager) => {
+        await lockAccountingOwner(manager, owner);
+        await readOwnedAccount(manager, owner, id);
+        const replay = await this.replay(manager, owner, id, input.requestId, payload);
+        if (replay) return { created: false, value: replay };
+        const ledger = await readConnectedLedger(manager, owner, [id], { lock: true });
+        const journal = ledger.accounts.get(id)!.journal;
+        const batch = await this.batch(manager, owner, id, target, true);
+        if (
+          batch.state !== 'draft' ||
+          input.parserVersion !== PARSER_VERSION ||
+          journal.currentRevision !== input.expectedJournalRevision
         )
-      )
-        throw invalid();
-      if (!view.canConfirm || view.previewHash !== input.previewHash) throw conflict();
-      const rows = view.rows;
-      for (const row of rows) {
-        if (!row.execution) throw new Error('Missing validated CSV execution');
-        const fields = execution(row.execution);
-        const instrument = instruments.get(fields.instrumentId);
-        if (!instrument) throw new Error('Missing validated CSV instrument');
-        const tradeId = randomUUID();
-        const requestId = randomUUID();
-        const revision = journal.currentRevision + row.ordinal;
-        await appendTradeVersion(manager, owner, id, {
-          ...fields,
-          tradeId,
-          requestId,
-          version: 1,
-          journalRevision: revision,
-          kind: 'create',
-          instrumentName: instrument.name,
-          instrumentSymbol: instrument.symbol,
-          canonicalPayload: JSON.stringify({
-            kind: 'create',
-            expectedJournalRevision: revision - 1,
-            ...fields,
-          }),
-        });
-        await manager.query(
-          'INSERT INTO account_csv_import_rows ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion","rollbackVersion") VALUES ($1,$2,$3,$4,$5,$6,1,NULL)',
-          [owner, id, target, row.ordinal, row.startLine, tradeId],
+          throw conflict();
+        const heads = await readTradeHeads(manager, owner, id);
+        const { view, instruments } = await this.evaluate(
+          manager,
+          owner,
+          id,
+          batch,
+          input,
+          journal,
+          heads,
+          ledger,
         );
-      }
-      const settings: Settings = { format: input.format, mapping: input.mapping, assertUsd: true };
-      await manager.query(
-        'UPDATE account_csv_imports SET state=\'committed\',"acceptedSettings"=$4::jsonb WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
-        [owner, id, target, JSON.stringify({ parserVersion: PARSER_VERSION, ...settings })],
-      );
-      await advanceJournal(manager, owner, id, journal.currentRevision + rows.length);
-      const saved = await this.command(
-        manager,
-        owner,
-        id,
-        target,
-        'confirm',
-        input.requestId,
-        payload,
-        rows.length,
-        journal.currentRevision,
-      );
-      return { created: true, value: receipt(saved) };
-    });
+        if (
+          view.rowErrors.length ||
+          view.batchErrors.some(
+            (e) =>
+              ![
+                'before-coverage',
+                'duplicate-chronology',
+                'active-trade-cap',
+                'version-cap',
+                'insufficient-holdings',
+                'connected-history',
+                'connected-capacity',
+              ].includes(e.code),
+          )
+        )
+          throw invalid();
+        if (!view.canConfirm || view.previewHash !== input.previewHash) throw conflict();
+        const rows = view.rows;
+        for (const row of rows) {
+          if (!row.execution) throw new Error('Missing validated CSV execution');
+          const fields = execution(row.execution);
+          const instrument = instruments.get(fields.instrumentId);
+          if (!instrument) throw new Error('Missing validated CSV instrument');
+          const tradeId = randomUUID();
+          const requestId = randomUUID();
+          const revision = journal.currentRevision + row.ordinal;
+          await appendTradeVersion(manager, owner, id, {
+            ...fields,
+            tradeId,
+            requestId,
+            version: 1,
+            journalRevision: revision,
+            kind: 'create',
+            instrumentName: instrument.name,
+            instrumentSymbol: instrument.symbol,
+            canonicalPayload: JSON.stringify({
+              kind: 'create',
+              expectedJournalRevision: revision - 1,
+              ...fields,
+            }),
+          });
+          await manager.query(
+            'INSERT INTO account_csv_import_rows ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion","rollbackVersion") VALUES ($1,$2,$3,$4,$5,$6,1,NULL)',
+            [owner, id, target, row.ordinal, row.startLine, tradeId],
+          );
+        }
+        const settings: Settings = {
+          format: input.format,
+          mapping: input.mapping,
+          assertUsd: true,
+        };
+        await manager.query(
+          'UPDATE account_csv_imports SET state=\'committed\',"acceptedSettings"=$4::jsonb WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
+          [owner, id, target, JSON.stringify({ parserVersion: PARSER_VERSION, ...settings })],
+        );
+        await advanceConnectedJournals(manager, owner, ledger, id, rows.length);
+        const saved = await this.command(
+          manager,
+          owner,
+          id,
+          target,
+          'confirm',
+          input.requestId,
+          payload,
+          rows.length,
+          journal.currentRevision,
+        );
+        return { created: true, value: receipt(saved) };
+      })
+      .catch(rethrowAccountingHistory);
   }
 
   async rollback(ownerId: string, accountId: string, batchId: string, raw: unknown) {
@@ -356,60 +368,63 @@ export class CsvImportService {
     const target = parseUuid(batchId);
     const input = parseCsvRollback(raw);
     const payload = canonical('rollback', target, input);
-    return this.source.transaction(async (manager) => {
-      await readOwnedAccount(manager, owner, id, true);
-      const replay = await this.replay(manager, owner, id, input.requestId, payload);
-      if (replay) return { created: false, value: replay };
-      const journal = await this.journal(manager, owner, id);
-      const batch = await this.batch(manager, owner, id, target);
-      if (journal.currentRevision !== input.expectedJournalRevision) throw conflict();
-      const heads = await readTradeHeads(manager, owner, id);
-      const baseline = await readBaseline(manager, owner, id, journal);
-      const links = await this.links(manager, owner, id, target);
-      const review = this.rollbackReview(batch, journal, heads, links, baseline);
-      if (!review.eligible) throw conflict();
-      for (const link of links) {
-        const original = heads.find((h) => h.tradeId === link.tradeId);
-        if (!original) throw new Error('Missing validated import head');
-        const revision = journal.currentRevision + link.ordinal;
-        await appendTradeVersion(manager, owner, id, {
-          ...execution(original),
-          tradeId: original.tradeId,
-          version: 2,
-          journalRevision: revision,
-          requestId: randomUUID(),
-          kind: 'void',
-          instrumentName: original.instrumentName,
-          instrumentSymbol: original.instrumentSymbol,
-          canonicalPayload: JSON.stringify({
-            kind: 'void',
+    return this.source
+      .transaction(async (manager) => {
+        await lockAccountingOwner(manager, owner);
+        await readOwnedAccount(manager, owner, id);
+        const replay = await this.replay(manager, owner, id, input.requestId, payload);
+        if (replay) return { created: false, value: replay };
+        const ledger = await readConnectedLedger(manager, owner, [id], { lock: true });
+        const journal = ledger.accounts.get(id)!.journal;
+        const batch = await this.batch(manager, owner, id, target);
+        if (journal.currentRevision !== input.expectedJournalRevision) throw conflict();
+        const heads = await readTradeHeads(manager, owner, id);
+        const links = await this.links(manager, owner, id, target);
+        const review = this.rollbackReview(batch, journal, heads, links, ledger, id);
+        if (!review.eligible) throw conflict();
+        for (const link of links) {
+          const original = heads.find((h) => h.tradeId === link.tradeId);
+          if (!original) throw new Error('Missing validated import head');
+          const revision = journal.currentRevision + link.ordinal;
+          await appendTradeVersion(manager, owner, id, {
+            ...execution(original),
             tradeId: original.tradeId,
-            expectedJournalRevision: revision - 1,
-          }),
-        });
+            version: 2,
+            journalRevision: revision,
+            requestId: randomUUID(),
+            kind: 'void',
+            instrumentName: original.instrumentName,
+            instrumentSymbol: original.instrumentSymbol,
+            canonicalPayload: JSON.stringify({
+              kind: 'void',
+              tradeId: original.tradeId,
+              expectedJournalRevision: revision - 1,
+            }),
+          });
+          await manager.query(
+            'UPDATE account_csv_import_rows SET "rollbackVersion"=2 WHERE "ownerId"=$1 AND "accountId"=$2 AND "batchId"=$3 AND ordinal=$4',
+            [owner, id, target, link.ordinal],
+          );
+        }
         await manager.query(
-          'UPDATE account_csv_import_rows SET "rollbackVersion"=2 WHERE "ownerId"=$1 AND "accountId"=$2 AND "batchId"=$3 AND ordinal=$4',
-          [owner, id, target, link.ordinal],
+          'UPDATE account_csv_imports SET state=\'rolled-back\' WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
+          [owner, id, target],
         );
-      }
-      await manager.query(
-        'UPDATE account_csv_imports SET state=\'rolled-back\' WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
-        [owner, id, target],
-      );
-      await advanceJournal(manager, owner, id, journal.currentRevision + links.length);
-      const saved = await this.command(
-        manager,
-        owner,
-        id,
-        target,
-        'rollback',
-        input.requestId,
-        payload,
-        links.length,
-        journal.currentRevision,
-      );
-      return { created: true, value: receipt(saved) };
-    });
+        await advanceConnectedJournals(manager, owner, ledger, id, links.length);
+        const saved = await this.command(
+          manager,
+          owner,
+          id,
+          target,
+          'rollback',
+          input.requestId,
+          payload,
+          links.length,
+          journal.currentRevision,
+        );
+        return { created: true, value: receipt(saved) };
+      })
+      .catch(rethrowAccountingHistory);
   }
 
   async list(ownerId: string, accountId: string, raw: unknown = {}) {
@@ -444,7 +459,7 @@ export class CsvImportService {
         [owner, id, target],
       );
       const heads = await readTradeHeads(manager, owner, id);
-      const baseline = await readBaseline(manager, owner, id, journal);
+      const ledger = await readConnectedLedger(manager, owner, [id]);
       const links = await this.links(manager, owner, id, target);
       const confirmed = commands.find((c) => c.kind === 'confirm');
       const rolledBack = commands.find((c) => c.kind === 'rollback');
@@ -453,7 +468,7 @@ export class CsvImportService {
         acceptedSettings: batch.acceptedSettings,
         confirmReceipt: confirmed ? receipt(confirmed) : null,
         rollbackReceipt: rolledBack ? receipt(rolledBack) : null,
-        rollbackReview: this.rollbackReview(batch, journal, heads, links, baseline),
+        rollbackReview: this.rollbackReview(batch, journal, heads, links, ledger, id),
       };
     });
   }
@@ -515,6 +530,7 @@ export class CsvImportService {
     settings: Settings,
     journal: JournalRow,
     heads: TradeVersion[],
+    loadedLedger?: ConnectedLedger,
   ) {
     const ids = [...new Set(settings.mapping.instruments.map((m) => m.instrumentId))];
     const owned: Instrument[] = await manager.query(
@@ -523,8 +539,8 @@ export class CsvImportService {
     );
     if (owned.length !== ids.length) throw new NotFoundException();
     const instruments = new Map(owned.map((i) => [i.id, i]));
-    const baseline = await readBaseline(manager, owner, id, journal);
-    const summaryBefore = calculateFifo(active(heads), baseline).summary;
+    const ledger = loadedLedger ?? (await readConnectedLedger(manager, owner, [id]));
+    const summaryBefore = projectConnectedLedger(ledger).accounts.get(id)!.summary;
     const document = parseCsvSource(sourceBytes(batch), settings.format.delimiter);
     const normalized = document.valid
       ? normalizeCsvRows(document, settings)
@@ -560,9 +576,15 @@ export class CsvImportService {
       if (journal.currentRevision + added.length > 10000) add('version-cap');
       if (!duplicate && candidate.length <= 1000) {
         try {
-          candidateSummary = calculateFifo(candidate, baseline).summary;
+          assertRevisionCapacity(ledger, id, added.length);
+          candidateSummary = projectConnectedLedger(ledger, {
+            accountId: id,
+            trades: candidate,
+          }).accounts.get(id)!.summary;
         } catch (error) {
-          if (error instanceof FifoHistoryError) add('insufficient-holdings');
+          if (error instanceof OwnedTransferCapacityError) add('connected-capacity');
+          else if (error instanceof FifoHistoryError)
+            add(ledger.transfers.length ? 'connected-history' : 'insufficient-holdings');
           else throw error;
         }
       }
@@ -615,15 +637,18 @@ export class CsvImportService {
     journal: JournalRow,
     heads: TradeVersion[],
     links: LinkRow[],
-    baseline: readonly FifoCarryInInput[],
+    ledger: ConnectedLedger,
+    id: string,
   ) {
     const current = active(heads);
-    const summaryBefore = calculateFifo(current, baseline).summary;
+    const summaryBefore = projectConnectedLedger(ledger).accounts.get(id)!.summary;
     let reason:
       | 'not-committed'
       | 'modified-trade'
       | 'version-cap'
       | 'insufficient-holdings'
+      | 'connected-history'
+      | 'connected-capacity'
       | null = null;
     let summaryAfter: FifoSummary | null = null;
     if (batch.state !== 'committed') reason = 'not-committed';
@@ -640,12 +665,15 @@ export class CsvImportService {
     else {
       const removed = new Set(links.map((l) => l.tradeId));
       try {
-        summaryAfter = calculateFifo(
-          current.filter((h) => !removed.has(h.tradeId)),
-          baseline,
-        ).summary;
+        assertRevisionCapacity(ledger, id, links.length);
+        summaryAfter = projectConnectedLedger(ledger, {
+          accountId: id,
+          trades: current.filter((h) => !removed.has(h.tradeId)),
+        }).accounts.get(id)!.summary;
       } catch (error) {
-        if (error instanceof FifoHistoryError) reason = 'insufficient-holdings';
+        if (error instanceof OwnedTransferCapacityError) reason = 'connected-capacity';
+        else if (error instanceof FifoHistoryError)
+          reason = ledger.transfers.length ? 'connected-history' : 'insufficient-holdings';
         else throw error;
       }
     }
@@ -662,7 +690,7 @@ export class CsvImportService {
   private read<T>(run: (manager: EntityManager) => Promise<T>): Promise<T> {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      return run(manager);
+      return run(manager).catch(rethrowAccountingHistory);
     });
   }
   private async journal(manager: EntityManager, owner: string, id: string) {

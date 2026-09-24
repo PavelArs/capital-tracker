@@ -115,10 +115,18 @@ export function parseTradeVoid(input: unknown): TradeVoidInput {
 }
 
 export function parseTradePageQuery(input: unknown): TradePageQuery {
+  return parsePage(input, 9999);
+}
+
+export function parseDerivedTradePageQuery(input: unknown): TradePageQuery {
+  return parsePage(input, 99999);
+}
+
+function parsePage(input: unknown, maxOffset: number): TradePageQuery {
   const row = object(input, ['journalRevision', 'offset', 'limit']);
   const journalRevision =
     row.journalRevision === undefined ? undefined : queryInteger(row.journalRevision, 0, 10000);
-  const offset = row.offset === undefined ? 0 : queryInteger(row.offset, 0, 9999);
+  const offset = row.offset === undefined ? 0 : queryInteger(row.offset, 0, maxOffset);
   if (offset !== 0 && journalRevision === undefined) return bad();
   return {
     ...(journalRevision === undefined ? {} : { journalRevision }),
