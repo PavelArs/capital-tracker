@@ -1,6 +1,6 @@
 # Manual portfolio valuation verification
 
-Status: implemented, independently reviewed and targeted GREEN; archive pending.
+Status: implemented, independently reviewed, targeted GREEN and archived.
 
 Base122e3ca has21 canonical specs and no active changes before this proposal.
 Owner chart maximum-period review remains deferred. Nginx edit/lock/data retained.
@@ -125,3 +125,11 @@ unchanged. Strict OpenSpec22items (21canonical+active) PASS. No full backend/ful
 older migration matrix, hostedCI, release scans, live providers or production check
 run in this slice; no tests/gates removed. No owner-data access/folder deletion/
 remote push/paid services. Whole brief and chart maximum-period review remain open.
+
+Installed OpenSpec1.2.0 `archive preview-manual-portfolio-value --yes` succeeded
+with canonical synchronization, archive2026-09-24-preview-manual-portfolio-value.
+The expected6/7 warning referred to3.3, which includes archive itself; marked7/7
+only after actual success. Luna's final independent evidence audit found no
+blocker. Strict22canonical specs pass,21previous specs byte-identical, new
+requirements match the archived delta. Generated Purpose filled without modifying
+requirements. Active changes empty after archive.

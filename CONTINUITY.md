@@ -168,8 +168,8 @@ CI gates/tests retained. Final independent evidence audit found no blocker.
 
 ## Completed selected manual-account valuation slice
 
-preview-manual-portfolio-value implemented, reviewed and targeted GREEN; archive
-pending. Contract3129270, puref01879b/PG8da7886, Luna2E2E4b0c864, Solview8823465
+preview-manual-portfolio-value archived2026-09-24-preview-manual-portfolio-value,
+7/7tasks; strict22canonical specs pass,21prior specs unchanged, activechangesempty. Contract3129270, puref01879b/PG8da7886, Luna2E2E4b0c864, Solview8823465
 precede actualHTTPSRED (validowner200 vs404, missingheading10s). Rootbackend7128c28
 adds POST/accounting/manual-valuation-preview with strict1..10distinct selected
 ownedUUIDs, oneRR READONLYsnapshot, shared history/exactpriceprojection, coverage
@@ -192,11 +192,13 @@ BEsha256:4b6bfc44032298aa1f4c8c342ad5ff9ac16c235d9bbf6c665fb58e227ae61c77
 FEsha256:92528857004478837265653aa1651f31b73783fa9c5bbbefdb1a45d4efb222b7
 SameBEinPG/HTTPS. Cleanup/liveDockerinventoryempty; ownerNginx/lockunchanged.
 Fullbackend/fullE2E/oldermigrationmatrix/hostedCI/release/productionnotrun.
-Read activeverification anddocs/manual-portfolio-valuation.md. Rootownsarchive.
+Read archivedverification anddocs/manual-portfolio-valuation.md. Final independent
+evidence audit found no blocker.
 
 ## Next
 
-Finish preview-manual-portfolio-value documentation/archive and canonical sync.
+No active OpenSpec change. Choose the next bounded slice from the remaining brief,
+with reviewed contract and targeted acceptance before product implementation.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
 automatic prices/longer history/charts, automatic all-account allocation, TWR,

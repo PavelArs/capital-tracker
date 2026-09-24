@@ -36,5 +36,5 @@ the calculation; the selection bounds the work. Invalid saved FIFO history
 remains an error instead of being relabeled as an ordinary missing-data gap.
 
 The selected PostgreSQL checks and all three HTTPS acceptance cases passed. See the
-[verification record](../openspec/changes/preview-manual-portfolio-value/verification.md)
+[verification record](../openspec/changes/archive/2026-09-24-preview-manual-portfolio-value/verification.md)
 for the selected acceptance scope, actual results and unrun checks.

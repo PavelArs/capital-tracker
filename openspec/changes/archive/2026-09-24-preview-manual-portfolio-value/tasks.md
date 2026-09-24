@@ -12,4 +12,4 @@
 
 - [x] 3.1 Independently review data correctness, privacy, read-only snapshot/bounds and UI; resolve findings without weakening assertions.
 - [x] 3.2 Run targeted pure checks, real PostgreSQL new+retained valuation, two new HTTPS cases plus retained VAL-UI, builds/lints/audit/spec validation; record actual results/images/unrun gates.
-- [ ] 3.3 Update guide/testing/continuity, confirm owner-file/data preservation and cleanup, archive through installed CLI and verify canonical sync.
+- [x] 3.3 Update guide/testing/continuity, confirm owner-file/data preservation and cleanup, archive through installed CLI and verify canonical sync.

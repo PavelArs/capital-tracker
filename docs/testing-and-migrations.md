@@ -484,8 +484,8 @@ for the exact filter, predecessor RED, image IDs, reviews and unrun checks.
 
 ## Manual portfolio valuation preview
 
-See [manual portfolio valuation](manual-portfolio-valuation.md) and the active
-[verification record](../openspec/changes/preview-manual-portfolio-value/verification.md).
+See [manual portfolio valuation](manual-portfolio-valuation.md) and the archived
+[verification record](../openspec/changes/archive/2026-09-24-preview-manual-portfolio-value/verification.md).
 The preview reuses migration19 without schema or dependency changes. Its explicit
 one-to-ten account selection bounds snapshot work; no catalog page is silently
 added. One read-only repeatable-read transaction covers account history and exact
