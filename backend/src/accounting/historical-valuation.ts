@@ -1,18 +1,11 @@
 import type { HistoricalPosition } from './historical-accounting';
-import { canonicalDecimalToAtoms } from './money';
+import { canonicalDecimalToAtoms, formatProduct } from './money';
 
 export interface ValuationPrice {
   instrumentId: string;
   priceUsd: string;
   observedAt: string;
   revision: number;
-}
-
-/** Products of two scale30 nonnegative inputs retain all60 fractional places. */
-function formatProduct(value: bigint): string {
-  const digits = value.toString().padStart(61, '0');
-  const fraction = digits.slice(-60).replace(/0+$/, '');
-  return `${digits.slice(0, -60)}${fraction ? `.${fraction}` : ''}`;
 }
 
 /** Prices are already effective exact-time points from the same database snapshot. */

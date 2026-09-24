@@ -14,3 +14,10 @@ export function formatAtoms(value: bigint): string {
   const fraction = (magnitude % ATOM_SCALE).toString().padStart(30, '0').replace(/0+$/, '');
   return `${value < 0n ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}`;
 }
+
+/** A product of two nonnegative scale30 inputs retains all60 fractional places. */
+export function formatProduct(value: bigint): string {
+  const digits = value.toString().padStart(61, '0');
+  const fraction = digits.slice(-60).replace(/0+$/, '');
+  return `${digits.slice(0, -60)}${fraction ? `.${fraction}` : ''}`;
+}

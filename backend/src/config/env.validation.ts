@@ -1,5 +1,14 @@
 import { Transform, plainToInstance } from 'class-transformer';
-import { IsEnum, IsNumber, IsOptional, IsString, Max, Min, validateSync } from 'class-validator';
+import {
+  IsEnum,
+  IsIn,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+  validateSync,
+} from 'class-validator';
 
 import { parseTrustedProxyIps } from '../auth/client-source';
 
@@ -10,6 +19,14 @@ export enum Environment {
 }
 
 export class EnvironmentVariables {
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  DISPLAY_FX_ENABLED = 'false';
+
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  DISPLAY_FX_TRUST_PROXY = 'false';
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;

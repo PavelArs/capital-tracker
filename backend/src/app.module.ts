@@ -18,6 +18,7 @@ import { validateEnvironment } from './config/env.validation';
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { CryptoModule } from './crypto/crypto.module';
 import { CurrenciesModule } from './currencies/currencies.module';
+import { DisplayFxModule } from './display-fx/display-fx.module';
 import { HealthModule } from './health/health.module';
 import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { MetricsModule } from './metrics/metrics.module';
@@ -98,6 +99,7 @@ import { GlobalExceptionFilter } from './shared/filters';
     LiabilitiesModule,
     CryptoModule,
     CurrenciesModule,
+    DisplayFxModule,
     MetricsModule,
     HealthModule,
   ],
