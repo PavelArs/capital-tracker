@@ -1,6 +1,6 @@
 # Daily display FX verification
 
-Status: implemented, independently reviewed and targeted GREEN; archive pending.
+Status: implemented, independently reviewed, targeted GREEN and archived.
 
 ## Baseline and scope
 
@@ -168,3 +168,12 @@ and lock SHA256
 match the preserved baseline. No folder deletion, owner-data access, paid activation,
 remote push, hostedCI, live-provider availability check or production rollout.
 The wider brief remains incomplete; chart maximum-period review stays deferred.
+
+Installed OpenSpec1.2.0 `archive collect-daily-display-fx --yes` succeeded, creating
+`2026-09-24-collect-daily-display-fx` and the new canonical capability. The CLI
+reported6/7 tasks because3.3 includes archiving itself; it was checked only after
+actual archive completion. All7/7 now complete. Luna independently audited the
+verification/documentation against raw logs and reported no blocker. Strict21
+canonical specs pass;20 prior specs remain byte-identical and the new requirements
+match the archived delta. Generated Purpose was filled without changing requirements.
+No active change remains at this archive boundary.

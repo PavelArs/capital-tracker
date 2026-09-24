@@ -417,8 +417,8 @@ No existing E2E case or CI gate was removed. See the [verification record](../op
 
 ## Daily display FX
 
-See [daily display conversion](daily-display-fx.md) and the active
-[verification record](../openspec/changes/collect-daily-display-fx/verification.md).
+See [daily display conversion](daily-display-fx.md) and the archived
+[verification record](../openspec/changes/archive/2026-09-24-collect-daily-display-fx/verification.md).
 Migration19 adds two tables for immutable provider observations and persistent
 collection coordination. Startup does not create or synchronize them; migration
 remains an explicit CLI operation. The PostgreSQL fixture requires a fresh19

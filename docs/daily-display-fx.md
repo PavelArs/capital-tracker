@@ -36,7 +36,7 @@ cooldown. Reservations survive process restarts.
 Migration 19 adds the observation and collection tables; it does not rewrite
 existing accounting. There is no automatic destructive downgrade or removal.
 
-The [verification record](../openspec/changes/collect-daily-display-fx/verification.md)
+The [verification record](../openspec/changes/archive/2026-09-24-collect-daily-display-fx/verification.md)
 records real fresh/populated PostgreSQL migration, concurrency/failure checks and
 three selected HTTPS acceptance cases, all passing. External provider responses
 were controlled fixtures; no live-provider success is claimed.

@@ -139,14 +139,15 @@ release scan/production run this slice. Old cases and CI gates preserved.
 
 ## Completed daily display FX slice
 
-collect-daily-display-fx implemented and targeted GREEN; archive pending.
+collect-daily-display-fx archived2026-09-24-collect-daily-display-fx,7/7tasks;
+strict21canonical specs pass,20prior specs unchanged. Activechangesempty atarchive.
 Contract89f0a06, acceptance before implementation, backendadd57b4/UIbf4660a.
 Migration19 adds two initially empty tables; opt-in fixed no-key daily indicative
 USD→EUR/RUB, PostgreSQL rolling3attempts/24h, >=20min cooldown, 30s fenced lease,
 last-good data, exact scale60 converter, DB-only private reads, Russian Settings.
 Direct DNS connection filtering; explicit trusted egress proxy boundary. No change
 to USD accounting/manual prices/chart, no new dependency or paid/production action.
-Docs daily-display-fx.md/provider-feasibility.md and active verification hold details.
+Docs daily-display-fx.md/provider-feasibility.md and archived verification hold details.
 
 Genuine predecessor HTTPS RED: anonymous401 vs404 and absent Settings item before
 product implementation. Source152/6tests passed; later2DNS/proxy wiring cases added,
@@ -163,11 +164,12 @@ BEsha256:514843fb64d028cdbe63deda161654147d203b750faba5dd6c9cac32f1dba2d7
 FEsha256:83370644fb9133219770465629851a07b3db933984f9a629d3c592fd5e24df71
 BEimage identical PG/HTTPS. Cleanup/live labeledinventory empty; Nginx/lock unchanged.
 Fullbackend/fullE2E/olderupgrade matrix/hostedCI/release/production not run. Existing
-CI gates/tests retained. Root owns final OpenSpec archive, docs and integration.
+CI gates/tests retained. Final independent evidence audit found no blocker.
 
 ## Next
 
-Finish collect-daily-display-fx documentation/archive and verify canonical sync.
+Next candidate: bounded multi-account USD valuation from stored manual history;
+independent scope assessment underway, no new product implementation yet.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
 automatic prices/longer history/charts, multi-account valuation, TWR, transfers/

@@ -51,8 +51,8 @@ stores accepted observations in PostgreSQL and shows an attributed conversion to
 the authenticated owner. It does not provide a general-purpose rate feed, use
 these rates for accounting/profit, or claim older FX history. The implementation
 and its synthetic provider checks do not establish live-provider availability;
-real PostgreSQL and selected HTTPS verification remain recorded in the active
-[change verification](../openspec/changes/collect-daily-display-fx/verification.md).
+real PostgreSQL and selected HTTPS verification remain recorded in the archived
+[change verification](../openspec/changes/archive/2026-09-24-collect-daily-display-fx/verification.md).
 
 This selection does not remove the CoinGecko Demo retention blocker above.
 CoinGecko remains unapproved for permanent cryptocurrency price history unless
