@@ -413,6 +413,14 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
     ).toHaveText('310');
     await expect(result).toContainText('Ревизия журнала: 1');
 
+    await closingInput.fill('2311');
+    await expect(result).toBeHidden();
+    await expect(review).not.toBeChecked();
+    await expect(valuation).toHaveValue('1100');
+    await expect(section).toContainText('Ревизия журнала: 1');
+    await closingInput.fill('2310');
+    await review.check();
+
     let postFetchedResolve: () => void = () => {};
     let postRelease: () => void = () => {};
     let postHandlerFinished: () => void = () => {};

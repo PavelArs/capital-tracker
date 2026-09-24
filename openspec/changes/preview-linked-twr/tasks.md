@@ -4,8 +4,8 @@
 
 ## 2. Implement and review
 - [x] 2.1 Implement read-only plan and revision-pinned exact linked preview; share TWR arithmetic with passing characterization and preserve data.
-- [ ] 2.2 Implement isolated Russian linked-TWR section with explicit preparation/review and stale-response guards.
-- [ ] 2.3 Independently review implementation and acceptance; resolve findings without relaxing financial/security assertions.
+- [x] 2.2 Implement isolated Russian linked-TWR section with explicit preparation/review and stale-response guards.
+- [x] 2.3 Independently review implementation and acceptance; resolve findings without relaxing financial/security assertions.
 
 ## 3. Verify and archive
 - [ ] 3.1 Run scoped unit/lint/build/types/advisory/spec gates, actualPG and LTWR-API/LTWR-UI plus unchanged TWR-UI; record actual evidence and cleanup.
