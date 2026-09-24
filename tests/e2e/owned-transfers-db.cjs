@@ -540,6 +540,82 @@ async function processRaces(db, s, f) {
   console.log('PASS TRANSFER-003-C process race/advisory and row wait/replay/passive budget');
 }
 
+async function ownerLimits(db, s, fixture) {
+  stage = 'TRANSFER-003-D valid owner1000-active and10000-version bounds';
+  for (const [index, owner] of fixture.capOwners.entries()) {
+    const token = (await s.accounting.createInstrument(owner, {
+      requestId: randomUUID(), name: `Capacity ${index}`, symbol: 'CAP',
+    })).value.id;
+    const f = { owner, token };
+    const { a, b, input } = await setup(s, f, `Capacity ${index}`);
+    const firstInput = { ...input, quantity: '0.001', feeInstrumentId: null, feeQuantity: '0' };
+    const first = (await s.transfer.create(owner, firstInput)).value;
+    if (index === 0) {
+      // Fully valid effective1000-event history. Only fixture construction uses
+      // bulk SQL; all boundary decisions/replay/corrections use production services.
+      const identities = Array.from({ length: 999 }, (_, i) => ({ id: randomUUID(), ordinal: i + 2 }));
+      await db.transaction(async manager => {
+        await manager.query(`INSERT INTO owned_transfers(id,"ownerId","fromAccountId","toAccountId","currentVersion")
+          SELECT x.id,$1,$2,$3,1 FROM jsonb_to_recordset($4::jsonb) AS x(id uuid,ordinal int)`,
+          [owner, a, b, JSON.stringify(identities)]);
+        await manager.query(`INSERT INTO owned_transfer_versions
+          ("ownerId","transferId",version,"journalRevision","fromJournalRevision","toJournalRevision",
+           "requestId","canonicalPayload",kind,"instrumentId","occurredAt","orderWithinTimestamp",quantity,"feeInstrumentId","feeQuantity")
+          SELECT $1,x.id,1,x.ordinal,x.ordinal+2,x.ordinal,gen_random_uuid(),'synthetic-active-cap','create',
+            $2,$3,x.ordinal,0.001,NULL,0 FROM jsonb_to_recordset($4::jsonb) AS x(id uuid,ordinal int)`,
+          [owner, token, firstInput.occurredAt, JSON.stringify(identities)]);
+        await manager.query('UPDATE owner_transfer_journals SET "currentRevision"=1000 WHERE "ownerId"=$1', [owner]);
+        await manager.query('UPDATE account_trade_journals SET "currentRevision"=CASE WHEN "accountId"=$2 THEN 1002 ELSE 1000 END WHERE "ownerId"=$1', [owner, a]);
+      });
+      const full = await s.transfer.list(owner, {});
+      assert.equal(full.activeCount, 1000); assert.equal(full.versionCount, 1000);
+      assert.equal((await journal(s, owner, b)).summary.remainingCostUsd, '100');
+      const overflow = movement(f, a, b, 1002, 1000, {
+        occurredAt: '2025-01-04T00:00:00.000Z', quantity: '0.001', feeInstrumentId: null, feeQuantity: '0',
+      });
+      await unchanged(db, () => s.transfer.create(owner, overflow), 409);
+      assert.deepEqual(await s.transfer.create(owner, firstInput), { created: false, value: first });
+      const correction = corrections(first.transfer, 1002, 1000, { quantity: '0.002' });
+      assert.equal((await s.transfer.correct(owner, first.transfer.transferId, correction)).created, true);
+      assert.equal((await s.transfer.list(owner, {})).activeCount, 1000, 'Correction does not consume active identity capacity');
+      assert.equal((await journal(s, owner, b)).summary.remainingCostUsd, '100.2');
+    } else {
+      // First component stops at9998 transfer versions so its two local buys
+      // still fit the journal budget. A disjoint component fills the final two
+      // OWNER-wide slots; its account pins retain capacity at the rejection.
+      await db.transaction(async manager => {
+        await manager.query(`INSERT INTO owned_transfer_versions
+          ("ownerId","transferId",version,"journalRevision","fromJournalRevision","toJournalRevision",
+           "requestId","canonicalPayload",kind,"instrumentId","occurredAt","orderWithinTimestamp",quantity,"feeInstrumentId","feeQuantity")
+          SELECT "ownerId","transferId",n,n,n+2,n,gen_random_uuid(),'synthetic-version-cap','correct',
+            "instrumentId","occurredAt","orderWithinTimestamp",quantity,"feeInstrumentId","feeQuantity"
+          FROM owned_transfer_versions CROSS JOIN generate_series(2,9998) n
+          WHERE "ownerId"=$1 AND "transferId"=$2 AND version=1`, [owner, first.transfer.transferId]);
+        await manager.query('UPDATE owned_transfers SET "currentVersion"=9998 WHERE "ownerId"=$1', [owner]);
+        await manager.query('UPDATE owner_transfer_journals SET "currentRevision"=9998 WHERE "ownerId"=$1', [owner]);
+        await manager.query('UPDATE account_trade_journals SET "currentRevision"=CASE WHEN "accountId"=$2 THEN 10000 ELSE 9998 END WHERE "ownerId"=$1', [owner, a]);
+      });
+      const next = await setup(s, f, 'Final owner slots');
+      const penultimate = (await s.transfer.create(owner, next.input)).value;
+      assert.equal(penultimate.journalRevision, 9999);
+      const command = corrections(penultimate.transfer, 3, 1, { quantity: '1.4' });
+      const last = (await s.transfer.correct(owner, penultimate.transfer.transferId, command)).value;
+      assert.equal(last.journalRevision, 10000);
+      assert.equal((await s.transfer.list(owner, {})).versionCount, 10000);
+      assert.equal((await journal(s, owner, next.a)).journalRevision, 4);
+      assert.equal((await journal(s, owner, next.b)).journalRevision, 2);
+      await unchanged(db, () => s.transfer.correct(owner, last.transfer.transferId,
+        corrections(last.transfer, 4, 2, { quantity: '1.3' })), 409);
+      await unchanged(db, () => s.transfer.create(owner, movement(f, next.a, next.b, 4, 2, {
+        occurredAt: '2025-01-04T00:00:00.000Z', quantity: '0.1', feeInstrumentId: null, feeQuantity: '0',
+      })), 409);
+      assert.deepEqual(await s.transfer.create(owner, firstInput), { created: false, value: first });
+      assert.deepEqual(await s.transfer.correct(owner, last.transfer.transferId, command), { created: false, value: last });
+    }
+  }
+  console.log('PASS TRANSFER-003-D actual owner1000-active/10000-version legal boundaries, atomic refusal and replay');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value,
     'Exact isolated synthetic settings required');
@@ -548,24 +624,28 @@ async function main() {
   await createDatabase(database);
   assert.match(migrate(database), /Migrations applied: 20/);
   assert.match(migrate(database), /Migrations applied: 0/);
-  await populatedUpgrade();
+  if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
     assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
     for (const table of transferTables) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    const [owner, other, activeCap, versionCap] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),
-      ('owned-transfer-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('owned-transfer-other@example.invalid','synthetic-not-a-hash',true),
+      ('owned-transfer-active-cap@example.invalid','synthetic-not-a-hash',true),
+      ('owned-transfer-version-cap@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
     const token = (await s.accounting.createInstrument(owner.id, { requestId: randomUUID(), name: 'Token', symbol: 'SAME' })).value.id;
     const foreignToken = (await s.accounting.createInstrument(other.id, { requestId: randomUUID(), name: 'Foreign', symbol: 'SAME' })).value.id;
-    const f = { owner: owner.id, other: other.id, token, foreignToken };
+    const f = { owner: owner.id, other: other.id, token, foreignToken, capOwners: [activeCap.id, versionCap.id] };
     const mutable = [...transferTables, 'manual_accounts', 'accounting_instruments', 'account_trade_journals',
       'account_trades', 'account_trade_versions', 'manual_usd_price_versions',
       'account_csv_imports', 'account_csv_import_commands', 'account_csv_import_rows'];
     const preserved = await fingerprint(db, mutable);
-    for (const check of [exactAndRestatement, correctionVoidAndPrivacy, coherentSnapshot, connectedCsv, commitAndConstraints, processRaces]) await check(db, s, f);
+    const checks = process.argv.includes('--limits-only') ? [ownerLimits]
+      : [exactAndRestatement, correctionVoidAndPrivacy, coherentSnapshot, connectedCsv, commitAndConstraints, processRaces, ownerLimits];
+    for (const check of checks) await check(db, s, f);
     assert.equal(await fingerprint(db, mutable), preserved, 'External flows/auth/legacy/provider tables unchanged');
   } finally { if (db.isInitialized) await db.destroy(); }
 }

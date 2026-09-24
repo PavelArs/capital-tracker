@@ -215,7 +215,18 @@ test('TRANSFER-API: original lot basis, connected restatement, replay and privat
     fromAccountId: randomUUID(),
   });
   expect(absentForeign.status()).toBe(404);
-  expect(await absentForeign.text()).toBe(await deniedForeign.text());
+  const { timestamp: foreignTime, ...foreignError } = await deniedForeign.json();
+  const { timestamp: absentTime, ...absentError } = await absentForeign.json();
+  // The existing error envelope includes a per-response timestamp. Privacy is
+  // equality of all stable fields, never equality of two different request times.
+  for (const timestamp of [foreignTime, absentTime]) {
+    expect(typeof timestamp).toBe('string');
+    expect(new Date(timestamp).toISOString()).toBe(timestamp);
+  }
+  expect(absentError).toEqual(foreignError);
+  expect(foreignError).toEqual({ statusCode: 404, message: 'Not Found',
+    error: 'NotFoundException', path: '/accounting/transfers' });
+  expect(await deniedForeign.text()).not.toContain(foreign.accountId);
 
   const malformedBefore = businessRows();
   const malformed = await api.send('POST', transfersPath, {

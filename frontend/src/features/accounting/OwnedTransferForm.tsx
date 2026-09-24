@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 
 export interface TransferDraft {
   fromAccountId: string;
@@ -48,6 +48,7 @@ export function OwnedTransferForm({
   onSubmit: () => void;
   onCancel?: () => void;
 }) {
+  const formId = useId();
   const update = (value: Partial<TransferDraft>) => onChange({ ...draft, ...value });
   const isVoid = mode === 'void';
   const submitLabel =
@@ -69,8 +70,9 @@ export function OwnedTransferForm({
         <legend>{mode === 'create' ? 'Новый перевод' : 'Параметры перевода'}</legend>
         <div className="manual-form-grid">
           <label>
-            Со счёта
+            <span id={`${formId}-from`}>Со счёта</span>
             <select
+              aria-labelledby={`${formId}-from`}
               value={draft.fromAccountId}
               disabled={mode !== 'create'}
               onChange={(event) => update({ fromAccountId: event.target.value })}
@@ -85,8 +87,9 @@ export function OwnedTransferForm({
             </select>
           </label>
           <label>
-            На счёт
+            <span id={`${formId}-to`}>На счёт</span>
             <select
+              aria-labelledby={`${formId}-to`}
               value={draft.toAccountId}
               disabled={mode !== 'create'}
               onChange={(event) => update({ toAccountId: event.target.value })}
@@ -101,8 +104,9 @@ export function OwnedTransferForm({
             </select>
           </label>
           <label>
-            Актив перевода
+            <span id={`${formId}-asset`}>Актив перевода</span>
             <select
+              aria-labelledby={`${formId}-asset`}
               value={draft.instrumentId}
               onChange={(event) => update({ instrumentId: event.target.value })}
               required
@@ -144,8 +148,9 @@ export function OwnedTransferForm({
             />
           </label>
           <label>
-            Актив комиссии
+            <span id={`${formId}-fee`}>Актив комиссии</span>
             <select
+              aria-labelledby={`${formId}-fee`}
               value={draft.feeInstrumentId}
               onChange={(event) => update({ feeInstrumentId: event.target.value })}
             >

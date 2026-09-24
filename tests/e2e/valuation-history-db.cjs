@@ -366,7 +366,6 @@ async function maximum(db, s, owner) {
   );
   for (const table of [
     'account_trade_journals',
-    'account_trade_versions',
     'account_carry_in_lots',
     'manual_usd_price_versions',
   ]) {
@@ -376,6 +375,11 @@ async function maximum(db, s, owner) {
       `Load ${table} exactly once, no per-point round trips`,
     );
   }
+  const tradeReads = statements.filter((sql) => /SELECT/.test(sql) && sql.includes('account_trade_versions'));
+  assert.equal(tradeReads.filter((sql) => /count\(\*\)/i.test(sql)).length, 1,
+    'One bounded component size preflight, never one per chart point');
+  assert.equal(tradeReads.filter((sql) => !/count\(\*\)/i.test(sql)).length, 1,
+    'Materialize trade history exactly once, never one per chart point');
   assert.equal(await fingerprint(db), before);
   console.log(
     `PASS VCH-MAX31 exact full-history samples in${elapsed}ms (host observation, no SLA)`,
@@ -416,7 +420,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 19);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('chart-owner@example.invalid','synthetic-not-a-hash',true),('chart-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);

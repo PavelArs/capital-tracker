@@ -74,7 +74,7 @@ async function main() {
     await source.initialize();
     await reader.initialize();
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 19);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
     const owners = {};
     for (const label of ['period', 'empty', 'reader', 'foreign', 'wide']) {
       const [row] = await source.query('INSERT INTO users(email,password,"emailVerified") VALUES($1,$2,true) RETURNING id', [`profit-${label}@example.invalid`, 'synthetic-not-a-login-hash']);
