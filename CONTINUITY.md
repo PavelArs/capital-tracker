@@ -40,6 +40,30 @@ backend/PG; only external providers stubbed. route.fetch plus abort is used only
 actual committed-response-loss acceptance. Record failures, warnings and unrun gates.
 Latest actual labeled Docker container/network inventories were empty after cleanup.
 
+## Owner local preview — preserve across development
+
+On2026-09-24 the owner requested a local look. A separate `capital-tracker-preview`
+Compose project is intentionally RUNNING at https://127.0.0.1:8444 (only loopback
+published). It has its own172.30.101.0/24 subnet, pinned preview image tags,
+`capital-tracker-preview_preview_data` durable volume, MFA key/TLS/config/credentials
+in ignored tests/e2e/.runtime/preview. Never remove/reset its volume, key or owner data
+as part of e2e cleanup, project consolidation or continuation. Tests retain separate
+capital-tracker-e2e/8443/172.30.90-91 networks and disposable DB. Old stopped
+capital_tracker_* containers and original project remain untouched.
+
+Local private ACCESS.md has login/recovery/TOTP details and safe `manage.cjs up|stop|status`
+commands; do not print/commit credentials. Owner created via actual production CLI;
+MFA prepared/confirmed via actual CLI. Browser/password/TOTP/private-denial and explicit
+logout verified, demo operations created through real protected HTTPS APIs. Two demo
+accounts have buys/sale/swap/reward/transfer and8daily manual prices per asset. Actual
+browser valuation41960 and rendered chart passed with no client errors; helper exact
+USD-sale10000/swap9990 assertions passed. Log /private/tmp/capital-local-preview-smoke.log.
+Initial startup inherited unexpanded YAML environment; bootstrap refused before creating
+an owner. Explicit merge expansion fixed config; second startup/migrations/no-reset and
+browser smoke passed. Logs /private/tmp/capital-local-preview-start{,2}.log.
+Preview uses BEdd90a8c5/FE7eff01d1 already tested above; no image rebuild/deployment.
+Its external provider fixtures are demo data, not live chain or market observations.
+
 ## Completed capabilities
 
 Canonical openspec/specs describe verified behavior; archived changes hold concrete
