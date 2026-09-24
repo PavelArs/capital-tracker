@@ -1,3 +1,5 @@
+import type { FifoReward, RewardSummary } from './asset-reward-types';
+import { CostTally } from './cost-evidence';
 import type { CarryInFifoResult, FifoCarryInInput, FifoTrade } from './fifo';
 import {
   FifoHistoryError,
@@ -11,13 +13,15 @@ import type {
   AccountFifoResult,
   LotOrigin,
   ReceivedSaleMatch,
+  RewardSaleMatch,
   TransferArrival,
   TransferFeeSummary,
 } from './owned-transfer-types';
 
 type Source =
   | { kind: 'trade'; trade: FifoTrade }
-  | { kind: 'carry-in'; lot: FifoCarryInInput; carriedCostUsd: string };
+  | { kind: 'carry-in'; lot: FifoCarryInInput; carriedCostUsd: string }
+  | { kind: 'reward'; reward: FifoReward };
 
 export interface BookFragment {
   source: Source;
@@ -32,7 +36,7 @@ export interface BookFragment {
 export interface BookPortion {
   fragment: BookFragment;
   interval: LotInterval;
-  cost: bigint;
+  cost: bigint | null;
 }
 
 export interface BookLimits {
@@ -46,7 +50,11 @@ function compareText(left: string, right: string): number {
 }
 
 function identity(origin: LotOrigin): string {
-  return origin.kind === 'trade' ? origin.tradeId : origin.lotId;
+  return origin.kind === 'trade'
+    ? origin.tradeId
+    : origin.kind === 'carry-in'
+      ? origin.lotId
+      : origin.rewardId;
 }
 
 /** Priority after a fragment arrives; its original cost coordinates are never rebased. */
@@ -81,19 +89,28 @@ export class FifoBook {
   private readonly realizations: AccountFifoResult['realizations'] = [];
   private readonly fees = new Map<
     string,
-    Omit<TransferFeeSummary, 'quantity' | 'consumedBasisUsd'> & {
+    Pick<TransferFeeSummary, 'instrumentId' | 'instrumentName' | 'instrumentSymbol'> & {
       quantity: bigint;
-      consumedBasisUsd: bigint;
+      basis: CostTally;
+      unknownCostQuantity: bigint;
     }
   >();
   private grossBuys = 0n;
   private buyFees = 0n;
   private grossSales = 0n;
   private sellFees = 0n;
-  private consumedCost = 0n;
-  private receivedBasis = 0n;
-  private sentBasis = 0n;
-  private feeConsumedBasis = 0n;
+  private readonly consumedCost = new CostTally();
+  private readonly receivedBasis = new CostTally();
+  private readonly sentBasis = new CostTally();
+  private readonly feeConsumedBasis = new CostTally();
+  private knownRealized = 0n;
+  private unknownRealizedCount = 0;
+  private hasRewardIdentity = false;
+  private rewardCount = 0;
+  private readonly rewardBasis = new CostTally();
+  private readonly rewardIncome = new CostTally();
+  private knownCategorizedIncome = 0n;
+  private unclassifiedRewards = 0;
   private participant = false;
 
   constructor(
@@ -138,6 +155,48 @@ export class FifoBook {
     });
   }
 
+  markRewardIdentity(): void {
+    this.hasRewardIdentity = true;
+  }
+
+  applyReward(reward: FifoReward): void {
+    this.occupy(reward.occurredAt, reward.orderWithinTimestamp);
+    const quantity = canonicalDecimalToAtoms(reward.quantity);
+    const basis =
+      reward.acquisitionBasisUsd === null
+        ? null
+        : canonicalDecimalToAtoms(reward.acquisitionBasisUsd);
+    const income =
+      reward.incomeValueUsd === null ? null : canonicalDecimalToAtoms(reward.incomeValueUsd);
+    if (quantity <= 0n || (basis !== null && basis < 0n) || (income !== null && income < 0n))
+      throw new FifoHistoryError();
+    this.append({
+      source: { kind: 'reward', reward },
+      origin: {
+        accountId: this.accountId,
+        kind: 'reward',
+        rewardId: reward.rewardId,
+        version: reward.version,
+        category: reward.category,
+        acquiredAt: reward.occurredAt,
+        orderWithinTimestamp: reward.orderWithinTimestamp,
+        originalQuantity: reward.quantity,
+        originalCostUsd: reward.acquisitionBasisUsd,
+      },
+      arrival: null,
+      instrumentId: reward.instrumentId,
+      instrumentName: reward.instrumentName,
+      instrumentSymbol: reward.instrumentSymbol,
+      interval: lotInterval(quantity, basis),
+    });
+    this.hasRewardIdentity = true;
+    this.rewardCount++;
+    this.rewardBasis.add(basis);
+    this.rewardIncome.add(income);
+    if (reward.category === 'unclassified') this.unclassifiedRewards++;
+    else if (income !== null) this.knownCategorizedIncome += income;
+  }
+
   occupy(occurredAt: string, orderWithinTimestamp: number): void {
     const key = JSON.stringify([occurredAt, orderWithinTimestamp]);
     if (this.chronology.has(key)) throw new FifoHistoryError();
@@ -175,15 +234,16 @@ export class FifoBook {
       return;
     }
     const portions = this.consume(trade.instrumentId, quantity);
-    let saleCost = 0n;
+    const saleCost = new CostTally();
     for (const portion of portions) {
-      saleCost += portion.cost;
+      saleCost.add(portion.cost);
+      this.consumedCost.add(portion.cost);
       const { fragment, interval } = portion;
       const common = {
         sellTradeId: trade.tradeId,
         sellVersion: trade.version,
         quantity: formatAtoms(interval.end - interval.start),
-        costUsd: formatAtoms(portion.cost),
+        costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
       };
       if (fragment.arrival) {
         const match: ReceivedSaleMatch = {
@@ -196,24 +256,38 @@ export class FifoBook {
         };
         this.matches.push(match);
       } else if (fragment.source.kind === 'trade') {
+        if (portion.cost === null) throw new FifoHistoryError();
         this.matches.push({
           ...common,
+          costUsd: formatAtoms(portion.cost),
           buyTradeId: fragment.source.trade.tradeId,
           buyVersion: fragment.source.trade.version,
         });
-      } else {
+      } else if (fragment.source.kind === 'carry-in') {
+        if (portion.cost === null) throw new FifoHistoryError();
         this.matches.push({
           ...common,
+          costUsd: formatAtoms(portion.cost),
           sourceKind: 'carry-in',
           lotId: fragment.source.lot.lotId,
           openingRevision: fragment.source.lot.openingRevision,
           ordinal: fragment.source.lot.ordinal,
         });
+      } else {
+        const match: RewardSaleMatch = {
+          ...common,
+          sourceKind: 'reward',
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+        };
+        this.matches.push(match);
       }
     }
     this.grossSales += gross;
     this.sellFees += fee;
-    this.consumedCost += saleCost;
+    if (saleCost.incomplete) this.unknownRealizedCount++;
+    else this.knownRealized += gross - fee - saleCost.known;
     this.realizations.push({
       sellTradeId: trade.tradeId,
       sellVersion: trade.version,
@@ -226,8 +300,16 @@ export class FifoBook {
       grossUsd: trade.grossUsd,
       feeUsd: trade.feeUsd,
       netUsd: formatAtoms(gross - fee),
-      consumedCostUsd: formatAtoms(saleCost),
-      realizedUsd: formatAtoms(gross - fee - saleCost),
+      consumedCostUsd: saleCost.value,
+      realizedUsd: saleCost.incomplete ? null : formatAtoms(gross - fee - saleCost.known),
+      ...(saleCost.incomplete
+        ? {
+            basisCoverage: {
+              knownConsumedCostUsd: formatAtoms(saleCost.known),
+              unknownMatchCount: saleCost.unknownCount,
+            },
+          }
+        : {}),
     });
   }
 
@@ -285,42 +367,45 @@ export class FifoBook {
       queue.splice(low, 0, fragment);
       this.queues.set(fragment.instrumentId, queue);
       this.held.add(fragment);
-      this.receivedBasis += portion.cost;
+      this.receivedBasis.add(portion.cost);
     }
     this.participant = true;
   }
 
   recordSent(portions: readonly BookPortion[]): void {
     this.participant = true;
-    for (const portion of portions) this.sentBasis += portion.cost;
+    for (const portion of portions) this.sentBasis.add(portion.cost);
   }
 
   recordFee(portions: readonly BookPortion[]): void {
     this.participant = true;
     for (const portion of portions) {
-      this.feeConsumedBasis += portion.cost;
+      this.feeConsumedBasis.add(portion.cost);
       const { fragment, interval } = portion;
       const current = this.fees.get(fragment.instrumentId) ?? {
         instrumentId: fragment.instrumentId,
         instrumentName: fragment.instrumentName,
         instrumentSymbol: fragment.instrumentSymbol,
         quantity: 0n,
-        consumedBasisUsd: 0n,
+        basis: new CostTally(),
+        unknownCostQuantity: 0n,
       };
       current.quantity += interval.end - interval.start;
-      current.consumedBasisUsd += portion.cost;
+      current.basis.add(portion.cost);
+      if (portion.cost === null) current.unknownCostQuantity += interval.end - interval.start;
       this.fees.set(fragment.instrumentId, current);
     }
   }
 
   project(): AccountFifoResult {
-    let remainingCost = 0n;
+    const remainingCost = new CostTally();
     const lots: AccountFifoResult['lots'] = [];
     for (const fragment of this.held) {
       const interval = fragment.interval;
       const remainingQuantity = formatAtoms(interval.end - interval.start);
-      const remainingCostUsd = formatAtoms(intervalCost(interval));
-      remainingCost += intervalCost(interval);
+      const cost = intervalCost(interval);
+      const remainingCostUsd = cost === null ? null : formatAtoms(cost);
+      remainingCost.add(cost);
       if (fragment.arrival) {
         lots.push({
           sourceKind: 'transfer',
@@ -336,6 +421,7 @@ export class FifoBook {
         });
       } else if (fragment.source.kind === 'trade') {
         const trade = fragment.source.trade;
+        if (cost === null || interval.originalCost === null) throw new FifoHistoryError();
         lots.push({
           buyTradeId: trade.tradeId,
           buyVersion: trade.version,
@@ -347,18 +433,33 @@ export class FifoBook {
           originalQuantity: trade.quantity,
           originalCostUsd: formatAtoms(interval.originalCost),
           remainingQuantity,
-          remainingCostUsd,
+          remainingCostUsd: formatAtoms(cost),
         });
-      } else {
+      } else if (fragment.source.kind === 'carry-in') {
+        if (cost === null) throw new FifoHistoryError();
         lots.push({
           sourceKind: 'carry-in',
           ...fragment.source.lot,
           carriedCostUsd: fragment.source.carriedCostUsd,
           remainingQuantity,
+          remainingCostUsd: formatAtoms(cost),
+        });
+      } else {
+        lots.push({
+          sourceKind: 'reward',
+          instrumentId: fragment.instrumentId,
+          instrumentName: fragment.instrumentName,
+          instrumentSymbol: fragment.instrumentSymbol,
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+          remainingQuantity,
           remainingCostUsd,
         });
       }
     }
+    const incomplete =
+      this.consumedCost.incomplete || remainingCost.incomplete || this.unknownRealizedCount > 0;
     const result: AccountFifoResult = {
       summary: {
         grossBuysUsd: formatAtoms(this.grossBuys),
@@ -366,9 +467,21 @@ export class FifoBook {
         grossSalesUsd: formatAtoms(this.grossSales),
         sellFeesUsd: formatAtoms(this.sellFees),
         netSalesUsd: formatAtoms(this.grossSales - this.sellFees),
-        consumedCostUsd: formatAtoms(this.consumedCost),
-        realizedUsd: formatAtoms(this.grossSales - this.sellFees - this.consumedCost),
-        remainingCostUsd: formatAtoms(remainingCost),
+        consumedCostUsd: this.consumedCost.value,
+        realizedUsd: this.unknownRealizedCount > 0 ? null : formatAtoms(this.knownRealized),
+        remainingCostUsd: remainingCost.value,
+        ...(incomplete
+          ? {
+              basisCoverage: {
+                consumed: this.consumedCost.coverage,
+                remaining: remainingCost.coverage,
+                realized: {
+                  knownSubtotalUsd: formatAtoms(this.knownRealized),
+                  unknownCount: this.unknownRealizedCount,
+                },
+              },
+            }
+          : {}),
       },
       lots,
       realizations: this.realizations,
@@ -376,9 +489,9 @@ export class FifoBook {
     };
     if (this.participant) {
       result.transferSummary = {
-        receivedBasisUsd: formatAtoms(this.receivedBasis),
-        sentBasisUsd: formatAtoms(this.sentBasis),
-        feeConsumedBasisUsd: formatAtoms(this.feeConsumedBasis),
+        receivedBasisUsd: this.receivedBasis.value,
+        sentBasisUsd: this.sentBasis.value,
+        feeConsumedBasisUsd: this.feeConsumedBasis.value,
         fees: [...this.fees.values()]
           .sort((left, right) => compareText(left.instrumentId, right.instrumentId))
           .map((fee) => ({
@@ -386,9 +499,42 @@ export class FifoBook {
             instrumentName: fee.instrumentName,
             instrumentSymbol: fee.instrumentSymbol,
             quantity: formatAtoms(fee.quantity),
-            consumedBasisUsd: formatAtoms(fee.consumedBasisUsd),
+            consumedBasisUsd: fee.basis.value,
+            ...(fee.basis.incomplete
+              ? {
+                  knownBasisSubtotalUsd: formatAtoms(fee.basis.known),
+                  unknownCostQuantity: formatAtoms(fee.unknownCostQuantity),
+                }
+              : {}),
           })),
+        ...(this.receivedBasis.incomplete ||
+        this.sentBasis.incomplete ||
+        this.feeConsumedBasis.incomplete
+          ? {
+              basisCoverage: {
+                received: this.receivedBasis.coverage,
+                sent: this.sentBasis.coverage,
+                fee: this.feeConsumedBasis.coverage,
+              },
+            }
+          : {}),
       };
+    }
+    if (this.hasRewardIdentity) {
+      const rewardSummary: RewardSummary = {
+        activeCount: this.rewardCount,
+        declaredBasisUsd: this.rewardBasis.value,
+        declaredIncomeUsd:
+          this.rewardIncome.incomplete || this.unclassifiedRewards > 0
+            ? null
+            : formatAtoms(this.rewardIncome.known),
+        knownBasisSubtotalUsd: formatAtoms(this.rewardBasis.known),
+        knownIncomeSubtotalUsd: formatAtoms(this.knownCategorizedIncome),
+        unknownBasisCount: this.rewardBasis.unknownCount,
+        unknownIncomeCount: this.rewardIncome.unknownCount,
+        unclassifiedCount: this.unclassifiedRewards,
+      };
+      result.rewardSummary = rewardSummary;
     }
     return result;
   }

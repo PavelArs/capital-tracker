@@ -1,3 +1,4 @@
+import type { FifoReward, RewardCategory, RewardSummary } from './asset-reward-types';
 import type {
   CarryInFifoResult,
   CarryInLot,
@@ -5,14 +6,41 @@ import type {
   FifoCarryInInput,
   FifoLot,
   FifoMatch,
+  FifoRealization,
+  FifoSummary,
   FifoTrade,
 } from './fifo';
+
+export interface BasisCoverage {
+  knownSubtotalUsd: string;
+  unknownCount: number;
+}
+
+export interface ConnectedFifoSummary
+  extends Omit<FifoSummary, 'consumedCostUsd' | 'realizedUsd' | 'remainingCostUsd'> {
+  consumedCostUsd: string | null;
+  realizedUsd: string | null;
+  remainingCostUsd: string | null;
+  basisCoverage?: {
+    consumed: BasisCoverage;
+    remaining: BasisCoverage;
+    realized: BasisCoverage;
+  };
+}
+
+export interface ConnectedFifoRealization
+  extends Omit<FifoRealization, 'consumedCostUsd' | 'realizedUsd'> {
+  consumedCostUsd: string | null;
+  realizedUsd: string | null;
+  basisCoverage?: { knownConsumedCostUsd: string; unknownMatchCount: number };
+}
 
 export interface OwnedAccountInput {
   accountId: string;
   coverageFrom: string;
   trades: readonly FifoTrade[];
   initialLots: readonly FifoCarryInInput[];
+  rewards?: readonly FifoReward[];
 }
 
 /** Current-effective movement; immutable version history is resolved by the store. */
@@ -50,6 +78,17 @@ export type LotOrigin =
       orderWithinTimestamp: number;
       originalQuantity: string;
       originalCostUsd: string;
+    }
+  | {
+      accountId: string;
+      kind: 'reward';
+      rewardId: string;
+      version: number;
+      category: RewardCategory;
+      acquiredAt: string;
+      orderWithinTimestamp: number;
+      originalQuantity: string;
+      originalCostUsd: string | null;
     };
 
 export interface TransferArrival {
@@ -61,7 +100,7 @@ export interface TransferAllocationItem {
   kind: 'principal' | 'fee';
   instrumentId: string;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
   origin: LotOrigin;
   intervalStart: string;
   intervalEnd: string;
@@ -70,9 +109,33 @@ export interface TransferAllocationItem {
 
 export interface TransferAllocation {
   transferId: string;
-  principalBasisUsd: string;
-  feeConsumedBasisUsd: string;
+  principalBasisUsd: string | null;
+  feeConsumedBasisUsd: string | null;
   items: TransferAllocationItem[];
+  basisCoverage?: { principal: BasisCoverage; fee: BasisCoverage };
+}
+
+export interface RewardLot {
+  sourceKind: 'reward';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: Extract<LotOrigin, { kind: 'reward' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string | null;
+}
+
+export interface RewardSaleMatch {
+  sourceKind: 'reward';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: Extract<LotOrigin, { kind: 'reward' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string | null;
 }
 
 export interface ReceivedLot {
@@ -85,7 +148,7 @@ export interface ReceivedLot {
   intervalStart: string;
   intervalEnd: string;
   remainingQuantity: string;
-  remainingCostUsd: string;
+  remainingCostUsd: string | null;
 }
 
 export interface ReceivedSaleMatch {
@@ -97,7 +160,7 @@ export interface ReceivedSaleMatch {
   intervalStart: string;
   intervalEnd: string;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
 }
 
 export interface TransferFeeSummary {
@@ -105,20 +168,27 @@ export interface TransferFeeSummary {
   instrumentName: string;
   instrumentSymbol: string | null;
   quantity: string;
-  consumedBasisUsd: string;
+  consumedBasisUsd: string | null;
+  knownBasisSubtotalUsd?: string;
+  unknownCostQuantity?: string;
 }
 
 export interface TransferSummary {
-  receivedBasisUsd: string;
-  sentBasisUsd: string;
-  feeConsumedBasisUsd: string;
+  receivedBasisUsd: string | null;
+  sentBasisUsd: string | null;
+  feeConsumedBasisUsd: string | null;
   fees: TransferFeeSummary[];
+  basisCoverage?: { received: BasisCoverage; sent: BasisCoverage; fee: BasisCoverage };
 }
 
-export interface AccountFifoResult extends Omit<CarryInFifoResult, 'lots' | 'matches'> {
-  lots: (FifoLot | CarryInLot | ReceivedLot)[];
-  matches: (FifoMatch | CarryInMatch | ReceivedSaleMatch)[];
+export interface AccountFifoResult
+  extends Omit<CarryInFifoResult, 'summary' | 'realizations' | 'lots' | 'matches'> {
+  summary: ConnectedFifoSummary;
+  realizations: ConnectedFifoRealization[];
+  lots: (FifoLot | CarryInLot | RewardLot | ReceivedLot)[];
+  matches: (FifoMatch | CarryInMatch | RewardSaleMatch | ReceivedSaleMatch)[];
   transferSummary?: TransferSummary;
+  rewardSummary?: RewardSummary;
 }
 
 export interface OwnedProjection {

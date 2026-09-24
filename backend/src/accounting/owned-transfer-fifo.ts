@@ -1,3 +1,4 @@
+import { CostTally } from './cost-evidence';
 import { type BookPortion, FifoBook } from './fifo-book';
 import { FifoHistoryError } from './fifo-lot-interval';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
@@ -26,6 +27,7 @@ export const OWNED_TRANSFER_LIMITS = {
   accounts: 32,
   activeTrades: 10000,
   activeTransfers: 1000,
+  activeRewards: 1000,
   matches: 100000,
   heldFragments: 100000,
 } as const;
@@ -37,8 +39,10 @@ export class OwnedTransferCapacityError extends FifoHistoryError {
   }
 }
 
-function cost(portions: readonly BookPortion[]): bigint {
-  return portions.reduce((sum, portion) => sum + portion.cost, 0n);
+function cost(portions: readonly BookPortion[]): CostTally {
+  const total = new CostTally();
+  for (const portion of portions) total.add(portion.cost);
+  return total;
 }
 
 function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
@@ -46,7 +50,7 @@ function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocati
     kind,
     instrumentId: portion.fragment.instrumentId,
     quantity: formatAtoms(portion.interval.end - portion.interval.start),
-    costUsd: formatAtoms(portion.cost),
+    costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
     origin: portion.fragment.origin,
     intervalStart: formatAtoms(portion.interval.start),
     intervalEnd: formatAtoms(portion.interval.end),
@@ -57,6 +61,13 @@ function item(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocati
 type Event =
   | {
       kind: 'trade';
+      accountId: string;
+      occurredAt: string;
+      orderWithinTimestamp: number;
+      index: number;
+    }
+  | {
+      kind: 'reward';
       accountId: string;
       occurredAt: string;
       orderWithinTimestamp: number;
@@ -78,15 +89,22 @@ export function calculateOwnedTransfers(
   const byAccount = new Map(accounts.map((account) => [account.accountId, account]));
   if (byAccount.size !== accounts.length) throw new FifoHistoryError();
   let tradeCount = 0;
+  let rewardCount = 0;
   let heldFragments = 0;
   let matches = 0;
   const books = new Map<string, FifoBook>();
   const events: Event[] = [];
   for (const account of accounts) {
-    if (account.trades.length > 1000 || account.initialLots.length > 100)
+    if (
+      account.trades.length > 1000 ||
+      account.initialLots.length > 100 ||
+      (account.rewards?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeRewards
+    )
       throw new OwnedTransferCapacityError();
     tradeCount += account.trades.length;
+    rewardCount += account.rewards?.length ?? 0;
     if (tradeCount > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
+    if (rewardCount > OWNED_TRANSFER_LIMITS.activeRewards) throw new OwnedTransferCapacityError();
     const book = new FifoBook(account.accountId, {
       match: () => {
         if (++matches > OWNED_TRANSFER_LIMITS.matches) throw new OwnedTransferCapacityError();
@@ -100,6 +118,7 @@ export function calculateOwnedTransfers(
       },
     });
     books.set(account.accountId, book);
+    if (account.rewards?.length) book.markRewardIdentity();
     if (at === undefined || account.coverageFrom <= at) {
       const baseline = [...account.initialLots].sort((left, right) =>
         left.acquiredAt === right.acquiredAt
@@ -129,7 +148,23 @@ export function calculateOwnedTransfers(
         index,
       });
     }
+    for (const [index, reward] of (account.rewards ?? []).entries()) {
+      if (reward.occurredAt < account.coverageFrom) throw new FifoHistoryError();
+      events.push({
+        kind: 'reward',
+        accountId: account.accountId,
+        occurredAt: reward.occurredAt,
+        orderWithinTimestamp: reward.orderWithinTimestamp,
+        index,
+      });
+    }
   }
+  const rewardIds = new Set<string>();
+  for (const account of accounts)
+    for (const reward of account.rewards ?? []) {
+      if (rewardIds.has(reward.rewardId)) throw new FifoHistoryError();
+      rewardIds.add(reward.rewardId);
+    }
   const transferIds = new Set<string>();
   for (const [index, transfer] of transfers.entries()) {
     const source = byAccount.get(transfer.fromAccountId);
@@ -165,7 +200,7 @@ export function calculateOwnedTransfers(
   const occupied = new Map<string, Set<string>>();
   for (const event of events) {
     const ids =
-      event.kind === 'trade'
+      event.kind !== 'transfer'
         ? [event.accountId]
         : [transfers[event.index].fromAccountId, transfers[event.index].toAccountId];
     const key = JSON.stringify([event.occurredAt, event.orderWithinTimestamp]);
@@ -182,7 +217,10 @@ export function calculateOwnedTransfers(
       : left.occurredAt > right.occurredAt
         ? 1
         : left.orderWithinTimestamp - right.orderWithinTimestamp ||
-          (left.kind === right.kind ? left.index - right.index : left.kind === 'trade' ? -1 : 1),
+          (left.kind === right.kind
+            ? left.index - right.index
+            : (left.kind === 'trade' ? 0 : left.kind === 'reward' ? 1 : 2) -
+              (right.kind === 'trade' ? 0 : right.kind === 'reward' ? 1 : 2)),
   );
 
   const allocations = new Map<string, TransferAllocation>();
@@ -191,6 +229,11 @@ export function calculateOwnedTransfers(
     if (event.kind === 'trade') {
       const account = byAccount.get(event.accountId)!;
       books.get(event.accountId)!.applyTrade(account.trades[event.index]);
+      continue;
+    }
+    if (event.kind === 'reward') {
+      const account = byAccount.get(event.accountId)!;
+      books.get(event.accountId)!.applyReward(account.rewards![event.index]);
       continue;
     }
     const transfer = transfers[event.index];
@@ -209,14 +252,24 @@ export function calculateOwnedTransfers(
     sender.recordSent(principal);
     sender.recordFee(fee);
     receiver.receive(principal, { transferId: transfer.transferId, version: transfer.version });
+    const principalCost = cost(principal);
+    const feeCost = cost(fee);
     allocations.set(transfer.transferId, {
       transferId: transfer.transferId,
-      principalBasisUsd: formatAtoms(cost(principal)),
-      feeConsumedBasisUsd: formatAtoms(cost(fee)),
+      principalBasisUsd: principalCost.value,
+      feeConsumedBasisUsd: feeCost.value,
       items: [
         ...principal.map((portion) => item('principal', portion)),
         ...fee.map((portion) => item('fee', portion)),
       ],
+      ...(principalCost.incomplete || feeCost.incomplete
+        ? {
+            basisCoverage: {
+              principal: principalCost.coverage,
+              fee: feeCost.coverage,
+            },
+          }
+        : {}),
     });
   }
   return {

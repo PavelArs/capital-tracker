@@ -15,7 +15,9 @@ export interface HistoricalPosition {
   instrumentName: string;
   instrumentSymbol: string | null;
   quantity: string;
-  costUsd: string;
+  costUsd: string | null;
+  knownCostSubtotalUsd?: string;
+  unknownCostQuantity?: string;
 }
 
 /** Restate a complete effective prefix; pagination belongs after this calculation. */
@@ -42,7 +44,10 @@ export function projectHistoricalFifo(
 ) {
   const totals = new Map<
     string,
-    Omit<HistoricalPosition, 'quantity' | 'costUsd'> & { quantity: bigint; costUsd: bigint }
+    Omit<
+      HistoricalPosition,
+      'quantity' | 'costUsd' | 'knownCostSubtotalUsd' | 'unknownCostQuantity'
+    > & { quantity: bigint; knownCost: bigint; unknownQuantity: bigint }
   >();
   for (const lot of fifo.lots) {
     const position = totals.get(lot.instrumentId) ?? {
@@ -50,10 +55,13 @@ export function projectHistoricalFifo(
       instrumentName: lot.instrumentName,
       instrumentSymbol: lot.instrumentSymbol,
       quantity: 0n,
-      costUsd: 0n,
+      knownCost: 0n,
+      unknownQuantity: 0n,
     };
-    position.quantity += canonicalDecimalToAtoms(lot.remainingQuantity);
-    position.costUsd += canonicalDecimalToAtoms(lot.remainingCostUsd);
+    const quantity = canonicalDecimalToAtoms(lot.remainingQuantity);
+    position.quantity += quantity;
+    if (lot.remainingCostUsd === null) position.unknownQuantity += quantity;
+    else position.knownCost += canonicalDecimalToAtoms(lot.remainingCostUsd);
     totals.set(lot.instrumentId, position);
   }
   const initialCost = baseline.reduce(
@@ -68,9 +76,22 @@ export function projectHistoricalFifo(
   const positions: HistoricalPosition[] = [...totals.values()]
     .sort((left, right) => (left.instrumentId < right.instrumentId ? -1 : 1))
     .map((position) => ({
-      ...position,
+      instrumentId: position.instrumentId,
+      instrumentName: position.instrumentName,
+      instrumentSymbol: position.instrumentSymbol,
       quantity: formatAtoms(position.quantity),
-      costUsd: formatAtoms(position.costUsd),
+      costUsd: position.unknownQuantity > 0n ? null : formatAtoms(position.knownCost),
+      ...(position.unknownQuantity > 0n
+        ? {
+            knownCostSubtotalUsd: formatAtoms(position.knownCost),
+            unknownCostQuantity: formatAtoms(position.unknownQuantity),
+          }
+        : {}),
     }));
-  return { initialCostUsd: formatAtoms(initialCost), summary: fifo.summary, positions };
+  return {
+    initialCostUsd: formatAtoms(initialCost),
+    summary: fifo.summary,
+    positions,
+    ...('rewardSummary' in fifo && fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
+  };
 }
