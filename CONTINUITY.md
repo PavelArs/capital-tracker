@@ -195,6 +195,37 @@ Fullbackend/fullE2E/oldermigrationmatrix/hostedCI/release/productionnotrun.
 Read archivedverification anddocs/manual-portfolio-valuation.md. Final independent
 evidence audit found no blocker.
 
+## Completed liability editor retirement slice
+
+`retire-liabilities-editor` archived as `2026-09-24-retire-liabilities-editor`,
+7/7 tasks; strict23 canonical specs passed, 22 previous specs unchanged.
+Contract/test1587ac6 and real predecessor RED before
+Luna implementation122e0c0, integrated63562b9. Protected `/liabilities/*` now shows
+a static notice linking manual accounts. Removed 1,853 frontend lines (20 added),
+16 feature files and six obsolete wrapper tests. Backend, schema, dependencies,
+Dashboard, historical chart and pipeline unchanged. Shared metrics and five
+category labels retained. Sol independently reviewed contract, acceptance and
+implementation; no blocker. Business rows preserved; no project folders deleted.
+
+Baseline: frontend104/13 passed in2.90s; retained backend liabilities/manual valuation
+44/2 passed in2.061s. After cleanup: Luna frontend98/12 passed in3.59s, lint passed
+with27 existing warnings, build/TypeScript/scoped Biome passed. Initial Node20 loader
+and pnpm metadata attempts failed; prescribed Node22 PATH then passed without any
+dependency install. Source-check evidence is in agent transcript, not saved logs.
+Root strict E2E types passed. Dependency gate exit0 with two existing moderate
+findings, lock unchanged. Strict OpenSpec23items passed before archive.
+
+Actual HTTPS: 2/2 passed in25.7s, one worker, zero retries: LIR-UI and unchanged
+MPV-UI. Real MFA/backend/PostgreSQL; only external providers stubbed. Exact saved
+rows, private API, bookmarks, zero provider calls, all-business-row fingerprints
+and retained valuation assertions passed. Backend image unchanged from MPV above.
+Frontend: sha256:fd9572099767a0e2a0ef0983408adcc9eb831bec44d3cb69b11ee7816b8baed8.
+Logs: `/private/tmp/capital-lir-{red,green,audit}.log` and red/green-artifacts.
+Cleanup live labeled inventory empty; owner Nginx mode/hash unchanged. Full backend,
+full E2E, older upgrade matrix, hosted CI, release scans, live providers and production
+not run. See the archived verification record for evidence and limits. Luna's final independent
+evidence audit found no discrepancy. Active changes empty after archive.
+
 ## Next
 
 No active OpenSpec change. Choose the next bounded slice from the remaining brief,
