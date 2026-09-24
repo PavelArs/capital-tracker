@@ -18,7 +18,14 @@ paid service, new dependency, arbitrary endpoint or historical-rate substitution
 ### Provider and input boundary
 
 Fixed `https://open.er-api.com/v6/latest/USD`; Axios text response, 5s timeout,
-64KiB maximum, no redirects and no immediate HTTP retry. Only HTTP200 with
+64KiB maximum, no redirects and no immediate HTTP retry. Direct mode explicitly
+disables Axios environment proxies and uses an HTTPS-agent lookup that rejects all
+non-public A/AAAA destinations, including mapped IPv4, at connection time while
+retaining hostname/TLS validation. `DISPLAY_FX_TRUST_PROXY=true` instead explicitly
+delegates destination resolution/enforcement to a server-managed HTTP(S) egress
+proxy from existing proxy environment configuration. It defaults false. This is an
+operational trust boundary, not a browser-controlled bypass; the isolated test
+fixture is such an allowlisted proxy and never opens upstream sockets. Only HTTP200 with
 `result=success`, `base_code=USD`, USD rate1 and positive EUR/RUB rates is accepted.
 Preserve JSON number lexemes through Node22 JSON.parse reviver `context.source`,
 then validate exact non-exponent decimal strings (up to48 integer/30 fractional
@@ -41,14 +48,16 @@ owner's indicative conversion. Normal collection is31 calls/31days; worst-case
 Migration19 adds `display_fx_observations`: fixed provider/base, primary publication
 instant, fetchedAt/nextUpdateAt/endOfLifeAt, EUR/RUB numeric(78,30), positive/finite
 constraints. Store both rates atomically. Same timestamp/same payload is idempotent;
-same timestamp/changed rates or metadata is invalid and never rewrites the original.
+same timestamp/changed rates or publication metadata is invalid and never rewrites
+the original. Replay comparison excludes the newly generated fetch timestamp.
 Reject an older-than-latest publication. Original fetch timestamp is immutable.
 
 `display_fx_collection` has one fixed-provider row, created only on collection:
-lastAttemptAt/lastSuccessAt/nextAttemptAt, lastOutcome, windowStartedAt/attemptCount,
+lastAttemptAt/lastSuccessAt/nextAttemptAt, lastOutcome, reservedAttempts (<=3 timestamps),
 leaseId/leaseUntil. Short transactions lock this row, reserve an attempt/cooldown
 and a30s lease before HTTP; no open DB transaction during HTTP. Max3 attempts per
-rolling24h window; minimum20min between attempts. Success schedules >=24h after the
+rolling24h interval: under the row lock retain timestamps >now-24h; three retained
+reservations block until the oldest+24h. No fixed-window reset. Minimum20min between attempts. Success schedules >=24h after the
 attempt and >=provider nextUpdateAt. Failure retains the reservation, with429
 respecting the greater of20min, valid Retry-After seconds/HTTP date and budget end.
 All HTTP failures/malformed data consume the reserved attempt. A crashed process
