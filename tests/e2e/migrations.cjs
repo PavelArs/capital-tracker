@@ -508,9 +508,41 @@ async function seedPreviousThirteen(client) {
   }
 }
 
+async function fixtureTrade(client, owner, account, tradeId, version, journalRevision, kind, input, instrumentName, instrumentSymbol = 'SAME') {
+  // Write only columns present in migration 14. The deferred head FK is resolved
+  // by the surrounding transaction, just as it was by the original command.
+  if (version === 1) await client.query(
+    'INSERT INTO account_trades(id,"ownerId","accountId","currentVersion") VALUES($1,$2,$3,1)',
+    [tradeId, owner, account]);
+  const fields = { instrumentId: input.instrumentId, side: input.side,
+    occurredAt: input.occurredAt, orderWithinTimestamp: input.orderWithinTimestamp,
+    quantity: input.quantity, grossUsd: input.grossUsd, feeUsd: input.feeUsd };
+  const payload = JSON.stringify({kind, ...(kind === 'create' ? {} : {tradeId}),
+    expectedJournalRevision: input.expectedJournalRevision,
+    ...(kind === 'void' ? {} : fields)});
+  const {rows:[row]} = await client.query(`INSERT INTO account_trade_versions
+    ("ownerId","accountId","tradeId",version,"journalRevision","requestId","canonicalPayload",kind,
+      "instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd")
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING "createdAt"`,
+  [owner,account,tradeId,version,journalRevision,input.requestId,payload,kind,
+    fields.instrumentId,fields.side,fields.occurredAt,fields.orderWithinTimestamp,
+    fields.quantity,fields.grossUsd,fields.feeUsd]);
+  await client.query('UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
+    [owner,account,tradeId,version]);
+  return {created:true,value:{accountId:account,journalRevision,trade:{tradeId,version,journalRevision,
+    requestId:input.requestId,kind,createdAt:row.createdAt.toISOString(),...fields,
+    instrumentName,instrumentSymbol}}};
+}
+
+function fixtureJournal(account, originReceipt, revision, activeTradeCount, versionCount, summary) {
+  return {accountId:account,eligible:false,ineligibilityReason:'already-initialized',journal:{
+    ...originReceipt.value,journalRevision:revision,activeTradeCount,versionCount,
+    limits:{activeTrades:1000,versions:10000},summary}};
+}
+
 async function seedPreviousFourteen(client, target) {
-  // Production manual commands need only the predecessor14 schema. No CSV service
-  // or new table participates in constructing the prior financial history.
+  // Construct predecessor history with its actual schema. Current TradeService
+  // reads connected-transfer tables that did not exist in predecessor 14.
   const source = new DataSource({ type: 'postgres', host: settings.DB_HOST,
     port: Number(settings.DB_PORT), username: settings.DB_USERNAME,
     password: settings.DB_PASSWORD, database: target, synchronize: false,
@@ -535,23 +567,38 @@ async function seedPreviousFourteen(client, target) {
         quantity: '1', grossUsd, feeUsd: '0', ...extra });
       const create = (revision, fields) => ({ requestId: randomUUID(), expectedJournalRevision: revision, ...fields });
       const firstInput = create(0, execution(2, '100'));
-      const first = await trade.create(owner, account, firstInput);
       const secondInput = create(1, execution(3, '200'));
-      const second = await trade.create(owner, account, secondInput);
       const saleInput = create(2, execution(4, '150', { side: 'sell', quantity: '0.5' }));
-      await trade.create(owner, account, saleInput);
       const correction = create(3, execution(2, '120'));
-      await trade.correct(owner, account, first.value.trade.tradeId, correction);
       const voidInput = { requestId: randomUUID(), expectedJournalRevision: 4 };
-      const voided = await trade.void(owner, account, second.value.trade.tradeId, voidInput);
-      const journal = await trade.getJournal(owner, account);
+      const firstId = randomUUID(), secondId = randomUUID(), saleId = randomUUID();
+      await client.query('BEGIN');
+      let first, voided;
+      try {
+        first = await fixtureTrade(client, owner, account, firstId, 1, 1, 'create', firstInput,
+          `Preserved USD instrument ${index}`);
+        await fixtureTrade(client, owner, account, secondId, 1, 2, 'create', secondInput,
+          `Preserved USD instrument ${index}`);
+        await fixtureTrade(client, owner, account, saleId, 1, 3, 'create', saleInput,
+          `Preserved USD instrument ${index}`);
+        await fixtureTrade(client, owner, account, firstId, 2, 4, 'correct', correction,
+          `Preserved USD instrument ${index}`);
+        voided = await fixtureTrade(client, owner, account, secondId, 2, 5, 'void',
+          {...secondInput,...voidInput}, `Preserved USD instrument ${index}`);
+        await client.query('UPDATE account_trade_journals SET "currentRevision"=5 WHERE "ownerId"=$1 AND "accountId"=$2',
+          [owner, account]);
+        await client.query('COMMIT');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
+      const journal = fixtureJournal(account, originReceipt, 5, 2, 5,
+        {grossBuysUsd:'120',buyFeesUsd:'0',grossSalesUsd:'150',sellFeesUsd:'0',
+          netSalesUsd:'150',consumedCostUsd:'60',realizedUsd:'90',remainingCostUsd:'60'});
       assert.equal(journal.journal.journalRevision, 5);
       assert.equal(journal.journal.activeTradeCount, 2);
       assert.deepEqual(journal.journal.summary, { grossBuysUsd: '120', buyFeesUsd: '0',
         grossSalesUsd: '150', sellFeesUsd: '0', netSalesUsd: '150', consumedCostUsd: '60',
         realizedUsd: '90', remainingCostUsd: '60' });
       saved.push({ owner, account, origin, originReceipt, firstInput, first,
-        secondTrade: second.value.trade.tradeId, voidInput, voided, journal });
+        secondTrade: secondId, voidInput, voided, journal });
     }
   } finally { await source.destroy(); }
   return async () => {
@@ -600,7 +647,7 @@ async function seedPreviousFifteen(client, target) {
   const saved = [];
   await source.initialize();
   try {
-    const accounting = new AccountingService(source), trade = new TradeService(source), csv = new CsvImportService(source);
+    const accounting = new AccountingService(source), trade = new TradeService(source);
     const owners = (await client.query('SELECT id FROM users ORDER BY email')).rows;
     assert.equal(owners.length,2);
     for (const [index,{id:owner}] of owners.entries()) {
@@ -617,32 +664,98 @@ async function seedPreviousFifteen(client, target) {
         const bytes = Buffer.from('\uFEFFinstrument,side,time,order,quantity,gross,fee\r\n' +
           `TOKEN,buy,2025-01-02T00:00:00Z,${order},1,50,0\r\n`);
         const upload = {filename:`Сохранённый ${state}.csv`,bytes};
-        const accepted = await csv.upload(owner,account,upload);
-        assert.equal(accepted.created,true);
-        const batchId = accepted.value.batchId;
+        const batchId = randomUUID(), sha256 = createHash('sha256').update(bytes).digest('hex');
+        const {rows:[savedBatch]} = await client.query(`INSERT INTO account_csv_imports
+          (id,"ownerId","accountId",sha256,"originalBytes","byteLength",filename,state,"acceptedSettings")
+          VALUES($1,$2,$3,$4,$5,$6,$7,'draft',NULL) RETURNING "createdAt"`,
+        [batchId,owner,account,sha256,bytes,bytes.length,upload.filename]);
+        const accepted = {created:true,value:{batchId,sha256,byteLength:bytes.length,
+          createdAt:savedBatch.createdAt.toISOString()}};
         let confirmInput,confirmReceipt,rollbackInput,rollbackReceipt;
         if (state !== 'draft') {
-          const preview = await csv.preview(owner,account,batchId,settings);
-          assert.equal(preview.canConfirm,true);
+          const execution = {instrumentId:instrument,side:'buy',occurredAt:'2025-01-02T00:00:00.000Z',
+            orderWithinTimestamp:order,quantity:'1',grossUsd:'50',feeUsd:'0'};
+          const formatTuple = [',','.','offset',null];
+          const mappingTuple = [[0,1,2,3,4,5,6,null],[['TOKEN',instrument]],[['buy','buy']]];
+          const previewHash = createHash('sha256').update(JSON.stringify([
+            'usd-csv-preview-v1','usd-csv-v1',account,batchId,sha256,formatTuple,mappingTuple,true,
+            [[1,2,[instrument,'buy',execution.occurredAt,order,'1','50','0']]],revision,
+          ]),'utf8').digest('hex');
           confirmInput = {...settings,requestId:randomUUID(),expectedJournalRevision:revision,
-            parserVersion:'usd-csv-v1',previewHash:preview.previewHash};
-          confirmReceipt = await csv.confirm(owner,account,batchId,confirmInput);
-          assert.equal(confirmReceipt.created,true); revision++;
-          if (state === 'rolled-back') {
-            rollbackInput = {requestId:randomUUID(),expectedJournalRevision:revision};
-            rollbackReceipt = await csv.rollback(owner,account,batchId,rollbackInput);
-            assert.equal(rollbackReceipt.created,true); revision++;
-          }
+            parserVersion:'usd-csv-v1',previewHash};
+          await client.query('BEGIN');
+          try {
+            const tradeId = randomUUID(), rowRequest = randomUUID();
+            await fixtureTrade(client,owner,account,tradeId,1,revision+1,'create',
+              {...execution,requestId:rowRequest,expectedJournalRevision:revision},
+              `Preserved CSV instrument ${index}`,'TOKEN');
+            await client.query(`INSERT INTO account_csv_import_rows
+              ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion","rollbackVersion")
+              VALUES($1,$2,$3,1,2,$4,1,NULL)`,[owner,account,batchId,tradeId]);
+            await client.query(`UPDATE account_csv_imports SET state='committed',"acceptedSettings"=$4::jsonb
+              WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3`,
+            [owner,account,batchId,JSON.stringify({parserVersion:'usd-csv-v1',...settings})]);
+            const canonical = JSON.stringify(['usd-csv-command-v1','confirm',batchId,revision,
+              'usd-csv-v1',formatTuple,mappingTuple,true,previewHash]);
+            const {rows:[command]} = await client.query(`INSERT INTO account_csv_import_commands
+              ("ownerId","accountId","requestId","batchId",kind,"canonicalPayload","rowCount","firstJournalRevision","lastJournalRevision")
+              VALUES($1,$2,$3,$4,'confirm',$5,1,$6,$6) RETURNING "createdAt"`,
+            [owner,account,confirmInput.requestId,batchId,canonical,revision+1]);
+            confirmReceipt = {created:true,value:{accountId:account,batchId,
+              requestId:confirmInput.requestId,kind:'confirm',rowCount:1,
+              firstJournalRevision:revision+1,lastJournalRevision:revision+1,
+              createdAt:command.createdAt.toISOString()}};
+            revision++;
+            if (state === 'rolled-back') {
+              rollbackInput = {requestId:randomUUID(),expectedJournalRevision:revision};
+              await fixtureTrade(client,owner,account,tradeId,2,revision+1,'void',
+                {...execution,...rollbackInput},`Preserved CSV instrument ${index}`,'TOKEN');
+              await client.query(`UPDATE account_csv_import_rows SET "rollbackVersion"=2
+                WHERE "ownerId"=$1 AND "accountId"=$2 AND "batchId"=$3`,[owner,account,batchId]);
+              await client.query(`UPDATE account_csv_imports SET state='rolled-back'
+                WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3`,[owner,account,batchId]);
+              const rollbackPayload = JSON.stringify(['usd-csv-command-v1','rollback',batchId,revision]);
+              const {rows:[rolled]} = await client.query(`INSERT INTO account_csv_import_commands
+                ("ownerId","accountId","requestId","batchId",kind,"canonicalPayload","rowCount","firstJournalRevision","lastJournalRevision")
+                VALUES($1,$2,$3,$4,'rollback',$5,1,$6,$6) RETURNING "createdAt"`,
+              [owner,account,rollbackInput.requestId,batchId,rollbackPayload,revision+1]);
+              rollbackReceipt = {created:true,value:{accountId:account,batchId,
+                requestId:rollbackInput.requestId,kind:'rollback',rowCount:1,
+                firstJournalRevision:revision+1,lastJournalRevision:revision+1,
+                createdAt:rolled.createdAt.toISOString()}};
+              revision++;
+            }
+            await client.query('UPDATE account_trade_journals SET "currentRevision"=$3 WHERE "ownerId"=$1 AND "accountId"=$2',
+              [owner,account,revision]);
+            await client.query('COMMIT');
+          } catch (error) { await client.query('ROLLBACK'); throw error; }
         }
         batches.push({batchId,state,upload,accepted,confirmInput,confirmReceipt,rollbackInput,rollbackReceipt});
       }
-      const journal = await trade.getJournal(owner,account);
+      const [originRow] = (await client.query('SELECT "requestId","coverageFrom","createdAt" FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2',
+        [owner,account])).rows;
+      const journal = fixtureJournal(account,{value:{accountId:account,requestId:originRow.requestId,
+        originKind:'declared-empty',coverageFrom:originRow.coverageFrom.toISOString(),
+        createdAt:originRow.createdAt.toISOString()}},3,1,3,
+      {grossBuysUsd:'50',buyFeesUsd:'0',grossSalesUsd:'0',sellFeesUsd:'0',
+        netSalesUsd:'0',consumedCostUsd:'0',realizedUsd:'0',remainingCostUsd:'50'});
       assert.equal(journal.journal.journalRevision,3);
       assert.deepEqual(journal.journal.summary,{grossBuysUsd:'50',buyFeesUsd:'0',grossSalesUsd:'0',sellFeesUsd:'0',
         netSalesUsd:'0',consumedCostUsd:'0',realizedUsd:'0',remainingCostUsd:'50'});
       for (const batch of batches) {
-        batch.detail = await csv.detail(owner,account,batch.batchId);
-        assert.equal(batch.detail.batch.state,batch.state);
+        const review = {journalRevision:3,eligible:batch.state==='committed',
+          reason:batch.state==='committed'?null:'not-committed',
+          removedTradeCount:batch.state==='committed'?1:0,
+          additionalVersionCount:batch.state==='committed'?1:0,
+          summaryBefore:journal.journal.summary,
+          summaryAfter:batch.state==='committed'?
+            {grossBuysUsd:'0',buyFeesUsd:'0',grossSalesUsd:'0',sellFeesUsd:'0',
+              netSalesUsd:'0',consumedCostUsd:'0',realizedUsd:'0',remainingCostUsd:'0'}:null};
+        batch.detail = {batch:{...batch.accepted.value,accountId:account,
+          filename:batch.upload.filename,state:batch.state},
+          acceptedSettings:batch.state==='draft'?null:{parserVersion:'usd-csv-v1',...settings},
+          confirmReceipt:batch.confirmReceipt?.value??null,
+          rollbackReceipt:batch.rollbackReceipt?.value??null,rollbackReview:review};
       }
       saved.push({owner,account,journal,batches});
     }
@@ -702,11 +815,21 @@ async function seedPreviousSixteen(client, target) {
       const saleInput = { requestId: randomUUID(), expectedJournalRevision: 0, instrumentId: instrument,
         side: 'sell', occurredAt: '2025-01-02T00:00:00.000Z', orderWithinTimestamp: 0,
         quantity: '0.5', grossUsd: '100', feeUsd: '0' };
-      const sale = await trade.create(owner, account, saleInput);
+      await client.query('BEGIN');
+      let sale;
+      try {
+        sale = await fixtureTrade(client, owner, account, randomUUID(), 1, 1, 'create', saleInput,
+          `Preserved carry instrument ${index}`, 'CARRY');
+        await client.query('UPDATE account_trade_journals SET "currentRevision"=1 WHERE "ownerId"=$1 AND "accountId"=$2',
+          [owner, account]);
+        await client.query('COMMIT');
+      } catch (error) { await client.query('ROLLBACK'); throw error; }
       const lots = await carry.listLots(owner, account);
       assert.equal(lots.items[0].priorDisposedQuantity, '2');
       assert.equal(lots.items[0].priorAllocatedCostUsd, '300');
-      const journal = await trade.getJournal(owner, account);
+      const journal = fixtureJournal(account, accepted, 1, 1, 1,
+        {grossBuysUsd:'0',buyFeesUsd:'0',grossSalesUsd:'100',sellFeesUsd:'0',
+          netSalesUsd:'100',consumedCostUsd:'75',realizedUsd:'25',remainingCostUsd:'225'});
       assert.equal(journal.journal.summary.consumedCostUsd, '75');
       assert.equal(journal.journal.summary.realizedUsd, '25');
       assert.equal(journal.journal.summary.remainingCostUsd, '225');
@@ -782,11 +905,8 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     }
     if (previousCount >= 13) await seedPreviousThirteen(client);
     const verifyTrades = previousCount >= 14 ? await seedPreviousFourteen(client, target) : async () => {};
-    await verifyTrades();
     const verifyCsv = previousCount >= 15 ? await seedPreviousFifteen(client, target) : async () => {};
-    await verifyCsv();
     const verifyCarry = previousCount >= 16 ? await seedPreviousSixteen(client, target) : async () => {};
-    await verifyCarry();
     if (previousCount >= 18) await seedPreviousEighteen(client);
     const before = await snapshot(client);
     assert.equal(before.rows.migrations.length, previousCount);
