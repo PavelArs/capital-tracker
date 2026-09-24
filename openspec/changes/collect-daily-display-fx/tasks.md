@@ -11,5 +11,5 @@
 ## 3. Independent review and verification
 
 - [x] 3.1 Review provider/SQL/concurrency/privacy/migration and UI independently; resolve findings without weakening acceptance.
-- [ ] 3.2 Run targeted backend/frontend checks, real fresh/populated18 PostgreSQL plus retained valuation fixture, two new HTTPS cases plus retained VCH-UI, builds/lints/audit/spec checks; record actual outputs/images and unrun checks.
+- [x] 3.2 Run targeted backend/frontend checks, real fresh/populated18 PostgreSQL plus retained valuation fixture, two new HTTPS cases plus retained VCH-UI, builds/lints/audit/spec checks; record actual outputs/images and unrun checks.
 - [ ] 3.3 Update provider/operation/testing/continuity docs, verify preservation and isolated cleanup, archive through installed CLI and verify canonical sync.

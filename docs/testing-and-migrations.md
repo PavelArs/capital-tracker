@@ -399,8 +399,8 @@ for actual commands, predecessor failures, image identities and unrun checks.
 See [manual USD price points](manual-usd-prices.md). That feature added migration18;
 its archived acceptance verified fresh18 and populated17 upgrades. Current schema
 is migration19 after the additive daily display-FX tables.
-`manual-usd-prices-db.cjs` is part of the full runner and verifies fresh18,
-populated17 upgrade preservation, immutable correction/void/replay, two-pool CAS,
+`manual-usd-prices-db.cjs` is part of the full runner and now expects fresh19,
+populated17 upgrade preservation through19, immutable correction/void/replay, two-pool CAS,
 RR consistency, exact values, ownership and cap constraints. The retained migration
 suite also passed: supported previous8–16 upgrades to18, fresh/replay, config/lock
 checks and unsafe legacy refusals. No migration is run against owner data.
@@ -447,8 +447,9 @@ It creates its fixed synthetic fixture database only after proving that database
 does not exist. Do not point it at an owner database or reuse an existing fixture.
 
 The exact-domain/provider tests cover parsing, conversion, timestamp, freshness
-and cooldown boundaries. The view test covers form behavior and late-result
-handling. `display-fx-db.cjs` exercises the compiled production adapter against
+and cooldown boundaries. The view test covers exact rows, zero/unavailable/stale
+states and collection availability; the browser case covers late-result handling.
+`display-fx-db.cjs` exercises the compiled production adapter against
 real PostgreSQL and the synthetic outbound HTTPS provider, including atomic
 storage, lease/budget coordination, failures and last-good preservation. DFX-API
 and DFX-UI use real password/MFA/backend/PostgreSQL for route privacy, strict
@@ -457,11 +458,11 @@ values and stale-response handling. Retained VCH-UI protects separation from
 historical USD accounting.
 
 These focused command examples assume the isolated acceptance environment is
-initialized where required; they do not provision it. The combined selected
-PostgreSQL and HTTPS verification remains in progress; selected browser checks
-and final evidence are pending. Do not infer a complete suite, release or
-production pass from partial results; the active verification record will list
-actual outputs and unrun gates.
+initialized where required; they do not provision it. Actual selected PostgreSQL
+checks and all three HTTPS cases passed (38.9s, one worker, zero retries). The
+verification record records the initial migration-fixture failure, its correction,
+stronger expiry/rollback oracles, image identities and unrun gates. This is scoped
+evidence, not a full-suite or release/production claim.
 
 ## Historical account valuation
 

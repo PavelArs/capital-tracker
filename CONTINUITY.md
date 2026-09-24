@@ -137,17 +137,42 @@ Backend image identical between PG and HTTPS. Artifact/network checks pass.
 No unexpected GREEN failures. No full backend/full E2E/upgrade matrix/hostedCI/
 release scan/production run this slice. Old cases and CI gates preserved.
 
+## Completed daily display FX slice
+
+collect-daily-display-fx implemented and targeted GREEN; archive pending.
+Contract89f0a06, acceptance before implementation, backendadd57b4/UIbf4660a.
+Migration19 adds two initially empty tables; opt-in fixed no-key daily indicative
+USD→EUR/RUB, PostgreSQL rolling3attempts/24h, >=20min cooldown, 30s fenced lease,
+last-good data, exact scale60 converter, DB-only private reads, Russian Settings.
+Direct DNS connection filtering; explicit trusted egress proxy boundary. No change
+to USD accounting/manual prices/chart, no new dependency or paid/production action.
+Docs daily-display-fx.md/provider-feasibility.md and active verification hold details.
+
+Genuine predecessor HTTPS RED: anonymous401 vs404 and absent Settings item before
+product implementation. Source152/6tests passed; later2DNS/proxy wiring cases added,
+root focused59/2pass1.714s. Frontend101/12pass; builds/lints pass with existing
+BE77/FE29 and Vite bundle warnings. Dependency gate nohighcritical,2moderate retained.
+FirstPGattempt failed helper allowlist missing18 (not productRED); corrected144c770.
+Fresh19/populated18 preservation/replay plus5FX/4retainedvaluation families PASS.
+Independent review strengthened actual lease expiry and COMMIT witness fb60e10;
+affected5FX plusdowngrade refusal PASS. Actual HTTPS3/3 in38.9s,1worker0retries,
+DFX-API/DFX-UI/retainedVCH-UI. Only external providers stubbed; real password/MFA/PG.
+Logs /private/tmp/capital-fx-{db-attempt1,db-attempt2,db-final,green}.log and
+capital-fx-green-artifacts. No live provider availability claim.
+BEsha256:514843fb64d028cdbe63deda161654147d203b750faba5dd6c9cac32f1dba2d7
+FEsha256:83370644fb9133219770465629851a07b3db933984f9a629d3c592fd5e24df71
+BEimage identical PG/HTTPS. Cleanup/live labeledinventory empty; Nginx/lock unchanged.
+Fullbackend/fullE2E/olderupgrade matrix/hostedCI/release/production not run. Existing
+CI gates/tests retained. Root owns final OpenSpec archive, docs and integration.
+
 ## Next
 
-Active collect-daily-display-fx: opt-in persisted daily indicative USD/EUR/RUB
-conversion, source ExchangeRate-API open no-key with verified cached end-use terms.
-Contract/acceptance preparation; no product edits yet. Root owns backend/migration/
-provider fixture/shared runners/Docker. New worktrees for Luna acceptance and Sol UI.
+Finish collect-daily-display-fx documentation/archive and verify canonical sync.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
-30-day behavior now, revisit with owner feedback later. Read active artifacts.
-Whole brief
-still needs automatic prices/longer history/charts, multi-account valuation, TWR, transfers/
+30-day behavior now, revisit with owner feedback later. Whole brief still needs
+automatic prices/longer history/charts, multi-account valuation, TWR, transfers/
 swaps/rewards, blockchain reconciliation, optionalAI and release/backup-restore
-hardening before consolidation. Do not move/delete original folders now.
+hardening before consolidation. CoinGecko permanent retention remains unapproved;
+FX end-use permission does not remove that blocker. Do not move/delete folders now.
 Reuse carry_docs_review Luna(simple) and historical_ui Sol(complex/review).
 gate_acceptance quota-limited untilSep29; do not retry/purchase.
