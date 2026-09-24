@@ -58,7 +58,7 @@ or paid fallback. Root removed only their known temporary dependency symlinks; t
 Root implementation6658dbc adds schema22/store/service/controller and connected loading,
 trade/historical/series projections. The schema is additive only. API/root persistence
 postimplementation independent review remains pending; do not treat pure-core review as
-covering persistence or UI. No frontend swap editor has been implemented yet.
+covering persistence or UI. The later frontend checkpoint is recorded below.
 
 - Root relevant Jest command adds `asset-swap` to the baseline selection: exit0,
   **403tests/18suites**,3.439s, `/private/tmp/capital-swaps-unit-green.log`.
@@ -75,7 +75,7 @@ covering persistence or UI. No frontend swap editor has been implemented yet.
   This does NOT establish populated21upgrade, full SQL constraints, process races,
   capacity/snapshot/CSV/once-only-load verification; these required cases remain pending.
 
-The change is not complete or ready to archive. UI, further PG/migration/bounds acceptance,
+The change is not complete or ready to archive. Further PG/migration/bounds acceptance,
 independent persistence/UI review and remaining task5gates are unrun/incomplete. See tasks.md;
 no full-suite or release claim is made.
 
@@ -87,7 +87,7 @@ no full-suite or release claim is made.
   release artifact/proxy checks, actual password/MFA/backend/PG. Tests assert exact held-lot
   preservation, incoming fee, null→0correction, terminal void, immutable replay, source
   protection/Origin/CSRF/generic404/no-store/no-business-mutation/no-provider-request.
-  SWAP-UI remains unimplemented/unrun GREEN; this is not a browser editor success claim.
+  This checkpoint covered API only; later SWAP-UI GREEN is recorded below.
 -20retained fixture expectations updated to schema22; predecessor17→22 applies5,
   19→22 applies3,20→22 applies2. Only new swap tables added to migration preservation
   exclusions with explicit emptiness checks; existing rows, financial/auth assertions
@@ -115,3 +115,80 @@ no full-suite or release claim is made.
 - Final labeled synthetic container/network inventories empty. Nginx/lock hashes above
   unchanged; only owner Nginx remains outside task commits. No realDB, deployment, push,
   paid fallback, original-repository movement or project-folder deletion.
+
+## Reviewed owner workflow implementation checkpoint (2026-09-24)
+
+Root implemented the frontend in11aa6ef after the recorded real SWAP-UI RED. Pending
+backend/fixture evidence was first committed d7889bd. New API types include local and
+transferred swap origins; current/historical results label actual USD sales separately
+from swap consideration, consumed basis, fee basis and realized evidence. The normalized
+review, immutable receipt, paged saved history and pinned current allocation remain
+separate. Fee source and asset UUIDs are explicit. Lost responses preserve the exact
+owner/account command across SPA remount, input/refresh generations invalidate reviews,
+and the trade draft survives swap mutations. No package, lock, migration or deployment
+configuration changed in this frontend checkpoint.
+
+Actual checks:
+
+- Frontend build exit0, TypeScript/Vite; existing bundle>500kB warning retained.
+  `/private/tmp/capital-swaps-frontend-build.log`.
+- Frontend full Vitest at the initial editor checkpoint: **106tests/16files PASS3.28s**,
+  `/private/tmp/capital-swaps-frontend-unit.log`. Three later static presentation/control
+  tests plus the three draft tests: **6/6 PASS1.06s** in2files, no own API/auth mocks,
+  `/private/tmp/capital-swaps-ui-evidence-tests.log`. They verify tiny fee amounts,
+  same-symbol UUIDs, known0/null totals and swap-origin transfer intervals.
+- Full frontend lint exit0 with the same27existing warnings; changed15files scoped Biome
+  passed. Draft tests preserve exact numeric comparisons beyond binary precision, UTC
+  normalization, fee coupling and rejected invalid fields. Root self-reviewed async
+  generations, recovery storage and provenance branches; this is NOT independent review.
+- Actual frontend image build exit0, source11aa6ef product tree:
+  **sha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c**,
+  `/private/tmp/capital-swaps-frontend-image.log`. Backend remained the actual dd90a8c5
+  image above. Image built before the final supplemental test-only fixture fixes;
+  compiled product source matches11aa6ef.
+- `caffeinate -is node /private/tmp/capital-swaps-ui-green.cjs` exit0,
+  `/private/tmp/capital-swaps-ui-green-attempt1.log`, artifacts
+  `/private/tmp/capital-swaps-ui-green-artifacts`: **7/7 PASS1.7m**,1Chromium worker,
+  zero retries. Real fresh22/seed/artifact checks/HTTPS/password/MFA/PG/two replicas.
+  Exact selection: SWAP-API, SWAP-UI, REWARD-UI, TRANSFER-UI, VAL-UI,
+  TRADE-003-A/TRADE-006-A primary form and CSV-006-A full Russian import/replay/rollback.
+  Main swap editor case passed11.9s, including real committed response loss plus identical
+  retry after navigation, exact allocation/original lot display, null→0 correction,
+  terminal void and separate draft preservation. A delayed actual versions response
+  was delivered after a concurrent real trade advanced the pin and a list refresh;
+  it could not restore stale review or enable submission. route.fetch exercised the real
+  backend; only transport delivery was delayed/aborted. Existing CSV/trade selectors
+  changed only for the clearer USD-sale result label, retaining every exact amount.
+- Strict E2E TypeScript exit0 using backend TypeScript with --noEmit --strict
+  --noUnusedLocals --noUnusedParameters --skipLibCheck --target ES2022 --module commonjs
+  --moduleResolution node --esModuleInterop --types node --typeRoots ./node_modules/@types
+  ../tests/e2e/*.ts; `/private/tmp/capital-swaps-ui-e2e-types2.log`.
+- `pnpm audit:production` exit0,2existingmoderate/nohighcritical,
+  `/private/tmp/capital-swaps-production-audit.log`; lock unchanged. Strict OpenSpec
+ 29items passed, `/private/tmp/capital-swaps-ui-specs.log`.
+
+Failed local preparation attempts were not claimed as successful checks: an initial
+TypeScript error exposed an obsolete narrowed review ref after making refresh always
+invalidate review; root removed the redundant ref/condition. Biome flagged JSX punctuation
+in allocation text, corrected without changing values. Two helper-edit invocations used
+wrong working-directory paths and made no requested edits; reruns used the correct paths.
+An attempted E2E tsconfig path did not exist; the explicit command above passed instead.
+The later supplemental component test initially omitted required Instrument metadata and
+used Playwright's unsupported `exact` option with Testing Library. This produced3tscerrors
+in `/private/tmp/capital-swaps-frontend-types-final.log`; no product error or assertion
+was hidden. Complete static metadata and the exact string role name fixed the fixture;
+final tsc exit0 plus **3/3 supplemental tests PASS1.01s** are recorded in
+`/private/tmp/capital-swaps-frontend-types-final2.log` and
+`/private/tmp/capital-swaps-ui-evidence-tests2.log`. No second full suite was needed for
+these test-only fixes. The previous compound shell wrapper returned its last command's
+status; this record uses the actual compiler output and subsequent set-e verification.
+
+All exec sessions completed and labeled synthetic container/network inventories were
+empty after cleanup. Owner Nginx and lock SHA256 above remain unchanged. No production,
+push, provider request from accounting, paid fallback or project movement/removal.
+Agents remain quota-limited; no retry or new paid-model fallback was attempted.
+Tasks4.1/4.2 are now complete, **6/12** total. Remaining requirements include populated21
+preservation/fullSQLconstraints, swap-specific real process/cap/coherent-snapshot/CSV/
+once-only nonempty-load gates and independent persistence/UI review. Final verification
+and archive remain unchecked. Full unrelated suites/hostedCI/release/backup/security
+matrix and broader target requirements are not claimed complete.

@@ -162,7 +162,7 @@ last checkbox is completed only after that procedure. No functional verification
 
 ## Remaining whole goal and next work
 
-Active `record-asset-swaps` is incomplete,4/12tasks done (contract+realRED, pureFIFO,input).
+Active `record-asset-swaps` is incomplete,6/12tasks done (contract+realRED, pureFIFO,input, frontend).
 Read its proposal/design/persistence/specs/tasks/verification before continuing. Root has
 implemented backend migration22/store/API/connected-loader integration6658dbc, purecore
 0e06fa9 and parser6450a57/8d0f54c. Original-lot incoming fees and preheldFIFO fees are explicit;
@@ -175,13 +175,11 @@ and build/scopedBiome pass. Schema22BEimage
 sha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
 Three new PG families pass (connected correction/receipt preservation, fee/null/zero/
 allocation/lifecycle, actual deferredCOMMIT witness/rollback). SWAP-API realHTTPS passed
-1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI is authored but
-no swap frontend implementation exists yet; do not mark archive-ready. Logs/harnesses are
+1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI and its Russian editor are now implemented/verified below; do not mark archive-ready. Logs/harnesses are
 /private/tmp/capital-swap-* and /private/tmp/capital-swaps-*; verification.md records scope.
 
 Next: complete populated21upgrade/directconstraints, process/cap/snapshot/connectedCSV/
-once-only-load tests; typed/rendered frontend consumers and reviewed swap editor/recovery;
-independent persistence/UI review and final scopedgates/docs/archive. Existing20fixture
+once-only-load tests, independent persistence/UI review and final scopedgates/archive. Existing20fixture
 fresh counts updated21→22 with only new swap tables excluded/checkedempty in predecessor
 preservation; original predecessor schemas retained. Runner includes new mainPG fixture.
 Retained PG attempt1 exposed a reward preflight matcher conflating swap/reward queries;
@@ -190,8 +188,26 @@ transfer families and fresh22/populated18auth+19+20preservation on sameBEimage. 
 swap-specificprocess/bounds/populated21 claim. Engineering183tests/2suites, backendlint
 (77existingwarnings), strict29OpenSpecitems pass. Final synthetic inventory empty; all
 execsessions terminal, worktreesclean and Nginx/lock hashes preserved.
-Do not repeat already-passing403tests/API unless product changes justify it. No full suite,
-productionaudit/release/whole-project pass claimed for active swaps. Details in verification.md.
+Root committed retained fixture/evidence checkpointd7889bd then frontend11aa6ef.
+Russian swap form reviews normalized exact intent, explicit fee source and UUIDs; frozen
+retry survives SPA remount, late responses cannot reinstate stale review, and USD trade
+drafts survive refresh. Current/historical typed consumers show swap-origin intervals and
+separate totals; paged version/allocation evidence distinguishes original/current data.
+Owner guide docs/asset-swaps.md explicitly labels remaining release gates.
+
+Actual currentFEsha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c.
+Same schema22BEdd90a8c5. Selected realHTTPS7/7PASS1.7m: new SWAP-API/UI plus rewardUI,
+transferUI, valuationUI, primary USDtradeUI and fullCSVimport/rollback.1worker0retries.
+SwapUI11.9s includes committed-response-loss/SPA identicalretry, exact origins/allocations,
+unknown→0 correction/void and delayed actual response after concurrent pin change. Logs/
+harness/artifacts /private/tmp/capital-swaps-ui-green*. Fullfrontend106tests/16filesPASS;
+later supplemental6tests/2filesPASS (3new render/control tests; no API/authmock). Tests-only
+type metadata/options corrected then finaltsc and3/3rerunPASS; failure evidence retained.
+Build/lint27existingwarnings/scopedBiome/strictE2Etypes/OpenSpec29itemsPASS; Vitechunk/proxy
+warnings remain. Productionauditexit0,2existingmoderate/nohighcritical. No package changes.
+All sessions terminal, labeled containers/networks empty, Nginx/lock unchanged.
+Do not repeat passed backend403/retainedPG/selectedHTTPS unless changes justify it. No full
+suite/release/whole-project pass claimed. Details in active verification.md.
 
 Still required after swaps: broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional

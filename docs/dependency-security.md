@@ -165,3 +165,12 @@ An initial offline dependency-add attempt failed because registry metadata was
 not cached; the subsequent exact-version registry install succeeded. That failed
 attempt is not counted as verification. Image scanning and production approval
 remain separate release requirements.
+
+## Asset swaps frontend checkpoint — 2026-09-24
+
+`pnpm audit:production` exited0 with2moderate findings and no high/critical findings.
+No dependency or lockfile edits were made. The previously documented lower-severity
+findings remain visible and were not suppressed. Evidence:
+`/private/tmp/capital-swaps-production-audit.log`; current lock SHA256
+`6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
+This dependency gate is not full application/image security or release verification.

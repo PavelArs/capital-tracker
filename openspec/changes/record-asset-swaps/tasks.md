@@ -16,8 +16,8 @@
 
 ## 4. Russian owner workflow
 
-- [ ] 4.1 Update existing typed/rendered consumers for swap origins and dedicated results without altering actual USD-trade totals; verify historical/value/CSV regressions and honest unknown evidence.
-- [ ] 4.2 Implement reviewed create/correct/void UI with explicit fee source and frozen ambiguous retry across SPA remount; preserve separate trade draft and reject stale/late reviews.
+- [x] 4.1 Update existing typed/rendered consumers for swap origins and dedicated results without altering actual USD-trade totals; verify historical/value/CSV regressions and honest unknown evidence.
+- [x] 4.2 Implement reviewed create/correct/void UI with explicit fee source and frozen ambiguous retry across SPA remount; preserve separate trade draft and reject stale/late reviews.
 
 ## 5. Review and delivery evidence
 
