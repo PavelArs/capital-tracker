@@ -1,6 +1,6 @@
 ## 1. Contract and acceptance
 
-- [ ] 1.1 Review scenarios independently, record baseline/inventory and strict-validate the contract.
+- [x] 1.1 Review scenarios independently, record baseline/inventory and strict-validate the contract.
 - [ ] 1.2 Add backend range/projection tests, real PostgreSQL series/snapshot/maxima fixture and two focused HTTPS API/UI cases (VCH-TIMELINE/RANGE/PRIVATE/UI); demonstrate missing-route/UI behavioral RED before implementation. Test chart precision/gaps below E2E (VCH-CHART).
 
 ## 2. Implementation
