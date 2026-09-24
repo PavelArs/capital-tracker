@@ -128,8 +128,8 @@ and parser acceptance; additional real concurrency/SQL/RR/cap/CSV fixtures still
 
 Fresh worktrees: capital-tracker-reward-core (historical_ui Sol; pure accounting only),
 capital-tracker-reward-acceptance (carry_docs_review Luna; two HTTPS cases only).
-Root owns migrations/store/service/integration/sharedrunners. No product reward changes
-yet; preserve accepted schema20 images until new2HTTPS expected failure is recorded.
+Root owns migrations/store/service/integration/sharedrunners. Sol may now implement pure core after11actual pureRED cases. Root API/UI/persistence
+implementation still waits for corresponding2HTTPS RED; preserve schema20 image IDs.
 Logs/private/tmp/capital-rewards-{baseline,pure-red}.log and
 /private/tmp/capital-reward-boundaries-red.log. RED harness prepared at
 /private/tmp/capital-rewards-red.cjs; image IDs verified live against previous block.

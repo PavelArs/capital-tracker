@@ -60,3 +60,11 @@ known/unknown same-instrument valuation, prefix chronology and1000/1001 boundary
 The83digit observation uses exact BigInt arithmetic and is not a full maximum-component
 performance test. Root then narrowed helper category types to the explicit contract union;
 no assertion changed.
+
+ATDD execution split: pure-core implementation may proceed after the11actual pure RED
+cases while the two HTTPS cases are prepared. API/UI/persistence implementation waits
+for their corresponding genuine predecessor-image RED. This avoids an unnecessary
+serial dependency without changing any oracle or claiming the later checks have passed.
+The immutable accepted schema20 images remain pinned and are not rebuilt for RED.
+Initial PG acceptance also now contains direct SQL constraints, deferred COMMIT witness
+and real two-PID RR/read-only snapshot scenarios; these are written but not yet run.

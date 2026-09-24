@@ -208,6 +208,127 @@ async function lifecycle(db, s, f) {
   console.log('PASS REWARD-003/006 known0, unresolved subtype, full immutable void/replay and private validation');
 }
 
+async function constraintsAndCommit(db, s, f) {
+  stage = 'REWARD-003/006 SQL constraints and deferred COMMIT rollback witness';
+  const a = await account(s, f.owner, 'Constraint account');
+  const command = input(f.token, 0);
+  const saved = (await s.reward.create(f.owner, a, command)).value;
+  const rewardId = saved.reward.rewardId;
+  for (const [field, value, code] of [
+    ['quantity', '0', '23514'], ['quantity', 'NaN', '23514'],
+    ['quantity', 'Infinity', '22003'], ['acquisitionBasisUsd', 'NaN', '23514'],
+    ['incomeValueUsd', '-1', '23514'], ['category', 'deposit', '23514'],
+    ['instrumentId', f.foreignToken, '23503'],
+  ]) {
+    assert.ok(['quantity', 'acquisitionBasisUsd', 'incomeValueUsd', 'category', 'instrumentId'].includes(field));
+    const before = await fingerprint(db);
+    await assert.rejects(() => db.query(
+      `UPDATE account_reward_versions SET "${field}"=$1 WHERE "ownerId"=$2 AND "accountId"=$3 AND "rewardId"=$4 AND version=1`,
+      [value, f.owner, a, rewardId]), error => error.code === code,
+      `SQL ${field} rejects invalid direct data for the intended constraint`);
+    assert.equal(await fingerprint(db), before);
+  }
+  const beforeHead = await fingerprint(db);
+  await assert.rejects(() => db.query(
+    'UPDATE account_rewards SET "currentVersion"=2 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
+    [f.owner, a, rewardId]), error => error.code === '23503');
+  assert.equal(await fingerprint(db), beforeHead);
+
+  await db.query('CREATE SEQUENCE reward_commit_witness');
+  await db.query(`CREATE FUNCTION fail_reward_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF NOT EXISTS(SELECT 1 FROM account_rewards r JOIN account_trade_journals j
+        ON j."ownerId"=r."ownerId" AND j."accountId"=r."accountId"
+        WHERE r."ownerId"=NEW."ownerId" AND r."accountId"=NEW."accountId"
+        AND r.id=NEW."rewardId" AND r."currentVersion"=NEW.version
+        AND j."currentRevision"=NEW."journalRevision") THEN
+        RAISE EXCEPTION 'reward write path incomplete';
+      END IF;
+      PERFORM nextval('reward_commit_witness');
+      RAISE EXCEPTION 'synthetic deferred reward failure';
+    END $$`);
+  await db.query(`CREATE CONSTRAINT TRIGGER reward_commit_failure AFTER INSERT ON account_reward_versions
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_reward_commit()`);
+  const replacement = correction(saved.reward, 1, { acquisitionBasisUsd: '100' });
+  const before = await fingerprint(db);
+  try {
+    await assert.rejects(() => s.reward.correct(f.owner, a, rewardId, replacement),
+      /synthetic deferred reward failure/);
+    const [witness] = await db.query('SELECT last_value::text,is_called FROM reward_commit_witness');
+    assert.deepEqual(witness, { last_value: '1', is_called: true },
+      'Nontransactional sequence proves version/head/pin writes reached deferred COMMIT');
+    assert.equal(await fingerprint(db), before, 'Commit failure rolls back every saved row/key/pin');
+  } finally {
+    await db.query('DROP TRIGGER reward_commit_failure ON account_reward_versions');
+    await db.query('DROP FUNCTION fail_reward_commit()');
+    await db.query('DROP SEQUENCE reward_commit_witness');
+  }
+  const accepted = await s.reward.correct(f.owner, a, rewardId, replacement);
+  assert.equal(accepted.created, true);
+  assert.equal(accepted.value.reward.version, 2, 'Same request key was not reserved by failed commit');
+  console.log('PASS REWARD-003/006 actual SQL constraints/deferred post-write witness/whole-command rollback/same-key recovery');
+}
+
+async function coherentSnapshot(db, s, f) {
+  stage = 'REWARD-004 real two-connection connected snapshot';
+  const a = await account(s, f.owner, 'Snapshot reward source');
+  const b = await account(s, f.owner, 'Snapshot reward recipient');
+  const saved = (await s.reward.create(f.owner, a, input(f.token, 0, { acquisitionBasisUsd: '100' }))).value;
+  await s.transfer.create(f.owner, { requestId: randomUUID(), fromAccountId: a, toAccountId: b,
+    expectedFromJournalRevision: 1, expectedToJournalRevision: 0, assertInternal: true,
+    instrumentId: f.token, occurredAt: transferAt, orderWithinTimestamp: 0, quantity: '1',
+    feeInstrumentId: null, feeQuantity: '0' });
+  const readDb = source();
+  await readDb.initialize();
+  let signal, release;
+  const seen = new Promise(resolve => { signal = resolve; });
+  const gate = new Promise(resolve => { release = resolve; });
+  let armed = true;
+  const createRunner = readDb.createQueryRunner.bind(readDb);
+  readDb.createQueryRunner = (...args) => {
+    const runner = createRunner(...args);
+    const query = runner.query.bind(runner);
+    runner.query = async (sql, ...rest) => {
+      const result = await query(sql, ...rest); // Every query still executes against PostgreSQL.
+      if (armed && /SELECT \* FROM account_trade_journals/.test(sql)) {
+        armed = false;
+        const [isolation] = await query('SHOW transaction_isolation');
+        const [readOnly] = await query('SHOW transaction_read_only');
+        assert.equal(isolation.transaction_isolation, 'repeatable read');
+        assert.equal(readOnly.transaction_read_only, 'on');
+        signal();
+        await gate;
+      }
+      return result;
+    };
+    return runner;
+  };
+  let pending;
+  try {
+    const [writerPid] = await db.query('SELECT pg_backend_pid() AS pid');
+    const [readerPid] = await readDb.query('SELECT pg_backend_pid() AS pid');
+    assert.notEqual(writerPid.pid, readerPid.pid);
+    const before = await fingerprint(db);
+    pending = services(readDb).history.getSnapshot(f.owner, b, { at: transferAt });
+    // A query exception must fail directly rather than leave a silent barrier timeout.
+    await Promise.race([seen, pending.then(() => { throw new Error('Reader never reached expected real barrier'); })]);
+    await s.reward.correct(f.owner, a, saved.reward.rewardId, correction(saved.reward, 2, { acquisitionBasisUsd: '120' }));
+    const afterWriter = await fingerprint(db);
+    assert.notEqual(afterWriter, before);
+    release();
+    const old = await pending;
+    assert.equal(old.journalRevision, 1); assert.equal(old.items[0].costUsd, '50');
+    const next = await s.history.getSnapshot(f.owner, b, { at: transferAt });
+    assert.equal(next.journalRevision, 2); assert.equal(next.items[0].costUsd, '60');
+    assert.equal(await fingerprint(db), afterWriter, 'Read-only requests never add further mutations');
+  } finally {
+    release();
+    if (pending) await Promise.allSettled([pending]);
+    await readDb.destroy();
+  }
+  console.log('PASS REWARD-004 actual RR/read-only two-PID snapshot and connected old/new evidence');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
@@ -230,6 +351,8 @@ async function main() {
     const fixture = { owner: owner.id, other: other.id, token, foreignToken };
     await economics(db, s, fixture);
     await lifecycle(db, s, fixture);
+    await constraintsAndCommit(db, s, fixture);
+    await coherentSnapshot(db, s, fixture);
     assert.equal(await fingerprint(db, mutable), before, 'No external flows, auth, legacy or provider rows changed');
   } finally { if (db.isInitialized) await db.destroy(); }
 }
