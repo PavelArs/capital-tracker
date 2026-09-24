@@ -49,7 +49,6 @@
   "navigation": {
     "dashboard": "Dashboard",
     "assets": "Assets",
-    "liabilities": "Liabilities",
     "crypto": "Crypto",
     "settings": "Settings"
   },
@@ -126,31 +125,12 @@
     }
   },
   "liabilities": {
-    "title": "Liabilities",
-    "addLiability": "Add Liability",
-    "editLiability": "Edit Liability",
-    "addNewLiability": "Add New Liability",
-    "updateLiability": "Update Liability",
-    "createLiability": "Create Liability",
-    "deleteConfirm": "Are you sure you want to delete this liability?",
-    "liabilityDistribution": "Liability Distribution",
-    "allLiabilities": "All Liabilities",
-    "frequency": "Frequency",
-    "deadline": "Deadline",
-    "frequencies": {
-      "daily": "Daily",
-      "weekly": "Weekly",
-      "monthly": "Monthly",
-      "quarterly": "Quarterly",
-      "yearly": "Yearly"
-    },
     "categories": {
       "subscriptions": "Subscriptions",
       "regularExpenses": "Regular Expenses",
       "loans": "Loans",
       "mortgage": "Mortgage",
-      "creditCard": "Credit Card",
-      "other": "Other"
+      "creditCard": "Credit Card"
     }
   },
   "crypto": {

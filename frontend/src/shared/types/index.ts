@@ -75,44 +75,6 @@ export interface CreateAssetDto {
 
 export interface UpdateAssetDto extends Partial<CreateAssetDto> {}
 
-// Liability types
-export type LiabilityCategory =
-  | 'subscriptions'
-  | 'regular_expenses'
-  | 'loans'
-  | 'mortgage'
-  | 'credit_card'
-  | 'other';
-
-export type LiabilityType = 'recurring' | 'one_time';
-
-export interface Liability {
-  id: string;
-  userId: string;
-  name: string;
-  category: LiabilityCategory;
-  liabilityType: LiabilityType;
-  amount: number;
-  currencyId: string;
-  currency?: Currency;
-  date: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateLiabilityDto {
-  name: string;
-  category: LiabilityCategory;
-  liabilityType: LiabilityType;
-  amount: number;
-  currencyId: string;
-  date: string;
-  description?: string;
-}
-
-export interface UpdateLiabilityDto extends Partial<CreateLiabilityDto> {}
-
 // Crypto types
 export type CryptoType = 'bitcoin' | 'ethereum';
 

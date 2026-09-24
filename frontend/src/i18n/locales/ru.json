@@ -49,7 +49,6 @@
   "navigation": {
     "dashboard": "Панель управления",
     "assets": "Активы",
-    "liabilities": "Обязательства",
     "crypto": "Криптовалюты",
     "settings": "Настройки"
   },
@@ -126,31 +125,12 @@
     }
   },
   "liabilities": {
-    "title": "Обязательства",
-    "addLiability": "Добавить обязательство",
-    "editLiability": "Редактировать обязательство",
-    "addNewLiability": "Добавить новое обязательство",
-    "updateLiability": "Обновить обязательство",
-    "createLiability": "Создать обязательство",
-    "deleteConfirm": "Вы уверены, что хотите удалить это обязательство?",
-    "liabilityDistribution": "Распределение обязательств",
-    "allLiabilities": "Все обязательства",
-    "frequency": "Частота",
-    "deadline": "Срок",
-    "frequencies": {
-      "daily": "Ежедневно",
-      "weekly": "Еженедельно",
-      "monthly": "Ежемесячно",
-      "quarterly": "Ежеквартально",
-      "yearly": "Ежегодно"
-    },
     "categories": {
       "subscriptions": "Подписки",
       "regularExpenses": "Регулярные расходы",
       "loans": "Займы",
       "mortgage": "Ипотека",
-      "creditCard": "Кредитная карта",
-      "other": "Другое"
+      "creditCard": "Кредитная карта"
     }
   },
   "crypto": {

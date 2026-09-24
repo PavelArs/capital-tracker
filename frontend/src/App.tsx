@@ -8,12 +8,12 @@ import Assets from '@pages/Assets';
 import CapitalFlows from '@pages/CapitalFlows';
 import Crypto from '@pages/Crypto';
 import Dashboard from '@pages/Dashboard';
-import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
 import ManualAccountDetail from '@pages/ManualAccountDetail';
 import ManualAccounts from '@pages/ManualAccounts';
 import ManualPrices from '@pages/ManualPrices';
 import PeriodProfit from '@pages/PeriodProfit';
+import RetiredLiabilities from '@pages/RetiredLiabilities';
 import Settings from '@pages/Settings';
 import React, { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
@@ -49,7 +49,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="assets/*" element={<Assets />} />
-        <Route path="liabilities" element={<Liabilities />} />
+        <Route path="liabilities/*" element={<RetiredLiabilities />} />
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
