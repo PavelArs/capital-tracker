@@ -9,6 +9,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import LinkedTwr from './LinkedTwr';
 import './PeriodProfit.css';
 
 type PreviewMode = 'profit' | 'xirr' | 'twr';
@@ -334,6 +335,13 @@ function PeriodProfitOwner() {
           )}
         </section>
       )}
+      <LinkedTwr
+        key={`${from}\u0000${to}`}
+        from={from}
+        to={to}
+        openingValueUsd={openingValueUsd}
+        closingValueUsd={closingValueUsd}
+      />
     </div>
   );
 }

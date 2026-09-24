@@ -106,6 +106,24 @@
   margin: 0;
 }
 
+.linked-twr-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.linked-twr-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.linked-twr-table th,
+.linked-twr-table td {
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 550px) {
   .profit-result {
     grid-template-columns: 1fr;
