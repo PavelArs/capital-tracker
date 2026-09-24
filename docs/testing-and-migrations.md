@@ -214,11 +214,11 @@ runtime privilege separation still requires final deployment configuration.
 
 A PostgreSQL advisory lock prevents cooperating migration commands overlapping;
 a contending invocation fails safely. Fresh installation explicitly provisions
-uuid-ossp and applies seventeen migrations: eight historic migrations, the additive
+uuid-ossp and applies nineteen migrations: eight historic migrations, the additive
 owner binding, the session table, the MFA/session extension and the additive
 request admission ledger, four manual-accounting tables, three USD journal tables,
-three CSV import tables, the carry-in baseline table/journal opening reference and two external USD flow tables. A populated fully
-migrated database is idempotent. The twelfth through seventeenth migrations preserve
+three CSV import tables, the carry-in baseline table/journal opening reference and two external USD flow tables, manual USD price history and daily display FX. A populated fully
+migrated database is idempotent. The twelfth through nineteenth migrations preserve
 all existing rows. Pending destructive historical migrations
 on an existing application schema are refused even when its tables are empty.
 The check runs before extension, ledger or application-table mutation. Raw database
@@ -256,7 +256,11 @@ unchanged and the new nullable opening reference explicitly NULL.
 The populated sixteen-to-seventeen fixture additionally retains original carry-in
 lots and their allocation phase, old exact sale results, original receipts and every
 previous schema object. Only two empty external-flow tables and the migration ledger
-entry are added. Current binaries require all seventeen migrations. Old images cannot interpret a new
+entry are added. The populated seventeen-to-eighteen fixture retains prior accounting,
+flow, authentication and admission state while adding manual USD price history.
+Migration19 adds only two daily display-FX tables; fresh19 and populated18
+preservation/replay checks are required for this change. Current binaries require all
+nineteen migrations. Old images cannot interpret a new
 carry-in origin: do not mix old/new binaries or assume binary rollback is safe after
 initialization. No destructive down migration is provided. Owner bootstrap must
 be followed by explicit MFA prepare/confirm before browser login.
@@ -392,8 +396,9 @@ for actual commands, predecessor failures, image identities and unrun checks.
 
 ## Manual USD price history
 
-See [manual USD price points](manual-usd-prices.md). Current schema is migration18;
-existing fixture current-version assertions include its exact migration name.
+See [manual USD price points](manual-usd-prices.md). That feature added migration18;
+its archived acceptance verified fresh18 and populated17 upgrades. Current schema
+is migration19 after the additive daily display-FX tables.
 `manual-usd-prices-db.cjs` is part of the full runner and verifies fresh18,
 populated17 upgrade preservation, immutable correction/void/replay, two-pool CAS,
 RR consistency, exact values, ownership and cap constraints. The retained migration
@@ -410,6 +415,54 @@ password/MFA/backend/PostgreSQL; delayed/lost delivery follows real `route.fetch
 No existing E2E case or CI gate was removed. See the [verification record](../openspec/changes/archive/2026-09-23-record-manual-usd-prices/verification.md).
 
 
+## Daily display FX
+
+See [daily display conversion](daily-display-fx.md) and the active
+[verification record](../openspec/changes/collect-daily-display-fx/verification.md).
+Migration19 adds two tables for immutable provider observations and persistent
+collection coordination. Startup does not create or synchronize them; migration
+remains an explicit CLI operation. The PostgreSQL fixture requires a fresh19
+database and a populated18 upgrade preserving prior rows, schema, sequences and
+session data. The migration fixture also checks replay and refuses unsafe legacy
+histories.
+
+The scoped unit/browser commands are:
+
+```sh
+pnpm --dir backend test --runInBand --coverage=false display-fx-domain display-fx-provider
+pnpm --dir frontend exec vitest run --coverage.enabled=false src/features/display-fx/display-fx-view.test.ts
+pnpm exec playwright test tests/e2e/display-fx.spec.ts tests/e2e/valuation-history.spec.ts --grep 'DFX-|VCH-UI:' --workers=1
+```
+
+In the already-started isolated Compose environment, the real PostgreSQL fixture
+can be run separately:
+
+```sh
+docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml run --rm --no-deps \
+  -v "$PWD/tests/e2e:/tests:ro" -e NODE_PATH=/app/backend/node_modules migrate \
+  env -u TRUSTED_PROXY_IPS node /tests/display-fx-db.cjs
+```
+
+It creates its fixed synthetic fixture database only after proving that database
+does not exist. Do not point it at an owner database or reuse an existing fixture.
+
+The exact-domain/provider tests cover parsing, conversion, timestamp, freshness
+and cooldown boundaries. The view test covers form behavior and late-result
+handling. `display-fx-db.cjs` exercises the compiled production adapter against
+real PostgreSQL and the synthetic outbound HTTPS provider, including atomic
+storage, lease/budget coordination, failures and last-good preservation. DFX-API
+and DFX-UI use real password/MFA/backend/PostgreSQL for route privacy, strict
+validation, no provider request on reads, explicit collection, exact EUR/RUB
+values and stale-response handling. Retained VCH-UI protects separation from
+historical USD accounting.
+
+These focused command examples assume the isolated acceptance environment is
+initialized where required; they do not provision it. The combined selected
+PostgreSQL and HTTPS verification remains in progress; selected browser checks
+and final evidence are pending. Do not infer a complete suite, release or
+production pass from partial results; the active verification record will list
+actual outputs and unrun gates.
+
 ## Historical account valuation
 
 See [historical valuation](historical-valuation.md). The selected pure command
@@ -418,7 +471,8 @@ historical-accounting manual-price-input` passed123 cases/4 suites (31 new,
 92 retained). The new `historical-valuation-db.cjs` passed four scenario families
 against actual PostgreSQL; retained `historical-accounting-db.cjs` also passed,
 protecting the extracted caller-owned read loader. No migration was added;
-fresh isolated fixtures use existing migration18.
+the archived acceptance used schema18 at that time. Current fresh fixtures use
+migration19.
 
 Only three HTTPS cases were selected: new VAL-API and VAL-UI plus retained
 HIST-004-A UI snapshot. They passed3/3 in37.8s, one worker and zero retries, with
