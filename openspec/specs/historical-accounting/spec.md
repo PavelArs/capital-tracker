@@ -22,6 +22,8 @@ chronology unique within each touched account. A transfer SHALL move position an
 adding covered purchases, sales, realized gain or external flows. The selected account result
 SHALL reflect the complete connected replay.
 
+Effective reward versions SHALL be included as acquisition events at inclusive UTC instants, with exact quantity and independently nullable basis. Positions with missing cost SHALL expose knownCostSubtotalUsd and unknownCostQuantity; no receipt income SHALL substitute for price or basis.
+
 #### Scenario: HIST-001-A Purchases, sale and amount correction
 - **GIVEN** empty coverage2025-01-01T00:00:00Z, buy1/cost100 onJan2, buy1/cost200 onJan3 and sale1.5/gross450 onJan4, all at00:00:00Z with zero fees
 - **WHEN** the owner reads2025-01-02T23:59:59.999Z,2025-01-03T00:00:00Z and2025-01-04T00:00:00Z
@@ -43,12 +45,18 @@ SHALL reflect the complete connected replay.
   basis/provenance, while trade and external-flow totals are unchanged; a read before arrival
   excludes the received lot
 
+#### Scenario: REWARD-HIST-PREFIX
+- **WHEN** a query is before, at or after a reward receipt and subsequent partial sale
+- **THEN** quantity follows the full effective prefix; unknown cost stays null and later correction restates history
+
 ### Requirement: HIST-002 Explicit accounting coverage and baseline
 The system SHALL distinguish an initialized empty journal and known-cost carry-in
 from absent coverage. It SHALL reject pre-coverage and uninitialized-journal reads
 with409 rather than inventing zero holdings or unknown acquisition costs. At coverage
 the baseline SHALL precede all executions at that instant. Initial carried cost SHALL
 be returned separately and SHALL NOT become covered buy totals or external flows.
+
+An unknown reward cost within an already initialized journal SHALL NOT invalidate known quantity coverage. This does not permit unknown-cost opening snapshots to become carry-in or guess their acquisition dates.
 
 #### Scenario: HIST-002-A Carry-in at the inclusive boundary
 - **GIVEN** a known-cost origin at2025-01-01T00:00:00Z with two original lots1/100 and1/200
@@ -63,6 +71,10 @@ be returned separately and SHALL NOT become covered buy totals or external flows
 - **WHEN** the owner requests each at its opening/coverage instant
 - **THEN** the first returns empty positions and exact zero totals, the second returns its actual positive quantity and zero cost, and the third returns409 without initializing a journal or guessing cost
 
+#### Scenario: REWARD-HIST-COVERAGE
+- **WHEN** an initialized journal receives an unknown-basis reward
+- **THEN** history returns its actual quantity with null cost while an uninitialized unknown-cost opening still returns409
+
 ### Requirement: HIST-003 Bounded coherent pages
 The system SHALL expose only the allowlisted query and response in the design. It
 SHALL use one caller-owned read-only REPEATABLE READ transaction for every database
@@ -76,6 +88,8 @@ REPEATABLE READ transaction. Its revision pin SHALL cover the connected history 
 selected account result depends; an upstream trade, CSV or transfer change SHALL invalidate a
 continuation for that account. Derived position offsets SHALL accept0..99999 with
 limit1..100 and the same revision-pin rules, without truncating connected positions.
+
+Reward versions SHALL load once with the connected ledger in the same snapshot; reward corrections SHALL invalidate every affected historical page pin.
 
 #### Scenario: HIST-003-A Pagination preserves identity and totals
 - **GIVEN** two different instruments with the same symbol, each having remaining lots, and limit1
@@ -99,6 +113,10 @@ limit1..100 and the same revision-pin rules, without truncating connected positi
   uses one complete connected snapshot
 - **AND** a connected result containing1101 distinct instrument positions can read its final position
   at pinned offset1100 with limit1; a valid offset99999 is empty with complete unchanged totals
+
+#### Scenario: REWARD-HIST-PIN
+- **WHEN** a concurrent upstream reward correction overlaps a connected historical read
+- **THEN** the snapshot is wholly old or new; stale continuation returns409
 
 ### Requirement: HIST-004 Protected Russian read-only review
 The system SHALL provide a Russian account-detail snapshot form with explicit ISO

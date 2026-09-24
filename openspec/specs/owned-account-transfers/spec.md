@@ -14,6 +14,8 @@ labelled `feeConsumedBasisUsd`, never a market fee valuation or duplicated expen
 Received fragments become available only on arrival, then FIFO uses original
 acquisition ordering. Repeat/onward/return transfers retain original intervals.
 
+Reward origins SHALL preserve original known-or-unknown acquisition basis and category through movement, fees and return. Unknown consumed basis SHALL remain null with exact known subtotal/evidence; quantity and known0 remain exact.
+
 #### Scenario: TRANSFER-001-A Principal and same-asset fee conserve basis
 - **GIVEN** A bought1 unit for100USD and1 for200USD, and B is declared empty
 - **WHEN** an owned transfer credits1.5 units to B with0.1 unit fee from A
@@ -39,6 +41,10 @@ acquisition ordering. Repeat/onward/return transfers retain original intervals.
 - **THEN** only the respective holdings are consumed and fee quantities/basis remain separately identified
 - **WHEN** the sender lacks any required principal or fee at the historical prefix
 - **THEN** the whole command returns409 and no principal, fee, head, version or revision change persists
+
+#### Scenario: REWARD-TRANSFER-UNKNOWN
+- **WHEN** unknown-cost reward portions fund principal and fee
+- **THEN** both affected basis totals remain null; quantities and original reward intervals survive onward/return movement
 
 ### Requirement: TRANSFER-002 Immutable commands support safe corrections and replay
 The application SHALL provide strict owner-private transfer create, full correction and terminal void commands with immutable complete versions, exact request replay, dual account revision pins and expected transfer version, preserving saved receipts through later history changes.
@@ -92,6 +98,8 @@ components, including nodes disconnected by void. Actual local saved-version cou
 is separate from the10000 journal-revision budget, which includes passive ticks.
 All affected budgets must permit a write. Replay of saved commands precedes live caps.
 
+Reward mutations SHALL acquire the same owner-first locks, validate all connected dependent prefixes and advance each affected account once without adding local trade versions. Reward heads SHALL be included in every trade/CSV/transfer replay.
+
 #### Scenario: TRANSFER-003-A Source cost restatement reaches later receiver sale
 - **GIVEN** TRANSFER-001-A including B's sale and immutable earlier command receipts
 - **WHEN** A's first buy cost is corrected from100 to120USD
@@ -117,6 +125,10 @@ All affected budgets must permit a write. Replay of saved commands precedes live
 - **THEN** every member of the old/new union advances once, including now-disconnected accounts, and old read/preview pins fail
 - **AND** capacity exhaustion in any affected account rejects the whole command before writes
 
+#### Scenario: REWARD-TRANSFER-RESTATEMENT
+- **WHEN** an upstream reward cost is corrected or its consumed quantity is removed
+- **THEN** valid costs restate downstream; invalid deficits reject the entire command without changing pins or receipts
+
 ### Requirement: TRANSFER-004 Bounded projections remain coherent and exact
 The application SHALL expose bounded private transfer history and provenance pages, current/historical holdings and valuations from one repeatable-read snapshot, with explicit capacity failures and no truncated financial results.
 
@@ -125,10 +137,12 @@ or read component is bounded by32 accounts/10000 active trades/1000 active trans
 plus existing1000 active trades and100 carry-in lots per account. Each full old or
 candidate replay stops before exceeding100000 principal/fee/sale allocation matches.
 Held fragments are separately bounded by100000 per replay. Derived lot/match/history
-page offsets extend to99999, raw trade-head offsets remain9999; all at most13200
+page offsets extend to99999, raw trade-head offsets remain9999; all at most14200
 distinct connected positions are valued. Paged output is limited to100 records; noninitial current pages require the exact
 relevant pin(s). Derived monetary sums retain all scale30 atoms even beyond input
 precision. Series retains current31-point maximum and loads its ledger once.
+
+Each component additionally SHALL contain at most1000active rewards within their owner cap. Maximum distinct connected positions is14200 with existing offsets. Unknown basis SHALL have the nullable totals/evidence specified by record-asset-rewards while exact quantity/price valuation remains available.
 
 #### Scenario: TRANSFER-004-A Bounded pinned allocation differs from command history
 - **GIVEN** a transfer consumes more than100 original fragments
@@ -148,6 +162,10 @@ precision. Series retains current31-point maximum and loads its ledger once.
 - **WHEN** the candidate is evaluated
 - **THEN** explicit409 returns without truncated allocations, partial holdings, writes or request-key reservation
 - **AND** valid inputs at the limits and untouched single-account maxima remain exact
+
+#### Scenario: REWARD-TRANSFER-READ
+- **WHEN** an allocation has mixed known and unknown reward portions
+- **THEN** every page has the same full nullable totals and known subtotals from one snapshot, with pins covering source reward changes
 
 ### Requirement: TRANSFER-005 Russian review and explicit retry prevent accidental changes
 The application SHALL provide a protected Russian workflow for reviewing and recording already performed internal movements, corrections and voids, explicitly distinguish immutable command receipts from current derived allocation, and preserve exact retries after ambiguous delivery.

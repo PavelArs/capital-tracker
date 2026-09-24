@@ -44,7 +44,7 @@ Latest actual labeled Docker container/network inventories were empty after clea
 
 Canonical openspec/specs describe verified behavior; archived changes hold concrete
 acceptance, design, persistence and command/image evidence. Do not replay all historical
-checks to recover context. Current schema has20 additive/retained migrations; read
+checks to recover context. Current schema has21 additive/retained migrations; read
 brownfield-audit.md before any legacy upgrade because old migrations have destructive
 history and explicit preflight refuses unsafe states.
 
@@ -115,50 +115,54 @@ Accepted FEsha256:184462cbef67047af371da2c8ede0577912823db35fdf047f5c35c3aed5c83
 SameBEimage in actualPG/HTTPS; FE rebuilt for select labels. Logs/harnesses/artifacts
 /private/tmp/capital-owned-transfer-*. Nginx/lock preserved, synthetic resources cleaned.
 
-## Active reward change
+## Completed asset rewards
 
-record-asset-rewards remains active,5/9tasks complete. Read active proposal/design/
-persistence/tasks/verification; never archive before remaining UI/review/HTTPS gates.
-Contracteb4c4e0; root7 + Sol4intended pure RED and actual2HTTPS RED (schema20 image IDs
-above: validPOST404, regionabsent) precede corresponding implementation. Pure core
-integratedae9a677, parser153682c, backend1148f1b. Root385/16focused tests and build pass;
-backend lint77existing warnings; audit2moderate/nohighcritical. No deps/deploy changes.
+record-asset-rewards archived2026-09-24. Read archived persistence/tasks/verification and
+[owner guide](docs/asset-rewards.md). Pure coreae9a677, parser153682c, backend1148f1b,
+existing consumers4c92516, editor5aa4b43/fdfa263, parent integration0d834bc; final test-only
+privacy path correction and real SPA recovery test are in the archive commit.
 
-Rewards are owner-attested received income, quantity actually received; unknown subtype
-is not unknown economic classification. Basis/income independentlynull orknown0; never
-infer price/flow/tax or addincomeagain. Original FIFO intervals and null known-subtotals
-survive transfers/fees/sales. Shared pins advanceallparticipants; actualtradeversioncount
-staysdistinct. Sourceonly rewardSummary includingvoidedidentities; seriesomitsmetadata.
-AllknownoldDTO shapes retained. Rootstore/module/readmodel/CSVintegration reviewed bySol.
+Owner-attested received rewards have independent nullable basis/income; unclassified is a
+reward subtype requiring review, not arbitrary incoming economic classification. No inferred
+price, external flow, tax basis or duplicated income. Original intervals/provenance survive
+sales/transfers/fees; incomplete costs carry exact known subtotals. Shared connected pins
+advance once; trade version counts remain real counts. Reward income remains source-only.
+Full immutable create/correct/terminal void and replay-before-CAS/caps. Private Russian form
+retains frozen command/body/pins/evidence across SPA remount, blocks stale review and preserves
+the separate trade draft. A full browser reload is not durable pending-command recovery.
 
-CandidateBEsha256:176f668b0c6a77e78961600a3b989446f2bd479a8bcbd9a933142b8e5684d25f.
-Actual synthetic PGmainattempt3 all7familiespass: fresh21/populated20/noop/preservation,
-economics/lifecycle/SQL/deferredCOMMIT/RR/CSV/once-onlyhistory. Attempt2 fixtureused wrong
-perinstantpricepin0; correctedactualglobalinstrumentpins1,2, nooracleweakening. Bounds
-fixture773fd75 plusrootactual1000th-write strengthening:4familiespass (realOSprocess
-owner-lock races, active1000/version10000/local+passiverevision10000,replayatcap). Same
-image retainedtransferPGallfamilies and fresh21/populated18schema/auth/financialpreservation
-pass. Root19schemaacceptancefiles syntaxpassed; oldmatrix mostlyunrun. Logs andharnesses
-/private/tmp/capital-rewards-{pg-attempt3,bounds-attempt1}.log/.cjs. Allsessionsclosed,
-finallycleanupremovedsyntheticstack; final liveinventorystillrequiredbeforearchive.
+Actual required scoped gates passed:
+- Backend385tests/16suites, frontend103tests/15files; builds/lints/strict E2E types and specs.
+  Existing77BE/27FE lint warnings, Vite chunk warning, proxy http2 deprecation remain.
+  Production audit2existingmoderate/nohighcritical; lock unchanged.
+- PGmain7families: fresh21/populated20/noop/old row and receipt preservation; exact economics,
+  lifecycle/SQL/deferred COMMIT rollback witness; two-PID RR; connected CSV; once-only series
+  and selected valuation loads. Fixture attempt2 used a wrong price pin; explicit global
+  instrument pins1,2 fixed setup and attempt3 passed. No financial oracle was weakened.
+- Bounds4families: real two-process advisory-lock races, actual1000th active reward accepted,
+  owner10000versions with spare local ticks, local/passive10000revision limits and replay.
+  Retained transferPG passed plus fresh21/populated18 actual encrypted MFA/session/financial/
+  schema preservation and populated19 transfer upgrade. Older8–17matrix/full suites unrun.
+- Genuine predecessor HTTPS RED2/2 before API/UI/persistence. First GREEN4/5: reward UI and
+  retained transfer/trade/valuationUI passed; API assertion wrongly included proxy/api prefix
+  in server error path. Exact /accounting expectation matches unchanged exception filter;
+  independent reviewer approved, private/financial assertions retained. Focused rerun2/2
+  passed27.7s, same images,1worker0retries; added actual SPA remount recovery plus delayed real
+  versions response/concurrent correction/list-refresh guard and trade draft preservation.
 
-UIexistingconsumers4c92516 rendernull/0/subtotals/rewardprovenance. NewAssetRewards5aa4b43
-is implemented but rootreviewfound stale-reviewcancellation andwrongimmutablecopy;
-Lunacarry_docs_review fixing/splittingcomponentandaddingfocusedunitcases. RootTradeJournal
-insertionpendinguncommitted; addjournalRevisionpropwhenLunafixarrives. Dateinputmustnot
-silentlynormalizeFeb31beforerawbackendvalidation. NewrealHTTPSGREENstillpending; planned
-2rewardcases + retainedtransferUI/tradeUI/valuationUI,1worker0retries. RebuildFEonlyafter
-fixes; BEimageunchanged unlessnewproductissue. Do notclaimfullE2Eorreleasereadiness.
-
-Worktrees: reward-corehistorical_ui(Sol)review/bounds, reward-acceptancecarry_docs_review
-(Luna)neweditor/API. Spare reward-schemaworktreecreatedat5aa4b43butnoagentstarted(thread
-limit); preservedclean. RootownsDocker/migrations/deps/sharedrunners/TradeJournal.
-Oldgate_acceptancequotaexhausted; donotretry/purchase. Nootherprojectsremoved.
+Accepted schema21BEsha256:176f668b0c6a77e78961600a3b989446f2bd479a8bcbd9a933142b8e5684d25f
+FEsha256:fe42b103d5daf60de1ad13c2415defbbf0f948e5398ef37e627763e489a7069e.
+Logs/harnesses/artifacts/private/tmp/capital-rewards-*. Root owns Docker and migrations;
+only synthetic tests/e2e/compose.yml used. Final labeled Docker inventories empty; owner
+Nginx/lock hashes above preserved. No production, push, paid service or project removal.
+Archive synced6added/17modified requirements:23delta blocks match except blanklines,
+16untouched blocks retained,20unrelated spec files byte-identical; new Purpose clarified.
+The archive command saw8/9tasks because final task includes archival/postcomparison; its
+last checkbox is completed only after that procedure. No functional verification was skipped.
 
 ## Remaining whole goal and next work
 
-Still required: swaps and explicitly categorized income/rewards, broader import and
-chain reconciliation, automatic price collection/retention/history, integrated whole-
+Still required: swaps, broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional
 AI, full release/security/backup-restore hardening, final consolidation. Selected
 manual valuation is not complete all-account/cash accounting. CoinGecko permanent
@@ -166,7 +170,8 @@ history retention remains unapproved; display FX permission does not remove that
 No production rollout or folder moves/deletions now. Finish each small change through
 review/verification/archive; no broad rewrite. Chart/max-period expansion deferred.
 
-Reusable agents: carry_docs_review (Luna; rendering worktree) and historical_ui (Sol;
-transfer-page worktree). Keep their existing worktrees. gate_acceptance is quota-limited
+Reusable agents: carry_docs_review (Luna; capital-tracker-reward-acceptance worktree) and
+historical_ui (Sol; capital-tracker-reward-core worktree). Both finished their assigned work.
+Keep their worktrees and the unused clean capital-tracker-reward-schema worktree. gate_acceptance is quota-limited
 untilSep29; do not retry or purchase credits. Root integrates reviewed commits; agents
 do not operate shared Docker/migrations/lockfiles/deployment.

@@ -75,6 +75,8 @@ shown. Candidate connected prefix/capacity failures SHALL retain the invalid-pre
 envelope with `connected-history`/`connected-capacity` batch errors respectively;
 invalid saved history SHALL return409 rather than a fabricated current summary.
 
+Candidate FIFO SHALL include rewards and propagate nullable sale/remaining costs and explicit known subtotals. Unknown basis alone SHALL NOT reject a quantity-valid candidate or become zero.
+
 #### Scenario: CSV-002-A Inspection supports deliberate mapping without guessing
 - **WHEN** the owner inspects comma or semicolon data containing doubled quotes, quoted delimiter/newlines, optional BOM and mixed LF/CRLF endings
 - **THEN** every source ordinal/start line and literal cell is correct before mappings exist, including ignored formula-looking text
@@ -98,6 +100,10 @@ invalid saved history SHALL return409 rather than a fabricated current summary.
 - **WHEN** the owner previews a CSV sale of the received lot
 - **THEN** the candidate summary and FIFO matches use the original lot interval and provenance, while every
   connected account row, transfer version and revision remains unchanged
+
+#### Scenario: REWARD-CSV-PREVIEW
+- **WHEN** a mapped sale consumes an unknown-cost reward
+- **THEN** preview shows valid quantity history but null affected cost/profit with exact completeness
 
 ### Requirement: CSV-003 Whole-batch atomic confirmation and replay
 Confirmation SHALL reparse immutable source/settings on the server and bind the exact
@@ -124,6 +130,8 @@ receives one passive invalidation tick in the same transaction. The 10,000 journ
 budget is separate from local trade versionCount and is checked for all participants before
 writes. Every affected account row SHALL be locked in sorted UUID order after the owner-scoped
 advisory lock, shared with trade, carry-in and transfer writers.
+
+Confirm SHALL revalidate connected reward history under the common owner-first locks. Upstream reward changes invalidate saved candidate pins/hash rather than silently accepting a different result.
 
 #### Scenario: CSV-003-A Out-of-source-order history commits exact mandatory FIFO
 - **GIVEN** a file physically lists sale1.5/gross450 at t3, then buy1/gross100 at t1 and buy1/gross200 at t2, all fees0
@@ -152,6 +160,10 @@ advisory lock, shared with trade, carry-in and transfer writers.
   result reflects the recomputed original-coordinate basis
 - **WHEN** any connected prefix is negative or a participant reaches its revision ceiling
 - **THEN** no source or recipient row, receipt, batch state, head or revision changes
+
+#### Scenario: REWARD-CSV-CONFIRM
+- **WHEN** a reward correction commits after a saved sale candidate
+- **THEN** confirmation returns409 until explicit review; original CSV bytes and receipts remain unchanged
 
 ### Requirement: CSV-004 Conditional complete rollback preserves history
 Rollback SHALL append N terminal void versions only when every imported trade still
@@ -208,6 +220,8 @@ SHALL use one coherent connected-history snapshot. A trade, transfer or CSV corr
 any participant SHALL invalidate its pinned results, and no nested page may calculate from a
 truncated connected ledger.
 
+Reward history SHALL be read in the same candidate/history snapshot and without per-row or per-point reloads. All current and candidate nullable totals SHALL use the same explicit cost-evidence contract as direct journal results.
+
 #### Scenario: CSV-005-A Real concurrent reads never mix journal versions
 - **WHEN** a real correction overlaps preview or rollback detail through a controlled database read barrier
 - **THEN** each complete response equals one old or new coherent revision, including labels and both summaries, never a mixed result
@@ -226,6 +240,10 @@ truncated connected ledger.
 - **WHEN** the remaining source, transfer and recipient data are loaded
 - **THEN** the preview is wholly the old candidate revision, and the next request detects the new connected
   revision instead of reusing that preview
+
+#### Scenario: REWARD-CSV-SNAPSHOT
+- **WHEN** a concurrent reward correction overlaps preview reads
+- **THEN** one complete old or new candidate is returned; no mixed cost completeness is shown
 
 ### Requirement: CSV-006 Protected Russian import journey preserves intent
 The account journal SHALL provide Russian upload/inspect/map/preview/confirm and

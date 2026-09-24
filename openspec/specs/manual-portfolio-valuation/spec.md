@@ -15,6 +15,8 @@ participants are selected, principal is counted once in aggregate. Any separatel
 asset remains absent from the sender inventory and is not assigned a market value or external
 flow.
 
+Selected accounts SHALL include reward quantities with independent cost/price completeness. Only explicit prices determine market value; reward income and basis never substitute for prices or create external flows.
+
 #### Scenario: MPV-EXACT Shared identity and exact aggregate
 - **GIVEN** selected accounts hold0.5 and2 units of the same instrument UUID, priced123.456 at the requested instant
 - **WHEN** the owner previews those accounts
@@ -33,6 +35,10 @@ flow.
 - **WHEN** the selected-account preview is calculated before and after arrival
 - **THEN** account values move with the lot while aggregate principal value counts it once, with no
   synthetic cash, trade or external-flow entry
+
+#### Scenario: REWARD-MPV-NODOUBLE
+- **WHEN** a reward partly moves between two selected accounts
+- **THEN** aggregate value counts currently held quantities once and preserves unknown cost evidence; source income is not duplicated
 
 ### Requirement: MPV-2 Private bounded snapshot without mutations
 The preview SHALL use one read-only repeatable-read PostgreSQL snapshot across all

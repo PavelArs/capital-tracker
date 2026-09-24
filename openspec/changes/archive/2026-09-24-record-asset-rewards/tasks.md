@@ -11,10 +11,10 @@
 
 ## 3. Integrate and review the owner workflow
 
-- [ ] 3.1 Add reviewed Russian account reward form/lifecycle/history and identical ambiguous retry, reward provenance and unknown-vs-zero rendering in existing consumers; preserve stale-response guards and parent drafts (REWARD-005).
-- [ ] 3.2 Independently review financial semantics, conservation, unknown propagation, security, concurrency/bounds and frontend intent; resolve findings without weakened tests.
+- [x] 3.1 Add reviewed Russian account reward form/lifecycle/history and identical ambiguous retry, reward provenance and unknown-vs-zero rendering in existing consumers; preserve stale-response guards and parent drafts (REWARD-005).
+- [x] 3.2 Independently review financial semantics, conservation, unknown propagation, security, concurrency/bounds and frontend intent; resolve findings without weakened tests.
 
 ## 4. Verify and archive
 
-- [ ] 4.1 Run scoped unit/build/lint/types, fresh21/populated20 real PG preservation/constraints/commit/races/snapshots/caps/CSV, two new critical HTTPS cases plus selected retained transfer/trade/valuation journeys, dependency audit and strict specs. Record image identity, failures, warnings and unrun gates.
-- [ ] 4.2 Update owner guide/continuity and actual evidence; preserve owner Nginx/lock/data, clean isolated resources, archive with installed CLI only after required checks and independent review pass; compare canonical deltas.
+- [x] 4.1 Run scoped unit/build/lint/types, fresh21/populated20 real PG preservation/constraints/commit/races/snapshots/caps/CSV, two new critical HTTPS cases plus selected retained transfer/trade/valuation journeys, dependency audit and strict specs. Record image identity, failures, warnings and unrun gates.
+- [x] 4.2 Update owner guide/continuity and actual evidence; preserve owner Nginx/lock/data, clean isolated resources, archive with installed CLI only after required checks and independent review pass; compare canonical deltas.

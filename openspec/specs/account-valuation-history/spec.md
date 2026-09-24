@@ -51,6 +51,8 @@ and period bounds SHALL not multiply connected-ledger queries. A series SHALL om
 point-specific transferSummary from its top-level metadata; it SHALL NOT present
 the first sample's transfer basis as a whole-period total.
 
+The once-loaded connected ledger SHALL include effective rewards. A reward correction SHALL invalidate dependent series pins; per-point rewardSummary is omitted while quantity/cost evidence remains correct.
+
 #### Scenario: VCH-SNAPSHOT Concurrent restatement and supported maxima
 - **GIVEN** real PostgreSQL and a series read paused after anchoring its snapshot
 - **WHEN** another connection commits trade and price corrections before remaining reads
@@ -69,6 +71,10 @@ the first sample's transfer basis as a whole-period total.
 - **WHEN** the series finishes calculating all points
 - **THEN** every point reflects the same complete old connected state, and a new series reflects the new
   state without repeated per-point connected-history loads
+
+#### Scenario: REWARD-VCH-ONCE
+- **WHEN** a bounded series spans a reward and a later connected sale
+- **THEN** one reward history load serves every point, inclusive quantities and unknown cost stay correct, with no provider request
 
 ### Requirement: VCH-3 Honest Russian chart and table
 The system SHALL offer an account-detail Russian custom-period form, exact table

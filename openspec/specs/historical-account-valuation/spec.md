@@ -15,6 +15,8 @@ instant: a received fragment is unavailable before arrival, and its quantity, or
 acquisition identity and exact basis remain those of its source lot. A movement SHALL not
 duplicate the same inventory or fabricate an observed price.
 
+Reward quantities SHALL be valued from the existing exact-time manual prices independently of nullable acquisition basis or declared income. Unknown basis SHALL retain explicit cost evidence without changing price completeness.
+
 #### Scenario: VAL-EXACT Known historical value and corrected price
 - **GIVEN** covered buys1/cost100 and1/cost200 followed by sale1.5/gross450, and exact-time manual price300
 - **WHEN** the owner values the account at the sale instant
@@ -34,6 +36,10 @@ duplicate the same inventory or fabricate an observed price.
 - **WHEN** each account is valued at the same instant
 - **THEN** only the recipient includes the moved quantity, using the same exact price identity and original
   lot basis, and the sum across both accounts counts that inventory once
+
+#### Scenario: REWARD-VAL-INDEPENDENT
+- **WHEN** a reward2/unknown basis/income40 is priced at5
+- **THEN** value is10 and cost null; income40 never becomes cost, price or market value
 
 ### Requirement: VAL-2 Honest missing coverage and known zero
 The system SHALL distinguish missing/voided exact-time prices from known price0.

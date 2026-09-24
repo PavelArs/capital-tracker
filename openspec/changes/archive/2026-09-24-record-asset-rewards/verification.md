@@ -1,7 +1,7 @@
 # Reward verification record
 
-Status: implementation in progress; pure checks and backend build pass. Runtime
-GREEN is still pending. Full project goal remains incomplete. No owner database or provider was accessed.
+Status: completed and archived2026-09-24 after required scoped source, PostgreSQL and
+HTTPS gates and independent review. All9tasks and canonical comparisons are complete. Full project goal remains incomplete. No owner database or provider was accessed.
 
 ## Baseline
 
@@ -147,3 +147,78 @@ Backend lint passed77existing warnings. Production dependency gate passed exit0 
 2existing moderate advisories and nohigh/critical; log/private/tmp/capital-rewards-audit.log.
 No dependency or deployment changes. New UI is still under review; no reward HTTPS GREEN
 or completed-change claim yet.
+
+## Final UI review and real HTTPS verification
+
+New editor74665d1 integrated5aa4b43, reviewed correction1fcc917 integratedfdfa263, root
+parent integration and submit guard0d834bc. Root/Sol review found and resolved stale
+review restoration after refresh/cancel, missing parent-pin invalidation, incomplete
+frozen-command identity, inaccurate correction copy, and invalid-date normalization.
+The editor retains the original command/body/pins and display evidence across SPA
+remount; review includes instrument UUID as well as name. Form/receipt/review rendering
+are separated. A proposed new component test that mocked internal APIs/auth was removed;
+its critical interaction assertions live in the real HTTPS case. No new backend or
+authentication mocks remain. Sol reviewed final child/parent guard and test-only fixes.
+
+Root integrated frontend checks:103tests/15files pass, lint passes with27existing warnings,
+scoped Biome passes. The final actual frontend Docker build includes TypeScript/Vite and
+passes with the existing >500kB chunk warning. Strict/noUnused E2E TypeScript passes.
+Logs/private/tmp/capital-rewards-frontend-{tests,lint,image-final}.log and
+/private/tmp/capital-rewards-e2e-ts-final.log. Backend build/unit/lint evidence above
+remains applicable: no later backend product changes.
+
+Exact images in both real HTTPS attempts:
+BEsha256:176f668b0c6a77e78961600a3b989446f2bd479a8bcbd9a933142b8e5684d25f
+FEsha256:fe42b103d5daf60de1ad13c2415defbbf0f948e5398ef37e627763e489a7069e.
+Actual release artifact checks ran before Playwright. Real password/MFA, two backend
+replicas and PostgreSQL were used; only external providers are stubbed. Transport tests
+forward real requests with route.fetch and then abort/delay delivery of actual responses.
+
+Attempt1 selected two new reward cases, owned-transfers.spec.ts:281, usd-trades.spec.ts:130
+and historical-valuation.spec.ts:266, one Chromium worker/zero retries. Four passed, one
+failed, exit1(1.1m). Reward API's test expected the proxy-facing/api prefix in the private
+error path; GlobalExceptionFilter uses request.url after Nginx removes/api. Root corrected
+only the exact two expected paths to/accounting. Status/message/error, canonical ISO
+timestamps, stable foreign/missing envelope equality, financial and private-label assertions
+remain unchanged. Sol independently confirmed the correction is not a weakened oracle.
+The reward UI and all3retained UI cases passed, including trade backend restarts.
+
+Attempt2 reran only the2new cases on identical images:2/2pass27.7s, exit0,1worker0retries.
+The same UI case now additionally follows actual SPA links away/back while the create
+response is unknown, verifies restored fields/no automatic secondPOST, then exact original
+body/key/pins and unchanged receipt200after committed201. It also delays a real version1
+history response while a concurrent actual correction commits and list refresh showsv2:
+late delivery cannot restore review, the unsaved reward draft remains, and explicit new
+review is needed. The separate trade draft17/777/3 survives reward correction/void.
+Logs/private/tmp/capital-rewards-https-attempt{1,2}.log; traces/artifacts
+/private/tmp/capital-rewards-green-artifacts and/private/tmp/capital-rewards-green2-artifacts.
+
+Required scoped gates are therefore satisfied. Full backend/E2E suites, older8–17upgrade
+matrix, hostedCI,
+reward-specific expired/revoked-session permutations, full security scans and backup/restore
+release gates were not rerun. Session guards are unchanged and independently inspected;
+this slice does not claim full route/security/release coverage. Existing tests/CI retained.
+The proxy still emits its existing http2 deprecation warning; no deployment file changed.
+
+Final live labeled Docker container/network inventories are empty. Owner nginx mode0644/
+size1348/SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432 and
+lock SHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d remain
+unchanged. No owner database, production deployment, paid provider, push, project removal
+or final repository consolidation occurred.
+
+## Archive and final consistency
+
+Installed OpenSpec1.2.0 `archive record-asset-rewards --yes` synced6added and17modified
+requirements in8capabilities and archived2026-09-24. The CLI's nonblocking >10deltas
+suggestion was acknowledged: nullable reward basis necessarily updates its connected
+trade/transfer/history/valuation/CSV consumers within this one acquisition feature.
+It saw8/9tasks because task4.2 itself includes archive and post-archive comparison; all
+functional/source/runtime checks had passed, and only this procedural closure remained.
+The final checkbox was updated after archive, owner guide, continuity and comparison.
+
+Snapshot-based comparison passed23delta blocks (blank-line normalization only),16retained
+requirement blocks and20unrelated capability files byte-for-byte. New canonical Purpose
+was filled with the actual capability and linked frozen wire contract, without altering
+requirements. Final strict canonical validation and active-change inventory are recorded
+in/private/tmp/capital-rewards-post-archive.log. Goal remains substantially incomplete;
+this archive does not complete the target brief or authorize production/consolidation.

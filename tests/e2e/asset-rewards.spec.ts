@@ -126,13 +126,13 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
     statusCode: 404,
     message: 'Not Found',
     error: 'NotFoundException',
-    path: `/api/accounting${rewardsPath(foreign.accountId)}`,
+    path: `/accounting${rewardsPath(foreign.accountId)}`,
   });
   expect(absentError).toMatchObject({
     statusCode: 404,
     message: 'Not Found',
     error: 'NotFoundException',
-    path: `/api/accounting${absentPath}`,
+    path: `/accounting${absentPath}`,
   });
   expect(foreignError.timestamp).toEqual(expect.any(String));
   expect(new Date(foreignError.timestamp).toISOString()).toBe(foreignError.timestamp);
@@ -392,6 +392,20 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
       form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }),
     ).toBeEnabled();
     expect(submitted).toHaveLength(1);
+    // Real client-side navigation unmounts the editor without reloading its memory.
+    await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
+    await page.locator(`a[href="/manual-accounts/${account.id}"]`).click();
+    await expect(form.getByLabel('Полученное количество', { exact: true })).toHaveValue('2');
+    await expect(form.getByLabel('Сумма дохода, USD', { exact: true })).toHaveValue('40');
+    await expect(
+      form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }),
+    ).toBeEnabled();
+    expect(submitted).toHaveLength(1);
+    // A separate trade draft is local to this visit and survives reward mutations.
+    await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
+    await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
+    await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
     const retry = await browserPost(page, rewardsPath(account.id), () =>
       form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }).click(),
     );

@@ -42,6 +42,8 @@ Transfer events SHALL have an explicit effective UTC-millisecond instant and sam
 at or after both participant coverage instants. Their chronology key SHALL be unique against
 trade and transfer events in each touched account; equal keys on disjoint accounts may commute.
 
+Reward events SHALL occupy the same account chronology namespace as trades/transfers and obey coverage, raw type and precision rules.
+
 #### Scenario: TRADE-002-A Precision and chronology survive restart
 - **WHEN** amounts above 2^53, quantity 0.000000000000000000000000000001 and valid 48/30 boundaries are submitted in reverse chronological API order
 - **THEN** exact canonical strings survive PostgreSQL/restart and FIFO uses explicit time/order, never arrival order or UUID
@@ -59,6 +61,10 @@ trade and transfer events in each touched account; equal keys on disjoint accoun
 - **WHEN** its effective key duplicates an event in either participant account or predates either coverage
   instant
 - **THEN** the movement is rejected atomically; the same key on disjoint accounts remains independent
+
+#### Scenario: REWARD-TRADE-ORDER
+- **WHEN** a reward overlaps a trade/transfer time/order or predates coverage
+- **THEN** the entire command is409 without persistence; distinct account keys remain independent
 
 ### Requirement: TRADE-003 Exact inspectable FIFO and conserved fees
 The system SHALL calculate with exact scale-30 integer atoms, without floating-point
@@ -84,6 +90,8 @@ declared fee-asset consumption SHALL NOT create synthetic buys, sells, trade fee
 realized trade gains or external USD flows; transfer basis in/out and removed fee basis remain
 separately identified.
 
+A reward SHALL be an explicit acquisition origin, never a synthetic buy. Original cost may be unknown; affected cost/realized fields SHALL be null with basisCoverage as defined in record-asset-rewards/persistence.md. Quantity and exact known basis intervals remain conserved; known realized subtotal includes only fully costed sales. Connected sums SHALL retain at least83atom digits rather than reuse raw input bounds.
+
 #### Scenario: TRADE-003-A Mandatory FIFO and fees
 - **WHEN** buys of 1 for gross 100 and 1 for gross 200 precede sale of 1.5 for gross 450, all fees 0
 - **THEN** matches consume first buy 1/basis 100 and second buy 0.5/basis 100, realized is 250, and remaining quantity/cost are 0.5/100
@@ -108,6 +116,10 @@ separately identified.
   trade or external-flow totals
 - **AND** received inventory is unavailable before its transfer arrival and keeps the original source
   identity and interval
+
+#### Scenario: REWARD-TRADE-BASIS
+- **WHEN** a sale consumes a known buy and an unknown-basis reward
+- **THEN** consumedCostUsd and realizedUsd are null with known cost subtotal and missing count; all old all-known oracles remain exact
 
 ### Requirement: TRADE-004 Atomic immutable corrections, voids and receipts
 The system SHALL serialize all journal writes on the owned account row, check request
@@ -137,6 +149,8 @@ command, regardless of paths. CSV keeps its contiguous N source revision range; 
 connected participant advances once. Local versionCount counts only persisted trade versions,
 never passive invalidation ticks. Each participant also has a separate 10,000 journal-revision
 ceiling checked before writes.
+
+Reward create/correct/void SHALL participate in the same connected replay/invalidation and revision ceilings. Trade and CSV mutations SHALL include current rewards when validating history; actual trade version counts exclude reward versions.
 
 #### Scenario: TRADE-004-A Historical changes rebuild or roll back fully
 - **GIVEN** the mandatory three-trade history
@@ -177,6 +191,10 @@ ceiling checked before writes.
   revision ceiling
 - **THEN** the whole command is refused without changing versions, heads, receipts or revisions
 
+#### Scenario: REWARD-TRADE-RESTATEMENT
+- **WHEN** a reward correction changes a source cost underlying a recipient sale
+- **THEN** the recipient result restates, both pins advance and old receipts remain immutable
+
 ### Requirement: TRADE-005 Coherent bounded derived reads
 Every derived response SHALL identify its calculation journalRevision and obtain
 revision, heads, complete effective history and labels from one coherent snapshot.
@@ -197,6 +215,8 @@ calculate all participant histories inside the caller-owned coherent snapshot. E
 account result and continuation remains pinned to its currentRevision; an upstream trade or
 transfer mutation SHALL make old affected pins stale without truncating FIFO calculation.
 
+Reward-origin lots/matches SHALL retain reward identity/version/category and original coordinates, whether local or transferred. Nullable costs SHALL carry explicit completeness in full totals and never be omitted as zero; current-effective rewards load in the same connected snapshot.
+
 #### Scenario: TRADE-005-A Concurrent correction never mixes revisions
 - **WHEN** a real concurrent old-buy correction overlaps bounded result reads
 - **THEN** every result equals the complete old or new revision, including summary, lots and provenance, never mixed heads/costs
@@ -212,6 +232,10 @@ transfer mutation SHALL make old affected pins stale without truncating FIFO cal
 - **AND** a sale consuming10001 original fragments can read its final match at pinned offset10000 with
   limit1; offset99999 is accepted and empty, while a raw-head offset beyond9999 is rejected
 
+#### Scenario: REWARD-TRADE-PAGES
+- **WHEN** a paged sale allocation contains an unknown-cost reward fragment
+- **THEN** its cost is null with provenance and full untruncated summary; upstream reward correction invalidates continuation
+
 ### Requirement: TRADE-006 Protected honest Russian journal journey
 The system SHALL expose a Russian journal section in protected manual account detail,
 explicit empty-origin attestation, gross/fee/time/order entry, full correction/void,
@@ -224,6 +248,8 @@ not another current holding added to seeded journal inventory. Baseline immutabi
 in this slice SHALL be disclosed before acceptance.
 Private routes SHALL retain full MFA, session/CSRF, existing quotas and owner isolation.
 No provider, legacy observation or external-flow mutation SHALL occur.
+
+The Russian journal SHALL render unknown cost/profit as unknown with the known subtotal explicitly labelled partial, and reward origin as reward rather than a fabricated buy.
 
 #### Scenario: TRADE-006-A Real UI, replay receipt and stale draft
 - **GIVEN** actual password/MFA login through the release application
@@ -252,3 +278,7 @@ No provider, legacy observation or external-flow mutation SHALL occur.
 - **THEN** statuses remain 401/403/generic 404/400 as appropriate, labels render as text and unauthorized requests cannot mutate accounting data
 - **AND** invalid Origin/CSRF does not touch sessions; valid private authorization may touch only its documented lastSeenAt outside the accounting transaction
 - **AND** local errors preserve 401 redirect/403 handling, no private values enter logs, and legacy/auth/factor/admission rows and provider request counts retain their existing oracles
+
+#### Scenario: REWARD-TRADE-UI
+- **WHEN** a current result contains both known0 and unknown-basis reward lots
+- **THEN** the owner sees distinct0/unknown labels and exact reward/transfer provenance

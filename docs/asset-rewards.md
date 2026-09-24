@@ -1,7 +1,7 @@
 # Manual asset rewards
 
-Implementation is under verification in the active `record-asset-rewards` change.
-See its verification record for actual checks; this is not a production release.
+Implemented in `record-asset-rewards`; see the [verification record](../openspec/changes/archive/2026-09-24-record-asset-rewards/verification.md) for actual scoped checks.
+This is not a production release.
 
 After initializing a manual account's trade journal, open its **Вознаграждения**
 section. Record only an asset already received as staking, an airdrop or another
@@ -34,7 +34,9 @@ reward income is excluded from the known categorized-income subtotal.
 
 If delivery is uncertain, retain the pending command and explicitly choose
 **Повторить тот же запрос**. It sends the original key, fields and revision pins;
-it does not create a new reward. A receipt confirms the original command, not the
+it does not create a new reward. This recovery survives client-side navigation away and
+back within the same browser application; a full browser reload is not durable recovery.
+A receipt confirms the original command, not the
 current derived result. Refreshes/corrections preserve the separate trade draft.
 
 The owner and each account allow1000active rewards and10000saved reward versions.
