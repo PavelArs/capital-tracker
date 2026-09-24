@@ -115,6 +115,25 @@ Accepted FEsha256:184462cbef67047af371da2c8ede0577912823db35fdf047f5c35c3aed5c83
 SameBEimage in actualPG/HTTPS; FE rebuilt for select labels. Logs/harnesses/artifacts
 /private/tmp/capital-owned-transfer-*. Nginx/lock preserved, synthetic resources cleaned.
 
+## Active reward change
+
+record-asset-rewards contract/testseb4c4e0; independent boundarytests787c6ec.
+Read active proposal/design/persistence/tasks/verification. Root/independent Sol/Luna
+reviewed nullable basis vs income vs price, source-only reward income, unclassified
+reward subtype with mandatory economic attestation, connected replay and cost evidence.
+No contract blocker. Existing368/13baseline pass2.703s. Root7pure cases fail behaviorally
+before product edits; Sol4independent boundary cases also intendedRED. Real HTTPS RED
+is pending; do not claim PG/HTTPS GREEN. Root drafted PG economics/lifecycle/populated20
+and parser acceptance; additional real concurrency/SQL/RR/cap/CSV fixtures still required.
+
+Fresh worktrees: capital-tracker-reward-core (historical_ui Sol; pure accounting only),
+capital-tracker-reward-acceptance (carry_docs_review Luna; two HTTPS cases only).
+Root owns migrations/store/service/integration/sharedrunners. No product reward changes
+yet; preserve accepted schema20 images until new2HTTPS expected failure is recorded.
+Logs/private/tmp/capital-rewards-{baseline,pure-red}.log and
+/private/tmp/capital-reward-boundaries-red.log. RED harness prepared at
+/private/tmp/capital-rewards-red.cjs; image IDs verified live against previous block.
+
 ## Remaining whole goal and next work
 
 Still required: swaps and explicitly categorized income/rewards, broader import and

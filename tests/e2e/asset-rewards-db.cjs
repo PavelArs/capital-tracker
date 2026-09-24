@@ -1,0 +1,239 @@
+'use strict';
+
+// Real compiled services and a fresh synthetic PostgreSQL database; no backend mocks.
+const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const { createHash, randomUUID } = require('node:crypto');
+const { existsSync, readdirSync } = require('node:fs');
+const { ConfigService } = require('@nestjs/config');
+const { Client } = require('pg');
+const { DataSource } = require('typeorm');
+const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e',
+  DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
+const database = 'capital_tracker_asset_rewards_e2e';
+const predecessor = 'capital_tracker_asset_rewards_previous_e2e';
+const rewardTables = ['account_rewards', 'account_reward_versions'];
+const coverage = '2025-01-01T00:00:00.000Z';
+const rewardAt = '2025-01-02T00:00:00.000Z';
+const transferAt = '2025-01-03T00:00:00.000Z';
+const saleAt = '2025-01-04T00:00:00.000Z';
+let stage = 'isolated prerequisites';
+function source(name = database) {
+  const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
+  const options = new TypeOrmConfigService(new ConfigService({ ...settings, DB_NAME: name })).createTypeOrmOptions();
+  assert.equal(options.synchronize, false); assert.equal(options.migrationsRun, false);
+  return new DataSource({ ...options, extra: { ...options.extra, max: 1 } });
+}
+function services(db) {
+  const make = (file, type) => new (require(`/app/backend/dist/accounting/${file}.js`)[type])(db);
+  return { accounting: make('accounting.service', 'AccountingService'), reward: make('asset-reward.service', 'AssetRewardService'),
+    trade: make('trade.service', 'TradeService'), transfer: make('owned-transfer.service', 'OwnedTransferService'),
+    history: make('historical-accounting.service', 'HistoricalAccountingService'),
+    valuation: make('historical-valuation.service', 'HistoricalValuationService'),
+    prices: make('manual-price.service', 'ManualPriceService'),
+    series: make('valuation-history.service', 'ValuationHistoryService'),
+    portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService') };
+}
+async function fingerprint(db, excluded = []) {
+  const tables = await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
+  const values = [];
+  for (const { tablename } of tables) {
+    if (excluded.includes(tablename)) continue;
+    assert.match(tablename, /^[a-z_]+$/);
+    values.push([tablename, await db.query(`SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`)]);
+  }
+  return createHash('sha256').update(JSON.stringify(values)).digest('hex');
+}
+async function unchanged(db, action, status) {
+  const before = await fingerprint(db);
+  await assert.rejects(async () => action(), error => error.getStatus?.() === status,
+    'Specified domain error, never incidental SQL/type failure');
+  assert.equal(await fingerprint(db), before, 'Every table including request identity is unchanged');
+}
+async function createDatabase(name) {
+  assert.ok([database, predecessor].includes(name));
+  const admin = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME,
+    password: settings.DB_PASSWORD, database: settings.DB_NAME });
+  await admin.connect();
+  try {
+    assert.equal((await admin.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount, 0,
+      'Never reuse/drop an existing database');
+    await admin.query(`CREATE DATABASE "${name}"`);
+  } finally { await admin.end(); }
+}
+function migrate(name) {
+  assert.ok([database, predecessor].includes(name));
+  const result = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend',
+    env: { ...process.env, ...settings, DB_NAME: name }, encoding: 'utf8', timeout: 60000 });
+  assert.equal(result.status, 0, `Actual guarded CLI: ${result.stderr}`);
+  return result.stdout;
+}
+async function account(s, owner, name) {
+  const id = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name })).value.id;
+  await s.trade.initialize(owner, id, { requestId: randomUUID(), coverageFrom: coverage, assertEmpty: true });
+  return id;
+}
+const input = (instrumentId, revision, changes = {}) => ({ requestId: randomUUID(), expectedJournalRevision: revision,
+  assertReward: true, instrumentId, category: 'staking', occurredAt: rewardAt, orderWithinTimestamp: 0,
+  quantity: '2', acquisitionBasisUsd: null, incomeValueUsd: '40', ...changes });
+const correction = (version, revision, changes = {}) => ({ requestId: randomUUID(), expectedJournalRevision: revision,
+  expectedVersion: version.version, assertReward: true, instrumentId: version.instrumentId,
+  category: version.category, occurredAt: version.occurredAt, orderWithinTimestamp: version.orderWithinTimestamp,
+  quantity: version.quantity, acquisitionBasisUsd: version.acquisitionBasisUsd, incomeValueUsd: version.incomeValueUsd, ...changes });
+const journal = async (s, owner, id) => (await s.trade.getJournal(owner, id)).journal;
+
+async function migrationPreservation() {
+  stage = 'REWARD-006 fresh21/populated20/no-op';
+  await createDatabase(predecessor);
+  const db = source(predecessor);
+  db.setOptions({ migrations: readdirSync('/app/backend/dist/migrations').filter(file => file.endsWith('.js') && file < '1790200000000')
+    .map(file => `/app/backend/dist/migrations/${file}`) });
+  await db.initialize();
+  try {
+    await db.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
+    await db.runMigrations({ transaction: 'all' });
+    assert.equal((await db.query('SELECT count(*)::int n FROM migrations'))[0].n, 20);
+    const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified")
+      VALUES('reward-predecessor@example.invalid','synthetic-no-login',true) RETURNING id`);
+    // Freeze predecessor rows using their original schema, not current services that
+    // may query new reward tables before the migration exists.
+    const accountId = randomUUID(), instrumentId = randomUUID(), tradeId = randomUUID(), requestId = randomUUID();
+    const execution = { kind: 'create', expectedJournalRevision: 0, instrumentId, side: 'buy', occurredAt: rewardAt,
+      orderWithinTimestamp: 0, quantity: '2', grossUsd: '100', feeUsd: '0' };
+    await db.transaction(async manager => {
+      await manager.query(`INSERT INTO manual_accounts(id,"ownerId",name,"requestId","canonicalPayload")
+        VALUES($1,$2,'Previous account',$3,$4)`, [accountId, owner, randomUUID(), JSON.stringify({ name: 'Previous account' })]);
+      await manager.query(`INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload")
+        VALUES($1,$2,'Previous asset','SAME',$3,$4)`, [instrumentId, owner, randomUUID(), JSON.stringify({ name: 'Previous asset', symbol: 'SAME' })]);
+      await manager.query(`INSERT INTO account_trade_journals("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","currentRevision")
+        VALUES($1,$2,$3,$4,'declared-empty',$5,1)`, [owner, accountId, randomUUID(), JSON.stringify({ coverageFrom: coverage, assertEmpty: true }), coverage]);
+      await manager.query(`INSERT INTO account_trades(id,"ownerId","accountId","currentVersion") VALUES($1,$2,$3,1)`, [tradeId, owner, accountId]);
+      await manager.query(`INSERT INTO account_trade_versions("ownerId","accountId","tradeId",version,"journalRevision","requestId","canonicalPayload",kind,
+        "instrumentId",side,"occurredAt","orderWithinTimestamp",quantity,"grossUsd","feeUsd")
+        VALUES($1,$2,$3,1,1,$4,$5,'create',$6,'buy',$7,0,2,100,0)`,
+        [owner, accountId, tradeId, requestId, JSON.stringify(execution), instrumentId, rewardAt]);
+    });
+    const before = await fingerprint(db, ['migrations']);
+    assert.match(migrate(predecessor), /Migrations applied: 1/);
+    assert.equal(await fingerprint(db, [...rewardTables, 'migrations']), before);
+    for (const table of rewardTables) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
+    const s = services(db);
+    const { kind: _kind, ...body } = execution;
+    const replay = await s.trade.create(owner, accountId, { ...body, requestId });
+    assert.equal(replay.created, false); assert.equal(replay.value.trade.tradeId, tradeId);
+    assert.equal((await journal(s, owner, accountId)).summary.remainingCostUsd, '100');
+    const after = await fingerprint(db);
+    assert.match(migrate(predecessor), /Migrations applied: 0/);
+    assert.equal(await fingerprint(db), after);
+    const { AddAssetRewards1790200000000 } = require('/app/backend/dist/migrations/1790200000000-AddAssetRewards.js');
+    await assert.rejects(() => new AddAssetRewards1790200000000().down(), /recovery|downgrade/i);
+    assert.equal(await fingerprint(db), after);
+  } finally { await db.destroy(); }
+  console.log('PASS REWARD-006 populated20/fresh21 preservation, immutable prior replay, no-op, downgrade refusal');
+}
+
+async function economics(db, s, f) {
+  stage = 'REWARD-001/002/003 quantity, unknown cost, income, movement and restatement';
+  const a = await account(s, f.owner, 'Rewards A'), b = await account(s, f.owner, 'Rewards B');
+  const command = input(f.token, 0);
+  const created = await s.reward.create(f.owner, a, command);
+  assert.equal(created.created, true);
+  const saved = JSON.parse(JSON.stringify(created.value));
+  const rewardId = saved.reward.rewardId;
+  assert.equal(saved.journalRevision, 1); assert.equal(saved.reward.acquisitionBasisUsd, null);
+  assert.equal(saved.reward.incomeValueUsd, '40');
+  const state = await journal(s, f.owner, a);
+  assert.equal(state.versionCount, 0);
+  assert.equal(state.summary.grossBuysUsd, '0'); assert.equal(state.summary.realizedUsd, '0');
+  assert.equal(state.summary.remainingCostUsd, null);
+  assert.equal(state.rewardSummary.declaredIncomeUsd, '40');
+  await s.prices.set(f.owner, f.token, { requestId: randomUUID(), expectedRevision: 0, assertReviewed: true, observedAt: rewardAt, priceUsd: '5' });
+  const valuation = await s.valuation.getSnapshot(f.owner, a, { at: rewardAt });
+  assert.equal(valuation.totalValueUsd, '10'); assert.equal(valuation.completeness, 'complete');
+  assert.equal(valuation.items[0].costUsd, null); assert.equal(valuation.items[0].unknownCostQuantity, '2');
+  const movement = { requestId: randomUUID(), fromAccountId: a, toAccountId: b,
+    expectedFromJournalRevision: 1, expectedToJournalRevision: 0, assertInternal: true,
+    instrumentId: f.token, occurredAt: transferAt, orderWithinTimestamp: 0, quantity: '1', feeInstrumentId: null, feeQuantity: '0' };
+  const transfer = (await s.transfer.create(f.owner, movement)).value;
+  const sale = await s.trade.create(f.owner, b, { requestId: randomUUID(), expectedJournalRevision: 1,
+    instrumentId: f.token, side: 'sell', occurredAt: saleAt, orderWithinTimestamp: 0,
+    quantity: '1', grossUsd: '80', feeUsd: '0' });
+  assert.equal(sale.created, true);
+  const oldPin = (await journal(s, f.owner, b)).journalRevision;
+  assert.equal((await journal(s, f.owner, b)).summary.realizedUsd, null);
+  const corrected = await s.reward.correct(f.owner, a, rewardId, correction(saved.reward, 3, { acquisitionBasisUsd: '120' }));
+  assert.equal(corrected.created, true); assert.equal(corrected.value.reward.version, 2);
+  assert.equal((await journal(s, f.owner, a)).summary.remainingCostUsd, '60');
+  const receiver = await journal(s, f.owner, b);
+  assert.equal(receiver.summary.consumedCostUsd, '60'); assert.equal(receiver.summary.realizedUsd, '20');
+  assert.equal(receiver.journalRevision, oldPin + 1); assert.equal(receiver.versionCount, 1);
+  await unchanged(db, () => s.trade.listLots(f.owner, b, { journalRevision: String(oldPin) }), 409);
+  assert.deepEqual(await s.reward.create(f.owner, a, command), { created: false, value: saved });
+  assert.deepEqual(await s.transfer.create(f.owner, movement), { created: false, value: transfer });
+  await unchanged(db, () => s.reward.void(f.owner, a, rewardId, { requestId: randomUUID(), expectedJournalRevision: 4, expectedVersion: 2 }), 409);
+  await unchanged(db, () => s.reward.correct(f.owner, a, rewardId, correction(corrected.value.reward, 4, { quantity: '0.5' })), 409);
+  assert.equal((await s.reward.listVersions(f.owner, a, rewardId, {})).items.length, 2);
+  assert.equal((await s.reward.list(f.owner, a, {})).versionCount, 2);
+  const match = (await s.trade.listMatches(f.owner, b, sale.value.trade.tradeId, {})).items[0];
+  assert.equal(match.origin.kind, 'reward'); assert.equal(match.origin.rewardId, rewardId);
+  assert.equal(match.origin.version, 2); assert.equal(match.costUsd, '60');
+  console.log('PASS REWARD-001/002/003 exact quantity/null basis/independent value/income, transfer sale restatement and immutable receipts');
+}
+
+async function lifecycle(db, s, f) {
+  stage = 'REWARD-003/006 explicit0, unclassified, terminal void and private errors';
+  const a = await account(s, f.owner, 'Zero and unresolved');
+  const first = input(f.token, 0, { acquisitionBasisUsd: '0', incomeValueUsd: '0' });
+  const saved = (await s.reward.create(f.owner, a, first)).value;
+  assert.equal((await journal(s, f.owner, a)).summary.remainingCostUsd, '0');
+  const second = input(f.token, 1, { orderWithinTimestamp: 1, category: 'unclassified', acquisitionBasisUsd: '0' });
+  const unresolved = (await s.reward.create(f.owner, a, second)).value;
+  const state = await journal(s, f.owner, a);
+  assert.equal(state.rewardSummary.declaredIncomeUsd, null);
+  assert.equal(state.rewardSummary.knownIncomeSubtotalUsd, '0'); assert.equal(state.rewardSummary.unclassifiedCount, 1);
+  for (const [field, value] of [['quantity', 2], ['acquisitionBasisUsd', undefined], ['incomeValueUsd', undefined], ['category', 'deposit'], ['assertReward', false]]) {
+    await unchanged(db, () => s.reward.create(f.owner, a, { ...input(f.token, 2), [field]: value }), 400);
+  }
+  await unchanged(db, () => s.reward.create(f.owner, a, input(f.foreignToken, 2)), 404);
+  await unchanged(db, () => s.reward.list(f.other, a, {}), 404);
+  await unchanged(db, () => s.reward.listVersions(f.other, a, saved.reward.rewardId, {}), 404);
+  await unchanged(db, () => s.reward.create(f.owner, a, { ...first, acquisitionBasisUsd: null }), 409);
+  await unchanged(db, () => s.reward.list(f.owner, a, { offset: '1' }), 400);
+  const voidInput = { requestId: randomUUID(), expectedJournalRevision: 2, expectedVersion: 1 };
+  const voided = (await s.reward.void(f.owner, a, unresolved.reward.rewardId, voidInput)).value;
+  assert.equal(voided.reward.kind, 'void'); assert.equal(voided.reward.category, 'unclassified');
+  await unchanged(db, () => s.reward.void(f.owner, a, unresolved.reward.rewardId, { ...voidInput, requestId: randomUUID(), expectedVersion: 2, expectedJournalRevision: 3 }), 409);
+  assert.deepEqual(await s.reward.void(f.owner, a, unresolved.reward.rewardId, voidInput), { created: false, value: voided });
+  assert.equal((await journal(s, f.owner, a)).rewardSummary.declaredIncomeUsd, '0');
+  console.log('PASS REWARD-003/006 known0, unresolved subtype, full immutable void/replay and private validation');
+}
+
+async function main() {
+  for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
+  assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
+  await createDatabase(database);
+  assert.match(migrate(database), /Migrations applied: 21/);
+  assert.match(migrate(database), /Migrations applied: 0/);
+  await migrationPreservation();
+  const db = source();
+  try {
+    await db.initialize();
+    for (const table of rewardTables) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
+    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+      ('reward-owner@example.invalid','synthetic-no-login',true),('reward-other@example.invalid','synthetic-no-login',true) RETURNING id`);
+    const s = services(db);
+    const token = (await s.accounting.createInstrument(owner.id, { requestId: randomUUID(), name: 'Reward asset', symbol: 'SAME' })).value.id;
+    const foreignToken = (await s.accounting.createInstrument(other.id, { requestId: randomUUID(), name: 'Other owner asset', symbol: 'SAME' })).value.id;
+    const mutable = [...rewardTables, 'manual_accounts', 'account_trade_journals', 'account_trades', 'account_trade_versions',
+      'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'manual_usd_price_versions'];
+    const before = await fingerprint(db, mutable);
+    const fixture = { owner: owner.id, other: other.id, token, foreignToken };
+    await economics(db, s, fixture);
+    await lifecycle(db, s, fixture);
+    assert.equal(await fingerprint(db, mutable), before, 'No external flows, auth, legacy or provider rows changed');
+  } finally { if (db.isInitialized) await db.destroy(); }
+}
+const watchdog = setTimeout(() => { console.error(`FAIL timeout ${stage}`); process.exit(1); }, 120000);
+watchdog.unref();
+main().catch(error => { console.error(`FAIL ${stage}: ${error.stack}`); process.exitCode = 1; })
+  .finally(() => clearTimeout(watchdog));

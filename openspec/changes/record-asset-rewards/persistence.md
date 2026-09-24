@@ -114,3 +114,12 @@ overwrite another account/input. Preserve frozen command/key/pins on ambiguous d
 only explicit identical retry, no automatic resubmit/new key. Preserve parent trade draft.
 Old receipts remain visible as receipts; no claim they show current state. Real full owner
 sessions, Origin/CSRF, private no-store, generic error envelopes and no secret/financial logs.
+
+Frozen accessible labels (scoped to the reward section): Актив вознаграждения;
+Категория вознаграждения (Стейкинг/Аирдроп/Другой доход/Вид вознаграждения не уточнён);
+Момент получения (ISO с часовым поясом); Порядок в моменте; Полученное количество;
+Себестоимость вознаграждения (Неизвестна/Известна); Сумма себестоимости, USD;
+Доход от вознаграждения (Неизвестен/Известен); Сумма дохода, USD.
+Attestation: Подтверждаю: это уже полученное вознаграждение, а не покупка, перевод или взнос.
+Correction: Проверить исправление -> Записать исправление. Void: Проверить отмену ->
+Отменить вознаграждение. Explicit retry: Повторить тот же запрос.

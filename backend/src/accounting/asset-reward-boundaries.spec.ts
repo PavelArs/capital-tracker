@@ -19,7 +19,7 @@ function reward(n: number, quantity: string, acquisitionBasisUsd: string | null)
     instrumentId: token,
     instrumentName: 'Reward',
     instrumentSymbol: 'SAME',
-    category: 'staking',
+    category: 'staking' as const,
     occurredAt: day(2),
     orderWithinTimestamp: n,
     quantity,

@@ -52,3 +52,11 @@ instead of the two expected exact holdings; reward-funded sales/transfers threw 
 history; reward summary and inclusive quantity were absent. This is behavioral RED,
 not import/type/environment failure. Tests use existing exported pure entrypoints.
 Log/private/tmp/capital-rewards-pure-red.log. HTTPS RED is still pending.
+
+Sol independently added4boundary cases before implementation (ea35533, integrated787c6ec).
+Focused Jest failed4/4 on missing reward behavior, exit1; scoped Biome passed. Log
+/private/tmp/capital-reward-boundaries-red.log. Root reviewed the11/7atom numerical oracle,
+known/unknown same-instrument valuation, prefix chronology and1000/1001 boundary tests.
+The83digit observation uses exact BigInt arithmetic and is not a full maximum-component
+performance test. Root then narrowed helper category types to the explicit contract union;
+no assertion changed.

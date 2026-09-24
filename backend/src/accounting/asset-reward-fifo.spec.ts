@@ -16,7 +16,7 @@ function reward(
   acquisitionBasisUsd: string | null,
   incomeValueUsd: string | null,
   instrumentId = token,
-  category = 'staking',
+  category: 'staking' | 'airdrop' | 'other' | 'unclassified' = 'staking',
 ) {
   return {
     rewardId: id(n),
