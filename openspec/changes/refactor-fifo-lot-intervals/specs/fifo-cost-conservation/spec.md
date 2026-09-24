@@ -25,8 +25,8 @@ permit empty resulting remainders with zero cost.
 - **AND** invalid operations fail without returning fabricated inventory
 
 ### Requirement: FIFO-RANGE-3 Preserve existing accounting projections
-Existing trade-only and carry-in FIFO DTOs, exact summaries, lot/match provenance,
-chronology, capacity and failure behavior SHALL remain unchanged. The refactor SHALL
+The system SHALL preserve existing trade-only and carry-in FIFO DTOs, exact summaries,
+lot/match provenance, chronology, capacity and failure behavior. The refactor SHALL
 make no database, endpoint, provider or frontend behavior change.
 
 #### Scenario: FIFO-RANGE-COMPAT Existing trade and carry-in journeys

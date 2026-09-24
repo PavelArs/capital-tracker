@@ -3,8 +3,8 @@
 - [x] 1.2 Add focused independent FIFO-RANGE partition/bounds/conservation tests without artificial behavior failure.
 
 ## 2. Refactor and review
-- [ ] 2.1 Extract interval arithmetic and use it in existing FIFO/carry-in with public shapes unchanged.
-- [ ] 2.2 Independently review implementation and retained/new oracles; resolve findings.
+- [x] 2.1 Extract interval arithmetic and use it in existing FIFO/carry-in with public shapes unchanged.
+- [x] 2.2 Independently review implementation and retained/new oracles; resolve findings.
 
 ## 3. Verify and archive
 - [ ] 3.1 Run scoped unit/build/lint/types/advisory/spec checks, realPG trade/carry-in and two unchanged HTTPS journeys; record evidence and cleanup.

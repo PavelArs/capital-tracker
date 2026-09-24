@@ -292,10 +292,34 @@ SamebackendPG/HTTPS, harnesscleanupcomplete, Nginx/lockunchanged. Fullbackend/fu
 olderupgradematrix/hostedCI/release/liveproviders/productionunrun. Read archived
 verification and docs/linked-twr.md for scope/evidence; manual valuations remain required.
 
-## Next
+## Current FIFO prerequisite and next transfer capability
 
-Choose the next bounded slice from the remaining brief,
-with reviewed contract and targeted acceptance before product implementation.
+Active change refactor-fifo-lot-intervals atccb70b0/0cac33c: interval allocation
+helper extracted under unchanged public FIFO/carry-in contracts. Baseline240tests/
+7suites passed2.327s; no artificialRED for pure refactor. Root added independent
+partition/bounds/highprecision oracles, independently reviewed by Sol. Luna owns
+only fifo.ts/fifo-lot-interval.ts in capital-tracker-fifo-intervals worktree.
+Root owns integration, Docker, evidence/archive. Selected actualPG usd-trades-db/
+carry-in-db plus unchanged TRADE-003-A/TRADE-006-A UI journey and CARRY-004-A CSV
+journey; no additional E2E cases. Verification still pending.
+
+Next implement actual persisted owned transfers, not another preview. Shared
+original-coordinate intervals are a prerequisite, not completion of transfers.
+Rejected freezing sender history and disallowing onward transfers: persisted cost
+fragments would stale on source corrections. Use immutable commands and dynamic
+connected-account replay; arrivals are available only from transfer time but ordered
+by original acquisition provenance thereafter. Old trade/CSV changes must revalidate
+all dependent histories; use owner-before-account writer lock ordering. Recipient
+pinned views must invalidate on upstream changes. Keep local version count distinct
+from journal revision/derived invalidations. Consume an explicitly declared fee asset
+from source once; report its cost basis separately without a tax/fairvalue claim.
+No synthetic buy/sell or external USD flow. Detailed persistence/revision/cap contract
+is not frozen yet; independently review before transfer implementation.
+
+## Remaining full goal
+
+The active goal is to continue all remaining target requirements, not merely close
+this prerequisite. Complete each change through verification/archive before the next.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
 automatic prices/longer history/charts, automatic all-account allocation,
