@@ -274,7 +274,23 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
   await gross.fill('110');
 
+  // A gap-only real series keeps its table without inventing a chart value.
+  await fromInput.fill(dayThree);
+  await toInput.fill(dayThree);
+  const gapOnly = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === 'GET',
+  );
+  await page.getByRole('button', { name: 'Показать историю', exact: true }).click();
+  expect((await gapOnly).status()).toBe(200);
+  await expect(table.getByRole('row')).toHaveCount(2);
+  await expectPointRow(table, dayThree, ['Нет полной оценки', '—', '0', '1']);
+  await expect(region.getByText('Нет полных оценок для графика', { exact: true })).toBeVisible();
+  await expect(region.getByRole('img', { name: 'График стоимости счёта' })).toHaveCount(0);
+  await expect(gross).toHaveValue('110');
+
   // A different exact period uses the real backend and retained PostgreSQL data.
+  await fromInput.fill(from);
   await toInput.fill(dayThree);
   const changedPeriod = page.waitForResponse(
     (response) =>
