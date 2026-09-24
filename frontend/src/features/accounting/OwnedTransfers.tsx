@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { Link } from 'react-router-dom';
 import './TradeJournal.css';
 import { OwnedTransferForm, type TransferDraft } from './OwnedTransferForm';
+import { TransferAllocationDetails } from './TransferAllocationDetails';
 import { accountingError, newRequestId } from './feedback';
 import '@pages/ManualAccounts.css';
 
@@ -755,49 +756,18 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
                       </p>
                     )}
                     {allocation && (
-                      <>
-                        <p>
-                          Текущая версия {allocation.version}; ревизии счетов{' '}
-                          {allocation.fromJournalRevision} и {allocation.toJournalRevision}.
-                        </p>
-                        <dl className="trade-summary">
-                          <dt>Себестоимость переданного актива, USD</dt>
-                          <dd>{allocation.principalBasisUsd}</dd>
-                          <dt>Списанная себестоимость комиссии, USD</dt>
-                          <dd>{allocation.feeConsumedBasisUsd}</dd>
-                        </dl>
-                        {allocation.items.length === 0 && (
-                          <p>В текущем переводе нет распределённых лотов.</p>
-                        )}
-                        <ol>
-                          {allocation.items.map((item, index) => (
-                            <li
-                              key={`${item.kind}-${item.origin.accountId}-${item.intervalStart}-${item.intervalEnd}-${index}`}
-                            >
-                              {item.kind === 'principal' ? 'Получателю' : 'Комиссия'}:{' '}
-                              {item.quantity}; себестоимость {item.costUsd} USD; исходный счёт{' '}
-                              {item.origin.accountId}, приобретение {item.origin.acquiredAt},
-                              интервал [{item.intervalStart}, {item.intervalEnd}).
-                            </li>
-                          ))}
-                        </ol>
-                        {allocation.nextOffset !== null && (
-                          <button
-                            type="button"
-                            className="manual-button manual-button--secondary"
-                            disabled={allocationRead === 'loading'}
-                            onClick={() =>
-                              void loadAllocation(
-                                version.transferId,
-                                allocation.nextOffset!,
-                                allocation,
-                              )
-                            }
-                          >
-                            Следующая страница разбора
-                          </button>
-                        )}
-                      </>
+                      <TransferAllocationDetails
+                        allocation={allocation}
+                        loading={allocationRead === 'loading'}
+                        onNext={() => {
+                          if (allocation.nextOffset !== null)
+                            void loadAllocation(
+                              version.transferId,
+                              allocation.nextOffset,
+                              allocation,
+                            );
+                        }}
+                      />
                     )}
                   </section>
                 )}
