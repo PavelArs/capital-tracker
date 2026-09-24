@@ -195,13 +195,19 @@ async function processRace(source, account, commands) {
     const deadline = performance.now() + 5000;
     let observed = false;
     while (performance.now() < deadline) {
-      const [{ waiting }] = await source.query(`SELECT count(*)::int AS waiting FROM pg_stat_activity
-        WHERE datname=$1 AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0
-        AND position('manual_accounts' in query)>0`, [database]);
-      if (waiting === workers.length) { observed = true; break; }
+      const [waiting] = await source.query(`SELECT
+        count(*) FILTER (WHERE position('manual_accounts' in query)>0)::int AS row_waits,
+        count(*) FILTER (WHERE position('pg_advisory_xact_lock' in query)>0
+          AND position('accounting-owner:' in query)>0)::int AS owner_waits
+        FROM pg_stat_activity WHERE datname=$1 AND wait_event_type='Lock'
+          AND cardinality(pg_blocking_pids(pid))>0`, [database]);
+      if (waiting.row_waits === 1 && waiting.owner_waits === workers.length - 1) {
+        observed = true; break;
+      }
       await new Promise(resolve => setTimeout(resolve, 10));
     }
-    assert.ok(observed, 'Both real production processes reach a persisted account lock wait');
+    assert.ok(observed,
+      'Real contenders wait at one locked account row and serialize on the accounting-owner advisory lock');
     await blocker.commitTransaction();
     return await Promise.all(workers.map(worker => worker.finished));
   } finally {
@@ -806,10 +812,11 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name,database);
     const migrations=await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length,19); assert.equal(migrations[15].name,'AddKnownCostCarryIn1790060000000');
+    assert.equal(migrations.length,20); assert.equal(migrations[15].name,'AddKnownCostCarryIn1790060000000');
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');
     assert.equal(migrations[17].name, 'AddManualUsdPrices1790080000000');
     assert.equal(migrations[18].name, 'AddDailyDisplayFx1790090000000');
+    assert.equal(migrations[19].name, 'AddOwnedTransfers1790100000000');
     assert.deepEqual(await rows(source,lotTable),[]);
     const svc=services(source),fixture=await seed(source,svc);
     const legacy=await fingerprint(source,true),retained=new Map();

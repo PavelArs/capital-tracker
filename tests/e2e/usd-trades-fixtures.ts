@@ -520,14 +520,20 @@ export async function withAccountLocked<T>(
   }
 }
 export async function expectBlockedTradeWrites(count: number): Promise<void> {
+  const expectedRowWaits = 1;
+  const expectedOwnerWaits = count - 1;
   await expect
     .poll(
       () =>
-        query(`SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
-    AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0 AND query LIKE '%manual_accounts%'`),
+        query(`SELECT
+    count(*) FILTER (WHERE position('manual_accounts' in query)>0)::text || '|' ||
+    count(*) FILTER (WHERE position('pg_advisory_xact_lock' in query)>0
+      AND position('accounting-owner:' in query)>0)::text
+  FROM pg_stat_activity WHERE datname=current_database()
+    AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0`),
       { timeout: 5_000 },
     )
-    .toBe(String(count));
+    .toBe(`${expectedRowWaits}|${expectedOwnerWaits}`);
 }
 export async function raceTradeReplicas(
   account: string,
