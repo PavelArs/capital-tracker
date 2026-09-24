@@ -292,16 +292,26 @@ SamebackendPG/HTTPS, harnesscleanupcomplete, Nginx/lockunchanged. Fullbackend/fu
 olderupgradematrix/hostedCI/release/liveproviders/productionunrun. Read archived
 verification and docs/linked-twr.md for scope/evidence; manual valuations remain required.
 
-## Current FIFO prerequisite and next transfer capability
+## Completed FIFO prerequisite and next transfer capability
 
-Active change refactor-fifo-lot-intervals atccb70b0/0cac33c: interval allocation
+Archived2026-09-24-refactor-fifo-lot-intervals (6/6tasks), contractccb70b0/0cac33c:
+interval allocation
 helper extracted under unchanged public FIFO/carry-in contracts. Baseline240tests/
 7suites passed2.327s; no artificialRED for pure refactor. Root added independent
 partition/bounds/highprecision oracles, independently reviewed by Sol. Luna owns
 only fifo.ts/fifo-lot-interval.ts in capital-tracker-fifo-intervals worktree.
 Root owns integration, Docker, evidence/archive. Selected actualPG usd-trades-db/
 carry-in-db plus unchanged TRADE-003-A/TRADE-006-A UI journey and CARRY-004-A CSV
-journey; no additional E2E cases. Verification still pending.
+journey; no additional E2E cases. Luna implementationa06a5b2 integrated84bf998;
+root and Sol independent reviews found no blocker. Root255/8pass2.081s, build/lint/
+Biome pass with77existingwarnings. Actual PG both retained suites pass, HTTPS2/2
+pass35.5s1worker0retries. Audit2moderate/nohighcritical; strict26items pass after
+fixing normative statement formatting indda4d7e. Final independent evidence audit passed;25prior specs unchanged; newdelta synchronized.
+Post-archive strict26canonical specs pass; activechangesempty.
+Logs /private/tmp/capital-fifo-interval-{root-unit,db,green,audit,specs-final}.log;
+accepted BEsha256:f1f480d4a1039aa89b909075d162273697253c755413c680d48bf01c47c09e3a
+and unchangedFEsha256:4dd2bcef305e76c7a1f5e6506b9ee85d90b46ad77fecd6d4a811b8438586c19e.
+No actual transfer implemented yet. OwnerNginx/lockunchanged.
 
 Next implement actual persisted owned transfers, not another preview. Shared
 original-coordinate intervals are a prerequisite, not completion of transfers.
@@ -313,8 +323,16 @@ all dependent histories; use owner-before-account writer lock ordering. Recipien
 pinned views must invalidate on upstream changes. Keep local version count distinct
 from journal revision/derived invalidations. Consume an explicitly declared fee asset
 from source once; report its cost basis separately without a tax/fairvalue claim.
-No synthetic buy/sell or external USD flow. Detailed persistence/revision/cap contract
-is not frozen yet; independently review before transfer implementation.
+No synthetic buy/sell or external USD flow. Sol recommends retaining currentRevision as the sharedCAS/readpin: source CSV
+consumes its existing contiguousN-range, passive connected accounts get one tick.
+Replay still precedesCAS/cap and returns unchanged saved receipts. Local trade
+versionCount must count persisted versions rather than revision ticks. Explicitly
+expose the10000journal-revision budget (passive invalidations consume it), preserving
+old version upperbounds without silently relabeling usage. Validate capacity for
+union of old/new components; void must invalidate even accounts it disconnects.
+All candidate trade/CSV/transfer mutations must replay complete connected history.
+Detailed persistence/revision/cap contract is not frozen yet; independently review
+before transfer implementation.
 
 ## Remaining full goal
 
