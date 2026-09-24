@@ -13,6 +13,8 @@ import { ManualPortfolioValuationController } from './manual-portfolio-valuation
 import { ManualPortfolioValuationService } from './manual-portfolio-valuation.service';
 import { ManualPriceController } from './manual-price.controller';
 import { ManualPriceService } from './manual-price.service';
+import { OwnedTransferController } from './owned-transfer.controller';
+import { OwnedTransferService } from './owned-transfer.service';
 import { PortfolioFlowController } from './portfolio-flow.controller';
 import { PortfolioFlowService } from './portfolio-flow.service';
 import { TradeController } from './trade.controller';
@@ -31,6 +33,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     HistoricalValuationController,
     ValuationHistoryController,
     ManualPortfolioValuationController,
+    OwnedTransferController,
   ],
   providers: [
     AccountingService,
@@ -44,6 +47,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     HistoricalValuationService,
     ValuationHistoryService,
     ManualPortfolioValuationService,
+    OwnedTransferService,
   ],
 })
 export class AccountingModule {}
