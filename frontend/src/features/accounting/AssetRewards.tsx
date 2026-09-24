@@ -1,6 +1,5 @@
 import { type Instrument, accountingApi } from '@api/accounting.api';
 import {
-  type RewardCategory,
   type RewardCommand,
   type RewardPage,
   type RewardReceipt,
@@ -12,23 +11,14 @@ import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { AssetRewardForm, type RewardDraft, type RewardMode } from './AssetRewardForm';
+import { AssetRewardReceipt } from './AssetRewardReceipt';
+import { AssetRewardReview } from './AssetRewardReview';
 import { accountingError, newRequestId } from './feedback';
 import './TradeJournal.css';
 import '@pages/ManualAccounts.css';
 
-type Mode = 'create' | 'correct' | 'void';
-type RewardDraft = {
-  instrumentId: string;
-  category: RewardCategory;
-  occurredAt: string;
-  orderWithinTimestamp: string;
-  quantity: string;
-  basisKnown: boolean;
-  acquisitionBasisUsd: string;
-  incomeKnown: boolean;
-  incomeValueUsd: string;
-  assertReward: boolean;
-};
+type Mode = RewardMode;
 type Command =
   | { kind: 'create'; body: RewardCommand }
   | {
@@ -46,8 +36,19 @@ type Command =
       };
     };
 type Recovery =
-  | { phase: 'sending' | 'unknown'; command: Command }
-  | { phase: 'accepted'; command: Command; receipt: RewardReceipt };
+  | {
+      phase: 'sending' | 'unknown';
+      command: Command;
+      draft: RewardDraft;
+      target: RewardVersion | null;
+    }
+  | {
+      phase: 'accepted';
+      command: Command;
+      draft: RewardDraft;
+      target: RewardVersion | null;
+      receipt: RewardReceipt;
+    };
 type Review = { journalRevision: number; version: number | null };
 type ReadState = 'loading' | 'ready' | 'error';
 
@@ -65,6 +66,24 @@ function subscribeRecovery(listener: () => void) {
 }
 function recoverySnapshot(key: string) {
   return recoveries.get(key) ?? null;
+}
+function commandMode(command: Command | undefined): Mode {
+  return command?.kind ?? 'create';
+}
+function draftFromCommand(command: Command, previous: RewardDraft): RewardDraft {
+  if (command.kind === 'void') return previous;
+  return {
+    instrumentId: command.body.instrumentId,
+    category: command.body.category,
+    occurredAt: command.body.occurredAt,
+    orderWithinTimestamp: String(command.body.orderWithinTimestamp),
+    quantity: command.body.quantity,
+    basisKnown: command.body.acquisitionBasisUsd !== null,
+    acquisitionBasisUsd: command.body.acquisitionBasisUsd ?? '',
+    incomeKnown: command.body.incomeValueUsd !== null,
+    incomeValueUsd: command.body.incomeValueUsd ?? '',
+    assertReward: command.body.assertReward,
+  };
 }
 
 const emptyDraft = (): RewardDraft => ({
@@ -100,6 +119,37 @@ function decimalValid(value: string, positive: boolean): boolean {
   return Boolean(match && match[1].length <= 48 && (!positive || /[1-9]/.test(value)));
 }
 
+function validInstant(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+  if (!match) return false;
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const offsetHour = Number(match[10] ?? 0);
+  const offsetMinute = Number(match[11] ?? 0);
+  const utcYear = new Date(value).getUTCFullYear();
+  return Boolean(
+    year >= 1970 &&
+      year <= 9999 &&
+      month >= 1 &&
+      month <= 12 &&
+      day >= 1 &&
+      day <= days[month - 1] &&
+      hour <= 23 &&
+      minute <= 59 &&
+      second <= 59 &&
+      offsetHour <= 14 &&
+      offsetMinute <= 59 &&
+      !(offsetHour === 14 && offsetMinute !== 0) &&
+      Number.isFinite(Date.parse(value)) &&
+      utcYear >= 1970 &&
+      utcYear <= 9999,
+  );
+}
+
 function commandFor(
   mode: Mode,
   draft: RewardDraft,
@@ -127,8 +177,7 @@ function commandFor(
     (draft.incomeKnown && !decimalValid(draft.incomeValueUsd, false)) ||
     !/^\d+$/.test(draft.orderWithinTimestamp) ||
     Number(draft.orderWithinTimestamp) > 2147483647 ||
-    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}(?:Z|[+-]\d{2}:\d{2})$/.test(draft.occurredAt) ||
-    !Number.isFinite(Date.parse(draft.occurredAt))
+    !validInstant(draft.occurredAt)
   )
     throw new Error(
       'Проверьте актив, количество, время и известные суммы. Пустая сумма не равна нулю.',
@@ -139,7 +188,7 @@ function commandFor(
     assertReward: true,
     instrumentId: draft.instrumentId,
     category: draft.category,
-    occurredAt: new Date(Date.parse(draft.occurredAt)).toISOString(),
+    occurredAt: draft.occurredAt,
     orderWithinTimestamp: Number(draft.orderWithinTimestamp),
     quantity: draft.quantity,
     acquisitionBasisUsd: draft.basisKnown ? draft.acquisitionBasisUsd : null,
@@ -179,10 +228,12 @@ async function allInstruments(): Promise<Instrument[]> {
 function AssetRewardsOwner({
   accountId,
   ownerId,
+  journalRevision,
   onChanged,
 }: {
   accountId: string;
   ownerId: string;
+  journalRevision: number;
   onChanged: () => void;
 }) {
   const key = recoveryKey(ownerId, accountId);
@@ -197,9 +248,13 @@ function AssetRewardsOwner({
   const [page, setPage] = useState<RewardPage | null>(null);
   const [listRead, setListRead] = useState<ReadState>('loading');
   const [listError, setListError] = useState('');
-  const [mode, setMode] = useState<Mode>('create');
-  const [draft, setDraft] = useState<RewardDraft>(() => emptyDraft());
-  const [target, setTarget] = useState<RewardVersion | null>(null);
+  const [mode, setMode] = useState<Mode>(() => commandMode(recoverySnapshot(key)?.command));
+  const [draft, setDraft] = useState<RewardDraft>(
+    () => recoverySnapshot(key)?.draft ?? emptyDraft(),
+  );
+  const [target, setTarget] = useState<RewardVersion | null>(
+    () => recoverySnapshot(key)?.target ?? null,
+  );
   const [review, setReview] = useState<Review | null>(null);
   const [reviewRead, setReviewRead] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [reviewError, setReviewError] = useState('');
@@ -218,6 +273,9 @@ function AssetRewardsOwner({
   const listGeneration = useRef(0);
   const reviewGeneration = useRef(0);
   const historyGeneration = useRef(0);
+  const parentRevision = useRef(journalRevision);
+  const latestReview = useRef(review);
+  latestReview.current = review;
   const callbacks = useRef({ onChanged });
   callbacks.current = { onChanged };
 
@@ -232,6 +290,7 @@ function AssetRewardsOwner({
   const loadList = useCallback(
     async (releaseAccepted = false) => {
       const generation = ++listGeneration.current;
+      reviewGeneration.current++;
       setListRead('loading');
       setListError('');
       try {
@@ -241,6 +300,16 @@ function AssetRewardsOwner({
         if (!live.current || generation !== listGeneration.current) return false;
         if (result.journalRevision !== state.journal.journalRevision)
           throw new Error('Ревизия журнала изменилась во время чтения. Обновите список.');
+        if (
+          latestReview.current &&
+          latestReview.current.journalRevision !== result.journalRevision
+        ) {
+          reviewGeneration.current++;
+          latestReview.current = null;
+          setReview(null);
+          setReviewRead('idle');
+          setReviewError('Ревизия изменилась. Проверьте команду снова.');
+        }
         setPage(result);
         setListRead('ready');
         clearHistory();
@@ -255,6 +324,7 @@ function AssetRewardsOwner({
             setMode('create');
             setTarget(null);
             setDraft(emptyDraft());
+            latestReview.current = null;
             setReview(null);
             setReviewRead('idle');
             setWriteError('');
@@ -277,6 +347,7 @@ function AssetRewardsOwner({
         if (isAxiosError(error) && error.response?.status === 409) {
           setPage(null);
           reviewGeneration.current++;
+          latestReview.current = null;
           setReview(null);
           setReviewRead('idle');
           clearHistory();
@@ -313,6 +384,17 @@ function AssetRewardsOwner({
     };
   }, [loadList]);
 
+  useEffect(() => {
+    if (parentRevision.current === journalRevision) return;
+    parentRevision.current = journalRevision;
+    reviewGeneration.current++;
+    latestReview.current = null;
+    setReview(null);
+    setReviewRead('idle');
+    setReviewError('Ревизия журнала изменилась. Обновите данные и проверьте команду снова.');
+    void loadList(true);
+  }, [journalRevision, loadList]);
+
   function edit(next: RewardDraft) {
     if (recoverySnapshot(key) || writeLock.current) return;
     const inputChange = Object.keys(next).some(
@@ -322,6 +404,7 @@ function AssetRewardsOwner({
     setWriteError('');
     if (inputChange) {
       reviewGeneration.current++;
+      latestReview.current = null;
       setReview(null);
       setReviewRead('idle');
       setReviewError('');
@@ -337,6 +420,7 @@ function AssetRewardsOwner({
       return;
     }
     const generation = ++reviewGeneration.current;
+    latestReview.current = null;
     setReview(null);
     setReviewRead('loading');
     setReviewError('');
@@ -355,10 +439,12 @@ function AssetRewardsOwner({
       }
       if (!live.current || generation !== reviewGeneration.current) return;
       if (latest) setTarget(latest);
-      setReview({
+      const acceptedReview = {
         journalRevision: state.journal.journalRevision,
         version: latest?.version ?? null,
-      });
+      };
+      latestReview.current = acceptedReview;
+      setReview(acceptedReview);
       setReviewRead('ready');
     } catch (error) {
       if (!live.current || generation !== reviewGeneration.current) return;
@@ -379,22 +465,40 @@ function AssetRewardsOwner({
       (!retry && existing)
     )
       return;
+    const frozenDraft = retry && existing ? existing.draft : draftFromCommand(command, draft);
+    const frozenTarget = retry && existing ? existing.target : target;
     writeLock.current = true;
     setWriting(true);
     setWriteError('');
-    retainRecovery(key, { phase: 'sending', command });
+    retainRecovery(key, {
+      phase: 'sending',
+      command,
+      draft: frozenDraft,
+      target: frozenTarget,
+    });
     try {
       const saved = await sendCommand(accountId, command);
-      retainRecovery(key, { phase: 'accepted', command, receipt: saved });
+      retainRecovery(key, {
+        phase: 'accepted',
+        command,
+        draft: frozenDraft,
+        target: frozenTarget,
+        receipt: saved,
+      });
       if (!live.current) return;
       setReceipt(saved);
+      latestReview.current = null;
       setReview(null);
       await loadList(true);
     } catch (error) {
       const status = isAxiosError(error) ? error.response?.status : undefined;
       const definitive = !retry && [400, 403, 404, 409].includes(status ?? 0);
-      retainRecovery(key, definitive ? null : { phase: 'unknown', command });
+      retainRecovery(
+        key,
+        definitive ? null : { phase: 'unknown', command, draft: frozenDraft, target: frozenTarget },
+      );
       if (!live.current) return;
+      latestReview.current = null;
       setReview(null);
       setWriteError(
         definitive
@@ -413,7 +517,8 @@ function AssetRewardsOwner({
       recoverySnapshot(key) ||
       !review ||
       reviewRead !== 'ready' ||
-      listRead !== 'ready'
+      listRead !== 'ready' ||
+      review.journalRevision !== page?.journalRevision
     )
       return;
     try {
@@ -424,18 +529,31 @@ function AssetRewardsOwner({
     }
   }
 
-  async function stage(nextMode: 'correct' | 'void', reward: RewardVersion) {
+  function stage(nextMode: 'correct' | 'void', reward: RewardVersion) {
     if (recoverySnapshot(key) || writeLock.current) return;
     setMode(nextMode);
     setTarget(reward);
     setDraft(draftFromReward(reward));
     setWriteError('');
     reviewGeneration.current++;
+    latestReview.current = null;
     setReview(null);
     setReviewRead('idle');
     setReviewError('');
     clearHistory();
     // Attestation resets on staging, so the user explicitly reviews this target.
+  }
+
+  function cancelEdit() {
+    reviewGeneration.current++;
+    latestReview.current = null;
+    setMode('create');
+    setTarget(null);
+    setDraft(emptyDraft());
+    setReview(null);
+    setReviewRead('idle');
+    setReviewError('');
+    setWriteError('');
   }
 
   async function loadHistory(
@@ -470,6 +588,7 @@ function AssetRewardsOwner({
   async function loadMore() {
     if (!page || page.nextOffset === null || listRead === 'loading') return;
     const generation = ++listGeneration.current;
+    reviewGeneration.current++;
     setListRead('loading');
     setListError('');
     try {
@@ -489,6 +608,8 @@ function AssetRewardsOwner({
       );
       if (isAxiosError(error) && error.response?.status === 409) {
         setPage(null);
+        reviewGeneration.current++;
+        latestReview.current = null;
         setReview(null);
         setReviewRead('idle');
         clearHistory();
@@ -497,7 +618,11 @@ function AssetRewardsOwner({
   }
 
   const blocked = Boolean(recovery) || writing;
-  const reviewed = review !== null && reviewRead === 'ready' && listRead === 'ready';
+  const reviewed =
+    review !== null &&
+    reviewRead === 'ready' &&
+    listRead === 'ready' &&
+    review.journalRevision === page?.journalRevision;
   const instrumentName = (id: string) => instruments.find((item) => item.id === id)?.name ?? id;
   const nextBeforeVersion = history?.nextBeforeVersion;
 
@@ -530,22 +655,7 @@ function AssetRewardsOwner({
         </section>
       )}
 
-      {receipt && (
-        <section className="manual-card" aria-label="Квитанция вознаграждения">
-          <h3>Квитанция команды</h3>
-          <p>
-            Квитанция неизменна и не описывает текущую себестоимость после последующих исправлений.
-          </p>
-          <dl className="trade-summary">
-            <dt>Номер вознаграждения</dt>
-            <dd>{receipt.reward.rewardId}</dd>
-            <dt>Версия</dt>
-            <dd>{receipt.reward.version}</dd>
-            <dt>Ревизия журнала</dt>
-            <dd>{receipt.journalRevision}</dd>
-          </dl>
-        </section>
-      )}
+      {receipt && <AssetRewardReceipt receipt={receipt} />}
 
       {catalogError && <p role="alert">{catalogError}</p>}
       {listError && <p role="alert">{listError}</p>}
@@ -558,240 +668,64 @@ function AssetRewardsOwner({
         Обновить вознаграждения
       </button>
 
-      <form
-        className="manual-form"
-        aria-label="Редактор вознаграждения"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-      >
-        {recovery?.phase === 'unknown' && (
-          <button
-            className="manual-button"
-            type="button"
-            disabled={writing}
-            onClick={() => void send(recovery.command, true)}
-          >
-            Повторить тот же запрос
-          </button>
-        )}
-        <fieldset
-          className="manual-position"
-          disabled={blocked || catalogRead !== 'ready' || mode === 'void'}
-        >
-          <legend>
-            {mode === 'create'
-              ? 'Новое вознаграждение'
-              : mode === 'correct'
-                ? 'Исправление вознаграждения'
-                : 'Отмена вознаграждения'}
-          </legend>
-          {target && (
-            <p>
-              Вознаграждение {target.rewardId}, версия {target.version}; актив и время получения
-              неизменны.
-            </p>
-          )}
-          <div className="manual-form-grid">
-            <label>
-              Актив вознаграждения
-              <select
-                required
-                value={draft.instrumentId}
-                onChange={(event) => edit({ ...draft, instrumentId: event.target.value })}
-              >
-                <option value="">Выберите актив</option>
-                {instruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.name}
-                    {instrument.symbol ? ` (${instrument.symbol})` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Категория вознаграждения
-              <select
-                value={draft.category}
-                onChange={(event) =>
-                  edit({
-                    ...draft,
-                    category: event.target.value as RewardCategory,
-                  })
-                }
-              >
-                <option value="staking">Стейкинг</option>
-                <option value="airdrop">Аирдроп</option>
-                <option value="other">Другой доход</option>
-                <option value="unclassified">Вид вознаграждения не уточнён</option>
-              </select>
-            </label>
-            <label>
-              Момент получения (ISO с часовым поясом)
-              <input
-                type="text"
-                required
-                value={draft.occurredAt}
-                onChange={(event) => edit({ ...draft, occurredAt: event.target.value })}
-              />
-            </label>
-            <label>
-              Порядок в моменте
-              <input
-                inputMode="numeric"
-                required
-                value={draft.orderWithinTimestamp}
-                onChange={(event) => edit({ ...draft, orderWithinTimestamp: event.target.value })}
-              />
-            </label>
-            <label>
-              Полученное количество
-              <input
-                inputMode="decimal"
-                required
-                value={draft.quantity}
-                onChange={(event) => edit({ ...draft, quantity: event.target.value })}
-              />
-            </label>
-            <label>
-              Себестоимость вознаграждения
-              <select
-                value={draft.basisKnown ? 'known' : 'unknown'}
-                onChange={(event) =>
-                  edit({
-                    ...draft,
-                    basisKnown: event.target.value === 'known',
-                    acquisitionBasisUsd:
-                      event.target.value === 'known' ? draft.acquisitionBasisUsd : '',
-                  })
-                }
-              >
-                <option value="unknown">Неизвестна</option>
-                <option value="known">Известна</option>
-              </select>
-            </label>
-            {draft.basisKnown && (
-              <label>
-                Сумма себестоимости, USD
-                <input
-                  inputMode="decimal"
-                  required
-                  value={draft.acquisitionBasisUsd}
-                  onChange={(event) => edit({ ...draft, acquisitionBasisUsd: event.target.value })}
-                />
-              </label>
-            )}
-            <label>
-              Доход от вознаграждения
-              <select
-                value={draft.incomeKnown ? 'known' : 'unknown'}
-                onChange={(event) =>
-                  edit({
-                    ...draft,
-                    incomeKnown: event.target.value === 'known',
-                    incomeValueUsd: event.target.value === 'known' ? draft.incomeValueUsd : '',
-                  })
-                }
-              >
-                <option value="unknown">Неизвестен</option>
-                <option value="known">Известен</option>
-              </select>
-            </label>
-            {draft.incomeKnown && (
-              <label>
-                Сумма дохода, USD
-                <input
-                  inputMode="decimal"
-                  required
-                  value={draft.incomeValueUsd}
-                  onChange={(event) => edit({ ...draft, incomeValueUsd: event.target.value })}
-                />
-              </label>
-            )}
-          </div>
-          <label className="manual-review-check">
-            <input
-              type="checkbox"
-              checked={draft.assertReward}
-              onChange={(event) => edit({ ...draft, assertReward: event.target.checked })}
+      <AssetRewardForm
+        draft={draft}
+        instruments={instruments}
+        mode={mode}
+        busy={blocked || catalogRead !== 'ready' || listRead !== 'ready'}
+        reviewed={reviewed}
+        reviewError={reviewError}
+        review={
+          review ? (
+            <AssetRewardReview
+              draft={draft}
+              journalRevision={review.journalRevision}
+              mode={mode}
+              targetId={target?.rewardId}
+              targetVersion={review.version ?? undefined}
+              instrumentName={instrumentName(draft.instrumentId)}
+              instrumentId={draft.instrumentId}
             />
-            Подтверждаю: это уже полученное вознаграждение, а не покупка, перевод или взнос.
-          </label>
-        </fieldset>
-        <p className="manual-muted">
-          Неизвестные суммы не становятся нулём. Нулевая сумма возможна только как явное известное
-          значение; категория «Вид вознаграждения не уточнён» требует последующей проверки.
-        </p>
-        {target?.category === 'unclassified' && (
-          <p className="manual-feedback">Вид вознаграждения не уточнён</p>
-        )}
-        {target && mode !== 'create' && (
-          <p>
-            Актив: {instrumentName(target.instrumentId)}; получено {target.occurredAt}.
-          </p>
-        )}
-        {review && (
-          <section className="manual-card" aria-label="Проверка вознаграждения">
-            <h3>Проверка вознаграждения</h3>
-            <dl className="trade-summary">
-              <dt>Ревизия журнала</dt>
-              <dd>{review.journalRevision}</dd>
-              {review.version !== null && (
-                <>
-                  <dt>Версия записи</dt>
-                  <dd>{review.version}</dd>
-                </>
+          ) : undefined
+        }
+        recovery={
+          recovery ? (
+            <>
+              {recovery.phase === 'unknown' && (
+                <button
+                  className="manual-button"
+                  type="button"
+                  disabled={writing}
+                  onClick={() => void send(recovery.command, true)}
+                >
+                  Повторить тот же запрос
+                </button>
               )}
-            </dl>
-          </section>
-        )}
-        {reviewError && (
-          <p className="manual-feedback manual-feedback--error" role="alert">
-            {reviewError}
-          </p>
-        )}
-        <button
-          className="manual-button manual-button--secondary"
-          type="button"
-          disabled={blocked || listRead !== 'ready' || catalogRead !== 'ready'}
-          onClick={() => void check(mode, target)}
-        >
-          {mode === 'create'
-            ? 'Проверить вознаграждение'
-            : mode === 'correct'
-              ? 'Проверить исправление'
-              : 'Проверить отмену'}
-        </button>
-        <button
-          className="manual-button"
-          type="submit"
-          disabled={blocked || !reviewed || (mode !== 'void' && !draft.assertReward)}
-        >
-          {mode === 'create'
-            ? 'Записать вознаграждение'
-            : mode === 'correct'
-              ? 'Записать исправление'
-              : 'Отменить вознаграждение'}
-        </button>
-        {target && (
-          <button
-            className="manual-button manual-button--secondary"
-            type="button"
-            disabled={blocked}
-            onClick={() => {
-              setMode('create');
-              setTarget(null);
-              setDraft(emptyDraft());
-              setReview(null);
-              setReviewRead('idle');
-              setReviewError('');
-            }}
-          >
-            Отменить редактирование
-          </button>
-        )}
-      </form>
+              <AssetRewardReview
+                draft={recovery.draft}
+                journalRevision={recovery.command.body.expectedJournalRevision}
+                mode={recovery.command.kind}
+                targetId={
+                  recovery.command.kind === 'create' ? undefined : recovery.command.rewardId
+                }
+                targetVersion={
+                  'expectedVersion' in recovery.command.body
+                    ? recovery.command.body.expectedVersion
+                    : undefined
+                }
+                instrumentName={instrumentName(recovery.draft.instrumentId)}
+                instrumentId={recovery.draft.instrumentId}
+                requestId={recovery.command.body.requestId}
+                frozen
+              />
+            </>
+          ) : undefined
+        }
+        onChange={edit}
+        onReview={() => void check(mode, target)}
+        onSubmit={submit}
+        onCancel={target ? cancelEdit : undefined}
+      />
 
       {writeError && (
         <p className="manual-feedback manual-feedback--error" role="alert">
@@ -917,8 +851,9 @@ function AssetRewardsOwner({
 
 export function AssetRewards({
   accountId,
+  journalRevision,
   onChanged,
-}: { accountId: string; onChanged: () => void }) {
+}: { accountId: string; journalRevision: number; onChanged: () => void }) {
   const { user } = useAuth();
   if (!user) return null;
   return (
@@ -926,6 +861,7 @@ export function AssetRewards({
       key={`${user.id}:${accountId}`}
       accountId={accountId}
       ownerId={user.id}
+      journalRevision={journalRevision}
       onChanged={onChanged}
     />
   );
