@@ -20,3 +20,13 @@ historical/valuation/chart characterization and relevant frontend tests; builds,
 lints, production audit and strict OpenSpec validation. Full backend/full E2E,
 older migration matrix, hostedCI, scans and production are not selected here;
 existing CI tests/gates remain. Actual commands/results will follow, not inferred.
+
+Baseline at3129270: `pnpm --dir backend test --runInBand --coverage=false
+valuation-history historical-valuation historical-accounting` passed95/4 in1.669s,
+`/private/tmp/capital-mpv-baseline.log`. Strict22items (21canonical+active) PASS.
+Sol independent contract review found no blocking financial/privacy ambiguity,
+requiring visible retained selection or explicit clearing if the catalog is replaced.
+This requirement is recorded in design; opening revision is not journal revision.
+Root pure tests f01879b and actual PG fixture8da7886 precede implementation; Sol
+view tests6120717 similarly have no product modules yet. Missing imports are not
+behavioral RED. Two actual predecessor HTTPS cases are being prepared.

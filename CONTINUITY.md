@@ -168,8 +168,11 @@ CI gates/tests retained. Final independent evidence audit found no blocker.
 
 ## Next
 
-Next candidate: bounded multi-account USD valuation from stored manual history;
-independent scope assessment underway, no new product implementation yet.
+Active preview-manual-portfolio-value: reviewed contract3129270 for1..10explicit
+selected manual accounts, one RR snapshot, exact aggregate and per-account gaps.
+Root pure/PG acceptance f01879b/8da7886; Sol viewtests6120717; no product edits or
+behavioral RED yet. Luna owns2E2E inportfolio-acceptance; Sol owns frontend in
+portfolio-ui; root owns backend/PG/sharedfiles/Docker. Read active artifacts.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
 automatic prices/longer history/charts, multi-account valuation, TWR, transfers/

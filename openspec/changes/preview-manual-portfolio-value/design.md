@@ -98,7 +98,10 @@ no inferred cash/connected wallets, no claim of whole net worth. Inputs/selectio
 remain editable during requests. Any edit immediately clears old result and
 invalidates pending responses; unmount also invalidates. Reusing the unchanged
 selection for a newer read only accepts the latest request. Keep account creation,
-catalog paging and their drafts unaffected. No browser storage for selections/data.
+catalog paging and their drafts unaffected. If replacing the loaded catalog removes
+a selected row, keep that selection visibly listed or clear it explicitly with a
+notice and invalidate the result; never submit a hidden selected ID. No browser
+storage for selections/data.
 
 ## Risks / Trade-offs
 
