@@ -288,6 +288,8 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
         if (isAxiosError(error) && error.response?.status === 409) {
           setList(null);
           setNeedsRefresh(true);
+          reviewGeneration.current++;
+          setReviewRead('idle');
           setReview(null);
           clearDetailReads();
         }
@@ -349,6 +351,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
         ? (await ownedTransfersApi.versions(selected.transferId)).items[0]
         : null;
       if (selected && !latest) throw new Error('Перевод не найден. Обновите список.');
+      if (latest?.kind === 'void') throw new Error('Перевод уже отменён. Обновите список.');
       const fromId = latest?.fromAccountId ?? candidate.fromAccountId;
       const toId = latest?.toAccountId ?? candidate.toAccountId;
       if (!fromId || !toId || fromId === toId) throw new Error('Выберите два разных счёта.');
@@ -495,6 +498,8 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
       setAllocationError(accountingError(error, 'загрузить текущий разбор лотов'));
       if (isAxiosError(error) && error.response?.status === 409) {
         setAllocation(null);
+        reviewGeneration.current++;
+        setReviewRead('idle');
         setReview(null);
         setNeedsRefresh(true);
       }

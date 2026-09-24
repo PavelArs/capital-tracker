@@ -17,6 +17,7 @@ import RetiredLiabilities from '@pages/RetiredLiabilities';
 import Settings from '@pages/Settings';
 import React, { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import OwnedTransfers from './features/accounting/OwnedTransfers';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
+        <Route path="owned-transfers" element={<OwnedTransfers />} />
         <Route path="manual-prices" element={<ManualPrices />} />
         <Route path="capital-flows" element={<CapitalFlows />} />
         <Route path="period-profit" element={<PeriodProfit />} />

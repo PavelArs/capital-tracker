@@ -54,13 +54,13 @@ function movement(value: TransferMovement): TransferMovement {
 export class OwnedTransferService {
   constructor(private readonly source: DataSource) {}
 
-  create(owner: string, raw: unknown) {
+  async create(owner: string, raw: unknown) {
     return this.mutate(parseUuid(owner), 'create', parseTransferCreate(raw));
   }
-  correct(owner: string, id: string, raw: unknown) {
+  async correct(owner: string, id: string, raw: unknown) {
     return this.mutate(parseUuid(owner), 'correct', parseTransferCorrection(raw), parseUuid(id));
   }
-  void(owner: string, id: string, raw: unknown) {
+  async void(owner: string, id: string, raw: unknown) {
     return this.mutate(parseUuid(owner), 'void', parseTransferVoid(raw), parseUuid(id));
   }
 
@@ -176,7 +176,7 @@ export class OwnedTransferService {
     });
   }
 
-  list(ownerId: string, raw: unknown) {
+  async list(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const query = parseTransferListQuery(raw);
     return this.read(async (manager) => {
@@ -205,7 +205,7 @@ export class OwnedTransferService {
     });
   }
 
-  listVersions(ownerId: string, transferId: string, raw: unknown) {
+  async listVersions(ownerId: string, transferId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const id = parseUuid(transferId);
     const query = parseTransferHistoryQuery(raw);
@@ -224,7 +224,7 @@ export class OwnedTransferService {
     });
   }
 
-  allocation(ownerId: string, transferId: string, raw: unknown) {
+  async allocation(ownerId: string, transferId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const id = parseUuid(transferId);
     const query = parseTransferAllocationQuery(raw);
