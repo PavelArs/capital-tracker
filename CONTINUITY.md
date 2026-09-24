@@ -257,13 +257,48 @@ Same backend in PG/HTTPS. Full backend/full E2E/older upgrade matrix/hostedCI/re
 scans/liveproviders/production not run; no owner data or project folders changed.
 Luna independently audited final verification evidence; no discrepancy.
 
+## Completed manual linked TWR slice
+
+`preview-linked-twr` archived2026-09-24-preview-linked-twr,7/7tasks;
+independently reviewed/targeted GREEN.24prior canonical specs byte-identical;
+new canonical requirements match archived delta; guide archive link resolves.
+Post-archive strict25canonical specs pass; activechangesempty. Luna final evidence audit
+found no unsupported success claim; live labeled Docker inventory empty.
+Contractd0fa11f, root pure/PG acceptancef076da6 reviewed by Sol; Luna two HTTPS cases
+64be0fb integratede4c0c2c. Actual predecessor RED before product edits: valid plan200
+vs404, absent new heading10s. Rootbackendbda97f7, SolUI83fd26a integrated97058af,
+Lunaguidec1bc65f integrated0d78172, root stronger UI assertions5cd0791.
+
+GET twr-boundaries + POST linked-twr-preview: complete owner RR READ ONLY snapshot,
+revision-pinned reviewed manual preflow values, sameUTCms netting, from adjustment/
+to exclusion, <=32interior nonzero instants. Exact BigInt rational linking and one
+final scale12 rounding; no intermediate rounding. Missing/overcapacity/nonpositive
+capital return explicit null rates; stale409 precedes semantic mismatch. Russian
+separate section retains plan on value edit, resets onperiod/owner/409 and suppresses
+late actual replies. Existing profit/XIRR/endpointTWR unchanged; chart untouched.
+No migration/dependency/provider/write/deployment action; schema19 retained.
+
+Baseline109/3pass; scoped215/6pass3.087s, frontend98/12pass3.03s. Builds/lints/types/
+Biome pass with existingBE77/FE27/Vite warning. Productiongate exit0,2moderate/nohigh-
+critical. ActualPG4LTWR+4retainedTWR families pass:1000heads,32/33boundaries, actual
+separatePIDs/committedcorrection/RR/COMMIT, all-row/provider preservation. HTTPS3/3
+pass36.9s,1worker0retries:LTWR-API,LTWR-UI,unchangedTWR-UI. Auth/backend/PG real;
+only external providers stubbed and delayedroute.fetch uses actual response.
+Logs /private/tmp/capital-linked-twr-{red,db,green,backend-unit,audit}.log and
+red/green-artifacts; frontendlogs sameprefix. Root reviewed UI, Sol backend: no blocker.
+BEsha256:8731e328a76f1d35cd33fa8d985ca235f744d58675c89dd10c409ee54b1cfc9c
+FEsha256:4dd2bcef305e76c7a1f5e6506b9ee85d90b46ad77fecd6d4a811b8438586c19e
+SamebackendPG/HTTPS, harnesscleanupcomplete, Nginx/lockunchanged. Fullbackend/fullE2E/
+olderupgradematrix/hostedCI/release/liveproviders/productionunrun. Read archived
+verification and docs/linked-twr.md for scope/evidence; manual valuations remain required.
+
 ## Next
 
-No active OpenSpec change. Choose the next bounded slice from the remaining brief,
+Choose the next bounded slice from the remaining brief,
 with reviewed contract and targeted acceptance before product implementation.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
-automatic prices/longer history/charts, automatic all-account allocation, linked TWR,
+automatic prices/longer history/charts, automatic all-account allocation,
 transfers/swaps/rewards, blockchain reconciliation, optionalAI and release/backup-
 restore hardening before consolidation. Selected manual valuation is not complete
 whole-portfolio value/cash accounting. Legacy UI/API simplification remains scoped

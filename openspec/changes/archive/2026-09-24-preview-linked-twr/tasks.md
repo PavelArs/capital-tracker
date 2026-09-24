@@ -8,5 +8,5 @@
 - [x] 2.3 Independently review implementation and acceptance; resolve findings without relaxing financial/security assertions.
 
 ## 3. Verify and archive
-- [ ] 3.1 Run scoped unit/lint/build/types/advisory/spec gates, actualPG and LTWR-API/LTWR-UI plus unchanged TWR-UI; record actual evidence and cleanup.
-- [ ] 3.2 Synchronize guide/continuity/evidence, independently audit results, archive with supported CLI and validate canonical specs.
+- [x] 3.1 Run scoped unit/lint/build/types/advisory/spec gates, actualPG and LTWR-API/LTWR-UI plus unchanged TWR-UI; record actual evidence and cleanup.
+- [x] 3.2 Synchronize guide/continuity/evidence, independently audit results, archive with supported CLI and validate canonical specs.
