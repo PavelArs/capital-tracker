@@ -61,8 +61,8 @@ describe('FIFO-RANGE-PARTITION original quantity coordinates', () => {
 
   it('retains full precision and the final atom after a156-digit product', () => {
     const maximum = 10n ** 78n - 1n;
-    const split = takePrefix(lotInterval(maximum, maximum), maximum - 1n);
-    expect(intervalCost(split.taken)).toBe(maximum - 1n);
+    const split = takePrefix(lotInterval(maximum, maximum - 1n), maximum - 1n);
+    expect(intervalCost(split.taken)).toBe(maximum - 2n);
     expect(intervalCost(split.remainder)).toBe(1n);
   });
 });

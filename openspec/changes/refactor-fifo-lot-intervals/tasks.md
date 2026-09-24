@@ -1,6 +1,6 @@
 ## 1. Preserve characterization
 - [x] 1.1 Audit transfer dependencies/pipeline, independently review interval design and retain passing240-test baseline.
-- [ ] 1.2 Add focused independent FIFO-RANGE partition/bounds/conservation tests without artificial behavior failure.
+- [x] 1.2 Add focused independent FIFO-RANGE partition/bounds/conservation tests without artificial behavior failure.
 
 ## 2. Refactor and review
 - [ ] 2.1 Extract interval arithmetic and use it in existing FIFO/carry-in with public shapes unchanged.
