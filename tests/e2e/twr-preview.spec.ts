@@ -174,6 +174,13 @@ test('TWR-API: exact endpoint return and private reviewed snapshot', async ({
     });
     expect(foreignOrigin.status()).toBe(403);
     noStore(foreignOrigin);
+    const missingCsrf = await page.request.fetch(twrEndpoint, {
+      method: 'POST',
+      data: previewInput(),
+      headers: { Origin: origin },
+    });
+    expect(missingCsrf.status()).toBe(403);
+    noStore(missingCsrf);
     const invalidCsrf = await api.send('POST', twrPath, previewInput(), {
       'X-CSRF-Token': 'invalid-synthetic-csrf',
     });
