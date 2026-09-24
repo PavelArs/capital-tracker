@@ -9,6 +9,8 @@ const feeToken = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const atom = '0.000000000000000000000000000001';
 const twoAtoms = '0.000000000000000000000000000002';
 const threeAtoms = '0.000000000000000000000000000003';
+const maximum = `${'9'.repeat(48)}.${'9'.repeat(30)}`;
+const doubleMaximum = `1${'9'.repeat(48)}.${'9'.repeat(29)}8`;
 
 function uuid(number: number): string {
   return `00000000-0000-4000-8000-${number.toString(16).padStart(12, '0')}`;
@@ -402,6 +404,108 @@ describe('OWNED-TRANSFER-FIFO exact economic projection', () => {
         thousandAndOne,
       ),
     ).toThrow(FifoHistoryError);
+  });
+
+  it('accepts exactly 100000 full-inventory matches and rejects the next sale match', () => {
+    const carryIn: FifoCarryInInput[] = Array.from({ length: 100 }, (_, index) => ({
+      lotId: uuid(10000 + index),
+      openingRevision: 1,
+      ordinal: index + 1,
+      instrumentId: token,
+      instrumentName: 'Token',
+      instrumentSymbol: 'SAME',
+      acquiredAt: day(1),
+      orderWithinTimestamp: index,
+      originalQuantity: '1',
+      originalCostUsd: '1',
+      carriedQuantity: '1',
+    }));
+    const buys = Array.from({ length: 900 }, (_, index) =>
+      trade(11000 + index, token, 'buy', '1', '1', 1, 100 + index),
+    );
+    const movements = Array.from({ length: 100 }, (_, index) =>
+      transfer(
+        12000 + index,
+        index % 2 === 0 ? accountA : accountB,
+        index % 2 === 0 ? accountB : accountA,
+        '1000',
+        index + 2,
+      ),
+    );
+    const accounts = [account(accountA, buys, carryIn), account(accountB)];
+    const exact = calculateOwnedTransfers(accounts, movements);
+    const allocationRows = [...exact.allocations.values()].reduce(
+      (count, allocation) => count + allocation.items.length,
+      0,
+    );
+    expect(exact.allocations.size).toBe(100);
+    expect(allocationRows).toBe(100000);
+    expect(exact.accounts.get(accountA)!.summary.remainingCostUsd).toBe('1000');
+    expect(exact.accounts.get(accountB)!.summary.remainingCostUsd).toBe('0');
+    expect(exact.allocations.get(movements[99].transferId)).toMatchObject({
+      principalBasisUsd: '1000',
+      feeConsumedBasisUsd: '0',
+    });
+
+    const sale = trade(13000, token, 'sell', '1', '2', 102);
+    expect(() =>
+      calculateOwnedTransfers(
+        [account(accountA, [...buys, sale], carryIn), account(accountB)],
+        movements,
+      ),
+    ).toThrow(FifoHistoryError);
+  }, 30000);
+
+  it('keeps a derived principal-plus-fee sum beyond the 48-integer-digit input limit', () => {
+    const movement = transfer(101, accountA, accountB, maximum, 3, {
+      feeInstrumentId: token,
+      feeQuantity: maximum,
+    });
+    const result = calculateOwnedTransfers(
+      [
+        account(accountA, [
+          trade(1, token, 'buy', maximum, maximum, 1),
+          trade(2, token, 'buy', maximum, maximum, 2),
+        ]),
+        account(accountB),
+      ],
+      [movement],
+    );
+    expect(result.accounts.get(accountA)!.summary).toMatchObject({
+      grossBuysUsd: doubleMaximum,
+      remainingCostUsd: '0',
+    });
+    expect(result.accounts.get(accountB)!.summary.remainingCostUsd).toBe(maximum);
+    expect(result.allocations.get(movement.transferId)).toMatchObject({
+      principalBasisUsd: maximum,
+      feeConsumedBasisUsd: maximum,
+    });
+  });
+
+  it('uses stable original-account identity to break equal acquisition keys, not arrival order', () => {
+    const cArrivesFirst = transfer(101, accountC, accountB, '1', 2);
+    const aArrivesSecond = transfer(102, accountA, accountB, '1', 2, { order: 1 });
+    const sale = trade(3, token, 'sell', '1', '300', 3);
+    const result = calculateOwnedTransfers(
+      [
+        account(accountA, [trade(1, token, 'buy', '1', '100', 1)]),
+        account(accountB, [sale]),
+        account(accountC, [trade(2, token, 'buy', '1', '200', 1)]),
+      ],
+      [cArrivesFirst, aArrivesSecond],
+    );
+    expect(result.accounts.get(accountB)!.realizations[0]).toMatchObject({
+      consumedCostUsd: '100',
+      realizedUsd: '200',
+    });
+    expect(result.accounts.get(accountB)!.matches).toEqual([
+      expect.objectContaining({
+        sourceKind: 'transfer',
+        origin: expect.objectContaining({ accountId: accountA, kind: 'trade' }),
+        arrival: { transferId: aArrivesSecond.transferId, version: 1 },
+      }),
+    ]);
+    expect(result.accounts.get(accountB)!.summary.remainingCostUsd).toBe('200');
   });
 
   it('keeps the no-transfer wrapper output byte-compatible with existing FIFO', () => {
