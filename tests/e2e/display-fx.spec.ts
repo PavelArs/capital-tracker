@@ -112,7 +112,7 @@ function expectDisplayIdentity(body: Record<string, unknown>) {
 async function expectCurrencyRow(table: Locator, currency: string, rate: string, amount: string) {
   const row = table.getByRole('row').filter({ hasText: currency });
   await expect(row).toHaveCount(1);
-  expect(await row.getByRole('cell').allTextContents()).toEqual([currency, rate, amount]);
+  await expect(row.getByRole('cell')).toHaveText([currency, rate, amount]);
 }
 
 test('DFX-API: private stored conversion, explicit collection, cooldown and last-good failure', async ({
@@ -124,11 +124,20 @@ test('DFX-API: private stored conversion, explicit collection, cooldown and last
   const anonymous = await request.get(displayUrl('1'));
   expect(anonymous.status()).toBe(401);
   noStore(anonymous);
+  const anonymousRefresh = await request.post(refreshPath, {
+    data: {},
+    headers: { Origin: origin },
+  });
+  expect(anonymousRefresh.status()).toBe(401);
+  noStore(anonymousRefresh);
 
   const api = await tradeApi(page);
   const pendingContext = await browser.newContext({ baseURL: origin, ignoreHTTPSErrors: true });
   try {
     const pending = await passwordStep(await pendingContext.newPage());
+    const pendingRead = await pendingContext.request.get(displayUrl('1'));
+    expect(pendingRead.status()).toBe(401);
+    noStore(pendingRead);
     resetFxRows();
     const validBody = validProviderBody();
     setProviderResponse(fixtureFxResponse(200, validBody.body));
@@ -382,8 +391,7 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
     const late = await delayed;
     expect(late.status()).toBe(200);
     expect(await late.json()).toMatchObject({ amountUsd: '123.45' });
-    const eurRow = table.getByRole('row').filter({ hasText: 'EUR' });
-    await expect(eurRow).not.toContainText('111.105');
+    await expect(table).toHaveCount(0);
 
     const finalRead = page.waitForResponse(
       (response) =>
@@ -405,4 +413,22 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
     release();
     await page.unroute(pattern);
   }
+
+  // Advance only the synthetic collection deadline; retain budget and last-good data.
+  makeCollectionDue();
+  setProviderResponse(fixtureFxResponse(503, 'synthetic-provider-unavailable'));
+  const failedRead = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === displayPath,
+  );
+  await page.getByRole('button', { name: 'Получить свежие курсы', exact: true }).click();
+  expect((await failedRead).status()).toBe(200);
+  await expect(panel.getByText('Данные устарели', { exact: true })).toBeVisible();
+  await expectCurrencyRow(table, 'EUR', '0.9', '180');
+  await expectCurrencyRow(table, 'RUB', '90.12', '18024');
+  expect(displayFingerprint()).toBe(financialBefore);
+  expect(providerRequests()).toEqual([
+    ...providersBefore,
+    { method: 'GET', url: providerUrl },
+    { method: 'GET', url: providerUrl },
+  ]);
 });
