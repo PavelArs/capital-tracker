@@ -1,4 +1,13 @@
+import {
+  FifoHistoryError,
+  type LotInterval,
+  intervalCost,
+  lotInterval,
+  takePrefix,
+} from './fifo-lot-interval';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
+
+export { FifoHistoryError } from './fifo-lot-interval';
 
 export interface Execution {
   instrumentId: string;
@@ -111,19 +120,9 @@ export interface CarryInFifoResult extends Omit<FifoResult, 'lots' | 'matches'> 
 export const MAX_ACTIVE_TRADES = 1000;
 export const MAX_CARRY_IN_LOTS = 100;
 
-export class FifoHistoryError extends Error {
-  constructor() {
-    super('Invalid trade history');
-    this.name = 'FifoHistoryError';
-  }
-}
-
 interface WorkingLot {
   source: { kind: 'trade'; trade: FifoTrade } | { kind: 'carry-in'; lot: FifoCarryInInput };
-  quantity: bigint;
-  cost: bigint;
-  disposed: bigint;
-  allocated: bigint;
+  interval: LotInterval;
 }
 
 /** Original allocation coordinates survive a partial disposal before coverage. */
@@ -138,18 +137,19 @@ export function deriveCarryInAmounts(
   if (quantity <= 0n || cost < 0n || remaining <= 0n || remaining > quantity)
     throw new FifoHistoryError();
   const disposed = quantity - remaining;
-  const allocated = (cost * disposed) / quantity;
+  const allocated = intervalCost(lotInterval(quantity, cost, 0n, disposed));
+  const carried = intervalCost(lotInterval(quantity, cost, disposed, quantity));
   return {
     priorDisposedQuantity: formatAtoms(disposed),
     priorAllocatedCostUsd: formatAtoms(allocated),
-    carriedCostUsd: formatAtoms(cost - allocated),
+    carriedCostUsd: formatAtoms(carried),
   };
 }
 
 function projectLot(lot: WorkingLot): FifoLot | CarryInLot {
   const remaining = {
-    remainingQuantity: formatAtoms(lot.quantity - lot.disposed),
-    remainingCostUsd: formatAtoms(lot.cost - lot.allocated),
+    remainingQuantity: formatAtoms(lot.interval.end - lot.interval.start),
+    remainingCostUsd: formatAtoms(intervalCost(lot.interval)),
   };
   if (lot.source.kind === 'carry-in') {
     const original = lot.source.lot;
@@ -174,7 +174,7 @@ function projectLot(lot: WorkingLot): FifoLot | CarryInLot {
     occurredAt: trade.occurredAt,
     orderWithinTimestamp: trade.orderWithinTimestamp,
     originalQuantity: trade.quantity,
-    originalCostUsd: formatAtoms(lot.cost),
+    originalCostUsd: formatAtoms(lot.interval.originalCost),
     ...remaining,
   };
 }
@@ -233,10 +233,11 @@ export function calculateFifo(
     );
     const lot: WorkingLot = {
       source: { kind: 'carry-in', lot: original },
-      quantity: canonicalDecimalToAtoms(original.originalQuantity),
-      cost: canonicalDecimalToAtoms(original.originalCostUsd),
-      disposed: canonicalDecimalToAtoms(amounts.priorDisposedQuantity),
-      allocated: canonicalDecimalToAtoms(amounts.priorAllocatedCostUsd),
+      interval: lotInterval(
+        canonicalDecimalToAtoms(original.originalQuantity),
+        canonicalDecimalToAtoms(original.originalCostUsd),
+        canonicalDecimalToAtoms(amounts.priorDisposedQuantity),
+      ),
     };
     const queue = queues.get(original.instrumentId) ?? { lots: [], head: 0 };
     queue.lots.push(lot);
@@ -259,10 +260,7 @@ export function calculateFifo(
     if (trade.side === 'buy') {
       const lot: WorkingLot = {
         source: { kind: 'trade', trade },
-        quantity,
-        cost: gross + fee,
-        disposed: 0n,
-        allocated: 0n,
+        interval: lotInterval(quantity, gross + fee),
       };
       const queue = queues.get(trade.instrumentId) ?? { lots: [], head: 0 };
       queue.lots.push(lot);
@@ -280,13 +278,11 @@ export function calculateFifo(
     while (remaining > 0n) {
       const lot = queue.lots[queue.head];
       if (!lot) throw new FifoHistoryError();
-      const available = lot.quantity - lot.disposed;
+      const available = lot.interval.end - lot.interval.start;
       const matched = remaining < available ? remaining : available;
-      lot.disposed += matched;
-      // Difference of cumulative allocations from the ORIGINAL lot, including its final atom.
-      const allocated = (lot.cost * lot.disposed) / lot.quantity;
-      const cost = allocated - lot.allocated;
-      lot.allocated = allocated;
+      const split = takePrefix(lot.interval, matched);
+      lot.interval = split.remainder;
+      const cost = intervalCost(split.taken);
       saleCost += cost;
       remaining -= matched;
       const match = {
@@ -313,7 +309,7 @@ export function calculateFifo(
               ordinal: lot.source.lot.ordinal,
             },
       );
-      if (lot.disposed === lot.quantity) queue.head += 1;
+      if (lot.interval.start === lot.interval.end) queue.head += 1;
     }
     grossSales += gross;
     sellFees += fee;
@@ -346,7 +342,7 @@ export function calculateFifo(
       realizedUsd: formatAtoms(grossSales - sellFees - consumedCost),
       remainingCostUsd: formatAtoms(carryInCost + grossBuys + buyFees - consumedCost),
     },
-    lots: lots.filter((lot) => lot.disposed < lot.quantity).map(projectLot),
+    lots: lots.filter((lot) => lot.interval.start < lot.interval.end).map(projectLot),
     realizations,
     matches,
   };
