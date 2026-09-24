@@ -1,4 +1,5 @@
 import type { FifoReward, RewardCategory, RewardSummary } from './asset-reward-types';
+import type { FifoSwap, SwapAllocation, SwapSummary } from './asset-swap-types';
 import type {
   CarryInFifoResult,
   CarryInLot,
@@ -41,6 +42,7 @@ export interface OwnedAccountInput {
   trades: readonly FifoTrade[];
   initialLots: readonly FifoCarryInInput[];
   rewards?: readonly FifoReward[];
+  swaps?: readonly FifoSwap[];
 }
 
 /** Current-effective movement; immutable version history is resolved by the store. */
@@ -85,6 +87,16 @@ export type LotOrigin =
       rewardId: string;
       version: number;
       category: RewardCategory;
+      acquiredAt: string;
+      orderWithinTimestamp: number;
+      originalQuantity: string;
+      originalCostUsd: string | null;
+    }
+  | {
+      accountId: string;
+      kind: 'swap';
+      swapId: string;
+      version: number;
       acquiredAt: string;
       orderWithinTimestamp: number;
       originalQuantity: string;
@@ -138,6 +150,29 @@ export interface RewardSaleMatch {
   costUsd: string | null;
 }
 
+export interface SwapLot {
+  sourceKind: 'swap';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: Extract<LotOrigin, { kind: 'swap' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string | null;
+}
+
+export interface SwapSaleMatch {
+  sourceKind: 'swap';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: Extract<LotOrigin, { kind: 'swap' }>;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string | null;
+}
+
 export interface ReceivedLot {
   sourceKind: 'transfer';
   instrumentId: string;
@@ -185,13 +220,15 @@ export interface AccountFifoResult
   extends Omit<CarryInFifoResult, 'summary' | 'realizations' | 'lots' | 'matches'> {
   summary: ConnectedFifoSummary;
   realizations: ConnectedFifoRealization[];
-  lots: (FifoLot | CarryInLot | RewardLot | ReceivedLot)[];
-  matches: (FifoMatch | CarryInMatch | RewardSaleMatch | ReceivedSaleMatch)[];
+  lots: (FifoLot | CarryInLot | RewardLot | SwapLot | ReceivedLot)[];
+  matches: (FifoMatch | CarryInMatch | RewardSaleMatch | SwapSaleMatch | ReceivedSaleMatch)[];
   transferSummary?: TransferSummary;
   rewardSummary?: RewardSummary;
+  swapSummary?: SwapSummary;
 }
 
 export interface OwnedProjection {
   accounts: ReadonlyMap<string, AccountFifoResult>;
   allocations: ReadonlyMap<string, TransferAllocation>;
+  swapAllocations: ReadonlyMap<string, SwapAllocation>;
 }

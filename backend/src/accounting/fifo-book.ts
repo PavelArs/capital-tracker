@@ -1,4 +1,6 @@
 import type { FifoReward, RewardSummary } from './asset-reward-types';
+import { swapAtoms } from './asset-swap-fifo';
+import type { FifoSwap, SwapAllocation, SwapSummary } from './asset-swap-types';
 import { CostTally } from './cost-evidence';
 import type { CarryInFifoResult, FifoCarryInInput, FifoTrade } from './fifo';
 import {
@@ -14,6 +16,8 @@ import type {
   LotOrigin,
   ReceivedSaleMatch,
   RewardSaleMatch,
+  SwapSaleMatch,
+  TransferAllocationItem,
   TransferArrival,
   TransferFeeSummary,
 } from './owned-transfer-types';
@@ -21,7 +25,8 @@ import type {
 type Source =
   | { kind: 'trade'; trade: FifoTrade }
   | { kind: 'carry-in'; lot: FifoCarryInInput; carriedCostUsd: string }
-  | { kind: 'reward'; reward: FifoReward };
+  | { kind: 'reward'; reward: FifoReward }
+  | { kind: 'swap'; swap: FifoSwap };
 
 export interface BookFragment {
   source: Source;
@@ -54,7 +59,9 @@ function identity(origin: LotOrigin): string {
     ? origin.tradeId
     : origin.kind === 'carry-in'
       ? origin.lotId
-      : origin.rewardId;
+      : origin.kind === 'reward'
+        ? origin.rewardId
+        : origin.swapId;
 }
 
 /** Priority after a fragment arrives; its original cost coordinates are never rebased. */
@@ -78,6 +85,19 @@ function compareFragments(left: BookFragment, right: BookFragment): number {
         ? 1
         : 0)
   );
+}
+
+function swapItem(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
+  return {
+    kind,
+    instrumentId: portion.fragment.instrumentId,
+    quantity: formatAtoms(portion.interval.end - portion.interval.start),
+    costUsd: portion.cost === null ? null : formatAtoms(portion.cost),
+    origin: portion.fragment.origin,
+    intervalStart: formatAtoms(portion.interval.start),
+    intervalEnd: formatAtoms(portion.interval.end),
+    arrival: portion.fragment.arrival,
+  };
 }
 
 /** Mutable only within a single pure projection; no input row is modified. */
@@ -111,6 +131,13 @@ export class FifoBook {
   private readonly rewardIncome = new CostTally();
   private knownCategorizedIncome = 0n;
   private unclassifiedRewards = 0;
+  private hasSwapIdentity = false;
+  private swapCount = 0;
+  private readonly swapConsideration = new CostTally();
+  private readonly swapPrincipalBasis = new CostTally();
+  private readonly swapFeeBasis = new CostTally();
+  private swapKnownRealized = 0n;
+  private swapUnknownRealizedCount = 0;
   private participant = false;
 
   constructor(
@@ -159,6 +186,10 @@ export class FifoBook {
     this.hasRewardIdentity = true;
   }
 
+  markSwapIdentity(): void {
+    this.hasSwapIdentity = true;
+  }
+
   applyReward(reward: FifoReward): void {
     this.occupy(reward.occurredAt, reward.orderWithinTimestamp);
     const quantity = canonicalDecimalToAtoms(reward.quantity);
@@ -195,6 +226,81 @@ export class FifoBook {
     this.rewardIncome.add(income);
     if (reward.category === 'unclassified') this.unclassifiedRewards++;
     else if (income !== null) this.knownCategorizedIncome += income;
+  }
+
+  /** A swap is one chronology event, with an explicit gross acquisition and one fee debit. */
+  applySwap(swap: FifoSwap): SwapAllocation {
+    this.occupy(swap.occurredAt, swap.orderWithinTimestamp);
+    const { outgoing, incoming, fee, consideration } = swapAtoms(swap);
+    const principal = this.consume(swap.outgoingInstrumentId, outgoing);
+    let feePortions: BookPortion[] = [];
+    if (swap.feeSource === 'held') {
+      if (swap.feeInstrumentId === null) throw new FifoHistoryError();
+      feePortions = this.consume(swap.feeInstrumentId, fee);
+    }
+
+    const fragment: BookFragment = {
+      source: { kind: 'swap', swap },
+      origin: {
+        accountId: this.accountId,
+        kind: 'swap',
+        swapId: swap.swapId,
+        version: swap.version,
+        acquiredAt: swap.occurredAt,
+        orderWithinTimestamp: swap.orderWithinTimestamp,
+        originalQuantity: swap.incomingQuantity,
+        originalCostUsd: swap.considerationUsd,
+      },
+      arrival: null,
+      instrumentId: swap.incomingInstrumentId,
+      instrumentName: swap.incomingInstrumentName,
+      instrumentSymbol: swap.incomingInstrumentSymbol,
+      interval: lotInterval(incoming, consideration),
+    };
+    if (swap.feeSource === 'incoming') {
+      this.limits.match?.();
+      const { taken, remainder } = takePrefix(fragment.interval, fee);
+      feePortions = [{ fragment, interval: taken, cost: intervalCost(taken) }];
+      fragment.interval = remainder;
+    }
+    if (fragment.interval.start < fragment.interval.end) this.append(fragment);
+
+    const principalBasis = new CostTally();
+    for (const portion of principal) principalBasis.add(portion.cost);
+    const feeBasis = new CostTally();
+    for (const portion of feePortions) feeBasis.add(portion.cost);
+    const complete = consideration !== null && !principalBasis.incomplete && !feeBasis.incomplete;
+    const realized = complete ? consideration - principalBasis.known - feeBasis.known : null;
+    this.hasSwapIdentity = true;
+    this.swapCount++;
+    this.swapConsideration.add(consideration);
+    for (const portion of principal) this.swapPrincipalBasis.add(portion.cost);
+    for (const portion of feePortions) this.swapFeeBasis.add(portion.cost);
+    if (realized === null) this.swapUnknownRealizedCount++;
+    else this.swapKnownRealized += realized;
+    return {
+      swapId: swap.swapId,
+      considerationUsd: swap.considerationUsd,
+      principalBasisUsd: principalBasis.value,
+      feeConsumedBasisUsd: feeBasis.value,
+      realizedUsd: realized === null ? null : formatAtoms(realized),
+      coverage: {
+        consideration: {
+          knownSubtotalUsd: consideration === null ? '0' : formatAtoms(consideration),
+          unknownCount: consideration === null ? 1 : 0,
+        },
+        principal: principalBasis.coverage,
+        fee: feeBasis.coverage,
+        realized: {
+          knownSubtotalUsd: realized === null ? '0' : formatAtoms(realized),
+          unknownCount: realized === null ? 1 : 0,
+        },
+      },
+      items: [
+        ...principal.map((portion) => swapItem('principal', portion)),
+        ...feePortions.map((portion) => swapItem('fee', portion)),
+      ],
+    };
   }
 
   occupy(occurredAt: string, orderWithinTimestamp: number): void {
@@ -273,11 +379,20 @@ export class FifoBook {
           openingRevision: fragment.source.lot.openingRevision,
           ordinal: fragment.source.lot.ordinal,
         });
-      } else {
+      } else if (fragment.source.kind === 'reward') {
         const match: RewardSaleMatch = {
           ...common,
           sourceKind: 'reward',
           origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+        };
+        this.matches.push(match);
+      } else {
+        const match: SwapSaleMatch = {
+          ...common,
+          sourceKind: 'swap',
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
           intervalStart: formatAtoms(interval.start),
           intervalEnd: formatAtoms(interval.end),
         };
@@ -444,13 +559,25 @@ export class FifoBook {
           remainingQuantity,
           remainingCostUsd: formatAtoms(cost),
         });
-      } else {
+      } else if (fragment.source.kind === 'reward') {
         lots.push({
           sourceKind: 'reward',
           instrumentId: fragment.instrumentId,
           instrumentName: fragment.instrumentName,
           instrumentSymbol: fragment.instrumentSymbol,
           origin: fragment.origin as Extract<LotOrigin, { kind: 'reward' }>,
+          intervalStart: formatAtoms(interval.start),
+          intervalEnd: formatAtoms(interval.end),
+          remainingQuantity,
+          remainingCostUsd,
+        });
+      } else {
+        lots.push({
+          sourceKind: 'swap',
+          instrumentId: fragment.instrumentId,
+          instrumentName: fragment.instrumentName,
+          instrumentSymbol: fragment.instrumentSymbol,
+          origin: fragment.origin as Extract<LotOrigin, { kind: 'swap' }>,
           intervalStart: formatAtoms(interval.start),
           intervalEnd: formatAtoms(interval.end),
           remainingQuantity,
@@ -536,12 +663,32 @@ export class FifoBook {
       };
       result.rewardSummary = rewardSummary;
     }
+    if (this.hasSwapIdentity) {
+      const swapSummary: SwapSummary = {
+        activeCount: this.swapCount,
+        considerationUsd: this.swapConsideration.value,
+        principalBasisUsd: this.swapPrincipalBasis.value,
+        feeConsumedBasisUsd: this.swapFeeBasis.value,
+        realizedUsd: this.swapUnknownRealizedCount > 0 ? null : formatAtoms(this.swapKnownRealized),
+        coverage: {
+          consideration: this.swapConsideration.coverage,
+          principal: this.swapPrincipalBasis.coverage,
+          fee: this.swapFeeBasis.coverage,
+          realized: {
+            knownSubtotalUsd: formatAtoms(this.swapKnownRealized),
+            unknownCount: this.swapUnknownRealizedCount,
+          },
+        },
+      };
+      result.swapSummary = swapSummary;
+    }
     return result;
   }
 
   /** The legacy wrapper never receives a fragment and keeps its exact DTO type. */
   projectLegacy(): CarryInFifoResult {
-    if (this.participant || this.hasRewardIdentity) throw new FifoHistoryError();
+    if (this.participant || this.hasRewardIdentity || this.hasSwapIdentity)
+      throw new FifoHistoryError();
     return this.project() as CarryInFifoResult;
   }
 }

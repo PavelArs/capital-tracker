@@ -93,5 +93,6 @@ export function projectHistoricalFifo(
     summary: fifo.summary,
     positions,
     ...('rewardSummary' in fifo && fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
+    ...('swapSummary' in fifo && fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
   };
 }

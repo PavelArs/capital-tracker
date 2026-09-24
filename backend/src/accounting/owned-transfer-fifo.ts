@@ -1,3 +1,5 @@
+import { swapAtoms } from './asset-swap-fifo';
+import type { SwapAllocation } from './asset-swap-types';
 import { CostTally } from './cost-evidence';
 import { type BookPortion, FifoBook } from './fifo-book';
 import { FifoHistoryError } from './fifo-lot-interval';
@@ -28,6 +30,7 @@ export const OWNED_TRANSFER_LIMITS = {
   activeTrades: 10000,
   activeTransfers: 1000,
   activeRewards: 1000,
+  activeSwaps: 1000,
   matches: 100000,
   heldFragments: 100000,
 } as const;
@@ -73,7 +76,16 @@ type Event =
       orderWithinTimestamp: number;
       index: number;
     }
+  | {
+      kind: 'swap';
+      accountId: string;
+      occurredAt: string;
+      orderWithinTimestamp: number;
+      index: number;
+    }
   | { kind: 'transfer'; occurredAt: string; orderWithinTimestamp: number; index: number };
+
+const eventRank = { trade: 0, reward: 1, swap: 2, transfer: 3 } as const;
 
 /** Pure full-component replay. Callers load current-effective heads in one DB snapshot. */
 export function calculateOwnedTransfers(
@@ -90,6 +102,7 @@ export function calculateOwnedTransfers(
   if (byAccount.size !== accounts.length) throw new FifoHistoryError();
   let tradeCount = 0;
   let rewardCount = 0;
+  let swapCount = 0;
   let heldFragments = 0;
   let matches = 0;
   const books = new Map<string, FifoBook>();
@@ -98,13 +111,16 @@ export function calculateOwnedTransfers(
     if (
       account.trades.length > 1000 ||
       account.initialLots.length > 100 ||
-      (account.rewards?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeRewards
+      (account.rewards?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeRewards ||
+      (account.swaps?.length ?? 0) > OWNED_TRANSFER_LIMITS.activeSwaps
     )
       throw new OwnedTransferCapacityError();
     tradeCount += account.trades.length;
     rewardCount += account.rewards?.length ?? 0;
+    swapCount += account.swaps?.length ?? 0;
     if (tradeCount > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
     if (rewardCount > OWNED_TRANSFER_LIMITS.activeRewards) throw new OwnedTransferCapacityError();
+    if (swapCount > OWNED_TRANSFER_LIMITS.activeSwaps) throw new OwnedTransferCapacityError();
     const book = new FifoBook(account.accountId, {
       match: () => {
         if (++matches > OWNED_TRANSFER_LIMITS.matches) throw new OwnedTransferCapacityError();
@@ -119,6 +135,7 @@ export function calculateOwnedTransfers(
     });
     books.set(account.accountId, book);
     if (account.rewards?.length) book.markRewardIdentity();
+    if (account.swaps?.length) book.markSwapIdentity();
     if (at === undefined || account.coverageFrom <= at) {
       const baseline = [...account.initialLots].sort((left, right) =>
         left.acquiredAt === right.acquiredAt
@@ -158,12 +175,29 @@ export function calculateOwnedTransfers(
         index,
       });
     }
+    for (const [index, swap] of (account.swaps ?? []).entries()) {
+      if (swap.occurredAt < account.coverageFrom) throw new FifoHistoryError();
+      swapAtoms(swap);
+      events.push({
+        kind: 'swap',
+        accountId: account.accountId,
+        occurredAt: swap.occurredAt,
+        orderWithinTimestamp: swap.orderWithinTimestamp,
+        index,
+      });
+    }
   }
   const rewardIds = new Set<string>();
   for (const account of accounts)
     for (const reward of account.rewards ?? []) {
       if (rewardIds.has(reward.rewardId)) throw new FifoHistoryError();
       rewardIds.add(reward.rewardId);
+    }
+  const swapIds = new Set<string>();
+  for (const account of accounts)
+    for (const swap of account.swaps ?? []) {
+      if (swapIds.has(swap.swapId)) throw new FifoHistoryError();
+      swapIds.add(swap.swapId);
     }
   const transferIds = new Set<string>();
   for (const [index, transfer] of transfers.entries()) {
@@ -219,11 +253,11 @@ export function calculateOwnedTransfers(
         : left.orderWithinTimestamp - right.orderWithinTimestamp ||
           (left.kind === right.kind
             ? left.index - right.index
-            : (left.kind === 'trade' ? 0 : left.kind === 'reward' ? 1 : 2) -
-              (right.kind === 'trade' ? 0 : right.kind === 'reward' ? 1 : 2)),
+            : eventRank[left.kind] - eventRank[right.kind]),
   );
 
   const allocations = new Map<string, TransferAllocation>();
+  const swapAllocations = new Map<string, SwapAllocation>();
   for (const event of events) {
     if (at !== undefined && event.occurredAt > at) break;
     if (event.kind === 'trade') {
@@ -234,6 +268,12 @@ export function calculateOwnedTransfers(
     if (event.kind === 'reward') {
       const account = byAccount.get(event.accountId)!;
       books.get(event.accountId)!.applyReward(account.rewards![event.index]);
+      continue;
+    }
+    if (event.kind === 'swap') {
+      const account = byAccount.get(event.accountId)!;
+      const swap = account.swaps![event.index];
+      swapAllocations.set(swap.swapId, books.get(event.accountId)!.applySwap(swap));
       continue;
     }
     const transfer = transfers[event.index];
@@ -275,5 +315,6 @@ export function calculateOwnedTransfers(
   return {
     accounts: new Map([...books].map(([id, book]) => [id, book.project()])),
     allocations,
+    swapAllocations,
   };
 }
