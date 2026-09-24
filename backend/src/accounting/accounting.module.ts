@@ -3,6 +3,8 @@ import { AccountingController } from './accounting.controller';
 import { AccountingService } from './accounting.service';
 import { AssetRewardController } from './asset-reward.controller';
 import { AssetRewardService } from './asset-reward.service';
+import { AssetSwapController } from './asset-swap.controller';
+import { AssetSwapService } from './asset-swap.service';
 import { CarryInController } from './carry-in.controller';
 import { CarryInService } from './carry-in.service';
 import { CsvImportController } from './csv-import.controller';
@@ -37,6 +39,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ManualPortfolioValuationController,
     OwnedTransferController,
     AssetRewardController,
+    AssetSwapController,
   ],
   providers: [
     AccountingService,
@@ -52,6 +55,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ManualPortfolioValuationService,
     OwnedTransferService,
     AssetRewardService,
+    AssetSwapService,
   ],
 })
 export class AccountingModule {}

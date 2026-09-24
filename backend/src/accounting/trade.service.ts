@@ -3,6 +3,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
 import type { RewardSummary } from './asset-reward-types';
+import type { SwapSummary } from './asset-swap-types';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
 import {
   advanceConnectedJournals,
@@ -68,6 +69,7 @@ export interface JournalState {
         summary: AccountFifoResult['summary'];
         transferSummary?: TransferSummary;
         rewardSummary?: RewardSummary;
+        swapSummary?: SwapSummary;
         revisionBudget?: { used: number; limit: number };
       })
     | null;
@@ -294,7 +296,8 @@ export class TradeService {
           summary: fifo.summary,
           ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
           ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
-          ...(fifo.transferSummary || fifo.rewardSummary
+          ...(fifo.swapSummary ? { swapSummary: fifo.swapSummary } : {}),
+          ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
             ? {
                 revisionBudget: { used: journal.currentRevision, limit: 10000 },
               }

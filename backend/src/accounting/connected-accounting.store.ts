@@ -8,6 +8,13 @@ import {
   rewardHeadJoin,
   rewardVersionSelect,
 } from './asset-reward.store';
+import { type FifoSwap, emptySwapSummary } from './asset-swap-types';
+import {
+  type SwapVersionRow,
+  projectSwapVersion,
+  swapHeadJoin,
+  swapVersionSelect,
+} from './asset-swap.store';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import {
   type AccountFifoResult,
@@ -40,6 +47,7 @@ export interface ConnectedLedger {
   transfers: readonly TransferVersion[];
   participants: ReadonlySet<string>;
   rewardParticipants: ReadonlySet<string>;
+  swapParticipants: ReadonlySet<string>;
 }
 export type ConnectedLedgerCache = Map<string, ConnectedLedger>;
 
@@ -168,6 +176,30 @@ export async function readConnectedLedger(
     rewards.push(projectRewardVersion(row));
     rewardsByAccount.set(row.accountId, rewards);
   }
+  const swapCounts: { accountId: string; active: number }[] = await manager.query(
+    `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
+      FROM account_swap_versions v ${swapHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
+    [owner, ids],
+  );
+  if (
+    swapCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeSwaps) ||
+    swapCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeSwaps
+  )
+    throw new OwnedTransferCapacityError();
+  const swapRows: SwapVersionRow[] = await manager.query(
+    `${swapVersionSelect} ${swapHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."swapId" LIMIT 1001`,
+    [owner, ids],
+  );
+  if (swapRows.length > OWNED_TRANSFER_LIMITS.activeSwaps) throw new OwnedTransferCapacityError();
+  const swapsByAccount = new Map<string, FifoSwap[]>();
+  for (const row of swapRows) {
+    const swaps = swapsByAccount.get(row.accountId) ?? [];
+    swaps.push(projectSwapVersion(row));
+    swapsByAccount.set(row.accountId, swaps);
+  }
   const accounts = new Map<string, ConnectedAccount>();
   for (const journal of journals) {
     accounts.set(journal.accountId, {
@@ -176,6 +208,7 @@ export async function readConnectedLedger(
       journal,
       trades: byAccount.get(journal.accountId) ?? [],
       rewards: rewardsByAccount.get(journal.accountId) ?? [],
+      swaps: swapsByAccount.get(journal.accountId) ?? [],
       initialLots: await readBaseline(manager, owner, journal.accountId, journal),
     });
   }
@@ -184,6 +217,7 @@ export async function readConnectedLedger(
     transfers: transfers.filter((transfer) => accounts.has(transfer.fromAccountId)),
     participants: await readTransferParticipants(manager, owner, ids),
     rewardParticipants: new Set(rewardCounts.map((row) => row.accountId)),
+    swapParticipants: new Set(swapCounts.map((row) => row.accountId)),
   };
 }
 
@@ -195,6 +229,7 @@ export function projectConnectedLedger(
     accountId?: string;
     trades?: readonly FifoTrade[];
     rewards?: readonly FifoReward[];
+    swaps?: readonly FifoSwap[];
     transfers?: readonly ActiveTransferInput[];
   } = {},
 ) {
@@ -204,6 +239,7 @@ export function projectConnectedLedger(
           ...account,
           trades: options.trades ?? account.trades,
           rewards: options.rewards ?? account.rewards,
+          swaps: options.swaps ?? account.swaps,
         }
       : account,
   );
@@ -215,6 +251,9 @@ export function connectedResult(ledger: ConnectedLedger, id: string, result: Acc
     ...result,
     ...(ledger.participants.has(id) && !result.transferSummary
       ? { transferSummary: emptyTransferSummary() }
+      : {}),
+    ...(ledger.swapParticipants.has(id) && !result.swapSummary
+      ? { swapSummary: emptySwapSummary() }
       : {}),
     ...(ledger.rewardParticipants.has(id) && !result.rewardSummary
       ? { rewardSummary: emptyRewardSummary() }

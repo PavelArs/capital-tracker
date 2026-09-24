@@ -63,7 +63,7 @@ export async function readHistoricalStates(
         openingRevision: journal.openingRevision,
         ...projectHistoricalFifo(fifo, account.initialLots),
         ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
-        ...(fifo.transferSummary || fifo.rewardSummary
+        ...(fifo.transferSummary || fifo.rewardSummary || fifo.swapSummary
           ? {
               revisionBudget: { used: journal.currentRevision, limit: 10000 },
             }
