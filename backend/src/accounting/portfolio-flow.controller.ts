@@ -19,6 +19,17 @@ export class PortfolioFlowController {
     return this.flows.previewTwr(owner.userId, input);
   }
 
+  @Get('twr-boundaries')
+  twrBoundaries(@CurrentUser() owner: OwnerIdentity, @Query() query: unknown) {
+    return this.flows.twrBoundaries(owner.userId, query);
+  }
+
+  @Post('linked-twr-preview')
+  @HttpCode(200)
+  previewLinkedTwr(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {
+    return this.flows.previewLinkedTwr(owner.userId, input);
+  }
+
   @Post('profit-preview')
   @HttpCode(200)
   previewProfit(@CurrentUser() owner: OwnerIdentity, @Body() input: unknown) {

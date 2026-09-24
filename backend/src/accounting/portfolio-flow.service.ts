@@ -4,6 +4,8 @@ import { DataSource, EntityManager } from 'typeorm';
 import type { PortfolioFlowJournal } from '../entities/portfolio-flow-journal.entity';
 import type { PortfolioFlowVersion } from '../entities/portfolio-flow-version.entity';
 import { parseDecimal, parseUuid } from './input';
+import { projectLinkedTwr, projectTwrBoundaries } from './linked-twr';
+import { parseLinkedTwrPreview, parseTwrBoundaryQuery } from './linked-twr-input';
 import { parseProfitPreview, projectPeriodProfit } from './period-profit';
 import { type FlowVersion, projectFlowPeriod } from './portfolio-flow';
 import {
@@ -197,6 +199,32 @@ export class PortfolioFlowService {
     return { ...preview, twr: projectTwr(input, items) };
   }
 
+  async twrBoundaries(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseTwrBoundaryQuery(raw);
+    return this.read(async (manager) => {
+      const { journal, items } = await this.period(manager, owner, input);
+      return {
+        ...input,
+        coverageFrom: journal.coverageFrom.toISOString(),
+        journalRevision: journal.currentRevision,
+        ...basis,
+        ...projectTwrBoundaries(input, items),
+      };
+    });
+  }
+
+  async previewLinkedTwr(ownerId: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const input = parseLinkedTwrPreview(raw);
+    const { preview, items } = await this.valuationSnapshot(
+      owner,
+      input,
+      input.expectedJournalRevision,
+    );
+    return { ...preview, linkedTwr: projectLinkedTwr(input, items) };
+  }
+
   async previewXirr(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const input = parseProfitPreview(raw);
@@ -211,9 +239,17 @@ export class PortfolioFlowService {
     }
   }
 
-  private valuationSnapshot(owner: string, input: ReturnType<typeof parseProfitPreview>) {
+  private valuationSnapshot(
+    owner: string,
+    input: ReturnType<typeof parseProfitPreview>,
+    expectedJournalRevision?: number,
+  ) {
     return this.read(async (manager) => {
-      const { journal, summary, items } = await this.period(manager, owner, input);
+      const { journal, summary, items } = await this.period(manager, owner, {
+        from: input.from,
+        to: input.to,
+        journalRevision: expectedJournalRevision,
+      });
       return {
         items,
         preview: {

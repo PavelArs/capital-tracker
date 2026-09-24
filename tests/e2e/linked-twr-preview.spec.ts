@@ -408,6 +408,9 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
     assertLinked(await availableResponse.json(), 1);
     await expect(result).toBeVisible();
     await expect(rate).toHaveText('21');
+    await expect(
+      result.getByText('Прибыль, USD', { exact: true }).locator('xpath=following-sibling::dd[1]'),
+    ).toHaveText('310');
     await expect(result).toContainText('Ревизия журнала: 1');
 
     let postFetchedResolve: () => void = () => {};

@@ -28,7 +28,7 @@ function object(input: unknown, keys: readonly string[]): Record<string, unknown
   if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
   return input as Record<string, unknown>;
 }
-function revision(value: unknown): number {
+export function parseFlowRevision(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0 || value > 10000)
     return bad();
   return value === 0 ? 0 : value;
@@ -58,7 +58,7 @@ export function parseFlowCreate(input: unknown): FlowCreate {
     return bad();
   return {
     requestId: parseUuid(row.requestId),
-    expectedJournalRevision: revision(row.expectedJournalRevision),
+    expectedJournalRevision: parseFlowRevision(row.expectedJournalRevision),
     direction: row.direction,
     occurredAt: parseAsOf(row.occurredAt),
     amountUsd: parseDecimal(row.amountUsd, true),
@@ -69,7 +69,7 @@ export function parseFlowVoid(input: unknown): FlowVoid {
   const row = object(input, ['requestId', 'expectedJournalRevision']);
   return {
     requestId: parseUuid(row.requestId),
-    expectedJournalRevision: revision(row.expectedJournalRevision),
+    expectedJournalRevision: parseFlowRevision(row.expectedJournalRevision),
   };
 }
 export function parseFlowPeriod(input: unknown) {
