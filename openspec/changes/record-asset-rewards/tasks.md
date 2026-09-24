@@ -5,9 +5,9 @@
 
 ## 2. Implement accounting and persistence
 
-- [ ] 2.1 Add genuine reward acquisition/origin and unknown-cost intervals with exact known-subtotal evidence; preserve all-known trade/carry/transfer results and quantity/rounding invariants (REWARD-001/002).
-- [ ] 2.2 Add strict parser, additive schema21/store/service/private controller and immutable lifecycle with owner-first locks, replay/CAS/caps/deferred rollback (REWARD-003/006).
-- [ ] 2.3 Integrate reward count/load/replay, passive pins, historical/valuation/series and CSV completeness in the same snapshot; verify original receipt/row preservation and query bounds (REWARD-003/004).
+- [x] 2.1 Add genuine reward acquisition/origin and unknown-cost intervals with exact known-subtotal evidence; preserve all-known trade/carry/transfer results and quantity/rounding invariants (REWARD-001/002).
+- [x] 2.2 Add strict parser, additive schema21/store/service/private controller and immutable lifecycle with owner-first locks, replay/CAS/caps/deferred rollback (REWARD-003/006).
+- [x] 2.3 Integrate reward count/load/replay, passive pins, historical/valuation/series and CSV completeness in the same snapshot; verify original receipt/row preservation and query bounds (REWARD-003/004).
 
 ## 3. Integrate and review the owner workflow
 

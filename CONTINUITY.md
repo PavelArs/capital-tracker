@@ -117,22 +117,43 @@ SameBEimage in actualPG/HTTPS; FE rebuilt for select labels. Logs/harnesses/arti
 
 ## Active reward change
 
-record-asset-rewards contract/testseb4c4e0; independent boundarytests787c6ec.
-Read active proposal/design/persistence/tasks/verification. Root/independent Sol/Luna
-reviewed nullable basis vs income vs price, source-only reward income, unclassified
-reward subtype with mandatory economic attestation, connected replay and cost evidence.
-No contract blocker. Existing368/13baseline pass2.703s. Root7pure cases fail behaviorally
-before product edits; Sol4independent boundary cases also intendedRED. Real HTTPS RED
-is pending; do not claim PG/HTTPS GREEN. Root drafted PG economics/lifecycle/populated20
-and parser acceptance; additional real concurrency/SQL/RR/cap/CSV fixtures still required.
+record-asset-rewards remains active,5/9tasks complete. Read active proposal/design/
+persistence/tasks/verification; never archive before remaining UI/review/HTTPS gates.
+Contracteb4c4e0; root7 + Sol4intended pure RED and actual2HTTPS RED (schema20 image IDs
+above: validPOST404, regionabsent) precede corresponding implementation. Pure core
+integratedae9a677, parser153682c, backend1148f1b. Root385/16focused tests and build pass;
+backend lint77existing warnings; audit2moderate/nohighcritical. No deps/deploy changes.
 
-Fresh worktrees: capital-tracker-reward-core (historical_ui Sol; pure accounting only),
-capital-tracker-reward-acceptance (carry_docs_review Luna; two HTTPS cases only).
-Root owns migrations/store/service/integration/sharedrunners. Sol may now implement pure core after11actual pureRED cases. Root API/UI/persistence
-implementation still waits for corresponding2HTTPS RED; preserve schema20 image IDs.
-Logs/private/tmp/capital-rewards-{baseline,pure-red}.log and
-/private/tmp/capital-reward-boundaries-red.log. RED harness prepared at
-/private/tmp/capital-rewards-red.cjs; image IDs verified live against previous block.
+Rewards are owner-attested received income, quantity actually received; unknown subtype
+is not unknown economic classification. Basis/income independentlynull orknown0; never
+infer price/flow/tax or addincomeagain. Original FIFO intervals and null known-subtotals
+survive transfers/fees/sales. Shared pins advanceallparticipants; actualtradeversioncount
+staysdistinct. Sourceonly rewardSummary includingvoidedidentities; seriesomitsmetadata.
+AllknownoldDTO shapes retained. Rootstore/module/readmodel/CSVintegration reviewed bySol.
+
+CandidateBEsha256:176f668b0c6a77e78961600a3b989446f2bd479a8bcbd9a933142b8e5684d25f.
+Actual synthetic PGmainattempt3 all7familiespass: fresh21/populated20/noop/preservation,
+economics/lifecycle/SQL/deferredCOMMIT/RR/CSV/once-onlyhistory. Attempt2 fixtureused wrong
+perinstantpricepin0; correctedactualglobalinstrumentpins1,2, nooracleweakening. Bounds
+fixture773fd75 plusrootactual1000th-write strengthening:4familiespass (realOSprocess
+owner-lock races, active1000/version10000/local+passiverevision10000,replayatcap). Same
+image retainedtransferPGallfamilies and fresh21/populated18schema/auth/financialpreservation
+pass. Root19schemaacceptancefiles syntaxpassed; oldmatrix mostlyunrun. Logs andharnesses
+/private/tmp/capital-rewards-{pg-attempt3,bounds-attempt1}.log/.cjs. Allsessionsclosed,
+finallycleanupremovedsyntheticstack; final liveinventorystillrequiredbeforearchive.
+
+UIexistingconsumers4c92516 rendernull/0/subtotals/rewardprovenance. NewAssetRewards5aa4b43
+is implemented but rootreviewfound stale-reviewcancellation andwrongimmutablecopy;
+Lunacarry_docs_review fixing/splittingcomponentandaddingfocusedunitcases. RootTradeJournal
+insertionpendinguncommitted; addjournalRevisionpropwhenLunafixarrives. Dateinputmustnot
+silentlynormalizeFeb31beforerawbackendvalidation. NewrealHTTPSGREENstillpending; planned
+2rewardcases + retainedtransferUI/tradeUI/valuationUI,1worker0retries. RebuildFEonlyafter
+fixes; BEimageunchanged unlessnewproductissue. Do notclaimfullE2Eorreleasereadiness.
+
+Worktrees: reward-corehistorical_ui(Sol)review/bounds, reward-acceptancecarry_docs_review
+(Luna)neweditor/API. Spare reward-schemaworktreecreatedat5aa4b43butnoagentstarted(thread
+limit); preservedclean. RootownsDocker/migrations/deps/sharedrunners/TradeJournal.
+Oldgate_acceptancequotaexhausted; donotretry/purchase. Nootherprojectsremoved.
 
 ## Remaining whole goal and next work
 

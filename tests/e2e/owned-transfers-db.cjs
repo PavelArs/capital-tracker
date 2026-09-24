@@ -136,10 +136,10 @@ async function populatedUpgrade() {
     await prior.query(`INSERT INTO assets("userId",name,category,amount,"currencyId",date)
       SELECT $1,'Preserved unrelated fixture','savings',123.45,id,'2025-01-01' FROM currencies WHERE code='USD'`, [owner]);
     const old = await fingerprint(prior, ['migrations']);
-    assert.match(migrate(previousDatabase), /Migrations applied: 1/);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
-    assert.equal(await fingerprint(prior, ['migrations', ...transferTables]), old);
-    for (const table of transferTables) assert.equal((await prior.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
+    assert.match(migrate(previousDatabase), /Migrations applied: 2/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 21);
+    assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions']), old);
+    for (const table of [...transferTables, 'account_rewards', 'account_reward_versions']) assert.equal((await prior.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const after = await fingerprint(prior);
     assert.match(migrate(previousDatabase), /Migrations applied: 0/);
     assert.equal(await fingerprint(prior), after);
@@ -622,14 +622,14 @@ async function main() {
   assert.ok(existsSync('/app/backend/dist/accounting/owned-transfer.service.js'),
     'Missing module is prerequisite failure, not behavioral RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 20/);
+  assert.match(migrate(database), /Migrations applied: 21/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 20);
-    for (const table of transferTables) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 21);
+    for (const table of [...transferTables, 'account_rewards', 'account_reward_versions']) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const [owner, other, activeCap, versionCap] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),
       ('owned-transfer-other@example.invalid','synthetic-not-a-hash',true),

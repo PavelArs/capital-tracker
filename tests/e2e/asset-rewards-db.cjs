@@ -27,6 +27,7 @@ function source(name = database) {
 function services(db) {
   const make = (file, type) => new (require(`/app/backend/dist/accounting/${file}.js`)[type])(db);
   return { accounting: make('accounting.service', 'AccountingService'), reward: make('asset-reward.service', 'AssetRewardService'),
+    csv: make('csv-import.service', 'CsvImportService'),
     trade: make('trade.service', 'TradeService'), transfer: make('owned-transfer.service', 'OwnedTransferService'),
     history: make('historical-accounting.service', 'HistoricalAccountingService'),
     valuation: make('historical-valuation.service', 'HistoricalValuationService'),
@@ -113,6 +114,23 @@ async function migrationPreservation() {
         VALUES($1,$2,$3,1,1,$4,$5,'create',$6,'buy',$7,0,2,100,0)`,
         [owner, accountId, tradeId, requestId, JSON.stringify(execution), instrumentId, rewardAt]);
     });
+    const credential = randomUUID(), enrollment = randomUUID();
+    await db.query('INSERT INTO owner_auth(id,"userId","credentialVersion") VALUES(1,$1,$2)', [owner, credential]);
+    // Synthetic schema-valid authentication evidence, never used to bypass login.
+    await db.query(`INSERT INTO auth_sessions("tokenHash","csrfToken",state,"userId","credentialVersion",
+      "createdAt","lastSeenAt","expiresAt","mfaVerifiedAt")
+      VALUES($1,$2,'authenticated',$3,$4,$5,$5,$6,$5)`,
+      ['a'.repeat(64), 'b'.repeat(43), owner, credential, coverage, saleAt]);
+    await db.query(`INSERT INTO owner_mfa(id,"userId","activeVersion","activeEnvelope","lastCounter")
+      VALUES(1,$1,$2,$3,1234)`, [owner, enrollment, { syntheticPreservationEvidence: true }]);
+    await db.query(`INSERT INTO owner_mfa_recovery("codeHash","userId","enrollmentVersion") VALUES($1,$2,$3)`,
+      ['c'.repeat(64), owner, enrollment]);
+    await db.query(`INSERT INTO auth_request_limits(scope,"subjectHash",hits,"windowStartedAt","expiresAt")
+      VALUES('login-account',$1,2,$2,$2::timestamptz+interval '600 seconds')`, ['d'.repeat(64), coverage]);
+    const csvBytes = Buffer.from('instrument,quantity\nSAME,2\n');
+    await db.query(`INSERT INTO account_csv_imports(id,"ownerId","accountId",sha256,"originalBytes","byteLength",filename,state)
+      VALUES($1,$2,$3,$4,$5,$6,'prior.csv','draft')`,
+      [randomUUID(), owner, accountId, createHash('sha256').update(csvBytes).digest('hex'), csvBytes, csvBytes.length]);
     const before = await fingerprint(db, ['migrations']);
     assert.match(migrate(predecessor), /Migrations applied: 1/);
     assert.equal(await fingerprint(db, [...rewardTables, 'migrations']), before);
@@ -329,6 +347,112 @@ async function coherentSnapshot(db, s, f) {
   console.log('PASS REWARD-004 actual RR/read-only two-PID snapshot and connected old/new evidence');
 }
 
+async function connectedCsv(db, s, f) {
+  stage = 'REWARD-003/004 reward-aware CSV completeness, invalidation and rollback';
+  const a = await account(s, f.owner, 'Reward CSV source'), b = await account(s, f.owner, 'Reward CSV sale');
+  const rewardCommand = input(f.token, 0);
+  const reward = (await s.reward.create(f.owner, a, rewardCommand)).value;
+  await s.transfer.create(f.owner, { requestId: randomUUID(), fromAccountId: a, toAccountId: b,
+    expectedFromJournalRevision: 1, expectedToJournalRevision: 0, assertInternal: true,
+    instrumentId: f.token, occurredAt: transferAt, orderWithinTimestamp: 0,
+    quantity: '1', feeInstrumentId: null, feeQuantity: '0' });
+  const bytes = Buffer.from(`instrument,side,time,order,quantity,gross,fee\nTOKEN,sell,${saleAt},0,1,80,0\n`);
+  const batch = (await s.csv.upload(f.owner, b, { filename: 'reward-sale.csv', bytes })).value;
+  const settings = { format: { delimiter: ',', decimalSeparator: '.', timestampMode: 'offset' },
+    mapping: { columns: { instrument: 0, side: 1, occurredAt: 2, order: 3, quantity: 4, grossUsd: 5, feeUsd: 6 },
+      instruments: [{ source: 'TOKEN', instrumentId: f.token }], sides: [{ source: 'sell', side: 'sell' }] }, assertUsd: true };
+  const preview = await s.csv.preview(f.owner, b, batch.batchId, settings);
+  assert.equal(preview.canConfirm, true);
+  assert.equal(preview.candidateSummary.realizedUsd, null);
+  assert.equal(preview.candidateSummary.consumedCostUsd, null);
+  assert.deepEqual(preview.candidateSummary.basisCoverage.realized, { knownSubtotalUsd: '0', unknownCount: 1 });
+  const command = value => ({ requestId: randomUUID(), expectedJournalRevision: value.journalRevision,
+    parserVersion: 'usd-csv-v1', ...settings, previewHash: value.previewHash });
+  const stale = command(preview);
+  await s.reward.correct(f.owner, a, reward.reward.rewardId, correction(reward.reward, 2, { acquisitionBasisUsd: '120' }));
+  await unchanged(db, () => s.csv.confirm(f.owner, b, batch.batchId, stale), 409);
+  const fresh = await s.csv.preview(f.owner, b, batch.batchId, settings);
+  assert.notEqual(fresh.previewHash, preview.previewHash);
+  assert.equal(fresh.journalRevision, 2);
+  assert.equal(fresh.candidateSummary.consumedCostUsd, '60');
+  assert.equal(fresh.candidateSummary.realizedUsd, '20');
+  assert.equal(fresh.candidateSummary.basisCoverage, undefined);
+  const accepted = command(fresh);
+  const receipt = (await s.csv.confirm(f.owner, b, batch.batchId, accepted)).value;
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 4);
+  assert.equal((await journal(s, f.owner, a)).versionCount, 0);
+  assert.equal((await journal(s, f.owner, b)).journalRevision, 3);
+  assert.equal((await journal(s, f.owner, b)).versionCount, 1);
+  const rollbackCommand = { requestId: randomUUID(), expectedJournalRevision: 3 };
+  const rollback = (await s.csv.rollback(f.owner, b, batch.batchId, rollbackCommand)).value;
+  const receiver = await journal(s, f.owner, b);
+  assert.equal(receiver.summary.remainingCostUsd, '60');
+  assert.equal(receiver.summary.realizedUsd, '0');
+  assert.equal(receiver.versionCount, 2); assert.equal(receiver.journalRevision, 4);
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 5);
+  const before = await fingerprint(db);
+  assert.deepEqual(await s.csv.confirm(f.owner, b, batch.batchId, accepted), { created: false, value: receipt });
+  assert.deepEqual(await s.csv.rollback(f.owner, b, batch.batchId, rollbackCommand), { created: false, value: rollback });
+  assert.deepEqual(await s.reward.create(f.owner, a, rewardCommand), { created: false, value: reward });
+  assert.deepEqual((await db.query('SELECT "originalBytes" FROM account_csv_imports WHERE id=$1', [batch.batchId]))[0].originalBytes, bytes);
+  assert.equal(await fingerprint(db), before);
+  console.log('PASS REWARD-003/004 real CSV nullable preview/upstream invalidation/pins/rollback/original receipts and bytes');
+}
+
+async function onceLoadedReadModels(db, s, f) {
+  stage = 'REWARD-004 inclusive series and connected selected valuation load rewards once';
+  const a = await account(s, f.owner, 'Series rewards'), b = await account(s, f.owner, 'Selected reward recipient');
+  const reward = (await s.reward.create(f.owner, a, input(f.token, 0))).value;
+  await s.transfer.create(f.owner, { requestId: randomUUID(), fromAccountId: a, toAccountId: b,
+    expectedFromJournalRevision: 1, expectedToJournalRevision: 0, assertInternal: true,
+    instrumentId: f.token, occurredAt: transferAt, orderWithinTimestamp: 0,
+    quantity: '1', feeInstrumentId: null, feeQuantity: '0' });
+  // Price revisions belong to the instrument, across all instants. Economics
+  // already wrote revision1 at rewardAt; these append revisions2 and3.
+  for (const [index, at] of [transferAt, saleAt].entries()) await s.prices.set(f.owner, f.token,
+    { requestId: randomUUID(), expectedRevision: index + 1, assertReviewed: true, observedAt: at, priceUsd: '5' });
+  const statements = [];
+  const createRunner = db.createQueryRunner.bind(db);
+  db.createQueryRunner = (...args) => {
+    const runner = createRunner(...args), query = runner.query.bind(runner);
+    runner.query = async (sql, ...rest) => { statements.push(sql); return query(sql, ...rest); };
+    return runner;
+  };
+  const once = () => {
+    assert.equal(statements.filter(sql => /SELECT v\.\*,i\.name[\s\S]*FROM account_reward_versions/.test(sql)).length, 1,
+      'One full reward materialization, not one per point or selected connected account');
+    assert.equal(statements.filter(sql => /SELECT v\."accountId",count\(\*\) FILTER/.test(sql)).length, 1,
+      'One reward capacity preflight before materialization');
+    assert.equal(statements.filter(sql => /SET TRANSACTION READ ONLY/.test(sql)).length, 1);
+    assert.equal(statements.filter(sql => /SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/.test(sql)).length, 1);
+  };
+  try {
+    const before = await fingerprint(db);
+    statements.length = 0;
+    const series = await s.series.getSeries(f.owner, a, { from: coverage, to: saleAt });
+    once();
+    assert.equal(series.rewardSummary, undefined);
+    assert.equal(series.transferSummary, undefined);
+    assert.deepEqual(series.points.map(point => point.totalValueUsd), ['0', '10', '5', '5']);
+    assert.equal(series.journalRevision, 2);
+    statements.length = 0;
+    const portfolio = await s.portfolio.preview(f.owner, { at: transferAt, accountIds: [a, b] }, {});
+    once();
+    assert.equal(portfolio.totalValueUsd, '10');
+    assert.deepEqual(portfolio.accounts.map(account => account.totalValueUsd), ['5', '5']);
+    assert.equal(await fingerprint(db), before);
+    await s.reward.correct(f.owner, a, reward.reward.rewardId, correction(reward.reward, 2, { acquisitionBasisUsd: '100' }));
+    const next = await s.series.getSeries(f.owner, a, { from: coverage, to: saleAt });
+    assert.equal(next.journalRevision, 3);
+    assert.deepEqual(next.points, series.points, 'Cost-only restatement does not invent a market value');
+    const history = await s.history.getSnapshot(f.owner, a, { at: transferAt });
+    assert.equal(history.items[0].costUsd, '50');
+    assert.equal(history.rewardSummary.declaredIncomeUsd, '40');
+    assert.equal((await s.history.getSnapshot(f.owner, b, { at: transferAt })).rewardSummary, undefined);
+  } finally { db.createQueryRunner = createRunner; }
+  console.log('PASS REWARD-004 once-only reward loads, exact inclusive series/selected valuation, distinct price and basis');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
@@ -346,13 +470,16 @@ async function main() {
     const token = (await s.accounting.createInstrument(owner.id, { requestId: randomUUID(), name: 'Reward asset', symbol: 'SAME' })).value.id;
     const foreignToken = (await s.accounting.createInstrument(other.id, { requestId: randomUUID(), name: 'Other owner asset', symbol: 'SAME' })).value.id;
     const mutable = [...rewardTables, 'manual_accounts', 'account_trade_journals', 'account_trades', 'account_trade_versions',
-      'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'manual_usd_price_versions'];
+      'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'manual_usd_price_versions',
+      'account_csv_imports', 'account_csv_import_commands', 'account_csv_import_rows'];
     const before = await fingerprint(db, mutable);
     const fixture = { owner: owner.id, other: other.id, token, foreignToken };
     await economics(db, s, fixture);
     await lifecycle(db, s, fixture);
     await constraintsAndCommit(db, s, fixture);
     await coherentSnapshot(db, s, fixture);
+    await connectedCsv(db, s, fixture);
+    await onceLoadedReadModels(db, s, fixture);
     assert.equal(await fingerprint(db, mutable), before, 'No external flows, auth, legacy or provider rows changed');
   } finally { if (db.isInitialized) await db.destroy(); }
 }

@@ -330,9 +330,9 @@ async function activeLimits(db, s, ownerWide, localOwner) {
   const token = await instrument(s, ownerWide, 'Owner active token');
   const a = await account(s, ownerWide, 'Owner active 999');
   const b = await account(s, ownerWide, 'Owner active 1');
+  await seedActive(db, ownerWide, a, token, 999);
   const firstCommand = command(token, 0);
   const first = (await s.reward.create(ownerWide, b, firstCommand)).value;
-  await seedActive(db, ownerWide, a, token, 999);
   const [ownerCount] = await db.query(
     'SELECT count(*)::int AS n FROM account_reward_versions WHERE "ownerId"=$1',
     [ownerWide],
@@ -365,9 +365,9 @@ async function activeLimits(db, s, ownerWide, localOwner) {
 
   const localToken = await instrument(s, localOwner, 'Local active token');
   const local = await account(s, localOwner, 'Local active 1000');
-  const originalCommand = command(localToken, 0);
+  await seedActive(db, localOwner, local, localToken, 999);
+  const originalCommand = command(localToken, 999, { orderWithinTimestamp: 999 });
   const original = (await s.reward.create(localOwner, local, originalCommand)).value;
-  await seedActive(db, localOwner, local, localToken, 999, 1);
   assert.equal((await journal(s, localOwner, local)).rewardSummary.activeCount, 1000);
   await unchanged(db, () =>
     s.reward.create(localOwner, local, command(localToken, 1000, { orderWithinTimestamp: 1000 })),

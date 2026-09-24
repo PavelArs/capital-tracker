@@ -101,3 +101,49 @@ Sol's independent existing-consumer UI commit ee02b2e integrated4c92516; agent r
 103tests/15files, build and lint passed (27existing warnings; Vite chunk warning), scoped
 Biome11files passed. Root inspected DTOs/nullable display/provenance before integration.
 New reward editor and root integration checks remain pending.
+
+## PostgreSQL integration and independent review
+
+Backend implementation1148f1b was independently reviewed by Sol for financial semantics,
+owner scoping, replay-before-CAS/caps, owner-before-sorted-row locking, connected validation,
+nullable propagation and SQL constraints. No blocker found. Root reviewed pure original
+interval arithmetic, null propagation and categorized income independently of its author.
+
+Actual new backend image sha256:176f668b0c6a77e78961600a3b989446f2bd479a8bcbd9a933142b8e5684d25f
+ran the real production compiled services on PostgreSQL16.10 with synchronize/migrationsRun
+false and the guarded migration CLI. Main PG attempt1 passed the original5families. Root
+then added populated auth/admission/CSV-byte preservation, connected CSV and once-only
+read-model scenarios. Attempt2 passed6families then failed at setup: additional price
+instants incorrectly supplied expectedRevision0 despite the instrument-wide price pin.
+The fixture now explicitly appends at1and2; no product or financial assertion changed.
+Attempt3 passed all7families, exit0; log/private/tmp/capital-rewards-pg-attempt3.log.
+It covers fresh21/populated20/no-op, old receipt/row preservation, independent quantity/
+nullable basis/income/price, connected restatement/terminal lifecycle, actual SQL and
+deferred COMMIT rollback witness, two-PID RR/read-only snapshot, CSV stale-preview/refusal/
+rollback/receipt/bytes, and once-only reward count/materialization in series and selected
+valuation. The schema-valid auth preservation rows in the new20fixture are synthetic;
+actual encrypted factors and session preservation are additionally checked below.
+
+Independent boundary fixtureb71336f integrated773fd75. Root strengthened setup BEFORE
+execution to seed999then accept the1000th reward through the actual service (owner/local),
+rather than merely constructing1000after an earlier service write. Actual4families passed:
+two forked OS processes observed waiting on the owner's real advisory lock, identical
+replay/conflicting CAS, owner/local active1000, owner versions10000 with spare local ticks,
+and local/passive journal revision10000. Every refusal preserves full table fingerprints;
+old exact replay still succeeds at limits. Same image then passed retained transfer PG
+economics/lifecycle/RR/CSV/deferred constraints/real races/owner limits and populated19
+upgrade, and fresh21 plus populated18 upgrade with authentic encrypted MFA factors, used/
+unused recovery, all session classes, prior economic rows and schema-object comparison.
+Log/private/tmp/capital-rewards-bounds-attempt1.log; harness uses synthetic tmpfs PG and
+finally removes the stack. This is scoped verification, not the full older upgrade matrix.
+
+Sol independently reviewed the root's newPG oracles and schema21 fixture maintenance,
+including price-pin correction and actual1000th-write strengthening; no blocker found.
+Existing fresh-count assertions now require21, explicit17/19predecessors require4/2new
+migrations, and schema comparisons allow only the two new empty reward tables in addition
+to their earlier additive sets. Syntax check passed19affected acceptance files.
+
+Backend lint passed77existing warnings. Production dependency gate passed exit0 with
+2existing moderate advisories and nohigh/critical; log/private/tmp/capital-rewards-audit.log.
+No dependency or deployment changes. New UI is still under review; no reward HTTPS GREEN
+or completed-change claim yet.
