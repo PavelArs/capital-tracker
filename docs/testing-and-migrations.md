@@ -426,3 +426,31 @@ real password/MFA/backend/PostgreSQL and external-provider-only stubs. The full
 runner includes the new PG fixture and discovers both new browser cases; all old
 cases remain. See the [verification record](../openspec/changes/archive/2026-09-23-value-historical-account/verification.md)
 for the exact filter, predecessor RED, image IDs, reviews and unrun checks.
+
+## Account valuation history
+
+See [account valuation history](valuation-history.md). Targeted backend tests use:
+
+```sh
+pnpm --dir backend test --runInBand --coverage=false valuation-history historical-valuation historical-accounting
+```
+
+These passed 95 cases across four suites (27 new and 68 retained). Frontend tests
+passed 98 cases across 11 files, including chart precision, zero, missing points,
+UTC spacing and no connecting lines. New `valuation-history-db.cjs` passed three
+families against real PostgreSQL: timeline/validation/privacy, concurrent coherent
+snapshots, and 31 samples across the supported maximum history. Four retained
+`historical-valuation-db.cjs` families also passed. No migration was added.
+
+After isolated build/migrate/seed/artifact checks, the selected browser command was:
+
+```sh
+pnpm exec playwright test tests/e2e/valuation-history.spec.ts tests/e2e/historical-valuation.spec.ts --grep 'VCH-|VAL-UI:' --workers=1
+```
+
+It passed 3/3 in 38.3s, one worker and zero retries, with actual password/MFA/backend/
+PostgreSQL. The UI case covers exact values, a gap-only table without a chart,
+period changes, zero-price refresh and a delayed real response preserving the draft.
+The full runner includes the new PG fixture; existing cases and CI gates remain.
+The [verification record](../openspec/changes/archive/2026-09-24-chart-account-valuations/verification.md)
+records genuine predecessor RED, independent reviews, images and unrun checks.

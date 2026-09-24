@@ -1,15 +1,15 @@
-# Historical account valuation history
+# Account valuation history
 
 This view compares sampled valuations for one account over a bounded period. The
-[active change verification](../openspec/changes/chart-account-valuations/verification.md)
+[verification record](../openspec/changes/archive/2026-09-24-chart-account-valuations/verification.md)
 tracks the selected checks; consult it for their current status.
 
 On an account detail page, enter `Начало периода (ISO)` and
 `Конец периода (ISO)`, then select `Показать историю`. The interval is measured in
-elapsed UTC milliseconds, not local calendar days. It may span at most30 days.
-The service samples the start, every24 hours from the start, and the exact end if
+elapsed UTC milliseconds, not local calendar days. It may span at most 30 days.
+The service samples the start, every 24 hours from the start, and the exact end if
 that instant is not already sampled. Equal endpoints produce one point; a request
-returns no more than31 points. A short final interval is retained rather than
+returns no more than 31 points. A short final interval is retained rather than
 shifted to a calendar boundary.
 
 Each point reconstructs the account's effective holdings through that instant,
@@ -29,8 +29,9 @@ The table `Оценки по датам` retains each UTC sample, status, exact 
 subtotal, and count without a price. The scatter chart plots only complete points,
 including zero; it does not bridge missing dates or claim continuous price
 coverage. Chart coordinates are approximate. Exact decimal strings in the table
-and tooltips are authoritative; derived arithmetic retains up to60 fractional
-digits.
+and tooltips are authoritative; derived arithmetic retains up to 60 fractional
+digits. If every point is incomplete, the table stays visible with
+`Нет полных оценок для графика` and no chart.
 
 Use `Обновить историю` to read current corrections explicitly. Editing either
 period field clears the previous result, and an old response cannot restore it
@@ -41,8 +42,8 @@ browser storage.
 The API is `GET /accounting/accounts/:id/valuation-history?from=<ISO>&to=<ISO>`.
 It accepts only `from` and `to`, normalizes offset timestamps to UTC milliseconds,
 and returns account/revision metadata with the ordered point summaries. Invalid,
-duplicate, reversed, over-30-day, or unexpected query values return400; missing or
-foreign accounts return404; an absent journal or start before coverage returns409.
+duplicate, reversed, over-30-day, or unexpected query values return 400; missing or
+foreign accounts return 404; an absent journal or start before coverage returns 409.
 The owner-scoped read uses one PostgreSQL `REPEATABLE READ`, `READ ONLY` snapshot
 for holdings and sampled prices, preserves authentication/MFA and private
 no-store responses, and makes no business-data writes.

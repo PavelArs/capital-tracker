@@ -51,16 +51,43 @@ Guide docs/manual-usd-prices.md and its archived verification contain the actual
 No provider ingestion, symbol mapping, interpolation or automatic full portfolio
 value. All existing price/accounting contracts remain unchanged by valuation.
 
-## Active chart slice
+## Completed chart slice
 
 chart-account-valuations contract5a3e367, backend pure3496b13, PGcb53d1c,
-E2Ed9a144b/root-reviewed302b235. Root backend+PG; Luna chart-acceptance worktree;
-Sol chart-ui worktree. No product edits yet, real predecessor RED running in root
-Docker session; /private/tmp/capital-chart-red.cjs/log. Contract:30elapsed-day
-custom range, start+24h samples+exactend <=31points, one RR snapshot, exact totals,
-complete-only scatter with no lines, exact table and honest missing values.
-Baseline68/3pass; auditexit0 twoexistingmoderate; strict20items pass. Read active
-change artifacts/verification. Next product implementation only after real RED.
+E2Ed9a144b/root-reviewed302b235. Actual predecessor behavioral RED:401 expected vs404
+and absent history heading. /private/tmp/capital-chart-red.log and red-artifacts.
+Only after RED, root implemented backend9f70991; Sol UI42081e2/5fdc42c integrated as
+7b07051/2935162. Root strengthened the same E2E case for all-gap rendering inad6dd63.
+Luna guidee137389 integrated asc052f86. Root reviewed UI, Sol independently reviewed
+backend; no blocker. Agent temporary dependency symlinks removed; worktrees retained.
+
+GET /accounting/accounts/:id/valuation-history?from=ISO&to=ISO:30elapsed-day
+custom range, start+24h samples+exactend <=31points, one RR READ ONLY snapshot,
+shared once-only history loads and batched indexed exact-time manual prices.
+Current-effective account positions only, no inferred cash or total portfolio.
+Exact scale60 strings; missing totalnull vs explicit0. Russian form/exacttable and
+complete-only UTCscatter with no lines; allgapstable/nochart; stale response/input/
+account/revision guards preserve the parent trade draft. No migration/dependency/
+deployment change. Read archived2026-09-24-chart-account-valuations verification
+and docs/valuation-history.md.
+
+Baseline68/3pass; backend GREEN95/4 in1.966s; Sol frontend98/11 in3.05s. Both builds/
+lints and strict E2E TS pass. Existing warnings:BE77,FE29,Vite>500kB. Dependencygate
+exit0 with2existingmoderate, nohighcritical; lock unchanged. Strict20items pass.
+Actual PGnew3families +retained valuation4families PASS;18fresh migrations, genuine
+concurrent RR, preservation and31samples/100baseline/1000trades exactoracle252ms
+(observation, noSLA). /private/tmp/capital-chart-db.log exit0.
+HTTPS atad6dd63:3/3 in38.3s,1worker0retries:VCH-API,VCH-UI,retainedVAL-UI.
+Real password/MFA/backend/PG; onlyexternalprovidersstubbed, delayedroute.fetch.
+/private/tmp/capital-chart-green.log and green-artifacts. Same BEimage in PG/HTTPS:
+BEsha256:9dcf0eaf717e063e7b198265498057471066dbdf57732aa23f41b2c9205d28e0
+FEsha256:c9456cdf239a2a6b05e12a58b4e070d7930f1dcd407932f489f6f579b04b9d1e.
+No unexpected GREEN failures. Fullbackend/fullE2E/upgrade matrix/hostedCI/production
+not run this slice; all prior tests/CI retained. Docker cleanup completed, live
+labeled container/network inventory empty. Installed CLI archived2026-09-24-chart-
+account-valuations with7/7tasks; strict20canonical specs pass, activechangesempty.
+Prior19canonical specs byte-identical; newrequirements matcharchiveddelta. Owner
+Nginx bytes/mode and lock hash still matchbaseline.
 
 ## Previous historical valuation slice
 
@@ -112,9 +139,9 @@ release scan/production run this slice. Old cases and CI gates preserved.
 
 ## Next
 
-Choose the next small database-first historical coverage/chart slice using this
-account valuation foundation. Whole brief
-still needs automatic prices/history/charts, multi-account valuation, TWR, transfers/
+Choose the next small database-first historical coverage slice after the archived
+chart-account-valuations change. Whole brief
+still needs automatic prices/longer history/charts, multi-account valuation, TWR, transfers/
 swaps/rewards, blockchain reconciliation, optionalAI and release/backup-restore
 hardening before consolidation. Do not move/delete original folders now.
 Reuse carry_docs_review Luna(simple) and historical_ui Sol(complex/review).
