@@ -92,3 +92,14 @@
   margin-top: 0.25rem;
   color: var(--text-secondary);
 }
+
+@media (max-width: 600px) {
+  .manual-portfolio__summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .manual-portfolio__summary dd {
+    margin-bottom: 0.6rem;
+  }
+}
