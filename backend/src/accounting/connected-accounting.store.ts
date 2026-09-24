@@ -1,6 +1,13 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import type { FifoReward, RewardSummary } from './asset-reward-types';
+import {
+  type RewardVersionRow,
+  projectRewardVersion,
+  rewardHeadJoin,
+  rewardVersionSelect,
+} from './asset-reward.store';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import {
   type AccountFifoResult,
@@ -32,6 +39,7 @@ export interface ConnectedLedger {
   accounts: ReadonlyMap<string, ConnectedAccount>;
   transfers: readonly TransferVersion[];
   participants: ReadonlySet<string>;
+  rewardParticipants: ReadonlySet<string>;
 }
 export type ConnectedLedgerCache = Map<string, ConnectedLedger>;
 
@@ -41,6 +49,16 @@ export const emptyTransferSummary = (): TransferSummary => ({
   sentBasisUsd: '0',
   feeConsumedBasisUsd: '0',
   fees: [],
+});
+export const emptyRewardSummary = (): RewardSummary => ({
+  activeCount: 0,
+  declaredBasisUsd: '0',
+  declaredIncomeUsd: '0',
+  knownBasisSubtotalUsd: '0',
+  knownIncomeSubtotalUsd: '0',
+  unknownBasisCount: 0,
+  unknownIncomeCount: 0,
+  unclassifiedCount: 0,
 });
 
 /** Resolve the affected old/new union before taking sorted account locks. */
@@ -125,6 +143,31 @@ export async function readConnectedLedger(
     trades.push(projectTradeVersion(row));
     byAccount.set(row.accountId, trades);
   }
+  const rewardCounts: { accountId: string; active: number }[] = await manager.query(
+    `SELECT v."accountId",count(*) FILTER(WHERE v.kind<>'void')::int AS active
+      FROM account_reward_versions v ${rewardHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) GROUP BY v."accountId"`,
+    [owner, ids],
+  );
+  if (
+    rewardCounts.some((row) => row.active > OWNED_TRANSFER_LIMITS.activeRewards) ||
+    rewardCounts.reduce((n, row) => n + row.active, 0) > OWNED_TRANSFER_LIMITS.activeRewards
+  )
+    throw new OwnedTransferCapacityError();
+  const rewardRows: RewardVersionRow[] = await manager.query(
+    `${rewardVersionSelect} ${rewardHeadJoin}
+      WHERE v."ownerId"=$1 AND v."accountId"=ANY($2::uuid[]) AND v.kind<>'void'
+      ORDER BY v."accountId",v."occurredAt",v."orderWithinTimestamp",v."rewardId" LIMIT 1001`,
+    [owner, ids],
+  );
+  if (rewardRows.length > OWNED_TRANSFER_LIMITS.activeRewards)
+    throw new OwnedTransferCapacityError();
+  const rewardsByAccount = new Map<string, FifoReward[]>();
+  for (const row of rewardRows) {
+    const rewards = rewardsByAccount.get(row.accountId) ?? [];
+    rewards.push(projectRewardVersion(row));
+    rewardsByAccount.set(row.accountId, rewards);
+  }
   const accounts = new Map<string, ConnectedAccount>();
   for (const journal of journals) {
     accounts.set(journal.accountId, {
@@ -132,6 +175,7 @@ export async function readConnectedLedger(
       coverageFrom: journal.coverageFrom.toISOString(),
       journal,
       trades: byAccount.get(journal.accountId) ?? [],
+      rewards: rewardsByAccount.get(journal.accountId) ?? [],
       initialLots: await readBaseline(manager, owner, journal.accountId, journal),
     });
   }
@@ -139,6 +183,7 @@ export async function readConnectedLedger(
     accounts,
     transfers: transfers.filter((transfer) => accounts.has(transfer.fromAccountId)),
     participants: await readTransferParticipants(manager, owner, ids),
+    rewardParticipants: new Set(rewardCounts.map((row) => row.accountId)),
   };
 }
 
@@ -149,20 +194,32 @@ export function projectConnectedLedger(
     at?: string;
     accountId?: string;
     trades?: readonly FifoTrade[];
+    rewards?: readonly FifoReward[];
     transfers?: readonly ActiveTransferInput[];
   } = {},
 ) {
   const accounts = [...ledger.accounts.values()].map((account) =>
     account.accountId === options.accountId
-      ? { ...account, trades: options.trades ?? account.trades }
+      ? {
+          ...account,
+          trades: options.trades ?? account.trades,
+          rewards: options.rewards ?? account.rewards,
+        }
       : account,
   );
   return calculateOwnedTransfers(accounts, options.transfers ?? ledger.transfers, options.at);
 }
 
 export function connectedResult(ledger: ConnectedLedger, id: string, result: AccountFifoResult) {
-  if (!ledger.participants.has(id) && !result.transferSummary) return result;
-  return { ...result, transferSummary: result.transferSummary ?? emptyTransferSummary() };
+  return {
+    ...result,
+    ...(ledger.participants.has(id) && !result.transferSummary
+      ? { transferSummary: emptyTransferSummary() }
+      : {}),
+    ...(ledger.rewardParticipants.has(id) && !result.rewardSummary
+      ? { rewardSummary: emptyRewardSummary() }
+      : {}),
+  };
 }
 
 export function rethrowAccountingHistory(error: unknown): never {

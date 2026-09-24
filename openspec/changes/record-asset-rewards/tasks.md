@@ -1,7 +1,7 @@
 ## 1. Specify and establish acceptance
 
 - [x] 1.1 Independently review proposal/design/persistence and all deltas, resolve nullable-basis/category/financial oracle questions, validate installed OpenSpec and freeze contract (REWARD-001..006).
-- [ ] 1.2 Write pure accounting and focused real HTTPS acceptance before each corresponding implementation; demonstrate intended behavioral RED against the accepted schema20 images and retain passing predecessor characterization. Record actual commands/results.
+- [x] 1.2 Write pure accounting and focused real HTTPS acceptance before each corresponding implementation; demonstrate intended behavioral RED against the accepted schema20 images and retain passing predecessor characterization. Record actual commands/results.
 
 ## 2. Implement accounting and persistence
 

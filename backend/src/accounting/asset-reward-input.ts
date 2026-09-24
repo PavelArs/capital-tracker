@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseAsOf, parseDecimal, parseUuid } from './input';
 import type { RewardCategory } from './asset-reward-types';
-import { parseTradeHistoryQuery, parseTradePageQuery } from './trade-input';
+import { parseAsOf, parseDecimal, parseUuid } from './input';
+import { parseTradePageQuery } from './trade-input';
 
 export { parseTradeHistoryQuery as parseRewardHistoryQuery } from './trade-input';
 export const parseRewardListQuery = parseTradePageQuery;
@@ -112,7 +112,10 @@ export function rewardPayload(
   const target =
     kind === 'create'
       ? {}
-      : { rewardId, expectedVersion: 'expectedVersion' in input ? input.expectedVersion : undefined };
+      : {
+          rewardId,
+          expectedVersion: 'expectedVersion' in input ? input.expectedVersion : undefined,
+        };
   return JSON.stringify({
     kind,
     ...target,

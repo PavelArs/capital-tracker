@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
+import type { RewardSummary } from './asset-reward-types';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
 import {
   advanceConnectedJournals,
@@ -12,7 +13,7 @@ import {
   readTradeVersionCount,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
-import { type Execution, type FifoResult } from './fifo';
+import type { Execution } from './fifo';
 import { parseUuid } from './input';
 import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
 import {
@@ -64,8 +65,9 @@ export interface JournalState {
         activeTradeCount: number;
         versionCount: number;
         limits: { activeTrades: number; versions: number };
-        summary: FifoResult['summary'];
+        summary: AccountFifoResult['summary'];
         transferSummary?: TransferSummary;
+        rewardSummary?: RewardSummary;
         revisionBudget?: { used: number; limit: number };
       })
     | null;
@@ -290,9 +292,10 @@ export class TradeService {
           versionCount: await readTradeVersionCount(manager, owner, id),
           limits: { activeTrades: 1000, versions: 10000 },
           summary: fifo.summary,
-          ...(fifo.transferSummary
+          ...(fifo.transferSummary ? { transferSummary: fifo.transferSummary } : {}),
+          ...(fifo.rewardSummary ? { rewardSummary: fifo.rewardSummary } : {}),
+          ...(fifo.transferSummary || fifo.rewardSummary
             ? {
-                transferSummary: fifo.transferSummary,
                 revisionBudget: { used: journal.currentRevision, limit: 10000 },
               }
             : {}),

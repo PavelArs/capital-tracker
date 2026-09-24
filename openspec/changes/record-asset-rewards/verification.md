@@ -1,7 +1,7 @@
 # Reward verification record
 
-Status: specification/acceptance preparation; no product reward implementation or GREEN
-claim. Full project goal remains incomplete. No owner database or provider was accessed.
+Status: implementation in progress; pure checks and backend build pass. Runtime
+GREEN is still pending. Full project goal remains incomplete. No owner database or provider was accessed.
 
 ## Baseline
 
@@ -51,7 +51,7 @@ asset-reward-fifo` compiled and ran7new independent cases, all failed as expecte
 instead of the two expected exact holdings; reward-funded sales/transfers threw invalid
 history; reward summary and inclusive quantity were absent. This is behavioral RED,
 not import/type/environment failure. Tests use existing exported pure entrypoints.
-Log/private/tmp/capital-rewards-pure-red.log. HTTPS RED is still pending.
+Log/private/tmp/capital-rewards-pure-red.log. The later HTTPS RED is recorded below.
 
 Sol independently added4boundary cases before implementation (ea35533, integrated787c6ec).
 Focused Jest failed4/4 on missing reward behavior, exit1; scoped Biome passed. Log
@@ -77,3 +77,27 @@ is captured after intentional foreign fixture seeding, unknownIncomeCount is0 fo
 income40and0 despite one unclassified subtype (distinct counters in frozen contract), and
 price assertions include the exact observed instant/revision rather than an accidental
 partial nested equality. No product code or financial expectation was changed to pass.
+
+## Genuine predecessor HTTPS RED and integrated unit checks
+
+Actual pinned schema20 images above ran both new Playwright cases through real HTTPS,
+password/MFA, application backend and PostgreSQL, one worker and zero retries. Both
+failed behaviorally as intended: valid create expected201 received404 (line63), and the
+reward region was absent (line338,10s). Exit1; log/private/tmp/capital-rewards-red.log,
+artifacts/private/tmp/capital-rewards-red-artifacts. Harness finally removed the synthetic
+containers and networks. API/UI/persistence implementation began only after this RED.
+Root's pre-execution review also compared foreign404's exact stable envelope separately
+from its legitimate path/timestamp, retaining canonical timestamp and expected path checks.
+
+Pure core83a48f5 integratedae9a677, parsera4d59fa integrated153682c. Root corrected an
+unused parser import and guarded the legacy known-cost projection against reward identities.
+After connecting reward storage/replay/current/history/CSV/series/module, backend build
+passed and focused Jest passed385tests/16suites in3.037s, exit0. Selection adds asset-reward
+to the baseline expression above. Logs/private/tmp/capital-rewards-backend-build.log and
+/private/tmp/capital-rewards-unit-green.log. Scoped Biome on12changed backend files passed.
+These are source/pure checks, not yet PostgreSQL or HTTPS GREEN evidence.
+
+Sol's independent existing-consumer UI commit ee02b2e integrated4c92516; agent reported
+103tests/15files, build and lint passed (27existing warnings; Vite chunk warning), scoped
+Biome11files passed. Root inspected DTOs/nullable display/provenance before integration.
+New reward editor and root integration checks remain pending.

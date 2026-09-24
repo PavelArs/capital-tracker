@@ -26,9 +26,9 @@ import {
   validateDisplayName,
 } from './csv-input';
 import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
-import { type Execution, FifoHistoryError, type FifoSummary, type FifoTrade } from './fifo';
+import { type Execution, FifoHistoryError, type FifoTrade } from './fifo';
 import { parseUuid } from './input';
-import { OwnedTransferCapacityError } from './owned-transfer-fifo';
+import { type AccountFifoResult, OwnedTransferCapacityError } from './owned-transfer-fifo';
 import {
   type JournalRow,
   type TradeVersion,
@@ -546,7 +546,7 @@ export class CsvImportService {
       ? normalizeCsvRows(document, settings)
       : { rows: [], rowErrors: [], ignoredColumns: [], batchErrors: [document.error] };
     const batchErrors: CsvIssue[] = [...normalized.batchErrors];
-    let candidateSummary: FifoSummary | null = null;
+    let candidateSummary: AccountFifoResult['summary'] | null = null;
     if (!normalized.rowErrors.length && !batchErrors.length) {
       const added: FifoTrade[] = normalized.rows.map((row) => {
         if (!row.execution) throw new Error('Missing normalized CSV execution');
@@ -650,7 +650,7 @@ export class CsvImportService {
       | 'connected-history'
       | 'connected-capacity'
       | null = null;
-    let summaryAfter: FifoSummary | null = null;
+    let summaryAfter: AccountFifoResult['summary'] | null = null;
     if (batch.state !== 'committed') reason = 'not-committed';
     else if (
       links.some(

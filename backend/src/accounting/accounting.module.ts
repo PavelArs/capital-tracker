@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AccountingController } from './accounting.controller';
 import { AccountingService } from './accounting.service';
+import { AssetRewardController } from './asset-reward.controller';
+import { AssetRewardService } from './asset-reward.service';
 import { CarryInController } from './carry-in.controller';
 import { CarryInService } from './carry-in.service';
 import { CsvImportController } from './csv-import.controller';
@@ -34,6 +36,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ValuationHistoryController,
     ManualPortfolioValuationController,
     OwnedTransferController,
+    AssetRewardController,
   ],
   providers: [
     AccountingService,
@@ -48,6 +51,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     ValuationHistoryService,
     ManualPortfolioValuationService,
     OwnedTransferService,
+    AssetRewardService,
   ],
 })
 export class AccountingModule {}

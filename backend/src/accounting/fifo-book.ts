@@ -541,7 +541,7 @@ export class FifoBook {
 
   /** The legacy wrapper never receives a fragment and keeps its exact DTO type. */
   projectLegacy(): CarryInFifoResult {
-    if (this.participant) throw new FifoHistoryError();
+    if (this.participant || this.hasRewardIdentity) throw new FifoHistoryError();
     return this.project() as CarryInFifoResult;
   }
 }

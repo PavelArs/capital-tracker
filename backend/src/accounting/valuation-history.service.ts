@@ -26,6 +26,7 @@ export class ValuationHistoryService {
         initialCostUsd: _cost,
         summary: _summary,
         transferSummary: _transfers,
+        rewardSummary: _rewards,
         at: _at,
         ...metadata
       } = states[0];
