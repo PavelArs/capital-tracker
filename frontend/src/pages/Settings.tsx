@@ -1,11 +1,12 @@
 import CurrenciesSection from '@components/CurrenciesSection';
 import LanguageSwitcher from '@components/LanguageSwitcher';
 import ThemeSwitcher from '@components/ThemeSwitcher';
+import { DisplayFxPanel } from '@features/display-fx/DisplayFxPanel';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import './Settings.css';
 
-type SettingsSection = 'general' | 'currencies';
+type SettingsSection = 'general' | 'currencies' | 'display-fx';
 
 export default function Settings() {
   const { t } = useTranslation();
@@ -34,6 +35,12 @@ export default function Settings() {
             onClick={() => handleSectionChange('currencies')}
           >
             {t('settings.currencies')}
+          </button>
+          <button
+            className={`settings-nav-btn ${activeSection === 'display-fx' ? 'active' : ''}`}
+            onClick={() => handleSectionChange('display-fx')}
+          >
+            Курсы для отображения
           </button>
         </div>
 
@@ -65,6 +72,7 @@ export default function Settings() {
               <CurrenciesSection />
             </div>
           )}
+          {activeSection === 'display-fx' && <DisplayFxPanel />}
         </div>
       </div>
     </div>
