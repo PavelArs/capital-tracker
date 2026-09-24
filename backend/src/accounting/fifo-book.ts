@@ -258,6 +258,7 @@ export class FifoBook {
   }
 
   receive(portions: readonly BookPortion[], arrival: TransferArrival): void {
+    const sortedInThisReceive = new Set<string>();
     for (const portion of portions) {
       this.limits.addFragment?.();
       const fragment: BookFragment = {
@@ -270,7 +271,10 @@ export class FifoBook {
         interval: portion.interval,
       };
       const queue = this.queues.get(fragment.instrumentId) ?? [];
-      queue.sort(compareFragments);
+      if (!sortedInThisReceive.has(fragment.instrumentId)) {
+        queue.sort(compareFragments);
+        sortedInThisReceive.add(fragment.instrumentId);
+      }
       let low = 0;
       let high = queue.length;
       while (low < high) {

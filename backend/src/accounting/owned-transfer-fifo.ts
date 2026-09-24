@@ -22,11 +22,13 @@ export type {
   TransferSummary,
 } from './owned-transfer-types';
 
-const MAX_ACCOUNTS = 32;
-const MAX_CONNECTED_TRADES = 10000;
-const MAX_TRANSFERS = 1000;
-const MAX_MATCHES = 100000;
-const MAX_HELD_FRAGMENTS = 100000;
+export const OWNED_TRANSFER_LIMITS = {
+  accounts: 32,
+  activeTrades: 10000,
+  activeTransfers: 1000,
+  matches: 100000,
+  heldFragments: 100000,
+} as const;
 
 export class OwnedTransferCapacityError extends FifoHistoryError {
   constructor() {
@@ -68,7 +70,10 @@ export function calculateOwnedTransfers(
   transfers: readonly ActiveTransferInput[],
   at?: string,
 ): OwnedProjection {
-  if (accounts.length > MAX_ACCOUNTS || transfers.length > MAX_TRANSFERS)
+  if (
+    accounts.length > OWNED_TRANSFER_LIMITS.accounts ||
+    transfers.length > OWNED_TRANSFER_LIMITS.activeTransfers
+  )
     throw new OwnedTransferCapacityError();
   const byAccount = new Map(accounts.map((account) => [account.accountId, account]));
   if (byAccount.size !== accounts.length) throw new FifoHistoryError();
@@ -81,13 +86,14 @@ export function calculateOwnedTransfers(
     if (account.trades.length > 1000 || account.initialLots.length > 100)
       throw new OwnedTransferCapacityError();
     tradeCount += account.trades.length;
-    if (tradeCount > MAX_CONNECTED_TRADES) throw new OwnedTransferCapacityError();
+    if (tradeCount > OWNED_TRANSFER_LIMITS.activeTrades) throw new OwnedTransferCapacityError();
     const book = new FifoBook(account.accountId, {
       match: () => {
-        if (++matches > MAX_MATCHES) throw new OwnedTransferCapacityError();
+        if (++matches > OWNED_TRANSFER_LIMITS.matches) throw new OwnedTransferCapacityError();
       },
       addFragment: () => {
-        if (++heldFragments > MAX_HELD_FRAGMENTS) throw new OwnedTransferCapacityError();
+        if (++heldFragments > OWNED_TRANSFER_LIMITS.heldFragments)
+          throw new OwnedTransferCapacityError();
       },
       removeFragment: () => {
         heldFragments--;
