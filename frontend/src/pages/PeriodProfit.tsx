@@ -1,4 +1,5 @@
 import { type ProfitPreview, periodProfitApi } from '@api/period-profit.api';
+import { type TwrPreview, type TwrUnavailableReason, twrPreviewApi } from '@api/twr-preview.api';
 import {
   type XirrPreview,
   type XirrUnavailableReason,
@@ -10,10 +11,11 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './PeriodProfit.css';
 
-type PreviewMode = 'profit' | 'xirr';
+type PreviewMode = 'profit' | 'xirr' | 'twr';
 type PreviewResult =
   | { mode: 'profit'; preview: ProfitPreview }
-  | { mode: 'xirr'; preview: XirrPreview };
+  | { mode: 'xirr'; preview: XirrPreview }
+  | { mode: 'twr'; preview: TwrPreview };
 
 const unavailableReason: Record<XirrUnavailableReason, string> = {
   'insufficient-cash-flows': 'Недостаточно денежных потоков в разные моменты для расчёта XIRR.',
@@ -24,8 +26,14 @@ const unavailableReason: Record<XirrUnavailableReason, string> = {
   'numerical-failure': 'Не удалось надёжно определить ставку XIRR для этих потоков.',
 };
 
+const twrUnavailableReason: Record<TwrUnavailableReason, string> = {
+  'missing-flow-boundary-valuations':
+    'Для расчёта TWR нужны оценки в моменты промежуточных вводов и выводов.',
+  'nonpositive-opening-capital': 'Начальный капитал после потоков должен быть положительным.',
+};
+
 function previewError(error: unknown, mode: PreviewMode): string {
-  const operation = mode === 'profit' ? 'прибыль' : 'XIRR';
+  const operation = mode === 'profit' ? 'прибыль' : mode === 'xirr' ? 'XIRR' : 'TWR';
   if (!isAxiosError(error)) return `Не удалось рассчитать ${operation}. Попробуйте ещё раз.`;
   const status = error.response?.status;
   if (status === 400) return 'Проверьте даты, оценки USD и подтверждение.';
@@ -33,7 +41,10 @@ function previewError(error: unknown, mode: PreviewMode): string {
     return 'Журнал внешних потоков не создан или период начинается до его границы учёта. Проверьте журнал и даты.';
   if (status === 401) return 'Сеанс завершён. Войдите снова и выполните новый расчёт.';
   if (status === 403) return 'Запрос отклонён. Проверьте сеанс и выполните новый расчёт.';
-  if (status === 429) return 'Расчёт XIRR уже выполняется. Попробуйте ещё раз позже.';
+  if (status === 429)
+    return mode === 'xirr'
+      ? 'Расчёт XIRR уже выполняется. Попробуйте ещё раз позже.'
+      : 'Слишком много запросов. Попробуйте ещё раз позже.';
   if (!error.response) return 'Не удалось получить ответ. Выполните новый расчёт.';
   return `Не удалось рассчитать ${operation}. Выполните новый расчёт.`;
 }
@@ -79,8 +90,11 @@ function PeriodProfitOwner() {
       if (mode === 'profit') {
         const preview = await periodProfitApi.preview(input);
         if (mounted.current && generation.current === request) setResult({ mode, preview });
-      } else {
+      } else if (mode === 'xirr') {
         const preview = await xirrPreviewApi.preview(input);
+        if (mounted.current && generation.current === request) setResult({ mode, preview });
+      } else {
+        const preview = await twrPreviewApi.preview(input);
         if (mounted.current && generation.current === request) setResult({ mode, preview });
       }
     } catch (failure) {
@@ -116,6 +130,13 @@ function PeriodProfitOwner() {
           вручную; потоки не сверены. Эта формула показывает прибыль, а XIRR отдельно оценивает
           годовую доходность по времени внешних потоков. Ни один расчёт не показывает текущий
           денежный остаток.
+        </p>
+        <p>
+          TWR показывает доходность только за выбранный период, без пересчёта в годовую ставку.
+          Расчёт по двум ручным оценкам доступен, только когда внутри периода нет ненулевых внешних
+          потоков после объединения потоков в один момент UTC. Иначе нужны оценки на границах этих
+          потоков. Потоки точно в начале меняют начальный капитал, а потоки точно в конце не входят
+          в период.
         </p>
         <p>
           <Link to="/capital-flows">Проверить журнал внешних потоков и границу учёта</Link>
@@ -207,6 +228,14 @@ function PeriodProfitOwner() {
             >
               Рассчитать XIRR
             </button>
+            <button
+              className="profit-button"
+              type="button"
+              disabled={!canSubmit}
+              onClick={() => void runPreview('twr')}
+            >
+              Рассчитать TWR
+            </button>
           </div>
         </form>
       </section>
@@ -270,6 +299,38 @@ function PeriodProfitOwner() {
           )}
           {result.preview.xirr.shortPeriod && (
             <p>Короткий период: годовая ставка не является прогнозом.</p>
+          )}
+        </section>
+      )}
+
+      {result?.mode === 'twr' && (
+        <section className="profit-card" aria-label="Доходность TWR">
+          <h2>Доходность TWR</h2>
+          <p>
+            Оценка вручную. Потоки не сверены. Это доходность только за период, без годового
+            пересчёта и без прогноза. Совпадающие по времени UTC потоки объединяются точно; при
+            ненулевом промежуточном потоке результат недоступен без оценки на его границе.
+          </p>
+          <p>
+            Ставка округлена до 12 знаков после запятой; погрешность округления ставки не более
+            0.0000000000005. Это точность арифметики, а не ручных оценок.
+          </p>
+          <dl className="profit-result">
+            <dt>Чистый поток в начале, USD</dt>
+            <dd>{result.preview.twr.netFlowAtStartUsd}</dd>
+            <dt>Начальный капитал после потоков, USD</dt>
+            <dd>{result.preview.twr.startingCapitalUsd}</dd>
+            <dt>Моменты ненулевых промежуточных потоков</dt>
+            <dd>{result.preview.twr.interiorNetFlowDateCount}</dd>
+            {result.preview.twr.status === 'available' && (
+              <>
+                <dt>TWR, % за период</dt>
+                <dd>{result.preview.twr.periodPercent}</dd>
+              </>
+            )}
+          </dl>
+          {result.preview.twr.status === 'unavailable' && (
+            <p>{twrUnavailableReason[result.preview.twr.reason]}</p>
           )}
         </section>
       )}
