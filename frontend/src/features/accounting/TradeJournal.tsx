@@ -11,6 +11,7 @@ import {
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetRewards } from './AssetRewards';
+import { AssetSwaps } from './AssetSwaps';
 import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
 import { HistoricalAccounting } from './HistoricalAccounting';
@@ -567,6 +568,11 @@ export function TradeJournal({
               onStale={stale}
             />
           )}
+          <AssetSwaps
+            accountId={accountId}
+            journalRevision={journal.journalRevision}
+            onChanged={() => void refreshAfterExternalWrite()}
+          />
           <AssetRewards
             accountId={accountId}
             journalRevision={journal.journalRevision}

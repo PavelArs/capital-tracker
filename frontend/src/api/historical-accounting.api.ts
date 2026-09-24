@@ -1,3 +1,4 @@
+import type { SwapSummary } from './asset-swaps.api';
 import apiClient from './client';
 import type { RewardSummary, TradeSummary } from './trades.api';
 
@@ -22,6 +23,7 @@ export interface HistoricalSnapshot {
   initialCostUsd: string;
   summary: TradeSummary;
   rewardSummary?: RewardSummary;
+  swapSummary?: SwapSummary;
   items: HistoricalPosition[];
   nextOffset: number | null;
 }

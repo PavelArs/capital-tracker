@@ -358,7 +358,7 @@ export async function expectJournalSummary(page: Page, summary: Summary): Promis
     sellFeesUsd: 'Комиссии продаж, USD',
     netSalesUsd: 'Чистая выручка, USD',
     consumedCostUsd: 'Списанная себестоимость, USD',
-    realizedUsd: 'Реализованный результат по журналу сделок',
+    realizedUsd: 'Реализованный результат продаж за USD',
     remainingCostUsd: 'Остаточная учётная стоимость',
   };
   const target = page.getByRole('region', { name: 'Итоги журнала', exact: true });

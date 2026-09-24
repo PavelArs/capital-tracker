@@ -337,6 +337,13 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     exact: true,
   });
   await expect(article).toContainText('Неизвестно');
+  await article.getByRole('button', { name: 'Показать распределение обмена', exact: true }).click();
+  const allocation = article.getByRole('region', { name: 'Распределение обмена', exact: true });
+  await expect(allocation.getByText('Реализованный результат обменов, USD').locator('+ dd')).toContainText('Неизвестно');
+  await expect(allocation.getByText('Себестоимость отданных активов, USD').locator('+ dd')).toHaveText('100');
+  const lots = page.getByRole('table', { name: 'Открытые лоты', exact: true });
+  await expect(lots).toContainText(`Обмен ${receipt?.swap.swapId}, версия 1`);
+  await expect(lots).toContainText('Интервал исходного лота: 0–3');
   await article.getByRole('button', { name: 'Исправить обмен', exact: true }).click();
   await form.getByLabel('Оценка обмена в USD', { exact: true }).selectOption({ label: 'Известна' });
   await form.getByLabel('Сумма оценки, USD', { exact: true }).fill('0');
@@ -346,6 +353,41 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
       exact: true,
     })
     .check();
+  let releaseHistory: (() => void) | undefined;
+  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  let historyHeld = false;
+  let historyDelivered = false;
+  const versionsRoute = `**/api/accounting${swapsPath(account.id)}/${receipt?.swap.swapId}/versions**`;
+  const delayActualHistory = async (route: import('@playwright/test').Route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    expect((await response.json()).items[0].version).toBe(1);
+    historyHeld = true;
+    await historyGate;
+    await route.fulfill({ response });
+    historyDelivered = true;
+  };
+  await page.route(versionsRoute, delayActualHistory);
+  try {
+    await form.getByRole('button', { name: 'Проверить исправление', exact: true }).click();
+    await expect.poll(() => historyHeld).toBe(true);
+    // Real concurrent write advances the same journal pin while the old review is in flight.
+    await api.create(account.id, tradeInput(outgoing.id, 2, { occurredAt: '2025-01-04T00:00:00.000Z' }));
+    await section.getByRole('button', { name: 'Обновить обмены', exact: true }).click();
+    await expect(section).toContainText('ревизия журнала: 3.');
+    const response = page.waitForResponse((result) => new URL(result.url()).pathname.endsWith(`/${receipt?.swap.swapId}/versions`));
+    releaseHistory?.();
+    await (await response).finished();
+    await expect.poll(() => historyDelivered).toBe(true);
+    await page.waitForLoadState('networkidle');
+    await expect(review).toHaveCount(0);
+    await expect(form.getByRole('button', { name: 'Записать исправление', exact: true })).toBeDisabled();
+    await expect(form.getByLabel('Сумма оценки, USD', { exact: true })).toHaveValue('0');
+    await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
+  } finally {
+    releaseHistory?.();
+    await page.unroute(versionsRoute, delayActualHistory);
+  }
   await form.getByRole('button', { name: 'Проверить исправление', exact: true }).click();
   const corrected = await browserPost(
     page,

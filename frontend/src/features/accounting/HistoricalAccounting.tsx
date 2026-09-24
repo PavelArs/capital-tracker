@@ -5,6 +5,7 @@ import {
 } from '@api/historical-accounting.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { AssetSwapTotals } from './AssetSwapTotals';
 import { accountingError } from './feedback';
 import './HistoricalAccounting.css';
 
@@ -180,7 +181,7 @@ export function HistoricalAccounting({
                 </small>
               )}
             </dd>
-            <dt>Реализованный результат по журналу, USD</dt>
+            <dt>Реализованный результат продаж за USD</dt>
             <dd>
               {snapshot.summary.realizedUsd ?? 'Неизвестно'}
               {snapshot.summary.realizedUsd === null && snapshot.summary.basisCoverage && (
@@ -202,6 +203,11 @@ export function HistoricalAccounting({
               )}
             </dd>
           </dl>
+          {snapshot.swapSummary && (
+            <dl className="trade-summary">
+              <AssetSwapTotals summary={snapshot.swapSummary} />
+            </dl>
+          )}
           {snapshot.rewardSummary && (
             <dl className="trade-summary">
               <dt>Активные вознаграждения на момент UTC</dt>

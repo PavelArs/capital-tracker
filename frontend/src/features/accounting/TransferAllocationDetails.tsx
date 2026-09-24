@@ -1,13 +1,15 @@
 import type { TransferAllocation, TransferAllocationItem } from '@api/owned-transfers.api';
 
-function allocationKey(item: TransferAllocationItem): string {
+export function allocationKey(item: TransferAllocationItem): string {
   const origin = item.origin;
   const identity =
     origin.kind === 'trade'
       ? `${origin.tradeId}:v${origin.version}`
       : origin.kind === 'carry-in'
         ? `${origin.lotId}:r${origin.openingRevision}:o${origin.ordinal}`
-        : `${origin.rewardId}:v${origin.version}`;
+        : origin.kind === 'reward'
+          ? `${origin.rewardId}:v${origin.version}`
+          : `${origin.swapId}:v${origin.version}`;
   return [
     item.kind,
     item.instrumentId,
@@ -21,7 +23,7 @@ function allocationKey(item: TransferAllocationItem): string {
   ].join(':');
 }
 
-function AllocationOrigin({ item }: { item: TransferAllocationItem }) {
+export function AllocationOrigin({ item }: { item: TransferAllocationItem }) {
   const { origin, arrival } = item;
   return (
     <>
@@ -36,9 +38,13 @@ function AllocationOrigin({ item }: { item: TransferAllocationItem }) {
           Начальный лот {origin.lotId}, ревизия позиций {origin.openingRevision}, лот{' '}
           {origin.ordinal}
         </span>
-      ) : (
+      ) : origin.kind === 'reward' ? (
         <span>
           Вознаграждение {origin.rewardId}, версия {origin.version}
+        </span>
+      ) : (
+        <span>
+          Обмен {origin.swapId}, версия {origin.version}
         </span>
       )}
       <br />

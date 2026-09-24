@@ -5,6 +5,8 @@ import {
   type JournalMatch,
   type RewardCurrentLot,
   type RewardMatch,
+  type SwapCurrentLot,
+  type SwapMatch,
   type TradePage,
   type TradeRealization,
   type TradeVersion,
@@ -16,6 +18,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AssetSwapTotals } from './AssetSwapTotals';
 import { accountingError } from './feedback';
 
 function Instrument({
@@ -51,8 +54,8 @@ function isCarryInLot(lot: JournalLot): lot is Extract<JournalLot, { sourceKind:
 function isTransferLot(lot: JournalLot): lot is TransferCurrentLot {
   return 'sourceKind' in lot && lot.sourceKind === 'transfer';
 }
-function isRewardLot(lot: JournalLot): lot is RewardCurrentLot {
-  return 'sourceKind' in lot && lot.sourceKind === 'reward';
+function isAcquisitionLot(lot: JournalLot): lot is RewardCurrentLot | SwapCurrentLot {
+  return 'sourceKind' in lot && (lot.sourceKind === 'reward' || lot.sourceKind === 'swap');
 }
 function isCarryInMatch(
   match: JournalMatch,
@@ -62,15 +65,17 @@ function isCarryInMatch(
 function isTransferMatch(match: JournalMatch): match is TransferMatch {
   return 'sourceKind' in match && match.sourceKind === 'transfer';
 }
-function isRewardMatch(match: JournalMatch): match is RewardMatch {
-  return 'sourceKind' in match && match.sourceKind === 'reward';
+function isAcquisitionMatch(match: JournalMatch): match is RewardMatch | SwapMatch {
+  return 'sourceKind' in match && (match.sourceKind === 'reward' || match.sourceKind === 'swap');
 }
 function originIdentity(origin: TransferOrigin) {
   return origin.kind === 'trade'
     ? `${origin.tradeId}:v${origin.version}`
     : origin.kind === 'carry-in'
       ? `${origin.lotId}:r${origin.openingRevision}:o${origin.ordinal}`
-      : `${origin.rewardId}:v${origin.version}`;
+      : origin.kind === 'reward'
+        ? `${origin.rewardId}:v${origin.version}`
+        : `${origin.swapId}:v${origin.version}`;
 }
 function transferFragmentKey(value: {
   origin: TransferOrigin;
@@ -112,9 +117,13 @@ function OriginFragment({
           Начальный лот {origin.lotId}, ревизия позиций {origin.openingRevision}, лот{' '}
           {origin.ordinal}
         </>
-      ) : (
+      ) : origin.kind === 'reward' ? (
         <>
           Вознаграждение {origin.rewardId}, версия {origin.version}
+        </>
+      ) : (
+        <>
+          Обмен {origin.swapId}, версия {origin.version}
         </>
       )}
       <br />
@@ -317,7 +326,7 @@ export function TradeResults({
               coverage={journal.summary.basisCoverage?.consumed}
             />
           </dd>
-          <dt>Реализованный результат по журналу сделок</dt>
+          <dt>Реализованный результат продаж за USD</dt>
           <dd>
             <Cost
               value={journal.summary.realizedUsd}
@@ -374,6 +383,7 @@ export function TradeResults({
               ))}
             </>
           )}
+          {journal.swapSummary && <AssetSwapTotals summary={journal.swapSummary} />}
           {journal.rewardSummary && (
             <>
               <dt>Активные вознаграждения</dt>
@@ -521,7 +531,7 @@ export function TradeResults({
             <tr>
               <th>
                 {journal.originKind === 'known-cost-carry-in' ||
-                lots?.items.some((lot) => isTransferLot(lot) || isRewardLot(lot))
+                lots?.items.some((lot) => isTransferLot(lot) || isAcquisitionLot(lot))
                   ? 'Источник лота'
                   : 'Покупка / версия'}
               </th>
@@ -538,8 +548,8 @@ export function TradeResults({
                 key={
                   isTransferLot(lot)
                     ? `transfer:${transferFragmentKey(lot)}`
-                    : isRewardLot(lot)
-                      ? `reward:${lot.origin.rewardId}:v${lot.origin.version}:${lot.intervalStart}:${lot.intervalEnd}`
+                    : isAcquisitionLot(lot)
+                      ? `${lot.sourceKind}:${originIdentity(lot.origin)}:${lot.intervalStart}:${lot.intervalEnd}`
                       : isCarryInLot(lot)
                         ? `carry-in:${lot.lotId}`
                         : `buy:${lot.buyTradeId}`
@@ -553,7 +563,7 @@ export function TradeResults({
                       intervalStart={lot.intervalStart}
                       intervalEnd={lot.intervalEnd}
                     />
-                  ) : isRewardLot(lot) ? (
+                  ) : isAcquisitionLot(lot) ? (
                     <OriginFragment
                       origin={lot.origin}
                       intervalStart={lot.intervalStart}
@@ -583,12 +593,12 @@ export function TradeResults({
                   <Instrument trade={lot} />
                 </td>
                 <td>
-                  {isTransferLot(lot) || isRewardLot(lot)
+                  {isTransferLot(lot) || isAcquisitionLot(lot)
                     ? lot.origin.originalQuantity
                     : lot.originalQuantity}
                 </td>
                 <td>
-                  {(isTransferLot(lot) || isRewardLot(lot)
+                  {(isTransferLot(lot) || isAcquisitionLot(lot)
                     ? lot.origin.originalCostUsd
                     : lot.originalCostUsd) ?? 'Неизвестно'}
                 </td>
@@ -663,7 +673,9 @@ export function TradeResults({
                   <th>Продажа / версия</th>
                   <th>
                     {journal.originKind === 'known-cost-carry-in' ||
-                    matches?.items.some((match) => isTransferMatch(match) || isRewardMatch(match))
+                    matches?.items.some(
+                      (match) => isTransferMatch(match) || isAcquisitionMatch(match),
+                    )
                       ? 'Источник лота'
                       : 'Покупка / версия'}
                   </th>
@@ -677,8 +689,8 @@ export function TradeResults({
                     key={
                       isTransferMatch(match)
                         ? `${match.sellTradeId}:transfer:${transferFragmentKey(match)}`
-                        : isRewardMatch(match)
-                          ? `${match.sellTradeId}:reward:${match.origin.rewardId}:v${match.origin.version}:${match.intervalStart}:${match.intervalEnd}`
+                        : isAcquisitionMatch(match)
+                          ? `${match.sellTradeId}:${match.sourceKind}:${originIdentity(match.origin)}:${match.intervalStart}:${match.intervalEnd}`
                           : isCarryInMatch(match)
                             ? `${match.sellTradeId}:carry-in:${match.lotId}`
                             : `${match.sellTradeId}:buy:${match.buyTradeId}`
@@ -697,7 +709,7 @@ export function TradeResults({
                           intervalStart={match.intervalStart}
                           intervalEnd={match.intervalEnd}
                         />
-                      ) : isRewardMatch(match) ? (
+                      ) : isAcquisitionMatch(match) ? (
                         <OriginFragment
                           origin={match.origin}
                           intervalStart={match.intervalStart}

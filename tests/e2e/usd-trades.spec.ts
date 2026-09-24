@@ -81,7 +81,7 @@ async function summary(page: Page, realized: string, remaining: string): Promise
   const region = page.getByRole('region', { name: 'Итоги журнала', exact: true });
   await expect(
     region
-      .getByText('Реализованный результат по журналу сделок', { exact: true })
+      .getByText('Реализованный результат продаж за USD', { exact: true })
       .locator('xpath=following-sibling::dd[1]'),
   ).toHaveText(realized);
   await expect(

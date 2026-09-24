@@ -1,3 +1,4 @@
+import type { SwapSummary } from './asset-swaps.api';
 import type { CarryInCurrentLot, CarryInMatch, CarryInOrigin } from './carry-in.api';
 import apiClient from './client';
 
@@ -74,6 +75,7 @@ export type Journal = (JournalOrigin | CarryInOrigin) & {
   summary: TradeSummary;
   transferSummary?: TransferSummary;
   rewardSummary?: RewardSummary;
+  swapSummary?: SwapSummary;
   revisionBudget?: RevisionBudget;
 };
 export interface JournalState {
@@ -149,6 +151,37 @@ export interface RewardOrigin {
   originalQuantity: string;
   originalCostUsd: string | null;
 }
+export interface SwapOrigin {
+  accountId: string;
+  kind: 'swap';
+  swapId: string;
+  version: number;
+  acquiredAt: string;
+  orderWithinTimestamp: number;
+  originalQuantity: string;
+  originalCostUsd: string | null;
+}
+export interface SwapCurrentLot {
+  sourceKind: 'swap';
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  origin: SwapOrigin;
+  intervalStart: string;
+  intervalEnd: string;
+  remainingQuantity: string;
+  remainingCostUsd: string | null;
+}
+export interface SwapMatch {
+  sourceKind: 'swap';
+  sellTradeId: string;
+  sellVersion: number;
+  origin: SwapOrigin;
+  intervalStart: string;
+  intervalEnd: string;
+  quantity: string;
+  costUsd: string | null;
+}
 export type TransferOrigin =
   | {
       accountId: string;
@@ -171,7 +204,8 @@ export type TransferOrigin =
       originalQuantity: string;
       originalCostUsd: string;
     }
-  | RewardOrigin;
+  | RewardOrigin
+  | SwapOrigin;
 export interface RewardCurrentLot {
   sourceKind: 'reward';
   instrumentId: string;
@@ -216,8 +250,13 @@ export interface TransferMatch {
   quantity: string;
   costUsd: string | null;
 }
-export type JournalLot = TradeLot | CarryInCurrentLot | RewardCurrentLot | TransferCurrentLot;
-export type JournalMatch = TradeMatch | CarryInMatch | RewardMatch | TransferMatch;
+export type JournalLot =
+  | TradeLot
+  | CarryInCurrentLot
+  | RewardCurrentLot
+  | SwapCurrentLot
+  | TransferCurrentLot;
+export type JournalMatch = TradeMatch | CarryInMatch | RewardMatch | SwapMatch | TransferMatch;
 export interface TradePage<T> {
   journalRevision: number;
   items: T[];
