@@ -51,7 +51,18 @@ Guide docs/manual-usd-prices.md and its archived verification contain the actual
 No provider ingestion, symbol mapping, interpolation or automatic full portfolio
 value. All existing price/accounting contracts remain unchanged by valuation.
 
-## Current historical valuation slice
+## Active chart slice
+
+chart-account-valuations contract5a3e367, backend pure3496b13, PGcb53d1c,
+E2Ed9a144b/root-reviewed302b235. Root backend+PG; Luna chart-acceptance worktree;
+Sol chart-ui worktree. No product edits yet, real predecessor RED running in root
+Docker session; /private/tmp/capital-chart-red.cjs/log. Contract:30elapsed-day
+custom range, start+24h samples+exactend <=31points, one RR snapshot, exact totals,
+complete-only scatter with no lines, exact table and honest missing values.
+Baseline68/3pass; auditexit0 twoexistingmoderate; strict20items pass. Read active
+change artifacts/verification. Next product implementation only after real RED.
+
+## Previous historical valuation slice
 
 value-historical-account implemented, independently reviewed and targeted GREEN;
 archived2026-09-23-value-historical-account with7/7tasks. Contract660c6ce,
