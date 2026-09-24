@@ -15,7 +15,7 @@ versus zero semantics SHALL match the existing point valuation contract.
 Every sampled point SHALL reconstruct current-effective positions through the complete connected
 transfer history at that point instant, respecting transfer arrival and original lot intervals.
 The existing30-day period, sampling schedule, exact-time pricing and gap behavior SHALL remain
-unchanged. Each point SHALL include the complete connected position set up to13,200 original
+unchanged. Each point SHALL include the complete connected position set up to15,200 original
 lots without per-point paging or truncation.
 
 #### Scenario: VCH-TIMELINE Historical quantities, gaps and corrections
@@ -52,11 +52,10 @@ boundaries, make zero provider calls and mutate no business data. Existing point
 valuation and historical accounting endpoints SHALL retain their behavior.
 
 A chart request SHALL load the connected journal once inside its existing single REPEATABLE READ
-transaction, then evaluate all unchanged sample instants from that snapshot. All relevant
-source, recipient, transfer and price revisions SHALL be coherent; the established point count
-and period bounds SHALL not multiply connected-ledger queries. A series SHALL omit
-point-specific transferSummary from its top-level metadata; it SHALL NOT present
-the first sample's transfer basis as a whole-period total.
+transaction, then evaluate all unchanged sample instants from that snapshot. All relevant source, recipient, transfer, reward, swap and price revisions SHALL be
+coherent; the established point count and period bounds SHALL not multiply connected-ledger queries. A series SHALL omit
+point-specific transferSummary and swapSummary from its top-level metadata; it SHALL NOT present
+the first sample's transfer basis or swap summary as a whole-period total.
 
 The once-loaded connected ledger SHALL include effective rewards. A reward correction SHALL invalidate dependent series pins; per-point rewardSummary is omitted while quantity/cost evidence remains correct.
 

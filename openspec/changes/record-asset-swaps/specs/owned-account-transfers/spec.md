@@ -98,8 +98,11 @@ Reward mutations SHALL acquire the same owner-first locks, validate all connecte
 
 #### Scenario: SWAP-TRANSFER-REPLAY
 - **GIVEN** an outgoing source lot was used by a swap and a portion of that swap lot was transferred and sold by a recipient
-- **WHEN** the source lot basis is corrected and the complete connected replay remains valid
-- **THEN** the recipient's swap-derived basis and sale result restate atomically, each participant pin advances once, and swap receipts remain immutable
+- **WHEN** the source lot basis is corrected, swap consideration remains unchanged, and the candidate connected history is valid
+- **THEN** the swap's outgoing principal basis and result restate, but its declared incoming basis and the recipient sale basis/result remain unchanged; each affected participant pin advances once and old receipts remain immutable
+
+- **WHEN** instead the swap consideration is corrected
+- **THEN** the incoming swap-lot basis and dependent recipient sale result restate atomically with the saved swap receipt unchanged until current state is read
 
 ### Requirement: TRANSFER-004 Bounded projections remain coherent and exact
 Connected allocation and snapshot reads SHALL include swap-origin lots and swap allocations from one complete connected history. Original swap provenance SHALL remain inspectable after transfer; bounded pages and full totals SHALL not hide swap-funded fragments or count a received lot as a new local swap.

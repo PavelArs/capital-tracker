@@ -238,3 +238,56 @@ Reward-origin lots/matches SHALL retain reward identity/version/category and ori
 - **GIVEN** a connected read has established a PostgreSQL snapshot before a swap correction commits on another connection
 - **WHEN** the read loads effective heads and derived positions
 - **THEN** it returns the complete pre-correction swap state, while a later read returns the complete corrected state and an old continuation is rejected as stale
+
+### Requirement: TRADE-006 Protected honest Russian journal journey
+The system SHALL expose a Russian journal section in protected manual account detail,
+explicit empty-origin attestation, gross/fee/time/order entry, full correction/void,
+current results and bounded provenance. It SHALL label realized journal results and
+remaining recorded cost, not portfolio return, fiat cash, market value or tax compliance.
+Existing opening accounts SHALL remain intact. Eligible known-cost accounts SHALL
+offer the explicit reviewed carry-in journey; unsupported unknown/mismatched cost SHALL
+remain visible. A referenced opening SHALL be displayed as historical baseline evidence,
+not another current holding added to seeded journal inventory. Baseline immutability
+in this slice SHALL be disclosed before acceptance.
+Private routes SHALL retain full MFA, session/CSRF, existing quotas and owner isolation.
+No provider, legacy observation or external-flow mutation SHALL occur.
+
+The Russian journal SHALL render unknown cost/profit as unknown with the known subtotal explicitly labelled partial, and reward origin as reward rather than a fabricated buy. Swap-origin lots and matches SHALL be rendered as swaps with their swap identity/version and original provenance, not as fabricated USD buys or sales.
+
+#### Scenario: TRADE-006-A Real UI, replay receipt and stale draft
+- **GIVEN** actual password/MFA login through the release application
+- **WHEN** the owner initializes an eligible account and enters the mandatory three trades through forms
+- **THEN** exact 250/100/0.5 results and lot provenance survive both backend restarts and reload
+- **AND** correcting the older buy shows 230/100 with its old version retained
+- **AND** successful or replayed receipts trigger a current-state read, not replacement by an old result
+- **AND** stale 409 preserves the draft with Russian feedback and explicit review before resubmission; writes disable edits and stale route responses cannot change another account
+
+#### Scenario: TRADE-006-C Refresh cannot silently rebase a selected mutation
+- **GIVEN** a correction draft or void confirmation refers to version 1 and another request corrects that trade to version 2
+- **WHEN** the owner refreshes the journal without submitting the draft
+- **THEN** the draft remains unchanged and the refreshed complete target is displayed for explicit review before a new command can use the newer journal revision
+- **AND** a target now terminally void cannot silently turn the selected mutation into a create
+
+#### Scenario: TRADE-006-D Read conflicts cannot discard an unresolved command
+- **GIVEN** a real correction commits but its response is lost before browser delivery
+- **WHEN** a stale revision-pinned read returns 409 and the owner refreshes and reviews the journal
+- **THEN** unchanged explicit retry still sends the complete original command, including its original request key, target and expected revision
+- **AND** the API returns the original receipt with 200, no duplicate version is created and a fresh current-state read supplies the displayed results
+- **AND** a replay refused by authentication, CSRF or admission does not establish the original outcome; the unresolved command, draft and target remain protected for a later exact replay
+- **AND** an ambiguous initialization keeps the opening editor blocked until current journal state is known
+
+#### Scenario: TRADE-006-B Retained security and privacy
+- **WHEN** anonymous/pending clients, invalid Origin/CSRF, foreign IDs, mass assignment or literal malicious labels exercise new routes
+- **THEN** statuses remain 401/403/generic 404/400 as appropriate, labels render as text and unauthorized requests cannot mutate accounting data
+- **AND** invalid Origin/CSRF does not touch sessions; valid private authorization may touch only its documented lastSeenAt outside the accounting transaction
+- **AND** local errors preserve 401 redirect/403 handling, no private values enter logs, and legacy/auth/factor/admission rows and provider request counts retain their existing oracles
+
+#### Scenario: REWARD-TRADE-UI
+- **WHEN** a current result contains both known0 and unknown-basis reward lots
+- **THEN** the owner sees distinct0/unknown labels and exact reward/transfer provenance
+
+#### Scenario: SWAP-TRADE-UI
+- **GIVEN** a real owner reviews a connected result containing a swap-origin lot or allocation
+- **WHEN** the protected Russian journal displays it
+- **THEN** the swap remains visibly distinct from USD trades, unknown consideration differs from known zero, and original swap/instrument identities remain inspectable
+- **AND** the existing USD trade draft remains unchanged
