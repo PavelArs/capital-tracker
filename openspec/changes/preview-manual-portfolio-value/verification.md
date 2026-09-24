@@ -1,6 +1,6 @@
 # Manual portfolio valuation verification
 
-Status: behavioral RED confirmed, backend implemented; real PostgreSQL and frontend pending.
+Status: implemented, independently reviewed and targeted GREEN; archive pending.
 
 Base122e3ca has21 canonical specs and no active changes before this proposal.
 Owner chart maximum-period review remains deferred. Nginx edit/lock/data retained.
@@ -58,4 +58,70 @@ passed127/5 (32new+95retained) in1.949s.
 audit exit0,2existing moderate findings/nohighcritical; unchanged lockfile.
 `/private/tmp/capital-mpv-audit.log`.
 
-Real PostgreSQL/HTTPS GREEN, independent product review and archive pending.
+## Actual PostgreSQL and source integration
+
+At7128c28, `/private/tmp/capital-mpv-db.cjs` built the backend image and ran new
+`manual-portfolio-valuation-db.cjs` plus retained `historical-valuation-db.cjs`.
+`/private/tmp/capital-mpv-db.log`, exit0. Actual explicit schema19 migration in each
+fresh synthetic database; no migration change introduced.
+
+- MPV-EXACT/GAPS/PRIVATE PASS: shared UUID exact308.64, same-symbol distinct UUID and
+  adjacent-instant gaps, missing journal/precoverage versus empty zero, price0 and
+  voiding, strict request and whole-request owner isolation, all-row fingerprints.
+- MPV-SNAPSHOT PASS: two actual connection pools/PIDs; pause the reader after its
+  RR snapshot is established, correct both account journals and the shared price
+  elsewhere, then prove unchanged old result30 and fresh result140. One union price
+  read; READ ONLY/isolation statements and all-row preservation asserted.
+- MPV-PRECISION/BOUND PASS: scale60 aggregate of two tiny products, selection10
+  accepted/11refused, invalid saved FIFO remains409 with no repair/mutation.
+  Ten accounts/two positions observed9ms; this is not an SLA or maximum11000-row
+  benchmark. Existing single-account peak coverage remains in the retained fixture.
+- Retained VAL-EXACT/GAPS/PRIVATE, VAL-COVERAGE, VAL-SNAPSHOT, VAL-PRECISION PASS.
+
+Image `sha256:4b6bfc44032298aa1f4c8c342ad5ff9ac16c235d9bbf6c665fb58e227ae61c77`.
+Controlled external fixture counters stay unchanged; no backend/repository mock.
+Harness cleanup removed its synthetic containers/networks. No owner database.
+
+Sol UI9d1b282 integrateda38901b. Root45cd0e9 clarified user-facing copy and stacked
+narrow-screen summary fields; no mathematical/state assertion change. Selection is
+stored visibly as records independent of the currently loaded catalog page, with
+explicit removal, avoiding hidden submissions after a catalog replacement.
+Sol independently reviewed backend7128c28 and reported no material bug; root reviewed
+the UI state machine/exact view/API/table and preserved account creation/paging.
+
+Frontend104tests/13files passed in2.97s (Sol worktree), production build/scopedBiome
+PASS. Root integrated frontend build and lint PASS (29existing warnings; retained
+>500kB bundle warning), logs `/private/tmp/capital-mpv-frontend-{build,lint}.log`.
+Final browser strict/noUnused TypeScript PASS; `git diff --check` PASS. Changes use
+no new package, migration or deployment topology.
+
+## HTTPS and archive
+
+At45cd0e9, `/private/tmp/capital-mpv-green.cjs` built both images, migrated/seeded
+the isolated database, checked containment and ran:
+
+`pnpm exec playwright test tests/e2e/manual-portfolio-valuation.spec.ts
+tests/e2e/historical-valuation.spec.ts --grep 'MPV-|VAL-UI:' --workers=1`
+
+Exit0, **3/3 in37.0s**, one worker, zero retries: MPV-API, MPV-UI and retained VAL-UI.
+Actual HTTPS/password/MFA/session/backend/PostgreSQL. Only external providers are
+controlled; delayed UI response uses actual `route.fetch()`, not a fabricated body.
+Exact per-account/aggregate values, private request boundary, missing history/price
+and saved zero, no provider/business writes, changed-time stale response and retained
+single-account UI all asserted. No unexpected GREEN failure. Containment/artifact
+checks PASS. Raw `/private/tmp/capital-mpv-green.log` and synthetic-only
+`/private/tmp/capital-mpv-green-artifacts`.
+
+- Backend `sha256:4b6bfc44032298aa1f4c8c342ad5ff9ac16c235d9bbf6c665fb58e227ae61c77`
+  (same image as actual PostgreSQL verification).
+- Frontend `sha256:92528857004478837265653aa1651f31b73783fa9c5bbbefdb1a45d4efb222b7`
+
+Cleanup completed; live labeled container/network inventories empty. Owner Nginx
+mode0644/size1348/SHA256
+`115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432`
+and lock SHA256
+`6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`
+unchanged. Strict OpenSpec22items (21canonical+active) PASS. No full backend/full E2E,
+older migration matrix, hostedCI, release scans, live providers or production check
+run in this slice; no tests/gates removed. No owner-data access/folder deletion/
+remote push/paid services. Whole brief and chart maximum-period review remain open.

@@ -511,7 +511,8 @@ docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml run --rm --no-dep
 The fixture creates its fixed database only after verifying it is absent. Never
 point it at owner data or reuse its existing fixture. Three new PostgreSQL families
 and four retained historical-valuation families passed in
-`/private/tmp/capital-mpv-db.log`; the two MPV HTTPS cases are pending. The browser
+`/private/tmp/capital-mpv-db.log`. Both MPV HTTPS cases and retained VAL-UI passed3/3
+in37.0s, one worker and zero retries (`/private/tmp/capital-mpv-green.log`). The browser
 selection includes retained VAL-UI to check that the new
 route does not change individual account valuation. No full-suite or release-pass
 claim is made; consult the verification record for exact images and remaining gates.

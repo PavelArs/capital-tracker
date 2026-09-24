@@ -166,20 +166,44 @@ BEimage identical PG/HTTPS. Cleanup/live labeledinventory empty; Nginx/lock unch
 Fullbackend/fullE2E/olderupgrade matrix/hostedCI/release/production not run. Existing
 CI gates/tests retained. Final independent evidence audit found no blocker.
 
+## Completed selected manual-account valuation slice
+
+preview-manual-portfolio-value implemented, reviewed and targeted GREEN; archive
+pending. Contract3129270, puref01879b/PG8da7886, Luna2E2E4b0c864, Solview8823465
+precede actualHTTPSRED (validowner200 vs404, missingheading10s). Rootbackend7128c28
+adds POST/accounting/manual-valuation-preview with strict1..10distinct selected
+ownedUUIDs, oneRR READONLYsnapshot, shared history/exactpriceprojection, coverage
+gaps separatefromzero, nullabletotal and knownsubtotal, no provider/write/cash
+inference. No migrations/dependencies/chart/deploymentchange; schema19 retained.
+SolUI9d1b282 integrateda38901b; visible selection retained acrosscatalogreloads,
+explicitaction, staleinput/request/unmount guards. Root45cd0e9 copy/mobilelayoutfix.
+Sol reviewedbackend, rootreviewedUI; no unresolvedproductfindings.
+
+Baseline95/4pass1.669s; targeted127/5pass1.949s (32new+95retained); Solfrontend104/13
+pass2.97s. Builds/lints/TS/scopedBiome PASS; existing BE77/FE29 andVitebundlewarnings.
+Dependencygate exit0,2existingmoderate/nohighcritical, lockunchanged.
+ActualPG3MPVfamilies+4retainedVALfamilies PASS. Real two-pool/PID snapshot barrier
+across twoaccount corrections andsharedprice, exact60scale,10selectedaccounts/
+11refused, invalidFIFO409, allrows/providerpreservation.10accounts/2positions9ms
+observation(noSLA/maxloadclaim). HTTPSat45cd0e9:3/3in37.0s,1worker0retries, MPV-API/
+MPV-UI/retainedVAL-UI; realMFA/HTTPS/backend/PG, onlyexternalprovidersstubbed.
+Logs/private/tmp/capital-mpv-{red,backend-unit,db,green}.log andred/green-artifacts.
+BEsha256:4b6bfc44032298aa1f4c8c342ad5ff9ac16c235d9bbf6c665fb58e227ae61c77
+FEsha256:92528857004478837265653aa1651f31b73783fa9c5bbbefdb1a45d4efb222b7
+SameBEinPG/HTTPS. Cleanup/liveDockerinventoryempty; ownerNginx/lockunchanged.
+Fullbackend/fullE2E/oldermigrationmatrix/hostedCI/release/productionnotrun.
+Read activeverification anddocs/manual-portfolio-valuation.md. Rootownsarchive.
+
 ## Next
 
-Active preview-manual-portfolio-value: reviewed contract3129270 for1..10explicit
-selected manual accounts, one RR snapshot, exact aggregate and per-account gaps.
-Root pure/PG acceptance f01879b/8da7886, Luna2E2E4b0c864 andSol viewtests8823465
-precede genuineRED: validowner200 vs404/missingheading on priorFXimages. Root
-backend7128c28 implemented;127/5unit andbuild/lint pass. RealPGrunning;Sol frontend
-inportfolio-ui inprogress. Root ownsbackend/PG/sharedfiles/Docker. Readactive
-verification; no runtimeGREEN/archiveclaim yet.
+Finish preview-manual-portfolio-value documentation/archive and canonical sync.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
-automatic prices/longer history/charts, multi-account valuation, TWR, transfers/
-swaps/rewards, blockchain reconciliation, optionalAI and release/backup-restore
-hardening before consolidation. CoinGecko permanent retention remains unapproved;
+automatic prices/longer history/charts, automatic all-account allocation, TWR,
+transfers/swaps/rewards, blockchain reconciliation, optionalAI and release/backup-
+restore hardening before consolidation. Selected manual valuation is not complete
+whole-portfolio value/cash accounting. Legacy UI/API simplification remains scoped
+work with data preservation. CoinGecko permanent retention remains unapproved;
 FX end-use permission does not remove that blocker. Do not move/delete folders now.
 Reuse carry_docs_review Luna(simple) and historical_ui Sol(complex/review).
 gate_acceptance quota-limited untilSep29; do not retry/purchase.

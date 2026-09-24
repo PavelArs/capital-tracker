@@ -22,7 +22,7 @@ data or contact external providers.
 
 The view identifies accounts with no journal (“История не инициализирована”) or
 an instant before their coverage (“Момент раньше начала истории”). It also
-identifies each held position with no exact price. “Оценённая часть, USD” is the
+reports the count of held positions with no exact price. “Оценённая часть, USD” is the
 subtotal of positions that can be priced; if any account history or position is
 unknown, “Оценка выбранных счетов, USD” is “Не определена”. A covered empty
 account and an explicitly zero-priced holding are known zero values. Monetary
@@ -35,6 +35,6 @@ session/MFA, Origin and CSRF protections, rejects extra input, and returns one
 the calculation; the selection bounds the work. Invalid saved FIFO history
 remains an error instead of being relabeled as an ordinary missing-data gap.
 
-Implementation and runtime verification are pending. See the active
+The selected PostgreSQL checks and all three HTTPS acceptance cases passed. See the
 [verification record](../openspec/changes/preview-manual-portfolio-value/verification.md)
-for the planned acceptance scope and current results.
+for the selected acceptance scope, actual results and unrun checks.
