@@ -49,11 +49,18 @@ Lock SHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d.
 
 ## RED
 
-Pending current predecessor run. It asserts previous image IDs before starting:
+Actual `/private/tmp/capital-chart-red.cjs` exited1: two expected failures before
+product changes, anonymous series GET expected401 got404 and new history heading
+absent after10s. Raw log `/private/tmp/capital-chart-red.log`, synthetic artifacts
+`/private/tmp/capital-chart-red-artifacts`. Previous image IDs were asserted before
+starting:
 BEsha256:6585ed74167fb470aa4c5575e934759daf14f60adb2502b1ed0a84f3409b8fd4
 FEsha256:f034307171dc39856cd16fe5bfe5ca177998584419324b90c9375de6279db4ea.
 Missing future modules are prerequisites, never behavioral RED.
 
 ## Implementation, GREEN and archive
 
-Pending actual results, independent review, preservation and canonical sync.
+Initial backend GREEN: `pnpm --dir backend test --runInBand --coverage=false
+valuation-history historical-valuation historical-accounting` passed95tests/4suites
+in1.966s (27new,68retained). Backend build/scopedBiome passed; backend lint passed
+with77existingwarnings. Real PG/HTTPS, final review and canonical sync pending.

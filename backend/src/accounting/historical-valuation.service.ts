@@ -3,15 +3,8 @@ import { DataSource } from 'typeorm';
 import { readHistoricalState } from './historical-accounting.store';
 import { projectValuation } from './historical-valuation';
 import { parseValuationQuery } from './historical-valuation-input';
-import { parseDecimal, parseUuid } from './input';
-
-interface PriceRow {
-  instrumentId: string;
-  observedAt: Date;
-  priceUsd: string | null;
-  revision: number;
-  kind: 'set' | 'void';
-}
+import { parseUuid } from './input';
+import { readValuationPrices } from './valuation-price.store';
 
 @Injectable()
 export class HistoricalValuationService {
@@ -29,24 +22,12 @@ export class HistoricalValuationService {
         summary: _summary,
         ...snapshot
       } = await readHistoricalState(manager, owner, id, at);
-      const rows: PriceRow[] =
-        positions.length === 0
-          ? []
-          : await manager.query(
-              `SELECT DISTINCT ON ("instrumentId") "instrumentId", "observedAt", "priceUsd"::text, revision, kind
-          FROM manual_usd_price_versions
-          WHERE "ownerId"=$1 AND "instrumentId"=ANY($2::uuid[]) AND "observedAt"=$3
-          ORDER BY "instrumentId", revision DESC`,
-              [owner, positions.map((position) => position.instrumentId), at],
-            );
-      const prices = rows
-        .filter((row) => row.kind === 'set')
-        .map((row) => ({
-          instrumentId: row.instrumentId,
-          priceUsd: parseDecimal(row.priceUsd, false),
-          observedAt: row.observedAt.toISOString(),
-          revision: row.revision,
-        }));
+      const prices = await readValuationPrices(
+        manager,
+        owner,
+        positions.map((position) => position.instrumentId),
+        [at],
+      );
       return {
         ...snapshot,
         priceSource: 'manual' as const,

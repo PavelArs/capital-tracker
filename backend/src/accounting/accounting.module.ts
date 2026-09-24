@@ -15,6 +15,8 @@ import { PortfolioFlowController } from './portfolio-flow.controller';
 import { PortfolioFlowService } from './portfolio-flow.service';
 import { TradeController } from './trade.controller';
 import { TradeService } from './trade.service';
+import { ValuationHistoryController } from './valuation-history.controller';
+import { ValuationHistoryService } from './valuation-history.service';
 
 @Module({
   controllers: [
@@ -25,6 +27,7 @@ import { TradeService } from './trade.service';
     PortfolioFlowController,
     ManualPriceController,
     HistoricalValuationController,
+    ValuationHistoryController,
   ],
   providers: [
     AccountingService,
@@ -36,6 +39,7 @@ import { TradeService } from './trade.service';
     PortfolioFlowService,
     ManualPriceService,
     HistoricalValuationService,
+    ValuationHistoryService,
   ],
 })
 export class AccountingModule {}

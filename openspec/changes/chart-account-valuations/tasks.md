@@ -5,7 +5,7 @@
 
 ## 2. Implementation
 
-- [ ] 2.1 Implement single-transaction series using shared bounded loads and exact existing arithmetic; retain point/historical API characterization (VCH-TIMELINE/RANGE/SNAPSHOT).
+- [x] 2.1 Implement single-transaction series using shared bounded loads and exact existing arithmetic; retain point/historical API characterization (VCH-TIMELINE/RANGE/SNAPSHOT).
 - [ ] 2.2 Implement Russian form/table/scatter and stale-intent handling with installed Chart.js; preserve draft and exact strings (VCH-UI/CHART).
 
 ## 3. Review and verification
