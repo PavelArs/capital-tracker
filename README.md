@@ -47,6 +47,10 @@ contributions/withdrawals with exact period totals, immutable correction history
 and safe original-command recovery. Four new and two retained critical HTTPS
 scenarios, real PostgreSQL and populated-schema migration checks passed. It does
 not yet calculate portfolio profit, XIRR or TWR.
+The bounded [TWR preview](docs/endpoint-twr.md) adds period returns for reviewed
+manual endpoints when no intermediate net external flow needs another valuation.
+Missing intermediate valuations produce an explicit unavailable result. General
+linked TWR and automatic portfolio performance remain pending.
 Original project folders/data remain untouched.
 
 Capital tracking application with manual-account workflows and retained legacy asset, crypto-wallet and financial-metrics screens during the incremental refactor.

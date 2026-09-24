@@ -226,13 +226,44 @@ full E2E, older upgrade matrix, hosted CI, release scans, live providers and pro
 not run. See the archived verification record for evidence and limits. Luna's final independent
 evidence audit found no discrepancy. Active changes empty after archive.
 
+## Completed bounded endpoint TWR slice
+
+`preview-endpoint-twr` archived as `2026-09-24-preview-endpoint-twr`,7/7tasks;
+strict24 canonical specs passed,23 previous specs unchanged, active changes empty.
+Contract3aaaf37, root pure/PG tests6b000c3 independently
+reviewed by Sol, Luna two HTTPS casesf449f70 integratedf1938f2 plus omitted-CSRF7f686d6.
+Actual predecessor RED: valid API200 vs404 and missing TWR button10s, before product
+implementation. Root backend7e39b45 shares strict profit input and owner RR READ ONLY
+snapshot; exact BigInt endpoint ratio only with no strictly interior nonzero net flow
+and positive adjusted starting capital. Missing valuations/nonpositive start are
+explicit null-rate states; same-ms flows net exactly, from adjusts opening/to excluded.
+Rate rounds once to12 places, half away from zero; percent derives from publishedrate,
+period-only, manual/unreconciled. General linked TWR is NOT complete. No schema,
+dependency/provider/chart/deployment change. Guide docs/endpoint-twr.md.
+
+Sol UI d228647 integrated4f2305c, root e512cf5 clarifies displayed percentage rounding.
+Sol independently reviewed backend; root reviewed UI; no blocker. Baseline82/2 pass;
+targeted109/3 pass2.92s (27new+82retained), frontend98/12 pass. Builds/lints/types/Biome
+pass with existing BE77/FE27/Vite bundle warnings. Production gate exit0, two moderate
+findings retained. ActualPG four TWR and four retained profit families passed, including
+1000heads, >page/corrections/voids/foreign isolation, separate real PIDs/RR barrier/
+COMMIT witness, all-row/provider preservation. HTTPS3/3 pass36.7s,1worker0retries:
+TWR-API, TWR-UI, unchanged XIRR-UI/LATE; real auth/backend/PG and actual delayedfetch.
+Logs /private/tmp/capital-twr-{red,db,green,backend-unit,audit}.log and red/green-artifacts;
+frontend logs same prefix. Cleanup live labeled inventory empty, Nginx/lock unchanged.
+BEsha256:a1975ae4405b23b463845dab0fb46171524b0f9129b8b104d14ae251e7623277
+FEsha256:3a3a6c834db933168a0af0aa06b8a5df01e499a3c68cfef2ca1832f19e0aa919
+Same backend in PG/HTTPS. Full backend/full E2E/older upgrade matrix/hostedCI/release
+scans/liveproviders/production not run; no owner data or project folders changed.
+Luna independently audited final verification evidence; no discrepancy.
+
 ## Next
 
 No active OpenSpec change. Choose the next bounded slice from the remaining brief,
 with reviewed contract and targeted acceptance before product implementation.
 User2026-09-24 defers chart/max-period review until overall completion; keep current
 30-day behavior now, revisit with owner feedback later. Whole brief still needs
-automatic prices/longer history/charts, automatic all-account allocation, TWR,
+automatic prices/longer history/charts, automatic all-account allocation, linked TWR,
 transfers/swaps/rewards, blockchain reconciliation, optionalAI and release/backup-
 restore hardening before consolidation. Selected manual valuation is not complete
 whole-portfolio value/cash accounting. Legacy UI/API simplification remains scoped
