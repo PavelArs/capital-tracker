@@ -190,7 +190,12 @@ export function DisplayFxPanel() {
         <div className="display-fx__result">
           <p>{view.statusText}</p>
           {providerFailed && (
-            <p>Последняя попытка сбора не удалась. Показаны ранее сохранённые курсы.</p>
+            <p>
+              Последняя попытка сбора не удалась.{' '}
+              {report.observation
+                ? 'Показаны ранее сохранённые курсы.'
+                : 'Сохранённых курсов пока нет.'}
+            </p>
           )}
           {report.collection.nextAttemptAt && (
             <p>
