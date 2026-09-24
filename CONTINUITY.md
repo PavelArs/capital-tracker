@@ -139,8 +139,13 @@ release scan/production run this slice. Old cases and CI gates preserved.
 
 ## Next
 
-Choose the next small database-first historical coverage slice after the archived
-chart-account-valuations change. Whole brief
+Active collect-daily-display-fx: opt-in persisted daily indicative USD/EUR/RUB
+conversion, source ExchangeRate-API open no-key with verified cached end-use terms.
+Contract/acceptance preparation; no product edits yet. Root owns backend/migration/
+provider fixture/shared runners/Docker. New worktrees for Luna acceptance and Sol UI.
+User2026-09-24 defers chart/max-period review until overall completion; keep current
+30-day behavior now, revisit with owner feedback later. Read active artifacts.
+Whole brief
 still needs automatic prices/longer history/charts, multi-account valuation, TWR, transfers/
 swaps/rewards, blockchain reconciliation, optionalAI and release/backup-restore
 hardening before consolidation. Do not move/delete original folders now.
