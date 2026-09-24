@@ -336,6 +336,10 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
   await page.goto(`/manual-accounts/${account.id}`);
   const section = page.getByRole('region', { name: 'Вознаграждения', exact: true });
   await expect(section).toBeVisible();
+  const tradeDraft = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
+  await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
+  await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
   const form = section.getByRole('form', { name: 'Редактор вознаграждения', exact: true });
   await form.getByLabel('Актив вознаграждения', { exact: true }).selectOption(instrument.id);
   await form.getByLabel('Категория вознаграждения', { exact: true }).selectOption('unclassified');
@@ -427,6 +431,62 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
       exact: true,
     })
     .check();
+  let releaseHistory: (() => void) | undefined;
+  const historyGate = new Promise<void>((resolve) => {
+    releaseHistory = resolve;
+  });
+  let historyHeld = false;
+  let historyDelivered = false;
+  const versionsRoute = `**/api/accounting${rewardsPath(account.id)}/${rewardId}/versions**`;
+  const delayActualHistory = async (route: import('@playwright/test').Route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    expect((await response.json()).items[0].version).toBe(1);
+    historyHeld = true;
+    await historyGate;
+    await route.fulfill({ response });
+    historyDelivered = true;
+  };
+  await page.route(versionsRoute, delayActualHistory);
+  try {
+    await form.getByRole('button', { name: 'Проверить исправление', exact: true }).click();
+    await expect.poll(() => historyHeld).toBe(true);
+    await api.result('POST', `${rewardsPath(account.id)}/${rewardId}/correct`, 201, {
+      ...(submitted[0] as Record<string, unknown>),
+      requestId: randomUUID(),
+      expectedJournalRevision: 1,
+      expectedVersion: 1,
+    });
+    await section.getByRole('button', { name: 'Обновить вознаграждения', exact: true }).click();
+    await expect(article).toContainText('2 · Активно');
+    const historyResponse = page.waitForResponse((response) =>
+      new URL(response.url()).pathname.endsWith(`/${rewardId}/versions`),
+    );
+    releaseHistory?.();
+    await (await historyResponse).finished();
+    await expect.poll(() => historyDelivered).toBe(true);
+    await page.waitForLoadState('networkidle');
+    await expect(review).toHaveCount(0);
+    await expect(
+      form.getByRole('button', { name: 'Записать исправление', exact: true }),
+    ).toBeDisabled();
+    await expect(form.getByLabel('Сумма себестоимости, USD', { exact: true })).toHaveValue('0');
+  } finally {
+    releaseHistory?.();
+    await page.unroute(versionsRoute, delayActualHistory);
+  }
+  // Explicitly select the newer immutable version and review it again.
+  await article.getByRole('button', { name: 'Исправить вознаграждение', exact: true }).click();
+  await form
+    .getByLabel('Себестоимость вознаграждения', { exact: true })
+    .selectOption({ label: 'Известна' });
+  await form.getByLabel('Сумма себестоимости, USD', { exact: true }).fill('0');
+  await form
+    .getByRole('checkbox', {
+      name: 'Подтверждаю: это уже полученное вознаграждение, а не покупка, перевод или взнос.',
+      exact: true,
+    })
+    .check();
   await form.getByRole('button', { name: 'Проверить исправление', exact: true }).click();
   await form.getByRole('button', { name: 'Записать исправление', exact: true }).click();
   await expect(article.getByTestId('reward-basis')).toHaveText('0');
@@ -436,6 +496,9 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
   await form.getByRole('button', { name: 'Проверить отмену', exact: true }).click();
   await form.getByRole('button', { name: 'Отменить вознаграждение', exact: true }).click();
   await expect(article).toContainText('Отменено');
+  await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
+  await expect(tradeDraft.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('777');
+  await expect(tradeDraft.getByLabel('Комиссия, USD', { exact: true })).toHaveValue('3');
 
   const journal = (await api.result('GET', `/accounts/${account.id}/trade-journal`, 200)) as {
     journal: Record<string, unknown>;

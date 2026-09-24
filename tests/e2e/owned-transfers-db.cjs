@@ -155,7 +155,7 @@ async function populatedUpgrade() {
     await assert.rejects(() => new AddOwnedTransfers1790100000000().down(), /recovery|downgrade/i);
     assert.equal(await fingerprint(prior), after, 'No-op/replay/refused downgrade preserve every row');
   } finally { if (prior.isInitialized) await prior.destroy(); }
-  console.log('PASS TRANSFER-006-A populated19/fresh20/no-op/replay/preservation/downgrade');
+  console.log('PASS TRANSFER-006-A populated19/fresh21/no-op/replay/preservation/downgrade');
 }
 
 async function exactAndRestatement(db, s, f) {

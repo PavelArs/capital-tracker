@@ -10,6 +10,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { AssetRewards } from './AssetRewards';
 import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
 import { HistoricalAccounting } from './HistoricalAccounting';
@@ -566,6 +567,11 @@ export function TradeJournal({
               onStale={stale}
             />
           )}
+          <AssetRewards
+            accountId={accountId}
+            journalRevision={journal.journalRevision}
+            onChanged={() => void refreshAfterExternalWrite()}
+          />
           <CsvImports
             key={accountId}
             accountId={accountId}

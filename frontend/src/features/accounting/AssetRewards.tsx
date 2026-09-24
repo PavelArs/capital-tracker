@@ -516,6 +516,7 @@ function AssetRewardsOwner({
       writeLock.current ||
       recoverySnapshot(key) ||
       !review ||
+      review.journalRevision !== page?.journalRevision ||
       reviewRead !== 'ready' ||
       listRead !== 'ready' ||
       review.journalRevision !== page?.journalRevision
