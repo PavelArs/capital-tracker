@@ -272,7 +272,7 @@ async function failures(db, fx, first) {
 }
 
 async function fenceAndRollback(db, fx, first) {
-  stage = 'DFX-FENCE expired token and deferred COMMIT failure';
+  stage = 'DFX-FENCE replaced token, expired original lease and deferred COMMIT failure';
   await setDue(db);
   await control('/fx', quote(first + 120, '0.7', '92', { delayMs: 500 }));
   const before = await rows(db);
@@ -284,23 +284,48 @@ async function fenceAndRollback(db, fx, first) {
     WHERE provider=$2`,
     [randomUUID(), providerName],
   );
+  const replacement = await state(db);
   assert.deepEqual(await pending, { outcome: 'superseded' });
   assert.deepEqual(await rows(db), before);
+  assert.deepEqual(await state(db), replacement, 'Old worker cannot change successor health');
   assert.equal((await state(db)).reservedAttempts.length, 1, 'Fenced reservation stays spent');
 
   await setDue(db);
+  await control('/fx', quote(first + 150, '0.65', '92.5', { delayMs: 500 }));
+  const beforeExpiry = (await requests()).length;
+  const expired = fx.collect();
+  await until(async () => (await requests()).length > beforeExpiry, 'provider call before expiry');
+  const original = await state(db);
+  await db.query(`UPDATE display_fx_collection SET "leaseUntil"=clock_timestamp()-interval '1 second'
+    WHERE provider=$1`, [providerName]);
+  const expiredState = await state(db);
+  assert.equal(expiredState.leaseId, original.leaseId, 'Expiry keeps the original token');
+  assert.deepEqual(await expired, { outcome: 'superseded' });
+  assert.deepEqual(await rows(db), before, 'Expired original worker cannot publish');
+  assert.deepEqual(await state(db), expiredState, 'Expired worker cannot update health or refund its attempt');
+  assert.equal((await fx.read({ amountUsd: '1' })).collection.outcome, 'interrupted');
+
+  await setDue(db);
+  await db.query('CREATE SEQUENCE fx_commit_witness');
   await db.query(`CREATE FUNCTION reject_fx_commit() RETURNS trigger LANGUAGE plpgsql AS $$
-    BEGIN RAISE EXCEPTION 'synthetic deferred fx commit rejection'; END $$`);
+    BEGIN PERFORM nextval('fx_commit_witness');
+    RAISE EXCEPTION 'synthetic deferred fx commit rejection'; END $$`);
   await db.query(`CREATE CONSTRAINT TRIGGER reject_fx_commit AFTER INSERT ON display_fx_observations
     DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_fx_commit()`);
   try {
-    await control('/fx', quote(first + 180, '0.6', '93'));
-    const result = await fx.collect().catch((error) => error);
-    assert.ok(
-      result instanceof Error || result.outcome === 'failed',
-      'Commit rejection must fail collection',
-    );
+    await control('/fx', quote(first + 180, '0.6', '93', { delayMs: 500 }));
+    const beforeCommit = (await requests()).length;
+    const committing = fx.collect().catch((error) => error);
+    await until(async () => (await requests()).length > beforeCommit, 'provider call before commit');
+    const reserved = await state(db);
+    const result = await committing;
+    assert.ok(result instanceof Error, 'Commit rejection must fail collection');
+    assert.equal(result.driverError?.code ?? result.code, 'P0001');
+    assert.equal(result.message, 'synthetic deferred fx commit rejection');
+    const [witness] = await db.query('SELECT last_value::int, is_called FROM fx_commit_witness');
+    assert.deepEqual(witness, { last_value: 1, is_called: true }, 'Deferred INSERT trigger actually ran');
     assert.deepEqual(await rows(db), before, 'Failed COMMIT rolls back both prices');
+    assert.deepEqual(await state(db), reserved, 'Failed COMMIT rolls back completion status and timestamps');
     assert.equal(
       (await state(db)).reservedAttempts.length,
       1,
@@ -309,8 +334,9 @@ async function fenceAndRollback(db, fx, first) {
   } finally {
     await db.query('DROP TRIGGER reject_fx_commit ON display_fx_observations');
     await db.query('DROP FUNCTION reject_fx_commit()');
+    await db.query('DROP SEQUENCE fx_commit_witness');
   }
-  console.log('PASS DFX-FENCE expired token and deferred COMMIT rollback');
+  console.log('PASS DFX-FENCE replaced token, expired original lease and witnessed deferred COMMIT rollback');
 }
 
 async function readonlyBarrier(db, first) {
@@ -429,6 +455,12 @@ async function main() {
     await failures(db, fx, first);
     await fenceAndRollback(db, fx, first);
     await readonlyBarrier(db, first);
+    stage = 'DFX-MIGRATE downgrade refuses without mutation';
+    const { AddDailyDisplayFx1790090000000 } = require('/app/backend/dist/migrations/1790090000000-AddDailyDisplayFx.js');
+    const beforeDowngrade = await fingerprint(db);
+    await assert.rejects(new AddDailyDisplayFx1790090000000().down(), /explicit recovery plan/);
+    assert.equal(await fingerprint(db), beforeDowngrade, 'Downgrade refusal preserves all rows');
+    console.log('PASS DFX-MIGRATE destructive downgrade refused without mutation');
   } finally {
     if (db.isInitialized) await db.destroy();
   }
