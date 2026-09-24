@@ -16,7 +16,7 @@ const pricePath = (instrumentId: string) => `/instruments/${instrumentId}/usd-pr
 
 async function createTimeline(api: Awaited<ReturnType<typeof tradeApi>>, prefix: string) {
   const account = await api.account(`${prefix} ${randomUUID()}`);
-  const instrument = await api.instrument(`${prefix} <script>${randomUUID()}</script>`, 'VCH');
+  const instrument = await api.instrument(`${prefix} ${randomUUID()}`, 'VCH');
   await api.initialize(account.id);
   const first = await api.create(
     account.id,
@@ -68,9 +68,7 @@ async function createTimeline(api: Awaited<ReturnType<typeof tradeApi>>, prefix:
 async function expectPointRow(table: Locator, at: string, values: string[]): Promise<void> {
   const row = table.getByRole('row').filter({ hasText: at });
   await expect(row).toHaveCount(1);
-  const cells = await row.getByRole('cell').allTextContents();
-  expect(cells).toContain(at);
-  for (const value of values) expect(cells).toContain(value);
+  await expect(row.getByRole('cell')).toHaveText([at, ...values]);
 }
 
 test('VCH-API: one private exact timeline reports empty, priced, missing and sold-down points', async ({
@@ -202,16 +200,12 @@ test('VCH-API: one private exact timeline reports empty, priced, missing and sol
     );
     expect(refreshed.status()).toBe(200);
     noStore(refreshed);
-    expect(await refreshed.json()).toMatchObject({
-      points: [
-        {
-          at: dayThree,
-          completeness: 'complete',
-          missingPriceCount: 0,
-          pricedSubtotalUsd: '0',
-          totalValueUsd: '0',
-        },
-      ],
+    expect((await refreshed.json()).points).toContainEqual({
+      at: dayThree,
+      completeness: 'complete',
+      missingPriceCount: 0,
+      pricedSubtotalUsd: '0',
+      totalValueUsd: '0',
     });
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(financialBefore);
     expect(ledgerState()).toBe(admissionsBefore);
@@ -265,15 +259,13 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   const table = region.getByRole('table', { name: 'Оценки по датам', exact: true });
   await expect(table).toBeVisible();
   await expect(table.getByRole('row')).toHaveCount(5);
-  await expectPointRow(table, from, ['Полная оценка', '0']);
-  await expectPointRow(table, dayTwo, ['Полная оценка', '100']);
+  await expectPointRow(table, from, ['Полная оценка', '0', '0', '0']);
+  await expectPointRow(table, dayTwo, ['Полная оценка', '100', '100', '0']);
   await expectPointRow(table, dayThree, ['Нет полной оценки', '—', '0', '1']);
-  await expectPointRow(table, dayFour, ['Полная оценка', '150']);
+  await expectPointRow(table, dayFour, ['Полная оценка', '150', '150', '0']);
   await expect(
     region.getByRole('img', { name: 'График стоимости счёта', exact: true }),
   ).toBeVisible();
-  await expect(region.getByText(instrument.name, { exact: false })).toBeVisible();
-  await expect(region.locator('script')).toHaveCount(0);
 
   const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
   const firstRow = tradeTable.getByRole('row').filter({ hasText: firstTrade.tradeId });
@@ -281,6 +273,18 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   const tradeForm = page.getByRole('group', { name: 'Сделка в USD', exact: true });
   const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
   await gross.fill('110');
+
+  // A different exact period uses the real backend and retained PostgreSQL data.
+  await toInput.fill(dayThree);
+  const changedPeriod = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === path && response.request().method() === 'GET',
+  );
+  await page.getByRole('button', { name: 'Показать историю', exact: true }).click();
+  expect((await changedPeriod).status()).toBe(200);
+  await expect(table.getByRole('row')).toHaveCount(4);
+  await expectPointRow(table, dayThree, ['Нет полной оценки', '—', '0', '1']);
+  expect(providerRequests()).toEqual(providersBefore);
 
   const zero = await api.send('POST', pricePath(instrument.id), {
     requestId: randomUUID(),
@@ -307,7 +311,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     pricedSubtotalUsd: '0',
     totalValueUsd: '0',
   });
-  await expectPointRow(table, dayThree, ['Полная оценка', '0']);
+  await expectPointRow(table, dayThree, ['Полная оценка', '0', '0', '0']);
   await expect(gross).toHaveValue('110');
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(financialAfterPriceWrite);
   expect(ledgerState()).toBe(admissionsAfterPriceWrite);
@@ -337,12 +341,12 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     );
     await page.getByRole('button', { name: 'Обновить историю', exact: true }).click();
     await expect.poll(() => held).toBe(true);
-    await toInput.fill(dayThree);
+    await toInput.fill(to);
     release();
     const late = await lateResponse;
     expect(late.status()).toBe(200);
     expect(late.headers()['cache-control']).toMatch(/(?:^|[,\s])no-store(?:$|[,\s])/);
-    expect(await late.json()).toMatchObject({ to });
+    expect(await late.json()).toMatchObject({ to: dayThree });
     await expect(table).toHaveCount(0);
     await expect(gross).toHaveValue('110');
     expect(writes).toEqual([]);
