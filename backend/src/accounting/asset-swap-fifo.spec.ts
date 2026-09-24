@@ -259,7 +259,7 @@ describe('SWAP-002 fee source, cost evidence and original intervals', () => {
           costUsd: '5',
           intervalStart: '0',
           intervalEnd: '0.1',
-          origin: { kind: 'swap', swapId: incoming.swapId },
+          origin: expect.objectContaining({ kind: 'swap', swapId: incoming.swapId }),
         }),
       ],
     });
@@ -363,7 +363,7 @@ describe('SWAP-002 fee source, cost evidence and original intervals', () => {
         expect.objectContaining({
           kind: 'principal',
           costUsd: null,
-          origin: { kind: 'reward', rewardId: unknownReward.rewardId },
+          origin: expect.objectContaining({ kind: 'reward', rewardId: unknownReward.rewardId }),
         }),
       ],
     });
@@ -398,8 +398,14 @@ describe('SWAP-002 fee source, cost evidence and original intervals', () => {
       feeConsumedBasisUsd: '0',
       items: [
         expect.objectContaining({
+          kind: 'principal',
+          instrumentId: token,
+          quantity: '1',
+          costUsd: '1',
+        }),
+        expect.objectContaining({
           kind: 'fee',
-          origin: { kind: 'swap', swapId: exchange.swapId },
+          origin: expect.objectContaining({ kind: 'swap', swapId: exchange.swapId }),
           intervalStart: '0',
           intervalEnd: '1',
           costUsd: '0',
@@ -418,7 +424,7 @@ describe('SWAP-002 fee source, cost evidence and original intervals', () => {
       principalBasisUsd: atom,
       items: [
         expect.objectContaining({
-          origin: { kind: 'swap', swapId: exchange.swapId },
+          origin: expect.objectContaining({ kind: 'swap', swapId: exchange.swapId }),
           intervalStart: '2',
           intervalEnd: '3',
           costUsd: atom,
@@ -442,7 +448,24 @@ describe('SWAP-002 fee source, cost evidence and original intervals', () => {
     expect(positions(fullyWithheld, source)).toEqual([]);
     expect(allocation(fullyWithheld, fullFee.swapId)).toMatchObject({
       feeConsumedBasisUsd: atom,
-      items: [expect.objectContaining({ intervalStart: '0', intervalEnd: '3', costUsd: atom })],
+      realizedUsd: '-1',
+      items: [
+        expect.objectContaining({
+          kind: 'principal',
+          instrumentId: token,
+          quantity: '1',
+          costUsd: '1',
+        }),
+        expect.objectContaining({
+          kind: 'fee',
+          instrumentId: stable,
+          quantity: '3',
+          origin: expect.objectContaining({ kind: 'swap', swapId: fullFee.swapId }),
+          intervalStart: '0',
+          intervalEnd: '3',
+          costUsd: atom,
+        }),
+      ],
     });
   });
 });
@@ -541,7 +564,7 @@ describe('SWAP-003/004 connected chronology, provenance and bounded replay', () 
     expect(result.allocations.get(out.transferId)).toMatchObject({
       items: [
         expect.objectContaining({
-          origin: { kind: 'swap', swapId: exchange.swapId, version: 1 },
+          origin: expect.objectContaining({ kind: 'swap', swapId: exchange.swapId, version: 1 }),
           intervalStart: '0',
           intervalEnd: '2',
         }),
@@ -550,18 +573,18 @@ describe('SWAP-003/004 connected chronology, provenance and bounded replay', () 
     expect(result.allocations.get(back.transferId)).toMatchObject({
       items: [
         expect.objectContaining({
-          origin: { kind: 'swap', swapId: exchange.swapId, version: 1 },
+          origin: expect.objectContaining({ kind: 'swap', swapId: exchange.swapId, version: 1 }),
           intervalStart: '0',
           intervalEnd: '1',
-          arrival: { transferId: out.transferId },
+          arrival: expect.objectContaining({ transferId: out.transferId }),
         }),
       ],
     });
     expect(result.accounts.get(source)!.matches).toEqual([
       expect.objectContaining({
         sourceKind: 'transfer',
-        origin: { kind: 'swap', swapId: exchange.swapId },
-        arrival: { transferId: back.transferId },
+        origin: expect.objectContaining({ kind: 'swap', swapId: exchange.swapId }),
+        arrival: expect.objectContaining({ transferId: back.transferId }),
         intervalStart: '0',
         intervalEnd: '1',
         costUsd: '50',
