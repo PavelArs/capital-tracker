@@ -334,6 +334,15 @@ All candidate trade/CSV/transfer mutations must replay complete connected histor
 Detailed persistence/revision/cap contract is not frozen yet; independently review
 before transfer implementation.
 
+## Active owned transfer change
+
+record-owned-transfers scaffold/proposal started at6532faa after the FIFO archive.
+Draft design.md records proposed connected replay, fee-basis treatment, interval
+provenance, revision policy, caps and independent numeric oracles. Wire contract,
+delta specs and acceptance are still being prepared; no transfer product code,
+migration or behavioralRED exists yet. Keep dynamic connected replay and full
+original goal; independently review contract before implementation.
+
 ## Remaining full goal
 
 The active goal is to continue all remaining target requirements, not merely close
