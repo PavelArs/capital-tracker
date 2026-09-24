@@ -4,7 +4,7 @@ const https = require('node:https');
 const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
 
-const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com']);
+const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -13,6 +13,13 @@ const secureContext = tls.createSecureContext(credentials);
 const initialBitcoin = () => ({ funded: 150000000, spent: 25000000 });
 let bitcoin = initialBitcoin();
 let requests = [];
+const initialFx = () => {
+  const at = Math.floor(Date.now() / 1000) - 60;
+  return { status: 200, body: JSON.stringify({ result: 'success', base_code: 'USD',
+    time_last_update_unix: at, time_next_update_unix: at + 86400, time_eol_unix: 0,
+    rates: { USD: 1, EUR: 0.9, RUB: 90.12 } }) };
+};
+let fx = initialFx();
 
 function respond(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json', connection: 'close' });
@@ -33,6 +40,19 @@ function provider(request, response, url) {
   requests.push({ method: request.method, url: url.href });
   if (request.method !== 'GET' || url.protocol !== 'https:' || !allowedHosts.has(url.hostname)) {
     return respond(response, 501, { error: 'Unexpected outbound request' });
+  }
+  if (url.hostname === 'open.er-api.com' && url.pathname === '/v6/latest/USD' && !url.search) {
+    const reply = { ...fx };
+    const send = () => {
+      if (response.destroyed) return;
+      response.writeHead(reply.status, { 'content-type': 'application/json', connection: 'close',
+        ...(reply.retryAfter ? { 'retry-after': reply.retryAfter } : {}),
+        ...(reply.status >= 300 && reply.status < 400 ? { location: 'http://169.254.169.254/metadata' } : {}) });
+      response.end(reply.body);
+    };
+    if (reply.delayMs) setTimeout(send, reply.delayMs);
+    else send();
+    return;
   }
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price') {
     return respond(response, 200, { bitcoin: { usd: 60000 }, ethereum: { usd: 3000 } });
@@ -62,6 +82,18 @@ const server = http.createServer(async (request, response) => {
     if (request.method === 'POST' && request.url === '/__control/reset') {
       bitcoin = initialBitcoin();
       requests = [];
+      fx = initialFx();
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/fx') {
+      const data = await readJson(request);
+      if (!Number.isInteger(data.status) || data.status < 200 || data.status > 599
+        || typeof data.body !== 'string' || data.body.length > 15000
+        || (data.delayMs !== undefined && (!Number.isInteger(data.delayMs) || data.delayMs < 0 || data.delayMs > 6000))
+        || (data.retryAfter !== undefined && (typeof data.retryAfter !== 'string' || /[\r\n]/.test(data.retryAfter)))) {
+        return respond(response, 400, { error: 'Invalid synthetic FX fixture' });
+      }
+      fx = data;
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin') {

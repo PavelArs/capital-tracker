@@ -51,7 +51,7 @@ if (command === 'down') {
     run('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-sha256', '-days', '2', '-nodes',
       '-keyout', join(providerTls, 'privkey.pem'), '-out', join(providerTls, 'fullchain.pem'),
       '-subj', '/CN=capital-tracker-provider-fixture.invalid',
-      '-addext', 'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com']);
+      '-addext', 'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com']);
     compose('down', '--remove-orphans');
     try {
       compose('build', 'backend', 'frontend');

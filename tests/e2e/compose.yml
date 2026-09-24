@@ -9,6 +9,8 @@ x-backend: &backend
     NODE_ENV: production
     PORT: "3000"
     BACKGROUND_JOBS_ENABLED: "false"
+    DISPLAY_FX_ENABLED: "true"
+    DISPLAY_FX_TRUST_PROXY: "true"
     DB_HOST: postgres
     DB_PORT: "5432"
     DB_USERNAME: capital_e2e
