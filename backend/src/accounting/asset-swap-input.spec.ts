@@ -80,6 +80,15 @@ describe('SWAP-INPUT strict economic command parsing', () => {
         feeQuantity: '2',
       }).feeQuantity,
     ).toBe('2');
+    expect(
+      parseSwapCreate({
+        ...create(),
+        incomingQuantity: '1',
+        feeSource: 'incoming',
+        feeInstrumentId: incomingId,
+        feeQuantity: '1.000000000000000000000000000000',
+      }).feeQuantity,
+    ).toBe('1');
 
     for (const patch of [
       { feeSource: 'held', feeInstrumentId: null, feeQuantity: '0' },
@@ -87,6 +96,12 @@ describe('SWAP-INPUT strict economic command parsing', () => {
       { feeSource: null, feeInstrumentId: null, feeQuantity: '0.1' },
       { feeSource: 'incoming', feeInstrumentId: feeId, feeQuantity: '0.1' },
       { feeSource: 'incoming', feeInstrumentId: incomingId, feeQuantity: '2.0001' },
+      {
+        feeSource: 'incoming',
+        feeInstrumentId: incomingId,
+        incomingQuantity: '1',
+        feeQuantity: '1.000000000000000000000000000001',
+      },
       {
         feeSource: 'incoming',
         feeInstrumentId: incomingId,

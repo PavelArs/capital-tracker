@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
+import { canonicalDecimalToAtoms } from './money';
 import { parseTradeHistoryQuery, parseTradePageQuery } from './trade-input';
 
 export type SwapFeeSource = 'held' | 'incoming' | null;
@@ -51,10 +52,6 @@ function integer(raw: unknown, minimum: number, maximum: number): number {
     return bad();
   return raw === 0 ? 0 : raw;
 }
-function decimalAtoms(value: string, scale: number): bigint {
-  const [whole, fraction = ''] = value.split('.');
-  return BigInt(whole) * 10n ** BigInt(scale) + BigInt(fraction.padEnd(scale, '0') || '0');
-}
 function queryInteger(raw: unknown, minimum: number, maximum: number): number {
   if (typeof raw !== 'string' || raw.length > 5 || !/^(0|[1-9][0-9]*)$/.test(raw)) return bad();
   const value = Number(raw);
@@ -85,12 +82,11 @@ function fields(row: Record<string, unknown>): SwapFields {
     if (feeSource === 'incoming' && feeInstrumentId !== incomingInstrumentId) return bad();
   }
 
-  if (feeSource === 'incoming') {
-    const feeScale = feeQuantity.split('.')[1]?.length ?? 0;
-    const incomingScale = incomingQuantity.split('.')[1]?.length ?? 0;
-    const scale = Math.max(feeScale, incomingScale);
-    if (decimalAtoms(feeQuantity, scale) > decimalAtoms(incomingQuantity, scale)) return bad();
-  }
+  if (
+    feeSource === 'incoming' &&
+    canonicalDecimalToAtoms(feeQuantity) > canonicalDecimalToAtoms(incomingQuantity)
+  )
+    return bad();
 
   return {
     assertExecuted: true,
