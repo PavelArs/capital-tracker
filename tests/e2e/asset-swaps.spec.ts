@@ -250,6 +250,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   await api.initialize(account.id);
   await api.create(account.id, tradeInput(outgoing.id, 0));
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('swaps');
   const section = page.getByRole('region', { name: 'Обмены активов', exact: true });
   await expect(section).toBeVisible();
   const form = section.getByRole('form', { name: 'Редактор обмена', exact: true });
@@ -306,8 +307,14 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     ).toBeEnabled();
     // SHELL-002-B: resizing and disclosing navigation must not remount the
     // editor, reset a separate draft or retry the ambiguous command implicitly.
-    const independentDraft = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+    const independentDraft = page.getByRole('group', {
+      name: 'Сделка в USD',
+      exact: true,
+      includeHidden: true,
+    });
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
     await independentDraft.getByLabel('Количество', { exact: true }).fill('17');
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('swaps');
     const mountedEditor = await form.elementHandle();
     for (const width of [360, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
@@ -332,6 +339,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     await mountedEditor?.dispose();
     await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
     await page.locator(`a[href="/manual-accounts/${account.id}"]`).click();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('swaps');
     await expect(form.getByLabel('Получаемое количество до комиссии', { exact: true })).toHaveValue(
       '3',
     );
@@ -356,8 +364,14 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   } finally {
     await page.unroute(routePattern);
   }
-  const tradeDraft = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  const tradeDraft = page.getByRole('group', {
+    name: 'Сделка в USD',
+    exact: true,
+    includeHidden: true,
+  });
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
   await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('swaps');
   const article = section.getByRole('article', {
     name: `Обмен ${receipt?.swap.swapId}`,
     exact: true,

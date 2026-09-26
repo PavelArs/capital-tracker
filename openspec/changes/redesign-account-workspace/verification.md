@@ -56,7 +56,16 @@ Evidence prefix `/private/tmp/capital-workspace-`:
   genuinely fails: historical instant expected hidden, received visible. Exit1,
   screenshot/trace retained in `browser-red-artifacts`. No artificial financial failure.
 - `unit-green.log`:116tests/20files PASS3.36s, including two new presentation checks.
-- `build.log`, `build-final.log`: exit0; existing >500kB bundle warning remains.
+- `build.log`: exit0 before the new workspace test was added; existing >500kB bundle warning remains.
+- Correction recorded during `focus-account-operation-workflows`: `build-final.log`
+  actually exited2 on three unsupported Testing Library `getByRole` options (`exact`).
+  The earlier exit0 claim here was wrong: a subsequent successful lint command masked
+  the build exit in the combined shell invocation. Docker builds excluded test files
+  through the existing .dockerignore and genuinely passed, as did the recorded runtime
+  E2E. The new slice removes only the unsupported options (string names already match
+  exactly), retains every assertion and verifies the full local build separately:
+  `/private/tmp/capital-workflows-build-fixed.log`, exit0. Focused workspace/operation
+  unit tests also pass. Future check evidence must inspect each command's own result.
 - `lint.log`, `lint-final.log`: exit0,27existing warnings; scoped source formatting passes.
 - `e2e-types.log`: backend cwd strict standalone tsc check of all E2E TypeScript passes.
 - `specs.log`: strict OpenSpec32/32 PASS. `production-audit.log`: exit0 at required

@@ -38,6 +38,7 @@ test('CSV-002-A/B / CSV-006-A: real Russian row errors block partial import unti
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
   await page
     .getByLabel('Файл CSV', { exact: true })

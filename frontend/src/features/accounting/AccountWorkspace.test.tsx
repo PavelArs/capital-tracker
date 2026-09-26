@@ -48,11 +48,11 @@ describe('WORKSPACE-001/002 presentation lifecycle', () => {
     render(<Workspace />);
     const input = screen.getByLabelText('Черновик');
     fireEvent.change(input, { target: { value: '0.123456789012345678' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Аналитика', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Аналитика' }));
     expect(input).toBeInTheDocument();
     expect(input).not.toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: 'Начальные данные', exact: true }));
-    fireEvent.click(screen.getByRole('button', { name: 'Операции', exact: true }));
+    fireEvent.click(screen.getByRole('button', { name: 'Начальные данные' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Операции' }));
     expect(screen.getByLabelText('Черновик')).toBe(input);
     expect(input).toHaveValue('0.123456789012345678');
   });

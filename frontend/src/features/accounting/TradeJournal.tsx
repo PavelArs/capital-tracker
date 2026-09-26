@@ -10,6 +10,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { AccountOperations, type OperationWorkflow } from './AccountOperations';
 import { type AccountSection, AccountWorkspace } from './AccountWorkspace';
 import { AssetRewards } from './AssetRewards';
 import { AssetSwaps } from './AssetSwaps';
@@ -52,6 +53,7 @@ export function TradeJournal({
   onSectionChange: (section: AccountSection) => void;
   openingDetails: ReactNode;
 }) {
+  const [workflow, setWorkflow] = useState<OperationWorkflow>('trades');
   const [state, setState] = useState<JournalState | null>(null);
   const [loading, setLoading] = useState(true);
   const [writing, setWriting] = useState(false);
@@ -542,41 +544,75 @@ export function TradeJournal({
                   часть лота. Это учётные результаты журнала, не рыночная стоимость, не доходность
                   портфеля и не налоговый отчёт.
                 </p>
-                {mode === 'void' && target ? (
-                  <form onSubmit={save}>
-                    <p>
-                      Аннулировать сделку {target.tradeId}, версия {target.version}? История будет
-                      пересчитана полностью; операция невозможна, если появится неподдержанная
-                      продажа.
-                    </p>
-                    <button type="submit" className="manual-button" disabled={disabled}>
-                      Подтвердить аннулирование
-                    </button>
-                    <button
-                      type="button"
-                      className="manual-button manual-button--secondary"
-                      disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
-                      onClick={cancel}
-                    >
-                      Отменить аннулирование
-                    </button>
-                  </form>
-                ) : (
-                  <TradeForm
-                    draft={draft}
-                    onChange={edit}
-                    onSubmit={save}
-                    instruments={instruments}
-                    selected={target}
-                    disabled={
-                      disabled || (ambiguous && retry.current?.operation.kind === 'initialize')
-                    }
-                    lockDraft={ambiguous}
-                    correction={mode === 'correct'}
-                    onCancel={cancel}
-                    cancelDisabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
-                  />
-                )}
+                <AccountOperations
+                  selected={workflow}
+                  onSelect={setWorkflow}
+                  trades={
+                    mode === 'void' && target ? (
+                      <form onSubmit={save}>
+                        <p>
+                          Аннулировать сделку {target.tradeId}, версия {target.version}? История
+                          будет пересчитана полностью; операция невозможна, если появится
+                          неподдержанная продажа.
+                        </p>
+                        <button type="submit" className="manual-button" disabled={disabled}>
+                          Подтвердить аннулирование
+                        </button>
+                        <button
+                          type="button"
+                          className="manual-button manual-button--secondary"
+                          disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
+                          onClick={cancel}
+                        >
+                          Отменить аннулирование
+                        </button>
+                      </form>
+                    ) : (
+                      <TradeForm
+                        draft={draft}
+                        onChange={edit}
+                        onSubmit={save}
+                        instruments={instruments}
+                        selected={target}
+                        disabled={
+                          disabled || (ambiguous && retry.current?.operation.kind === 'initialize')
+                        }
+                        lockDraft={ambiguous}
+                        correction={mode === 'correct'}
+                        onCancel={cancel}
+                        cancelDisabled={
+                          writing || loading || ambiguous || csvBlocked || carryInBlocked
+                        }
+                      />
+                    )
+                  }
+                  swaps={
+                    <AssetSwaps
+                      accountId={accountId}
+                      journalRevision={journal.journalRevision}
+                      onChanged={() => void refreshAfterExternalWrite()}
+                    />
+                  }
+                  rewards={
+                    <AssetRewards
+                      accountId={accountId}
+                      journalRevision={journal.journalRevision}
+                      onChanged={() => void refreshAfterExternalWrite()}
+                    />
+                  }
+                  imports={
+                    <CsvImports
+                      key={accountId}
+                      accountId={accountId}
+                      journalRevision={journal.journalRevision}
+                      instruments={instruments}
+                      parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
+                      parentBlocked={manualDisabled || ambiguous || carryInBlocked}
+                      onBlocked={blockForCsv}
+                      onJournalRefresh={refreshAfterExternalWrite}
+                    />
+                  }
+                />
                 {!hideResults && !loading && (
                   <TradeResults
                     key={`${accountId}:${journal.journalRevision}:${epoch}`}
@@ -584,31 +620,17 @@ export function TradeJournal({
                     journal={journal}
                     disabled={writing || openingBusy || (needsReview && !reviewed)}
                     mutationDisabled={ambiguous || csvBlocked || carryInBlocked}
-                    onCorrect={(trade) => select(trade, 'correct')}
-                    onVoid={(trade) => select(trade, 'void')}
+                    onCorrect={(trade) => {
+                      select(trade, 'correct');
+                      setWorkflow('trades');
+                    }}
+                    onVoid={(trade) => {
+                      select(trade, 'void');
+                      setWorkflow('trades');
+                    }}
                     onStale={stale}
                   />
                 )}
-                <AssetSwaps
-                  accountId={accountId}
-                  journalRevision={journal.journalRevision}
-                  onChanged={() => void refreshAfterExternalWrite()}
-                />
-                <AssetRewards
-                  accountId={accountId}
-                  journalRevision={journal.journalRevision}
-                  onChanged={() => void refreshAfterExternalWrite()}
-                />
-                <CsvImports
-                  key={accountId}
-                  accountId={accountId}
-                  journalRevision={journal.journalRevision}
-                  instruments={instruments}
-                  parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
-                  parentBlocked={manualDisabled || ambiguous || carryInBlocked}
-                  onBlocked={blockForCsv}
-                  onJournalRefresh={refreshAfterExternalWrite}
-                />
               </>
             )}
           </>

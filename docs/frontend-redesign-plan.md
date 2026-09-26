@@ -94,8 +94,14 @@ The next bounded FUI-03 slice, `redesign-account-workspace`, separates individua
 account operations, analytics and initial data while retaining mounted drafts/results
 and global journal recovery. Saved initial positions have an honest scope label.
 See [the workspace guide](account-workspace.md) and its linked actual verification.
-Independent review/archive remain pending. Dedicated operation editors are next:
-open the selected workflow on demand, retaining frozen retries and independent drafts.
+Independent review/archive remain pending. Active `focus-account-operation-workflows`
+implements the next FUI-03 slice (4/6 tasks): a native selector shows one of the four
+mounted operation workflows, keeps shared journal results, and reveals the existing
+trade editor/confirmation from history. Independent drafts, the selected CSV File and
+original recovery/locks survive switching. See [the operations guide](account-operation-workflows.md).
+118 frontend tests and four distinct selected real HTTPS/PostgreSQL cases pass;
+independent review/archive still wait for agent quota. Next: compact journal context,
+field ergonomics and clearer results; the mobile preface is still too verbose.
 Do not mark all six frontend tasks complete.
 FUI-04/05/06, maximum-period chart work and owner visual review are still pending.
 The local preview database, MFA key, credentials and original repositories remain

@@ -330,7 +330,13 @@ honest initial-data label. No accounting/auth/backend/API/schema/dependency chan
 
 Actual evidence:114/19frontend baselinePASS3.30s; actual HTTPS WORKSPACE-UI predecessor
 RED (historical instant expectedhidden/receivedvisible), then116/20PASS3.36s,
-build/lint27existingwarnings, strict E2E types, format/OpenSpec32PASS. Initial selected
+lint27existingwarnings, strict E2E types, format/OpenSpec32PASS. Correction discovered
+in the next slice: initial local build passed, but final build including the new unit
+file failed on three unsupported Testing Library exact options. A subsequent lint
+masked its exit in the combined shell invocation, causing the previous false build
+claim. The operations slice removes only those ignored options; separate final build
+passes. Actual prior Docker build/E2E results remain valid (image excludes test files).
+Initial selected
 browser attempt5/7PASS; two explicit test-navigation mistakes were corrected with
 all financial assertions retained. Final layout+those two cases3/3PASS39.8s and
 retained hidden-section chartVCH-UI1/1PASS14.2s, one worker/no retries: eight distinct
@@ -342,8 +348,34 @@ FinalFEsha256:7051d24c4bbfe691e127ce2e6d7a448cc2f8f8b2aceecc0b9d6f2de939c59839,
 unchangedBEdd90a8c5. Evidence /private/tmp/capital-workspace-* retains failures.
 Production audit exit0,2moderate/nohighcritical. E2E resources cleaned; preview volume,
 old preview image/stopped containers, owner Nginx and lock unchanged. No preview update.
-Next: focused on-demand operation editors and remaining frontend redesign; resolve
-independent reviews for swap/shell/directory/workspace before their archives.
+Independent reviews for swap/shell/directory/workspace remain required before archives.
+
+Sep26 next slice `focus-account-operation-workflows` implemented,4/6tasks, in
+capital-tracker-operation-workflows, branch refactor/operation-workflows, from3ad13f7.
+Read docs/account-operation-workflows.md and active verification.md. Native choice
+shows trades/swaps/rewards/CSV individually while all remain mounted; shared trade
+history reveals correction/void without submitting. Existing controller/guard code
+is unchanged. Exact drafts, CSV File, hidden CSV locks and original replay survive.
+No backend/auth/schema/dependency/deployment changes; no preview update.
+
+Actual evidence:116/20 baselinePASS3.38s; actual predecessor HTTPS RED at initially
+visible CSV;118/21frontendPASS3.44s. Separate corrected local build, lint27warnings,
+scopedBiome12files/strictE2Etypes/OpenSpec33 and productionaudit exit0,2moderate/nohighcritical.
+First browser attempt3/4PASS: SWAP-UI12.6s, REWARD-UI12.7s, CSV committed-confirm/
+expiry/MFA14.0s. New keyboard case initially failed native ArrowDown/Enter, then Space;
+isolated HTML reproduced the installed macOS Chromium behavior. Native Cyrillic CDP
+key input succeeds without DOM assignment or application mocking. Next attempt passed
+draft/File/width/section assertions but exposed a wrongly scoped cancel-button locator;
+page exact-name lookup fixed it, with all assertions retained. Final WORKFLOW-UI1/1
+PASS13.9s also verifies exact correction/void target, no financial writes, and separate
+reward draft. Four distinct selected cases pass across attempts,1worker0retries.
+Root inspected mobile/tablet/desktop screenshots; verbose mobile context still needs
+simplification. Evidence/failures/artifacts /private/tmp/capital-workflows-*.
+FEsha256:795d1b7ae04cc6d26753e418a3dc776c439e5d05635ee888e6e5c402b71d555c,
+unchangedBEdd90a8c5. Synthetic containers/networks cleaned; owner Nginx/lock hashes,
+preview volume/tag/stopped containers preserved. Review3.1/archive3.3 remain pending;
+root inspection does not replace independent review. Next: compact journal context,
+individual field ergonomics/results, remaining frontend redesign and required reviews.
 
 Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-

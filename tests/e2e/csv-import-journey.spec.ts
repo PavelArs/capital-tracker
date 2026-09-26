@@ -60,6 +60,7 @@ test('CSV-006-B regression: a committed confirm with a lost response survives ac
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const batch = await uploadInBrowser(page, account.id);
   await inspectAndMap(page, account.id, batch, instrument.id);
   await previewInBrowser(page, account.id, batch, {
@@ -101,6 +102,13 @@ test('CSV-006-B regression: a committed confirm with a lost response survives ac
     await expect(retryButton(page)).toBeEnabled();
     expect(commands).toHaveLength(1);
     expect(commands[0].expectedJournalRevision).toBe(0);
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
+    await expect(
+      page.getByRole('button', { name: 'Сохранить сделку', exact: true }),
+    ).toBeDisabled();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
+    await expect(retryButton(page)).toBeEnabled();
+    expect(commands).toHaveLength(1);
     const afterCommit = fingerprint(['auth_sessions', 'auth_request_limits']);
     const savedCsv = csvRows(account.id);
     const token = await cookie(page);
@@ -204,6 +212,7 @@ test('CSV-004-A / CSV-006-A regression: explicit CSV refresh reviews the new jou
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const batch = await uploadInBrowser(page, account.id);
   await inspectAndMap(page, account.id, batch, instrument.id);
   await previewInBrowser(page, account.id, batch, {
@@ -329,6 +338,7 @@ test('CSV-006-B regression: choosing a new unuploaded file cannot confirm the pr
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const first = await uploadInBrowser(page, account.id, [buy], 'Первая партия.csv');
   await inspectAndMap(page, account.id, first, instrument.id);
   await previewInBrowser(page, account.id, first, {
@@ -404,6 +414,7 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const csvRegion = page.getByRole('region', { name: 'Импорт CSV', exact: true });
   await expect(csvRegion).toContainText('Не импортируйте одну историю повторно в изменённом виде');
   await expect(csvRegion).toContainText('1000 активных сделок и 10000 версий');
@@ -476,6 +487,7 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
   expect(providerRequests()).toEqual(providers);
   providers = await restartWithExactProviderWarmup();
   await page.reload();
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   await expectJournalSummary(page, expected);
   await page
     .getByRole('combobox', { name: 'Сохранённая партия CSV', exact: true })
@@ -554,6 +566,7 @@ for (const kind of ['confirm', 'rollback'] as const) {
     const csrfBefore = browserCsrfAdmissions();
     const assertQuota = trackBrowserRequests(page, api);
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
     const batch = await uploadInBrowser(page, account.id);
     await inspectAndMap(page, account.id, batch, instrument.id);
     await previewInBrowser(page, account.id, batch, {
@@ -695,6 +708,7 @@ test('CSV-006-B: late real preview and inspection responses cannot revive an edi
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const batch = await uploadInBrowser(page, account.id);
   await inspectAndMap(page, account.id, batch, instrument.id);
   const before = fingerprint(['auth_sessions', 'auth_request_limits']);
@@ -803,6 +817,7 @@ test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correctio
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const imported = [{ ...buy, time: '2025-01-05T00:00:00Z', gross: '50' }];
   const batch = await uploadInBrowser(page, account.id, imported);
   await inspectAndMap(page, account.id, batch, instrument.id, imported);
@@ -856,7 +871,9 @@ test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correctio
           `/api/accounting/accounts/${account.id}/csv-imports/${batch}` &&
         response.request().method() === 'GET',
     );
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
     await page.getByRole('button', { name: 'Обновить состояние CSV', exact: true }).click();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
     expect((await refreshed).status()).toBe(200);
     const review = page.getByRole('region', { name: 'Журнал изменился', exact: true });
     await expect(review).toBeVisible();
@@ -940,6 +957,7 @@ test('CSV-002-A / CSV-006-A regression: exact source keys with leading spaces st
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const source = [buy, { ...buy, source: ' TOKEN', order: 1, gross: '200' }];
   const batch = await uploadInBrowser(page, account.id, source);
   const inspection = await browserPost(
@@ -1065,6 +1083,7 @@ test('CSV-006-B: a delayed real preview for another account cannot replace the c
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const batch = await uploadInBrowser(page, account.id);
   await inspectAndMap(page, account.id, batch, instrument.id);
   const before = fingerprint(['auth_sessions', 'auth_request_limits']);
@@ -1145,6 +1164,7 @@ test('CSV-006-B: a real pinned read409 cannot resolve an earlier committed CSV c
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const imported = [{ ...buy, time: '2025-01-05T00:00:00Z' }];
   const batch = await uploadInBrowser(page, account.id, imported);
   await inspectAndMap(page, account.id, batch, instrument.id, imported);
@@ -1273,6 +1293,7 @@ test('CSV-006-B: an accepted CSV receipt followed by a lost parent read blocks n
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const batch = await uploadInBrowser(page, account.id);
   await inspectAndMap(page, account.id, batch, instrument.id);
   await previewInBrowser(page, account.id, batch, {
@@ -1318,9 +1339,11 @@ test('CSV-006-B: an accepted CSV receipt followed by a lost parent read blocks n
     ).toBeVisible();
     await expect(retryButton(page)).toHaveCount(0);
     await expect(page.getByLabel('Файл CSV', { exact: true })).toBeDisabled();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
     await expect(
       page.getByRole('button', { name: 'Сохранить сделку', exact: true }),
     ).toBeDisabled();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
     expect(writes).toBe(1);
     const committed = fingerprint(['auth_sessions', 'auth_request_limits']);
     const refresh = page.waitForResponse(
@@ -1367,6 +1390,7 @@ test('CSV-001-A / CSV-006-B: a lost committed upload preserves its actual File a
   const csrfBefore = browserCsrfAdmissions();
   const assertQuota = trackBrowserRequests(page, api);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
   const source = csvSource(example);
   const filename = 'Потерянная загрузка 📒.csv';

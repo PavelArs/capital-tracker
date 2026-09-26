@@ -335,11 +335,18 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
 
   await page.goto(`/manual-accounts/${account.id}`);
   const section = page.getByRole('region', { name: 'Вознаграждения', exact: true });
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
   await expect(section).toBeVisible();
-  const tradeDraft = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
+  const tradeDraft = page.getByRole('group', {
+    name: 'Сделка в USD',
+    exact: true,
+    includeHidden: true,
+  });
   await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
   await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
   await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
   const form = section.getByRole('form', { name: 'Редактор вознаграждения', exact: true });
   await form.getByLabel('Актив вознаграждения', { exact: true }).selectOption(instrument.id);
   await form.getByLabel('Категория вознаграждения', { exact: true }).selectOption('unclassified');
@@ -396,6 +403,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
     await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
     await page.locator(`a[href="/manual-accounts/${account.id}"]`).click();
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
     await expect(form.getByLabel('Полученное количество', { exact: true })).toHaveValue('2');
     await expect(form.getByLabel('Сумма дохода, USD', { exact: true })).toHaveValue('40');
     await expect(
@@ -403,9 +411,11 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
     ).toBeEnabled();
     expect(submitted).toHaveLength(1);
     // A separate trade draft is local to this visit and survives reward mutations.
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
     await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
     await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
     await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
     const retry = await browserPost(page, rewardsPath(account.id), () =>
       form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }).click(),
     );

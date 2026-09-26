@@ -194,6 +194,7 @@ test('CSV-006-A: real Russian upload and inspection show the retained filename, 
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
     await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
     await page.getByLabel('Файл CSV', { exact: true }).setInputFiles({
       name: filename,

@@ -90,6 +90,16 @@ data through native section buttons. Hidden contents stay mounted; the original
 journal eligibility/retry/cross-editor locks remain. Initial-data labels now identify
 the saved opening snapshot instead of implying current holdings. Compact shared
 refresh/error/recovery remains accessible. See [the guide](account-workspace.md).
-Individual trade/swap/reward/CSV editors still need focused on-demand workflows;
-analytical tools still have independent date inputs. Independent review, broader
+Analytical tools still have independent date inputs. Independent review, broader
 redesign and owner visual approval remain pending; preview remains unchanged.
+
+## Operation-workflows checkpoint, 2026-09-26
+
+Active `focus-account-operation-workflows` presents one selected trade/swap/reward/CSV
+workflow while preserving all mounted state and shared journal results. History actions
+reveal the trade editor or void confirmation. Exact drafts, CSV File and hidden recovery
+locks are verified through real HTTPS/MFA/PostgreSQL; see [the guide](account-operation-workflows.md).
+Responsive screenshots cover all four choices at360/768/1440px. Root visual inspection
+confirms the verbose journal context still takes excessive mobile space. Compact context,
+field ergonomics and clearer result tables are next; no complete redesign or independent
+visual review is claimed. Preview remains unchanged.

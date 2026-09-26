@@ -192,6 +192,7 @@ export async function navigateToAccount(page: Page, account: string): Promise<vo
       .toBeGreaterThan(previous);
   }
   await link.click();
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
 }
 export async function uploadInBrowser(
@@ -200,6 +201,7 @@ export async function uploadInBrowser(
   executions = [buy],
   filename = 'Сделки 📒.csv',
 ): Promise<string> {
+  await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
   const buffer = csvSource(executions);
   await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
   await page
