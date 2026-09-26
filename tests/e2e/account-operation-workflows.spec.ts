@@ -342,6 +342,13 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
         fullPage: false,
       });
       await table.scrollIntoViewIfNeeded();
+      const tableContainer = table.locator('..');
+      await expect(tableContainer).toHaveCSS('overflow-x', 'auto');
+      if (width === 360) {
+        await expect
+          .poll(() => tableContainer.evaluate((node) => node.scrollWidth - node.clientWidth))
+          .toBeGreaterThan(0);
+      }
       for (const action of await table.getByRole('button').all()) {
         const bounds = await action.boundingBox();
         expect(bounds).not.toBeNull();
@@ -367,6 +374,31 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   expect(requests).toEqual([]);
   expect(businessState()).toBe(prior);
   expect(providerRequests()).toEqual(providers);
+
+  // A genuine journal refresh replaces the originating history button. Cancellation
+  // must fall back to the current workbench rather than the disconnected old action.
+  const refreshOrigin = await correctAction.elementHandle();
+  await correctAction.scrollIntoViewIfNeeded();
+  await correctAction.focus();
+  await page.keyboard.press('Enter');
+  await expect(correctionWorkbench).toBeFocused();
+  const refreshJournal = page.getByRole('button', { name: 'Обновить журнал', exact: true });
+  await refreshJournal.click();
+  await expect.poll(() => refreshOrigin!.evaluate((node) => node.isConnected)).toBe(false);
+  await expect(correctAction).toBeEnabled();
+  expect(await correctAction.evaluate((node, original) => node === original, refreshOrigin)).toBe(
+    false,
+  );
+  await expect(cancelCorrection).toBeEnabled();
+  await expect(refreshJournal).toBeFocused();
+  await cancelCorrection.focus();
+  await page.keyboard.press('Enter');
+  await expect(newWorkbench).toBeFocused();
+  expect(requests.length).toBeGreaterThan(0);
+  expect(requests.every((request) => request.startsWith('GET '))).toBe(true);
+  expect(businessState()).toBe(prior);
+  expect(providerRequests()).toEqual(providers);
+  await refreshOrigin?.dispose();
   await originalFile.dispose();
   for (const node of [tradeNode, swapNode, rewardNode, fileNode]) await node?.dispose();
 });
