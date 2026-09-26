@@ -82,6 +82,7 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
   const account = readAccount(await created.json());
   await page.waitForLoadState('networkidle');
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Начальные позиции', exact: true })).toBeVisible();
 
@@ -158,7 +159,7 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
       }))
       .sort((a, b) => a.instrumentId.localeCompare(b.instrumentId)),
   );
-  const current = page.getByRole('table', { name: 'Текущие позиции', exact: true });
+  const current = page.getByRole('table', { name: 'Сохраненные начальные позиции', exact: true });
   for (let index = 0; index < instruments.length; index++) {
     const row = current.getByRole('row').filter({
       has: page.getByRole('cell', { name: `${instruments[index].name} (USD)`, exact: true }),
@@ -218,6 +219,7 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
   const providersAfterRestart = [...providersBefore, startupRequest, startupRequest];
   await expect.poll(() => providerRequests(), { timeout: 10_000 }).toEqual(providersAfterRestart);
   await page.reload();
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   await expect(current.getByRole('cell', { name: quantities[0], exact: true })).toBeVisible();
   expect(await api.detail(account.id)).toEqual({
     ...account,
@@ -239,6 +241,7 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
   );
   expect(replaced.revision).toBe(2);
   await page.reload();
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'История исправлений', exact: true }),
   ).toBeVisible();
@@ -269,6 +272,7 @@ test('OPEN-003-A / OPEN-004-A: literal labels and a real stale form require expl
   );
   const first = await api.save(account.id, openingInput(instrument.id));
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   await expect(page.getByRole('heading', { name: account.name, exact: true })).toBeVisible();
   await expect(page.locator('[data-manual-label]')).toHaveCount(0);
   const group = page.getByRole('group', { name: 'Позиция 1', exact: true });
@@ -332,7 +336,7 @@ test('OPEN-003-A / OPEN-004-A: literal labels and a real stale form require expl
   expect(browserWrites[1].expectedRevision).toBe(2);
   expect(browserWrites[1].requestId).not.toBe(browserWrites[0].requestId);
   expect((await api.history(account.id)).items).toEqual([third, second, first]);
-  const table = page.getByRole('table', { name: 'Текущие позиции', exact: true });
+  const table = page.getByRole('table', { name: 'Сохраненные начальные позиции', exact: true });
   await expect(table.getByRole('cell', { name: instrument.name, exact: true })).toBeVisible();
   await expect(page.locator('[data-manual-label]')).toHaveCount(0);
   expect(ledgerState()).toBe(admissionsAfterConflict);

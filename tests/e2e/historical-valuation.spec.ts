@@ -285,6 +285,7 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Оценка счёта на дату', exact: true }),
     ).toBeVisible();
@@ -325,12 +326,18 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
     await expect(secondPosition.getByRole('cell').nth(3)).toHaveText('Нет точной цены');
     await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('—');
 
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
     const tradeRow = tradeTable.getByRole('row').filter({ hasText: firstTrade.trade.tradeId });
     await tradeRow.getByRole('button', { name: 'Исправить', exact: true }).click();
-    const tradeForm = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+    const tradeForm = page.getByRole('group', {
+      name: 'Сделка в USD',
+      exact: true,
+      includeHidden: true,
+    });
     const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
     await gross.fill('120');
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 
     const zero = await setPrice(api, second.id, 0, '0');
     expect(zero.status()).toBe(201);

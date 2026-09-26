@@ -1,5 +1,10 @@
 # Production dependency security record
 
+Latest scoped recheck,2026-09-26, `redesign-account-workspace`: required
+`pnpm audit:production` exited0; two moderate Router findings remain, with no
+high/critical findings. Evidence `/private/tmp/capital-workspace-production-audit.log`.
+No dependency/lock changes; the existing findings and release deadline below remain.
+
 Reviewed **2026-09-22** for `patch-production-dependency-advisories`.
 Scope: pnpm production dependencies. Development tools, operating-system/image
 packages, application exploitability and production deployment require separate

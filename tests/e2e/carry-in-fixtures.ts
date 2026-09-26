@@ -176,6 +176,7 @@ export const retryButton = (page: Page) =>
   });
 
 export async function fillAndPreview(page: Page, data: Fixture) {
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   await fillLot(page, 0, data.lots[0]);
   await page.getByRole('button', { name: 'Добавить лот', exact: true }).click();
   await fillLot(page, 1, data.lots[1]);

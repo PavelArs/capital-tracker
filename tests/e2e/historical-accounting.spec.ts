@@ -241,6 +241,7 @@ test('HIST-004-A: UI snapshot shows exact quantity and cost', async ({ page }) =
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();

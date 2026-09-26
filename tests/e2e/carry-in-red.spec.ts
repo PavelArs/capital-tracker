@@ -256,6 +256,7 @@ test('CARRY-001-A / CARRY-005-A: real Russian lot preview requires a separate un
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Начальные лоты FIFO', exact: true }),
     ).toBeVisible();
@@ -322,6 +323,16 @@ test('CARRY-001-A / CARRY-005-A: real Russian lot preview requires a separate un
     });
     const receipt = readOrigin(await initialized.json(), data, uuid(command.requestId));
     await expectState(data, receipt, false);
+    const saved = page.getByRole('region', { name: 'Сохраненные начальные позиции', exact: true });
+    await expect(saved).toContainText('Снимок на начало учета');
+    await expect(saved).toContainText('Ревизия 1');
+    await expect(saved).toContainText(coverageFrom);
+    const snapshot = saved.getByRole('table');
+    await expect(snapshot.getByRole('cell', { name: '2', exact: true })).toBeVisible();
+    await expect(snapshot.getByRole('cell', { name: '300', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Сохранить начальные позиции', exact: true }),
+    ).toHaveCount(0);
     expect(await api.trades(account.id)).toEqual({
       journalRevision: 0,
       items: [],

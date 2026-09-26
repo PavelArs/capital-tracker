@@ -101,6 +101,7 @@ test('CARRY-005-A: original accepted command survives lost delivery, real401, MF
     await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
     await completeFactor(page, recoveryFactor());
     await navigateToAccount(page, account.id);
+    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
     await expect(retryButton(page)).toBeEnabled();
     expect(commands).toHaveLength(2);
     const replay = await browserPost(page, path, () => retryButton(page).click());
@@ -310,9 +311,11 @@ test('CARRY-005-A: accepted receipt survives lost current reads and blocks write
       page.getByRole('alert').filter({ hasText: 'До успешного обновления' }),
     ).toBeVisible();
     await expect(retryButton(page)).toHaveCount(0);
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect(
       page.getByRole('button', { name: 'Сохранить сделку', exact: true }),
     ).toBeDisabled();
+    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
     const accepted = fingerprint(['auth_sessions', 'auth_request_limits']);
     await page.unroute(pattern);
     await page.getByRole('button', { name: 'Обновить начальные лоты', exact: true }).click();

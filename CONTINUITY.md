@@ -319,6 +319,32 @@ strict OpenSpec31/31 passes. Next: account-detail hierarchy and focused operatio
 workflows; required independent
 swap/shell/directory review when available. No archive until independent review passes.
 
+Sep26 next slice `redesign-account-workspace` implemented,4/6tasks; required independent
+review/archive remain pending quota. Worktree capital-tracker-account-workspace, branch
+refactor/account-workspace, from5099690. Read docs/account-workspace.md and active
+verification.md. Account sections Операции/Аналитика/Начальные данные retain mounted
+editors/results, exact drafts and original retry/eligibility/cross-editor guards.
+Shared journal recovery remains reachable from every section. Parent account-scoped
+selection survives opening-revision journal remount; saved opening snapshot has an
+honest initial-data label. No accounting/auth/backend/API/schema/dependency changes.
+
+Actual evidence:114/19frontend baselinePASS3.30s; actual HTTPS WORKSPACE-UI predecessor
+RED (historical instant expectedhidden/receivedvisible), then116/20PASS3.36s,
+build/lint27existingwarnings, strict E2E types, format/OpenSpec32PASS. Initial selected
+browser attempt5/7PASS; two explicit test-navigation mistakes were corrected with
+all financial assertions retained. Final layout+those two cases3/3PASS39.8s and
+retained hidden-section chartVCH-UI1/1PASS14.2s, one worker/no retries: eight distinct
+selected cases pass across attempts. Includes exact0.123456789012345678 draft,
+100 historical/112.35 remaining cost, committed201→same200/no duplicate SQL,
+opening unknown/zero/history/restart, carry-in2/300, late analysis and chart0/100/null/150.
+Root inspected final responsive screenshots; this is not independent review.
+FinalFEsha256:7051d24c4bbfe691e127ce2e6d7a448cc2f8f8b2aceecc0b9d6f2de939c59839,
+unchangedBEdd90a8c5. Evidence /private/tmp/capital-workspace-* retains failures.
+Production audit exit0,2moderate/nohighcritical. E2E resources cleaned; preview volume,
+old preview image/stopped containers, owner Nginx and lock unchanged. No preview update.
+Next: focused on-demand operation editors and remaining frontend redesign; resolve
+independent reviews for swap/shell/directory/workspace before their archives.
+
 Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional

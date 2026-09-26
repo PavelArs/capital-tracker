@@ -81,4 +81,15 @@ Active `redesign-account-directory` implements the next bounded part of this inv
 accounts lead the page, creation uses an explicit mounted disclosure, and selected
 valuation is collapsible. Pagination and exact preview state are retained; checkbox
 sizing is corrected locally. See [the guide](account-directory.md) and linked runtime
-evidence. Account details and operation workflows remain unchanged; FUI-03 is partial.
+evidence. FUI-03 remains partial.
+
+## Account-workspace checkpoint, 2026-09-26
+
+Active `redesign-account-workspace` separates operations, analytical tools and initial
+data through native section buttons. Hidden contents stay mounted; the original
+journal eligibility/retry/cross-editor locks remain. Initial-data labels now identify
+the saved opening snapshot instead of implying current holdings. Compact shared
+refresh/error/recovery remains accessible. See [the guide](account-workspace.md).
+Individual trade/swap/reward/CSV editors still need focused on-demand workflows;
+analytical tools still have independent date inputs. Independent review, broader
+redesign and owner visual approval remain pending; preview remains unchanged.

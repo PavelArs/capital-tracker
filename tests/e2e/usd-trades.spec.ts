@@ -56,13 +56,22 @@ async function fillTrade(page: Page, input: TradeInput): Promise<void> {
     await expect
       .poll(
         async () =>
-          (await option.count()) > 0 || ((await more.isVisible()) && (await more.isEnabled())),
+          (await option.count()) > 0 ||
+          (await page
+            .getByRole('button', {
+              name: 'Показать еще инструменты',
+              exact: true,
+              includeHidden: true,
+            })
+            .count()) > 0,
       )
       .toBe(true);
     if ((await option.count()) > 0) break;
     expect(loaded, 'Synthetic instrument discovery stays bounded').toBeLessThan(10);
     const previousCount = await instrument.locator('option').count();
+    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
     await more.click();
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect.poll(() => instrument.locator('option').count()).toBeGreaterThan(previousCount);
   }
   await instrument.selectOption(input.instrumentId);
@@ -1448,6 +1457,7 @@ test('TRADE-006-D regression: ambiguous initialization keeps the opening editor 
   const assertQuota = trackBrowserRequests(page, api);
   const originalOpeningRows = accountRows(account.id);
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
   const opening = page.getByRole('region', { name: 'Начальные позиции', exact: true });
   const saveOpening = opening.getByRole('button', {
     name: 'Сохранить начальные позиции',
@@ -1457,6 +1467,7 @@ test('TRADE-006-D regression: ambiguous initialization keeps the opening editor 
     saveOpening,
     'The known eligible predecessor state permits editing an opening',
   ).toBeEnabled();
+  await page.getByRole('button', { name: 'Операции', exact: true }).click();
   await page.getByLabel('Дата начала журнала (UTC)', { exact: true }).fill(coverageFrom);
   await page.getByRole('checkbox', { name: 'Позиции были пустыми', exact: true }).check();
   const path = `/api/accounting/accounts/${account.id}/trade-journal`;
@@ -1483,6 +1494,7 @@ test('TRADE-006-D regression: ambiguous initialization keeps the opening editor 
     await page.getByRole('button', { name: 'Открыть журнал', exact: true }).click();
     await expect.poll(() => lost).toBe(true);
     await expect(page.getByRole('alert')).toContainText(/[А-Яа-я]/);
+    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
     await expect(opening).toBeVisible();
     await expect(
       saveOpening,

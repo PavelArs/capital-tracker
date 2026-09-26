@@ -230,6 +230,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   });
 
   await page.goto(`/manual-accounts/${account.id}`);
+  await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
   await expect(
     page.getByRole('heading', { name: 'История стоимости счёта', exact: true }),
   ).toBeVisible();
@@ -267,12 +268,18 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     region.getByRole('img', { name: 'График стоимости счёта', exact: true }),
   ).toBeVisible();
 
+  await page.getByRole('button', { name: 'Операции', exact: true }).click();
   const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
   const firstRow = tradeTable.getByRole('row').filter({ hasText: firstTrade.tradeId });
   await firstRow.getByRole('button', { name: 'Исправить', exact: true }).click();
-  const tradeForm = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  const tradeForm = page.getByRole('group', {
+    name: 'Сделка в USD',
+    exact: true,
+    includeHidden: true,
+  });
   const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
   await gross.fill('110');
+  await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 
   // A gap-only real series keeps its table without inventing a chart value.
   await fromInput.fill(dayThree);

@@ -84,6 +84,7 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
       { times: 1 },
     );
     await page.goto(`/manual-accounts/${previous.id}`);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
@@ -103,6 +104,7 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
     await expect.poll(() => held).toBe(true);
 
     await navigateToAccount(page, selected.id);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/manual-accounts/${selected.id}$`));
     await expect(page.getByRole('heading', { name: selected.name, exact: true })).toBeVisible();
     release();
@@ -263,19 +265,26 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     const tradeTable = page.getByRole('table', {
       name: 'Сделки журнала',
       exact: true,
     });
     const selected = tradeTable.getByRole('row').filter({ hasText: first.trade.tradeId });
     await selected.getByRole('button', { name: 'Исправить', exact: true }).click();
-    const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+    const form = page.getByRole('group', {
+      name: 'Сделка в USD',
+      exact: true,
+      includeHidden: true,
+    });
     const gross = form.getByLabel('Валовая сумма, USD', { exact: true });
     await gross.fill('12');
     await expect(gross).toHaveValue('12');
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 
     const section = page.getByRole('region', {
       name: 'Учётный срез на дату',
@@ -358,7 +367,9 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
       }),
     ).toHaveCount(0);
     await expect(gross).toHaveValue('12');
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect(selected).toBeVisible();
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(afterWriter);
 
     const refreshed = page.waitForResponse(
@@ -458,7 +469,9 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
     });
     await expect(section.getByRole('table')).toHaveCount(0);
     await expect(gross).toHaveValue('12');
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect(selected).toBeVisible();
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 
     expect(historyRequests).toHaveLength(4);
     expect(accountingPosts).toEqual([]);

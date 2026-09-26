@@ -9,7 +9,8 @@ import {
   tradesApi,
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type AccountSection, AccountWorkspace } from './AccountWorkspace';
 import { AssetRewards } from './AssetRewards';
 import { AssetSwaps } from './AssetSwaps';
 import { CarryIn } from './CarryIn';
@@ -39,11 +40,17 @@ export function TradeJournal({
   instruments,
   openingBusy,
   onEligibility,
+  section,
+  onSectionChange,
+  openingDetails,
 }: {
   accountId: string;
   instruments: Instrument[];
   openingBusy: boolean;
   onEligibility: (hasJournal: boolean | null) => void;
+  section: AccountSection;
+  onSectionChange: (section: AccountSection) => void;
+  openingDetails: ReactNode;
 }) {
   const [state, setState] = useState<JournalState | null>(null);
   const [loading, setLoading] = useState(true);
@@ -364,25 +371,25 @@ export function TradeJournal({
   const journal = state?.journal;
   return (
     <section className="manual-card trade-journal" aria-labelledby="trade-journal-heading">
-      <h2 id="trade-journal-heading">Журнал сделок в USD</h2>
-      <p className="manual-muted">
-        Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов. Общий
-        баланс не восстанавливает историю покупок автоматически.
-      </p>
+      <header className="trade-journal__header">
+        <h2 id="trade-journal-heading">Журнал сделок в USD</h2>
+        <button
+          type="button"
+          className="manual-button manual-button--secondary"
+          disabled={writing || openingBusy || loading || csvBlocked}
+          onClick={() => void refresh()}
+        >
+          Обновить журнал
+        </button>
+      </header>
+
       {loading && <p role="status">Загрузка журнала…</p>}
       {error && (
         <p role="alert" className="manual-feedback manual-feedback--error">
           {error}
         </p>
       )}
-      <button
-        type="button"
-        className="manual-button manual-button--secondary"
-        disabled={writing || openingBusy || loading || csvBlocked}
-        onClick={() => void refresh()}
-      >
-        Обновить журнал
-      </button>
+
       {ambiguous && (
         <div className="manual-coverage-warning">
           <p>
@@ -464,149 +471,178 @@ export function TradeJournal({
           </label>
         </section>
       )}
-      {state &&
-        !journal &&
-        (state.eligible ? (
-          <form onSubmit={initialize} className="manual-form">
-            <fieldset disabled={disabled}>
-              <legend>Явное пустое начало</legend>
-              <label className="manual-field">
-                Дата начала журнала (UTC)
-                <input
-                  type="text"
-                  value={coverage}
-                  disabled={ambiguous}
-                  required
-                  onChange={(event) => {
-                    if (retry.current?.ambiguous) return;
-                    retry.current = null;
-                    setCoverage(event.target.value);
-                  }}
+      <AccountWorkspace
+        section={section}
+        onSelect={onSectionChange}
+        operations={
+          <>
+            <p className="manual-muted">
+              Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов.
+              Общий баланс не восстанавливает историю покупок автоматически.
+            </p>
+            {state &&
+              !journal &&
+              (state.eligible ? (
+                <form onSubmit={initialize} className="manual-form">
+                  <fieldset disabled={disabled}>
+                    <legend>Явное пустое начало</legend>
+                    <label className="manual-field">
+                      Дата начала журнала (UTC)
+                      <input
+                        type="text"
+                        value={coverage}
+                        disabled={ambiguous}
+                        required
+                        onChange={(event) => {
+                          if (retry.current?.ambiguous) return;
+                          retry.current = null;
+                          setCoverage(event.target.value);
+                        }}
+                      />
+                    </label>
+                    <label className="manual-review-check">
+                      <input
+                        type="checkbox"
+                        checked={assertEmpty}
+                        disabled={ambiguous}
+                        onChange={(event) => {
+                          if (retry.current?.ambiguous) return;
+                          retry.current = null;
+                          setAssertEmpty(event.target.checked);
+                        }}
+                      />
+                      Позиции были пустыми
+                    </label>
+                    <p>
+                      Подтверждаю пустые позиции в указанный момент и буду записывать все
+                      последующие относящиеся к журналу сделки.
+                    </p>
+                    <button type="submit" className="manual-button" disabled={!assertEmpty}>
+                      Открыть журнал
+                    </button>
+                  </fieldset>
+                </form>
+              ) : (
+                <p>
+                  У счёта есть история начальных позиций. Для открытия журнала требуется отдельно
+                  проверить исходные лоты с известной себестоимостью. Существующие позиции
+                  сохранены.
+                </p>
+              ))}
+            {journal && (
+              <>
+                <p>
+                  Ревизия журнала: {journal.journalRevision}. Граница покрытия UTC:{' '}
+                  {journal.coverageFrom}.
+                </p>
+                <p className="manual-muted">
+                  Активных сделок: {journal.activeTradeCount} / {journal.limits.activeTrades},
+                  неизменяемых версий: {journal.versionCount} / {journal.limits.versions}.
+                  Распределение себестоимости: 30 десятичных знаков, остаток получает последняя
+                  часть лота. Это учётные результаты журнала, не рыночная стоимость, не доходность
+                  портфеля и не налоговый отчёт.
+                </p>
+                {mode === 'void' && target ? (
+                  <form onSubmit={save}>
+                    <p>
+                      Аннулировать сделку {target.tradeId}, версия {target.version}? История будет
+                      пересчитана полностью; операция невозможна, если появится неподдержанная
+                      продажа.
+                    </p>
+                    <button type="submit" className="manual-button" disabled={disabled}>
+                      Подтвердить аннулирование
+                    </button>
+                    <button
+                      type="button"
+                      className="manual-button manual-button--secondary"
+                      disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
+                      onClick={cancel}
+                    >
+                      Отменить аннулирование
+                    </button>
+                  </form>
+                ) : (
+                  <TradeForm
+                    draft={draft}
+                    onChange={edit}
+                    onSubmit={save}
+                    instruments={instruments}
+                    selected={target}
+                    disabled={
+                      disabled || (ambiguous && retry.current?.operation.kind === 'initialize')
+                    }
+                    lockDraft={ambiguous}
+                    correction={mode === 'correct'}
+                    onCancel={cancel}
+                    cancelDisabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
+                  />
+                )}
+                {!hideResults && !loading && (
+                  <TradeResults
+                    key={`${accountId}:${journal.journalRevision}:${epoch}`}
+                    accountId={accountId}
+                    journal={journal}
+                    disabled={writing || openingBusy || (needsReview && !reviewed)}
+                    mutationDisabled={ambiguous || csvBlocked || carryInBlocked}
+                    onCorrect={(trade) => select(trade, 'correct')}
+                    onVoid={(trade) => select(trade, 'void')}
+                    onStale={stale}
+                  />
+                )}
+                <AssetSwaps
+                  accountId={accountId}
+                  journalRevision={journal.journalRevision}
+                  onChanged={() => void refreshAfterExternalWrite()}
                 />
-              </label>
-              <label className="manual-review-check">
-                <input
-                  type="checkbox"
-                  checked={assertEmpty}
-                  disabled={ambiguous}
-                  onChange={(event) => {
-                    if (retry.current?.ambiguous) return;
-                    retry.current = null;
-                    setAssertEmpty(event.target.checked);
-                  }}
+                <AssetRewards
+                  accountId={accountId}
+                  journalRevision={journal.journalRevision}
+                  onChanged={() => void refreshAfterExternalWrite()}
                 />
-                Позиции были пустыми
-              </label>
-              <p>
-                Подтверждаю пустые позиции в указанный момент и буду записывать все последующие
-                относящиеся к журналу сделки.
-              </p>
-              <button type="submit" className="manual-button" disabled={!assertEmpty}>
-                Открыть журнал
-              </button>
-            </fieldset>
-          </form>
-        ) : (
-          <p>
-            У счёта есть история начальных позиций. Для открытия журнала требуется отдельно
-            проверить исходные лоты с известной себестоимостью. Существующие позиции сохранены.
-          </p>
-        ))}
-      {journal && (
-        <>
-          <p>
-            Ревизия журнала: {journal.journalRevision}. Граница покрытия UTC: {journal.coverageFrom}
-            .
-          </p>
-          <p className="manual-muted">
-            Активных сделок: {journal.activeTradeCount} / {journal.limits.activeTrades},
-            неизменяемых версий: {journal.versionCount} / {journal.limits.versions}. Распределение
-            себестоимости: 30 десятичных знаков, остаток получает последняя часть лота. Это учётные
-            результаты журнала, не рыночная стоимость, не доходность портфеля и не налоговый отчёт.
-          </p>
-          {mode === 'void' && target ? (
-            <form onSubmit={save}>
-              <p>
-                Аннулировать сделку {target.tradeId}, версия {target.version}? История будет
-                пересчитана полностью; операция невозможна, если появится неподдержанная продажа.
-              </p>
-              <button type="submit" className="manual-button" disabled={disabled}>
-                Подтвердить аннулирование
-              </button>
-              <button
-                type="button"
-                className="manual-button manual-button--secondary"
-                disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
-                onClick={cancel}
-              >
-                Отменить аннулирование
-              </button>
-            </form>
-          ) : (
-            <TradeForm
-              draft={draft}
-              onChange={edit}
-              onSubmit={save}
-              instruments={instruments}
-              selected={target}
-              disabled={disabled || (ambiguous && retry.current?.operation.kind === 'initialize')}
-              lockDraft={ambiguous}
-              correction={mode === 'correct'}
-              onCancel={cancel}
-              cancelDisabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
-            />
-          )}
-          {!hideResults && !loading && (
-            <TradeResults
-              key={`${accountId}:${journal.journalRevision}:${epoch}`}
+                <CsvImports
+                  key={accountId}
+                  accountId={accountId}
+                  journalRevision={journal.journalRevision}
+                  instruments={instruments}
+                  parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
+                  parentBlocked={manualDisabled || ambiguous || carryInBlocked}
+                  onBlocked={blockForCsv}
+                  onJournalRefresh={refreshAfterExternalWrite}
+                />
+              </>
+            )}
+          </>
+        }
+        analytics={
+          <>
+            <HistoricalAccounting
               accountId={accountId}
-              journal={journal}
-              disabled={writing || openingBusy || (needsReview && !reviewed)}
-              mutationDisabled={ambiguous || csvBlocked || carryInBlocked}
-              onCorrect={(trade) => select(trade, 'correct')}
-              onVoid={(trade) => select(trade, 'void')}
-              onStale={stale}
+              journalRevision={journal?.journalRevision ?? null}
             />
-          )}
-          <AssetSwaps
-            accountId={accountId}
-            journalRevision={journal.journalRevision}
-            onChanged={() => void refreshAfterExternalWrite()}
-          />
-          <AssetRewards
-            accountId={accountId}
-            journalRevision={journal.journalRevision}
-            onChanged={() => void refreshAfterExternalWrite()}
-          />
-          <CsvImports
-            key={accountId}
-            accountId={accountId}
-            journalRevision={journal.journalRevision}
-            instruments={instruments}
-            parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
-            parentBlocked={manualDisabled || ambiguous || carryInBlocked}
-            onBlocked={blockForCsv}
-            onJournalRefresh={refreshAfterExternalWrite}
-          />
-        </>
-      )}
-      <HistoricalAccounting
-        accountId={accountId}
-        journalRevision={journal?.journalRevision ?? null}
-      />
-      <HistoricalValuation
-        accountId={accountId}
-        journalRevision={journal?.journalRevision ?? null}
-      />
-      <ValuationHistory accountId={accountId} journalRevision={journal?.journalRevision ?? null} />
-      <CarryIn
-        key={accountId}
-        accountId={accountId}
-        hasJournal={state ? state.journal !== null : null}
-        parentBusy={writing || openingBusy || ambiguous || csvBlocked}
-        parentBlocked={manualDisabled || ambiguous || csvBlocked}
-        onBlocked={blockForCarryIn}
-        onJournalRefresh={refreshAfterExternalWrite}
+            <HistoricalValuation
+              accountId={accountId}
+              journalRevision={journal?.journalRevision ?? null}
+            />
+            <ValuationHistory
+              accountId={accountId}
+              journalRevision={journal?.journalRevision ?? null}
+            />
+          </>
+        }
+        setup={
+          <>
+            <CarryIn
+              key={accountId}
+              accountId={accountId}
+              hasJournal={state ? state.journal !== null : null}
+              parentBusy={writing || openingBusy || ambiguous || csvBlocked}
+              parentBlocked={manualDisabled || ambiguous || csvBlocked}
+              onBlocked={blockForCarryIn}
+              onJournalRefresh={refreshAfterExternalWrite}
+            />
+            {openingDetails}
+          </>
+        }
       />
     </section>
   );

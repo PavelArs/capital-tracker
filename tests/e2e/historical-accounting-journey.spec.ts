@@ -57,10 +57,12 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
 
   try {
     await page.goto(`/manual-accounts/${account.id}`);
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
 
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
     const selected = tradeTable.getByRole('row').filter({ hasText: first.trade.tradeId });
     await selected.getByRole('button', { name: 'Исправить', exact: true }).click();
@@ -69,6 +71,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     await gross.fill('120');
     await expect(gross).toHaveValue('120');
 
+    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
     const section = page.getByRole('region', {
       name: 'Учётный срез на дату',
       exact: true,
@@ -147,6 +150,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     await expect(position.getByRole('cell', { name: '100', exact: true })).toBeVisible();
     await expect(section.getByText('2025-01-02T00:00:00.000Z', { exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect(gross).toHaveValue('120');
     await expect(page.getByRole('button', { name: 'Сохранить сделку', exact: true })).toBeEnabled();
     await expect(selected).toBeVisible();
