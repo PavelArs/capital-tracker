@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect } from '@playwright/test';
+import { type Locator, type Request, type Route, expect } from '@playwright/test';
 import { foreignOwner, noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { type TradeApi, browserPost, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -224,8 +224,12 @@ test('TRANSFER-API: original lot basis, connected restatement, replay and privat
     expect(new Date(timestamp).toISOString()).toBe(timestamp);
   }
   expect(absentError).toEqual(foreignError);
-  expect(foreignError).toEqual({ statusCode: 404, message: 'Not Found',
-    error: 'NotFoundException', path: '/accounting/transfers' });
+  expect(foreignError).toEqual({
+    statusCode: 404,
+    message: 'Not Found',
+    error: 'NotFoundException',
+    path: '/accounting/transfers',
+  });
   expect(await deniedForeign.text()).not.toContain(foreign.accountId);
 
   const malformedBefore = businessRows();
@@ -280,7 +284,7 @@ test('TRANSFER-API: original lot basis, connected restatement, replay and privat
 
 test('TRANSFER-UI: review, exact create retry, correction and terminal void use real receipts', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const { from, to, instrument } = await ownedFixture(api, 'UI');
   const priorRows = businessRows();
@@ -292,6 +296,26 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   ).toBeVisible();
   expect(businessRows()).toBe(priorRows);
   expect(providerRequests()).toEqual(providersBefore);
+
+  const editor = page.getByRole('region', { name: 'Команда перевода', exact: true });
+  const quantity = page.getByLabel('Количество получателю', { exact: true });
+  const time = page.getByLabel('Время перевода (UTC)', { exact: true });
+  const order = page.getByLabel('Порядок в эту миллисекунду', { exact: true });
+  const feeAsset = page.getByLabel('Актив комиссии', { exact: true });
+  const feeQuantity = page.getByLabel('Количество комиссии', { exact: true });
+  const attestation = page.getByRole('checkbox', { name: 'Это перевод между моими счетами' });
+  const createButton = page.getByRole('button', { name: 'Записать перевод', exact: true });
+  await expect(quantity).toHaveAccessibleDescription(/получател.*(без|не включает).*комисси/i);
+  await expect(time).toHaveAccessibleDescription(/UTC.*YYYY-MM-DDTHH:mm:ss\.sssZ/i);
+  await expect(order).toHaveAccessibleDescription(/миллисекунд/i);
+  await expect(order).toHaveAccessibleDescription(/порядок|последовательность/i);
+  for (const control of [feeAsset, feeQuantity]) {
+    await expect(control).toHaveAccessibleDescription(/нулев|комисси.*0/i);
+    await expect(control).toHaveAccessibleDescription(/без комиссии|не указыва/i);
+    await expect(control).toHaveAccessibleDescription(/историческ/i);
+    await expect(control).toHaveAccessibleDescription(/не.*рыночн/i);
+  }
+  await expect(createButton).toBeDisabled();
 
   await page.getByLabel('Со счёта', { exact: true }).selectOption(from.id);
   await page.getByLabel('На счёт', { exact: true }).selectOption(to.id);
@@ -305,7 +329,23 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   await expect(
     page.getByRole('checkbox', { name: 'Это перевод между моими счетами' }),
   ).toBeVisible();
-  await page.getByRole('checkbox', { name: 'Это перевод между моими счетами' }).check();
+  await expect(createButton).toBeDisabled();
+  await attestation.check();
+  await expect(createButton).toBeEnabled();
+  // Confirmation alone leaves the successful economic review intact.
+  await attestation.uncheck();
+  await expect(createButton).toBeDisabled();
+  await attestation.check();
+  await expect(createButton).toBeEnabled();
+  // Changing reviewed economics requires a fresh real account review.
+  await quantity.fill('1.4');
+  await expect(createButton).toBeDisabled();
+  await quantity.fill('1.5');
+  await expect(createButton).toBeDisabled();
+  await page.getByRole('button', { name: 'Проверить счета', exact: true }).click();
+  await expect(createButton).toBeEnabled();
+  await expect(quantity).toHaveValue('1.5');
+  await expect(feeQuantity).toHaveValue('0.1');
 
   const submitted: unknown[] = [];
   page.on('request', (request) => {
@@ -317,7 +357,7 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   });
   let lostReceipt: Record<string, unknown> | undefined;
   let dropped = false;
-  const dropFirstCommittedCreate = async (route: import('@playwright/test').Route) => {
+  const dropFirstCommittedCreate = async (route: Route) => {
     if (route.request().method() !== 'POST' || dropped) return route.continue();
     const response = await route.fetch();
     expect(response.status()).toBe(201);
@@ -354,12 +394,184 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   const articleName = `Перевод ${transferId}`;
   const transferArticle = page.getByRole('article', { name: articleName, exact: true });
   await expect(transferArticle).toBeVisible();
+  await expect(transferArticle.getByRole('heading', { level: 3 })).toContainText('1.5');
+  await expect(transferArticle.getByRole('heading', { level: 3 })).toContainText(instrument.name);
+  await expect(transferArticle.getByRole('heading', { level: 3 })).not.toContainText(transferId);
+  await expect(transferArticle.getByRole('link', { name: from.name, exact: true })).toBeVisible();
+  await expect(transferArticle.getByRole('link', { name: to.name, exact: true })).toBeVisible();
+  const identity = transferArticle.getByText('Идентификатор перевода', { exact: true });
+  const disclosure = identity.locator('..');
+  expect(await identity.evaluate((node) => node.tagName)).toBe('SUMMARY');
+  expect(await disclosure.evaluate((node) => node.tagName)).toBe('DETAILS');
+  await expect(disclosure).not.toHaveAttribute('open', '');
+  const identityValue = disclosure.getByText(transferId, { exact: true });
+  await expect(identityValue).toBeHidden();
+  await identity.focus();
+  await page.keyboard.press('Enter');
+  await expect(identityValue).toBeVisible();
+  await expect(identityValue).toHaveText(transferId);
+  await page.keyboard.press('Space');
+  await expect(identityValue).toBeHidden();
+
   await transferArticle.getByRole('button', { name: 'Показать разбор лотов', exact: true }).click();
   await expect(transferArticle.getByText('Текущий разбор лотов', { exact: true })).toBeVisible();
   await expect(
-    transferArticle.getByText('Списанная себестоимость комиссии, USD', { exact: true })
+    transferArticle
+      .getByText('Списанная себестоимость комиссии, USD', { exact: true })
       .locator('xpath=following-sibling::dd[1]'),
   ).toHaveText('20');
+
+  await transferArticle.getByRole('button', { name: 'Показать версии', exact: true }).click();
+  await expect(
+    transferArticle.getByRole('region', { name: 'Версии перевода', exact: true }),
+  ).toContainText('Версия 1: 1.5');
+
+  const checkPresentation = async () => {
+    const rowsBefore = businessRows();
+    const callsBefore = providerRequests();
+    const viewport = page.viewportSize();
+    const originalTheme = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    const capture = async (target: Locator, name: string) => {
+      const bounds = await target.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top + window.scrollY, height: box.height };
+      });
+      for (let index = 0; index < Math.ceil(bounds.height / 900); index++) {
+        const offset = Math.min(index * 900, Math.max(0, bounds.height - 900));
+        await page.evaluate(
+          (top) => window.scrollTo(0, Math.max(0, top - 16)),
+          bounds.top + offset,
+        );
+        await expect(
+          page.getByRole('link', { name: 'К содержимому', exact: true }),
+        ).not.toBeInViewport();
+        await testInfo.attach(`${name}-${index + 1}`, {
+          body: await page.screenshot({
+            path: testInfo.outputPath(`${name}-${index + 1}.png`),
+            animations: 'disabled',
+            fullPage: false,
+          }),
+          contentType: 'image/png',
+        });
+      }
+    };
+    try {
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-theme', value),
+          theme,
+        );
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        for (const width of [360, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          await expect
+            .poll(() =>
+              page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            )
+            .toBe(true);
+          for (const target of [editor, transferArticle]) {
+            const controls = await target
+              .locator('input:not([type="checkbox"]), select, button, summary')
+              .evaluateAll((nodes) =>
+                nodes
+                  .filter((node) => node.getClientRects().length > 0)
+                  .map((node) => ({
+                    label: node.textContent || node.getAttribute('aria-label') || node.tagName,
+                    height: node.getBoundingClientRect().height,
+                  })),
+              );
+            expect(controls.length).toBeGreaterThan(0);
+            for (const control of controls)
+              expect(control.height, control.label).toBeGreaterThanOrEqual(44);
+          }
+          await capture(editor, `transfer-editor-${theme}-${width}`);
+          await capture(transferArticle, `transfer-history-${theme}-${width}`);
+          await expect(identityValue).toBeHidden();
+          await expect(
+            transferArticle
+              .getByText('Списанная себестоимость комиссии, USD', { exact: true })
+              .locator('xpath=following-sibling::dd[1]'),
+          ).toHaveText('20');
+        }
+      }
+    } finally {
+      await page.evaluate((value) => {
+        if (value === null) document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', value);
+      }, originalTheme);
+      if (viewport) await page.setViewportSize(viewport);
+    }
+    expect(businessRows()).toBe(rowsBefore);
+    expect(providerRequests()).toEqual(callsBefore);
+  };
+  await checkPresentation();
+
+  const correctAction = transferArticle.getByRole('button', { name: 'Исправить', exact: true });
+  const voidAction = transferArticle.getByRole('button', { name: 'Отменить перевод', exact: true });
+  const selectionRows = businessRows();
+  const selectionWrites: string[] = [];
+  const recordSelectionWrite = (request: Request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname.startsWith(`/api/accounting${transfersPath}`)
+    )
+      selectionWrites.push(request.url());
+  };
+  page.on('request', recordSelectionWrite);
+  let held = false;
+  let releaseReview = () => {};
+  const reviewDelivery = new Promise<void>((resolve) => {
+    releaseReview = resolve;
+  });
+  const holdReview = async (route: Route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(200);
+    held = true;
+    await reviewDelivery;
+    await route.fulfill({ response });
+  };
+  const versionsRoute = `**/api/accounting${transfersPath}/${transferId}/versions**`;
+  await page.route(versionsRoute, holdReview);
+  try {
+    await correctAction.click();
+    await expect(
+      editor.getByRole('heading', { name: 'Исправление перевода', exact: true }),
+    ).toBeFocused();
+    await expect.poll(() => held).toBe(true);
+    const historyFocus = transferArticle.getByRole('button', {
+      name: 'Показать версии',
+      exact: true,
+    });
+    await historyFocus.focus();
+    releaseReview();
+    await expect(editor.getByText(/Проверены ревизии счетов:/)).toBeVisible();
+    await expect(historyFocus).toBeFocused();
+    await expect(page.getByLabel('Со счёта', { exact: true })).toBeDisabled();
+    await expect(page.getByLabel('На счёт', { exact: true })).toBeDisabled();
+    await expect(quantity).toBeEditable();
+    await expect(quantity).toHaveValue('1.5');
+    await editor.getByRole('button', { name: 'Отменить редактирование', exact: true }).click();
+    await expect(correctAction).toBeFocused();
+  } finally {
+    releaseReview();
+    await page.unroute(versionsRoute, holdReview);
+  }
+  await voidAction.click();
+  await expect(editor.getByRole('heading', { name: 'Отмена перевода', exact: true })).toBeFocused();
+  await expect(quantity).toBeDisabled();
+  await expect(time).toBeDisabled();
+  await expect(order).toBeDisabled();
+  await expect(feeAsset).toBeDisabled();
+  await expect(feeQuantity).toBeDisabled();
+  await expect(editor.getByText(/Проверены ревизии счетов:.*версия перевода: 1/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Подтвердить отмену', exact: true })).toBeEnabled();
+  await editor.getByRole('button', { name: 'Отменить редактирование', exact: true }).click();
+  await expect(voidAction).toBeFocused();
+  expect(selectionWrites).toEqual([]);
+  expect(businessRows()).toBe(selectionRows);
+  page.off('request', recordSelectionWrite);
 
   await transferArticle.getByRole('button', { name: 'Исправить', exact: true }).click();
   await page.getByLabel('Количество получателю', { exact: true }).fill('1.4');
