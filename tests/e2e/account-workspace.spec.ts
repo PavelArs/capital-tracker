@@ -119,15 +119,19 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     committed = readReceipt(await response.json());
     await route.abort('connectionreset');
   });
+  const context = page.locator('details').filter({
+    has: page.locator('summary', { hasText: 'Параметры и правила учёта' }),
+  });
+  await context.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+  expect(writes).toEqual([]);
   try {
     await page.getByRole('button', { name: 'Сохранить сделку', exact: true }).click();
     const retry = page.getByRole('button', { name: 'Повторить исходный запрос', exact: true });
     await expect(retry).toBeVisible();
     await expect(retry.locator('xpath=ancestor::details')).toHaveCount(0);
-    const context = page.locator('details').filter({
-      has: page.locator('summary', { hasText: 'Параметры и правила учёта' }),
-    });
-    for (const expanded of [true, false]) {
+    for (const expanded of [false, true]) {
       await context.locator('summary').focus();
       await page.keyboard.press('Enter');
       await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(expanded);
@@ -151,6 +155,9 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await expect(positions).toHaveCount(0);
     expect(analyses).toBe(1);
     await selectSection(page, 'Операции');
+    await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(true);
+    await expect(context).toContainText('Ревизия журнала: 2.');
+    await expect(context).toContainText('Активных сделок: 2 / 1000, неизменяемых версий: 2 / 10000.');
     const total = page.getByRole('region', { name: 'Итоги журнала', exact: true });
     await expect(
       total
@@ -171,6 +178,11 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
     await page.locator(`a[href="/manual-accounts/${other.id}"]`).click();
     await expect(page.getByRole('heading', { name: other.name, exact: true })).toBeVisible();
+    await expect(page.getByText(
+      'Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов. Общий баланс не восстанавливает историю покупок автоматически.',
+      { exact: true },
+    )).toBeVisible();
+    await expect(context.locator('summary')).toHaveCount(0);
     await selectSection(page, 'Начальные данные');
     await expect(instrumentName).toHaveValue('');
     await selectSection(page, 'Аналитика');
@@ -187,6 +199,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     }, account.id);
     await expect(page.getByRole('heading', { name: account.name, exact: true })).toBeVisible();
     await expect(form).toBeVisible();
+    await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
     await expect(quantity).toHaveValue('');
     await selectSection(page, 'Начальные данные');
     await expect(instrumentName).toHaveValue('');
