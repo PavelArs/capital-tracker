@@ -73,9 +73,14 @@ unnecessary migration. No paid UI kit/service or new production deployment.
 
 ## Order and current state
 
-First finish the open swap accounting verification/review gates. Then begin FUI-01/02
-as the next frontend work, before asking the owner for another visual review. Complete
-the remaining redesign incrementally alongside separately scoped product capabilities.
-All tasks above are pending; no redesigned screen or approval is claimed today.
+Swap runtime verification is complete at9/12; its independent review still waits for
+the known agent quota and remains required before archive. Separate frontend preparation
+can proceed during that wait. FUI-01 source inventory and target hierarchy are recorded
+in [frontend-screen-audit.md](frontend-screen-audit.md); responsive prototypes/review are
+still pending, so the task is not complete. OpenSpec `redesign-application-shell` defines
+the first small FUI-02 slice with acceptance and verification criteria, in the isolated
+`refactor/frontend-shell` worktree. Next: characterization and executable RED before
+implementation. Complete the remaining redesign incrementally alongside separately
+scoped product capabilities. No redesigned screen or owner approval is claimed today.
 The local preview database, MFA key, credentials and original repositories remain
 preserved. Broader blockchain/provider/import/security/release requirements remain open.

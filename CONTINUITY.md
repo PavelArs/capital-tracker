@@ -14,8 +14,9 @@ Owner2026-09-26 reviewed the preview and rejected the current visuals/usability.
 Complete frontend redesign is now required: modern restrained responsive Russian UX,
 functionality first, optional early-2000s influence, no excess decoration/animation.
 Read docs/frontend-redesign-plan.md (FUI-01..06, all pending) and the dated target-brief
-amendment. This covers navigation/workflows/all screens, not CSS polish alone. Finish
-the current swap gates, then begin the redesign in small verified changes. The next
+amendment. This covers navigation/workflows/all screens, not CSS polish alone. Swap
+runtime gates now pass; independent review waits for quota. Separate shell preparation
+has begun while that review remains pending. The next
 owner visual review is after redesign; current functional UI checks are not UX approval.
 
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
@@ -262,7 +263,18 @@ OpenSpec29PASS, protected hashes unchanged, e2e resources empty, preview volume 
 No new browser/build/migration/audit/fullsuite claim; no product/image changes this step.
 Independent persistence/UI review and final verification/archive remain pending.
 
-Still required after swaps: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
+New active frontend change `redesign-application-shell` has complete proposal/design/
+specs/tasks,0/8implementation tasks. docs/frontend-screen-audit.md inventories routes,
+journeys and keep/simplify/remove decisions; FUI-01 remains partial pending prototypes.
+Worktree../capital-tracker-frontend-shell,branchrefactor/frontend-shell at4decf5a base;
+no dependencies/symlinks added. Shell scope: grouped responsive navigation, active/skip/
+keyboard controls, manual-account landing, labelled preserved legacy dashboard,
+restrained login styling. Existing editors/APIs/data/precision/retry remain intact.
+Next work: apply this explicitly named change, baseline/acceptanceRED before UI code.
+No implementation/browser/build/screenshots for this shell yet. Root owns Docker and
+integration; do not reset preview or archive swaps without independent review.
+
+Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional
 AI, full release/security/backup-restore hardening, final consolidation. Selected
