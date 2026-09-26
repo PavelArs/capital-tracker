@@ -1,6 +1,7 @@
 import type { Instrument } from '@api/accounting.api';
-import type { ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import type { SwapDraft, SwapMode } from './swap-draft';
+import './OperationForm.css';
 
 export function AssetSwapForm({
   draft,
@@ -30,6 +31,7 @@ export function AssetSwapForm({
   onCancel?: () => void;
 }) {
   const update = (value: Partial<SwapDraft>) => onChange({ ...draft, ...value });
+  const guidanceId = useId();
   const options = instruments.map((instrument) => (
     <option key={instrument.id} value={instrument.id}>
       {instrument.name}
@@ -38,7 +40,7 @@ export function AssetSwapForm({
   ));
   return (
     <form
-      className="manual-form"
+      className="operation-form"
       aria-label="Редактор обмена"
       onSubmit={(event) => {
         event.preventDefault();
@@ -46,7 +48,7 @@ export function AssetSwapForm({
       }}
     >
       {recovery}
-      <fieldset className="manual-position" disabled={busy || mode === 'void'}>
+      <fieldset className="operation-form__fieldset" disabled={busy || mode === 'void'}>
         <legend>
           {mode === 'create'
             ? 'Новый обмен'
@@ -54,153 +56,194 @@ export function AssetSwapForm({
               ? 'Исправление обмена'
               : 'Отмена обмена'}
         </legend>
-        <div className="manual-form-grid">
-          <label>
-            Отдаваемый актив
-            <select
-              aria-label="Отдаваемый актив"
-              required
-              value={draft.outgoingInstrumentId}
-              onChange={(event) => update({ outgoingInstrumentId: event.target.value })}
-            >
-              <option value="">Выберите актив</option>
-              {options}
-            </select>
-          </label>
-          <label>
-            Получаемый актив
-            <select
-              aria-label="Получаемый актив"
-              required
-              value={draft.incomingInstrumentId}
-              onChange={(event) =>
-                update({
-                  incomingInstrumentId: event.target.value,
-                  ...(draft.feeSource === 'incoming'
-                    ? { feeInstrumentId: event.target.value }
-                    : {}),
-                })
-              }
-            >
-              <option value="">Выберите актив</option>
-              {options}
-            </select>
-          </label>
-          <label>
-            Отдаваемое количество
-            <input
-              inputMode="decimal"
-              required
-              value={draft.outgoingQuantity}
-              onChange={(event) => update({ outgoingQuantity: event.target.value })}
-            />
-          </label>
-          <label>
-            Получаемое количество до комиссии
-            <input
-              inputMode="decimal"
-              required
-              value={draft.incomingQuantity}
-              onChange={(event) => update({ incomingQuantity: event.target.value })}
-            />
-          </label>
-          <label>
-            Момент обмена (ISO с часовым поясом)
-            <input
-              type="text"
-              required
-              value={draft.occurredAt}
-              onChange={(event) => update({ occurredAt: event.target.value })}
-            />
-          </label>
-          <label>
-            Порядок в моменте
-            <input
-              inputMode="numeric"
-              required
-              value={draft.orderWithinTimestamp}
-              onChange={(event) => update({ orderWithinTimestamp: event.target.value })}
-            />
-          </label>
-          <label>
-            Оценка обмена в USD
-            <select
-              aria-label="Оценка обмена в USD"
-              value={draft.considerationKnown ? 'known' : 'unknown'}
-              onChange={(event) =>
-                update({
-                  considerationKnown: event.target.value === 'known',
-                  considerationUsd: event.target.value === 'known' ? draft.considerationUsd : '',
-                })
-              }
-            >
-              <option value="unknown">Неизвестна</option>
-              <option value="known">Известна</option>
-            </select>
-          </label>
-          {draft.considerationKnown && (
-            <label>
-              Сумма оценки, USD
+        <section className="operation-form__section" aria-labelledby={`${guidanceId}-assets`}>
+          <h3 id={`${guidanceId}-assets`}>Активы и количества</h3>
+          <div className="operation-form__fields">
+            <label className="operation-form__field">
+              Отдаваемый актив
+              <select
+                aria-label="Отдаваемый актив"
+                required
+                value={draft.outgoingInstrumentId}
+                onChange={(event) => update({ outgoingInstrumentId: event.target.value })}
+              >
+                <option value="">Выберите актив</option>
+                {options}
+              </select>
+            </label>
+            <label className="operation-form__field">
+              Получаемый актив
+              <select
+                aria-label="Получаемый актив"
+                required
+                value={draft.incomingInstrumentId}
+                onChange={(event) =>
+                  update({
+                    incomingInstrumentId: event.target.value,
+                    ...(draft.feeSource === 'incoming'
+                      ? { feeInstrumentId: event.target.value }
+                      : {}),
+                  })
+                }
+              >
+                <option value="">Выберите актив</option>
+                {options}
+              </select>
+            </label>
+            <label className="operation-form__field">
+              Отдаваемое количество
               <input
                 inputMode="decimal"
                 required
-                value={draft.considerationUsd}
-                onChange={(event) => update({ considerationUsd: event.target.value })}
+                value={draft.outgoingQuantity}
+                onChange={(event) => update({ outgoingQuantity: event.target.value })}
               />
             </label>
-          )}
-          <label>
-            Источник комиссии
-            <select
-              aria-label="Источник комиссии"
-              value={draft.feeSource}
-              onChange={(event) => {
-                const source = event.target.value as SwapDraft['feeSource'];
-                update({
-                  feeSource: source,
-                  feeInstrumentId:
-                    source === 'none'
-                      ? ''
-                      : source === 'incoming'
-                        ? draft.incomingInstrumentId
-                        : draft.feeInstrumentId,
-                  feeQuantity:
-                    source === 'none' ? '0' : draft.feeSource === 'none' ? '' : draft.feeQuantity,
-                });
-              }}
-            >
-              <option value="none">Без комиссии</option>
-              <option value="held">Из имеющегося остатка</option>
-              <option value="incoming">Из получаемого актива</option>
-            </select>
-          </label>
-          {draft.feeSource !== 'none' && (
-            <>
-              <label>
-                Актив комиссии
-                <select
-                  aria-label="Актив комиссии"
-                  required
-                  disabled={draft.feeSource === 'incoming'}
-                  value={draft.feeInstrumentId}
-                  onChange={(event) => update({ feeInstrumentId: event.target.value })}
-                >
-                  <option value="">Выберите актив</option>
-                  {options}
-                </select>
-              </label>
-              <label>
-                Количество комиссии
+            <label className="operation-form__field">
+              Получаемое количество до комиссии
+              <input
+                aria-describedby={`${guidanceId}-incoming`}
+                inputMode="decimal"
+                required
+                value={draft.incomingQuantity}
+                onChange={(event) => update({ incomingQuantity: event.target.value })}
+              />
+            </label>
+          </div>
+          <p className="operation-form__hint" id={`${guidanceId}-incoming`}>
+            Укажите получаемое количество до удержания комиссии из этого актива.
+          </p>
+        </section>
+
+        <section className="operation-form__section" aria-labelledby={`${guidanceId}-valuation`}>
+          <h3 id={`${guidanceId}-valuation`}>Оценка в USD</h3>
+          <div className="operation-form__fields">
+            <label className="operation-form__field">
+              Оценка обмена в USD
+              <select
+                aria-label="Оценка обмена в USD"
+                aria-describedby={`${guidanceId}-valuation-hint`}
+                value={draft.considerationKnown ? 'known' : 'unknown'}
+                onChange={(event) =>
+                  update({
+                    considerationKnown: event.target.value === 'known',
+                    considerationUsd: event.target.value === 'known' ? draft.considerationUsd : '',
+                  })
+                }
+              >
+                <option value="unknown">Неизвестна</option>
+                <option value="known">Известна</option>
+              </select>
+            </label>
+            {draft.considerationKnown && (
+              <label className="operation-form__field">
+                Сумма оценки, USD
                 <input
+                  aria-describedby={`${guidanceId}-valuation-hint`}
                   inputMode="decimal"
                   required
-                  value={draft.feeQuantity}
-                  onChange={(event) => update({ feeQuantity: event.target.value })}
+                  value={draft.considerationUsd}
+                  onChange={(event) => update({ considerationUsd: event.target.value })}
                 />
               </label>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+          <p className="operation-form__hint" id={`${guidanceId}-valuation-hint`}>
+            Оценка относится ко всему получаемому количеству до комиссии. Неизвестная оценка не
+            равна нулю.
+          </p>
+        </section>
+
+        <section className="operation-form__section" aria-labelledby={`${guidanceId}-fee`}>
+          <h3 id={`${guidanceId}-fee`}>Комиссия</h3>
+          <div className="operation-form__fields">
+            <label className="operation-form__field">
+              Источник комиссии
+              <select
+                aria-label="Источник комиссии"
+                aria-describedby={`${guidanceId}-fee-hint`}
+                value={draft.feeSource}
+                onChange={(event) => {
+                  const source = event.target.value as SwapDraft['feeSource'];
+                  update({
+                    feeSource: source,
+                    feeInstrumentId:
+                      source === 'none'
+                        ? ''
+                        : source === 'incoming'
+                          ? draft.incomingInstrumentId
+                          : draft.feeInstrumentId,
+                    feeQuantity:
+                      source === 'none' ? '0' : draft.feeSource === 'none' ? '' : draft.feeQuantity,
+                  });
+                }}
+              >
+                <option value="none">Без комиссии</option>
+                <option value="held">Из имеющегося остатка</option>
+                <option value="incoming">Из получаемого актива</option>
+              </select>
+            </label>
+            {draft.feeSource !== 'none' && (
+              <>
+                <label className="operation-form__field">
+                  Актив комиссии
+                  <select
+                    aria-label="Актив комиссии"
+                    required
+                    disabled={draft.feeSource === 'incoming'}
+                    value={draft.feeInstrumentId}
+                    onChange={(event) => update({ feeInstrumentId: event.target.value })}
+                  >
+                    <option value="">Выберите актив</option>
+                    {options}
+                  </select>
+                </label>
+                <label className="operation-form__field">
+                  Количество комиссии
+                  <input
+                    inputMode="decimal"
+                    required
+                    value={draft.feeQuantity}
+                    onChange={(event) => update({ feeQuantity: event.target.value })}
+                  />
+                </label>
+              </>
+            )}
+          </div>
+          <p className="operation-form__hint" id={`${guidanceId}-fee-hint`}>
+            Комиссия из получаемого актива уменьшает только новый лот; комиссия из остатка
+            списывается по FIFO до поступления нового актива.
+          </p>
+        </section>
+
+        <section className="operation-form__section" aria-labelledby={`${guidanceId}-time`}>
+          <h3 id={`${guidanceId}-time`}>Время обмена</h3>
+          <div className="operation-form__fields">
+            <label className="operation-form__field">
+              Момент обмена (ISO с часовым поясом)
+              <input
+                aria-describedby={`${guidanceId}-time-hint`}
+                type="text"
+                required
+                value={draft.occurredAt}
+                onChange={(event) => update({ occurredAt: event.target.value })}
+              />
+            </label>
+            <label className="operation-form__field">
+              Порядок в моменте
+              <input
+                aria-describedby={`${guidanceId}-time-hint`}
+                inputMode="numeric"
+                required
+                value={draft.orderWithinTimestamp}
+                onChange={(event) => update({ orderWithinTimestamp: event.target.value })}
+              />
+            </label>
+          </div>
+          <p className="operation-form__hint" id={`${guidanceId}-time-hint`}>
+            Укажите часовой пояс явно. Порядок различает операции в одно и то же время обмена.
+          </p>
+        </section>
         <label className="manual-review-check">
           <input
             type="checkbox"
@@ -210,50 +253,47 @@ export function AssetSwapForm({
           Подтверждаю: это уже выполненный обмен внутри этого счёта.
         </label>
       </fieldset>
-      <p className="manual-muted">
-        Оценка относится ко всему получаемому количеству до комиссии. Неизвестная оценка не равна
-        нулю. Комиссия из получаемого актива уменьшает только новый лот; комиссия из остатка
-        списывается по FIFO до поступления нового актива.
-      </p>
       {review}
       {reviewError && (
         <p className="manual-feedback manual-feedback--error" role="alert">
           {reviewError}
         </p>
       )}
-      <button
-        className="manual-button manual-button--secondary"
-        type="button"
-        disabled={busy}
-        onClick={onReview}
-      >
-        {mode === 'create'
-          ? 'Проверить обмен'
-          : mode === 'correct'
-            ? 'Проверить исправление'
-            : 'Проверить отмену'}
-      </button>
-      <button
-        className="manual-button"
-        type="submit"
-        disabled={busy || !reviewed || (mode !== 'void' && !draft.assertExecuted)}
-      >
-        {mode === 'create'
-          ? 'Записать обмен'
-          : mode === 'correct'
-            ? 'Записать исправление'
-            : 'Отменить обмен'}
-      </button>
-      {onCancel && (
+      <div className="operation-form__actions">
         <button
           className="manual-button manual-button--secondary"
           type="button"
           disabled={busy}
-          onClick={onCancel}
+          onClick={onReview}
         >
-          Отменить редактирование
+          {mode === 'create'
+            ? 'Проверить обмен'
+            : mode === 'correct'
+              ? 'Проверить исправление'
+              : 'Проверить отмену'}
         </button>
-      )}
+        <button
+          className="manual-button"
+          type="submit"
+          disabled={busy || !reviewed || (mode !== 'void' && !draft.assertExecuted)}
+        >
+          {mode === 'create'
+            ? 'Записать обмен'
+            : mode === 'correct'
+              ? 'Записать исправление'
+              : 'Отменить обмен'}
+        </button>
+        {onCancel && (
+          <button
+            className="manual-button manual-button--secondary"
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Отменить редактирование
+          </button>
+        )}
+      </div>
     </form>
   );
 }
