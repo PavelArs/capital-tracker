@@ -86,7 +86,9 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
       requests.push(`${request.method()} ${new URL(request.url()).pathname}`);
   });
   const quantity = trade.getByLabel('Количество', { exact: true });
-  await quantity.fill('0.123456789012345678');
+  await quantity.fill('0.');
+  await quantity.pressSequentially('123456789012345678');
+  await expect(quantity).toBeFocused();
   const tradeNode = await quantity.elementHandle();
   await toggleContext(true);
   await toggleContext(false);
@@ -196,7 +198,28 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   await expect(reward).toHaveValue('2.000000000000000001');
   const table = page.getByRole('table', { name: 'Сделки журнала', exact: true });
   const row = table.getByRole('row').filter({ hasText: bought.trade.tradeId });
-  await row.getByRole('button', { name: 'Исправить', exact: true }).click();
+  const correctAction = row.getByRole('button', { name: 'Исправить', exact: true });
+  const correctActionNode = await correctAction.elementHandle();
+  await correctAction.scrollIntoViewIfNeeded();
+  await correctAction.focus();
+  await expect(correctAction).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(choice).toHaveValue('trades');
+  await expect(quantity).toHaveValue('1');
+  // First new oracle: the predecessor reveals the editor but leaves keyboard focus in history.
+  // Keep this before named-group, guidance and layout assertions so RED proves the behavior gap.
+  await expect(correctAction).not.toBeFocused();
+  const correctionWorkbench = page.getByRole('group', {
+    name: 'Исправление сделки',
+    exact: true,
+  });
+  await expect(correctionWorkbench).toBeFocused();
+  await expect
+    .poll(() => correctionWorkbench.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(() => correctionWorkbench.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeLessThanOrEqual(96);
   await expect(choice).toHaveValue('trades');
   await expect(quantity).toHaveValue('1');
   await expect(trade.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('100');
@@ -215,9 +238,32 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   await expect(quantity).toHaveValue('1');
   await expect(cancelCorrection).toBeVisible();
   await correctionNode?.dispose();
-  await cancelCorrection.click();
+  await cancelCorrection.focus();
+  await page.keyboard.press('Enter');
+  await expect(correctAction).toBeFocused();
+  expect(
+    await correctAction.evaluate((node, original) => node === original, correctActionNode),
+  ).toBe(true);
+  await correctActionNode?.dispose();
   await choice.selectOption('rewards');
-  await row.getByRole('button', { name: 'Аннулировать', exact: true }).click();
+  const voidAction = row.getByRole('button', { name: 'Аннулировать', exact: true });
+  const voidActionNode = await voidAction.elementHandle();
+  await voidAction.scrollIntoViewIfNeeded();
+  await voidAction.focus();
+  await expect(voidAction).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(voidAction).not.toBeFocused();
+  const voidWorkbench = page.getByRole('group', {
+    name: 'Аннулирование сделки',
+    exact: true,
+  });
+  await expect(voidWorkbench).toBeFocused();
+  await expect
+    .poll(() => voidWorkbench.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeGreaterThanOrEqual(0);
+  await expect
+    .poll(() => voidWorkbench.evaluate((node) => node.getBoundingClientRect().top))
+    .toBeLessThanOrEqual(96);
   await expect(choice).toHaveValue('trades');
   await expect(
     page.getByText(`Аннулировать сделку ${bought.trade.tradeId}, версия 1?`, { exact: false }),
@@ -225,7 +271,97 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   await expect(
     page.getByRole('button', { name: 'Подтвердить аннулирование', exact: true }),
   ).toBeVisible();
-  await page.getByRole('button', { name: 'Отменить аннулирование', exact: true }).click();
+  const cancelVoid = page.getByRole('button', { name: 'Отменить аннулирование', exact: true });
+  await cancelVoid.focus();
+  await page.keyboard.press('Enter');
+  await expect(voidAction).toBeFocused();
+  expect(await voidAction.evaluate((node, original) => node === original, voidActionNode)).toBe(
+    true,
+  );
+  await voidActionNode?.dispose();
+
+  const newWorkbench = page.getByRole('group', { name: 'Новая сделка', exact: true });
+  await expect(newWorkbench).toBeVisible();
+  for (const label of [
+    'Инструмент',
+    'Тип сделки',
+    'Количество',
+    'Дата и время сделки (UTC)',
+    'Порядок в этот момент',
+    'Валовая сумма, USD',
+    'Комиссия, USD',
+  ]) {
+    await expect(trade.getByLabel(label, { exact: true })).toBeVisible();
+  }
+  const gross = trade.getByLabel('Валовая сумма, USD', { exact: true });
+  const fee = trade.getByLabel('Комиссия, USD', { exact: true });
+  await expect(gross).toHaveAccessibleDescription(
+    /(?:общ|полн|валов).*сумм.*(?:не.*цен.*единиц|не.*единичн)/i,
+  );
+  await expect(fee).toHaveAccessibleDescription(/(?:отдельн.*USD|USD.*отдельн)/i);
+  await expect(
+    trade.getByLabel('Дата и время сделки (UTC)', { exact: true }),
+  ).toHaveAccessibleDescription(/UTC/);
+  await expect(
+    trade.getByLabel('Порядок в этот момент', { exact: true }),
+  ).toHaveAccessibleDescription(/(?:одинаков|совпадающ).*времен|(?:одинаков|совпадающ).*момент/i);
+  await gross.fill('100.000000000000000001');
+  await expect(gross).toBeFocused();
+  await expect(gross).toHaveValue('100.000000000000000001');
+  await fee.fill('0.000000000000000001');
+  await expect(fee).toBeFocused();
+  await expect(fee).toHaveValue('0.000000000000000001');
+  await toggleContext(true);
+  await toggleContext(false);
+  await expect(summary).toBeFocused();
+
+  const originalTheme = await page.evaluate(() =>
+    document.documentElement.getAttribute('data-theme'),
+  );
+  for (const theme of ['light', 'dark']) {
+    // Presentation-only theme selection; no fabricated input/change events or business data.
+    await page.evaluate(
+      (value) => document.documentElement.setAttribute('data-theme', value),
+      theme,
+    );
+    for (const width of [360, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(summary).toBeFocused();
+      await expect(gross).toHaveValue('100.000000000000000001');
+      await expect(fee).toHaveValue('0.000000000000000001');
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          ),
+        )
+        .toBeLessThanOrEqual(1);
+      await newWorkbench.evaluate((node) => node.scrollIntoView({ block: 'start' }));
+      await page.screenshot({
+        path: testInfo.outputPath(`trade-workbench-${theme}-${width}.png`),
+        fullPage: false,
+      });
+      await table.scrollIntoViewIfNeeded();
+      for (const action of await table.getByRole('button').all()) {
+        const bounds = await action.boundingBox();
+        expect(bounds).not.toBeNull();
+        expect(bounds!.height).toBeGreaterThanOrEqual(44);
+        expect(bounds!.width).toBeGreaterThanOrEqual(44);
+      }
+      await expect(row).toContainText(bought.trade.tradeId);
+      await expect(row.getByRole('cell', { name: '100', exact: true })).toBeVisible();
+      await expect(lotTable).toBeVisible();
+      await page.screenshot({
+        path: testInfo.outputPath(`trade-results-${theme}-${width}.png`),
+        fullPage: false,
+      });
+      await expect(summary).toBeFocused();
+    }
+  }
+  await page.evaluate((value) => {
+    if (value === null) document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', value);
+  }, originalTheme);
   await choice.selectOption('rewards');
   await expect(reward).toHaveValue('2.000000000000000001');
   expect(requests).toEqual([]);
