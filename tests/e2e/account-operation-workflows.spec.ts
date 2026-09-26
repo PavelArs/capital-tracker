@@ -393,7 +393,9 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     false,
   );
   await expect(cancelCorrection).toBeEnabled();
-  await expect(refreshJournal).toBeFocused();
+  // Native focus may leave the refresh button while loading disables it; refresh must not
+  // schedule the explicit history-action focus on the correction workbench.
+  await expect(correctionWorkbench).not.toBeFocused();
   await cancelCorrection.focus();
   await page.keyboard.press('Enter');
   await expect(newWorkbench).toBeFocused();
