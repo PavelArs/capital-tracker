@@ -174,13 +174,15 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   }
   for (const node of [tradeNode, swapNode, rewardNode, fileNode])
     expect(await node?.evaluate((element) => element.isConnected)).toBe(true);
-  for (const [input, node] of [
-    [quantity, tradeNode],
-    [swap, swapNode],
-    [reward, rewardNode],
-    [csv, fileNode],
-  ] as const)
+  for (const [workflow, input, node] of [
+    ['trades', quantity, tradeNode],
+    ['swaps', swap, swapNode],
+    ['rewards', reward, rewardNode],
+    ['imports', csv, fileNode],
+  ] as const) {
+    await choice.selectOption(workflow);
     expect(await input.evaluate((element, original) => element === original, node)).toBe(true);
+  }
   expect(
     await csv.evaluate(
       (input: HTMLInputElement, original) => input.files![0] === original,
