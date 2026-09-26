@@ -1,6 +1,7 @@
 import type { Instrument } from '@api/accounting.api';
 import type { RewardCategory } from '@api/asset-rewards.api';
-import type { ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import './OperationForm.css';
 
 export type RewardMode = 'create' | 'correct' | 'void';
 export interface RewardDraft {
@@ -43,6 +44,7 @@ export function AssetRewardForm({
   onSubmit: () => void;
   onCancel?: () => void;
 }) {
+  const hintId = useId();
   const update = (value: Partial<RewardDraft>) => onChange({ ...draft, ...value });
   const submitLabel =
     mode === 'create'
@@ -53,7 +55,7 @@ export function AssetRewardForm({
 
   return (
     <form
-      className="manual-form"
+      className="manual-form operation-form"
       aria-label="Редактор вознаграждения"
       onSubmit={(event) => {
         event.preventDefault();
@@ -69,119 +71,182 @@ export function AssetRewardForm({
               ? 'Исправление вознаграждения'
               : 'Отмена вознаграждения'}
         </legend>
-        <div className="manual-form-grid">
-          <label>
-            Актив вознаграждения
-            <select
-              aria-label="Актив вознаграждения"
-              required
-              value={draft.instrumentId}
-              onChange={(event) => update({ instrumentId: event.target.value })}
-            >
-              <option value="">Выберите актив</option>
-              {instruments.map((instrument) => (
-                <option key={instrument.id} value={instrument.id}>
-                  {instrument.name}
-                  {instrument.symbol ? ` (${instrument.symbol})` : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Категория вознаграждения
-            <select
-              aria-label="Категория вознаграждения"
-              value={draft.category}
-              onChange={(event) => update({ category: event.target.value as RewardCategory })}
-            >
-              <option value="staking">Стейкинг</option>
-              <option value="airdrop">Аирдроп</option>
-              <option value="other">Другой доход</option>
-              <option value="unclassified">Вид вознаграждения не уточнён</option>
-            </select>
-          </label>
-          <label>
-            Момент получения (ISO с часовым поясом)
-            <input
-              type="text"
-              required
-              value={draft.occurredAt}
-              onChange={(event) => update({ occurredAt: event.target.value })}
-            />
-          </label>
-          <label>
-            Порядок в моменте
-            <input
-              inputMode="numeric"
-              required
-              value={draft.orderWithinTimestamp}
-              onChange={(event) => update({ orderWithinTimestamp: event.target.value })}
-            />
-          </label>
-          <label>
-            Полученное количество
-            <input
-              inputMode="decimal"
-              required
-              value={draft.quantity}
-              onChange={(event) => update({ quantity: event.target.value })}
-            />
-          </label>
-          <label>
-            Себестоимость вознаграждения
-            <select
-              aria-label="Себестоимость вознаграждения"
-              value={draft.basisKnown ? 'known' : 'unknown'}
-              onChange={(event) =>
-                update({
-                  basisKnown: event.target.value === 'known',
-                  acquisitionBasisUsd:
-                    event.target.value === 'known' ? draft.acquisitionBasisUsd : '',
-                })
-              }
-            >
-              <option value="unknown">Неизвестна</option>
-              <option value="known">Известна</option>
-            </select>
-          </label>
-          {draft.basisKnown && (
+        <div className="operation-form__section">
+          <h3>Получение вознаграждения</h3>
+          <div className="operation-form__fields">
             <label>
-              Сумма себестоимости, USD
-              <input
-                inputMode="decimal"
+              Актив вознаграждения
+              <select
+                aria-label="Актив вознаграждения"
                 required
-                value={draft.acquisitionBasisUsd}
-                onChange={(event) => update({ acquisitionBasisUsd: event.target.value })}
-              />
+                value={draft.instrumentId}
+                onChange={(event) => update({ instrumentId: event.target.value })}
+              >
+                <option value="">Выберите актив</option>
+                {instruments.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.name}
+                    {instrument.symbol ? ` (${instrument.symbol})` : ''}
+                  </option>
+                ))}
+              </select>
             </label>
-          )}
-          <label>
-            Доход от вознаграждения
-            <select
-              aria-label="Доход от вознаграждения"
-              value={draft.incomeKnown ? 'known' : 'unknown'}
-              onChange={(event) =>
-                update({
-                  incomeKnown: event.target.value === 'known',
-                  incomeValueUsd: event.target.value === 'known' ? draft.incomeValueUsd : '',
-                })
-              }
-            >
-              <option value="unknown">Неизвестен</option>
-              <option value="known">Известен</option>
-            </select>
-          </label>
-          {draft.incomeKnown && (
-            <label>
-              Сумма дохода, USD
-              <input
-                inputMode="decimal"
-                required
-                value={draft.incomeValueUsd}
-                onChange={(event) => update({ incomeValueUsd: event.target.value })}
-              />
-            </label>
-          )}
+            <div className="operation-form__field">
+              <label>
+                Категория вознаграждения
+                <select
+                  aria-label="Категория вознаграждения"
+                  aria-describedby={`${hintId}-category`}
+                  value={draft.category}
+                  onChange={(event) => update({ category: event.target.value as RewardCategory })}
+                >
+                  <option value="staking">Стейкинг</option>
+                  <option value="airdrop">Аирдроп</option>
+                  <option value="other">Другой доход</option>
+                  <option value="unclassified">Вид вознаграждения не уточнён</option>
+                </select>
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-category`}>
+                Вид вознаграждения не уточнён требует последующей проверки.
+              </small>
+            </div>
+            <div className="operation-form__field">
+              <label>
+                Полученное количество
+                <input
+                  aria-describedby={`${hintId}-quantity`}
+                  inputMode="decimal"
+                  required
+                  value={draft.quantity}
+                  onChange={(event) => update({ quantity: event.target.value })}
+                />
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-quantity`}>
+                Укажите точное полученное количество актива.
+              </small>
+            </div>
+          </div>
+        </div>
+        <div className="operation-form__section">
+          <h3>Себестоимость и доход</h3>
+          <div className="operation-form__fields">
+            <div className="operation-form__field">
+              <label>
+                Себестоимость вознаграждения
+                <select
+                  aria-label="Себестоимость вознаграждения"
+                  aria-describedby={`${hintId}-basis`}
+                  value={draft.basisKnown ? 'known' : 'unknown'}
+                  onChange={(event) =>
+                    update({
+                      basisKnown: event.target.value === 'known',
+                      acquisitionBasisUsd:
+                        event.target.value === 'known' ? draft.acquisitionBasisUsd : '',
+                    })
+                  }
+                >
+                  <option value="unknown">Неизвестна</option>
+                  <option value="known">Известна</option>
+                </select>
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-basis`}>
+                Указывается независимо от дохода. Неизвестная сумма не равна нулю; ноль задаётся
+                как известное значение.
+              </small>
+            </div>
+            {draft.basisKnown && (
+              <div className="operation-form__field">
+                <label>
+                  Сумма себестоимости, USD
+                  <input
+                    aria-describedby={`${hintId}-basis-value`}
+                    inputMode="decimal"
+                    required
+                    value={draft.acquisitionBasisUsd}
+                    onChange={(event) => update({ acquisitionBasisUsd: event.target.value })}
+                  />
+                </label>
+                <small className="operation-form__hint" id={`${hintId}-basis-value`}>
+                  Введите точную сумму в USD. Ноль допустим только как явно известное значение.
+                </small>
+              </div>
+            )}
+            <div className="operation-form__field">
+              <label>
+                Доход от вознаграждения
+                <select
+                  aria-label="Доход от вознаграждения"
+                  aria-describedby={`${hintId}-income`}
+                  value={draft.incomeKnown ? 'known' : 'unknown'}
+                  onChange={(event) =>
+                    update({
+                      incomeKnown: event.target.value === 'known',
+                      incomeValueUsd: event.target.value === 'known' ? draft.incomeValueUsd : '',
+                    })
+                  }
+                >
+                  <option value="unknown">Неизвестен</option>
+                  <option value="known">Известен</option>
+                </select>
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-income`}>
+                Указывается независимо от себестоимости. Неизвестная сумма не равна нулю; ноль
+                задаётся как известное значение.
+              </small>
+            </div>
+            {draft.incomeKnown && (
+              <div className="operation-form__field">
+                <label>
+                  Сумма дохода, USD
+                  <input
+                    aria-describedby={`${hintId}-income-value`}
+                    inputMode="decimal"
+                    required
+                    value={draft.incomeValueUsd}
+                    onChange={(event) => update({ incomeValueUsd: event.target.value })}
+                  />
+                </label>
+                <small className="operation-form__hint" id={`${hintId}-income-value`}>
+                  Введите точную сумму в USD. Ноль допустим только как явно известное значение.
+                </small>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="operation-form__section">
+          <h3>Время получения</h3>
+          <div className="operation-form__fields">
+            <div className="operation-form__field">
+              <label>
+                Момент получения (ISO с часовым поясом)
+                <input
+                  aria-describedby={`${hintId}-time`}
+                  type="text"
+                  required
+                  value={draft.occurredAt}
+                  onChange={(event) => update({ occurredAt: event.target.value })}
+                />
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-time`}>
+                Укажите точный момент в формате ISO 8601 с часовым поясом.
+              </small>
+            </div>
+            <div className="operation-form__field">
+              <label>
+                Порядок в моменте
+                <input
+                  aria-describedby={`${hintId}-order`}
+                  inputMode="numeric"
+                  required
+                  value={draft.orderWithinTimestamp}
+                  onChange={(event) => update({ orderWithinTimestamp: event.target.value })}
+                />
+              </label>
+              <small className="operation-form__hint" id={`${hintId}-order`}>
+                Порядок различает вознаграждения с одинаковым моментом получения.
+              </small>
+            </div>
+          </div>
         </div>
         <label className="manual-review-check">
           <input
@@ -193,45 +258,43 @@ export function AssetRewardForm({
           Подтверждаю: это уже полученное вознаграждение, а не покупка, перевод или взнос.
         </label>
       </fieldset>
-      <p className="manual-muted">
-        Неизвестные суммы не становятся нулём. Нулевая сумма возможна только как явное известное
-        значение; категория «Вид вознаграждения не уточнён» требует последующей проверки.
-      </p>
       {review}
       {reviewError && (
         <p className="manual-feedback manual-feedback--error" role="alert">
           {reviewError}
         </p>
       )}
-      <button
-        className="manual-button manual-button--secondary"
-        type="button"
-        disabled={busy}
-        onClick={onReview}
-      >
-        {mode === 'create'
-          ? 'Проверить вознаграждение'
-          : mode === 'correct'
-            ? 'Проверить исправление'
-            : 'Проверить отмену'}
-      </button>
-      <button
-        className="manual-button"
-        type="submit"
-        disabled={busy || !reviewed || (mode !== 'void' && !draft.assertReward)}
-      >
-        {submitLabel}
-      </button>
-      {onCancel && (
+      <div className="operation-form__actions">
         <button
           className="manual-button manual-button--secondary"
           type="button"
           disabled={busy}
-          onClick={onCancel}
+          onClick={onReview}
         >
-          Отменить редактирование
+          {mode === 'create'
+            ? 'Проверить вознаграждение'
+            : mode === 'correct'
+              ? 'Проверить исправление'
+              : 'Проверить отмену'}
         </button>
-      )}
+        <button
+          className="manual-button"
+          type="submit"
+          disabled={busy || !reviewed || (mode !== 'void' && !draft.assertReward)}
+        >
+          {submitLabel}
+        </button>
+        {onCancel && (
+          <button
+            className="manual-button manual-button--secondary"
+            type="button"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            Отменить редактирование
+          </button>
+        )}
+      </div>
     </form>
   );
 }
