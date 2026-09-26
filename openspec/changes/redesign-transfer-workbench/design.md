@@ -14,7 +14,7 @@ CI/CD and synthetic Compose were inspected: production is still manually gated b
 
 - Reuse OperationForm.css with useId descriptions outside labels; preserve all values, handlers, required/disabled expressions and option identities. Native controls avoid an unnecessary UI dependency migration in this bounded step.
 - Root owns OwnedTransfers navigation and scoped CSS; a Luna worktree owns only OwnedTransferForm. Separate Sol acceptance worktree extends existing TRANSFER-UI. Independent review challenges guards, descriptions, focus and evidence.
-- Focus is synchronous with the user's staging event, after its existing permission guards, on a persistent heading ref. React updates the heading text normally. Cancel preserves existing reset semantics then focuses the stored live enabled origin or the heading. Asynchronous review does not focus anything.
+- An event-only layout effect focuses the persistent heading after React renders the selected mode, without waiting for review. The request is issued only after the existing staging guards. Cancel preserves existing reset semantics then focuses the stored live enabled origin or the heading. Asynchronous review does not focus anything.
 - Keep article accessible identity for stable selection; lead visible heading with amount/asset or cancelled state. Native details retains full identity without custom disclosure state. Existing allocation/version loaders and receipts remain unchanged.
 - Add only transfer-scoped CSS, readable foreground tokens, flexible grids and contained table overflow. No global/shared CSS changes required.
 

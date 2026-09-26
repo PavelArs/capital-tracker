@@ -13,13 +13,21 @@ import {
 import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { Link } from 'react-router-dom';
 import './TradeJournal.css';
 import { OwnedTransferForm, type TransferDraft } from './OwnedTransferForm';
 import { TransferAllocationDetails } from './TransferAllocationDetails';
 import { accountingError, newRequestId } from './feedback';
 import '@pages/ManualAccounts.css';
+import './OwnedTransfers.css';
 
 type Mode = 'create' | 'correct' | 'void';
 type ReadState = 'idle' | 'loading' | 'ready' | 'error';
@@ -168,6 +176,14 @@ async function allCatalog<T extends { id: string }>(
 }
 
 function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const historyAction = useRef<HTMLButtonElement | null>(null);
+  const [editorFocusRequest, setEditorFocusRequest] = useState(0);
+  useLayoutEffect(() => {
+    if (editorFocusRequest === 0) return;
+    editorHeading.current?.focus({ preventScroll: true });
+    editorHeading.current?.scrollIntoView({ block: 'start' });
+  }, [editorFocusRequest]);
   const recovery = useSyncExternalStore(subscribeRecovery, () => recoveryFor(ownerId));
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -391,13 +407,19 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
     }
   };
 
-  const stage = (nextMode: 'correct' | 'void', version: TransferVersion) => {
+  const stage = (
+    nextMode: 'correct' | 'void',
+    version: TransferVersion,
+    trigger: HTMLButtonElement,
+  ) => {
     if (recoveryFor(ownerId) || writeLock.current || needsRefresh) return;
     setMode(nextMode);
     setTarget(version);
     const nextDraft = draftFromVersion(version);
     setDraft(nextDraft);
     setWriteError('');
+    historyAction.current = trigger;
+    setEditorFocusRequest((request) => request + 1);
     void readReview(nextMode, nextDraft, version, true);
   };
 
@@ -410,6 +432,10 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
     setReviewRead('idle');
     setReviewError('');
     setWriteError('');
+    const origin = historyAction.current;
+    historyAction.current = null;
+    if (origin?.isConnected && !origin.disabled) origin.focus();
+    else editorHeading.current?.focus();
   };
 
   const runCommand = async (command: Command, retry = false) => {
@@ -536,7 +562,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
   const reviewed =
     review !== null && reviewRead === 'ready' && !needsRefresh && listRead === 'ready';
   return (
-    <div className="manual-page trade-journal">
+    <div className="manual-page trade-journal owned-transfers">
       <header className="manual-page__header">
         <h1>Переводы между своими счетами</h1>
         <p>
@@ -600,7 +626,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
       )}
 
       <section className="manual-card" aria-label="Команда перевода">
-        <h2>
+        <h2 ref={editorHeading} tabIndex={-1} className="owned-transfers__editor-heading">
           {mode === 'create'
             ? 'Новый перевод'
             : mode === 'correct'
@@ -637,7 +663,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
           reviewed={reviewed}
           review={
             review && (
-              <p>
+              <p role="status">
                 Проверены ревизии счетов: {review.fromRevision} и {review.toRevision}
                 {review.version !== null ? `; версия перевода: ${review.version}` : ''}.
               </p>
@@ -694,13 +720,12 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
                 aria-label={`Перевод ${version.transferId}`}
                 key={version.transferId}
               >
-                <h3>Перевод {version.transferId}</h3>
-                <p>
+                <h3>
                   {version.kind === 'void'
-                    ? 'Отменён'
+                    ? 'Отменённый перевод'
                     : `${version.quantity} ${version.instrumentName}${version.instrumentSymbol ? ` (${version.instrumentSymbol})` : ''}`}
-                </p>
-                <p>
+                </h3>
+                <p className="owned-transfers__direction">
                   <Link to={`/manual-accounts/${version.fromAccountId}`}>
                     {accounts.find((account) => account.id === version.fromAccountId)?.name ??
                       version.fromAccountId}
@@ -715,6 +740,10 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
                   Версия {version.version}; время {version.occurredAt}; порядок{' '}
                   {version.orderWithinTimestamp}.
                 </p>
+                <details className="owned-transfers__identity">
+                  <summary>Идентификатор перевода</summary>
+                  <p>{version.transferId}</p>
+                </details>
                 <div className="trade-actions">
                   {version.kind !== 'void' && (
                     <>
@@ -722,7 +751,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
                         type="button"
                         className="manual-button manual-button--secondary"
                         disabled={blocked || needsRefresh}
-                        onClick={() => stage('correct', version)}
+                        onClick={(event) => stage('correct', version, event.currentTarget)}
                       >
                         Исправить
                       </button>
@@ -730,7 +759,7 @@ function OwnedTransfersOwner({ ownerId }: { ownerId: string }) {
                         type="button"
                         className="manual-button manual-button--secondary"
                         disabled={blocked || needsRefresh}
-                        onClick={() => stage('void', version)}
+                        onClick={(event) => stage('void', version, event.currentTarget)}
                       >
                         Отменить перевод
                       </button>

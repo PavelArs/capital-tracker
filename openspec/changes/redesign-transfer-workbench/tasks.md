@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
-- [ ] 1.1 Record audit/keep-simplify-remove scope, pipeline inspection, baseline and strict valid artifacts.
-- [ ] 1.2 Independently extend TRANSFER-UI for TRANSFER-UX-001/002/003; review scenarios and demonstrate expected new-behavior RED on predecessor, retaining existing financial/security assertions.
+- [x] 1.1 Record audit/keep-simplify-remove scope, pipeline inspection, baseline and strict valid artifacts.
+- [x] 1.2 Independently extend TRANSFER-UI for TRANSFER-UX-001/002/003; review scenarios and demonstrate expected new-behavior RED on predecessor, retaining existing financial/security assertions.
 
 ## 2. Implement and review
 
