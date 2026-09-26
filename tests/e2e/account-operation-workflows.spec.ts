@@ -342,6 +342,7 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
       await newWorkbench.evaluate((node) => node.scrollIntoView({ block: 'start' }));
       await page.screenshot({
         path: testInfo.outputPath(`trade-workbench-${theme}-${width}.png`),
+        animations: 'disabled',
         fullPage: false,
       });
       await table.scrollIntoViewIfNeeded();
@@ -363,6 +364,7 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
       await expect(lotTable).toBeVisible();
       await page.screenshot({
         path: testInfo.outputPath(`trade-results-${theme}-${width}.png`),
+        animations: 'disabled',
         fullPage: false,
       });
       await expect(summary).toBeFocused();
