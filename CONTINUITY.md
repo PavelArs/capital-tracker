@@ -13,11 +13,10 @@ account series. Legacy Dashboard is not the investment-accounting source of trut
 Owner2026-09-26 reviewed the preview and rejected the current visuals/usability.
 Complete frontend redesign is now required: modern restrained responsive Russian UX,
 functionality first, optional early-2000s influence, no excess decoration/animation.
-Read docs/frontend-redesign-plan.md (FUI-01..06, all pending) and the dated target-brief
+Read docs/frontend-redesign-plan.md (FUI-01..06, partial or pending) and the dated target-brief
 amendment. This covers navigation/workflows/all screens, not CSS polish alone. Swap
-runtime gates now pass; independent review waits for quota. The first shell slice is implemented
-while that review remains pending. The next
-owner visual review is after redesign; current functional UI checks are not UX approval.
+runtime and independent review now pass; swaps and four initial frontend slices are
+archived. The next owner visual review is after redesign; current functional UI checks are not UX approval.
 
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
 shared runner integration and Docker. Isolated worktrees for independent work;
@@ -78,7 +77,7 @@ Its external provider fixtures are demo data, not live chain or market observati
 
 Canonical openspec/specs describe verified behavior; archived changes hold concrete
 acceptance, design, persistence and command/image evidence. Do not replay all historical
-checks to recover context. Archived capabilities use schema21; active swaps add22. Read
+checks to recover context. Archived capabilities now include schema22 asset swaps. Read
 brownfield-audit.md before any legacy upgrade because old migrations have destructive
 history and explicit preflight refuses unsafe states.
 
@@ -194,202 +193,76 @@ Archive synced6added/17modified requirements:23delta blocks match except blankli
 The archive command saw8/9tasks because final task includes archival/postcomparison; its
 last checkbox is completed only after that procedure. No functional verification was skipped.
 
-## Remaining whole goal and next work
+## Latest independent review and archives — 2026-09-26
 
-Active `record-asset-swaps` is incomplete,9/12tasks done (contract+realRED, implementation and scopedruntime verified).
-Read its proposal/design/persistence/specs/tasks/verification before continuing. Root has
-implemented backend migration22/store/API/connected-loader integration6658dbc, purecore
-0e06fa9 and parser6450a57/8d0f54c. Original-lot incoming fees and preheldFIFO fees are explicit;
-consideration nullable/known0 is independently preserved. Swap result is consideration
-minus principal/fee consumed basis, separate from actual USD trade totals and external flows.
-Incoming basis equals declared gross consideration, never inferred outgoing cost or peg.
+Owner reported restored quotas. Independent agents ran in detached worktrees at175120a:
+Sol reviewed shell/directory/workspace/workflows and screenshots; Astra reviewed swaps
+finance/persistence/security/recovery and actual evidence; Luna audited docs/link status.
+No paid fallback. Read docs/reviews/2026-09-26-frontend.md and the archived swap review.md.
+All five changes archived via OpenSpec1.2.0 after required findings were resolved:
+- record-asset-swaps:12/12, schema22 exact swaps, explicit fee source and nullable evidence,
+  connected FIFO/CSV/history, immutable owner-scoped create/correct/void and SPA recovery.
+- redesign-application-shell:8/8, responsive grouped navigation/manual-account landing,
+  honest legacy access, restrained real login/MFA and focus behavior.
+- redesign-account-directory:6/6, accounts lead, explicit mounted creation and valuation,
+  retained name/request ID/error, pagination and exact selected-account preview.
+- redesign-account-workspace:6/6, mounted operations/analytics/initial-data sections,
+  preserved retry/eligibility guards and honest saved-opening labels.
+- focus-account-operation-workflows:6/6, individually visible trade/swap/reward/CSV editors,
+  mounted independent drafts/File, shared results and correction/void reveal.
+Archives: openspec/changes/archive/2026-09-26-<name>/. Active changes are empty at this checkpoint.
+Canonical comparison verifies42delta/97untouched requirement blocks and20byte-identical
+untouched spec files;33canonical specs pass strict validation. All required behavioral
+and review work was complete before archive; each final checkbox includes the subsequent
+archive/comparison procedure and is marked only after it passed.
 
-Actual evidence so far: predecessor pure10/10RED and HTTPS2/2RED; root403tests/18suites
-and build/scopedBiome pass. Schema22BEimage
-sha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
-Three new PG families pass (connected correction/receipt preservation, fee/null/zero/
-allocation/lifecycle, actual deferredCOMMIT witness/rollback). SWAP-API realHTTPS passed
-1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI and its Russian editor are now implemented/verified below; do not mark archive-ready. Logs/harnesses are
-/private/tmp/capital-swap-* and /private/tmp/capital-swaps-*; verification.md records scope.
+Final followup evidence: docs/reviews/2026-09-26-verification.md. Test-only7773bb77,
+integrated as aad33a9, closes two review-identified CSV evidence gaps in existing PG
+fixtures. Root actual swaps-pg exits0 with7PASS lines across6families plus explicit
+negative CSV subcase: invalid earlier sale strands later swap without row/pin changes;
+real two-PID RR/READ ONLY concurrent CSV preview returns complete old/new DTOs, exact
+pins4→5/hash/basis30→40/profit50→40, once-only swap loads and stale confirmation409.
+Earlier SQL55refusals, populated21 preservation, process/bounds and other gates remain
+in the archived dated verification, not replaced by unit/mocked claims.
 
-Next for swaps: independent persistence/UI review and final scopedgates/archive. Existing20fixture
-fresh counts updated21→22 with only new swap tables excluded/checkedempty in predecessor
-preservation; original predecessor schemas retained. Runner includes new mainPG fixture.
-Retained PG attempt1 exposed a reward preflight matcher conflating swap/reward queries;
-exact1per-table plus exact1swap materialization now asserted. Attempt2passed allreward/
-transfer families and fresh22/populated18auth+19+20preservation on sameBEimage. No new
-swap-specificprocess/bounds claim. Engineering183tests/2suites, backendlint
-(77existingwarnings), strict29OpenSpecitems pass. Final synthetic inventory empty; all
-execsessions terminal, worktreesclean and Nginx/lock hashes preserved.
-Root committed retained fixture/evidence checkpointd7889bd then frontend11aa6ef.
-Russian swap form reviews normalized exact intent, explicit fee source and UUIDs; frozen
-retry survives SPA remount, late responses cannot reinstate stale review, and USD trade
-drafts survive refresh. Current/historical typed consumers show swap-origin intervals and
-separate totals; paged version/allocation evidence distinguishes original/current data.
-Owner guide docs/asset-swaps.md explicitly labels remaining release gates.
+Independent frontend review found old global instrument draft name/symbol retained on
+parameter-only account-route navigation. Actual RED on FE795d1b7a expected empty name,
+received previous draft. Fix94f4bd7 resets only those fields in the existing route reset;
+extended existing WORKSPACE-UI retains all old oracles and adds account-route coverage.
+Independent reviewer approved fix and actual GREEN. Latest real WORKSPACE/WORKFLOW2/2
+PASS25.7s plus SWAP-UI1/1PASS13.2s,1worker0retries, actual HTTPS/password/MFA/backend/PG.
+Frontend118tests/21files PASS3.92s; separate build/lint/types pass,27existingwarnings and
+bundle warning remain. Initial import-order format error explicitly corrected; final
+scoped check passes. Productionauditexit0,2moderate/nohighcritical. Logs and synthetic
+artifacts /private/tmp/capital-reviews-*. No full suite/release/production claim.
+Final FEsha256:64923db446c89cc808f1de71bc28392484e60e06208136a84bb77ab2df528631;
+unchanged BEsha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
+Prior workspace final local build failure remains corrected in its archived record:
+unsupported Testing Library exact options were removed in175120a; the old combined
+shell command had masked that failure with successful lint. Docker/E2E actually passed.
+Never infer one check's exit from a later successful command.
 
-Actual currentFEsha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c.
-Same schema22BEdd90a8c5. Selected realHTTPS7/7PASS1.7m: new SWAP-API/UI plus rewardUI,
-transferUI, valuationUI, primary USDtradeUI and fullCSVimport/rollback.1worker0retries.
-SwapUI11.9s includes committed-response-loss/SPA identicalretry, exact origins/allocations,
-unknown→0 correction/void and delayed actual response after concurrent pin change. Logs/
-harness/artifacts /private/tmp/capital-swaps-ui-green*. Fullfrontend106tests/16filesPASS;
-later supplemental6tests/2filesPASS (3new render/control tests; no API/authmock). Tests-only
-type metadata/options corrected then finaltsc and3/3rerunPASS; failure evidence retained.
-Build/lint27existingwarnings/scopedBiome/strictE2Etypes/OpenSpec29itemsPASS; Vitechunk/proxy
-warnings remain. Productionauditexit0,2existingmoderate/nohighcritical. No package changes.
-All sessions terminal, labeled containers/networks empty, Nginx/lock unchanged.
-Do not repeat passed backend403/retainedPG/selectedHTTPS unless changes justify it. No full
-suite/release/whole-project pass claimed. Details in active verification.md.
+## Next work and remaining whole goal
 
-Sep26 root added required frontend redesign to brief/backlog/continuity inbe35646.
-Swap task3.1 now passes: realPG main4families including55directSQL refusals checked
-by exactSQLSTATE/full-row fingerprint, positive null/0/30-digit/fee controls, actual
-deferredCOMMIT witness. `migrations.cjs --from21` constructs native populated21,
-upgrades with actual CLI22, preserves every old schema/row/auth factor/session/CSV,
-reward/transfer receipt, price/FX, then exact no-op/downgrade refusal. SameBEdd90a8c5;
-no product change/rebuild. /private/tmp/capital-swaps-schema22-attempt1.log exit0.
-Only isolated e2e resources cleaned; local preview/data remain separately preserved.
-Later Sep26 checkpoint closes3.2/3.3: mainPG6/6 and boundsPG6/6 pass on sameBEdd90a8c5.
-Four actual two-process owner-advisory/CAS races; exact1000active/10000owner-version/
-local/passive revisions; aggregate1001preflight before swap rows;102allocation fragments
-over3pages with complete totals and upstream pin invalidation. ConnectedCSV null→known,
-confirm/rollback/source-funding refusal/immutable bytes and reward/transfer dependencies.
-Two-PID RR/read-only history/chart/selectedportfolio concurrent corrections see complete
-old then new states, with one nonempty swap load/count per reader. Logs/private/tmp/
-capital-swaps-bounds-attempt{1,2}.log and capital-swaps-connected-attempt1.log.
-Bounds fixture added to runner. Engineering183/2suitesPASS6.34s, scopedBiome/syntax/
-OpenSpec29PASS, protected hashes unchanged, e2e resources empty, preview volume present.
-No new browser/build/migration/audit/fullsuite claim; no product/image changes this step.
-Independent persistence/UI review and final verification/archive remain pending.
+Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
+are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
+compact verbose journal context and improve field/actions/results hierarchy. Track
+correction/void focus announcement, delayed create completion stealing focus, and
+focused desktop-navigation collapse on resize as nonblocking UX review followups.
+Keep chart/max-period expansion deferred for the owner's later review.
 
-Active frontend change `redesign-application-shell` is implemented,6/8tasks; independent
-review/archive pending quota. Isolated worktree capital-tracker-frontend-shell, branch
-refactor/frontend-shell. Read its verification.md, docs/application-shell.md and the
-frontend screen audit/backlog. Root landing now opens manual accounts; desktop sidebar,
-in-flow mobile menu, active links/skip/Escape focus, labelled preserved legacy overview,
-restrained login/MFA and light/dark tokens. No financial/API/auth-logic/schema changes.
-Outlet stays mounted through menu/viewport changes. FUI-01/02 remain partial; long
-account/editor/valuation screens still need FUI-03/04. No owner UX approval is claimed.
+Still required: broader import/automatic reward and chain reconciliation; automatic
+prices/retention/history; whole-portfolio allocation/cash UI; six network adapters with
+honest coverage; optional AI; release/security/backup-restore hardening and consolidation.
+Selected manual valuation is not complete all-account/cash accounting. CoinGecko
+permanent history retention remains unapproved. Accounting locks have no dedicated
+transaction-local timeout; track explicit policy/held-lock refusal/reusable-key tests
+as shared release hardening. Current race tests prove serialization, not bounded waits.
+Instrument receipt labels currently depend on the create/read-only catalog remaining
+immutable; future catalog edits require explicit receipt preservation.
 
-Actual Sep26 shell gates: predecessor109/17frontendPASS; new static3/3expectedRED plus
-realHTTPSRED at successful MFA landing(/ versus /manual-accounts). Then112/18frontend
-PASS2.80s, build/lint27existingwarnings, scopedBiome/strictE2Etypes, OpenSpec30PASS.
-First browserGREEN: swapPASS, shellfailed new test's wrong logout label; corrected
-selector to retained “Выход”, no security/financial oracle changed. Final3/3realHTTPS
-PASS34.5s: SHELL-UI, extendedSWAP-UI, retainedISO-003-B wallet navigation/reload.1worker,
-0retries, actualfresh22/productionCLIseed/password/MFA/twoBEreplicas/PostgreSQL. Saved
-account/root reload, anonymous/password-only denial, mobile keyboard, legacy notice,
-logoutrevocation; retainedswapno-remount/independentdraft/explicitretry/financialchecks.
-FEsha256:62543d34b7a1f20e88944f245ebece7543edd2a762c83ac74e5c57106f8ce823,
-unchangedBEdd90a8c5. Root inspected synthetic360/768/1440 light/dark/login/error/recovery
-screenshots; independent review is NOT substituted. Logs/harnesses/artifacts
-/private/tmp/capital-shell-*. Productionaudit firstsandboxENOTFOUND, authorizedretry
-exit0 with2moderate/nohighcritical; no package/lock changes. ExistingVitechunk/proxy
-http2warnings retained. FullE2E/backend/migrationmatrix/hostedCI/release gates unrun.
-Test containers/networks removed; preview still stopped30h, durable volume present and
-old preview image retained. Owner Nginx and lock hashes unchanged. No project removal.
-Shell implementation committed4049132 and fast-forwarded into integration; its worktree
-is clean and the three temporary dependency symlinks are removed. Actual packages and
-all project folders retained. Integrated strict OpenSpec30/30 and apply6/8 confirmed.
-Next active slice `redesign-account-directory` is implemented (4/6 tasks) from60ee94e
-in capital-tracker-account-directory, branch refactor/account-directory. Read its
-proposal/design/specs/tasks/verification and docs/account-directory.md. Directory-first
-entry, explicit mounted create form with focus/Escape, retained name/request-ID/error,
-success link outside the closed form and native mounted valuation disclosure. Scoped
-page CSS and checkbox sizing only; no financial/backend/auth/schema/package changes.
-
-Actual Sep26 evidence: retained112/18 unit PASS2.82s; two new static tests genuinely
-RED for absent trigger/disclosure and real DIRECTORY-UI RED for visible initial form.
-Then114/19 frontend PASS3.20s, build/lint27existing warnings, strict E2E types/scoped
-format/OpenSpec31 PASS. Real DIRECTORY-UI/SHELL-UI/MPV-UI all PASS37.1s, one worker,
-zero retries:51 synthetic accounts and two-page catalog, draft focus/resize/collapse,
-actual committed-response loss/replay200/same UUID/no duplicate SQL count, reload;
-retained exact308.64/61.728/246.912, gaps/null, stale result, no business/provider writes.
-Valuation selection/time/result survive collapse without extra request. Root inspected
-360/768/1440 screenshots; independent review is still pending, not replaced by this.
-FEsha256:340b653f8c3dbf678a193120c03bfeeb0b43e9892a4e09e849fad32260dea89d,
-unchangedBEdd90a8c5. Logs/harness/artifacts /private/tmp/capital-directory-*.
-Production audit exit0 with two moderate/no high-critical findings. Test resources
-cleaned; preview volume and old FE7eff01d1 preview tag preserved. No full suites or
-new migration/release/production claim. Owner Nginx and lock remain protected.
-Directory implementation committed f391bdc and fast-forwarded into integration; worktree
-clean, three temporary dependency symlinks removed, actual packages retained. Integrated
-strict OpenSpec31/31 passes. Next: account-detail hierarchy and focused operation
-workflows; required independent
-swap/shell/directory review when available. No archive until independent review passes.
-
-Sep26 next slice `redesign-account-workspace` implemented,4/6tasks; required independent
-review/archive remain pending quota. Worktree capital-tracker-account-workspace, branch
-refactor/account-workspace, from5099690. Read docs/account-workspace.md and active
-verification.md. Account sections Операции/Аналитика/Начальные данные retain mounted
-editors/results, exact drafts and original retry/eligibility/cross-editor guards.
-Shared journal recovery remains reachable from every section. Parent account-scoped
-selection survives opening-revision journal remount; saved opening snapshot has an
-honest initial-data label. No accounting/auth/backend/API/schema/dependency changes.
-
-Actual evidence:114/19frontend baselinePASS3.30s; actual HTTPS WORKSPACE-UI predecessor
-RED (historical instant expectedhidden/receivedvisible), then116/20PASS3.36s,
-lint27existingwarnings, strict E2E types, format/OpenSpec32PASS. Correction discovered
-in the next slice: initial local build passed, but final build including the new unit
-file failed on three unsupported Testing Library exact options. A subsequent lint
-masked its exit in the combined shell invocation, causing the previous false build
-claim. The operations slice removes only those ignored options; separate final build
-passes. Actual prior Docker build/E2E results remain valid (image excludes test files).
-Initial selected
-browser attempt5/7PASS; two explicit test-navigation mistakes were corrected with
-all financial assertions retained. Final layout+those two cases3/3PASS39.8s and
-retained hidden-section chartVCH-UI1/1PASS14.2s, one worker/no retries: eight distinct
-selected cases pass across attempts. Includes exact0.123456789012345678 draft,
-100 historical/112.35 remaining cost, committed201→same200/no duplicate SQL,
-opening unknown/zero/history/restart, carry-in2/300, late analysis and chart0/100/null/150.
-Root inspected final responsive screenshots; this is not independent review.
-FinalFEsha256:7051d24c4bbfe691e127ce2e6d7a448cc2f8f8b2aceecc0b9d6f2de939c59839,
-unchangedBEdd90a8c5. Evidence /private/tmp/capital-workspace-* retains failures.
-Production audit exit0,2moderate/nohighcritical. E2E resources cleaned; preview volume,
-old preview image/stopped containers, owner Nginx and lock unchanged. No preview update.
-Independent reviews for swap/shell/directory/workspace remain required before archives.
-
-Sep26 next slice `focus-account-operation-workflows` implemented,4/6tasks, in
-capital-tracker-operation-workflows, branch refactor/operation-workflows, from3ad13f7.
-Read docs/account-operation-workflows.md and active verification.md. Native choice
-shows trades/swaps/rewards/CSV individually while all remain mounted; shared trade
-history reveals correction/void without submitting. Existing controller/guard code
-is unchanged. Exact drafts, CSV File, hidden CSV locks and original replay survive.
-No backend/auth/schema/dependency/deployment changes; no preview update.
-
-Actual evidence:116/20 baselinePASS3.38s; actual predecessor HTTPS RED at initially
-visible CSV;118/21frontendPASS3.44s. Separate corrected local build, lint27warnings,
-scopedBiome12files/strictE2Etypes/OpenSpec33 and productionaudit exit0,2moderate/nohighcritical.
-First browser attempt3/4PASS: SWAP-UI12.6s, REWARD-UI12.7s, CSV committed-confirm/
-expiry/MFA14.0s. New keyboard case initially failed native ArrowDown/Enter, then Space;
-isolated HTML reproduced the installed macOS Chromium behavior. Native Cyrillic CDP
-key input succeeds without DOM assignment or application mocking. Next attempt passed
-draft/File/width/section assertions but exposed a wrongly scoped cancel-button locator;
-page exact-name lookup fixed it, with all assertions retained. Final WORKFLOW-UI1/1
-PASS13.9s also verifies exact correction/void target, no financial writes, and separate
-reward draft. Four distinct selected cases pass across attempts,1worker0retries.
-Root inspected mobile/tablet/desktop screenshots; verbose mobile context still needs
-simplification. Evidence/failures/artifacts /private/tmp/capital-workflows-*.
-FEsha256:795d1b7ae04cc6d26753e418a3dc776c439e5d05635ee888e6e5c402b71d555c,
-unchangedBEdd90a8c5. Synthetic containers/networks cleaned; owner Nginx/lock hashes,
-preview volume/tag/stopped containers preserved. Review3.1/archive3.3 remain pending;
-root inspection does not replace independent review. Next: compact journal context,
-individual field ergonomics/results, remaining frontend redesign and required reviews.
-
-Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
-broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
-portfolio value/allocation/cash UI, six network adapters and honest coverage, optional
-AI, full release/security/backup-restore hardening, final consolidation. Selected
-manual valuation is not complete all-account/cash accounting. CoinGecko permanent
-history retention remains unapproved; display FX permission does not remove that gate.
-No production rollout or folder moves/deletions now. Finish each small change through
-review/verification/archive; no broad rewrite. Chart/max-period expansion deferred.
-
-Agents carry_docs_review(Luna) and historical_ui(Sol) both hit quota untilSep30 during
-swap implementation. Do not retry or purchase credits. Root inspected their stopped diffs,
-reviewed/committed/integrated them; their current swap-contract/swap-core worktrees are
-clean and temporary dependency symlinks removed. Earlier reward/worktrees and unused
-reward-schema worktree retained. gate_acceptance previously quota-limited untilSep29.
-Independent persistence/UI review remains pending, not silently replaced by earlier design
-review. Root alone operates shared Docker/migrations/lockfiles/deployment.
+No preview update, owner DB access, production rollout, remote push or project cleanup.
+Preserve preview volume/MFA/TLS/credentials, old image tag7eff01d1 and stopped containers.
+Review worktrees remain for inspection. Root alone owns Docker, migrations, locks and
+deployment; protect owner Nginx/lock hashes above. Follow worktree/model-routing rules
+for the next independent tasks; prior quota errors are historical, not a current blocker.

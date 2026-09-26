@@ -4,6 +4,8 @@
 Provide exact database-only USD valuation for an explicitly selected set of manual accounts, preserving coverage and price gaps within one private snapshot.
 ## Requirements
 ### Requirement: MPV-1 Exact value for an explicit manual-account subset
+Selected-account positions SHALL include effective swaps exactly once at their recorded time. Swap consideration and realized result SHALL not be added as cash, an external contribution/withdrawal, or market value; only explicitly stored prices value resulting holdings.
+
 The system SHALL value1..10 unique selected owned manual accounts at one UTC instant
 from stored effective history and exact-time manual USD prices. It SHALL retain
 per-account provenance and exact decimal strings, with no provider call or inferred
@@ -40,7 +42,14 @@ Selected accounts SHALL include reward quantities with independent cost/price co
 - **WHEN** a reward partly moves between two selected accounts
 - **THEN** aggregate value counts currently held quantities once and preserves unknown cost evidence; source income is not duplicated
 
+#### Scenario: SWAP-MPV-SELECTED
+- **GIVEN** selected accounts include a swap and exact prices for the resulting holdings
+- **WHEN** the selected-account valuation is calculated
+- **THEN** resulting asset quantities are valued once from stored prices, while consideration/result creates neither a cash position nor an external flow
+
 ### Requirement: MPV-2 Private bounded snapshot without mutations
+The selected-account snapshot SHALL load each required connected history once including effective swaps, even when a connected source lies outside the selected subset. A concurrent swap mutation SHALL leave the established snapshot wholly old and a later preview wholly current.
+
 The preview SHALL use one read-only repeatable-read PostgreSQL snapshot across all
 selected accounts and price versions. Authentication, full MFA, CSRF, no-store,
 strict request fields and owner-scoped selection SHALL apply. Invalid saved history
@@ -69,11 +78,19 @@ valuations.
 - **THEN** the selected subset result remains coherent with its original connected revision and subsequent
   preview sees the corrected value
 
+#### Scenario: SWAP-MPV-SNAPSHOT
+- **GIVEN** a selected recipient depends on a connected source swap outside the selected account set
+- **WHEN** that source swap is corrected after the preview snapshot begins
+- **THEN** the established preview is wholly old and a later preview is wholly current, with no repeated connected-history load per selected account
+
 ### Requirement: MPV-3 Russian selection and trustworthy asynchronous results
 The manual-accounts page SHALL offer explicit account selection and UTC preview,
 exact per-account/aggregate values, coverage explanations and manual-subset caveats.
 Editing selection/time or leaving the view SHALL invalidate older pending results
-without disturbing account creation or catalog paging.
+without disturbing account creation or catalog paging. The supplementary panel SHALL
+start collapsed and offer a clear valuation action. Collapsing the panel SHALL only
+hide it, preserving selection, time and current results without changing the intent
+or issuing another request; page navigation SHALL still invalidate older responses.
 
 #### Scenario: MPV-UI Exact display and stale intent
 - **GIVEN** real login with MFA, multiple manual accounts and stored exact prices
@@ -81,3 +98,9 @@ without disturbing account creation or catalog paging.
 - **THEN** the Russian summary/table show the exact sum and any missing-data reasons
 - **WHEN** a real response is delayed and the owner changes selection or time
 - **THEN** the old result stays cleared and cannot overwrite the new intent; only an explicit fresh preview supplies a result.
+
+#### Scenario: MPV-UI-DISCLOSURE Preserve a deliberate valuation
+- **GIVEN** a real exact selected-account preview
+- **WHEN** the owner collapses and reopens the valuation panel
+- **THEN** selected accounts, UTC time, exact result and missing-data explanations remain
+- **AND** no extra preview or business mutation is issued

@@ -592,11 +592,20 @@ see the active swap verification record.
 
 The later scoped swap runtime checkpoint also passed on2026-09-26. Main fixture now
 has6families including connected CSV funding/sales/rollback, reward/transfer
-dependencies and three real concurrent RR/read-only history/series/selected-portfolio
-reads. Every chart/selected-account request materializes nonempty swap history once.
+dependencies and four real concurrent RR/read-only history/series/selected-portfolio/CSV
+preview reads. Review added a rejected earlier CSV sale that would strand a later swap;
+its exact error envelope and every business row remain unchanged. Every chart/selected-account request materializes nonempty swap history once.
 The new `asset-swaps-bounds-db.cjs` has6families: four separate-process races through
 actual owner advisory locks;1000active swaps;10000owner versions with spare local
 ticks; local/passive10000revision budgets; connected1001 refusal before row loading;
 and102allocation fragments across3pages with complete totals/upstream pin invalidation.
 Both fixtures are included in the full runner. No browser case was added for these
-database boundaries. Independent review/final delivery/archive remain open.
+database boundaries. Independent review/final scoped verification/archive completed
+on2026-09-26; see the archived swap record and docs/reviews/2026-09-26-verification.md.
+
+Release hardening still required: shared accounting advisory locks have no dedicated
+transaction-local lock-wait timeout. Serialization tests release the lock explicitly;
+they do not prove bounded refusal. A separate change must define the timeout policy,
+verify timely private failure under a held owner lock, preserve every row/request key
+and prove successful explicit retry after release. Do not present current behavior
+as a verified bounded wait.

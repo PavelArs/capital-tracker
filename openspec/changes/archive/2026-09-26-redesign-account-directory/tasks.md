@@ -9,9 +9,9 @@
 
 ## 3. Review and delivery
 
-- [ ] 3.1 Independently review focus, draft/idempotency, disclosure semantics and screenshots; record quota blockers honestly and resolve findings before archive.
+- [x] 3.1 Independently review focus, draft/idempotency, disclosure semantics and screenshots; record quota blockers honestly and resolve findings before archive.
 - [x] 3.2 Run the scoped manifest, record actual RED/GREEN/images/screenshots/unrun checks and protected hashes, update owner/backlog/continuity docs and clean only synthetic resources.
-- [ ] 3.3 After required review and verification pass, archive with supported OpenSpec commands and compare synchronized/untouched canonical requirements. Do not mark the whole frontend complete.
+- [x] 3.3 After required review and verification pass, archive with supported OpenSpec commands and compare synchronized/untouched canonical requirements. Do not mark the whole frontend complete.
 
 ## Scoped verification manifest
 

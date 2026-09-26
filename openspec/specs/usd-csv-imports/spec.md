@@ -43,6 +43,8 @@ Changed bytes and overlapping exports MUST NOT be heuristically deduplicated.
 - **AND** drafts and rolled-back originals count; the64MiB bound is not misrepresented as independently reachable below256 maximum-size files
 
 ### Requirement: CSV-002 Explicit inspection and exact economic preview
+CSV inspection and preview SHALL calculate candidate rows against the complete current connected history, including effective swaps, without treating a swap as a synthetic USD trade or changing its consideration. A candidate which conflicts with or makes a later swap prefix invalid SHALL be rejected as a whole.
+
 The system SHALL inspect a stored source before requiring economic mapping, returning
 all bounded headers/rows with ordinal and physical start line or one structural error
 without a partial prefix. Inspection SHALL work in every batch state without writes.
@@ -105,7 +107,14 @@ Candidate FIFO SHALL include rewards and propagate nullable sale/remaining costs
 - **WHEN** a mapped sale consumes an unknown-cost reward
 - **THEN** preview shows valid quantity history but null affected cost/profit with exact completeness
 
+#### Scenario: SWAP-CSV-PREVIEW
+- **GIVEN** an effective swap depends on inventory later changed by a candidate CSV sale
+- **WHEN** the candidate preview makes the swap chronology invalid
+- **THEN** preview identifies the invalid candidate and creates no accepted trade, swap version, or partial import
+
 ### Requirement: CSV-003 Whole-batch atomic confirmation and replay
+CSV confirmation SHALL replay and validate the complete candidate history with all effective swaps before writing any trade versions. Successful confirmation SHALL preserve each swap identity/version and advance passive connected account revisions according to existing connected-journal rules; it SHALL NOT rewrite swap receipts.
+
 Confirmation SHALL reparse immutable source/settings on the server and bind the exact
 parser version, source, account/batch, normalized rows and locked journal revision to
 the preview hash. The hash MUST NOT be treated as authentication or proof of a human
@@ -165,7 +174,14 @@ Confirm SHALL revalidate connected reward history under the common owner-first l
 - **WHEN** a reward correction commits after a saved sale candidate
 - **THEN** confirmation returns409 until explicit review; original CSV bytes and receipts remain unchanged
 
+#### Scenario: SWAP-CSV-CONFIRM
+- **GIVEN** a valid reviewed CSV batch and an effective later swap in connected history
+- **WHEN** the batch is confirmed
+- **THEN** the entire candidate is validated with the swap before any write, trade versions commit atomically, and the existing swap receipt is unchanged
+
 ### Requirement: CSV-004 Conditional complete rollback preserves history
+CSV rollback SHALL validate the complete post-rollback connected history including every effective swap. If removing imported trades makes any later swap or dependent history invalid, rollback SHALL leave import and accounting rows unchanged.
+
 Rollback SHALL append N terminal void versions only when every imported trade still
 has its exact initial create head, N version slots remain and the complete remaining
 history is valid. It SHALL remove the whole batch from candidate calculation at once. A reviewed
@@ -203,7 +219,14 @@ budget remains distinct from saved trade versionCount.
 - **WHEN** the complete connected component remains valid
 - **THEN** rollback commits atomically and invalidates each affected account pin once
 
+#### Scenario: SWAP-CSV-ROLLBACK
+- **GIVEN** removing an imported trade would make a later effective swap exceed available inventory
+- **WHEN** rollback is requested
+- **THEN** rollback is refused atomically and preserves the import, all swap versions, trade rows and connected revisions
+
 ### Requirement: CSV-005 Coherent bounded preview and provenance
+CSV preview, provenance, and rollback reads SHALL use one coherent connected snapshot containing effective swaps. Returned trade totals and batch receipts remain trade-only; any swap evidence remains separately identified and pagination SHALL not truncate validation history.
+
 Preview and live rollbackReview SHALL read journal revision, complete history, batch
 and owned labels in one read-only REPEATABLE READ snapshot. Carry-in baseline records
 SHALL be loaded through that same snapshot manager and applied consistently to all
@@ -244,6 +267,11 @@ Reward history SHALL be read in the same candidate/history snapshot and without 
 #### Scenario: REWARD-CSV-SNAPSHOT
 - **WHEN** a concurrent reward correction overlaps preview reads
 - **THEN** one complete old or new candidate is returned; no mixed cost completeness is shown
+
+#### Scenario: SWAP-CSV-SNAPSHOT
+- **GIVEN** an owner requests a pinned CSV preview while another connection commits a connected swap correction
+- **WHEN** the preview completes from its established snapshot
+- **THEN** all trade and swap evidence reflects one complete old revision; the next request sees the new revision, without mutating source bytes or swap receipts
 
 ### Requirement: CSV-006 Protected Russian import journey preserves intent
 The account journal SHALL provide Russian upload/inspect/map/preview/confirm and

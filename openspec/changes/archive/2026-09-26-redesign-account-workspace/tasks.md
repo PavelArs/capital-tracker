@@ -9,9 +9,9 @@
 
 ## 3. Review and verification
 
-- [ ] 3.1 Independently review financial lifecycle/locks, accessibility, retained nodes and responsive screenshots; resolve findings before archive. Quota-blocked review stays pending.
+- [x] 3.1 Independently review financial lifecycle/locks, accessibility, retained nodes and responsive screenshots; resolve findings before archive.
 - [x] 3.2 Verify scoped checks, record actual RED/GREEN/images/unrun checks and hashes, update backlog/continuity and clean only synthetic test resources.
-- [ ] 3.3 Archive using supported OpenSpec commands after review and verification; compare canonical/untouched requirements. Do not mark the full frontend complete.
+- [x] 3.3 Archive using supported OpenSpec commands after review and verification; compare canonical/untouched requirements. Do not mark the full frontend complete.
 
 ## Scoped verification manifest
 

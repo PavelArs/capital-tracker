@@ -5,6 +5,8 @@ Provide a coherent bounded history of one account's tracked position values usin
 exact-time manual USD prices, with exact totals, explicit gaps and a Russian chart.
 ## Requirements
 ### Requirement: VCH-1 Bounded exact account series
+Each historical sample SHALL include the current-effective connected swap events at that instant, with incoming fees and original FIFO provenance reflected in quantities. Exact-time prices alone determine value; swap consideration/result SHALL not be added as a separate holding or cash flow. The existing sampling schedule and bounds remain unchanged.
+
 The system SHALL return a coherent read-only historical valuation series for one
 owned account for normalized from/to instants at most30 elapsed days apart. It
 SHALL sample the start, every24 hours and the exact end once, at most31 sorted
@@ -15,7 +17,7 @@ versus zero semantics SHALL match the existing point valuation contract.
 Every sampled point SHALL reconstruct current-effective positions through the complete connected
 transfer history at that point instant, respecting transfer arrival and original lot intervals.
 The existing30-day period, sampling schedule, exact-time pricing and gap behavior SHALL remain
-unchanged. Each point SHALL include the complete connected position set up to13,200 original
+unchanged. Each point SHALL include the complete connected position set up to15,200 original
 lots without per-point paging or truncation.
 
 #### Scenario: VCH-TIMELINE Historical quantities, gaps and corrections
@@ -38,18 +40,24 @@ lots without per-point paging or truncation.
 - **THEN** the source point loses the moved quantity at the effective instant and the recipient point gains
   it, with the same original lot basis and no duplicated point inventory
 
+#### Scenario: SWAP-VCH-SERIES
+- **GIVEN** a chart range includes the exact instant of an effective swap and exact-time prices for both instruments
+- **WHEN** the bounded series is requested
+- **THEN** points before and after the swap use the respective holdings, existing sample bounds remain unchanged, and swap consideration is not counted as cash or price
+
 ### Requirement: VCH-2 Coherent private database history
+A chart request SHALL load the connected ledger once per snapshot including effective swaps, and every sample SHALL derive from that same complete history. Swap changes SHALL not cause repeated per-point loads or mixed revisions.
+
 The system SHALL load history once and batch exact-time prices in one owner-scoped
 RR READ ONLY transaction. It SHALL preserve authentication, MFA, origin and no-store
 boundaries, make zero provider calls and mutate no business data. Existing point
 valuation and historical accounting endpoints SHALL retain their behavior.
 
 A chart request SHALL load the connected journal once inside its existing single REPEATABLE READ
-transaction, then evaluate all unchanged sample instants from that snapshot. All relevant
-source, recipient, transfer and price revisions SHALL be coherent; the established point count
-and period bounds SHALL not multiply connected-ledger queries. A series SHALL omit
-point-specific transferSummary from its top-level metadata; it SHALL NOT present
-the first sample's transfer basis as a whole-period total.
+transaction, then evaluate all unchanged sample instants from that snapshot. All relevant source, recipient, transfer, reward, swap and price revisions SHALL be
+coherent; the established point count and period bounds SHALL not multiply connected-ledger queries. A series SHALL omit
+point-specific transferSummary and swapSummary from its top-level metadata; it SHALL NOT present
+the first sample's transfer basis or swap summary as a whole-period total.
 
 The once-loaded connected ledger SHALL include effective rewards. A reward correction SHALL invalidate dependent series pins; per-point rewardSummary is omitted while quantity/cost evidence remains correct.
 
@@ -75,6 +83,11 @@ The once-loaded connected ledger SHALL include effective rewards. A reward corre
 #### Scenario: REWARD-VCH-ONCE
 - **WHEN** a bounded series spans a reward and a later connected sale
 - **THEN** one reward history load serves every point, inclusive quantities and unknown cost stay correct, with no provider request
+
+#### Scenario: SWAP-VCH-LOAD
+- **GIVEN** a bounded series crosses multiple swaps and one connected swap correction commits after the read snapshot begins
+- **WHEN** every point is calculated
+- **THEN** all points use the same pre-correction connected ledger; a later series uses the corrected ledger without reloading it per point
 
 ### Requirement: VCH-3 Honest Russian chart and table
 The system SHALL offer an account-detail Russian custom-period form, exact table

@@ -314,3 +314,50 @@ retained with its actual dates. Root inspected fixture setup, transaction barrie
 and exact assertions. Independent persistence/UI review remains blocked by the known
 agent quota untilSep29/30 and is not claimed complete. Final verification/archive
 remain unchecked. Frontend planning can proceed separately without archiving swaps.
+
+
+## Independent review and final scoped verification — 2026-09-26
+
+Required independent review now passes after the recorded fix/evidence closures.
+Earlier quota statuses above describe previous checkpoints. See the consolidated
+[final followup evidence](../../../../docs/reviews/2026-09-26-verification.md) for the
+actual RED, two-field fix,118unit tests, build/lint/types/audit and three selected real
+browser passes on FE64923db4/BEdd90a8c5. Full redesign/release/owner approval remain open.
+
+Independent swap review identified two missing required CSV witnesses, not a confirmed
+product defect. Test-only7773bb77, integrated as aad33a9, closes both in the existing main
+fixture. Root inspected its fixed hash/economic oracles and barriers before execution.
+`swaps-pg.log` exits0 on the unchanged BE/PG16.10 with seven PASS lines across the
+existing six families plus the explicit negative CSV subcase:
+- SWAP-CSV-PREVIEW: a valid earlier sale strands an existing connected swap; exact
+  connected-history error, null candidate/hash, original120basis, normalized valid row,
+  private source bytes/draft state and every business row remain unchanged.
+- SWAP-CSV-SNAPSHOT: fourth concurrent reader variant uses two actual PostgreSQL PIDs,
+  pauses after the real journal read in RR/READ ONLY, commits a connected correction,
+  then compares complete old and next DTOs. Recipient pins4→5, basis30→40/result50→40,
+  independently assembled preview hashes, one swap count/materialization, stale409
+  confirmation refusal and immutable bytes/receipts are asserted.
+All previous main fixture SQL/lifecycle/COMMIT/connected-reader assertions remain.
+No artificial RED was required for these characterization gaps. Agent Node syntax,
+scoped Biome and diff checks pass. Final reviewer inspected the actual successful PG
+log and accepted both evidence closures plus corrected persistence wording: versions
+join an immutable instrument catalog; accounting has no dedicated lock-wait timeout.
+The shared timeout limitation is tracked as release hardening, not a verified bound.
+No outstanding blocking finding remains in the independent review. Existing migration21,
+55SQL refusals, process/bounds fixtures, pure/retained backend checks and earlier selected
+HTTPS passes above supply the rest of task5.2's cumulative scoped manifest.
+
+
+## Archive completion — 2026-09-26
+
+Supported `openspec archive <change> --yes` exited0 after review and behavioral gates.
+The one pending checkbox reported by the CLI was this final archive/comparison
+procedure; it is now complete. All five changes synchronized42delta requirement
+blocks while preserving97other requirement blocks and20untouched spec files byte-for-byte.
+`capital-reviews-spec-comparison.log` and strict `capital-reviews-specs-final.log`
+pass;33canonical specifications and no active changes remain. Generated Purpose text
+was clarified without altering requirements. Original swap proposal retains the CLI's
+nonblocking >10deltas warning; shared-reader contracts were verified together.
+Final test-labeled container/network inventories are empty. Preview volume/tag7eff01d1/
+stopped containers, owner Nginx mode0644/size1348/hash and lock hash remain unchanged.
+No preview update, owner data access, paid service, production or project deletion.

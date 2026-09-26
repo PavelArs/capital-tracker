@@ -8,6 +8,8 @@ is recorded in the archived
 [design](../../changes/archive/2026-09-23-inspect-historical-accounting/design.md).
 ## Requirements
 ### Requirement: HIST-001 Restated exact account snapshots
+Historical account projections SHALL replay swaps as one atomic effective event at their recorded instant, debiting outgoing quantity and crediting net incoming quantity while retaining fee and original-lot provenance. Swap consideration/result SHALL be reported separately from actual USD trade totals and SHALL not become external flow or portfolio value.
+
 The system SHALL reconstruct account positions and cumulative FIFO journal totals at
 an explicit UTC instant from current effective, non-void trade versions and the
 immutable baseline. It SHALL include all executions at or before that instant,
@@ -49,6 +51,11 @@ Effective reward versions SHALL be included as acquisition events at inclusive U
 - **WHEN** a query is before, at or after a reward receipt and subsequent partial sale
 - **THEN** quantity follows the full effective prefix; unknown cost stays null and later correction restates history
 
+#### Scenario: SWAP-HIST-RESTATEMENT
+- **GIVEN** an account has outgoing holdings before a swap and an exact price for the received instrument
+- **WHEN** a historical snapshot is requested at the swap instant and immediately after it
+- **THEN** the outgoing quantity is debited and net incoming quantity credited inclusively at the event, while consideration/result is separate from USD trade totals and market value
+
 ### Requirement: HIST-002 Explicit accounting coverage and baseline
 The system SHALL distinguish an initialized empty journal and known-cost carry-in
 from absent coverage. It SHALL reject pre-coverage and uninitialized-journal reads
@@ -76,6 +83,8 @@ An unknown reward cost within an already initialized journal SHALL NOT invalidat
 - **THEN** history returns its actual quantity with null cost while an uninitialized unknown-cost opening still returns409
 
 ### Requirement: HIST-003 Bounded coherent pages
+Historical pages SHALL be calculated from complete connected histories including effective swaps and carry swap-specific evidence separately from trade-only summary fields. Corrections or voids to any connected event SHALL invalidate old pins; pagination SHALL never truncate replay.
+
 The system SHALL expose only the allowlisted query and response in the design. It
 SHALL use one caller-owned read-only REPEATABLE READ transaction for every database
 read in a response, preserve existing journal bounds, sort positions by canonical
@@ -117,6 +126,11 @@ Reward versions SHALL load once with the connected ledger in the same snapshot; 
 #### Scenario: REWARD-HIST-PIN
 - **WHEN** a concurrent upstream reward correction overlaps a connected historical read
 - **THEN** the snapshot is wholly old or new; stale continuation returns409
+
+#### Scenario: SWAP-HIST-PAGES
+- **GIVEN** an effective swap contributes to historical account positions and a paged history read
+- **WHEN** a connected correction changes the swap's effective result
+- **THEN** the original page remains pinned to its revision, the old continuation is rejected, and a refreshed page reports the complete current history without truncation
 
 ### Requirement: HIST-004 Protected Russian read-only review
 The system SHALL provide a Russian account-detail snapshot form with explicit ISO

@@ -26,7 +26,8 @@ The persistent local preview has not been rebuilt or reset.
 
 Implementation uses installed React/native controls and existing theme variables,
 with no dependency, backend, authentication, schema, deployment or data changes.
-See [the active change](../openspec/changes/redesign-account-workspace/proposal.md)
-and [verification evidence](../openspec/changes/redesign-account-workspace/verification.md).
-Required independent review and archive remain pending agent quota; root source and
-screenshot inspection does not substitute for that review.
+See [the archived change](../openspec/changes/archive/2026-09-26-redesign-account-workspace/proposal.md)
+and [verification evidence](../openspec/changes/archive/2026-09-26-redesign-account-workspace/verification.md).
+Independent review and archive completed on 2026-09-26. Review also added verified
+instrument-name/symbol reset on parameter-only SPA account changes; switching sections
+within the same account still preserves those drafts. See [the review](reviews/2026-09-26-frontend.md).

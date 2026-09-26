@@ -1,8 +1,8 @@
 # Production dependency security record
 
-Latest scoped recheck,2026-09-26, `focus-account-operation-workflows`: required
+Latest scoped recheck,2026-09-26, independent review followup: required
 `pnpm audit:production` exited0; two moderate Router findings remain, with no
-high/critical findings. Evidence `/private/tmp/capital-workflows-production-audit.log`.
+high/critical findings. Evidence `/private/tmp/capital-reviews-production-audit.log`.
 No dependency/lock changes; the existing findings and release deadline below remain.
 
 Reviewed **2026-09-22** for `patch-production-dependency-advisories`.

@@ -1,8 +1,7 @@
 # Manual-account directory
 
-Status: implemented in active `redesign-account-directory`; scoped verification passes,
-independent review and archive remain pending. This is one part of the frontend
-redesign. The preserved local preview has not yet been updated.
+Status: `redesign-account-directory` passed independent review and scoped verification
+and was archived on 2026-09-26. This is one part of the frontend redesign. The preserved local preview has not yet been updated.
 
 **Ручные счета** now opens with the saved-account list. **Показано счетов** counts only
 loaded rows; use **Показать еще счета** when more are available. Account names and
@@ -23,4 +22,4 @@ remain. This is not the value of all holdings or cash.
 Account details, operation editors, chart periods and the remaining screens still
 need the [planned redesign](frontend-redesign-plan.md). Actual tests, images,
 screenshots and unrun/review gates are in the
-[verification record](../openspec/changes/redesign-account-directory/verification.md).
+[verification record](../openspec/changes/archive/2026-09-26-redesign-account-directory/verification.md).

@@ -11,9 +11,9 @@
 
 ## 3. Review and verification
 
-- [ ] 3.1 Independently review navigation, focus, responsive screenshots, honest scope and preservation of auth/recovery behavior; resolve findings and record any quota blocker without claiming review completion.
+- [x] 3.1 Independently review navigation, focus, responsive screenshots, honest scope and preservation of auth/recovery behavior; resolve findings and record any quota blocker without claiming review completion.
 - [x] 3.2 Run the scoped manifest against actual release images; record RED/GREEN, image digests, screenshots, retained oracles, protected hashes, cleanup and unrun checks. Update owner/backlog/continuity docs with partial-redesign status.
-- [ ] 3.3 After required gates pass, archive using supported OpenSpec commands, compare synchronized canonical requirements and untouched specs, and verify final strict validation. Do not mark all FUI work complete.
+- [x] 3.3 After required gates pass, archive using supported OpenSpec commands, compare synchronized canonical requirements and untouched specs, and verify final strict validation. Do not mark all FUI work complete.
 
 ## Scoped verification manifest
 

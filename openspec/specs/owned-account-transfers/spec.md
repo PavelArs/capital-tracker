@@ -4,6 +4,8 @@
 Record already-performed movements between owned manual accounts while preserving exact FIFO cost basis, original lot provenance, and coherent connected accounting history.
 ## Requirements
 ### Requirement: TRANSFER-001 Recorded internal movements preserve ownership and basis
+A transferred lot whose original origin is a swap SHALL retain its swap identity/version, original quantity, original cost (including unknown), and original interval through partial movements and returns. Arrival coordinates remain separate and transfer SHALL NOT create a second swap result or synthetic trade.
+
 The application SHALL record a reviewed already performed movement between two distinct owned initialized manual journals, atomically debit the credited principal and explicit fee from the sender, credit only principal to the receiver, and preserve exact original FIFO lot provenance and coordinates without creating a trade gain or external flow.
 
 `quantity` means principal credited to the receiver. Fee consumption follows
@@ -45,6 +47,11 @@ Reward origins SHALL preserve original known-or-unknown acquisition basis and ca
 #### Scenario: REWARD-TRANSFER-UNKNOWN
 - **WHEN** unknown-cost reward portions fund principal and fee
 - **THEN** both affected basis totals remain null; quantities and original reward intervals survive onward/return movement
+
+#### Scenario: SWAP-TRANSFER-ORIGIN
+- **GIVEN** an incoming swap lot is partially transferred and later returned
+- **WHEN** each fragment is allocated or sold
+- **THEN** every fragment identifies the original swap version and original interval/cost, with arrival tracked separately and no new swap gain created by movement
 
 ### Requirement: TRANSFER-002 Immutable commands support safe corrections and replay
 The application SHALL provide strict owner-private transfer create, full correction and terminal void commands with immutable complete versions, exact request replay, dual account revision pins and expected transfer version, preserving saved receipts through later history changes.
@@ -88,6 +95,8 @@ precision, UUID, JSON-type, Origin/CSRF and full owner-session validation.
 - **AND** malformed types, unknown fields, missing attestation, excessive precision or invalid dates return400 without reserving the request key
 
 ### Requirement: TRANSFER-003 Connected histories rebuild under one transaction
+Connected candidate replay for transfer create/correction/void SHALL include all active swaps in the union of old and new components. A transfer correction, bridge void, or source-history edit that changes a swap-funded fragment SHALL restate dependent swap FIFO allocations and results atomically, preserving swap receipts and advancing each distinct account pin once.
+
 The application SHALL replay the affected owned-account graph after transfer, source trade or CSV history changes, reject any invalid prefix atomically, and invalidate all dependent account revisions while keeping immutable command receipts and original CSV bytes unchanged.
 
 Acquire the owner transaction advisory lock before economic account-row locks,
@@ -129,7 +138,17 @@ Reward mutations SHALL acquire the same owner-first locks, validate all connecte
 - **WHEN** an upstream reward cost is corrected or its consumed quantity is removed
 - **THEN** valid costs restate downstream; invalid deficits reject the entire command without changing pins or receipts
 
+#### Scenario: SWAP-TRANSFER-REPLAY
+- **GIVEN** an outgoing source lot was used by a swap and a portion of that swap lot was transferred and sold by a recipient
+- **WHEN** the source lot basis is corrected, swap consideration remains unchanged, and the candidate connected history is valid
+- **THEN** the swap's outgoing principal basis and result restate, but its declared incoming basis and the recipient sale basis/result remain unchanged; each affected participant pin advances once and old receipts remain immutable
+
+- **WHEN** instead the swap consideration is corrected
+- **THEN** current reads show the restated incoming swap-lot basis and dependent recipient sale result, while saved swap receipts remain unchanged
+
 ### Requirement: TRANSFER-004 Bounded projections remain coherent and exact
+Connected allocation and snapshot reads SHALL include swap-origin lots and swap allocations from one complete connected history. Original swap provenance SHALL remain inspectable after transfer; bounded pages and full totals SHALL not hide swap-funded fragments or count a received lot as a new local swap.
+
 The application SHALL expose bounded private transfer history and provenance pages, current/historical holdings and valuations from one repeatable-read snapshot, with explicit capacity failures and no truncated financial results.
 
 Owner limits are1000 active transfers/10000 transfer versions. Each affected union
@@ -166,6 +185,11 @@ Each component additionally SHALL contain at most1000active rewards within their
 #### Scenario: REWARD-TRANSFER-READ
 - **WHEN** an allocation has mixed known and unknown reward portions
 - **THEN** every page has the same full nullable totals and known subtotals from one snapshot, with pins covering source reward changes
+
+#### Scenario: SWAP-TRANSFER-READ
+- **GIVEN** a recipient holds an arrived fragment originating from a swap
+- **WHEN** connected allocation and current projection pages are read
+- **THEN** the original swap provenance is present, the movement is not counted as a recipient swap, full totals include all fragments, and stale continuation is rejected after an upstream change
 
 ### Requirement: TRANSFER-005 Russian review and explicit retry prevent accidental changes
 The application SHALL provide a protected Russian workflow for reviewing and recording already performed internal movements, corrections and voids, explicitly distinguish immutable command receipts from current derived allocation, and preserve exact retries after ambiguous delivery.

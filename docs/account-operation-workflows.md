@@ -18,7 +18,7 @@ controllers are retained. It adds no library, backend, schema, auth, price/provi
 deployment change. The persistent preview remains unchanged. Field ergonomics and
 remaining screens are still part of [the redesign plan](frontend-redesign-plan.md).
 
-See [the specification](../openspec/changes/focus-account-operation-workflows/specs/account-operation-workflows/spec.md)
-and [actual verification](../openspec/changes/focus-account-operation-workflows/verification.md).
-Independent review and archive remain pending quota; root integration inspection is
-not a substitute for that review.
+See [the specification](../openspec/changes/archive/2026-09-26-focus-account-operation-workflows/specs/account-operation-workflows/spec.md)
+and [actual verification](../openspec/changes/archive/2026-09-26-focus-account-operation-workflows/verification.md).
+Independent review and archive completed on 2026-09-26; see [the review](reviews/2026-09-26-frontend.md).
+The remaining frontend redesign and owner visual approval are still outstanding.

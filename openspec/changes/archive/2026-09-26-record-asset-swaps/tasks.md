@@ -21,9 +21,9 @@
 
 ## 5. Review and delivery evidence
 
-- [ ] 5.1 Independently review contract, finance, transaction/security boundaries, UI recovery and test oracles; fix findings and retain review evidence.
-- [ ] 5.2 Run risk-based manifest below against actual release images; record successful/failed attempts, exact scenarios/images, unrun gates, warnings and protected-file hashes. Update runner/owner guide/continuity.
-- [ ] 5.3 After all required gates pass, synchronize/archive using supported OpenSpec CLI; compare delta blocks and untouched specs, verify canonical strict validation and synthetic cleanup, then mark this final procedural task complete.
+- [x] 5.1 Independently review contract, finance, transaction/security boundaries, UI recovery and test oracles; fix findings and retain review evidence.
+- [x] 5.2 Run risk-based manifest below against actual release images; record successful/failed attempts, exact scenarios/images, unrun gates, warnings and protected-file hashes. Update runner/owner guide/continuity.
+- [x] 5.3 After all required gates pass, synchronize/archive using supported OpenSpec CLI; compare delta blocks and untouched specs, verify canonical strict validation and synthetic cleanup, then mark this final procedural task complete.
 
 ## Verification manifest
 

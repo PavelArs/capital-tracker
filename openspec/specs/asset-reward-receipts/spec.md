@@ -57,6 +57,8 @@ Unchanged all-known trade/carry/transfer histories SHALL retain their prior resu
 - **THEN** fee basis is1, A remaining basis7 and B basis4, with original receipts unchanged
 
 ### Requirement: REWARD-003 Immutable connected lifecycle is atomic and replay safe
+Reward create/correction/void candidate replay SHALL include every effective swap in the connected component. If a changed reward lot feeds a swap, the whole reward and swap history is validated atomically; dependent swap results and participant pins restate without modifying old swap receipts.
+
 The system SHALL implement full create/correct/terminal-void under owner-before-account locks,
 validate whole old/candidate histories, enforce shared pins and bounds, append complete
 versions and advance every affected account once. Replay SHALL precede live CAS/cap checks;
@@ -77,7 +79,14 @@ old receipts and unrelated rows SHALL remain unchanged. Account identity cannot 
 - **WHEN** a deferred constraint fails at COMMIT after journal/head/version writes
 - **THEN** all writes and request identity roll back, with an independent post-write witness
 
+#### Scenario: SWAP-REWARD-REPLAY
+- **GIVEN** a swap consumes a reward-origin lot
+- **WHEN** the reward's declared basis is corrected
+- **THEN** the complete connected candidate recalculates the swap's principal or fee allocation and result, advances affected pins once, and leaves the prior swap receipt unchanged
+
 ### Requirement: REWARD-004 Coherent bounded history and completeness
+Coherent reward and connected history reads SHALL include effective swaps once and preserve swap-origin provenance and separate swap summaries. Unknown swap consideration remains unknown and SHALL NOT be converted to known zero by reward projections or pagination.
+
 All reward/current/historical/provenance/valuation/CSV reads SHALL use one coherent bounded
 snapshot and include rewards before paging. Price completeness SHALL remain independent of
 cost/category completeness. The persistence contract bounds SHALL apply before materializing
@@ -91,6 +100,11 @@ an oversized history; no silent truncation or amount rounding is permitted.
 - **AND** owner1000active/10000versions and every account revision ceiling accept their exact
   boundary, refuse the next command atomically and still allow old request replay
 - **AND** series/selected valuation load rewards once, expose full holdings and request no provider
+
+#### Scenario: SWAP-REWARD-READ
+- **GIVEN** a reward-origin fragment participates in a swap and later sale
+- **WHEN** a connected reward or allocation read is made
+- **THEN** reward and swap evidence share one coherent revision; unknown swap consideration remains unknown rather than becoming zero or a reward income amount
 
 ### Requirement: REWARD-005 Protected Russian review retains user intent
 The application SHALL provide the Russian reviewed create/correct/void workflow in manual

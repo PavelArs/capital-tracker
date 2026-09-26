@@ -9,9 +9,9 @@
 
 ## 3. Review and delivery
 
-- [ ] 3.1 Obtain independent lifecycle/accessibility/recovery review and resolve findings. Quota-blocked review remains pending.
+- [x] 3.1 Obtain independent lifecycle/accessibility/recovery review and resolve findings.
 - [x] 3.2 Run scoped verification, record actual failures/successes/images and unrun gates, update docs/continuity, preserve owner files and clean synthetic test resources.
-- [ ] 3.3 Archive with supported commands after independent review and verification; compare canonical and untouched requirements.
+- [x] 3.3 Archive with supported commands after independent review and verification; compare canonical and untouched requirements.
 
 ## Verification manifest
 

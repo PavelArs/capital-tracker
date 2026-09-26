@@ -1,9 +1,8 @@
 # Application navigation
 
-Status: the first frontend redesign slice is implemented in active OpenSpec change
-`redesign-application-shell`. Scoped runtime checks pass; independent review and
-archive remain pending. The complete frontend redesign and owner visual review are
-still required. The saved local preview has not been updated to this candidate.
+Status: `redesign-application-shell` passed independent review and scoped verification
+and was archived on 2026-09-26. The complete frontend redesign and owner visual review
+are still required. The saved local preview has not been updated to this candidate.
 
 After password and MFA, the working entry is **Ручные счета**. It lists real manual
 accounts; selected-account valuation is not whole-portfolio/cash/provider coverage.
@@ -26,5 +25,5 @@ This slice replaces only navigation, entry and login presentation. The next acti
 [directory slice](account-directory.md) now leads with saved accounts and exposes
 creation/valuation on demand. Long operation editors, valuation/performance screens
 and settings still need the workflow redesign in [the backlog](frontend-redesign-plan.md). See the
-[verification record](../openspec/changes/redesign-application-shell/verification.md)
+[verification record](../openspec/changes/archive/2026-09-26-redesign-application-shell/verification.md)
 for actual RED/GREEN, images, screenshots, unrun checks and review blocker.

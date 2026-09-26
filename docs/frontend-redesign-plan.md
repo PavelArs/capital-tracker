@@ -73,36 +73,29 @@ unnecessary migration. No paid UI kit/service or new production deployment.
 
 ## Order and current state
 
-Swap runtime verification is complete at9/12; its independent review still waits for
-the known agent quota and remains required before archive. FUI-01 source inventory and
-target hierarchy are recorded in [frontend-screen-audit.md](frontend-screen-audit.md).
-The first FUI-02 slice is implemented in active `redesign-application-shell`, 6/8 tasks:
-responsive grouped navigation, manual-account landing, preserved labelled legacy
-views, restrained login/MFA, theme and keyboard focus. See [the navigation guide](application-shell.md)
-and its linked actual verification evidence.112 frontend tests and 3 selected real
-HTTPS/PostgreSQL browser journeys pass; independent review/archive remain pending.
-The preserved local preview still uses its previous image and data.
+Five bounded changes were independently reviewed and archived on2026-09-26: asset
+swaps plus application shell, account directory, account workspace and operation
+selection. See the [independent frontend review](reviews/2026-09-26-frontend.md),
+[final followup verification](reviews/2026-09-26-verification.md) and owner guides:
+[navigation](application-shell.md), [directory](account-directory.md),
+[workspace](account-workspace.md), [operations](account-operation-workflows.md).
 
-FUI-01 remains partial: the shell now has real 360/768/1440px screenshots, while the other
-screen prototypes and their review remain. FUI-02 also remains partial: shared table,
-form and feedback composition is not yet redesigned. The first FUI-03 account-directory
-slice is now implemented in active `redesign-account-directory` (4/6 tasks): accounts
-lead, creation is explicit, valuation is collapsible, and drafts/request identity remain.
-See [the directory guide](account-directory.md) for scope and evidence.114 frontend tests
-and three selected real browser cases pass; review/archive remain pending.
-The next bounded FUI-03 slice, `redesign-account-workspace`, separates individual
-account operations, analytics and initial data while retaining mounted drafts/results
-and global journal recovery. Saved initial positions have an honest scope label.
-See [the workspace guide](account-workspace.md) and its linked actual verification.
-Independent review/archive remain pending. Active `focus-account-operation-workflows`
-implements the next FUI-03 slice (4/6 tasks): a native selector shows one of the four
-mounted operation workflows, keeps shared journal results, and reveals the existing
-trade editor/confirmation from history. Independent drafts, the selected CSV File and
-original recovery/locks survive switching. See [the operations guide](account-operation-workflows.md).
-118 frontend tests and four distinct selected real HTTPS/PostgreSQL cases pass;
-independent review/archive still wait for agent quota. Next: compact journal context,
-field ergonomics and clearer results; the mobile preface is still too verbose.
-Do not mark all six frontend tasks complete.
-FUI-04/05/06, maximum-period chart work and owner visual review are still pending.
-The local preview database, MFA key, credentials and original repositories remain
-preserved. Broader blockchain/provider/import/security/release requirements remain open.
+The latest followup passes118 frontend tests, local build/lint/types, three selected
+real HTTPS/MFA/PostgreSQL journeys and the dependency gate. Review found and fixed
+instrument-draft retention on parameter-only account navigation. Earlier scoped
+checks retain their recorded image/date limits. No full-suite or whole-redesign
+completion is claimed. The preserved local preview still uses its old image/data.
+
+FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
+Responsive evidence exists for the completed slices, not every screen. Next bounded
+work: compact journal context, clearer form fields/actions and result tables, then
+remaining analytical/settings screens. Retain chart maximum-period review separately.
+
+Carry these nonblocking review findings into the next suitable UX slice:
+- Reveal/focus or announce correction/void editors selected from shared history.
+- Avoid stealing focus when a delayed account creation completes after the owner
+  has closed its form and moved into another control.
+- Verify focus transfer when resizing desktop navigation to its hidden mobile state.
+
+Original repositories, owner data, preview volume/MFA/credentials and Nginx edit
+remain preserved. Broader providers/import/security/release work remains separate.

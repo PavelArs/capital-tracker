@@ -119,3 +119,27 @@ node_modules symlinks; actual installed packages and every project folder remain
 Post-integration strict OpenSpec passes31/31 (`...-integrated-specs.log`). Backend,
 deployment/CI, canonical specs, lock and tracked Nginx have no committed changes from
 60ee94e; the owner's separate Nginx edit and both protected hashes remain unchanged.
+
+
+## Independent review and final scoped verification — 2026-09-26
+
+Required independent review now passes after the recorded fix/evidence closures.
+Earlier quota statuses above describe previous checkpoints. See the consolidated
+[final followup evidence](../../../../docs/reviews/2026-09-26-verification.md) for the
+actual RED, two-field fix,118unit tests, build/lint/types/audit and three selected real
+browser passes on FE64923db4/BEdd90a8c5. Full redesign/release/owner approval remain open.
+
+
+## Archive completion — 2026-09-26
+
+Supported `openspec archive <change> --yes` exited0 after review and behavioral gates.
+The one pending checkbox reported by the CLI was this final archive/comparison
+procedure; it is now complete. All five changes synchronized42delta requirement
+blocks while preserving97other requirement blocks and20untouched spec files byte-for-byte.
+`capital-reviews-spec-comparison.log` and strict `capital-reviews-specs-final.log`
+pass;33canonical specifications and no active changes remain. Generated Purpose text
+was clarified without altering requirements. Original swap proposal retains the CLI's
+nonblocking >10deltas warning; shared-reader contracts were verified together.
+Final test-labeled container/network inventories are empty. Preview volume/tag7eff01d1/
+stopped containers, owner Nginx mode0644/size1348/hash and lock hash remain unchanged.
+No preview update, owner data access, paid service, production or project deletion.

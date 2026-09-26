@@ -1,8 +1,8 @@
 # Manual asset exchanges
 
-Status: implemented in active `record-asset-swaps`; populated21 upgrade and SQL
-constraints are verified, together with concurrency, bounds, connected CSV and coherent
-snapshots. Independent persistence/UI review, final delivery and archive remain open.
+Status: independently reviewed and archived on 2026-09-26. Populated21 upgrade, SQL
+constraints, concurrency, bounds, connected CSV and coherent snapshots are verified.
+The final review closed two CSV evidence gaps; see the linked verification and review.
 This is not production rollout approval.
 
 In a manual account with an initialized journal, use **Обмены активов** to record an
@@ -55,7 +55,7 @@ trade/reward/transfer/replay limits remain. Exact stored retries precede live ca
 checks. Migration22 adds two swap tables without deleting previous data. Previous images
 must not write a ledger containing swaps; destructive downgrade is refused.
 
-See [active specifications](../openspec/changes/record-asset-swaps/specs/asset-swaps/spec.md),
-[verification evidence](../openspec/changes/record-asset-swaps/verification.md) and
+See [active specifications](../openspec/changes/archive/2026-09-26-record-asset-swaps/specs/asset-swaps/spec.md),
+[verification evidence](../openspec/changes/archive/2026-09-26-record-asset-swaps/verification.md) and
 [isolated test procedure](testing-and-migrations.md). Broad import, chain reconciliation,
 automatic price collection and release/backup hardening remain separate work.

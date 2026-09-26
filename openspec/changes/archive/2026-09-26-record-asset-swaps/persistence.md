@@ -21,15 +21,21 @@ canonical JSON includes kind,target,pins and all normalized fields, excluding re
 
 Receipts: `{accountId,journalRevision,swap:<version>}`. Version includes swapId,version,
 kind(create/correct/void),requestId,journalRevision,createdAt plus all economic fields and
-saved outgoing/incoming instrumentName/instrumentSymbol, feeInstrumentName/Symbol nullable.
+outgoing/incoming instrumentName/instrumentSymbol, feeInstrumentName/Symbol nullable.
 The pure row's names are `outgoingInstrumentName`, `outgoingInstrumentSymbol`,
-`incomingInstrumentName`, `incomingInstrumentSymbol`; fee labels are stored for readable
-receipts but replay obtains actual source labels from consumed fragments. assertExecuted
+`incomingInstrumentName`, `incomingInstrumentSymbol`. Stored versions reference instrument
+UUIDs; read DTOs join the current create/read-only instrument catalog for principal/fee
+labels. Receipt stability therefore depends on that catalog remaining immutable. Future
+label editing would require explicit receipt preservation. Replay obtains actual source
+labels from consumed fragments. assertExecuted
 is an input attestation, not an economic projection field. Request identity namespace is
 owner/account/swap-request. Replay returns immutable original201receipt as200 before live
 pins/caps; no automatic retry. Reused key with changed kind/target/pins/fields returns409.
 Missing foreign valid resources use existing generic404; bad fields400; invalid history,
-stale pins, terminal identity or capacity409. Existing bounded lock error policy applies.
+stale pins, terminal identity or capacity409. Accounting uses the existing owner advisory
+lock and database error mapping, but has no dedicated transaction-local lock-wait timeout.
+Race tests prove serialization after controlled release, not a bounded wait. Shared
+accounting timeout hardening remains a separate release task.
 
 Tables `account_swaps` and `account_swap_versions` follow reward storage: owner/account
 composite references, swap version/current-head FK (deferred), owned instrument references

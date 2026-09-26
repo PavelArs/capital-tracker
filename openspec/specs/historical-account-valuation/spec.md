@@ -4,6 +4,8 @@
 Value reconstructed account positions using exact-time manual USD prices in one private database snapshot, preserving exact arithmetic and explicit missing-price coverage.
 ## Requirements
 ### Requirement: VAL-1 Exact historical position valuation
+Historical positions SHALL include effective swaps at their inclusive event instant, using net received quantity and exact outgoing debit from the complete connected FIFO history. Valuation SHALL use only exact-time stored prices; consideration, basis, and realized swap result are not substitutes for market price or value.
+
 The system SHALL value a single account's reconstructed positive positions at an
 explicit instant using only effective manual USD prices at that exact UTC instant.
 It SHALL retain UUID identity, inclusive accounting boundaries, immutable carry-in
@@ -41,6 +43,11 @@ Reward quantities SHALL be valued from the existing exact-time manual prices ind
 - **WHEN** a reward2/unknown basis/income40 is priced at5
 - **THEN** value is10 and cost null; income40 never becomes cost, price or market value
 
+#### Scenario: SWAP-VAL-POSITIONS
+- **GIVEN** a covered account swaps outgoing quantity for a different instrument and both have exact-time manual prices
+- **WHEN** the owner values the account at the swap instant
+- **THEN** outgoing and net incoming quantities follow event ordering and only their exact stored prices determine market value; consideration is not added as cash
+
 ### Requirement: VAL-2 Honest missing coverage and known zero
 The system SHALL distinguish missing/voided exact-time prices from known price0.
 Missing positive positions SHALL yield null values and null total, with an explicitly
@@ -62,6 +69,8 @@ Absent accounting coverage or precoverage requests SHALL return409, without muta
 - **AND** any precoverage request returns409 rather than inventing zero holdings.
 
 ### Requirement: VAL-3 Coherent private database reads
+The coherent valuation snapshot SHALL load effective swaps with trades, transfers, rewards, carry-in, and manual prices. A connected swap correction or void SHALL not permit mixed old/new positions or revisions.
+
 The system SHALL read the entire valuation in one owner-scoped RR READ ONLY
 transaction with existing bounded history, allowlisted query/response and auth,
 MFA, origin and no-store controls. Reads SHALL make no provider calls or business
@@ -91,6 +100,11 @@ mixed old/new position result.
 - **WHEN** the valuation completes its connected replay and reads manual prices
 - **THEN** it returns the wholly old position/revision state, and a later request returns the wholly
   corrected state without changing the manual price history
+
+#### Scenario: SWAP-VAL-SNAPSHOT
+- **GIVEN** an account valuation snapshot is established while a connected swap correction commits
+- **WHEN** the original request finishes
+- **THEN** it is wholly consistent with the old effective holdings and prices, and a subsequent request sees the new connected revision
 
 ### Requirement: VAL-4 Russian read-only account review
 The system SHALL expose a protected Russian account-detail valuation form with
