@@ -76,4 +76,15 @@ No backend/schema/dependency/auth/provider/pipeline change; no full E2E, repeate
 backend/SQL/security matrix or production release claim. This bounded presentation
 step does not complete the whole frontend redesign or owner visual approval. Fields,
 results, focus followups and analytical/settings screens remain on the redesign plan.
-Archive/comparison results are appended only after that procedure completes.
+
+## Archive outcome
+
+Product/evidence commitffab187. Actual `openspec archive compact-journal-context --yes`
+exited0 and created this dated archive, adding three canonical requirements. The CLI
+reported4/5tasks because the final task includes archive and postcomparison; it is
+marked complete only after that procedure passed. No implementation/review gate was
+skipped. Generated Purpose was clarified without changing requirement blocks.
+
+`spec-comparison.log`: all3 added requirement blocks match exactly; all33 pre-existing
+canonical files remain byte-identical. `specs-final.log`:34/34strictPASS. All5tasks
+complete. Only task-created dependency symlinks were removed; worktrees retained.

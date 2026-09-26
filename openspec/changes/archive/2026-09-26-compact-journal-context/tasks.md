@@ -10,7 +10,7 @@
 
 - [x] 3.1 Independently review composition, content, keyboard state and retained recovery; resolve findings and inspect responsive screenshots.
 - [x] 3.2 Run the scoped manifest, record actual RED/GREEN and image identities, update docs/continuity, and preserve owner data/files/preview while cleaning synthetic resources.
-- [ ] 3.3 Archive using supported OpenSpec CLI after required gates, compare canonical/untouched specs and validate strictly; mark only after the archive/comparison procedure passes.
+- [x] 3.3 Archive using supported OpenSpec CLI after required gates, compare canonical/untouched specs and validate strictly; mark only after the archive/comparison procedure passes.
 
 ## Scoped verification manifest
 

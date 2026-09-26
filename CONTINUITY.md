@@ -261,7 +261,10 @@ No full E2E repeated. Final independent approval, no remaining bounded-scope fin
 Logs/artifacts `/private/tmp/capital-context-*`; failed run preserved separately.
 FEsha256:ab29708ca75a9b60c738ecd9d63d92abb2150c51a3f12e221a4a001756c822b4;
 BEdd90a8c5 unchanged. E2E containers/networks empty; owner Nginx/lock above unchanged,
-preview stopped32hours with original volume/tags intact. Archive comparison follows.
+preview stopped32hours with original volume/tags intact. Product/evidenceffab187;
+archived as2026-09-26-compact-journal-context using installed CLI. All5tasks complete:
+3new requirement blocks match exactly,33old canonical files byte-identical,34strict
+specs pass; active changes empty. Only task dependency symlinks removed, worktrees kept.
 
 ## Next work and remaining whole goal
 
