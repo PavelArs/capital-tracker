@@ -11,6 +11,12 @@ An authenticated manual account SHALL provide Операции, Аналитик
 - **THEN** only that section is visible, selection is exposed and focus stays on its button
 - **AND** opening a different account cannot expose the previous account's drafts or results
 
+#### Scenario: WORKSPACE-001-B Reuse the account route for another identity
+- **GIVEN** unsaved instrument name and symbol in account setup
+- **WHEN** SPA navigation changes the account identity without a directory-page unmount
+- **THEN** the new account opens operations with its own journal and a blank trade draft
+- **AND** setup instrument fields are reset without submitting a command
+
 ### Requirement: WORKSPACE-002 Retain state and explicit recovery
 Section selection and resize SHALL preserve mounted drafts, analytical inputs/results and mutation request identity without submitting a command, rerunning analysis or bypassing eligibility/conflict locks. Journal errors and original-request recovery SHALL remain reachable when a different section is selected. Page departure and actual journal revision changes SHALL retain their established result-invalidation rules.
 

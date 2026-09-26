@@ -255,6 +255,8 @@ export default function ManualAccountDetail() {
     setInstruments([]);
     setInstrumentCursor(null);
     setDraft([]);
+    setInstrumentName('');
+    setInstrumentSymbol('');
     setLoading(true);
     setInstrumentsLoading(true);
     setHistoryLoading(true);

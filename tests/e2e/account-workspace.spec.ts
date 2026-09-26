@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { expect, type Page } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 import { providerRequests } from './manual-opening-fixtures';
 import { query, test } from './mfa-fixtures';
 import {
+  type TradeReceipt,
   browserPost,
   readReceipt,
   tradeApi,
   tradeInput,
-  type TradeReceipt,
 } from './usd-trades-fixtures';
 
 async function selectSection(page: Page, name: string) {
@@ -165,6 +165,22 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await selectSection(page, 'Аналитика');
     await expect(instant).toHaveValue('');
     await expect(positions).toHaveCount(0);
+    // Exercise parameter-only SPA reuse without the directory unmounting this page.
+    await selectSection(page, 'Начальные данные');
+    await instrumentName.fill('Черновик другого счета');
+    const symbol = page.getByLabel('Символ (необязательно)', { exact: true });
+    await symbol.fill('OTHER');
+    await page.evaluate((accountId) => {
+      history.pushState(history.state, '', `/manual-accounts/${accountId}`);
+      dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+    }, account.id);
+    await expect(page.getByRole('heading', { name: account.name, exact: true })).toBeVisible();
+    await expect(form).toBeVisible();
+    await expect(quantity).toHaveValue('');
+    await selectSection(page, 'Начальные данные');
+    await expect(instrumentName).toHaveValue('');
+    await expect(symbol).toHaveValue('');
+    expect(writes).toHaveLength(2);
     expect(providerRequests()).toEqual(providers);
   } finally {
     await page.unroute(pattern);
