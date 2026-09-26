@@ -406,7 +406,7 @@ test('CSV-006-B regression: choosing a new unuploaded file cannot confirm the pr
 
 test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source provenance and exact replay across restart, then rolls back the complete batch', async ({
   page,
-}) => {
+}, testInfo) => {
   const { api, account, instrument } = await csvFixture(page);
   const prior = retainedState();
   let providers = providerRequests();
@@ -418,9 +418,121 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
   const csvRegion = page.getByRole('region', { name: 'Импорт CSV', exact: true });
   await expect(csvRegion).toContainText('Не импортируйте одну историю повторно в изменённом виде');
   await expect(csvRegion).toContainText('1000 активных сделок и 10000 версий');
+  await expect(csvRegion.getByText(/Не импортируйте одну историю повторно/)).toBeVisible();
+  await expect(csvRegion.getByText(/1000 активных сделок и 10000 версий/)).toBeVisible();
+  const guide = csvRegion.getByRole('list', { name: 'Этапы импорта', exact: true });
+  await expect(guide).toHaveJSProperty('tagName', 'OL');
+  await expect(guide.getByRole('listitem')).toHaveCount(3);
+  await expect(guide.getByRole('listitem')).toHaveText(['Файл', 'Сопоставление', 'Проверка']);
+  await expect(guide.locator('[aria-current="step"]')).toHaveText('Файл');
   const batch = await uploadInBrowser(page, account.id, example);
   const beforePreview = fingerprint(['auth_sessions', 'auth_request_limits']);
   await inspectAndMap(page, account.id, batch, instrument.id, example);
+  await expect(guide.locator('[aria-current="step"]')).toHaveText('Сопоставление');
+  const mapping = csvRegion.locator('fieldset.csv-mapping');
+  const descriptions: Array<[string, RegExp[]]> = [
+    ['Колонка: Количество', [/итог|общ|вс[её]/i, /цен.*единиц|единиц.*цен/i]],
+    ['Колонка: Валовая сумма USD', [/итог|общ|вс[её]/i, /цен.*единиц|единиц.*цен/i]],
+    ['Колонка: Комиссия USD', [/нул|ноль|\b0\b/i, /явн/i]],
+    ['Колонка: Валюта', [/необязательн|не сопостав|не выб|можно.*не/i, /USD/i]],
+    ['Десятичный разделитель', [/точк/i, /запят/i]],
+    ['Формат времени', [/ISO/i, /секунд/i, /смещен/i]],
+    ['Колонка: Порядок в одну дату', [/одинаков|совпада|равн/i, /поряд/i]],
+  ];
+  for (const [name, semantics] of descriptions) {
+    const control = mapping.getByRole('combobox', { name, exact: true });
+    for (const meaning of semantics) await expect(control).toHaveAccessibleDescription(meaning);
+  }
+  const draftValues = () =>
+    mapping.locator('select, input').evaluateAll((controls) =>
+      controls.map((control) => {
+        const input = control as HTMLInputElement;
+        return { value: input.value, checked: input.type === 'checkbox' ? input.checked : null };
+      }),
+    );
+  const savedDraft = await draftValues();
+  const originalViewport = page.viewportSize();
+  const themeSelect = page.locator('select.theme-select');
+  const originalTheme = await themeSelect.inputValue();
+  const checkPresentation = async (stage: 'mapping' | 'preview') => {
+    await page.waitForLoadState('networkidle');
+    const before = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const calls = providerRequests();
+    const presentationRequests: string[] = [];
+    const recordPresentationRequest = (request: { url(): string }) => {
+      if (request.url().includes(`/accounts/${account.id}`))
+        presentationRequests.push(request.url());
+    };
+    page.on('request', recordPresentationRequest);
+    const previewText =
+      stage === 'preview'
+        ? await csvRegion
+            .getByRole('table', { name: 'Сделки перед импортом', exact: true })
+            .textContent()
+        : null;
+    try {
+      for (const theme of ['light', 'dark']) {
+        await themeSelect.selectOption(theme);
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        for (const width of [360, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          await expect
+            .poll(() =>
+              page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            )
+            .toBe(true);
+          const targets = await csvRegion
+            .locator('input:not([type="checkbox"]):not([type="file"]), select, button, summary')
+            .evaluateAll((controls) =>
+              controls
+                .filter((control) => control.getClientRects().length > 0)
+                .map((control) => ({
+                  label:
+                    control.textContent || control.getAttribute('aria-label') || control.tagName,
+                  height: control.getBoundingClientRect().height,
+                })),
+            );
+          expect(targets.length).toBeGreaterThan(0);
+          for (const target of targets)
+            expect(target.height, target.label).toBeGreaterThanOrEqual(44);
+          for (const checkbox of await csvRegion.locator('input[type="checkbox"]').all()) {
+            if (!(await checkbox.isVisible())) continue;
+            const box = await checkbox.boundingBox();
+            expect(box).not.toBeNull();
+            expect(box?.height).toBeLessThan(44);
+            expect(box?.width).toBeLessThan(44);
+          }
+          await testInfo.attach(`csv-${stage}-${theme}-${width}`, {
+            body: await (stage === 'mapping'
+              ? mapping
+              : csvRegion.getByRole('region', {
+                  name: 'Предпросмотр импорта',
+                  exact: true,
+                })
+            ).screenshot({ animations: 'disabled' }),
+            contentType: 'image/png',
+          });
+          expect(await draftValues()).toEqual(savedDraft);
+        }
+      }
+    } finally {
+      await themeSelect.selectOption(originalTheme);
+      if (originalViewport) await page.setViewportSize(originalViewport);
+      page.off('request', recordPresentationRequest);
+    }
+    if (previewText !== null)
+      await expect(
+        csvRegion.getByRole('table', {
+          name: 'Сделки перед импортом',
+          exact: true,
+        }),
+      ).toHaveText(previewText);
+    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
+    expect(providerRequests()).toEqual(calls);
+    expect(presentationRequests).toEqual([]);
+  };
+  await checkPresentation('mapping');
+
   const expected = {
     grossBuysUsd: '300',
     buyFeesUsd: '0',
@@ -432,6 +544,49 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
     remainingCostUsd: '100',
   };
   await previewInBrowser(page, account.id, batch, expected);
+  await expect(guide.locator('[aria-current="step"]')).toHaveText('Проверка');
+  const summary = csvRegion.locator('summary').filter({ hasText: /^Идентификаторы партии$/ });
+  const disclosure = summary.locator('..');
+  await expect(summary).toHaveJSProperty('tagName', 'SUMMARY');
+  await expect(disclosure).toHaveJSProperty('tagName', 'DETAILS');
+  await expect(disclosure).toHaveJSProperty('open', false);
+  await page.waitForLoadState('networkidle');
+  const beforeDisclosure = fingerprint(['auth_sessions', 'auth_request_limits']);
+  const disclosureCalls = providerRequests();
+  const disclosureRequests: string[] = [];
+  const recordDisclosureRequest = (request: { url(): string }) => {
+    if (request.url().includes(`/accounts/${account.id}`)) disclosureRequests.push(request.url());
+  };
+  page.on('request', recordDisclosureRequest);
+  const reviewedText = await csvRegion
+    .getByRole('table', {
+      name: 'Сделки перед импортом',
+      exact: true,
+    })
+    .textContent();
+  await summary.focus();
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveJSProperty('open', true);
+  await expect(disclosure).toContainText(batch);
+  await expect(disclosure).toContainText(
+    createHash('sha256').update(csvSource(example)).digest('hex'),
+  );
+  await expect(disclosure).toContainText('Оригинал хранится приватно');
+  await page.keyboard.press('Enter');
+  await expect(disclosure).toHaveJSProperty('open', false);
+  expect(await draftValues()).toEqual(savedDraft);
+  await expect(
+    csvRegion.getByRole('table', {
+      name: 'Сделки перед импортом',
+      exact: true,
+    }),
+  ).toHaveText(reviewedText || '');
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeDisclosure);
+  page.off('request', recordDisclosureRequest);
+  expect(providerRequests()).toEqual(disclosureCalls);
+  expect(disclosureRequests).toEqual([]);
+  await checkPresentation('preview');
+
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforePreview);
   expect((await api.state(account.id)).journal).toMatchObject({
     journalRevision: 0,
