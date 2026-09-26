@@ -291,7 +291,10 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     'Валовая сумма, USD',
     'Комиссия, USD',
   ]) {
-    await expect(trade.getByLabel(label, { exact: true })).toBeVisible();
+    const field = ['Инструмент', 'Тип сделки'].includes(label)
+      ? trade.getByRole('combobox', { name: label, exact: true })
+      : trade.getByLabel(label, { exact: true });
+    await expect(field).toBeVisible();
   }
   const gross = trade.getByLabel('Валовая сумма, USD', { exact: true });
   const fee = trade.getByLabel('Комиссия, USD', { exact: true });
