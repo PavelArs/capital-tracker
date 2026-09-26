@@ -55,6 +55,11 @@ Original project folders/data remain untouched.
 
 Capital tracking application with manual-account workflows and retained legacy asset, crypto-wallet and financial-metrics screens during the incremental refactor.
 
+The first [navigation redesign](docs/application-shell.md) opens manual accounts after
+login and groups legacy views separately. It passes scoped runtime checks and awaits
+independent review; the [complete frontend redesign](docs/frontend-redesign-plan.md)
+is still in progress. The saved local preview has not yet been updated.
+
 ## Tech Stack
 
 - **Backend:** NestJS 11, TypeScript, TypeORM, PostgreSQL 16, Redis 7

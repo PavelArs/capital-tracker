@@ -1,15 +1,16 @@
 :root {
+  color-scheme: light;
   /* Light theme (default) */
   --bg-color: #ffffff;
-  --bg-secondary: #f5f5f5;
-  --bg-tertiary: #e8e8e8;
-  --text-color: #333333;
-  --text-secondary: #666666;
-  --text-muted: #999999;
-  --border-color: #dddddd;
-  --primary-color: #4a90e2;
-  --primary-color-light: rgba(74, 144, 226, 0.1);
-  --primary-color-dark: #357abd;
+  --bg-secondary: #f3f4f2;
+  --bg-tertiary: #e9ece9;
+  --text-color: #252e35;
+  --text-secondary: #59656e;
+  --text-muted: #626d76;
+  --border-color: #cbd1d3;
+  --primary-color: #355778;
+  --primary-color-light: #eaf0f5;
+  --primary-color-dark: #2d5072;
   --error-color: #e74c3c;
   --success-color: #27ae60;
   --warning-color: #f39c12;
@@ -18,17 +19,18 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   /* Dark theme */
-  --bg-color: #1a1a1a;
-  --bg-secondary: #2c2c2c;
-  --bg-tertiary: #3a3a3a;
-  --text-color: #e0e0e0;
-  --text-secondary: #b0b0b0;
-  --text-muted: #808080;
-  --border-color: #404040;
-  --primary-color: #5ba3f5;
-  --primary-color-light: rgba(91, 163, 245, 0.2);
-  --primary-color-dark: #4a90e2;
+  --bg-color: #202930;
+  --bg-secondary: #172027;
+  --bg-tertiary: #2a353e;
+  --text-color: #e4e9ec;
+  --text-secondary: #b2bec7;
+  --text-muted: #a3b0ba;
+  --border-color: #46535e;
+  --primary-color: #41658b;
+  --primary-color-light: #2b3c4e;
+  --primary-color-dark: #acd1f4;
   --error-color: #ff6b6b;
   --success-color: #51cf66;
   --warning-color: #ffd43b;
@@ -49,7 +51,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg-secondary);
   color: var(--text-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 code {
@@ -232,5 +233,21 @@ th {
 
   h3 {
     font-size: 1.1rem;
+  }
+}
+
+/* Keyboard focus stays visible across the shell and retained form controls. */
+:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

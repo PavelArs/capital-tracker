@@ -74,13 +74,20 @@ unnecessary migration. No paid UI kit/service or new production deployment.
 ## Order and current state
 
 Swap runtime verification is complete at9/12; its independent review still waits for
-the known agent quota and remains required before archive. Separate frontend preparation
-can proceed during that wait. FUI-01 source inventory and target hierarchy are recorded
-in [frontend-screen-audit.md](frontend-screen-audit.md); responsive prototypes/review are
-still pending, so the task is not complete. OpenSpec `redesign-application-shell` defines
-the first small FUI-02 slice with acceptance and verification criteria, in the isolated
-`refactor/frontend-shell` worktree. Next: characterization and executable RED before
-implementation. Complete the remaining redesign incrementally alongside separately
-scoped product capabilities. No redesigned screen or owner approval is claimed today.
+the known agent quota and remains required before archive. FUI-01 source inventory and
+target hierarchy are recorded in [frontend-screen-audit.md](frontend-screen-audit.md).
+The first FUI-02 slice is implemented in active `redesign-application-shell`, 6/8 tasks:
+responsive grouped navigation, manual-account landing, preserved labelled legacy
+views, restrained login/MFA, theme and keyboard focus. See [the navigation guide](application-shell.md)
+and its linked actual verification evidence.112 frontend tests and 3 selected real
+HTTPS/PostgreSQL browser journeys pass; independent review/archive remain pending.
+The preserved local preview still uses its previous image and data.
+
+FUI-01 remains partial: the shell now has real 360/768/1440px screenshots, while the other
+screen prototypes and their review remain. FUI-02 also remains partial: shared table,
+form and feedback composition is not yet redesigned. Next implementation slice should
+address account list/detail hierarchy and focused operation workflows (FUI-03), keeping
+frozen retries and independent drafts. Do not mark all six frontend tasks complete.
+FUI-04/05/06, maximum-period chart work and owner visual review are still pending.
 The local preview database, MFA key, credentials and original repositories remain
 preserved. Broader blockchain/provider/import/security/release requirements remain open.

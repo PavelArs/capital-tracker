@@ -101,7 +101,9 @@ async function loginThroughBrowser(page: Page): Promise<string> {
 }
 
 async function openWallets(page: Page): Promise<void> {
-  await page.getByRole('link', { name: 'Криптовалюты', exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
+  await navigation.getByText('Прежние данные', { exact: true }).click();
+  await navigation.getByRole('link', { name: 'Криптокошельки', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
 }
 

@@ -174,3 +174,12 @@ findings remain visible and were not suppressed. Evidence:
 `/private/tmp/capital-swaps-production-audit.log`; current lock SHA256
 `6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
 This dependency gate is not full application/image security or release verification.
+
+## Application shell checkpoint — 2026-09-26
+
+No dependency or lock changes. `pnpm audit:production` initially failed on sandbox
+DNS resolution (ENOTFOUND); the authorized network-enabled retry exited 0 with 2 moderate
+findings and no high/critical findings. Existing findings above remain unsuppressed.
+Logs `/private/tmp/capital-shell-production-audit.log` and `...-audit2.log`. Lock SHA256
+remains `6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
+This is a dependency gate, not complete application/image security verification.

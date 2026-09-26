@@ -304,6 +304,32 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     await expect(
       form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }),
     ).toBeEnabled();
+    // SHELL-002-B: resizing and disclosing navigation must not remount the
+    // editor, reset a separate draft or retry the ambiguous command implicitly.
+    const independentDraft = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+    await independentDraft.getByLabel('Количество', { exact: true }).fill('17');
+    const mountedEditor = await form.elementHandle();
+    for (const width of [360, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      if (width < 1000) {
+        const menu = page.getByRole('button', { name: 'Меню', exact: true });
+        await menu.click();
+        await expect(menu).toHaveAttribute('aria-expanded', 'true');
+        await page.keyboard.press('Escape');
+        await expect(menu).toBeFocused();
+        await expect(menu).toHaveAttribute('aria-expanded', 'false');
+      }
+      expect(await mountedEditor?.evaluate((node) => node.isConnected)).toBe(true);
+      await expect(independentDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
+      await expect(
+        form.getByLabel('Получаемое количество до комиссии', { exact: true }),
+      ).toHaveValue('3');
+      await expect(
+        form.getByRole('button', { name: 'Повторить тот же запрос', exact: true }),
+      ).toBeEnabled();
+      expect(submitted).toHaveLength(1);
+    }
+    await mountedEditor?.dispose();
     await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
     await page.locator(`a[href="/manual-accounts/${account.id}"]`).click();
     await expect(form.getByLabel('Получаемое количество до комиссии', { exact: true })).toHaveValue(
@@ -339,8 +365,12 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   await expect(article).toContainText('Неизвестно');
   await article.getByRole('button', { name: 'Показать распределение обмена', exact: true }).click();
   const allocation = article.getByRole('region', { name: 'Распределение обмена', exact: true });
-  await expect(allocation.getByText('Реализованный результат обменов, USD').locator('+ dd')).toContainText('Неизвестно');
-  await expect(allocation.getByText('Себестоимость отданных активов, USD').locator('+ dd')).toHaveText('100');
+  await expect(
+    allocation.getByText('Реализованный результат обменов, USD').locator('+ dd'),
+  ).toContainText('Неизвестно');
+  await expect(
+    allocation.getByText('Себестоимость отданных активов, USD').locator('+ dd'),
+  ).toHaveText('100');
   const lots = page.getByRole('table', { name: 'Открытые лоты', exact: true });
   await expect(lots).toContainText(`Обмен ${receipt?.swap.swapId}, версия 1`);
   await expect(lots).toContainText('Интервал исходного лота: 0–3');
@@ -354,7 +384,9 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     })
     .check();
   let releaseHistory: (() => void) | undefined;
-  const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  const historyGate = new Promise<void>((resolve) => {
+    releaseHistory = resolve;
+  });
   let historyHeld = false;
   let historyDelivered = false;
   const versionsRoute = `**/api/accounting${swapsPath(account.id)}/${receipt?.swap.swapId}/versions**`;
@@ -372,16 +404,23 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     await form.getByRole('button', { name: 'Проверить исправление', exact: true }).click();
     await expect.poll(() => historyHeld).toBe(true);
     // Real concurrent write advances the same journal pin while the old review is in flight.
-    await api.create(account.id, tradeInput(outgoing.id, 2, { occurredAt: '2025-01-04T00:00:00.000Z' }));
+    await api.create(
+      account.id,
+      tradeInput(outgoing.id, 2, { occurredAt: '2025-01-04T00:00:00.000Z' }),
+    );
     await section.getByRole('button', { name: 'Обновить обмены', exact: true }).click();
     await expect(section).toContainText('ревизия журнала: 3.');
-    const response = page.waitForResponse((result) => new URL(result.url()).pathname.endsWith(`/${receipt?.swap.swapId}/versions`));
+    const response = page.waitForResponse((result) =>
+      new URL(result.url()).pathname.endsWith(`/${receipt?.swap.swapId}/versions`),
+    );
     releaseHistory?.();
     await (await response).finished();
     await expect.poll(() => historyDelivered).toBe(true);
     await page.waitForLoadState('networkidle');
     await expect(review).toHaveCount(0);
-    await expect(form.getByRole('button', { name: 'Записать исправление', exact: true })).toBeDisabled();
+    await expect(
+      form.getByRole('button', { name: 'Записать исправление', exact: true }),
+    ).toBeDisabled();
     await expect(form.getByLabel('Сумма оценки, USD', { exact: true })).toHaveValue('0');
     await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
   } finally {

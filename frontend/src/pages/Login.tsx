@@ -83,9 +83,10 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <h1>{t(mfaPending ? 'auth.confirmLogin' : 'auth.login')}</h1>
+    <main className="auth-container">
+      <section className="auth-card" aria-labelledby="login-heading">
+        <div className="auth-brand">Capital Tracker</div>
+        <h1 id="login-heading">{t(mfaPending ? 'auth.confirmLogin' : 'auth.login')}</h1>
 
         {error && (
           <div className="error" role="alert">
@@ -172,7 +173,7 @@ export default function Login() {
         )}
 
         <p>{t('auth.ownerAccessGuidance')}</p>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

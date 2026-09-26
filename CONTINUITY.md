@@ -15,8 +15,8 @@ Complete frontend redesign is now required: modern restrained responsive Russian
 functionality first, optional early-2000s influence, no excess decoration/animation.
 Read docs/frontend-redesign-plan.md (FUI-01..06, all pending) and the dated target-brief
 amendment. This covers navigation/workflows/all screens, not CSS polish alone. Swap
-runtime gates now pass; independent review waits for quota. Separate shell preparation
-has begun while that review remains pending. The next
+runtime gates now pass; independent review waits for quota. The first shell slice is implemented
+while that review remains pending. The next
 owner visual review is after redesign; current functional UI checks are not UX approval.
 
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
@@ -263,16 +263,34 @@ OpenSpec29PASS, protected hashes unchanged, e2e resources empty, preview volume 
 No new browser/build/migration/audit/fullsuite claim; no product/image changes this step.
 Independent persistence/UI review and final verification/archive remain pending.
 
-New active frontend change `redesign-application-shell` has complete proposal/design/
-specs/tasks,0/8implementation tasks. docs/frontend-screen-audit.md inventories routes,
-journeys and keep/simplify/remove decisions; FUI-01 remains partial pending prototypes.
-Worktree../capital-tracker-frontend-shell,branchrefactor/frontend-shell at4decf5a base;
-no dependencies/symlinks added. Shell scope: grouped responsive navigation, active/skip/
-keyboard controls, manual-account landing, labelled preserved legacy dashboard,
-restrained login styling. Existing editors/APIs/data/precision/retry remain intact.
-Next work: apply this explicitly named change, baseline/acceptanceRED before UI code.
-No implementation/browser/build/screenshots for this shell yet. Root owns Docker and
-integration; do not reset preview or archive swaps without independent review.
+Active frontend change `redesign-application-shell` is implemented,6/8tasks; independent
+review/archive pending quota. Isolated worktree capital-tracker-frontend-shell, branch
+refactor/frontend-shell. Read its verification.md, docs/application-shell.md and the
+frontend screen audit/backlog. Root landing now opens manual accounts; desktop sidebar,
+in-flow mobile menu, active links/skip/Escape focus, labelled preserved legacy overview,
+restrained login/MFA and light/dark tokens. No financial/API/auth-logic/schema changes.
+Outlet stays mounted through menu/viewport changes. FUI-01/02 remain partial; long
+account/editor/valuation screens still need FUI-03/04. No owner UX approval is claimed.
+
+Actual Sep26 shell gates: predecessor109/17frontendPASS; new static3/3expectedRED plus
+realHTTPSRED at successful MFA landing(/ versus /manual-accounts). Then112/18frontend
+PASS2.80s, build/lint27existingwarnings, scopedBiome/strictE2Etypes, OpenSpec30PASS.
+First browserGREEN: swapPASS, shellfailed new test's wrong logout label; corrected
+selector to retained “Выход”, no security/financial oracle changed. Final3/3realHTTPS
+PASS34.5s: SHELL-UI, extendedSWAP-UI, retainedISO-003-B wallet navigation/reload.1worker,
+0retries, actualfresh22/productionCLIseed/password/MFA/twoBEreplicas/PostgreSQL. Saved
+account/root reload, anonymous/password-only denial, mobile keyboard, legacy notice,
+logoutrevocation; retainedswapno-remount/independentdraft/explicitretry/financialchecks.
+FEsha256:62543d34b7a1f20e88944f245ebece7543edd2a762c83ac74e5c57106f8ce823,
+unchangedBEdd90a8c5. Root inspected synthetic360/768/1440 light/dark/login/error/recovery
+screenshots; independent review is NOT substituted. Logs/harnesses/artifacts
+/private/tmp/capital-shell-*. Productionaudit firstsandboxENOTFOUND, authorizedretry
+exit0 with2moderate/nohighcritical; no package/lock changes. ExistingVitechunk/proxy
+http2warnings retained. FullE2E/backend/migrationmatrix/hostedCI/release gates unrun.
+Test containers/networks removed; preview still stopped30h, durable volume present and
+old preview image retained. Owner Nginx and lock hashes unchanged. No project removal.
+Next: required independent swap/shell review when available; meanwhile specify a small
+account-workflow redesign slice. No shell/swap archive until independent review passes.
 
 Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-

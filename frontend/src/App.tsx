@@ -16,7 +16,7 @@ import PeriodProfit from '@pages/PeriodProfit';
 import RetiredLiabilities from '@pages/RetiredLiabilities';
 import Settings from '@pages/Settings';
 import React, { useEffect } from 'react';
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import OwnedTransfers from './features/accounting/OwnedTransfers';
 
 interface PrivateRouteProps {
@@ -27,7 +27,11 @@ function PrivateRoute({ children }: PrivateRouteProps) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div className="loading-container">Loading...</div>;
+    return (
+      <div className="loading-container" role="status">
+        Загрузка…
+      </div>
+    );
   }
 
   return user ? <>{children}</> : <Navigate to="/login" />;
@@ -48,7 +52,19 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/manual-accounts" replace />} />
+        <Route
+          path="legacy-overview"
+          element={
+            <>
+              <aside className="legacy-scope-note" role="note" aria-label="Область прежнего обзора">
+                Этот обзор показывает прежние активы и кошельки и не включает ручные счета. Для
+                учета операций и оценки перейдите в <Link to="/manual-accounts">ручные счета</Link>.
+              </aside>
+              <Dashboard />
+            </>
+          }
+        />
         <Route path="assets/*" element={<Assets />} />
         <Route path="liabilities/*" element={<RetiredLiabilities />} />
         <Route path="crypto" element={<Crypto />} />

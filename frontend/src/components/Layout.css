@@ -1,277 +1,202 @@
 .layout {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
   min-height: 100vh;
-  background-color: var(--bg-secondary);
-  transition: background-color 0.3s ease;
+  background: var(--bg-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
-.navbar {
-  background-color: var(--bg-tertiary);
+.skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 1100;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
   color: var(--text-color);
-  padding: 1rem 2rem;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+.app-navigation {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-color);
+  color: var(--text-color);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.app-navigation__header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 4px var(--shadow);
-  border-bottom: 1px solid var(--border-color);
-  transition: background-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease;
-  position: relative;
-  flex-wrap: wrap;
   gap: 1rem;
+  padding: 1.5rem 1.25rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.nav-brand {
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: var(--text-color);
-  white-space: nowrap;
+.app-navigation__identity {
+  min-width: 0;
 }
 
-.mobile-menu-toggle {
-  display: none;
-  flex-direction: column;
-  gap: 4px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0.5rem;
-  z-index: 1001;
+.app-navigation__brand {
+  font-weight: 700;
+  font-size: 1.125rem;
+  letter-spacing: -0.025em;
 }
 
-.mobile-menu-toggle span {
-  width: 25px;
-  height: 3px;
-  background-color: var(--text-color);
-  border-radius: 2px;
-  transition: all 0.3s ease;
+.app-navigation__email {
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
 }
 
-.nav-links {
-  display: flex;
-  gap: 2rem;
-  align-items: center;
-  flex-wrap: wrap;
+.app-navigation__menu {
+  padding: 1.25rem 0.75rem;
 }
 
-.nav-links a {
+.app-navigation__label {
+  padding: 0 0.625rem;
+  margin-bottom: 0.625rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.app-navigation__links {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.app-navigation__links a {
+  display: block;
+  padding: 0.625rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
   color: var(--text-color);
   text-decoration: none;
-  transition: opacity 0.2s, color 0.2s;
-  white-space: nowrap;
-  padding: 0.25rem 0;
 }
 
-.nav-links a:hover {
-  opacity: 0.8;
-  color: var(--primary-color);
+.app-navigation__links a:hover {
+  background: var(--bg-secondary);
+  text-decoration: underline;
 }
 
-.nav-user {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
+.app-navigation__links a[aria-current="page"] {
+  border-color: var(--border-color);
+  background: var(--primary-color-light);
+  color: var(--primary-color-dark);
+  font-weight: 600;
 }
 
-.nav-user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+.app-navigation__legacy {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
 }
 
-.nav-user-email {
-  color: var(--text-color);
-  word-break: break-word;
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.nav-user button {
-  background-color: var(--error-color);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
+.app-navigation__legacy summary {
+  padding: 0.625rem;
+  color: var(--text-secondary);
   cursor: pointer;
-  transition: background-color 0.2s, opacity 0.2s;
-  white-space: nowrap;
-  font-size: 0.9rem;
 }
 
-.nav-user button:hover {
-  opacity: 0.9;
+.app-navigation__session {
+  margin-top: 1.25rem;
+  padding: 1rem 0.625rem 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.app-navigation button {
+  min-height: 44px;
+  padding: 0.5rem 0.875rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+  cursor: pointer;
+  transition: none;
+}
+
+.app-navigation button:hover {
+  background: var(--bg-secondary);
+  opacity: 1;
+}
+.app-navigation button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.app-navigation__toggle {
+  display: none;
+  flex-shrink: 0;
 }
 
 .main-content {
-  flex: 1;
-  padding: 2rem;
-  max-width: 1200px;
+  min-width: 0;
   width: 100%;
+  max-width: 1440px;
   margin: 0 auto;
-  background-color: var(--bg-secondary);
+  padding: clamp(1rem, 2.5vw, 2.5rem);
   color: var(--text-color);
-  transition: background-color 0.3s ease, color 0.3s ease;
-  box-sizing: border-box;
 }
 
-/* Mobile styles */
-@media (max-width: 768px) {
-  .navbar {
-    padding: 0.75rem 1rem;
-    flex-wrap: nowrap;
-    min-height: auto;
+.legacy-scope-note {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-left: 3px solid var(--primary-color-dark);
+  border-radius: 4px;
+  background: var(--bg-color);
+  line-height: 1.5;
+}
+
+.legacy-scope-note a {
+  color: var(--primary-color-dark);
+}
+
+@media (max-width: 960px) {
+  .layout {
+    display: block;
+  }
+  .app-navigation {
+    position: static;
     height: auto;
-    align-items: center;
+    overflow: visible;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
   }
-
-  .nav-brand {
-    font-size: 1.1rem;
-    flex: 1;
-    min-width: 0;
+  .app-navigation__header {
+    padding: 0.875rem 1rem;
+    border-bottom: 0;
   }
-
-  /* Скрываем nav-links и nav-user из потока документа на мобильных */
-  .nav-links:not(.open),
-  .nav-user:not(.open) {
+  .app-navigation__toggle {
+    display: inline-block;
+  }
+  .app-navigation__menu {
+    padding: 1rem;
+    border-top: 1px solid var(--border-color);
+  }
+  .app-navigation__menu:not(.is-open) {
     display: none;
   }
-
-  .nav-links.open {
-    display: flex;
-  }
-
-  .nav-user.open {
-    display: flex;
-  }
-
-  .mobile-menu-toggle {
-    display: flex;
-    order: 3;
-    flex-shrink: 0;
-  }
-
-  .mobile-menu-toggle.active span:nth-child(1) {
-    transform: rotate(45deg) translate(8px, 8px);
-  }
-
-  .mobile-menu-toggle.active span:nth-child(2) {
-    opacity: 0;
-  }
-
-  .mobile-menu-toggle.active span:nth-child(3) {
-    transform: rotate(-45deg) translate(7px, -7px);
-  }
-
-  .nav-links {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    background-color: var(--bg-tertiary);
-    flex-direction: column;
-    gap: 0;
-    padding: 0;
-    box-shadow: 0 4px 6px var(--shadow);
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease;
-    z-index: 1000;
-    pointer-events: none;
-  }
-
-  .nav-links.open {
-    max-height: 400px;
-    padding: 1rem 0;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  .nav-links a {
-    width: 100%;
-    padding: 0.75rem 2rem;
-    border-bottom: 1px solid var(--border-color);
-    line-height: 1.5;
-  }
-
-  .nav-links a:last-child {
-    border-bottom: none;
-  }
-
-  .nav-user {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    background-color: var(--bg-tertiary);
-    flex-direction: column;
-    align-items: stretch;
-    gap: 1rem;
-    padding: 0;
-    box-shadow: 0 4px 6px var(--shadow);
-    max-height: 0;
-    overflow: hidden;
-    opacity: 0;
-    transition: max-height 0.3s ease, padding 0.3s ease, opacity 0.3s ease, top 0.3s ease;
-    z-index: 999;
-    margin-top: 0;
-    pointer-events: none;
-  }
-
-  .nav-user.open {
-    max-height: 300px;
-    padding: 1rem;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  /* When nav-links is open, nav-user position is set dynamically via JavaScript */
-  /* This ensures nav-user sticks directly to nav-links without any gap */
-
-  .nav-user-info {
-    flex-direction: column;
-    align-items: flex-start;
-    width: 100%;
-  }
-
-  .nav-user-email {
-    max-width: 100%;
-    word-break: break-all;
-  }
-
-  .nav-user button {
-    width: 100%;
-  }
-
   .main-content {
-    padding: 1rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .navbar {
-    padding: 0.5rem 0.75rem;
-    min-height: 48px;
-  }
-
-  .nav-brand {
-    font-size: 1rem;
-    line-height: 1.2;
-  }
-
-  .mobile-menu-toggle {
-    padding: 0.25rem;
-  }
-
-  .mobile-menu-toggle span {
-    width: 20px;
-    height: 2px;
-  }
-
-  .main-content {
-    padding: 0.75rem;
+    padding: 1rem 0.5rem;
   }
 }
