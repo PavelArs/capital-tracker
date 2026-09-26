@@ -705,10 +705,60 @@ async function connectedCsv(db, s, f) {
   console.log(
     'PASS SWAP-003/004 CSV null/known preview, upstream stale pins, confirmation/rollback, reward/transfer dependencies and consumed source-batch refusal with immutable bytes/receipts',
   );
+
+  stage = 'SWAP-CSV-PREVIEW earlier candidate sale cannot strand an effective swap';
+  const invalidBytes = Buffer.from(
+    'instrument,side,time,order,quantity,gross,fee\nTOKEN,sell,2025-01-02T00:00:00.000Z,0,2,160,0\n',
+  );
+  const invalidBatch = (
+    await s.csv.upload(f.owner, a, { filename: 'strands-swap.csv', bytes: invalidBytes })
+  ).value;
+  const beforeInvalid = await fingerprint(db);
+  const sourceState = await journal(s, f.owner, a);
+  const invalid = await s.csv.preview(
+    f.owner,
+    a,
+    invalidBatch.batchId,
+    csvSettings(f.token, 'sell'),
+  );
+  assert.equal(invalid.journalRevision, 7);
+  assert.equal(invalid.canConfirm, false);
+  assert.equal(invalid.candidateSummary, null);
+  assert.equal(invalid.previewHash, null);
+  assert.deepEqual(invalid.rowErrors, []);
+  assert.deepEqual(invalid.batchErrors, [{ code: 'connected-history', line: null, column: null }]);
+  assert.equal(invalid.rows.length, 1);
+  assert.deepEqual(invalid.rows[0].execution, {
+    instrumentId: f.token,
+    side: 'sell',
+    occurredAt: '2025-01-02T00:00:00.000Z',
+    orderWithinTimestamp: 0,
+    quantity: '2',
+    grossUsd: '160',
+    feeUsd: '0',
+  });
+  assert.deepEqual(invalid.summaryBefore, sourceState.summary);
+  assert.equal(invalid.summaryBefore.remainingCostUsd, '120');
+  assert.deepEqual(
+    (
+      await db.query('SELECT state,"originalBytes" FROM account_csv_imports WHERE id=$1', [
+        invalidBatch.batchId,
+      ])
+    )[0],
+    { state: 'draft', originalBytes: invalidBytes },
+  );
+  assert.equal(
+    await fingerprint(db),
+    beforeInvalid,
+    'Invalid preview leaves all source bytes, trade/swap heads, versions, keys and pins unchanged',
+  );
+  console.log(
+    'PASS SWAP-CSV-PREVIEW valid earlier sale row strands later swap: exact nonconfirmable envelope, unchanged summary, draft bytes and every business row',
+  );
 }
 
 async function coherentReadModels(db, s, f) {
-  stage = 'SWAP-004-B real concurrent history/chart/portfolio snapshots and once-only loads';
+  stage = 'SWAP-004-B/SWAP-CSV-SNAPSHOT real concurrent reads and once-only loads';
   const a = await account(s, f.owner, 'Swap snapshots source');
   const b = await account(s, f.owner, 'Swap snapshots recipient');
   await s.trade.create(f.owner, a, tradeInput(f.token, 0, { quantity: '3', grossUsd: '300' }));
@@ -733,6 +783,31 @@ async function coherentReadModels(db, s, f) {
     feeInstrumentId: null,
     feeQuantity: '0',
   });
+  const csvBytes = Buffer.from(
+    `instrument,side,time,order,quantity,gross,fee\nTOKEN,sell,${saleAt},0,1,80,0\n`,
+  );
+  const csvBatch = (
+    await s.csv.upload(f.owner, b, { filename: 'concurrent-swap-sale.csv', bytes: csvBytes })
+  ).value;
+  const settings = csvSettings(f.other, 'sell');
+  // Fixed documented tuple for this one-row source, independent of preview implementation helpers.
+  const expectedCsvHash = (revision) =>
+    createHash('sha256')
+      .update(
+        JSON.stringify([
+          'usd-csv-preview-v1',
+          'usd-csv-v1',
+          b,
+          csvBatch.batchId,
+          createHash('sha256').update(csvBytes).digest('hex'),
+          [',', '.', 'offset', null],
+          [[0, 1, 2, 3, 4, 5, 6, null], [['TOKEN', f.other]], [['sell', 'sell']]],
+          true,
+          [[1, 2, [f.other, 'sell', saleAt, 0, '1', '80', '0']]],
+          revision,
+        ]),
+      )
+      .digest('hex');
   for (const [index, at] of [
     coverage,
     firstCommand.occurredAt,
@@ -760,7 +835,9 @@ async function coherentReadModels(db, s, f) {
       ? service.history.getSnapshot(f.owner, b, { at: transferAt })
       : kind === 'series'
         ? service.series.getSeries(f.owner, a, { from: coverage, to: saleAt })
-        : service.portfolio.preview(f.owner, { at: transferAt, accountIds: [a, b] }, {});
+        : kind === 'portfolio'
+          ? service.portfolio.preview(f.owner, { at: transferAt, accountIds: [a, b] }, {})
+          : service.csv.preview(f.owner, b, csvBatch.batchId, settings);
   const statements = [];
   const createRunner = readDb.createQueryRunner.bind(readDb);
   let armed = false;
@@ -793,7 +870,7 @@ async function coherentReadModels(db, s, f) {
       (await db.query('SELECT pg_backend_pid() pid'))[0].pid,
       (await readDb.query('SELECT pg_backend_pid() pid'))[0].pid,
     );
-    for (const [index, kind] of ['history', 'series', 'portfolio'].entries()) {
+    for (const [index, kind] of ['history', 'series', 'portfolio', 'csv'].entries()) {
       const expected = await read(s, kind);
       const seen = new Promise((resolve) => {
         signal = resolve;
@@ -817,7 +894,7 @@ async function coherentReadModels(db, s, f) {
         expectedJournalRevision: 4 + index,
         expectedVersion: 1 + index,
         incomingQuantity: String(quantity),
-        considerationUsd: String(quantity * 30),
+        considerationUsd: String(quantity * (kind === 'csv' ? 40 : 30)),
       });
       const afterWrite = await fingerprint(db);
       release();
@@ -863,7 +940,7 @@ async function coherentReadModels(db, s, f) {
         assert.equal(old.journalRevision, 5);
         assert.equal(next.journalRevision, 6);
         assert.equal(next.swapSummary, undefined);
-      } else {
+      } else if (kind === 'portfolio') {
         assert.equal(old.totalValueUsd, '155');
         assert.equal(next.totalValueUsd, '165');
         assert.equal(next.accounts.find((row) => row.accountId === a).totalValueUsd, '155');
@@ -871,6 +948,54 @@ async function coherentReadModels(db, s, f) {
         assert.deepEqual(
           next.accounts.map((row) => row.journalRevision).sort((x, y) => x - y),
           [4, 7],
+        );
+      } else {
+        assert.equal(old.canConfirm, true);
+        assert.equal(old.journalRevision, 4);
+        assert.equal(old.previewHash, expectedCsvHash(4));
+        assert.deepEqual(old.summaryBefore, {
+          grossBuysUsd: '0',
+          buyFeesUsd: '0',
+          grossSalesUsd: '0',
+          sellFeesUsd: '0',
+          netSalesUsd: '0',
+          consumedCostUsd: '0',
+          realizedUsd: '0',
+          remainingCostUsd: '60',
+        });
+        assert.deepEqual(old.candidateSummary, {
+          ...old.summaryBefore,
+          grossSalesUsd: '80',
+          netSalesUsd: '80',
+          consumedCostUsd: '30',
+          realizedUsd: '50',
+          remainingCostUsd: '30',
+        });
+        assert.deepEqual(next, {
+          ...old,
+          journalRevision: 5,
+          previewHash: expectedCsvHash(5),
+          summaryBefore: { ...old.summaryBefore, remainingCostUsd: '80' },
+          candidateSummary: {
+            ...old.candidateSummary,
+            consumedCostUsd: '40',
+            realizedUsd: '40',
+            remainingCostUsd: '40',
+          },
+        });
+        assert.notEqual(next.previewHash, old.previewHash);
+        await unchanged(
+          db,
+          () => s.csv.confirm(f.owner, b, csvBatch.batchId, csvCommand(old, settings)),
+          409,
+        );
+        assert.deepEqual(
+          (
+            await db.query('SELECT state,"originalBytes" FROM account_csv_imports WHERE id=$1', [
+              csvBatch.batchId,
+            ])
+          )[0],
+          { state: 'draft', originalBytes: csvBytes },
         );
       }
       assert.equal(
@@ -889,7 +1014,7 @@ async function coherentReadModels(db, s, f) {
     await readDb.destroy();
   }
   console.log(
-    'PASS SWAP-004-B two-PID RR/read-only history, chart and selected portfolio with concurrent swap changes, exact old/new amounts, once-only nonempty histories and saved replay',
+    'PASS SWAP-004-B/SWAP-CSV-SNAPSHOT two-PID RR/read-only history, chart, portfolio and CSV preview; exact old/new DTOs, pins/hashes, once-only swap loads, stale confirmation refusal and immutable bytes/receipts',
   );
 }
 
