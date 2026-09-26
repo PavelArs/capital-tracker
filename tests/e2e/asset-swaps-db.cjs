@@ -332,6 +332,177 @@ async function deferredCommit(db, s, f) {
   );
 }
 
+async function sqlConstraints(db, s, f) {
+  stage = 'SWAP-006 direct PostgreSQL constraints';
+  const a = await account(s, f.owner, 'Swap SQL boundaries');
+  await s.trade.create(f.owner, a, tradeInput(f.token, 0));
+  const saved = (await s.swap.create(f.owner, a, input(f.token, f.other, 1))).value;
+  const id = saved.swap.swapId;
+  const before = await fingerprint(db);
+  let refused = 0;
+  const rejectSql = async (label, statement, parameters, code) => {
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    try {
+      await assert.rejects(
+        async () => {
+          await runner.query(statement, parameters);
+          await runner.query('SET CONSTRAINTS ALL IMMEDIATE');
+        },
+        (error) => error.driverError?.code === code,
+        `${label}: expected PostgreSQL ${code}`,
+      );
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
+    assert.equal(await fingerprint(db), before, `${label}: no rows or request keys changed`);
+    refused++;
+  };
+  const patchVersion = (label, patch, code = '23514') =>
+    rejectSql(
+      label,
+      `UPDATE account_swap_versions v SET (${Object.keys(patch)
+        .map((key) => `"${key}"`)
+        .join(',')}) =
+      (SELECT ${Object.keys(patch)
+        .map((key) => `p."${key}"`)
+        .join(',')}
+       FROM jsonb_populate_record(NULL::account_swap_versions,to_jsonb(v)||$2::jsonb) p)
+     WHERE "swapId"=$1`,
+      [id, JSON.stringify(patch)],
+      code,
+    );
+  for (const key of ['outgoingQuantity', 'incomingQuantity']) {
+    for (const value of ['0', '-1', 'NaN']) await patchVersion(`${key} ${value}`, { [key]: value });
+    await patchVersion(`${key} missing`, { [key]: null }, '23502');
+    await patchVersion(`${key} overflow`, { [key]: '1e49' }, '22003');
+  }
+  for (const key of ['considerationUsd', 'feeQuantity']) {
+    for (const value of ['-1', 'NaN']) await patchVersion(`${key} ${value}`, { [key]: value });
+    await patchVersion(`${key} overflow`, { [key]: '1e49' }, '22003');
+  }
+  await patchVersion('missing fee quantity', { feeQuantity: null }, '23502');
+  for (const occurredAt of ['infinity', '-infinity', '1969-12-31', '10000-01-01']) {
+    await patchVersion(`date ${occurredAt}`, { occurredAt });
+  }
+  await patchVersion('nonfinite creation time', { createdAt: 'infinity' });
+  await patchVersion('negative order', { orderWithinTimestamp: -1 });
+  for (const key of ['version', 'journalRevision']) {
+    for (const value of [0, 10001]) await patchVersion(`${key} ${value}`, { [key]: value });
+  }
+  await patchVersion('first version cannot be correction', { kind: 'correct' });
+  await patchVersion('later version cannot be create', { version: 2 });
+  await patchVersion('unsupported kind', { kind: 'replace' });
+  await patchVersion('identical principal instruments', { incomingInstrumentId: f.token });
+  for (const patch of [
+    { feeSource: 'held' },
+    { feeInstrumentId: f.other },
+    { feeQuantity: '0.1' },
+    { feeQuantity: '0.1', feeSource: 'held' },
+    { feeQuantity: '0.1', feeInstrumentId: f.other },
+    { feeQuantity: '0.1', feeInstrumentId: f.other, feeSource: 'unknown' },
+    { feeQuantity: '0.1', feeInstrumentId: f.token, feeSource: 'incoming' },
+    {
+      feeQuantity: '3.000000000000000000000000000001',
+      feeInstrumentId: f.other,
+      feeSource: 'incoming',
+    },
+  ])
+    await patchVersion(`invalid fee coupling ${JSON.stringify(patch)}`, patch);
+  for (const key of ['outgoingInstrumentId', 'incomingInstrumentId']) {
+    await patchVersion(`foreign ${key}`, { [key]: f.foreignToken }, '23503');
+    await patchVersion(`missing ${key}`, { [key]: randomUUID() }, '23503');
+  }
+  await patchVersion(
+    'foreign held fee',
+    { feeQuantity: '0.1', feeSource: 'held', feeInstrumentId: f.foreignToken },
+    '23503',
+  );
+  await patchVersion('missing head', { swapId: randomUUID() }, '23503');
+  await patchVersion('foreign owner/account', { ownerId: f.foreign }, '23503');
+  for (const patch of [
+    { version: 2, kind: 'correct', journalRevision: 3 },
+    { version: 2, kind: 'correct', requestId: randomUUID() },
+    { requestId: randomUUID(), journalRevision: 3 },
+  ])
+    await rejectSql(
+      'unique request/revision/version',
+      `INSERT INTO account_swap_versions SELECT p.* FROM account_swap_versions v
+      CROSS JOIN LATERAL jsonb_populate_record(NULL::account_swap_versions,to_jsonb(v)||$2::jsonb) p
+      WHERE v."swapId"=$1`,
+      [id, JSON.stringify(patch)],
+      '23505',
+    );
+  for (const value of [0, 10001])
+    await rejectSql(
+      `head bound ${value}`,
+      'UPDATE account_swaps SET "currentVersion"=$2 WHERE id=$1',
+      [id, value],
+      '23514',
+    );
+  await rejectSql(
+    'deferred head must have complete version',
+    'UPDATE account_swaps SET "currentVersion"=2 WHERE id=$1',
+    [id],
+    '23503',
+  );
+  await rejectSql(
+    'head must reference owned journal',
+    'INSERT INTO account_swaps(id,"ownerId","accountId","currentVersion") VALUES($1,$2,$3,1)',
+    [randomUUID(), f.foreign, a],
+    '23503',
+  );
+  await rejectSql(
+    'referenced head cannot disappear',
+    'DELETE FROM account_swaps WHERE id=$1',
+    [id],
+    '23503',
+  );
+  await rejectSql(
+    'referenced current version cannot disappear',
+    'DELETE FROM account_swap_versions WHERE "swapId"=$1',
+    [id],
+    '23503',
+  );
+
+  // Positive controls distinguish valid zero/unknown/exact precision and fee shapes
+  // from a fixture that happens to reject every update. Roll back every probe.
+  const runner = db.createQueryRunner();
+  await runner.connect();
+  await runner.startTransaction();
+  try {
+    for (const consideration of [null, '0', '0.000000000000000000000000000001']) {
+      await runner.query(
+        `UPDATE account_swap_versions SET "considerationUsd"=$2,
+        "feeSource"='incoming',"feeInstrumentId"="incomingInstrumentId","feeQuantity"="incomingQuantity"
+        WHERE "swapId"=$1`,
+        [id, consideration],
+      );
+      await runner.query('SET CONSTRAINTS ALL IMMEDIATE');
+      const [row] = await runner.query(
+        `SELECT "considerationUsd"::text AS value FROM account_swap_versions WHERE "swapId"=$1`,
+        [id],
+      );
+      assert.equal(row.value, consideration === '0' ? `0.${'0'.repeat(30)}` : consideration);
+    }
+    await runner.query(
+      `UPDATE account_swap_versions SET "feeSource"='held',"feeInstrumentId"="outgoingInstrumentId",
+      "feeQuantity"=0.000000000000000000000000000001 WHERE "swapId"=$1`,
+      [id],
+    );
+    await runner.query('SET CONSTRAINTS ALL IMMEDIATE');
+  } finally {
+    await runner.rollbackTransaction();
+    await runner.release();
+  }
+  assert.equal(await fingerprint(db), before, 'Positive probes preserve original rows');
+  console.log(
+    `PASS SWAP-006 ${refused} direct SQL refusals with exact SQLSTATE/full-row preservation, valid null/zero/30-digit and fee controls`,
+  );
+}
+
 async function main() {
   assert.equal(
     process.env.DB_HOST,
@@ -387,6 +558,7 @@ async function main() {
     await connectedEconomics(db, s, f);
     await feeEvidence(db, s, f);
     await deferredCommit(db, s, f);
+    await sqlConstraints(db, s, f);
   } finally {
     await db.destroy();
   }

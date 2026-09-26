@@ -192,3 +192,61 @@ preservation/fullSQLconstraints, swap-specific real process/cap/coherent-snapsho
 once-only nonempty-load gates and independent persistence/UI review. Final verification
 and archive remain unchecked. Full unrelated suites/hostedCI/release/backup/security
 matrix and broader target requirements are not claimed complete.
+
+## Schema22 preservation and SQL checkpoint — 2026-09-26
+
+Task3.1 is now complete, **7/12** total. This increment adds acceptance coverage
+for the already implemented additive migration; no product behavior, dependency,
+deployment configuration or image changed. No artificial RED was manufactured.
+The owner-required complete frontend redesign is separately tracked in
+docs/frontend-redesign-plan.md and the target brief, committed asbe35646.
+
+Actual command `caffeinate -is node /private/tmp/capital-swaps-schema22.cjs` exited0,
+log `/private/tmp/capital-swaps-schema22-attempt1.log`. Harness used only disposable
+`capital-tracker-e2e` PostgreSQL16.10 and the existing backend release image
+**sha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2**.
+It ran the following fixtures in real release containers, mounting tests read-only:
+
+- `node /tests/asset-swaps-db.cjs`: **4/4 families PASS**. Retained connected
+  economics, fee/evidence/lifecycle and actual deferred COMMIT rollback witness
+  passed again. New SWAP-006 covers **55 direct SQL refusals**, requiring specific
+  SQLSTATE23514/23503/23505/23502/22003 and unchanged fingerprints across every table.
+  Covers positive finite principal/fee/consideration constraints, nullable evidence,
+  48-digit integer capacity, chronology, version/kind bounds, explicit fee coupling,
+  foreign/missing instruments/heads, request/revision/version uniqueness, deferred
+  current-head linkage and restricted deletion. Positive transactional probes accept
+  null, known0, exact30fractional digits, full incoming fee and tiny held fee. All
+  probes roll back; parser precision and immutable API semantics remain separate.
+- `node /tests/migrations.cjs --from21`: missing configuration refusals, fresh22/
+  populated no-op and **native populated21→22 preservation PASS**. Shared native
+  predecessor fixtures retain both owners' legacy financial rows, authentic encrypted
+  active/candidate MFA and recovery states, all session classes/admissions, opening,
+  trades, CSV bytes/receipts, carry-in, flows and manual prices. New helper also seeds
+  exact display FX plus source rewards and owned transfers for both owners. Actual
+  post-upgrade services return identical original receipt values with stale
+  original pins; transferred reward origin and exact50USD remaining basis in each
+  account are preserved. Both new swap tables stay empty; every preceding schema
+  object and row is unchanged, with only the new migration record/sequence added.
+  Repeated CLI execution is identical; explicit migration22 downgrade refusal
+  preserves the full snapshot. Default full migration runner includes21 now.
+
+All three changed CJS files pass `node --check`; `git diff --check` passes. Scoped
+Biome on the main swap fixture and new helper passed after formatting and splitting
+two multi-variable declarations flagged by the first lint invocation; no financial
+assertion changed. Log `/private/tmp/capital-swaps-schema22-style.log`. Existing
+large migrations.cjs retains its surrounding style to avoid unrelated formatting.
+`OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive` passed
+**29/29**, `/private/tmp/capital-swaps-schema22-specs.log`.
+
+Actual final Docker inventories contained no e2e-labeled containers/networks.
+Separate preview containers were already stopped29hours earlier; their durable
+`capital-tracker-preview_preview_data` volume is present. No preview restart/reset
+or volume removal occurred. Nginx/lock hashes match the protected values above.
+
+Root reviewed fixture construction, SQL oracles and preservation comparisons; this
+does not complete pending independent persistence/UI review. Quota-limited agents
+were not retried. Swap-specific two-process races/capacity/coherent snapshots/CSV/
+once-only loads, final delivery gates and archive remain pending. Browser checks,
+builds, full suites, older predecessor matrix, dependency audit, hosted CI and
+release/backup/security gates were not repeated for these test-only changes; the
+previous scoped results remain dated evidence, not new claims.

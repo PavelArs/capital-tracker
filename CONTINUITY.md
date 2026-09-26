@@ -51,8 +51,9 @@ Latest actual labeled Docker container/network inventories were empty after clea
 ## Owner local preview — preserve across development
 
 On2026-09-24 the owner requested a local look. A separate `capital-tracker-preview`
-Compose project is intentionally RUNNING at https://127.0.0.1:8444 (only loopback
-published). It has its own172.30.101.0/24 subnet, pinned preview image tags,
+Compose project was created at https://127.0.0.1:8444 (only loopback published).
+Sep26 live inventory found its containers stopped29hours earlier; its durable volume
+still exists. This turn did not restart/remove/reset it. It has its own172.30.101.0/24 subnet, pinned preview image tags,
 `capital-tracker-preview_preview_data` durable volume, MFA key/TLS/config/credentials
 in ignored tests/e2e/.runtime/preview. Never remove/reset its volume, key or owner data
 as part of e2e cleanup, project consolidation or continuation. Tests retain separate
@@ -194,7 +195,7 @@ last checkbox is completed only after that procedure. No functional verification
 
 ## Remaining whole goal and next work
 
-Active `record-asset-swaps` is incomplete,6/12tasks done (contract+realRED, pureFIFO,input, frontend).
+Active `record-asset-swaps` is incomplete,7/12tasks done (contract+realRED, pureFIFO,input, schema/SQL, frontend).
 Read its proposal/design/persistence/specs/tasks/verification before continuing. Root has
 implemented backend migration22/store/API/connected-loader integration6658dbc, purecore
 0e06fa9 and parser6450a57/8d0f54c. Original-lot incoming fees and preheldFIFO fees are explicit;
@@ -210,14 +211,14 @@ allocation/lifecycle, actual deferredCOMMIT witness/rollback). SWAP-API realHTTP
 1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI and its Russian editor are now implemented/verified below; do not mark archive-ready. Logs/harnesses are
 /private/tmp/capital-swap-* and /private/tmp/capital-swaps-*; verification.md records scope.
 
-Next: complete populated21upgrade/directconstraints, process/cap/snapshot/connectedCSV/
+Next: complete process/cap/snapshot/connectedCSV/
 once-only-load tests, independent persistence/UI review and final scopedgates/archive. Existing20fixture
 fresh counts updated21→22 with only new swap tables excluded/checkedempty in predecessor
 preservation; original predecessor schemas retained. Runner includes new mainPG fixture.
 Retained PG attempt1 exposed a reward preflight matcher conflating swap/reward queries;
 exact1per-table plus exact1swap materialization now asserted. Attempt2passed allreward/
 transfer families and fresh22/populated18auth+19+20preservation on sameBEimage. No new
-swap-specificprocess/bounds/populated21 claim. Engineering183tests/2suites, backendlint
+swap-specificprocess/bounds claim. Engineering183tests/2suites, backendlint
 (77existingwarnings), strict29OpenSpecitems pass. Final synthetic inventory empty; all
 execsessions terminal, worktreesclean and Nginx/lock hashes preserved.
 Root committed retained fixture/evidence checkpointd7889bd then frontend11aa6ef.
@@ -240,6 +241,17 @@ warnings remain. Productionauditexit0,2existingmoderate/nohighcritical. No packa
 All sessions terminal, labeled containers/networks empty, Nginx/lock unchanged.
 Do not repeat passed backend403/retainedPG/selectedHTTPS unless changes justify it. No full
 suite/release/whole-project pass claimed. Details in active verification.md.
+
+Sep26 root added required frontend redesign to brief/backlog/continuity inbe35646.
+Swap task3.1 now passes: realPG main4families including55directSQL refusals checked
+by exactSQLSTATE/full-row fingerprint, positive null/0/30-digit/fee controls, actual
+deferredCOMMIT witness. `migrations.cjs --from21` constructs native populated21,
+upgrades with actual CLI22, preserves every old schema/row/auth factor/session/CSV,
+reward/transfer receipt, price/FX, then exact no-op/downgrade refusal. SameBEdd90a8c5;
+no product change/rebuild. /private/tmp/capital-swaps-schema22-attempt1.log exit0.
+Only isolated e2e resources cleaned; local preview/data remain separately preserved.
+Current swap-specific races/caps/coherent snapshots/CSV/once-only loads and independent
+persistence/UI review are still pending; no new browser/full-suite pass claimed.
 
 Still required after swaps: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-

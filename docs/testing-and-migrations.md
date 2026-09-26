@@ -568,3 +568,25 @@ Two new HTTPS cases cover protected API economics and the Russian review/create/
 ambiguous-delivery identical retry/correction/void journey. Three retained trade,
 carry-inCSV and private-history cases were selected; the whole E2E suite was not
 repeated. Only external providers are stubbed. Full suite/release gates remain.
+
+## Asset swap schema preservation
+
+For the current schema22, `migrations.cjs --from21` selects fresh/no-op checks and
+the immediately preceding populated schema21 upgrade. The full migration runner
+also includes this predecessor. Run the fixture inside the isolated test Compose
+migrate container with `/tests` mounted and `NODE_PATH=/app/backend/node_modules`,
+as for the other PostgreSQL fixtures; never point it at owner data.
+
+`migration-reward-predecessor.cjs` constructs native prior-schema reward/transfer
+rows and frozen receipts. Current services verify their identical replay and
+transferred reward basis after upgrade. Shared predecessor fixtures retain real
+encrypted MFA, sessions/recovery/admissions, legacy financial rows, trades, CSV
+bytes/receipts, carry-in, flows and exact manual prices. Display FX rows are populated
+too. Every old row/schema object is compared; new swap tables are empty. Repeated
+migration is a no-op, and destructive downgrade is refused without changes.
+
+`asset-swaps-db.cjs` additionally checks55 direct SQL refusals with exact SQLSTATE
+and full-row rollback checks, positive null/zero/30-digit and fee controls, and an
+actual deferred COMMIT failure witness. This focused gate passed on2026-09-26;
+see the active swap verification record. Swap-specific process races, bounds,
+snapshots and independent review remain separate pending gates.

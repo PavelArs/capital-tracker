@@ -33,6 +33,7 @@ const previousFourteenName = 'capital_tracker_previous_fourteen_e2e';
 const previousFifteenName = 'capital_tracker_previous_fifteen_e2e';
 const previousSixteenName = 'capital_tracker_previous_sixteen_e2e';
 const previousEighteenName = 'capital_tracker_previous_eighteen_e2e';
+const previousTwentyOneName = 'capital_tracker_previous_twenty_one_e2e';
 const swapTables = ['account_swaps', 'account_swap_versions'];
 const rewardTables = ['account_rewards', 'account_reward_versions'];
 const transferTables = ['owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions'];
@@ -48,7 +49,7 @@ const accountingTables = [
 ];
 const testDatabases = [
   freshName, legacyName, emptyLegacyName, previousName,
-  previousNineName, previousTenName, previousElevenName, previousTwelveName, previousThirteenName, previousFourteenName, previousFifteenName, previousSixteenName, previousEighteenName,
+  previousNineName, previousTenName, previousElevenName, previousTwelveName, previousThirteenName, previousFourteenName, previousFifteenName, previousSixteenName, previousEighteenName, previousTwentyOneName,
 ];
 let stage = 'isolated configuration';
 const migrationNames = [
@@ -283,7 +284,7 @@ async function verifyLegacy(database, empty = false) {
 
 async function createPreviousSchema(client, target, previousCount) {
   assert.ok(testDatabases.includes(target));
-  assert.ok([8, 9, 10, 11, 12, 13, 14, 15, 16, 18].includes(previousCount));
+  assert.ok([8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21].includes(previousCount));
   await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
   const migrationClasses = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
@@ -872,11 +873,11 @@ async function seedPreviousEighteen(client) {
 }
 
 async function verifyPopulatedAuthUpgrade(previousCount) {
-  assert.ok([11, 12, 13, 14, 15, 16, 18].includes(previousCount));
-  const target = { 11: previousElevenName, 12: previousTwelveName, 13: previousThirteenName, 14: previousFourteenName, 15: previousFifteenName, 16: previousSixteenName, 18: previousEighteenName }[previousCount];
-  const scenario = { 11: 'LIMIT-006-A', 12: 'OPEN-004-B', 13: 'TRADE-MIG-001', 14: 'CSV-MIG-001', 15: 'CARRY-MIG-001', 16: 'FLOW-MIG-001', 18: 'DFX-MIGRATE' }[previousCount];
+  assert.ok([11, 12, 13, 14, 15, 16, 18, 21].includes(previousCount));
+  const target = { 11: previousElevenName, 12: previousTwelveName, 13: previousThirteenName, 14: previousFourteenName, 15: previousFifteenName, 16: previousSixteenName, 18: previousEighteenName, 21: previousTwentyOneName }[previousCount];
+  const scenario = { 11: 'LIMIT-006-A', 12: 'OPEN-004-B', 13: 'TRADE-MIG-001', 14: 'CSV-MIG-001', 15: 'CARRY-MIG-001', 16: 'FLOW-MIG-001', 18: 'DFX-MIGRATE', 21: 'SWAP-006' }[previousCount];
   const addedTables = [...(previousCount === 11 ? ['auth_request_limits'] : []),
-    ...(previousCount < 13 ? accountingTables : []), ...(previousCount < 14 ? tradeTables : []), ...(previousCount < 15 ? csvTables : []), ...(previousCount < 16 ? carryTables : []), ...(previousCount < 17 ? flowTables : []), ...(previousCount < 18 ? priceTables : []), ...fxTables, ...transferTables, ...rewardTables, ...swapTables];
+    ...(previousCount < 13 ? accountingTables : []), ...(previousCount < 14 ? tradeTables : []), ...(previousCount < 15 ? csvTables : []), ...(previousCount < 16 ? carryTables : []), ...(previousCount < 17 ? flowTables : []), ...(previousCount < 18 ? priceTables : []), ...(previousCount < 19 ? fxTables : []), ...(previousCount < 20 ? transferTables : []), ...(previousCount < 21 ? rewardTables : []), ...swapTables];
   stage = `${scenario} previous${previousCount} schema and populated fixture`;
   const client = new Client(connection(target));
   const directory = mkdtempSync(join(tmpdir(), 'capital-migration-mfa-'));
@@ -912,6 +913,9 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     const verifyCsv = previousCount >= 15 ? await seedPreviousFifteen(client, target) : async () => {};
     const verifyCarry = previousCount >= 16 ? await seedPreviousSixteen(client, target) : async () => {};
     if (previousCount >= 18) await seedPreviousEighteen(client);
+    const verifyRewardsAndTransfers = previousCount >= 21
+      ? await require('./migration-reward-predecessor.cjs').seedRewardPredecessor(client, connection(target))
+      : async () => {};
     const before = await snapshot(client);
     assert.equal(before.rows.migrations.length, previousCount);
     if (previousCount >= 13) {
@@ -992,6 +996,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     await verifyTrades();
     await verifyCsv();
     await verifyCarry();
+    await verifyRewardsAndTransfers();
 
     stage = `${scenario} current migration populated replay`;
     const replay = runMigration(target);
@@ -1001,6 +1006,12 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     await verifyTrades();
     await verifyCsv();
     await verifyCarry();
+    await verifyRewardsAndTransfers();
+    if (previousCount === 21) {
+      const { AddAssetSwaps1790300000000 } = require('/app/backend/dist/migrations/1790300000000-AddAssetSwaps.js');
+      await assert.rejects(() => new AddAssetSwaps1790300000000().down(), /recovery plan/);
+      assert.deepEqual(await snapshot(client), after, 'Refused downgrade preserves all data and schema');
+    }
     console.log(`PASS ${scenario} populated${previousCount}-to22 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
@@ -1041,9 +1052,9 @@ async function main() {
     for (const previousCount of [14, 15, 16, 18]) await verifyPopulatedAuthUpgrade(previousCount);
     return;
   }
-  if (process.argv[2] === '--from18') {
+  if (process.argv[2] === '--from18' || process.argv[2] === '--from21') {
     await verifyFresh();
-    await verifyPopulatedAuthUpgrade(18);
+    await verifyPopulatedAuthUpgrade(process.argv[2] === '--from21' ? 21 : 18);
     return;
   }
   assert.equal(process.argv.length, 2, 'Unknown fixture selection');
@@ -1061,6 +1072,7 @@ async function main() {
   await verifyPopulatedAuthUpgrade(15);
   await verifyPopulatedAuthUpgrade(16);
   await verifyPopulatedAuthUpgrade(18);
+  await verifyPopulatedAuthUpgrade(21);
 }
 
 main().catch(() => {

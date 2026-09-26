@@ -10,7 +10,7 @@
 
 ## 3. Private connected persistence
 
-- [ ] 3.1 Add migration22 and real PG acceptance for fresh/populated21 preservation, SQL constraints and deferred COMMIT rollback; preserve previous schemas and data.
+- [x] 3.1 Add migration22 and real PG acceptance for fresh/populated21 preservation, SQL constraints and deferred COMMIT rollback; preserve previous schemas and data.
 - [ ] 3.2 Implement owner-scoped immutable API/store/service and connected loading/replay for every trade/reward/transfer/CSV mutation and historical reader; verify exact replay, CAS and two-process races.
 - [ ] 3.3 Verify account/owner/component/version/passive-revision bounds, pinned complete allocation pages, real two-connection coherent snapshots and once-only series/portfolio loads.
 
@@ -33,6 +33,9 @@
   unknown evidence, bounds and compatible predecessor DTOs. No repository/auth mocks.
 - Real PG `asset-swaps-db.cjs`: SWAP-001..004/006 economics, lifecycle, additive migration,
   owner boundaries, actual SQL constraints/COMMIT rollback, snapshot coherence and CSV.
+- Real PG `migrations.cjs --from21`: SWAP-006 fresh22/populated21/no-op/downgrade refusal;
+  native predecessor fixtures preserve every previous schema/row plus actual encrypted
+  MFA, sessions, CSV bytes/receipts, rewards, transfers, manual prices and display FX.
 - Real PG `asset-swaps-bounds-db.cjs`: SWAP-003-B/004-B processes/advisory locks/CAS,
   active/version/passive revision limits and paged complete materialization.
 - Selected retained PG transfer/reward fixtures where connected loader behavior changes.
