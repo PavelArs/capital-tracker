@@ -391,8 +391,23 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   });
 
   await page.goto('/manual-accounts');
+  const directory = page.getByRole('region', { name: 'Счета', exact: true });
+  await expect(directory).not.toContainText('Загрузка счетов…');
+  const more = directory.getByRole('button', { name: 'Показать еще счета', exact: true });
+  while (await more.isVisible()) {
+    const nextPage = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/accounting/accounts' &&
+        response.request().method() === 'GET',
+    );
+    await more.click();
+    expect((await nextPage).status()).toBe(200);
+    await expect(directory.getByRole('button', { name: 'Загрузка…', exact: true })).toHaveCount(0);
+  }
+  const disclosure = page.getByText('Оценить выбранные счета', { exact: true });
+  await disclosure.click();
   const heading = page.getByRole('heading', { name: 'Оценка выбранных счетов', exact: true });
-  // This is the first new-feature assertion: predecessor images fail before any preview request.
+  // Retained valuation heading after explicitly opening the supplementary panel.
   await expect(heading).toBeVisible();
   const region = page.getByRole('region', { name: 'Оценка выбранных счетов', exact: true });
   const at = page.getByLabel('Момент оценки (UTC)', { exact: true });
@@ -432,6 +447,19 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   const doubleRow = table.getByRole('row').filter({ hasText: data.accounts.double.name });
   await expect(doubleRow.getByRole('cell').nth(3)).toHaveText('246.912');
   await expect(doubleRow.getByRole('cell').nth(4)).toHaveText('246.912');
+
+  // DIRECTORY / MPV-UI-DISCLOSURE: hiding the panel must not replace its intent.
+  const mountedValuation = await region.elementHandle();
+  await disclosure.click();
+  await expect(region).toBeHidden();
+  await disclosure.click();
+  expect(await mountedValuation?.evaluate((node) => node.isConnected)).toBe(true);
+  await expect(halfChoice).toBeChecked();
+  await expect(doubleChoice).toBeChecked();
+  await expect(at).toHaveValue(valuationAt);
+  await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
+  expect(writes).toHaveLength(1);
+  await mountedValuation?.dispose();
 
   await gapChoice.check();
   await expect(region.getByText('Полная оценка выбранных счетов', { exact: true })).toBeHidden();

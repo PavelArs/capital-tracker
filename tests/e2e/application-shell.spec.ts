@@ -64,6 +64,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(200);
 
+  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
   await page.getByLabel('Название счета', { exact: true }).fill('Основной счет');
   const accountCreated = page.waitForResponse(
     (response) =>

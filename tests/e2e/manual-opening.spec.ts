@@ -73,6 +73,7 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
   const csrfBefore = browserCsrfAdmissions();
   const name = `Точный ручной счет ${randomUUID()}`;
   await page.goto('/manual-accounts');
+  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
   await page.getByLabel('Название счета', { exact: true }).fill(name);
   const created = await browserPost(page, '/accounts', () =>
     page.getByRole('button', { name: 'Создать счет', exact: true }).click(),

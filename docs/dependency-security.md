@@ -183,3 +183,10 @@ findings and no high/critical findings. Existing findings above remain unsuppres
 Logs `/private/tmp/capital-shell-production-audit.log` and `...-audit2.log`. Lock SHA256
 remains `6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
 This is a dependency gate, not complete application/image security verification.
+
+## Account directory checkpoint — 2026-09-26
+
+`pnpm audit:production` exited0 with two moderate findings and no high/critical findings;
+`/private/tmp/capital-directory-production-audit.log`. No dependencies or lock changed;
+the previously documented findings remain unsuppressed. This is not complete release
+or application/image security verification.

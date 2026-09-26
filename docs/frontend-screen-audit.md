@@ -73,3 +73,12 @@ overview notice and login presentation. Existing account/editor layouts remain f
 later changes. Required widths360/768/1440 and retained financial journey checks are
 specified in its artifacts. FUI-01 remains partial until responsive prototypes and
 their review exist; FUI-02..06 are not complete.
+
+
+## Account-directory checkpoint, 2026-09-26
+
+Active `redesign-account-directory` implements the next bounded part of this inventory:
+accounts lead the page, creation uses an explicit mounted disclosure, and selected
+valuation is collapsible. Pagination and exact preview state are retained; checkbox
+sizing is corrected locally. See [the guide](account-directory.md) and linked runtime
+evidence. Account details and operation workflows remain unchanged; FUI-03 is partial.

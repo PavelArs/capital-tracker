@@ -22,8 +22,9 @@ data remains intact; retired liability URLs still show their existing notice.
 **Выход** retains real server-side session revocation. Light/dark/system preferences
 remain in Settings; password, authenticator and recovery behavior is unchanged.
 
-This slice replaces only navigation, entry and login presentation. Account lists,
-long operation editors, valuation/performance screens and settings still need the
-workflow redesign in [the backlog](frontend-redesign-plan.md). See the
+This slice replaces only navigation, entry and login presentation. The next active
+[directory slice](account-directory.md) now leads with saved accounts and exposes
+creation/valuation on demand. Long operation editors, valuation/performance screens
+and settings still need the workflow redesign in [the backlog](frontend-redesign-plan.md). See the
 [verification record](../openspec/changes/redesign-application-shell/verification.md)
 for actual RED/GREEN, images, screenshots, unrun checks and review blocker.

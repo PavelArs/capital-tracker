@@ -292,8 +292,29 @@ old preview image retained. Owner Nginx and lock hashes unchanged. No project re
 Shell implementation committed4049132 and fast-forwarded into integration; its worktree
 is clean and the three temporary dependency symlinks are removed. Actual packages and
 all project folders retained. Integrated strict OpenSpec30/30 and apply6/8 confirmed.
-Next: required independent swap/shell review when available; meanwhile specify a small
-account-workflow redesign slice. No shell/swap archive until independent review passes.
+Next active slice `redesign-account-directory` is implemented (4/6 tasks) from60ee94e
+in capital-tracker-account-directory, branch refactor/account-directory. Read its
+proposal/design/specs/tasks/verification and docs/account-directory.md. Directory-first
+entry, explicit mounted create form with focus/Escape, retained name/request-ID/error,
+success link outside the closed form and native mounted valuation disclosure. Scoped
+page CSS and checkbox sizing only; no financial/backend/auth/schema/package changes.
+
+Actual Sep26 evidence: retained112/18 unit PASS2.82s; two new static tests genuinely
+RED for absent trigger/disclosure and real DIRECTORY-UI RED for visible initial form.
+Then114/19 frontend PASS3.20s, build/lint27existing warnings, strict E2E types/scoped
+format/OpenSpec31 PASS. Real DIRECTORY-UI/SHELL-UI/MPV-UI all PASS37.1s, one worker,
+zero retries:51 synthetic accounts and two-page catalog, draft focus/resize/collapse,
+actual committed-response loss/replay200/same UUID/no duplicate SQL count, reload;
+retained exact308.64/61.728/246.912, gaps/null, stale result, no business/provider writes.
+Valuation selection/time/result survive collapse without extra request. Root inspected
+360/768/1440 screenshots; independent review is still pending, not replaced by this.
+FEsha256:340b653f8c3dbf678a193120c03bfeeb0b43e9892a4e09e849fad32260dea89d,
+unchangedBEdd90a8c5. Logs/harness/artifacts /private/tmp/capital-directory-*.
+Production audit exit0 with two moderate/no high-critical findings. Test resources
+cleaned; preview volume and old FE7eff01d1 preview tag preserved. No full suites or
+new migration/release/production claim. Owner Nginx and lock remain protected.
+Next: account-detail hierarchy and focused operation workflows; required independent
+swap/shell/directory review when available. No archive until independent review passes.
 
 Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-

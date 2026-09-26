@@ -85,9 +85,13 @@ The preserved local preview still uses its previous image and data.
 
 FUI-01 remains partial: the shell now has real 360/768/1440px screenshots, while the other
 screen prototypes and their review remain. FUI-02 also remains partial: shared table,
-form and feedback composition is not yet redesigned. Next implementation slice should
-address account list/detail hierarchy and focused operation workflows (FUI-03), keeping
-frozen retries and independent drafts. Do not mark all six frontend tasks complete.
+form and feedback composition is not yet redesigned. The first FUI-03 account-directory
+slice is now implemented in active `redesign-account-directory` (4/6 tasks): accounts
+lead, creation is explicit, valuation is collapsible, and drafts/request identity remain.
+See [the directory guide](account-directory.md) for scope and evidence.114 frontend tests
+and three selected real browser cases pass; review/archive remain pending.
+Next implementation slice should address account-detail hierarchy and focused operation
+workflows, keeping frozen retries and independent drafts. Do not mark all six frontend tasks complete.
 FUI-04/05/06, maximum-period chart work and owner visual review are still pending.
 The local preview database, MFA key, credentials and original repositories remain
 preserved. Broader blockchain/provider/import/security/release requirements remain open.

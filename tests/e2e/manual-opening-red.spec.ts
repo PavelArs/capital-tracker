@@ -114,6 +114,7 @@ test('OPEN-001-A: the Russian protected manual-account page creates an empty acc
   await page.goto('/manual-accounts');
   await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
   const name = `Ручной счет ${randomUUID()}`;
+  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
   await page.getByLabel('Название счета', { exact: true }).fill(name);
   const pending = page.waitForResponse(
     (response) =>
