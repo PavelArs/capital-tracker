@@ -37,6 +37,21 @@
   border: 1px solid var(--border-color);
 }
 
+.owned-transfers .operation-form__section {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.owned-transfers .operation-form__section h3 {
+  margin: 0;
+}
+
+.owned-transfers .manual-feedback--error {
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--error-color);
+  color: var(--text-color);
+}
+
 .owned-transfers .manual-review-check {
   display: flex;
   align-items: flex-start;
