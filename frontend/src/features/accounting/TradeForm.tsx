@@ -1,6 +1,7 @@
 import type { Instrument } from '@api/accounting.api';
 import type { TradeExecution, TradeVersion } from '@api/trades.api';
 import { useId } from 'react';
+import './OperationForm.css';
 import './TradeForm.css';
 
 export type TradeDraft = Omit<TradeExecution, 'orderWithinTimestamp'> & {
@@ -45,12 +46,12 @@ export function TradeForm({
   const hintId = useId();
   const update = (value: Partial<TradeDraft>) => onChange({ ...draft, ...value });
   return (
-    <form className="trade-form" onSubmit={onSubmit}>
+    <form className="trade-form operation-form" onSubmit={onSubmit}>
       <fieldset className="manual-position" aria-label="Сделка в USD" disabled={disabled}>
         <legend>{correction ? 'Исправление сделки' : 'Новая сделка'}</legend>
-        <div className="trade-form__section">
+        <div className="operation-form__section">
           <h3>Инструмент и направление</h3>
-          <div className="trade-form__fields">
+          <div className="operation-form__fields">
             <label>
               Инструмент
               <select
@@ -89,9 +90,9 @@ export function TradeForm({
             </label>
           </div>
         </div>
-        <div className="trade-form__section">
+        <div className="operation-form__section">
           <h3>Количество и суммы</h3>
-          <div className="trade-form__fields">
+          <div className="operation-form__fields">
             <label>
               Количество
               <input
@@ -102,7 +103,7 @@ export function TradeForm({
                 required
               />
             </label>
-            <div className="trade-form__field">
+            <div className="operation-form__field">
               <label>
                 Валовая сумма, USD
                 <input
@@ -116,7 +117,7 @@ export function TradeForm({
               </label>
               <small id={`${hintId}-gross`}>Фактическая общая сумма сделки, не цена единицы.</small>
             </div>
-            <div className="trade-form__field">
+            <div className="operation-form__field">
               <label>
                 Комиссия, USD
                 <input
@@ -132,10 +133,10 @@ export function TradeForm({
             </div>
           </div>
         </div>
-        <div className="trade-form__section">
+        <div className="operation-form__section">
           <h3>Время исполнения</h3>
-          <div className="trade-form__fields">
-            <div className="trade-form__field">
+          <div className="operation-form__fields">
+            <div className="operation-form__field">
               <label>
                 Дата и время сделки (UTC)
                 <input
@@ -150,7 +151,7 @@ export function TradeForm({
                 Укажите дату и время UTC, например 2025-01-01T00:00:00.000Z.
               </small>
             </div>
-            <div className="trade-form__field">
+            <div className="operation-form__field">
               <label>
                 Порядок в этот момент
                 <input

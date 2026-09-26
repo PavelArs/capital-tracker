@@ -40,7 +40,7 @@ export function AssetSwapForm({
   ));
   return (
     <form
-      className="operation-form"
+      className="manual-form operation-form"
       aria-label="Редактор обмена"
       onSubmit={(event) => {
         event.preventDefault();
@@ -48,7 +48,7 @@ export function AssetSwapForm({
       }}
     >
       {recovery}
-      <fieldset className="operation-form__fieldset" disabled={busy || mode === 'void'}>
+      <fieldset className="manual-position" disabled={busy || mode === 'void'}>
         <legend>
           {mode === 'create'
             ? 'Новый обмен'
@@ -241,7 +241,8 @@ export function AssetSwapForm({
             </label>
           </div>
           <p className="operation-form__hint" id={`${guidanceId}-time-hint`}>
-            Укажите часовой пояс явно. Порядок различает операции в одно и то же время обмена.
+            Укажите момент в формате ISO 8601 с часовым поясом. Порядок различает операции с
+            одинаковым временем обмена.
           </p>
         </section>
         <label className="manual-review-check">

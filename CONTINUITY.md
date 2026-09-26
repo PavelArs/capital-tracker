@@ -291,11 +291,28 @@ product/evidence661ccc8; archived2026-09-26-redesign-trade-workbench,6/6tasks co
 3new requirement blocks match,34old canonical files byte-identical,35strict specs pass,
 active changes empty. Task dependency symlinks removed; all worktrees retained.
 
+## Acquisition entry — 2026-09-26
+
+`redesign-acquisition-entry` follows0fc48f7: grouped swap/reward forms, associated
+financial/time guidance and shared scoped OperationForm.css extracted from trade.
+Luna agents own the two component worktrees, Sol acceptance and independent review;
+root integrates in capital-tracker-acquisition-entry. All handlers/guards/options
+retain baseline semantics; controllers/backend/schema/pipeline untouched.
+Actual RED: both missing accessible descriptions on predecessor FE8e48e2fa.
+Candidate118/21frontendPASS3.15s; build/lint/types/style/audit pass,27existing lint
+warnings,bundle warning and2moderate advisories retained. Real WORKFLOW/REWARD/SWAP
+3/3PASS44.0s,1worker0retries; all26 requested screenshots independently approved.
+FEsha256:73f4c11a8eee1496177581248c26642c77accb953173e762130eb392c8a9a707;
+unchanged BEdd90a8c5. Logs/artifacts `/private/tmp/capital-entry-*`, review and exact
+limits in change verification.md/review.md. E2E resources empty; owner Nginx/lock
+unchanged; preview remains stopped33hours with original image/volume. Task dependency
+symlinks removed, all source worktrees retained. Final archive procedure follows.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-remaining swap/reward/import and transfer/flow editors, then analytical/settings
+CSV import and transfer/flow editors, then analytical/settings
 screens and wider result hierarchy. Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.

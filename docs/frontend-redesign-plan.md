@@ -88,7 +88,7 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: remaining swap/reward/import and transfer/flow editors, followed by the
+work: CSV import and transfer/flow editors, followed by the
 analytical/settings screens. Retain chart maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -101,6 +101,14 @@ grouped trade fields with accessible guidance, explicit history-editor focus/can
 return and consistent shared result controls. Exact tables and controllers remain.
 See [workbench verification](../openspec/changes/archive/2026-09-26-redesign-trade-workbench/verification.md).
 Other operation editors, analytical/result hierarchy and whole-redesign review remain.
+
+`redesign-acquisition-entry` follows with grouped swap/reward fields, associated
+financial guidance and shared scoped form styles with trade. Real SWAP-UI, REWARD-UI
+and WORKFLOW-UI pass3/3 without weakening existing financial/recovery assertions;
+118 frontend characterization tests pass. See
+[acquisition-entry verification](../openspec/changes/archive/2026-09-26-redesign-acquisition-entry/verification.md).
+Swap/reward history-focus ergonomics remain a separate followup; this slice changes
+their fields and actions only. FUI-03 remains partial.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to

@@ -1,6 +1,6 @@
 import type { Instrument } from '@api/accounting.api';
 import type { RewardCategory } from '@api/asset-rewards.api';
-import { useId, type ReactNode } from 'react';
+import { type ReactNode, useId } from 'react';
 import './OperationForm.css';
 
 export type RewardMode = 'create' | 'correct' | 'void';
@@ -107,7 +107,7 @@ export function AssetRewardForm({
                 </select>
               </label>
               <small className="operation-form__hint" id={`${hintId}-category`}>
-                Вид вознаграждения не уточнён требует последующей проверки.
+                Категория «Вид вознаграждения не уточнён» требует последующей проверки.
               </small>
             </div>
             <div className="operation-form__field">
@@ -150,8 +150,8 @@ export function AssetRewardForm({
                 </select>
               </label>
               <small className="operation-form__hint" id={`${hintId}-basis`}>
-                Указывается независимо от дохода. Неизвестная сумма не равна нулю; ноль задаётся
-                как известное значение.
+                Указывается независимо от дохода. Неизвестная сумма не равна нулю; ноль задаётся как
+                известное значение.
               </small>
             </div>
             {draft.basisKnown && (

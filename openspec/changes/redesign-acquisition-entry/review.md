@@ -1,0 +1,30 @@
+# Acquisition entry independent review
+
+Baseline: `0fc48f7`; read-only review of current `capital-tracker-acquisition-entry` diff on 2026-09-26. Reviewed AGENTS.md, CONTINUITY.md, target brief, active proposal/design/tasks/spec; no repo/runtime mutation, dependency installation or test run.
+
+## Source verdict
+
+No blocking source findings and no nonblocking defects identified within the bounded presentation slice. Visual approval and GREEN remain pending; this source verdict does not satisfy those gates.
+
+- Installed TypeScript AST inspection compared every form/fieldset/input/select/option/button semantic attribute (excluding className and added aria-describedby, allowing the specified field-group reorder): all 26 swap, 25 reward and 16 trade nodes match baseline. Thus exact value/onChange/onSubmit handlers, required/disabled expressions, option values, fee-source linking/clearing and known/unknown clearing remain identical. Trade control order is identical too.
+- Recovery still precedes and lies outside the busy/void-disabled fieldset. Review and alert remain after that fieldset and before actions. Review/save/cancel types and guards are unchanged; confirmations remain labeled native checkboxes. Amounts/time/order remain string inputs with no new coercion; no controllers/API/backend/schema/dependency/deployment changes are present.
+- Swap hints preserve existing gross valuation/unknown-vs-zero/FIFO explanations and attach them to the relevant controls; new incoming/time guidance is consistent. Reward basis/income hints explain independent evidence and known-zero; unclassified guidance retains the existing category/options. useId supplies instance-unique hint IDs; no hint text is embedded in control labels or financial data.
+- OperationForm.css selectors are scoped through .operation-form; themed control selector retains .trade-journal specificity and excludes checkboxes. Responsive minmax(min(100%,15rem),1fr), min-width:0, wrapping hints/actions and native label associations are appropriate. Existing trade workbench focus/cancel rules remain. Text/select/action minimum height is 44px, while checkbox dimensions come from unchanged manual-review-check CSS. No new animation.
+- Test diff adds guidance/layout checks inside existing UI cases. All API tests, exact null/zero/retry/receipt/SQL/account-isolation/financial and stale-review oracles remain intact (other edits are formatting). Populated long exact conditional values are checked across themes/viewports; database/provider snapshots guard against layout-triggered writes/calls. Each test restores its viewport/theme and original unknown/none state before the existing financial/recovery flow. No assertions removed/weakened and no retries introduced.
+- `/private/tmp/capital-entry-browser-red.log` lines 159–163 and 198–202 record the two actual expected failures: accessible descriptions returned the empty string. This verifies the new semantic RED rather than an artificial CSS failure.
+
+## Remaining required evidence
+
+Root must finish real SWAP-UI, REWARD-UI and retained WORKFLOW-UI GREEN (1 worker/0 retries), characterization/build/lint/type/spec/audit gates and supply settled screenshots for both themes at 360/768/1440. I have not inspected screenshots or claimed runtime/layout correctness. Source-only review cannot rule out computed-style/load-order or visual clipping issues; screenshot review is the explicit next review gate.
+
+## Final visual/runtime review — completed
+
+Independent final approval for this bounded acquisition-entry slice. No blocking or nonblocking defects found after visual review. Earlier pending screenshot/GREEN gates above are now satisfied by the evidence below.
+
+- Actually opened and inspected 26 original screenshots with view_image, without image editing: all 10 `swap-ui-*` and all 10 `reward-ui-*` captures (both themes at 360/768 with top+bottom, both themes at 1440 with the whole form/actions fitting in the top capture), plus all 6 `trade-workbench-*` screenshots (both themes at 360/768/1440).
+- Mobile fields stack cleanly, tablet groups form two columns, desktop groups expand consistently. Hints and complete confirmation labels wrap without collision or page-side clipping. Both themes preserve readable text, controls and section boundaries. Populated long decimal quantities/fees/basis/valuation are fully readable in the provided views. Swap/reward actions wrap to separate rows on mobile and align on larger screens. Native compact checkboxes remain distinct from text/select controls. No screenshot reveals a CSS extraction regression in the trade workbench.
+- The captured native instrument select text can exceed the closed select width (including fixture UUIDs), and the long reward category is abbreviated by the native closed select at 360; associated full category guidance remains visible. This is retained native-control behavior with original labels/options, not changed financial values or a new regression. Arbitrarily long strings cannot all be visible simultaneously in a bounded text control; this review approves the tested exact decimal examples and string preservation, not an unlimited-length display promise.
+- Independently read GREEN log results: WORKFLOW-UI 15.9s, REWARD-UI 13.7s, SWAP-UI 13.7s; 3 passed in 44.0s. Root reports exit 0, 1 worker, 0 retries. Together with reviewed retained assertions, this supplies actual browser/HTTPS/backend/PostgreSQL evidence for the changed guidance/layout and preserved workflows/recovery; it is not a full E2E/security/financial release matrix.
+- Root additionally reports final 118 frontend tests passing in 3.15s, build/lint/scoped style (7 files)/strict E2E types/audit/OpenSpec passing; 27 existing warnings and 2 moderate advisories remain. I did not rerun these commands or inspect their separate logs, so those ancillary checks are explicitly root-reported.
+
+Screenshot artifacts: `/private/tmp/capital-entry-green-artifacts`; GREEN log: `/private/tmp/capital-entry-browser-green.log`. No runtime/repo mutation performed by this reviewer. No broader-redesign acceptance, production-readiness or preview deployment claim.

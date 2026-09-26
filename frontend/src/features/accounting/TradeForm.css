@@ -9,54 +9,6 @@
   outline-offset: 4px;
 }
 
-.trade-form .manual-position {
-  padding: 1rem;
-  border-radius: 4px;
-}
-
-.trade-form__section {
-  padding-bottom: 1rem;
-  margin-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.trade-form__section h3 {
-  margin: 0 0 0.75rem;
-  color: var(--text-secondary);
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.trade-form__fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-  align-items: start;
-  gap: 1rem;
-}
-
-.trade-form__fields label,
-.trade-form__field {
-  display: grid;
-  min-width: 0;
-  gap: 0.4rem;
-}
-
-.trade-form small {
-  color: var(--text-secondary);
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
-
-.trade-journal .trade-form input,
-.trade-journal .trade-form select {
-  min-height: 44px;
-  background: var(--bg-color);
-  color: var(--text-color);
-  border-color: var(--border-color);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-}
-
 .trade-form > button {
   margin-top: 0.75rem;
 }

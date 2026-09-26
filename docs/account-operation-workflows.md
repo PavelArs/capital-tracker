@@ -21,6 +21,14 @@ that history action, or to the workbench after an explicit refresh replaced the 
 Shared results keep exact semantic tables with contained scrolling and consistent
 theme-aware action controls. See [workbench verification](../openspec/changes/archive/2026-09-26-redesign-trade-workbench/verification.md).
 
+Swap entry now groups assets/quantities, USD valuation, fee source and execution time.
+Attached descriptions explain gross incoming quantity, unknown versus zero and the
+difference between held-asset and incoming-asset fees. Reward entry groups receipt,
+independent basis/income and time; unknown values and unclassified rewards remain
+explicit. Trade, swap and reward share responsive form styles in both themes while
+keeping exact strings and the existing review/retry controls. See
+[acquisition-entry verification](../openspec/changes/archive/2026-09-26-redesign-acquisition-entry/verification.md).
+
 Switching keeps all workflows mounted, including exact independent drafts, selected
 CSV File, reviewed state and unresolved commands. It does not submit, refresh or
 cancel anything. Hidden unresolved CSV operations still block incompatible trade
@@ -28,10 +36,10 @@ writes. Return to the relevant workflow for its existing recovery action; the sa
 rule applies after a permitted SPA return. Shared journal feedback and original trade
 retry remain above the account section selector.
 
-This slice changes composition only: original trade, swap, reward, CSV and result
+These slices change presentation and guidance: original trade, swap, reward, CSV and result
 controllers are retained. It adds no library, backend, schema, auth, price/provider or
-deployment change. The persistent preview remains unchanged. Field ergonomics and
-remaining screens are still part of [the redesign plan](frontend-redesign-plan.md).
+deployment change. The persistent preview remains unchanged. Remaining operation
+editors and screens are still part of [the redesign plan](frontend-redesign-plan.md).
 
 See [the specification](../openspec/changes/archive/2026-09-26-focus-account-operation-workflows/specs/account-operation-workflows/spec.md)
 and [actual verification](../openspec/changes/archive/2026-09-26-focus-account-operation-workflows/verification.md).
