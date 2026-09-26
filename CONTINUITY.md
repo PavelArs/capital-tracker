@@ -286,7 +286,10 @@ Final actual WORKFLOW/WORKSPACE2/2PASS29.5s on
 FEsha256:8e48e2fa1d3efd6196e1267446cf5bdde47afa79b772d395a80684bc8589844a,
 unchanged BEdd90a8c5. All12settled light/dark360/768/1440 screenshots inspected;
 types/style checks pass. E2E containers/networks empty; preview stopped33hours,
-original volume/tags and owner Nginx/lock unchanged. Archive procedure follows.
+original volume/tags and owner Nginx/lock unchanged. Independent final approval and
+product/evidence661ccc8; archived2026-09-26-redesign-trade-workbench,6/6tasks complete.
+3new requirement blocks match,34old canonical files byte-identical,35strict specs pass,
+active changes empty. Task dependency symlinks removed; all worktrees retained.
 
 ## Next work and remaining whole goal
 

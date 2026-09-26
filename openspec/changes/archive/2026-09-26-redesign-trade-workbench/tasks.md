@@ -11,7 +11,7 @@
 
 - [x] 3.1 Independently review source/oracles and light/dark responsive screenshots; resolve findings.
 - [x] 3.2 Complete scoped checks, document actual outcomes/limits and preserve owner files/data/preview; remove only task-created symlinks and disposable test resources.
-- [ ] 3.3 Archive with supported CLI, compare canonical/untouched specs and validate; mark after the procedure passes.
+- [x] 3.3 Archive with supported CLI, compare canonical/untouched specs and validate; mark after the procedure passes.
 
 ## Verification manifest
 
