@@ -11,7 +11,7 @@
 
 - [x] 3.1 Independently review source/financial guards and settled responsive screenshots; resolve findings.
 - [x] 3.2 Verify scoped checks, preserve original financial/security oracles, document actual failures/results and clean only synthetic runtime/task symlinks.
-- [ ] 3.3 Archive with installed CLI, compare new/untouched canonical requirements and strictly validate; mark after the actual procedure.
+- [x] 3.3 Archive with installed CLI, compare new/untouched canonical requirements and strictly validate; mark after the actual procedure.
 
 ## Verification manifest
 

@@ -331,7 +331,9 @@ unchangedBEdd90a8c5. Other three cases retain preceding-image evidence; no fulls
 Logs/artifacts `/private/tmp/capital-csv-workbench-*`;44finalframes. E2E resources empty,
 preview stopped34hours with original volume/tags; owner Nginx/lock unchanged. Task
 dependency symlinks removed, all worktrees retained. Independent source/runtime review
-approved, all44clean frames inspected (Sol30,Luna14). Final archive procedure follows.
+approved, all44clean frames inspected (Sol30,Luna14). Product/evidence9743139; archived
+2026-09-26-redesign-csv-workbench,6/6tasks complete. Three new requirement blocks match,
+36old canonical files are byte-identical,37strict specs pass; active changes empty.
 
 ## Next work and remaining whole goal
 

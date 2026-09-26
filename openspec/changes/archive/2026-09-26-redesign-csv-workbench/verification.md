@@ -105,4 +105,10 @@ and explicit candidate UUID evidence remain available. File-stage frames were ca
 after inspection, so their current guide step is mapping. No separate visual coverage
 claim for initial empty, source-scroll, error/stale/recovery/unknown-completeness or
 expanded-identity states; relevant retained runtime/source checks are narrower evidence.
-Archive comparison remains the final procedural step.
+Product/evidence commit `9743139`. Installed CLI `openspec archive redesign-csv-workbench --yes`
+archived as `2026-09-26-redesign-csv-workbench`; its warning reflected only the pending
+archive/comparison task, with all product/review/runtime work already complete. Replaced
+generated Purpose placeholder; all3 new requirement blocks match exactly and36 old
+canonical files are byte-identical. Strict validation passes37 canonical specs;
+`openspec list --json` returns no active changes. Final task marked after this actual
+procedure;6/6complete. Archive/hash/spec logs use the same `/private/tmp` prefix.
