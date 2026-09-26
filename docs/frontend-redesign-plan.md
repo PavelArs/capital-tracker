@@ -88,7 +88,7 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: transfer/flow editors, followed by the
+work: external USD flow editor, followed by the
 analytical/settings screens. Retain chart maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -115,6 +115,13 @@ associated interpretation hints, batch identity disclosure and responsive exact 
 Source/controller/atomic import/rollback and immutable-retry behavior remain. See
 [CSV workbench verification](../openspec/changes/archive/2026-09-26-redesign-csv-workbench/verification.md)
 for scoped gates, corrected mobile overflow/contrast and final visual evidence.
+
+`redesign-transfer-workbench` adds grouped internal-transfer fields and associated
+exact-amount/time/fee guidance, history-to-editor focus with cancel return, and compact
+identity disclosure. The existing exact command/review/recovery guards remain. See
+[transfer workbench verification](../openspec/changes/archive/2026-09-26-redesign-transfer-workbench/verification.md)
+for the selected real HTTPS/MFA/PostgreSQL journeys and scoped review. External USD
+flows, remaining editor focus, analytics/settings and whole-redesign review remain open.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to

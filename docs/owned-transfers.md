@@ -19,6 +19,15 @@ correction is saved with **Сохранить исправление**; terminal
 **Подтвердить отмену**. The separate **Показать разбор лотов** action loads
 current FIFO allocation.
 
+The editor groups accounts/recipient quantity, UTC/order and fee fields. Associated
+guidance explains principal versus fee and the historical fee-basis meaning. Selecting
+a correction or void moves keyboard focus to its heading; cancellation returns to the
+originating history action when available. History leads with quantity/asset and account
+direction; **Идентификатор перевода** reveals the full copyable identity. Current
+allocation and version history remain separate from the saved command receipt. See the
+[transfer workbench verification](../openspec/changes/archive/2026-09-26-redesign-transfer-workbench/verification.md)
+for the scoped real browser checks and responsive evidence.
+
 Both accounts must have an initialized journal with a declared-empty or known-cost
 opening. Unknown-cost holdings cannot be converted by creating a transfer. The
 movement instant must be at or after both accounts' coverage boundaries. The

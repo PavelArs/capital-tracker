@@ -335,11 +335,37 @@ approved, all44clean frames inspected (Sol30,Luna14). Product/evidence9743139; a
 2026-09-26-redesign-csv-workbench,6/6tasks complete. Three new requirement blocks match,
 36old canonical files are byte-identical,37strict specs pass; active changes empty.
 
+## Transfer workbench — verified, archive pending
+
+`redesign-transfer-workbench` follows859f267. Grouped internal-transfer fields with
+associated recipient/fee/UTC/order guidance, explicit review section, action-only
+editor focus and cancellation return; history now leads with exact amount/asset and
+account direction with native identity disclosure. Controllers/recovery/guarded writes
+remain;14form control AST signatures unchanged. Root owns page/styles, Luna form,
+Sol acceptance and separate Sol source/history review; independent Luna editor review.
+
+Actual RED on prior FEe5099425: missing recipient accessible description. Final product
+5d52cac integrates form06c0514 from41a49ce and acceptance42f918f from5144617. Author
+component-test attempt had known ERR_REQUIRE_ESM worker startup; root Node22.23.2
+all118tests/21files PASS5.47s. Build/lint/types/style/audit/specs pass; existing27warnings,
+Vite chunk warning and2moderate/nohighcritical remain. GREEN2/2PASS31.5s: TRANSFER-UI
+14.8s with exact committed retry/correction/void/fee/holdings and WORKFLOW-UI16.0s.
+RealHTTPS/password/MFA/backend/PG22migrations, no own-backend/auth mocks.
+
+FEsha256:ebdc0e74e6e439bc93a492f46f71f61b2e45f8ad8308900fa321664aa54da0b7;
+BEdd90a8c5 unchanged.24light/dark360/768/1440 actual viewport frames independently
+reviewed, no blocking findings. Captures cover blank create editor and saved
+allocation/version history; other states have browser assertions, not visual approval.
+Minor desktop field-grid whitespace is nonblocking. Logs/artifacts
+`/private/tmp/capital-transfer-workbench-*`. E2E resources empty; preview volume/image/
+stopped containers, owner Nginx and lock preserved. Full suites/backend/upgrades/live
+providers/scanners/hostedCI/release not rerun for this frontend slice.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-transfer/flow editors, then analytical/settings
+external USD flow editor, then analytical/settings
 screens and wider result hierarchy. Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
