@@ -29,6 +29,11 @@ explicit. Trade, swap and reward share responsive form styles in both themes whi
 keeping exact strings and the existing review/retry controls. See
 [acquisition-entry verification](../openspec/changes/archive/2026-09-26-redesign-acquisition-entry/verification.md).
 
+CSV import has a visible file → mapping → review guide, grouped mapping fields and
+attached interpretation hints. Selected-batch IDs/hash are available on demand;
+source, exact preview, receipts and complete rollback evidence remain accessible.
+See the [CSV workflow](csv-imports.md) for explicit upload/review/confirmation steps.
+
 Switching keeps all workflows mounted, including exact independent drafts, selected
 CSV File, reviewed state and unresolved commands. It does not submit, refresh or
 cancel anything. Hidden unresolved CSV operations still block incompatible trade

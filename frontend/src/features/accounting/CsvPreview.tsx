@@ -127,20 +127,22 @@ export function CsvSource({ inspection }: { inspection: CsvInspection }) {
 }
 export function CsvPreview({ value }: { value: CsvPreviewResult }) {
   return (
-    <section aria-label="Предпросмотр импорта">
+    <section className="csv-imports__preview" aria-label="Предпросмотр импорта">
       <h3>Предпросмотр импорта</h3>
       <p>
         Проверена ревизия журнала: {value.journalRevision}. Суммы ниже — учётные результаты
         записанных сделок.
       </p>
-      <CsvSummary title="До импорта" summary={value.summaryBefore} />
-      {value.candidateSummary ? (
-        <CsvSummary title="После импорта" summary={value.candidateSummary} />
-      ) : (
-        <p role="alert">
-          Импорт пока невозможен. Результат по отдельным допустимым строкам не рассчитывается.
-        </p>
-      )}
+      <div className="csv-imports__comparison">
+        <CsvSummary title="До импорта" summary={value.summaryBefore} />
+        {value.candidateSummary ? (
+          <CsvSummary title="После импорта" summary={value.candidateSummary} />
+        ) : (
+          <p role="alert">
+            Импорт пока невозможен. Результат по отдельным допустимым строкам не рассчитывается.
+          </p>
+        )}
+      </div>
       {value.batchErrors.length > 0 && (
         <ul>
           {value.batchErrors.map((error) => (

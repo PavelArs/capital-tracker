@@ -88,7 +88,7 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: CSV import and transfer/flow editors, followed by the
+work: transfer/flow editors, followed by the
 analytical/settings screens. Retain chart maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -110,12 +110,20 @@ and WORKFLOW-UI pass3/3 without weakening existing financial/recovery assertions
 Swap/reward history-focus ergonomics remain a separate followup; this slice changes
 their fields and actions only. FUI-03 remains partial.
 
+`redesign-csv-workbench` adds a visible file/mapping/review guide, grouped mapping with
+associated interpretation hints, batch identity disclosure and responsive exact evidence.
+Source/controller/atomic import/rollback and immutable-retry behavior remain. See
+[CSV workbench verification](../openspec/changes/archive/2026-09-26-redesign-csv-workbench/verification.md)
+for scoped gates, corrected mobile overflow/contrast and final visual evidence.
+
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to
   remaining operation editors as they are redesigned.
 - Avoid stealing focus when a delayed account creation completes after the owner
   has closed its form and moved into another control.
 - Verify focus transfer when resizing desktop navigation to its hidden mobile state.
+- Audit foreground token contrast on the remaining dark-theme screens; CSV disclosure
+  and current-stage labels now use the existing readable foreground token.
 
 Original repositories, owner data, preview volume/MFA/credentials and Nginx edit
 remain preserved. Broader providers/import/security/release work remains separate.

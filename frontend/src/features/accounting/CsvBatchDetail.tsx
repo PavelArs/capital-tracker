@@ -46,16 +46,19 @@ export function CsvBatchDetail({
   const settings = value.acceptedSettings;
   const review = value.rollbackReview;
   return (
-    <section aria-label="Партия CSV">
+    <section className="csv-imports__section" aria-label="Партия CSV">
       <h3>{value.batch.filename}</h3>
       <p>
         Состояние: {csvStateLabel[value.batch.state]}. Сохранено байт: {value.batch.byteLength}.
         Дата: {value.batch.createdAt}.
       </p>
-      <p className="manual-muted">
-        Идентификатор партии: {value.batch.batchId}. SHA256: {value.batch.sha256}. Оригинал хранится
-        приватно.
-      </p>
+      <details>
+        <summary>Идентификаторы партии</summary>
+        <p className="manual-muted">
+          Идентификатор партии: {value.batch.batchId}. SHA256: {value.batch.sha256}. Оригинал
+          хранится приватно.
+        </p>
+      </details>
       {value.confirmReceipt && <CsvReceiptView receipt={value.confirmReceipt} />}
       {value.rollbackReceipt && <CsvReceiptView receipt={value.rollbackReceipt} />}
       {settings && (
@@ -160,7 +163,7 @@ export function CsvBatchDetail({
         </>
       )}
       {value.batch.state === 'committed' && (
-        <section aria-label="Проверка отката">
+        <section className="csv-imports__rollback" aria-label="Проверка отката">
           <h4>Откат партии целиком</h4>
           <p>
             Проверена ревизия журнала: {review.journalRevision}. Будут исключены{' '}
@@ -168,8 +171,12 @@ export function CsvBatchDetail({
             неизменяемых версий. Исходные данные и история сохранятся. Распределение оставшихся
             лотов FIFO пересчитывается.
           </p>
-          <CsvSummary title="До отката" summary={review.summaryBefore} />
-          {review.summaryAfter && <CsvSummary title="После отката" summary={review.summaryAfter} />}
+          <div className="csv-imports__comparison">
+            <CsvSummary title="До отката" summary={review.summaryBefore} />
+            {review.summaryAfter && (
+              <CsvSummary title="После отката" summary={review.summaryAfter} />
+            )}
+          </div>
           {review.reason && <p>{reasons[review.reason]}</p>}
           {rollbackStale && (
             <p role="alert">Журнал изменился. Обновите состояние CSV перед проверкой отката.</p>

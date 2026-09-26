@@ -452,9 +452,10 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
     );
   const savedDraft = await draftValues();
   const originalViewport = page.viewportSize();
-  const themeSelect = page.locator('select.theme-select');
-  const originalTheme = await themeSelect.inputValue();
-  const checkPresentation = async (stage: 'mapping' | 'preview') => {
+  const originalTheme = await page.evaluate(() =>
+    document.documentElement.getAttribute('data-theme'),
+  );
+  const checkPresentation = async (stage: 'mapping' | 'preview' | 'batch') => {
     await page.waitForLoadState('networkidle');
     const before = fingerprint(['auth_sessions', 'auth_request_limits']);
     const calls = providerRequests();
@@ -464,6 +465,32 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
         presentationRequests.push(request.url());
     };
     page.on('request', recordPresentationRequest);
+    const captureTarget = async (target: typeof mapping, name: string, firstOnly = false) => {
+      const bounds = await target.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top + window.scrollY, height: box.height };
+      });
+      const segments = firstOnly ? 1 : Math.ceil(bounds.height / 900);
+      for (let index = 0; index < segments; index++) {
+        const offset = Math.min(index * 900, Math.max(0, bounds.height - 900));
+        await page.evaluate(
+          (top) => window.scrollTo(0, Math.max(0, top - 16)),
+          bounds.top + offset,
+        );
+        // Capture the real viewport; element clipping can misplace transformed fixed links.
+        await expect(
+          page.getByRole('link', { name: 'К содержимому', exact: true }),
+        ).not.toBeInViewport();
+        await testInfo.attach(`${name}-${index + 1}`, {
+          body: await page.screenshot({
+            path: testInfo.outputPath(`${name}-${index + 1}.png`),
+            animations: 'disabled',
+            fullPage: false,
+          }),
+          contentType: 'image/png',
+        });
+      }
+    };
     const previewText =
       stage === 'preview'
         ? await csvRegion
@@ -472,7 +499,11 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
         : null;
     try {
       for (const theme of ['light', 'dark']) {
-        await themeSelect.selectOption(theme);
+        // Select presentation only, as in WORKFLOW-UI; no input events or business data change.
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-theme', value),
+          theme,
+        );
         await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
         for (const width of [360, 768, 1440]) {
           await page.setViewportSize({ width, height: 1000 });
@@ -502,21 +533,36 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
             expect(box?.height).toBeLessThan(44);
             expect(box?.width).toBeLessThan(44);
           }
-          await testInfo.attach(`csv-${stage}-${theme}-${width}`, {
-            body: await (stage === 'mapping'
+          if (stage === 'mapping')
+            await captureTarget(csvRegion, `csv-file-${theme}-${width}`, true);
+          await captureTarget(
+            stage === 'mapping'
               ? mapping
               : csvRegion.getByRole('region', {
-                  name: 'Предпросмотр импорта',
+                  name: stage === 'preview' ? 'Предпросмотр импорта' : 'Партия CSV',
                   exact: true,
-                })
-            ).screenshot({ animations: 'disabled' }),
-            contentType: 'image/png',
-          });
-          expect(await draftValues()).toEqual(savedDraft);
+                }),
+            `csv-${stage}-${theme}-${width}`,
+          );
+          expect(await draftValues()).toEqual(stage === 'batch' ? [] : savedDraft);
+          if (stage === 'batch') {
+            await expect(
+              csvRegion.getByRole('combobox', { name: 'Сохранённая партия CSV', exact: true }),
+            ).toHaveValue(batch);
+            await expect(
+              csvRegion.getByRole('checkbox', {
+                name: 'Я проверил последствия отката всей партии',
+                exact: true,
+              }),
+            ).not.toBeChecked();
+          }
         }
       }
     } finally {
-      await themeSelect.selectOption(originalTheme);
+      await page.evaluate((value) => {
+        if (value === null) document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', value);
+      }, originalTheme);
       if (originalViewport) await page.setViewportSize(originalViewport);
       page.off('request', recordPresentationRequest);
     }
@@ -639,6 +685,7 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
       },
     });
   }
+  await checkPresentation('batch');
   expect(providerRequests()).toEqual(providers);
   providers = await restartWithExactProviderWarmup();
   await page.reload();

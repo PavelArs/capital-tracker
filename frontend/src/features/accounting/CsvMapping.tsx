@@ -101,6 +101,14 @@ export function CsvMapping({
   disabled: boolean;
 }) {
   const descriptionId = useId();
+  const columnDescriptions: Partial<Record<CsvField, string>> = {
+    quantity: `${descriptionId}-totals`,
+    grossUsd: `${descriptionId}-totals`,
+    feeUsd: `${descriptionId}-fee`,
+    currency: `${descriptionId}-currency`,
+    occurredAt: `${descriptionId}-time`,
+    order: `${descriptionId}-time`,
+  };
   const [choices, setChoices] = useState(instruments);
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -145,15 +153,7 @@ export function CsvMapping({
               {`Колонка: ${csvFields[field]}`}
               <select
                 value={draft.columns[field]}
-                aria-describedby={
-                  field === 'quantity' || field === 'grossUsd'
-                    ? `${descriptionId}-totals`
-                    : field === 'feeUsd'
-                      ? `${descriptionId}-fee`
-                      : field === 'currency'
-                        ? `${descriptionId}-currency`
-                        : undefined
-                }
+                aria-describedby={columnDescriptions[field]}
                 onChange={(event) =>
                   onChange({
                     ...draft,
@@ -182,11 +182,13 @@ export function CsvMapping({
           Комиссия обязательна; ноль указывайте явно.
         </p>
         <p id={`${descriptionId}-currency`} className="operation-form__hint">
-          Валюта необязательна. Если сопоставили колонку валюты, каждое значение должно быть USD.
+          Колонку валюты можно не сопоставлять. Если она сопоставлена, каждое значение должно быть
+          USD.
         </p>
       </section>
       <section className="operation-form__section">
         <h3>Точные исходные значения инструмента</h3>
+        <p className="operation-form__hint">Одинаковые названия не заменяют UUID.</p>
         <div className="operation-form__fields">
           {sourceKeys(document, draft.columns.instrument).map((source) => (
             <label key={source}>
@@ -256,23 +258,25 @@ export function CsvMapping({
       <section className="operation-form__section">
         <h3>Интерпретация чисел и времени</h3>
         <div className="operation-form__fields">
-          <label>
-            Десятичный разделитель
-            <select
-              value={draft.decimalSeparator}
-              aria-describedby={`${descriptionId}-decimal`}
-              onChange={(event) =>
-                onChange({ ...draft, decimalSeparator: event.target.value as '.' | ',' })
-              }
-            >
-              <option value=".">Точка (.)</option>
-              <option value=",">Запятая (,)</option>
-            </select>
-          </label>
-          <p id={`${descriptionId}-decimal`} className="operation-form__hint">
-            Выберите точку или запятую как десятичный разделитель. Значения будут прочитаны по этому
-            правилу без преобразования или форматирования исходного CSV.
-          </p>
+          <div className="operation-form__field">
+            <label>
+              Десятичный разделитель
+              <select
+                value={draft.decimalSeparator}
+                aria-describedby={`${descriptionId}-decimal`}
+                onChange={(event) =>
+                  onChange({ ...draft, decimalSeparator: event.target.value as '.' | ',' })
+                }
+              >
+                <option value=".">Точка (.)</option>
+                <option value=",">Запятая (,)</option>
+              </select>
+            </label>
+            <p id={`${descriptionId}-decimal`} className="operation-form__hint">
+              Выберите точку или запятую как десятичный разделитель. Значения будут прочитаны по
+              этому правилу без преобразования или форматирования исходного CSV.
+            </p>
+          </div>
           <label>
             Формат времени
             <select
@@ -293,6 +297,7 @@ export function CsvMapping({
             <label>
               Фиксированное смещение UTC
               <input
+                aria-describedby={`${descriptionId}-time`}
                 value={draft.fixedOffset}
                 placeholder="+03:00"
                 onChange={(event) => onChange({ ...draft, fixedOffset: event.target.value })}
@@ -303,7 +308,7 @@ export function CsvMapping({
         <p id={`${descriptionId}-time`} className="operation-form__hint">
           Поддерживается дата ISO с секундами и до трёх десятичных знаков. Используйте явное
           смещение или Z в каждой дате либо задайте общее фиксированное смещение. Летнее время не
-          угадывается; совпадающие моменты упорядочиваются отдельной колонкой.
+          угадывается; порядок совпадающих моментов задаётся отдельной колонкой.
         </p>
       </section>
       <label className="manual-review-check">

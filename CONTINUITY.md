@@ -311,11 +311,33 @@ symlinks removed, all source worktrees retained. Product/evidencef2af2d2; archiv
 blocks match,35old canonical files are byte-identical,36strict specs pass and active
 changes are empty. These results cover this bounded form slice, not the whole redesign.
 
+## CSV workbench — 2026-09-26
+
+`redesign-csv-workbench` followsfd698a6: derived file/mapping/review guide, grouped
+mapping with associated exact interpretation hints, native secondary batch identity
+disclosure, scoped responsive source/preview/provenance/rollback presentation.
+Controller/helpers/handlers/guards remain; no parser/backend/auth/schema/pipeline change.
+Root capital-tracker-csv-workbench, Sol acceptance/review, Luna mapping and separate
+mapping visual review; source commitsb779907/9618a3f. Genuine preimplementation RED:
+guide absent on predecessorFE73f4c11a.118/21frontendPASS3.24s; build/lint/types/style/audit
+pass,27existing lint warnings,bundle warning and2moderate findings retained.
+Actual firstGREEN3pass/1test-locator failure; corrected nonexistent theme selector.
+Focused rerun found real preview mobile overflow; scoped grid minimum fixed without
+weakening assertion. Then4/4realjourneysPASS1.1m onFE8d319fc1. Independent visual review
+found dark-label contrast and full-element capture artifacts. Scoped foreground fix,
+real viewport captures without masking, final fullCSV1/1PASS27.5s on
+FEsha256:e50994254810e656a7614ed9d2716fe9cdb863c4631fa3e38c17cd6cdd7e8f43;
+unchangedBEdd90a8c5. Other three cases retain preceding-image evidence; no fullsuite.
+Logs/artifacts `/private/tmp/capital-csv-workbench-*`;44finalframes. E2E resources empty,
+preview stopped34hours with original volume/tags; owner Nginx/lock unchanged. Task
+dependency symlinks removed, all worktrees retained. Independent source/runtime review
+approved, all44clean frames inspected (Sol30,Luna14). Final archive procedure follows.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-CSV import and transfer/flow editors, then analytical/settings
+transfer/flow editors, then analytical/settings
 screens and wider result hierarchy. Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.

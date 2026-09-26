@@ -205,3 +205,5 @@ The subsequent trade-workbench gate also exited0 with the same two moderate find
 and unchanged lockfile: `/private/tmp/capital-workbench-audit.log`.
 The acquisition-entry gate also exited0 with the same two moderate findings and
 unchanged lockfile: `/private/tmp/capital-entry-audit.log`.
+The CSV-workbench gate also exited0 with the same two moderate findings and unchanged
+lockfile: `/private/tmp/capital-csv-workbench-audit.log`.

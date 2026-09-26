@@ -43,6 +43,15 @@ and metadata before delimiter-dependent parsing. No invalid prefix becomes trade
 
 ## Russian form workflow
 
+The **Файл → Сопоставление → Проверка** guide shows the current preparation stage;
+it does not submit an import. Mapping separates source columns, exact source values
+and number/time interpretation, with descriptions attached to the controls. Wide
+source/candidate/provenance tables scroll inside their own area. **Идентификаторы
+партии** opens the exact batch ID/hash with the keyboard; status, receipts, errors,
+original-request recovery and rollback consequences remain visible separately.
+See the [workbench verification](../openspec/changes/archive/2026-09-26-redesign-csv-workbench/verification.md)
+for this presentation slice's scoped evidence and limits.
+
 1. Open the account's **Импорт CSV** section. Choose **Файл CSV**, then **Загрузить CSV**.
    The retained filename identifies the selected batch. Selecting another file clears
    the old inspection, mapping and preview; upload it before preparing its import.
@@ -50,7 +59,7 @@ and metadata before delimiter-dependent parsing. No invalid prefix becomes trade
    shows decoded literal cells, record ordinals and physical starting lines. Source
    text is displayed as text, including markup and formula-looking strings.
 3. Map instrument, side, timestamp, order within the timestamp, quantity, gross USD
-   total and USD fee columns. Currency is optional. Map every observed instrument
+   total and USD fee columns. The currency column is optional. Map every observed instrument
    source key to an existing owned instrument UUID, and each side key to buy/sell.
    Source keys retain case and spaces; identical symbols do not establish identity.
    The form can load more instruments when the needed UUID is beyond the first page.

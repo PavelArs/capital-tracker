@@ -386,9 +386,18 @@ export function CsvImports({
   const refreshBatch =
     recovery?.batchId ??
     (recovery && recovery.operation.kind !== 'upload' ? recovery.operation.batchId : selected);
+  const importStep =
+    preview || (detail && detail.batch.state !== 'draft') ? 3 : inspection?.valid ? 2 : 1;
   return (
     <section className="manual-card csv-imports" aria-labelledby="csv-import-heading">
       <h2 id="csv-import-heading">Импорт CSV</h2>
+      <ol className="csv-imports__steps" aria-label="Этапы импорта">
+        {['Файл', 'Сопоставление', 'Проверка'].map((label, index) => (
+          <li key={label} aria-current={importStep === index + 1 ? 'step' : undefined}>
+            {label}
+          </li>
+        ))}
+      </ol>
       <p>
         UTF-8, запятая или точка с запятой; файл до 256 КиБ, до 100 записей, 32 колонок и 4096 байт
         в ячейке. Сначала просмотрите исходные строки и явно укажите смысл колонок. Поддерживаются
@@ -434,98 +443,104 @@ export function CsvImports({
         receipt.requestId !== detail?.rollbackReceipt?.requestId && (
           <CsvReceiptView receipt={receipt} />
         )}
-      <label className="manual-field">
-        Файл CSV
-        <input
-          type="file"
-          accept=".csv,text/csv"
-          disabled={locked}
-          onChange={(event) => {
-            if (recoveries.has(accountId) || callbacks.current.parentBlocked) return;
-            invalidate();
-            setFile(event.target.files?.[0] ?? null);
-            selection.current = null;
-            setSelected(null);
-            setDetail(null);
-            setInspection(null);
-            setMapping(emptyCsvMapping());
-            setRows(null);
-            setReceipt(null);
-          }}
-        />
-      </label>
-      {file && <p>Выбранный файл: {file.name}</p>}
-      <button
-        type="button"
-        className="manual-button"
-        disabled={locked || reading || !file}
-        onClick={() => {
-          if (file && !recoveries.has(accountId) && !callbacks.current.parentBlocked)
-            void send({ kind: 'upload', file });
-        }}
-      >
-        Загрузить CSV
-      </button>
-      <div className="trade-actions">
+      <section className="csv-imports__section" aria-label="Файл и сохранённые партии">
+        <h3>Файл и сохранённые партии</h3>
+        <p className="manual-muted">
+          Загрузка сохраняет источник. Сделки появятся только после проверки и подтверждения.
+        </p>
+        <label className="manual-field">
+          Файл CSV
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            disabled={locked}
+            onChange={(event) => {
+              if (recoveries.has(accountId) || callbacks.current.parentBlocked) return;
+              invalidate();
+              setFile(event.target.files?.[0] ?? null);
+              selection.current = null;
+              setSelected(null);
+              setDetail(null);
+              setInspection(null);
+              setMapping(emptyCsvMapping());
+              setRows(null);
+              setReceipt(null);
+            }}
+          />
+        </label>
+        {file && <p>Выбранный файл: {file.name}</p>}
         <button
           type="button"
-          className="manual-button manual-button--secondary"
-          disabled={listing}
-          onClick={() => void list()}
+          className="manual-button"
+          disabled={locked || reading || !file}
+          onClick={() => {
+            if (file && !recoveries.has(accountId) && !callbacks.current.parentBlocked)
+              void send({ kind: 'upload', file });
+          }}
         >
-          Обновить список импортов
+          Загрузить CSV
         </button>
-        {batches?.nextCursor && (
+        <div className="trade-actions">
           <button
             type="button"
             className="manual-button manual-button--secondary"
             disabled={listing}
-            onClick={() => void list(batches.nextCursor ?? undefined)}
+            onClick={() => void list()}
           >
-            Следующие импорты
+            Обновить список импортов
           </button>
+          {batches?.nextCursor && (
+            <button
+              type="button"
+              className="manual-button manual-button--secondary"
+              disabled={listing}
+              onClick={() => void list(batches.nextCursor ?? undefined)}
+            >
+              Следующие импорты
+            </button>
+          )}
+        </div>
+        {batches && (
+          <label>
+            Сохранённая партия CSV
+            <select
+              value={selected ?? ''}
+              disabled={locked}
+              onChange={(event) => {
+                if (event.target.value) chooseBatch(event.target.value);
+              }}
+            >
+              <option value="">Выберите партию</option>
+              {!batches.items.some((batch) => batch.batchId === selected) && selected && (
+                <option value={selected}>{detail?.batch.filename ?? selected}</option>
+              )}
+              {batches.items.map((batch) => (
+                <option key={batch.batchId} value={batch.batchId}>
+                  {batch.filename} · {csvStateLabel[batch.state]} · {batch.batchId}
+                </option>
+              ))}
+            </select>
+          </label>
         )}
-      </div>
-      {batches && (
-        <label>
-          Сохранённая партия CSV
-          <select
-            value={selected ?? ''}
-            disabled={locked}
-            onChange={(event) => {
-              if (event.target.value) chooseBatch(event.target.value);
+        {refreshBatch && (
+          <button
+            type="button"
+            className="manual-button manual-button--secondary"
+            disabled={reading || recovery?.phase === 'sending' || parentBusy}
+            onClick={() => {
+              selection.current = refreshBatch;
+              setSelected(refreshBatch);
+              void loadDetail(
+                refreshBatch,
+                recovery?.phase === 'accepted' ? recovery : undefined,
+                true,
+              );
             }}
           >
-            <option value="">Выберите партию</option>
-            {!batches.items.some((batch) => batch.batchId === selected) && selected && (
-              <option value={selected}>{detail?.batch.filename ?? selected}</option>
-            )}
-            {batches.items.map((batch) => (
-              <option key={batch.batchId} value={batch.batchId}>
-                {batch.filename} · {csvStateLabel[batch.state]} · {batch.batchId}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {refreshBatch && (
-        <button
-          type="button"
-          className="manual-button manual-button--secondary"
-          disabled={reading || recovery?.phase === 'sending' || parentBusy}
-          onClick={() => {
-            selection.current = refreshBatch;
-            setSelected(refreshBatch);
-            void loadDetail(
-              refreshBatch,
-              recovery?.phase === 'accepted' ? recovery : undefined,
-              true,
-            );
-          }}
-        >
-          Обновить состояние CSV
-        </button>
-      )}
+            Обновить состояние CSV
+          </button>
+        )}
+      </section>
       {detail && (
         <CsvBatchDetail
           value={detail}
@@ -539,7 +554,8 @@ export function CsvImports({
         />
       )}
       {selected && (
-        <>
+        <section className="csv-imports__section" aria-label="Исходный файл">
+          <h3>Исходный файл</h3>
           <label>
             Разделитель
             <select
@@ -559,11 +575,11 @@ export function CsvImports({
           >
             Просмотреть исходные строки
           </button>
-        </>
+        </section>
       )}
       {inspection && <CsvSource inspection={inspection} />}
       {inspection?.valid && detail?.batch.state === 'draft' && (
-        <>
+        <div className="csv-imports__section">
           <CsvMapping
             document={inspection}
             draft={mapping}
@@ -579,10 +595,10 @@ export function CsvImports({
           >
             Проверить импорт
           </button>
-        </>
+        </div>
       )}
       {preview && (
-        <>
+        <div className="csv-imports__section">
           <CsvPreview value={preview.value} />
           <button
             type="button"
@@ -599,7 +615,7 @@ export function CsvImports({
           >
             Подтвердить импорт CSV
           </button>
-        </>
+        </div>
       )}
     </section>
   );
