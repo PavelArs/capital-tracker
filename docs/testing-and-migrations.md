@@ -588,5 +588,15 @@ migration is a no-op, and destructive downgrade is refused without changes.
 `asset-swaps-db.cjs` additionally checks55 direct SQL refusals with exact SQLSTATE
 and full-row rollback checks, positive null/zero/30-digit and fee controls, and an
 actual deferred COMMIT failure witness. This focused gate passed on2026-09-26;
-see the active swap verification record. Swap-specific process races, bounds,
-snapshots and independent review remain separate pending gates.
+see the active swap verification record.
+
+The later scoped swap runtime checkpoint also passed on2026-09-26. Main fixture now
+has6families including connected CSV funding/sales/rollback, reward/transfer
+dependencies and three real concurrent RR/read-only history/series/selected-portfolio
+reads. Every chart/selected-account request materializes nonempty swap history once.
+The new `asset-swaps-bounds-db.cjs` has6families: four separate-process races through
+actual owner advisory locks;1000active swaps;10000owner versions with spare local
+ticks; local/passive10000revision budgets; connected1001 refusal before row loading;
+and102allocation fragments across3pages with complete totals/upstream pin invalidation.
+Both fixtures are included in the full runner. No browser case was added for these
+database boundaries. Independent review/final delivery/archive remain open.

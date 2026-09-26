@@ -111,6 +111,8 @@ if (command === 'down') {
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/asset-swaps-db.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
+        '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/asset-swaps-bounds-db.cjs');
+      compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/owner-cli.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'env', '-u', 'TRUSTED_PROXY_IPS', 'node', '/tests/sessions-db.cjs');

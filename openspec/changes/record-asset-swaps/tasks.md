@@ -11,8 +11,8 @@
 ## 3. Private connected persistence
 
 - [x] 3.1 Add migration22 and real PG acceptance for fresh/populated21 preservation, SQL constraints and deferred COMMIT rollback; preserve previous schemas and data.
-- [ ] 3.2 Implement owner-scoped immutable API/store/service and connected loading/replay for every trade/reward/transfer/CSV mutation and historical reader; verify exact replay, CAS and two-process races.
-- [ ] 3.3 Verify account/owner/component/version/passive-revision bounds, pinned complete allocation pages, real two-connection coherent snapshots and once-only series/portfolio loads.
+- [x] 3.2 Implement owner-scoped immutable API/store/service and connected loading/replay for every trade/reward/transfer/CSV mutation and historical reader; verify exact replay, CAS and two-process races.
+- [x] 3.3 Verify account/owner/component/version/passive-revision bounds, pinned complete allocation pages, real two-connection coherent snapshots and once-only series/portfolio loads.
 
 ## 4. Russian owner workflow
 

@@ -250,3 +250,67 @@ once-only loads, final delivery gates and archive remain pending. Browser checks
 builds, full suites, older predecessor matrix, dependency audit, hosted CI and
 release/backup/security gates were not repeated for these test-only changes; the
 previous scoped results remain dated evidence, not new claims.
+
+## Connected runtime and bounds checkpoint — 2026-09-26
+
+Tasks3.2/3.3 now complete, **9/12** total. Added only PG acceptance and runner
+integration; implementation and release images are unchanged. Native bulk fixtures
+prepare large histories only; real production services execute all boundary writes,
+refusals, replay and reads. No own backend/repository/auth response is mocked.
+
+- `caffeinate -is node /private/tmp/capital-swaps-bounds.cjs` first exited0 with
+ 4families, `/private/tmp/capital-swaps-bounds-attempt1.log`. After adding component
+  preflight and wide allocation coverage, the same command exited0 with **6/6**,
+  `/private/tmp/capital-swaps-bounds-attempt2.log`. Four race variants use separate
+  Node and PostgreSQL PIDs, an actual held owner advisory lock and observed database
+  waiters before releasing both writers: identical request, competing same pin,
+  changed payload under the same key, and swap versus real USD sale. Exactly one
+  write commits, identical replay returns the same receipt, other attempts return409;
+  uncommitted distinct keys are absent and balances/pins advance once.
+- Owner and account1000th active swaps succeed;1001st refuses without any row/key
+  change. Correction at capacity and original replay succeed. Ten pinned pages expose
+  all1000identities. Owner10000versions accepts the last slot across accounts and
+  rejects create/correct/void with spare local revision budget; old receipts and
+  descending history remain available. Local/passive10000th ticks succeed, next
+  mutation refuses; connected exact60USD basis and saved replay remain correct.
+- Two linked accounts with500swaps each read successfully. A native synthetic extra
+  row makes the component1001 while each account is below1000; real reading returns409
+  after exactly one swap count query and before any swap materialization. No truncation
+  or write occurs. This tests corrupt/oversized storage refusal, not a supported import.
+- A swap consumes101original trade lots plus an incoming fee. Three50-item allocation
+  pages expose102items in exact provenance order; every page retains full principal101,
+  fee5 and realized44. Upstream buy correction changes principal102/result43, invalidates
+  old journal-pinned continuation, preserves swap version1 and original command receipt.
+- `caffeinate -is node /private/tmp/capital-swaps-pg.cjs` exited0, **6/6 main families**,
+  `/private/tmp/capital-swaps-connected-attempt1.log`. Four retained families passed.
+  New connected CSV family verifies null-basis preview, swap correction invalidating
+  preview, exact60basis/20profit, confirm/rollback source/passive ticks, reward and
+  transfer mutation refusal if they strand history, and original receipts/CSV bytes.
+  Valid reward correction changes outgoing basis without replacing the declared incoming
+  swap basis. A source two-row CSV batch funds an exchange; rollback correctly refuses.
+- New concurrent read family uses two real PostgreSQL PIDs. It pauses each reader after
+  executing its actual journal query, checks RR and READ ONLY in PostgreSQL, commits a
+  swap correction on the writer connection, then resumes unchanged queries. History,
+  chart and selected portfolio return the complete old DTO; the next request returns
+  exact new values/pins. Chart old `[300,225,145,135,135]` becomes
+  `[300,235,155,145,145]`; selected total155 becomes165. Each reader performs exactly
+  one swap count and one nonempty connected swap materialization, including multiple
+  swaps and two selected accounts. Reads add no rows and retain immutable swap replay.
+
+Same backend release **sha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2**
+and PostgreSQL16.10 in the guarded disposable project. All runtime attempts above
+passed without financial oracle adjustments. Biome formatting was applied; final
+scoped check exit0, `/private/tmp/capital-swaps-runtime-style.log`. Both CJS fixtures
+and shared acceptance runner pass Node syntax; `git diff --check` passes. Shared
+runner now includes the bounds fixture; `pnpm test:engineering` **183/183 in2suites**
+passes6.34s, `/private/tmp/capital-swaps-runtime-engineering.log`. Strict OpenSpec
+**29/29** passes, `/private/tmp/capital-swaps-runtime-specs.log`.
+
+Final actual e2e-labeled container/network inventories are empty; preview durable
+volume remains present. Protected Nginx/lock hashes are unchanged. No product rebuild,
+production deployment, private data access, paid service, push or folder cleanup.
+No new browser/full-suite/migration/audit/release pass is claimed; prior evidence is
+retained with its actual dates. Root inspected fixture setup, transaction barriers
+and exact assertions. Independent persistence/UI review remains blocked by the known
+agent quota untilSep29/30 and is not claimed complete. Final verification/archive
+remain unchecked. Frontend planning can proceed separately without archiving swaps.

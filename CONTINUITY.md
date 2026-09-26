@@ -195,7 +195,7 @@ last checkbox is completed only after that procedure. No functional verification
 
 ## Remaining whole goal and next work
 
-Active `record-asset-swaps` is incomplete,7/12tasks done (contract+realRED, pureFIFO,input, schema/SQL, frontend).
+Active `record-asset-swaps` is incomplete,9/12tasks done (contract+realRED, implementation and scopedruntime verified).
 Read its proposal/design/persistence/specs/tasks/verification before continuing. Root has
 implemented backend migration22/store/API/connected-loader integration6658dbc, purecore
 0e06fa9 and parser6450a57/8d0f54c. Original-lot incoming fees and preheldFIFO fees are explicit;
@@ -211,8 +211,7 @@ allocation/lifecycle, actual deferredCOMMIT witness/rollback). SWAP-API realHTTP
 1/1in13.3s with priorFEimage, realpassword/MFA/PG,1worker0retries. SWAP-UI and its Russian editor are now implemented/verified below; do not mark archive-ready. Logs/harnesses are
 /private/tmp/capital-swap-* and /private/tmp/capital-swaps-*; verification.md records scope.
 
-Next: complete process/cap/snapshot/connectedCSV/
-once-only-load tests, independent persistence/UI review and final scopedgates/archive. Existing20fixture
+Next for swaps: independent persistence/UI review and final scopedgates/archive. Existing20fixture
 fresh counts updated21→22 with only new swap tables excluded/checkedempty in predecessor
 preservation; original predecessor schemas retained. Runner includes new mainPG fixture.
 Retained PG attempt1 exposed a reward preflight matcher conflating swap/reward queries;
@@ -250,8 +249,18 @@ upgrades with actual CLI22, preserves every old schema/row/auth factor/session/C
 reward/transfer receipt, price/FX, then exact no-op/downgrade refusal. SameBEdd90a8c5;
 no product change/rebuild. /private/tmp/capital-swaps-schema22-attempt1.log exit0.
 Only isolated e2e resources cleaned; local preview/data remain separately preserved.
-Current swap-specific races/caps/coherent snapshots/CSV/once-only loads and independent
-persistence/UI review are still pending; no new browser/full-suite pass claimed.
+Later Sep26 checkpoint closes3.2/3.3: mainPG6/6 and boundsPG6/6 pass on sameBEdd90a8c5.
+Four actual two-process owner-advisory/CAS races; exact1000active/10000owner-version/
+local/passive revisions; aggregate1001preflight before swap rows;102allocation fragments
+over3pages with complete totals and upstream pin invalidation. ConnectedCSV null→known,
+confirm/rollback/source-funding refusal/immutable bytes and reward/transfer dependencies.
+Two-PID RR/read-only history/chart/selectedportfolio concurrent corrections see complete
+old then new states, with one nonempty swap load/count per reader. Logs/private/tmp/
+capital-swaps-bounds-attempt{1,2}.log and capital-swaps-connected-attempt1.log.
+Bounds fixture added to runner. Engineering183/2suitesPASS6.34s, scopedBiome/syntax/
+OpenSpec29PASS, protected hashes unchanged, e2e resources empty, preview volume present.
+No new browser/build/migration/audit/fullsuite claim; no product/image changes this step.
+Independent persistence/UI review and final verification/archive remain pending.
 
 Still required after swaps: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
 broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-

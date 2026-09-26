@@ -1,8 +1,9 @@
 # Manual asset exchanges
 
 Status: implemented in active `record-asset-swaps`; populated21 upgrade and SQL
-constraints are verified. Swap-specific concurrency, bounds, snapshot and independent
-review gates remain open. This is not production rollout approval.
+constraints are verified, together with concurrency, bounds, connected CSV and coherent
+snapshots. Independent persistence/UI review, final delivery and archive remain open.
+This is not production rollout approval.
 
 In a manual account with an initialized journal, use **Обмены активов** to record an
 already-executed exchange within that account. Select two different instrument UUIDs,

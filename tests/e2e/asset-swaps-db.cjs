@@ -39,6 +39,10 @@ function services(db) {
     trade: make('trade.service', 'TradeService'),
     transfer: make('owned-transfer.service', 'OwnedTransferService'),
     history: make('historical-accounting.service', 'HistoricalAccountingService'),
+    csv: make('csv-import.service', 'CsvImportService'),
+    prices: make('manual-price.service', 'ManualPriceService'),
+    series: make('valuation-history.service', 'ValuationHistoryService'),
+    portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService'),
   };
 }
 async function fingerprint(db) {
@@ -503,6 +507,392 @@ async function sqlConstraints(db, s, f) {
   );
 }
 
+function csvSettings(instrumentId, side) {
+  return {
+    format: { delimiter: ',', decimalSeparator: '.', timestampMode: 'offset' },
+    mapping: {
+      columns: {
+        instrument: 0,
+        side: 1,
+        occurredAt: 2,
+        order: 3,
+        quantity: 4,
+        grossUsd: 5,
+        feeUsd: 6,
+      },
+      instruments: [{ source: 'TOKEN', instrumentId }],
+      sides: [{ source: side, side }],
+    },
+    assertUsd: true,
+  };
+}
+const csvCommand = (preview, settings) => ({
+  requestId: randomUUID(),
+  expectedJournalRevision: preview.journalRevision,
+  parserVersion: 'usd-csv-v1',
+  ...settings,
+  previewHash: preview.previewHash,
+});
+
+async function connectedCsv(db, s, f) {
+  stage = 'SWAP-003/004 connected CSV and reward/transfer dependencies';
+  const a = await account(s, f.owner, 'Swap CSV source');
+  const b = await account(s, f.owner, 'Swap CSV recipient');
+  const rewardCommand = {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    assertReward: true,
+    instrumentId: f.token,
+    category: 'staking',
+    occurredAt: coverage,
+    orderWithinTimestamp: 0,
+    quantity: '2',
+    acquisitionBasisUsd: '100',
+    incomeValueUsd: null,
+  };
+  const reward = (await s.reward.create(f.owner, a, rewardCommand)).value;
+  const swapCommand = input(f.token, f.other, 1, { considerationUsd: null });
+  const swap = (await s.swap.create(f.owner, a, swapCommand)).value;
+  const transferCommand = {
+    requestId: randomUUID(),
+    fromAccountId: a,
+    toAccountId: b,
+    expectedFromJournalRevision: 2,
+    expectedToJournalRevision: 0,
+    assertInternal: true,
+    instrumentId: f.other,
+    occurredAt: transferAt,
+    orderWithinTimestamp: 0,
+    quantity: '2',
+    feeInstrumentId: null,
+    feeQuantity: '0',
+  };
+  const transfer = (await s.transfer.create(f.owner, transferCommand)).value;
+  const bytes = Buffer.from(
+    `instrument,side,time,order,quantity,gross,fee\nTOKEN,sell,${saleAt},0,1,80,0\n`,
+  );
+  const batch = (await s.csv.upload(f.owner, b, { filename: 'swap-sale.csv', bytes })).value;
+  const settings = csvSettings(f.other, 'sell');
+  const preview = await s.csv.preview(f.owner, b, batch.batchId, settings);
+  assert.equal(preview.canConfirm, true);
+  assert.equal(preview.candidateSummary.realizedUsd, null);
+  assert.equal(preview.candidateSummary.consumedCostUsd, null);
+  assert.deepEqual(preview.candidateSummary.basisCoverage.realized, {
+    knownSubtotalUsd: '0',
+    unknownCount: 1,
+  });
+  const stale = csvCommand(preview, settings);
+  await s.swap.correct(f.owner, a, swap.swap.swapId, {
+    ...swapCommand,
+    requestId: randomUUID(),
+    expectedJournalRevision: 3,
+    expectedVersion: 1,
+    considerationUsd: '180',
+  });
+  await unchanged(db, () => s.csv.confirm(f.owner, b, batch.batchId, stale), 409);
+  const fresh = await s.csv.preview(f.owner, b, batch.batchId, settings);
+  assert.notEqual(fresh.previewHash, preview.previewHash);
+  assert.equal(fresh.journalRevision, 2);
+  assert.equal(fresh.candidateSummary.consumedCostUsd, '60');
+  assert.equal(fresh.candidateSummary.realizedUsd, '20');
+  assert.equal(fresh.candidateSummary.basisCoverage, undefined);
+  const accepted = csvCommand(fresh, settings);
+  const receipt = (await s.csv.confirm(f.owner, b, batch.batchId, accepted)).value;
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 5);
+  assert.equal((await journal(s, f.owner, a)).versionCount, 0);
+  assert.equal((await journal(s, f.owner, b)).versionCount, 1);
+  await unchanged(
+    db,
+    () =>
+      s.transfer.void(f.owner, transfer.transfer.transferId, {
+        requestId: randomUUID(),
+        expectedVersion: 1,
+        expectedFromJournalRevision: 5,
+        expectedToJournalRevision: 3,
+      }),
+    409,
+  );
+  await unchanged(
+    db,
+    () =>
+      s.reward.void(f.owner, a, reward.reward.rewardId, {
+        requestId: randomUUID(),
+        expectedVersion: 1,
+        expectedJournalRevision: 5,
+      }),
+    409,
+  );
+  const rollbackCommand = { requestId: randomUUID(), expectedJournalRevision: 3 };
+  const rollback = (await s.csv.rollback(f.owner, b, batch.batchId, rollbackCommand)).value;
+  const receiver = await journal(s, f.owner, b);
+  assert.equal(receiver.summary.remainingCostUsd, '120');
+  assert.equal(receiver.summary.realizedUsd, '0');
+  assert.equal(receiver.versionCount, 2);
+  assert.equal(receiver.journalRevision, 4);
+  assert.equal((await journal(s, f.owner, a)).journalRevision, 6);
+  await s.reward.correct(f.owner, a, reward.reward.rewardId, {
+    ...rewardCommand,
+    requestId: randomUUID(),
+    expectedJournalRevision: 6,
+    expectedVersion: 1,
+    acquisitionBasisUsd: '120',
+  });
+  assert.equal((await journal(s, f.owner, a)).swapSummary.realizedUsd, '120');
+  assert.equal(
+    (await journal(s, f.owner, b)).summary.remainingCostUsd,
+    '120',
+    'Outgoing reward basis never replaces declared incoming swap basis',
+  );
+  const before = await fingerprint(db);
+  for (const [action, value] of [
+    [() => s.csv.confirm(f.owner, b, batch.batchId, accepted), receipt],
+    [() => s.csv.rollback(f.owner, b, batch.batchId, rollbackCommand), rollback],
+    [() => s.swap.create(f.owner, a, swapCommand), swap],
+    [() => s.reward.create(f.owner, a, rewardCommand), reward],
+    [() => s.transfer.create(f.owner, transferCommand), transfer],
+  ])
+    assert.deepEqual(await action(), { created: false, value });
+  assert.deepEqual(
+    (
+      await db.query('SELECT "originalBytes" FROM account_csv_imports WHERE id=$1', [batch.batchId])
+    )[0].originalBytes,
+    bytes,
+  );
+  assert.equal(await fingerprint(db), before);
+
+  const c = await account(s, f.owner, 'CSV funds swap');
+  const sourceBytes = Buffer.from(
+    `instrument,side,time,order,quantity,gross,fee\nTOKEN,buy,${coverage},0,0.5,50,0\nTOKEN,buy,${coverage},1,0.5,50,0\n`,
+  );
+  const sourceBatch = (
+    await s.csv.upload(f.owner, c, { filename: 'swap-funding.csv', bytes: sourceBytes })
+  ).value;
+  const sourceSettings = csvSettings(f.token, 'buy');
+  const sourcePreview = await s.csv.preview(f.owner, c, sourceBatch.batchId, sourceSettings);
+  const sourceCommand = csvCommand(sourcePreview, sourceSettings);
+  const sourceReceipt = (await s.csv.confirm(f.owner, c, sourceBatch.batchId, sourceCommand)).value;
+  assert.equal(
+    (await journal(s, f.owner, c)).journalRevision,
+    2,
+    'Two source CSV trades consume two ticks',
+  );
+  const fundedSwap = (await s.swap.create(f.owner, c, input(f.token, f.other, 2))).value;
+  assert.equal(
+    (await s.swap.getAllocation(f.owner, c, fundedSwap.swap.swapId, {})).principalBasisUsd,
+    '100',
+  );
+  await unchanged(
+    db,
+    () =>
+      s.csv.rollback(f.owner, c, sourceBatch.batchId, {
+        requestId: randomUUID(),
+        expectedJournalRevision: 3,
+      }),
+    409,
+  );
+  assert.deepEqual(await s.csv.confirm(f.owner, c, sourceBatch.batchId, sourceCommand), {
+    created: false,
+    value: sourceReceipt,
+  });
+  assert.deepEqual(
+    (
+      await db.query('SELECT "originalBytes" FROM account_csv_imports WHERE id=$1', [
+        sourceBatch.batchId,
+      ])
+    )[0].originalBytes,
+    sourceBytes,
+  );
+  console.log(
+    'PASS SWAP-003/004 CSV null/known preview, upstream stale pins, confirmation/rollback, reward/transfer dependencies and consumed source-batch refusal with immutable bytes/receipts',
+  );
+}
+
+async function coherentReadModels(db, s, f) {
+  stage = 'SWAP-004-B real concurrent history/chart/portfolio snapshots and once-only loads';
+  const a = await account(s, f.owner, 'Swap snapshots source');
+  const b = await account(s, f.owner, 'Swap snapshots recipient');
+  await s.trade.create(f.owner, a, tradeInput(f.token, 0, { quantity: '3', grossUsd: '300' }));
+  const firstCommand = input(f.token, f.other, 1, { occurredAt: '2025-01-02T00:00:00.000Z' });
+  const first = (await s.swap.create(f.owner, a, firstCommand)).value;
+  await s.swap.create(
+    f.owner,
+    a,
+    input(f.token, f.other, 2, { incomingQuantity: '4', considerationUsd: '200' }),
+  );
+  await s.transfer.create(f.owner, {
+    requestId: randomUUID(),
+    fromAccountId: a,
+    toAccountId: b,
+    expectedFromJournalRevision: 3,
+    expectedToJournalRevision: 0,
+    assertInternal: true,
+    instrumentId: f.other,
+    occurredAt: transferAt,
+    orderWithinTimestamp: 0,
+    quantity: '2',
+    feeInstrumentId: null,
+    feeQuantity: '0',
+  });
+  for (const [index, at] of [
+    coverage,
+    firstCommand.occurredAt,
+    swapAt,
+    transferAt,
+    saleAt,
+  ].entries()) {
+    for (const [id, priceUsd] of [
+      [f.token, '100'],
+      [f.other, '5'],
+    ]) {
+      await s.prices.set(f.owner, id, {
+        requestId: randomUUID(),
+        expectedRevision: index,
+        assertReviewed: true,
+        observedAt: at,
+        priceUsd,
+      });
+    }
+  }
+  const readDb = source();
+  await readDb.initialize();
+  const read = (service, kind) =>
+    kind === 'history'
+      ? service.history.getSnapshot(f.owner, b, { at: transferAt })
+      : kind === 'series'
+        ? service.series.getSeries(f.owner, a, { from: coverage, to: saleAt })
+        : service.portfolio.preview(f.owner, { at: transferAt, accountIds: [a, b] }, {});
+  const statements = [];
+  const createRunner = readDb.createQueryRunner.bind(readDb);
+  let armed = false;
+  let signal;
+  let release;
+  let gate;
+  readDb.createQueryRunner = (...args) => {
+    const runner = createRunner(...args);
+    const query = runner.query.bind(runner);
+    runner.query = async (sql, ...rest) => {
+      statements.push(sql);
+      const result = await query(sql, ...rest);
+      if (armed && /SELECT \* FROM account_trade_journals/.test(sql)) {
+        armed = false;
+        assert.equal(
+          (await query('SHOW transaction_isolation'))[0].transaction_isolation,
+          'repeatable read',
+        );
+        assert.equal((await query('SHOW transaction_read_only'))[0].transaction_read_only, 'on');
+        signal();
+        await gate;
+      }
+      return result;
+    };
+    return runner;
+  };
+  let pending;
+  try {
+    assert.notEqual(
+      (await db.query('SELECT pg_backend_pid() pid'))[0].pid,
+      (await readDb.query('SELECT pg_backend_pid() pid'))[0].pid,
+    );
+    for (const [index, kind] of ['history', 'series', 'portfolio'].entries()) {
+      const expected = await read(s, kind);
+      const seen = new Promise((resolve) => {
+        signal = resolve;
+      });
+      gate = new Promise((resolve) => {
+        release = resolve;
+      });
+      armed = true;
+      statements.length = 0;
+      pending = read(services(readDb), kind);
+      await Promise.race([
+        seen,
+        pending.then(() => {
+          throw new Error('Reader missed real database barrier');
+        }),
+      ]);
+      const quantity = 5 + index * 2;
+      await s.swap.correct(f.owner, a, first.swap.swapId, {
+        ...firstCommand,
+        requestId: randomUUID(),
+        expectedJournalRevision: 4 + index,
+        expectedVersion: 1 + index,
+        incomingQuantity: String(quantity),
+        considerationUsd: String(quantity * 30),
+      });
+      const afterWrite = await fingerprint(db);
+      release();
+      const old = await pending;
+      assert.deepEqual(old, expected, `${kind} sees all old pins, holdings, costs and prices`);
+      assert.equal(
+        statements.filter(
+          (sql) =>
+            /SELECT v\."accountId",count\(\*\) FILTER/.test(sql) &&
+            sql.includes('FROM account_swap_versions v'),
+        ).length,
+        1,
+        'One swap capacity preflight',
+      );
+      assert.equal(
+        statements.filter((sql) => /SELECT v\.\*[\s\S]*FROM account_swap_versions/.test(sql))
+          .length,
+        1,
+        'One nonempty swap materialization per request',
+      );
+      assert.equal(statements.filter((sql) => /SET TRANSACTION READ ONLY/.test(sql)).length, 1);
+      assert.equal(
+        statements.filter((sql) => /SET TRANSACTION ISOLATION LEVEL REPEATABLE READ/.test(sql))
+          .length,
+        1,
+      );
+      const next = await read(s, kind);
+      if (kind === 'history') {
+        assert.equal(old.items[0].costUsd, '100');
+        assert.equal(next.items[0].costUsd, '60');
+        assert.equal(old.journalRevision, 1);
+        assert.equal(next.journalRevision, 2);
+        assert.equal(next.swapSummary, undefined);
+      } else if (kind === 'series') {
+        assert.deepEqual(
+          old.points.map((point) => point.totalValueUsd),
+          ['300', '225', '145', '135', '135'],
+        );
+        assert.deepEqual(
+          next.points.map((point) => point.totalValueUsd),
+          ['300', '235', '155', '145', '145'],
+        );
+        assert.equal(old.journalRevision, 5);
+        assert.equal(next.journalRevision, 6);
+        assert.equal(next.swapSummary, undefined);
+      } else {
+        assert.equal(old.totalValueUsd, '155');
+        assert.equal(next.totalValueUsd, '165');
+        assert.equal(next.accounts.find((row) => row.accountId === a).totalValueUsd, '155');
+        assert.equal(next.accounts.find((row) => row.accountId === b).totalValueUsd, '10');
+        assert.deepEqual(
+          next.accounts.map((row) => row.journalRevision).sort((x, y) => x - y),
+          [4, 7],
+        );
+      }
+      assert.equal(
+        await fingerprint(db),
+        afterWrite,
+        'Concurrent read-only requests never persist derived rows',
+      );
+    }
+    assert.deepEqual(await s.swap.create(f.owner, a, firstCommand), {
+      created: false,
+      value: first,
+    });
+  } finally {
+    release?.();
+    if (pending) await Promise.allSettled([pending]);
+    await readDb.destroy();
+  }
+  console.log(
+    'PASS SWAP-004-B two-PID RR/read-only history, chart and selected portfolio with concurrent swap changes, exact old/new amounts, once-only nonempty histories and saved replay',
+  );
+}
+
 async function main() {
   assert.equal(
     process.env.DB_HOST,
@@ -559,6 +949,8 @@ async function main() {
     await feeEvidence(db, s, f);
     await deferredCommit(db, s, f);
     await sqlConstraints(db, s, f);
+    await connectedCsv(db, s, f);
+    await coherentReadModels(db, s, f);
   } finally {
     await db.destroy();
   }
