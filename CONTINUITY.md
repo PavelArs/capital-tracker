@@ -335,7 +335,7 @@ approved, all44clean frames inspected (Sol30,Luna14). Product/evidence9743139; a
 2026-09-26-redesign-csv-workbench,6/6tasks complete. Three new requirement blocks match,
 36old canonical files are byte-identical,37strict specs pass; active changes empty.
 
-## Transfer workbench — verified, archive pending
+## Transfer workbench — archived
 
 `redesign-transfer-workbench` follows859f267. Grouped internal-transfer fields with
 associated recipient/fee/UTC/order guidance, explicit review section, action-only
@@ -360,6 +360,10 @@ Minor desktop field-grid whitespace is nonblocking. Logs/artifacts
 `/private/tmp/capital-transfer-workbench-*`. E2E resources empty; preview volume/image/
 stopped containers, owner Nginx and lock preserved. Full suites/backend/upgrades/live
 providers/scanners/hostedCI/release not rerun for this frontend slice.
+
+Archived at openspec/changes/archive/2026-09-26-redesign-transfer-workbench. Three new
+requirement blocks match canonical;37previous spec files byte-identical; strict38
+canonical specs pass and active changes empty. Final integration bookkeeping pending.
 
 ## Next work and remaining whole goal
 

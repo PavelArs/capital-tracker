@@ -1,6 +1,6 @@
 # Transfer workbench verification
 
-Status: all required product, runtime and independent-review gates passed; archive/canonical comparison pending.
+Status: required gates passed; archived and canonical specifications compared. Final integration bookkeeping remains.
 
 ## Scope and baseline
 
@@ -50,3 +50,9 @@ Harness finally cleanup completed with exit0. No full-suite repetition was neede
 Sol source/acceptance/history review: [review.md](review.md); Luna independent editor review: [editor-visual-review.md](editor-visual-review.md). Both reviewed their12 actual screenshots,24total, after the successful run. No unresolved blocking findings. Minor desktop auto-fit layout inefficiency (recipient quantity occupies the next row) is recorded as nonblocking; no extra runtime claim is made for absent filled/error screenshots. Root also inspected mobile light editor and desktop dark history.
 
 Final strict OpenSpec validation:38items pass. Final labeled Docker inventory showed no E2E containers/networks. Preview containers remain exited, preserved volume capital-tracker-preview_preview_data exists, and original FEpreview sha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c is unchanged. Owner Nginx mode0644,size1348,SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432; lock SHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d. No owner data, production, remote push or original project cleanup.
+
+## Archive
+
+OpenSpec1.2.0 `openspec archive redesign-transfer-workbench --yes` exited0 and created `2026-09-26-redesign-transfer-workbench`. The CLI warned5/6tasks because final task3.2 deliberately includes archive/canonical comparison/integration, not unfinished product verification. All product/runtime/review gates were complete before archive; the final checkbox is completed only after the remaining procedure. Log `/private/tmp/capital-transfer-workbench-archive.log`.
+
+Post-archive comparison confirms all3 new requirement blocks match the archived delta (only blank-line normalization) and all37previous canonical files remain byte-identical to859f267. The generated Purpose placeholder was replaced with the actual capability purpose. Strict38canonical specs pass, active changes list is empty. Logs `...-canonical.log` and `...-specs-archived.log`.
