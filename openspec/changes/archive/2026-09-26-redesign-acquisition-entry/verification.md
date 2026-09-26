@@ -75,4 +75,12 @@ Integration owner Nginx remains the sole unrelated edit, mode0644,size1348,SHA25
 Lock SHA256 `6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d`.
 Worktree tracked Nginx/backend/deploy/CI/Compose/Dockerfile/lock match baseline. Only the
 three verified task dependency symlinks were removed; source worktrees/folders retained.
-Archive and canonical comparison are the remaining procedural step.
+Product/evidence commit `f2af2d2`. Installed CLI `openspec archive redesign-acquisition-entry --yes`
+archived the change as `2026-09-26-redesign-acquisition-entry`. Its warning correctly
+identified only the final archive/comparison task as still pending; all implementation,
+review and runtime gates were complete. After replacing the generated Purpose placeholder,
+three added requirement blocks match exactly and35 old canonical files are byte-identical.
+Strict validation passes all36 canonical specs and `openspec list --json` returns no
+active changes. Final task marked only after these actual procedures;7/7 complete.
+Logs: `capital-entry-archive.log`, `capital-entry-canonical-after.log`,
+`capital-entry-specs-final.log` under `/private/tmp`.

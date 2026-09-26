@@ -12,7 +12,7 @@
 
 - [x] 3.1 Independently review financial UI semantics, source preservation and responsive screenshots; resolve findings.
 - [x] 3.2 Run scoped verification, document actual evidence/limits and preserve owner files/data/preview; clean only task symlinks and synthetic runtime.
-- [ ] 3.3 Archive with actual OpenSpec CLI, compare added/untouched specs and strictly validate; mark only after this procedure.
+- [x] 3.3 Archive with actual OpenSpec CLI, compare added/untouched specs and strictly validate; mark only after this procedure.
 
 ## Verification manifest
 

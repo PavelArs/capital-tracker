@@ -306,7 +306,10 @@ FEsha256:73f4c11a8eee1496177581248c26642c77accb953173e762130eb392c8a9a707;
 unchanged BEdd90a8c5. Logs/artifacts `/private/tmp/capital-entry-*`, review and exact
 limits in change verification.md/review.md. E2E resources empty; owner Nginx/lock
 unchanged; preview remains stopped33hours with original image/volume. Task dependency
-symlinks removed, all source worktrees retained. Final archive procedure follows.
+symlinks removed, all source worktrees retained. Product/evidencef2af2d2; archived as
+2026-09-26-redesign-acquisition-entry with7/7tasks complete. Three new requirement
+blocks match,35old canonical files are byte-identical,36strict specs pass and active
+changes are empty. These results cover this bounded form slice, not the whole redesign.
 
 ## Next work and remaining whole goal
 
