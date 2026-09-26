@@ -1,6 +1,7 @@
 import { type Instrument, accountingApi } from '@api/accounting.api';
 import type { CsvDocument, CsvField, CsvSettings } from '@api/csv-imports.api';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import './OperationForm.css';
 import { csvFields } from './CsvPreview';
 import { accountingError } from './feedback';
 
@@ -99,6 +100,7 @@ export function CsvMapping({
   instruments: Instrument[];
   disabled: boolean;
 }) {
+  const descriptionId = useId();
   const [choices, setChoices] = useState(instruments);
   const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
@@ -133,141 +135,177 @@ export function CsvMapping({
     }
   }
   return (
-    <fieldset disabled={disabled} className="csv-mapping">
+    <fieldset disabled={disabled} className="csv-mapping operation-form">
       <legend>Сопоставление колонок и значений</legend>
-      <p>
-        Количество и валовая сумма — итоги сделки, не цена одной единицы. Комиссия обязательна: ноль
-        должен быть записан явно. Одинаковые названия не заменяют UUID.
-      </p>
-      <div className="manual-form-grid">
-        {(Object.keys(csvFields) as CsvField[]).map((field) => (
-          <label key={field}>
-            {`Колонка: ${csvFields[field]}`}
-            <select
-              value={draft.columns[field]}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  columns: { ...draft.columns, [field]: event.target.value },
-                  ...(field === 'instrument' ? { instruments: [] } : {}),
-                  ...(field === 'side' ? { sides: [] } : {}),
-                })
-              }
-            >
-              <option value="">
-                {field === 'currency' ? 'Не сопоставлена' : 'Выберите колонку'}
-              </option>
-              {document.headers.map((header, index) => (
-                <option key={`${index}:${header}`} value={index}>
-                  {index + 1}: {header}
+      <section className="operation-form__section">
+        <h3>Колонки источника</h3>
+        <div className="operation-form__fields">
+          {(Object.keys(csvFields) as CsvField[]).map((field) => (
+            <label key={field}>
+              {`Колонка: ${csvFields[field]}`}
+              <select
+                value={draft.columns[field]}
+                aria-describedby={
+                  field === 'quantity' || field === 'grossUsd'
+                    ? `${descriptionId}-totals`
+                    : field === 'feeUsd'
+                      ? `${descriptionId}-fee`
+                      : field === 'currency'
+                        ? `${descriptionId}-currency`
+                        : undefined
+                }
+                onChange={(event) =>
+                  onChange({
+                    ...draft,
+                    columns: { ...draft.columns, [field]: event.target.value },
+                    ...(field === 'instrument' ? { instruments: [] } : {}),
+                    ...(field === 'side' ? { sides: [] } : {}),
+                  })
+                }
+              >
+                <option value="">
+                  {field === 'currency' ? 'Не сопоставлена' : 'Выберите колонку'}
                 </option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
-      <div className="manual-form-grid">
-        {sourceKeys(document, draft.columns.instrument).map((source) => (
-          <label key={source}>
-            <span>
-              Инструмент для <span className="csv-source-key">{source}</span>
-            </span>
-            <select
-              value={draft.instruments.find((item) => item.source === source)?.instrumentId ?? ''}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  instruments: [
-                    ...draft.instruments.filter((item) => item.source !== source),
-                    { source, instrumentId: event.target.value },
-                  ],
-                })
-              }
-            >
-              <option value="">Выберите принадлежащий вам инструмент</option>
-              {choices.map((instrument) => (
-                <option key={instrument.id} value={instrument.id}>
-                  {instrument.name}
-                  {instrument.symbol ? ` (${instrument.symbol})` : ''} · {instrument.id}
-                </option>
-              ))}
-            </select>
-          </label>
-        ))}
-      </div>
-      {cursor !== null && (
-        <button
-          type="button"
-          className="manual-button manual-button--secondary"
-          disabled={loading || disabled}
-          onClick={() => void more()}
-        >
-          {loading ? 'Загрузка инструментов…' : 'Загрузить ещё инструменты для CSV'}
-        </button>
-      )}
-      {error && <p role="alert">{error}</p>}
-      <div className="manual-form-grid">
-        {sourceKeys(document, draft.columns.side).map((source) => (
-          <label key={source}>
-            <span>
-              Тип сделки для <span className="csv-source-key">{source}</span>
-            </span>
-            <select
-              value={draft.sides.find((item) => item.source === source)?.side ?? ''}
-              onChange={(event) => {
-                const side = event.target.value;
-                const sides = draft.sides.filter((item) => item.source !== source);
-                if (side === 'buy' || side === 'sell') sides.push({ source, side });
-                onChange({ ...draft, sides });
-              }}
-            >
-              <option value="">Выберите тип</option>
-              <option value="buy">Покупка</option>
-              <option value="sell">Продажа</option>
-            </select>
-          </label>
-        ))}
-      </div>
-      <div className="manual-form-grid">
-        <label>
-          Десятичный разделитель
-          <select
-            value={draft.decimalSeparator}
-            onChange={(event) =>
-              onChange({ ...draft, decimalSeparator: event.target.value as '.' | ',' })
-            }
+                {document.headers.map((header, index) => (
+                  <option key={`${index}:${header}`} value={index}>
+                    {index + 1}: {header}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        <p id={`${descriptionId}-totals`} className="operation-form__hint">
+          Количество и валовая сумма — общий итог сделки, а не цена за единицу.
+        </p>
+        <p id={`${descriptionId}-fee`} className="operation-form__hint">
+          Комиссия обязательна; ноль указывайте явно.
+        </p>
+        <p id={`${descriptionId}-currency`} className="operation-form__hint">
+          Валюта необязательна. Если сопоставили колонку валюты, каждое значение должно быть USD.
+        </p>
+      </section>
+      <section className="operation-form__section">
+        <h3>Точные исходные значения инструмента</h3>
+        <div className="operation-form__fields">
+          {sourceKeys(document, draft.columns.instrument).map((source) => (
+            <label key={source}>
+              <span>
+                Инструмент для <span className="csv-source-key">{source}</span>
+              </span>
+              <select
+                value={draft.instruments.find((item) => item.source === source)?.instrumentId ?? ''}
+                onChange={(event) =>
+                  onChange({
+                    ...draft,
+                    instruments: [
+                      ...draft.instruments.filter((item) => item.source !== source),
+                      { source, instrumentId: event.target.value },
+                    ],
+                  })
+                }
+              >
+                <option value="">Выберите принадлежащий вам инструмент</option>
+                {choices.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.name}
+                    {instrument.symbol ? ` (${instrument.symbol})` : ''} · {instrument.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+        {cursor !== null && (
+          <button
+            type="button"
+            className="manual-button manual-button--secondary"
+            disabled={loading || disabled}
+            onClick={() => void more()}
           >
-            <option value=".">Точка (.)</option>
-            <option value=",">Запятая (,)</option>
-          </select>
-        </label>
-        <label>
-          Формат времени
-          <select
-            value={draft.timestampMode}
-            onChange={(event) =>
-              onChange({ ...draft, timestampMode: event.target.value as 'offset' | 'fixed-offset' })
-            }
-          >
-            <option value="offset">В каждой дате указано смещение или Z</option>
-            <option value="fixed-offset">Местное время с общим фиксированным смещением</option>
-          </select>
-        </label>
-        {draft.timestampMode === 'fixed-offset' && (
-          <label>
-            Фиксированное смещение UTC
-            <input
-              value={draft.fixedOffset}
-              placeholder="+03:00"
-              onChange={(event) => onChange({ ...draft, fixedOffset: event.target.value })}
-            />
-          </label>
+            {loading ? 'Загрузка инструментов…' : 'Загрузить ещё инструменты для CSV'}
+          </button>
         )}
-      </div>
-      <p>
-        Поддерживается ISO-дата с секундами и до трёх десятичных знаков. Летнее время не
-        угадывается; порядок совпадающих моментов задаётся отдельной колонкой.
-      </p>
+        {error && <p role="alert">{error}</p>}
+      </section>
+      <section className="operation-form__section">
+        <h3>Точные исходные значения типа сделки</h3>
+        <div className="operation-form__fields">
+          {sourceKeys(document, draft.columns.side).map((source) => (
+            <label key={source}>
+              <span>
+                Тип сделки для <span className="csv-source-key">{source}</span>
+              </span>
+              <select
+                value={draft.sides.find((item) => item.source === source)?.side ?? ''}
+                onChange={(event) => {
+                  const side = event.target.value;
+                  const sides = draft.sides.filter((item) => item.source !== source);
+                  if (side === 'buy' || side === 'sell') sides.push({ source, side });
+                  onChange({ ...draft, sides });
+                }}
+              >
+                <option value="">Выберите тип</option>
+                <option value="buy">Покупка</option>
+                <option value="sell">Продажа</option>
+              </select>
+            </label>
+          ))}
+        </div>
+      </section>
+      <section className="operation-form__section">
+        <h3>Интерпретация чисел и времени</h3>
+        <div className="operation-form__fields">
+          <label>
+            Десятичный разделитель
+            <select
+              value={draft.decimalSeparator}
+              aria-describedby={`${descriptionId}-decimal`}
+              onChange={(event) =>
+                onChange({ ...draft, decimalSeparator: event.target.value as '.' | ',' })
+              }
+            >
+              <option value=".">Точка (.)</option>
+              <option value=",">Запятая (,)</option>
+            </select>
+          </label>
+          <p id={`${descriptionId}-decimal`} className="operation-form__hint">
+            Выберите точку или запятую как десятичный разделитель. Значения будут прочитаны по этому
+            правилу без преобразования или форматирования исходного CSV.
+          </p>
+          <label>
+            Формат времени
+            <select
+              value={draft.timestampMode}
+              aria-describedby={`${descriptionId}-time`}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  timestampMode: event.target.value as 'offset' | 'fixed-offset',
+                })
+              }
+            >
+              <option value="offset">В каждой дате указано смещение или Z</option>
+              <option value="fixed-offset">Местное время с общим фиксированным смещением</option>
+            </select>
+          </label>
+          {draft.timestampMode === 'fixed-offset' && (
+            <label>
+              Фиксированное смещение UTC
+              <input
+                value={draft.fixedOffset}
+                placeholder="+03:00"
+                onChange={(event) => onChange({ ...draft, fixedOffset: event.target.value })}
+              />
+            </label>
+          )}
+        </div>
+        <p id={`${descriptionId}-time`} className="operation-form__hint">
+          Поддерживается дата ISO с секундами и до трёх десятичных знаков. Используйте явное
+          смещение или Z в каждой дате либо задайте общее фиксированное смещение. Летнее время не
+          угадывается; совпадающие моменты упорядочиваются отдельной колонкой.
+        </p>
+      </section>
       <label className="manual-review-check">
         <input
           type="checkbox"
