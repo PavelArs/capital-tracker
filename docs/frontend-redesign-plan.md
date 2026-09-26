@@ -88,18 +88,23 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: clearer form fields/actions and result tables, then
-remaining analytical/settings screens. Retain chart maximum-period review separately.
+work: remaining swap/reward/import and transfer/flow editors, followed by the
+analytical/settings screens. Retain chart maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
 to an honest short notice and a native keyboard-accessible disclosure. Exact details,
 initialization guidance, mounted drafts and recovery remain;118 characterization tests
 and two selected real HTTPS/MFA/PostgreSQL journeys pass. Independent source/visual
 review covers compact/expanded360/768/1440px. See [verification](../openspec/changes/archive/2026-09-26-compact-journal-context/verification.md).
-This completes only the context item; field/results ergonomics remain open.
+This completes only the context item. The subsequent `redesign-trade-workbench` adds
+grouped trade fields with accessible guidance, explicit history-editor focus/cancel
+return and consistent shared result controls. Exact tables and controllers remain.
+See [workbench verification](../openspec/changes/archive/2026-09-26-redesign-trade-workbench/verification.md).
+Other operation editors, analytical/result hierarchy and whole-redesign review remain.
 
 Carry these nonblocking review findings into the next suitable UX slice:
-- Reveal/focus or announce correction/void editors selected from shared history.
+- Trade correction/void focus is handled by the workbench; carry this convention to
+  remaining operation editors as they are redesigned.
 - Avoid stealing focus when a delayed account creation completes after the owner
   has closed its form and moved into another control.
 - Verify focus transfer when resizing desktop navigation to its hidden mobile state.

@@ -201,3 +201,5 @@ or application/image security verification.
 No dependency or lock changes. `pnpm audit:production` exited0 with the same two
 moderate findings and no high/critical findings; `/private/tmp/capital-context-production-audit.log`.
 Findings remain unsuppressed. This scoped dependency gate is not release verification.
+The subsequent trade-workbench gate also exited0 with the same two moderate findings
+and unchanged lockfile: `/private/tmp/capital-workbench-audit.log`.

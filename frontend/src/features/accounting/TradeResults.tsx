@@ -167,8 +167,8 @@ export function TradeResults({
   journal: Journal;
   disabled: boolean;
   mutationDisabled: boolean;
-  onCorrect: (trade: TradeVersion) => void;
-  onVoid: (trade: TradeVersion) => void;
+  onCorrect: (trade: TradeVersion, trigger: HTMLButtonElement) => void;
+  onVoid: (trade: TradeVersion, trigger: HTMLButtonElement) => void;
   onStale: () => void;
 }) {
   const [trades, setTrades] = useState<TradePage<TradeVersion> | null>(null);
@@ -487,14 +487,14 @@ export function TradeResults({
                         <button
                           type="button"
                           disabled={busy || mutationDisabled}
-                          onClick={() => onCorrect(trade)}
+                          onClick={(event) => onCorrect(trade, event.currentTarget)}
                         >
                           Исправить
                         </button>
                         <button
                           type="button"
                           disabled={busy || mutationDisabled}
-                          onClick={() => onVoid(trade)}
+                          onClick={(event) => onVoid(trade, event.currentTarget)}
                         >
                           Аннулировать
                         </button>

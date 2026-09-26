@@ -14,6 +14,13 @@ preserves drafts and the selected CSV File. Initialization warnings and shared e
 receipts and original-request recovery stay visible outside the disclosure.
 See the [context verification](../openspec/changes/archive/2026-09-26-compact-journal-context/verification.md).
 
+Trade entry groups instrument/direction, amounts and execution time. Hints attached to
+the fields clarify total USD, separate fee, UTC and equal-time order. Selecting a
+history correction or void focuses and reveals its editor; cancellation returns to
+that history action, or to the workbench after an explicit refresh replaced the row.
+Shared results keep exact semantic tables with contained scrolling and consistent
+theme-aware action controls. See [workbench verification](../openspec/changes/archive/2026-09-26-redesign-trade-workbench/verification.md).
+
 Switching keeps all workflows mounted, including exact independent drafts, selected
 CSV File, reviewed state and unresolved commands. It does not submit, refresh or
 cancel anything. Hidden unresolved CSV operations still block incompatible trade

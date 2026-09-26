@@ -15,7 +15,7 @@ Complete frontend redesign is now required: modern restrained responsive Russian
 functionality first, optional early-2000s influence, no excess decoration/animation.
 Read docs/frontend-redesign-plan.md (FUI-01..06, partial or pending) and the dated target-brief
 amendment. This covers navigation/workflows/all screens, not CSS polish alone. Swap
-runtime and independent review now pass; swaps and five initial frontend slices are
+runtime and independent review now pass; swaps and initial frontend slices are
 archived. The next owner visual review is after redesign; current functional UI checks are not UX approval.
 
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
@@ -266,12 +266,35 @@ archived as2026-09-26-compact-journal-context using installed CLI. All5tasks com
 3new requirement blocks match exactly,33old canonical files byte-identical,34strict
 specs pass; active changes empty. Only task dependency symlinks removed, worktrees kept.
 
+## Trade workbench — 2026-09-26
+
+`redesign-trade-workbench` follows0370395: grouped native trade fields with attached
+USD/UTC/order guidance, explicit guarded correction/void focus and original-button
+cancel return with disconnected-origin fallback. Shared results retain exact semantic
+tables/controllers; theme controls have44px targets and contained scrolling. Worktrees
+capital-tracker-trade-workbench, capital-test-trade-workbench and capital-tracker-trade-results-style;
+Sol acceptance/independent review, Luna CSS, root composition/Docker. Evidence in the
+change verification.md/review.md, logs `/private/tmp/capital-workbench-*`.
+Actual predecessor RED: keyboard correction leaves history action focused. Candidate
+118/21frontendPASS3.64s, build/lint/types/style/audit pass;27existing lint warnings,
+bundle warning and2moderate advisories retained. Two candidate test assumptions were
+corrected with independent review: native select label lookup and disabled-refresh
+focus. Exact identity/recovery/business oracles retained. No product/backend/retry
+regression found; full redesign and preview update remain separate work. Final CSS
+refinement461ee0c preserves normal table-word widths and contained exact-value overflow.
+Final actual WORKFLOW/WORKSPACE2/2PASS29.5s on
+FEsha256:8e48e2fa1d3efd6196e1267446cf5bdde47afa79b772d395a80684bc8589844a,
+unchanged BEdd90a8c5. All12settled light/dark360/768/1440 screenshots inspected;
+types/style checks pass. E2E containers/networks empty; preview stopped33hours,
+original volume/tags and owner Nginx/lock unchanged. Archive procedure follows.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-improve field/actions/results hierarchy. Compact journal context is complete. Track
-correction/void focus announcement, delayed create completion stealing focus, and
+remaining swap/reward/import and transfer/flow editors, then analytical/settings
+screens and wider result hierarchy. Compact context and trade entry/focus are complete.
+Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.
 

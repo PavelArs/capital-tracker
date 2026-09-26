@@ -9,7 +9,7 @@ import {
   tradesApi,
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AccountOperations, type OperationWorkflow } from './AccountOperations';
 import { type AccountSection, AccountWorkspace } from './AccountWorkspace';
 import { AssetRewards } from './AssetRewards';
@@ -23,6 +23,7 @@ import { TradeResults } from './TradeResults';
 import { ValuationHistory } from './ValuationHistory';
 import { accountingError, newRequestId } from './feedback';
 import './TradeJournal.css';
+import './TradeResults.css';
 
 const initializationGuidance =
   'Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов. Общий баланс не восстанавливает историю покупок автоматически.';
@@ -57,6 +58,14 @@ export function TradeJournal({
   openingDetails: ReactNode;
 }) {
   const [workflow, setWorkflow] = useState<OperationWorkflow>('trades');
+  const workbench = useRef<HTMLDivElement>(null);
+  const historyAction = useRef<HTMLButtonElement | null>(null);
+  const [editorFocusRequest, setEditorFocusRequest] = useState(0);
+  useLayoutEffect(() => {
+    if (editorFocusRequest === 0) return;
+    workbench.current?.focus({ preventScroll: true });
+    workbench.current?.scrollIntoView({ block: 'start' });
+  }, [editorFocusRequest]);
   const [state, setState] = useState<JournalState | null>(null);
   const [loading, setLoading] = useState(true);
   const [writing, setWriting] = useState(false);
@@ -175,7 +184,7 @@ export function TradeJournal({
     setDraft(next);
     setError(null);
   }
-  function select(trade: TradeVersion, kind: 'correct' | 'void') {
+  function select(trade: TradeVersion, kind: 'correct' | 'void', trigger: HTMLButtonElement) {
     if (retry.current?.ambiguous || writeLock.current || csvLock.current || carryInLock.current)
       return;
     retry.current = null;
@@ -196,6 +205,9 @@ export function TradeJournal({
       setReviewed(false);
       setReviewReady(false);
     }
+    historyAction.current = trigger;
+    setWorkflow('trades');
+    setEditorFocusRequest((request) => request + 1);
   }
   function cancel() {
     if (retry.current?.ambiguous || writeLock.current || csvLock.current || carryInLock.current)
@@ -209,6 +221,10 @@ export function TradeJournal({
       setReviewed(false);
       setReviewReady(false);
     }
+    const origin = historyAction.current;
+    historyAction.current = null;
+    if (origin?.isConnected && !origin.disabled) origin.focus();
+    else workbench.current?.focus();
   }
   function stale() {
     setHideResults(true);
@@ -557,43 +573,68 @@ export function TradeJournal({
                   selected={workflow}
                   onSelect={setWorkflow}
                   trades={
-                    mode === 'void' && target ? (
-                      <form onSubmit={save}>
-                        <p>
-                          Аннулировать сделку {target.tradeId}, версия {target.version}? История
-                          будет пересчитана полностью; операция невозможна, если появится
-                          неподдержанная продажа.
+                    <div
+                      ref={workbench}
+                      className="trade-workbench"
+                      role="group"
+                      aria-label={
+                        mode === 'correct'
+                          ? 'Исправление сделки'
+                          : mode === 'void'
+                            ? 'Аннулирование сделки'
+                            : 'Новая сделка'
+                      }
+                      tabIndex={-1}
+                    >
+                      {mode === 'correct' && target && (
+                        <p className="trade-workbench__identity">
+                          Сделка {target.tradeId}, версия {target.version}
                         </p>
-                        <button type="submit" className="manual-button" disabled={disabled}>
-                          Подтвердить аннулирование
-                        </button>
-                        <button
-                          type="button"
-                          className="manual-button manual-button--secondary"
-                          disabled={writing || loading || ambiguous || csvBlocked || carryInBlocked}
-                          onClick={cancel}
-                        >
-                          Отменить аннулирование
-                        </button>
-                      </form>
-                    ) : (
-                      <TradeForm
-                        draft={draft}
-                        onChange={edit}
-                        onSubmit={save}
-                        instruments={instruments}
-                        selected={target}
-                        disabled={
-                          disabled || (ambiguous && retry.current?.operation.kind === 'initialize')
-                        }
-                        lockDraft={ambiguous}
-                        correction={mode === 'correct'}
-                        onCancel={cancel}
-                        cancelDisabled={
-                          writing || loading || ambiguous || csvBlocked || carryInBlocked
-                        }
-                      />
-                    )
+                      )}
+                      {mode === 'void' && target ? (
+                        <form className="trade-workbench__void" onSubmit={save}>
+                          <h3>Аннулирование сделки</h3>
+                          <p>
+                            Аннулировать сделку {target.tradeId}, версия {target.version}? История
+                            будет пересчитана полностью; операция невозможна, если появится
+                            неподдержанная продажа.
+                          </p>
+                          <div className="trade-workbench__actions">
+                            <button type="submit" className="manual-button" disabled={disabled}>
+                              Подтвердить аннулирование
+                            </button>
+                            <button
+                              type="button"
+                              className="manual-button manual-button--secondary"
+                              disabled={
+                                writing || loading || ambiguous || csvBlocked || carryInBlocked
+                              }
+                              onClick={cancel}
+                            >
+                              Отменить аннулирование
+                            </button>
+                          </div>
+                        </form>
+                      ) : (
+                        <TradeForm
+                          draft={draft}
+                          onChange={edit}
+                          onSubmit={save}
+                          instruments={instruments}
+                          selected={target}
+                          disabled={
+                            disabled ||
+                            (ambiguous && retry.current?.operation.kind === 'initialize')
+                          }
+                          lockDraft={ambiguous}
+                          correction={mode === 'correct'}
+                          onCancel={cancel}
+                          cancelDisabled={
+                            writing || loading || ambiguous || csvBlocked || carryInBlocked
+                          }
+                        />
+                      )}
+                    </div>
                   }
                   swaps={
                     <AssetSwaps
@@ -629,14 +670,8 @@ export function TradeJournal({
                     journal={journal}
                     disabled={writing || openingBusy || (needsReview && !reviewed)}
                     mutationDisabled={ambiguous || csvBlocked || carryInBlocked}
-                    onCorrect={(trade) => {
-                      select(trade, 'correct');
-                      setWorkflow('trades');
-                    }}
-                    onVoid={(trade) => {
-                      select(trade, 'void');
-                      setWorkflow('trades');
-                    }}
+                    onCorrect={(trade, trigger) => select(trade, 'correct', trigger)}
+                    onVoid={(trade, trigger) => select(trade, 'void', trigger)}
                     onStale={stale}
                   />
                 )}
