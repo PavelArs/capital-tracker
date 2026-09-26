@@ -10,6 +10,14 @@ inventory in docs/consolidation-plan.md. Original projects/data remain untouched
 The user defers chart/max-period review; current chart remains a bounded 30-day
 account series. Legacy Dashboard is not the investment-accounting source of truth.
 
+Owner2026-09-26 reviewed the preview and rejected the current visuals/usability.
+Complete frontend redesign is now required: modern restrained responsive Russian UX,
+functionality first, optional early-2000s influence, no excess decoration/animation.
+Read docs/frontend-redesign-plan.md (FUI-01..06, all pending) and the dated target-brief
+amendment. This covers navigation/workflows/all screens, not CSS polish alone. Finish
+the current swap gates, then begin the redesign in small verified changes. The next
+owner visual review is after redesign; current functional UI checks are not UX approval.
+
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
 shared runner integration and Docker. Isolated worktrees for independent work;
 Luna for simple bounded tasks, Sol/stronger for accounting/security and independent
@@ -233,7 +241,8 @@ All sessions terminal, labeled containers/networks empty, Nginx/lock unchanged.
 Do not repeat passed backend403/retainedPG/selectedHTTPS unless changes justify it. No full
 suite/release/whole-project pass claimed. Details in active verification.md.
 
-Still required after swaps: broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
+Still required after swaps: complete frontend/UX redesign per docs/frontend-redesign-plan.md,
+broader import and automatic reward/chain reconciliation, automatic price collection/retention/history, integrated whole-
 portfolio value/allocation/cash UI, six network adapters and honest coverage, optional
 AI, full release/security/backup-restore hardening, final consolidation. Selected
 manual valuation is not complete all-account/cash accounting. CoinGecko permanent

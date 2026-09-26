@@ -211,6 +211,18 @@ Store observed balances and price history. Reconstruct historical holdings from 
 
 Provide Russian-language Dashboard, Assets/Wallets, Operations/Import, History/Performance, AI Analysis, and Settings/Integration Health screens. Include charts for capital, external net flows, performance, and allocation; 1D/1W/1M/1Y/all/custom periods; zoom/tooltips; per-asset detail; loading, empty, stale, incomplete, and error states; desktop/mobile layouts.
 
+### Owner frontend direction — 2026-09-26
+
+After reviewing the local preview, the owner rejected the current visual design and
+usability and requested a complete frontend redesign. Build a modern, restrained,
+responsive interface focused on functionality and user experience, without ornamental
+effects or unnecessary animations. An early-2000s aesthetic is an allowed influence.
+Redesign navigation and workflows as well as styling; the existing frontend is not the
+target UX. Preserve working accounting/authentication and user data, delivering the
+redesign in incremental verified OpenSpec changes. The owner will review the frontend
+again after it has been redesigned. Track the required work and acceptance criteria in
+[docs/frontend-redesign-plan.md](docs/frontend-redesign-plan.md).
+
 ## 10. Authentication, privacy, and security verification
 
 A public domain must expose only the login surface, necessary static assets, and a minimal non-sensitive liveness response. Deny private access by default at the backend. Protect reports, exports, background-job triggers, settings, AI analysis, and any alternative API routes—not just navigation.
