@@ -123,6 +123,17 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await page.getByRole('button', { name: 'Сохранить сделку', exact: true }).click();
     const retry = page.getByRole('button', { name: 'Повторить исходный запрос', exact: true });
     await expect(retry).toBeVisible();
+    await expect(retry.locator('xpath=ancestor::details')).toHaveCount(0);
+    const context = page.locator('details').filter({
+      has: page.locator('summary', { hasText: 'Параметры и правила учёта' }),
+    });
+    for (const expanded of [true, false]) {
+      await context.locator('summary').focus();
+      await page.keyboard.press('Enter');
+      await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(expanded);
+      await expect(retry).toBeVisible();
+      await expect(quantity).toBeDisabled();
+    }
     await expect(quantity).toBeDisabled();
     expect(writes).toHaveLength(1);
     await selectSection(page, 'Начальные данные');
