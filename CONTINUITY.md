@@ -363,7 +363,9 @@ providers/scanners/hostedCI/release not rerun for this frontend slice.
 
 Archived at openspec/changes/archive/2026-09-26-redesign-transfer-workbench. Three new
 requirement blocks match canonical;37previous spec files byte-identical; strict38
-canonical specs pass and active changes empty. Final integration bookkeeping pending.
+canonical specs pass and active changes empty. All6tasks complete; product/archive56b6856
+fast-forward integrated into refactor/brownfield-baseline. Temporary dependency links
+unlinked; primary dependencies and all worktrees retained.
 
 ## Next work and remaining whole goal
 

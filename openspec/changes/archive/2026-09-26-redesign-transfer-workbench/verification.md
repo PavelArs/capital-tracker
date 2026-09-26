@@ -1,6 +1,6 @@
 # Transfer workbench verification
 
-Status: required gates passed; archived and canonical specifications compared. Final integration bookkeeping remains.
+Status: complete, archived and integrated; all6tasks complete.
 
 ## Scope and baseline
 
@@ -56,3 +56,10 @@ Final strict OpenSpec validation:38items pass. Final labeled Docker inventory sh
 OpenSpec1.2.0 `openspec archive redesign-transfer-workbench --yes` exited0 and created `2026-09-26-redesign-transfer-workbench`. The CLI warned5/6tasks because final task3.2 deliberately includes archive/canonical comparison/integration, not unfinished product verification. All product/runtime/review gates were complete before archive; the final checkbox is completed only after the remaining procedure. Log `/private/tmp/capital-transfer-workbench-archive.log`.
 
 Post-archive comparison confirms all3 new requirement blocks match the archived delta (only blank-line normalization) and all37previous canonical files remain byte-identical to859f267. The generated Purpose placeholder was replaced with the actual capability purpose. Strict38canonical specs pass, active changes list is empty. Logs `...-canonical.log` and `...-specs-archived.log`.
+
+Product and archive56b6856 fast-forward integrated into refactor/brownfield-baseline
+after verifying its starting HEAD859f267 and sole owner Nginx edit. Only the three
+exact temporary integration-worktree node_modules symlinks were unlinked after
+verification; primary dependencies remain. QA/form worktrees are clean and retained.
+Task3.2 was then completed. Final bookkeeping is documentation only; no new product
+changes or unsupported rerun claims. The whole-refactor goal remains active.
