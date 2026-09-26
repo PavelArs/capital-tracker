@@ -195,3 +195,9 @@ This is a dependency gate, not complete application/image security verification.
 `/private/tmp/capital-directory-production-audit.log`. No dependencies or lock changed;
 the previously documented findings remain unsuppressed. This is not complete release
 or application/image security verification.
+
+## Compact journal context checkpoint — 2026-09-26
+
+No dependency or lock changes. `pnpm audit:production` exited0 with the same two
+moderate findings and no high/critical findings; `/private/tmp/capital-context-production-audit.log`.
+Findings remain unsuppressed. This scoped dependency gate is not release verification.

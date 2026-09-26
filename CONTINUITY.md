@@ -15,7 +15,7 @@ Complete frontend redesign is now required: modern restrained responsive Russian
 functionality first, optional early-2000s influence, no excess decoration/animation.
 Read docs/frontend-redesign-plan.md (FUI-01..06, partial or pending) and the dated target-brief
 amendment. This covers navigation/workflows/all screens, not CSS polish alone. Swap
-runtime and independent review now pass; swaps and four initial frontend slices are
+runtime and independent review now pass; swaps and five initial frontend slices are
 archived. The next owner visual review is after redesign; current functional UI checks are not UX approval.
 
 Branch: refactor/brownfield-baseline. Root owns migration/dependency/deployment/
@@ -242,11 +242,32 @@ unsupported Testing Library exact options were removed in175120a; the old combin
 shell command had masked that failure with successful lint. Docker/E2E actually passed.
 Never infer one check's exit from a later successful command.
 
+## Compact journal context — 2026-09-26
+
+Change `compact-journal-context` adds a short initialized-journal scope notice and
+native closed details/summary with exact existing metadata/caveats. Uninitialized
+guidance and all shared errors/receipts/retry remain outside. No controller/key/backend
+change. Worktrees capital-tracker-journal-context and capital-test-journal-context;
+Sol acceptance/review, Luna copy inventory, root integration/Docker. All six final
+compact/expanded360/768/1440px screenshots independently reviewed. Read archived
+verification.md/review.md for evidence and limits; preview remains unchanged.
+
+Actual preimplementation RED on FE64923db4: exact revision expected hidden, visible.
+First candidate1pass/1fail: new identity test searched hidden role group; QA fix8df86c6
+selects the matching workflow before strict original-node assertions. Final real
+WORKFLOW/WORKSPACE2/2PASS26.5s,118/21frontendPASS3.84s, build/lint/types/scoped style
+and dependency gate pass. Existing27lint/bundle warnings and2moderate advisories remain.
+No full E2E repeated. Final independent approval, no remaining bounded-scope findings.
+Logs/artifacts `/private/tmp/capital-context-*`; failed run preserved separately.
+FEsha256:ab29708ca75a9b60c738ecd9d63d92abb2150c51a3f12e221a4a001756c822b4;
+BEdd90a8c5 unchanged. E2E containers/networks empty; owner Nginx/lock above unchanged,
+preview stopped32hours with original volume/tags intact. Archive comparison follows.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-compact verbose journal context and improve field/actions/results hierarchy. Track
+improve field/actions/results hierarchy. Compact journal context is complete. Track
 correction/void focus announcement, delayed create completion stealing focus, and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.

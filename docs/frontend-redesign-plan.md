@@ -88,8 +88,15 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: compact journal context, clearer form fields/actions and result tables, then
+work: clearer form fields/actions and result tables, then
 remaining analytical/settings screens. Retain chart maximum-period review separately.
+
+The next bounded step, `compact-journal-context`, reduces initialized-journal prose
+to an honest short notice and a native keyboard-accessible disclosure. Exact details,
+initialization guidance, mounted drafts and recovery remain;118 characterization tests
+and two selected real HTTPS/MFA/PostgreSQL journeys pass. Independent source/visual
+review covers compact/expanded360/768/1440px. See [verification](../openspec/changes/archive/2026-09-26-compact-journal-context/verification.md).
+This completes only the context item; field/results ergonomics remain open.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Reveal/focus or announce correction/void editors selected from shared history.

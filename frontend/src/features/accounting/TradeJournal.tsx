@@ -24,6 +24,9 @@ import { ValuationHistory } from './ValuationHistory';
 import { accountingError, newRequestId } from './feedback';
 import './TradeJournal.css';
 
+const initializationGuidance =
+  'Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов. Общий баланс не восстанавливает историю покупок автоматически.';
+
 type Operation =
   | { kind: 'initialize'; input: { requestId: string; coverageFrom: string; assertEmpty: true } }
   | { kind: 'create'; input: TradeCommand }
@@ -478,10 +481,7 @@ export function TradeJournal({
         onSelect={onSectionChange}
         operations={
           <>
-            <p className="manual-muted">
-              Журнал требует явно подтверждённого пустого начала либо проверенных начальных лотов.
-              Общий баланс не восстанавливает историю покупок автоматически.
-            </p>
+            {!journal && <p className="manual-muted">{initializationGuidance}</p>}
             {state &&
               !journal &&
               (state.eligible ? (
@@ -533,17 +533,26 @@ export function TradeJournal({
               ))}
             {journal && (
               <>
-                <p>
-                  Ревизия журнала: {journal.journalRevision}. Граница покрытия UTC:{' '}
-                  {journal.coverageFrom}.
-                </p>
-                <p className="manual-muted">
-                  Активных сделок: {journal.activeTradeCount} / {journal.limits.activeTrades},
-                  неизменяемых версий: {journal.versionCount} / {journal.limits.versions}.
-                  Распределение себестоимости: 30 десятичных знаков, остаток получает последняя
-                  часть лота. Это учётные результаты журнала, не рыночная стоимость, не доходность
-                  портфеля и не налоговый отчёт.
-                </p>
+                <div className="trade-journal__context">
+                  <p className="manual-muted">Учёт операций в USD. Без рыночной оценки.</p>
+                  <details>
+                    <summary>Параметры и правила учёта</summary>
+                    <div className="trade-journal__context-body">
+                      <p>{initializationGuidance}</p>
+                      <p>
+                        Ревизия журнала: {journal.journalRevision}. Граница покрытия UTC:{' '}
+                        {journal.coverageFrom}.
+                      </p>
+                      <p className="manual-muted">
+                        Активных сделок: {journal.activeTradeCount} / {journal.limits.activeTrades},
+                        неизменяемых версий: {journal.versionCount} / {journal.limits.versions}.
+                        Распределение себестоимости: 30 десятичных знаков, остаток получает
+                        последняя часть лота. Это учётные результаты журнала, не рыночная стоимость,
+                        не доходность портфеля и не налоговый отчёт.
+                      </p>
+                    </div>
+                  </details>
+                </div>
                 <AccountOperations
                   selected={workflow}
                   onSelect={setWorkflow}

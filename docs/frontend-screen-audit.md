@@ -106,3 +106,13 @@ field ergonomics and clearer result tables are next. Independent review inspecte
 scoped screenshots; complete redesign and owner visual acceptance remain pending.
 Preview remains unchanged. All four frontend checkpoints above were archived on2026-09-26;
 see the [review and followups](reviews/2026-09-26-frontend.md).
+
+## Compact context checkpoint, 2026-09-26
+
+`compact-journal-context` moves initialized-journal explanation and live metadata into
+a native disclosure, retaining a short scope notice above the editor. Independent
+review inspected compact/expanded360/768/1440px screenshots; two selected real journeys
+verify exact drafts/File, keyboard state and committed-response recovery. See
+[verification](../openspec/changes/archive/2026-09-26-compact-journal-context/verification.md).
+Field/action/result layout remains the next account UX work. Full redesign, owner
+visual approval and preview update remain pending.

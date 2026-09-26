@@ -15,14 +15,12 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   await page.goto(`/manual-accounts/${account.id}`);
   const trade = page.getByRole('group', { name: 'Сделка в USD', exact: true });
   await expect(trade).toBeVisible();
-  const revision = page.getByText(
-    `Ревизия журнала: 1. Граница покрытия UTC: ${coverageFrom}.`,
-    { exact: true },
-  );
-  const capacity = page.getByText(
-    'Активных сделок: 1 / 1000, неизменяемых версий: 1 / 10000.',
-    { exact: false },
-  );
+  const revision = page.getByText(`Ревизия журнала: 1. Граница покрытия UTC: ${coverageFrom}.`, {
+    exact: true,
+  });
+  const capacity = page.getByText('Активных сделок: 1 / 1000, неизменяемых версий: 1 / 10000.', {
+    exact: false,
+  });
   // Genuine predecessor RED: initialized journal details used to be always visible.
   await expect(revision).toBeHidden();
   await expect(capacity).toBeHidden();
@@ -37,17 +35,16 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   const summary = context.locator('summary');
   await expect(summary).toHaveText('Параметры и правила учёта');
   await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
-  const scope = page.getByText(
-    'Учёт операций в USD. Без рыночной оценки.',
-    { exact: true },
-  );
+  const scope = page.getByText('Учёт операций в USD. Без рыночной оценки.', { exact: true });
   await expect(scope).toBeVisible();
   const toggleContext = async (expanded: boolean) => {
     await summary.focus();
     await expect(summary).toBeFocused();
     await page.keyboard.press('Enter');
     await expect(summary).toBeFocused();
-    await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(expanded);
+    await expect
+      .poll(() => context.evaluate((node: HTMLDetailsElement) => node.open))
+      .toBe(expanded);
     if (expanded) {
       await expect(initialization).toBeVisible();
       await expect(revision).toBeVisible();
@@ -144,7 +141,9 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
         )
         .toBeLessThanOrEqual(1);
       await page.screenshot({
-        path: testInfo.outputPath(`journal-context-${expanded ? 'expanded' : 'compact'}-${width}.png`),
+        path: testInfo.outputPath(
+          `journal-context-${expanded ? 'expanded' : 'compact'}-${width}.png`,
+        ),
         fullPage: false,
       });
     }
@@ -210,7 +209,9 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
   await toggleContext(true);
   await toggleContext(false);
   expect(await correctionNode?.evaluate((element) => element.isConnected)).toBe(true);
-  expect(await quantity.evaluate((element, original) => element === original, correctionNode)).toBe(true);
+  expect(await quantity.evaluate((element, original) => element === original, correctionNode)).toBe(
+    true,
+  );
   await expect(quantity).toHaveValue('1');
   await expect(cancelCorrection).toBeVisible();
   await correctionNode?.dispose();

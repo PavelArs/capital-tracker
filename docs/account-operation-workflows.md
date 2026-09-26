@@ -6,6 +6,14 @@ Only the selected workflow is visible. Shared journal totals, lots and trade his
 remain below it; selecting correction or void from that history opens the trade editor.
 The action still needs its existing explicit review and submission.
 
+Initialized journals show a short USD accounting-scope notice. **Параметры и правила
+учёта** opens exact coverage/revision/counts and the full accounting explanation on
+demand. It works with the keyboard and retains its open state while switching account
+sections or workflows; a real account remount starts closed. Reading these details
+preserves drafts and the selected CSV File. Initialization warnings and shared errors,
+receipts and original-request recovery stay visible outside the disclosure.
+See the [context verification](../openspec/changes/archive/2026-09-26-compact-journal-context/verification.md).
+
 Switching keeps all workflows mounted, including exact independent drafts, selected
 CSV File, reviewed state and unresolved commands. It does not submit, refresh or
 cancel anything. Hidden unresolved CSV operations still block incompatible trade
