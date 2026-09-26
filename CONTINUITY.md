@@ -289,6 +289,9 @@ exit0 with2moderate/nohighcritical; no package/lock changes. ExistingVitechunk/p
 http2warnings retained. FullE2E/backend/migrationmatrix/hostedCI/release gates unrun.
 Test containers/networks removed; preview still stopped30h, durable volume present and
 old preview image retained. Owner Nginx and lock hashes unchanged. No project removal.
+Shell implementation committed4049132 and fast-forwarded into integration; its worktree
+is clean and the three temporary dependency symlinks are removed. Actual packages and
+all project folders retained. Integrated strict OpenSpec30/30 and apply6/8 confirmed.
 Next: required independent swap/shell review when available; meanwhile specify a small
 account-workflow redesign slice. No shell/swap archive until independent review passes.
 

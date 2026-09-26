@@ -160,3 +160,11 @@ and historical_ui until Sep30; gate_acceptance until Sep29). No retry/purchase/f
 was attempted. Root source/screenshot inspection is explicitly not independent review.
 Tasks 1.1/1.2/2.1/2.2/2.3/3.2 complete, 3.1/3.3 pending;6/8. Do not archive or synchronize
 canonical shell specifications until independent review and any resulting checks pass.
+
+Local implementation committed as4049132 and fast-forwarded into the integration
+branch without changing the owner Nginx edit. The shell worktree is clean; its three
+explicit temporary node_modules symlinks were removed, preserving actual installed
+packages. No project/worktree directories were deleted. Post-integration strict
+OpenSpec again passes30/30 and apply reports6/8, in `/private/tmp/capital-shell-integrated-specs.log`
+and `...-integrated-apply.json`. Canonical specs, backend, deployment, CI, lock and
+tracked Nginx have no committed diff from34e924b. Independent review/archive still pending.
