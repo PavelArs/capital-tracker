@@ -313,7 +313,10 @@ unchangedBEdd90a8c5. Logs/harness/artifacts /private/tmp/capital-directory-*.
 Production audit exit0 with two moderate/no high-critical findings. Test resources
 cleaned; preview volume and old FE7eff01d1 preview tag preserved. No full suites or
 new migration/release/production claim. Owner Nginx and lock remain protected.
-Next: account-detail hierarchy and focused operation workflows; required independent
+Directory implementation committed f391bdc and fast-forwarded into integration; worktree
+clean, three temporary dependency symlinks removed, actual packages retained. Integrated
+strict OpenSpec31/31 passes. Next: account-detail hierarchy and focused operation
+workflows; required independent
 swap/shell/directory review when available. No archive until independent review passes.
 
 Still required: complete frontend/UX redesign per docs/frontend-redesign-plan.md,

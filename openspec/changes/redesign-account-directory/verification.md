@@ -112,3 +112,10 @@ Backend/schema logic is unchanged. Broader regressions remain for final release.
 Independent review and archive remain pending because observed agent quotas persist;
 no paid fallback or repeated agent retry. Tasks1.1/2.1/2.2/3.2 complete (4/6),3.1/3.3
 pending. Canonical requirements must not be synchronized/archived before those gates.
+
+Local implementation committed f391bdc and fast-forwarded into the integration branch.
+The account-directory worktree is clean after removing only its three explicit
+node_modules symlinks; actual installed packages and every project folder remain.
+Post-integration strict OpenSpec passes31/31 (`...-integrated-specs.log`). Backend,
+deployment/CI, canonical specs, lock and tracked Nginx have no committed changes from
+60ee94e; the owner's separate Nginx edit and both protected hashes remain unchanged.
