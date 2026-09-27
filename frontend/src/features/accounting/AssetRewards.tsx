@@ -10,7 +10,14 @@ import {
 import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { AssetRewardForm, type RewardDraft, type RewardMode } from './AssetRewardForm';
 import { AssetRewardReceipt } from './AssetRewardReceipt';
 import { AssetRewardReview } from './AssetRewardReview';
@@ -51,6 +58,8 @@ type Recovery =
     };
 type Review = { journalRevision: number; version: number | null };
 type ReadState = 'loading' | 'ready' | 'error';
+type FocusKind = 'editor' | 'history' | 'return-editor' | 'return-history';
+type FocusRequest = { kind: FocusKind; sequence: number };
 
 const recoveries = new Map<string, Recovery>();
 const recoveryListeners = new Set<() => void>();
@@ -268,6 +277,39 @@ function AssetRewardsOwner({
   const [history, setHistory] = useState<RewardVersions | null>(null);
   const [historyRead, setHistoryRead] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [historyError, setHistoryError] = useState('');
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null);
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
+  const historyHeading = useRef<HTMLHeadingElement>(null);
+  const editorAction = useRef<HTMLButtonElement | null>(null);
+  const historyAction = useRef<HTMLButtonElement | null>(null);
+  const focusSequence = useRef(0);
+
+  const requestFocus = useCallback((kind: FocusKind) => {
+    setFocusRequest({ kind, sequence: ++focusSequence.current });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!focusRequest) return;
+    const origin =
+      focusRequest.kind === 'return-editor'
+        ? editorAction.current
+        : focusRequest.kind === 'return-history'
+          ? historyAction.current
+          : null;
+    if (origin?.isConnected && !origin.disabled) {
+      origin.focus();
+    } else {
+      const target =
+        focusRequest.kind === 'editor'
+          ? editor.current
+          : focusRequest.kind === 'history'
+            ? historyHeading.current
+            : sectionHeading.current;
+      target?.focus();
+    }
+    setFocusRequest(null);
+  }, [focusRequest]);
   const live = useRef(false);
   const writeLock = useRef(false);
   const listGeneration = useRef(0);
@@ -530,7 +572,7 @@ function AssetRewardsOwner({
     }
   }
 
-  function stage(nextMode: 'correct' | 'void', reward: RewardVersion) {
+  function stage(nextMode: 'correct' | 'void', reward: RewardVersion, trigger: HTMLButtonElement) {
     if (recoverySnapshot(key) || writeLock.current) return;
     setMode(nextMode);
     setTarget(reward);
@@ -542,6 +584,8 @@ function AssetRewardsOwner({
     setReviewRead('idle');
     setReviewError('');
     clearHistory();
+    editorAction.current = trigger;
+    requestFocus('editor');
     // Attestation resets on staging, so the user explicitly reviews this target.
   }
 
@@ -555,6 +599,7 @@ function AssetRewardsOwner({
     setReviewRead('idle');
     setReviewError('');
     setWriteError('');
+    requestFocus('return-editor');
   }
 
   async function loadHistory(
@@ -629,7 +674,9 @@ function AssetRewardsOwner({
 
   return (
     <section className="manual-card" aria-label="Вознаграждения">
-      <h2>Вознаграждения</h2>
+      <h2 ref={sectionHeading} tabIndex={-1} className="operation-focus-target">
+        Вознаграждения
+      </h2>
       <p className="manual-muted">
         Записывайте актив, уже полученный как вознаграждение. Это не покупка, перевод или внешний
         ввод. Неизвестная себестоимость и неизвестный доход остаются неизвестными; оценка актива
@@ -669,64 +716,78 @@ function AssetRewardsOwner({
         Обновить вознаграждения
       </button>
 
-      <AssetRewardForm
-        draft={draft}
-        instruments={instruments}
-        mode={mode}
-        busy={blocked || catalogRead !== 'ready' || listRead !== 'ready'}
-        reviewed={reviewed}
-        reviewError={reviewError}
-        review={
-          review ? (
-            <AssetRewardReview
-              draft={draft}
-              journalRevision={review.journalRevision}
-              mode={mode}
-              targetId={target?.rewardId}
-              targetVersion={review.version ?? undefined}
-              instrumentName={instrumentName(draft.instrumentId)}
-              instrumentId={draft.instrumentId}
-            />
-          ) : undefined
+      <div
+        ref={editor}
+        className="operation-workbench"
+        role="region"
+        aria-label={
+          mode === 'correct'
+            ? 'Исправление вознаграждения'
+            : mode === 'void'
+              ? 'Отмена вознаграждения'
+              : 'Новое вознаграждение'
         }
-        recovery={
-          recovery ? (
-            <>
-              {recovery.phase === 'unknown' && (
-                <button
-                  className="manual-button"
-                  type="button"
-                  disabled={writing}
-                  onClick={() => void send(recovery.command, true)}
-                >
-                  Повторить тот же запрос
-                </button>
-              )}
+        tabIndex={-1}
+      >
+        <AssetRewardForm
+          draft={draft}
+          instruments={instruments}
+          mode={mode}
+          busy={blocked || catalogRead !== 'ready' || listRead !== 'ready'}
+          reviewed={reviewed}
+          reviewError={reviewError}
+          review={
+            review ? (
               <AssetRewardReview
-                draft={recovery.draft}
-                journalRevision={recovery.command.body.expectedJournalRevision}
-                mode={recovery.command.kind}
-                targetId={
-                  recovery.command.kind === 'create' ? undefined : recovery.command.rewardId
-                }
-                targetVersion={
-                  'expectedVersion' in recovery.command.body
-                    ? recovery.command.body.expectedVersion
-                    : undefined
-                }
-                instrumentName={instrumentName(recovery.draft.instrumentId)}
-                instrumentId={recovery.draft.instrumentId}
-                requestId={recovery.command.body.requestId}
-                frozen
+                draft={draft}
+                journalRevision={review.journalRevision}
+                mode={mode}
+                targetId={target?.rewardId}
+                targetVersion={review.version ?? undefined}
+                instrumentName={instrumentName(draft.instrumentId)}
+                instrumentId={draft.instrumentId}
               />
-            </>
-          ) : undefined
-        }
-        onChange={edit}
-        onReview={() => void check(mode, target)}
-        onSubmit={submit}
-        onCancel={target ? cancelEdit : undefined}
-      />
+            ) : undefined
+          }
+          recovery={
+            recovery ? (
+              <>
+                {recovery.phase === 'unknown' && (
+                  <button
+                    className="manual-button"
+                    type="button"
+                    disabled={writing}
+                    onClick={() => void send(recovery.command, true)}
+                  >
+                    Повторить тот же запрос
+                  </button>
+                )}
+                <AssetRewardReview
+                  draft={recovery.draft}
+                  journalRevision={recovery.command.body.expectedJournalRevision}
+                  mode={recovery.command.kind}
+                  targetId={
+                    recovery.command.kind === 'create' ? undefined : recovery.command.rewardId
+                  }
+                  targetVersion={
+                    'expectedVersion' in recovery.command.body
+                      ? recovery.command.body.expectedVersion
+                      : undefined
+                  }
+                  instrumentName={instrumentName(recovery.draft.instrumentId)}
+                  instrumentId={recovery.draft.instrumentId}
+                  requestId={recovery.command.body.requestId}
+                  frozen
+                />
+              </>
+            ) : undefined
+          }
+          onChange={edit}
+          onReview={() => void check(mode, target)}
+          onSubmit={submit}
+          onCancel={target ? cancelEdit : undefined}
+        />
+      </div>
 
       {writeError && (
         <p className="manual-feedback manual-feedback--error" role="alert">
@@ -787,7 +848,7 @@ function AssetRewardsOwner({
                     className="manual-button manual-button--secondary"
                     type="button"
                     disabled={blocked}
-                    onClick={() => void stage('correct', reward)}
+                    onClick={(event) => void stage('correct', reward, event.currentTarget)}
                   >
                     Исправить вознаграждение
                   </button>
@@ -795,7 +856,7 @@ function AssetRewardsOwner({
                     className="manual-button manual-button--secondary"
                     type="button"
                     disabled={blocked}
-                    onClick={() => void stage('void', reward)}
+                    onClick={(event) => void stage('void', reward, event.currentTarget)}
                   >
                     Отменить вознаграждение
                   </button>
@@ -805,12 +866,19 @@ function AssetRewardsOwner({
                 className="manual-button manual-button--secondary"
                 type="button"
                 disabled={blocked || (historyId === reward.rewardId && historyRead === 'loading')}
-                onClick={() => void loadHistory(reward.rewardId)}
+                onClick={(event) => {
+                  historyAction.current = event.currentTarget;
+                  void loadHistory(reward.rewardId);
+                  requestFocus('history');
+                }}
               >
                 История вознаграждения
               </button>
               {historyId === reward.rewardId && (
                 <section aria-label="История вознаграждения">
+                  <h4 ref={historyHeading} tabIndex={-1} className="operation-focus-target">
+                    История вознаграждения
+                  </h4>
                   {historyError && <p role="alert">{historyError}</p>}
                   {history?.items.map((version) => (
                     <p key={version.version}>
@@ -830,6 +898,16 @@ function AssetRewardsOwner({
                       Ещё версии
                     </button>
                   )}
+                  <button
+                    className="manual-button manual-button--secondary"
+                    type="button"
+                    onClick={() => {
+                      clearHistory();
+                      requestFocus('return-history');
+                    }}
+                  >
+                    Закрыть историю
+                  </button>
                 </section>
               )}
             </article>
