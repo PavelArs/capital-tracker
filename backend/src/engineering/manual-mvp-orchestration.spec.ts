@@ -56,7 +56,7 @@ if(tool==='docker'){
  }
  if(a[0]==='exec'){
   const s=a.join(' ');
-  if(s.includes('SELECT name FROM migrations'))process.stdout.write(original+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
+  if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore')process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
   else if(s.includes('pg_dump'))process.stdout.write(mode==='fingerprint'&&a[1]!=='db'?'DIFFERENT_RESTORED_ROWS\\n':'SYNTHETIC_LOGICAL_ROWS_AND_SCHEMA\\n');
@@ -131,7 +131,7 @@ const appUp = (call: Command) =>
   call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('up');
 
 describe('MVP-003/004: failure-safe server process orchestration', () => {
-  it.each(['lock', 'missing-db', 'dump', 'encrypt', 'restore', 'fingerprint'])(
+  it.each(['lock', 'missing-db', 'dump', 'encrypt', 'restore', 'fingerprint', 'unsafe-schema'])(
     'refuses %s before migration or candidate application update',
     (failure) => {
       const { result, calls } = release(failure);
@@ -145,6 +145,8 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
         dump: (call) => call.tool === 'docker' && call.args.join(' ').includes('pg_dump -Fc'),
         encrypt: (call) => call.tool === 'openssl' && !call.args.includes('-d'),
         restore: (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
+        'unsafe-schema': (call) =>
+          call.tool === 'docker' && call.args.join(' ').includes('SELECT name FROM migrations'),
         fingerprint: (call) =>
           call.tool === 'docker' && call.args.join(' ').includes('pg_dump --no-owner'),
       };
@@ -154,6 +156,8 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
       for (const call of calls.filter(appUp)) {
         expect(call.backend).toBe(previousBackend);
         expect(call.frontend).toBe(previousFrontend);
+        const configuration = call.args[call.args.indexOf('-f') + 1];
+        expect(readFileSync(configuration, 'utf8')).toBe('# Synthetic previous configuration\n');
       }
       expect(existsSync(join(directory, '.env.images'))).toBe(false);
     },
@@ -169,6 +173,12 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
       );
       expect(rollbackIndex).toBeGreaterThan(0);
       expect(calls[rollbackIndex].frontend).toBe(previousFrontend);
+      expect(
+        readFileSync(
+          calls[rollbackIndex].args[calls[rollbackIndex].args.indexOf('-f') + 1],
+          'utf8',
+        ),
+      ).toBe('# Synthetic previous configuration\n');
       expect(
         calls
           .slice(rollbackIndex + 1)

@@ -6,7 +6,7 @@
 
 ## 2. Runtime and trusted candidate
 
-- [ ] 2.1 Gate automatic startup/scheduling under existing false flag, bound enabled fiat HTTP timeout, preserve explicit FX/legacy demand semantics; pass focused runtime tests.
+- [x] 2.1 Gate automatic startup/scheduling under existing false flag, bound enabled fiat HTTP timeout, preserve explicit FX/legacy demand semantics; pass focused runtime tests.
 - [ ] 2.2 Resolve Router release advisories, retain routing/authentication and production audit evidence.
 - [ ] 2.3 Neutralize upstream automatic CD safely before main integration; implement trusted immutable tested candidate promotion and pinned SSH identity with existing Actions/GHCR.
 
