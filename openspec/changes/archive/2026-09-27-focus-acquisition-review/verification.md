@@ -101,3 +101,18 @@ network inventories empty. Preview remains stopped45hours with originalFE7eff01d
 and capital-tracker-preview_preview_data preserved. Main remains2616db4 with sole
 owner Nginx edit: mode0644,size1348,SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432;
 lockSHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d.
+
+## Archive procedure
+
+OpenSpec1.2.0 `openspec archive focus-acquisition-review --yes` exited0, synchronizing
+2added requirements into acquisition-entry and archiving2026-09-27-focus-acquisition-review.
+CLI warned5/6tasks because final3.2 includes this archive/comparison/integration/cleanup
+procedure, not unfinished product verification. Log `...-archive.log`.
+
+All41other canonical files remain byte-identical to2616db4. Original acquisition-entry
+header/Purpose and3old requirements are preserved;2new blocks match archived delta
+after trailing blank normalization. The first temporary comparison parser used a greedy
+heading regex and failed its block-count assertion; restricting the heading to one line
+made the actual comparison pass. This did not change specification text beyond normal
+EOF whitespace. Log `...-canonical.log`. Strict42canonical specs PASS, no activechanges;
+`...-specs-archived.log`. Integration and exact temporary-link cleanup remain pending.
