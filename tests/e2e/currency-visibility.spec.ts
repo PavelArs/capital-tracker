@@ -181,6 +181,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
     await page.goto('/settings');
     await page.getByRole('button', { name: 'Валюты', exact: true }).click();
     await expect.poll(() => lostRead).toBe(true);
+    verifyPreferences(false);
     // Genuine predecessor RED: the original catch silently loses this actual backend response.
     await expect(
       page
@@ -366,7 +367,45 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
   await visible.click();
   await expect(systemRow).toBeVisible();
   const snapshotPreferences = preferences();
+  const lastVisibleTables = await manager.getByRole('table').allTextContents();
+  const lastCounts = [await visible.textContent(), await hidden.textContent()];
+  await hidden.click();
+  const lastHiddenTables = await manager.getByRole('table').allTextContents();
+  await visible.click();
+  // A later partial read cannot publish one new list or erase either last-good list.
+  lostRead = false;
+  await page.route(hiddenRoute, loseHiddenRead, { times: 1 });
+  try {
+    await reload.click();
+    await expect.poll(() => lostRead).toBe(true);
+    await expect(
+      manager
+        .getByRole('alert')
+        .filter({ hasText: 'Не удалось загрузить списки валют. Повторите загрузку.' }),
+    ).toBeVisible();
+    await expect(
+      manager.getByText(
+        'Показаны последние успешно загруженные списки; видимость могла измениться.',
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(reload).toBeEnabled();
+    expect([await visible.textContent(), await hidden.textContent()]).toEqual(lastCounts);
+    expect(await manager.getByRole('table').allTextContents()).toEqual(lastVisibleTables);
+    for (const action of await manager.getByRole('button', { name: /^(?:Скрыть|Показать) / }).all())
+      await expect(action).toBeDisabled();
+    await hidden.click();
+    expect(await manager.getByRole('table').allTextContents()).toEqual(lastHiddenTables);
+    for (const action of await manager.getByRole('button', { name: /^(?:Скрыть|Показать) / }).all())
+      await expect(action).toBeDisabled();
+    await visible.click();
+    verifyPreferences(false);
+    expect(preferences()).toEqual(snapshotPreferences);
+  } finally {
+    await page.unroute(hiddenRoute, loseHiddenRead);
+  }
   await reloadPair(() => reload.click());
+  await expect(hideSystem).toBeEnabled();
   expect(preferences()).toEqual(snapshotPreferences);
   await page.reload();
   await reloadPair(() => page.getByRole('button', { name: 'Валюты', exact: true }).click());
@@ -512,6 +551,13 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
     await expect(general).toBeFocused();
     await expect(systemRow).toHaveCount(0);
     await expect(reload).toBeEnabled();
+    expect(
+      currencyRequests
+        .filter((row) => row.method === 'GET')
+        .slice(readsBeforeRemount.length)
+        .map((row) => row.path)
+        .sort(),
+    ).toEqual([listPath, hiddenPath].sort());
     verifyPreferences(true);
   } finally {
     releaseRemount();
@@ -547,6 +593,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
   expect(
     currencyRequests.every((row) => [listPath, hiddenPath, hidePath, showPath].includes(row.path)),
   ).toBe(true);
+  // Paired reads plus five explicit commands:25 expected; one bounded spare admission.
   expect(currencyRequests.length).toBeLessThanOrEqual(26);
   verifyPreferences(false);
 });
