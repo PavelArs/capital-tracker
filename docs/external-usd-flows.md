@@ -33,6 +33,19 @@ response; it does not automatically post a retry or store pending commands in br
 storage. In-memory recovery ends on a full page reload, after which saved entries
 remain discoverable from the journal.
 
+The page keeps its unreconciled scope visible. “Правила учёта потоков” opens the full
+exclusions and tab-memory caveat. Associated field hints explain positive USD values,
+explicit time zones and inclusive/exclusive period boundaries. History actions focus
+the correction, void or versions panel; cancel/close returns to the initiating row
+when it is still available. Closing versions discards a pending version read. Later
+responses do not move focus or replace unsaved correction values.
+
+Period tables lead with UTC time, direction and exact USD amount. The complete
+selectable identifier is available under “Идентификатор потока”; wide period/version
+tables scroll within named keyboard-focusable regions. See the
+[workbench verification](../openspec/changes/archive/2026-09-27-redesign-external-flow-workbench/verification.md)
+for the selected real browser/database checks and responsive review scope.
+
 This ledger does not calculate portfolio wealth, cash balances, investment profit,
 XIRR or TWR. Withdrawals can exceed recorded contributions because opening wealth and
 cash balances are outside this slice. It does not reconcile bank or blockchain

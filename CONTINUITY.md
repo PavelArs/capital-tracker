@@ -367,12 +367,35 @@ canonical specs pass and active changes empty. All6tasks complete; product/archi
 fast-forward integrated into refactor/brownfield-baseline. Temporary dependency links
 unlinked; primary dependencies and all worktrees retained.
 
+## External flow workbench — 2026-09-27
+
+`redesign-external-flow-workbench` follows75a0f6b. Root TSX34aee29 and Luna CSSa19c8d4
+(integrated26bd124, root followups b514f64/20d9feb) add associated exact-USD/time/period
+guidance, native rules/identity disclosure, action-only correction/void/version focus,
+cancel/close return and contained responsive tables. Eleven form/input signatures and
+ten financial/recovery/read controller definitions remain structurally unchanged.
+No backend/auth/schema/pipeline/dependency changes. Sol authored acceptance5df23b9,
+root independently reviewed tests and fixed pre-initialization guidance ordering in
+303f430. Sol separately reviewed root/Luna product and all26actual viewport frames;
+the report does not claim independent review of its author's own tests.
+
+Actual predecessor RED on FEebdc0e74: absent new rules summary. Final frontend118/21
+PASS4.89s; build/lint/types/style/audit/specs pass. Existing27warnings, bundle warning
+and2moderate/nohighcritical remain. GREEN2/2PASS33.2s: FLOW-004-A17.8s and retained
+FLOW-004-B14.7s, one worker/zero retries, actual HTTPS/password/MFA/backend/PG22migrations.
+Exact financial/stale-read/recovery/fingerprint/admission/provider assertions retained.
+FEsha256:048b059e457731b7692617f1484d9d8fac29bc50cae7aecbc8fc758516ba089c;
+unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-flow-workbench-*`.
+No blocking source/visual findings; native ISO inputs can clip their visible text at768,
+with complete returned interval still readable. Full suites and broader release gates
+were not repeated. Archive/integration procedure is the only remaining slice task.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
-are partial; FUI-04/05/06 and owner visual approval remain open. Next small slice:
-external USD flow editor, then analytical/settings
-screens and wider result hierarchy. Compact context and trade entry/focus are complete.
+are partial; FUI-04/05/06 and owner visual approval remain open. Next small slices:
+analytical/settings screens and wider result hierarchy. Compact context and trade
+entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.

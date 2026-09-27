@@ -88,8 +88,8 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: external USD flow editor, followed by the
-analytical/settings screens. Retain chart maximum-period review separately.
+work: analytical/settings screens and remaining editor focus. Retain chart
+maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
 to an honest short notice and a native keyboard-accessible disclosure. Exact details,
@@ -120,8 +120,14 @@ for scoped gates, corrected mobile overflow/contrast and final visual evidence.
 exact-amount/time/fee guidance, history-to-editor focus with cancel return, and compact
 identity disclosure. The existing exact command/review/recovery guards remain. See
 [transfer workbench verification](../openspec/changes/archive/2026-09-26-redesign-transfer-workbench/verification.md)
-for the selected real HTTPS/MFA/PostgreSQL journeys and scoped review. External USD
-flows, remaining editor focus, analytics/settings and whole-redesign review remain open.
+for the selected real HTTPS/MFA/PostgreSQL journeys and scoped review.
+
+`redesign-external-flow-workbench` adds associated USD/time/period guidance, native
+rules and identity disclosures, correction/void/version focus and cancellation return,
+and contained exact result tables. Both selected real flow/recovery journeys pass;
+26 light/dark360/768/1440 viewport frames have independent product review. See
+[flow workbench verification](../openspec/changes/archive/2026-09-27-redesign-external-flow-workbench/verification.md).
+Remaining editor focus, analytics/settings and whole-redesign review remain open.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to
