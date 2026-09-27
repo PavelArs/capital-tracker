@@ -6,13 +6,14 @@ import {
   hostSubject,
   ledger,
 } from './admission-fixtures';
+import { inspectAnalysis, selectAnalysis } from './analytics-workbench-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
 import { fingerprint, test } from './mfa-fixtures';
 import { trackBrowserRequests, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 test('HIST-004-A: a late history response cannot replace edited intent or the unsaved correction', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const account = await api.account(`Historical late response ${randomUUID()}`);
   const instrument = await api.instrument(`Historical late TOKEN ${randomUUID()}`, 'HIST');
@@ -58,6 +59,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
   try {
     await page.goto(`/manual-accounts/${account.id}`);
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
+    await selectAnalysis(page, 'accounting');
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
@@ -149,6 +151,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     await expect(position.getByRole('cell', { name: '1', exact: true })).toBeVisible();
     await expect(position.getByRole('cell', { name: '100', exact: true })).toBeVisible();
     await expect(section.getByText('2025-01-02T00:00:00.000Z', { exact: true })).toBeVisible();
+    await inspectAnalysis(page, testInfo, section, 'accounting');
 
     await page.getByRole('button', { name: 'Операции', exact: true }).click();
     await expect(gross).toHaveValue('120');

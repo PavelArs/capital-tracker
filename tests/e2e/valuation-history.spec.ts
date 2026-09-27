@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type Locator, expect } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
+import { inspectAnalysis, selectAnalysis } from './analytics-workbench-fixtures';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { coverageFrom, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -217,7 +218,7 @@ test('VCH-API: one private exact timeline reports empty, priced, missing and sol
 
 test('VCH-UI: chart history refreshes zero data and ignores a late period response without losing the trade draft', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const { account, instrument, firstTrade } = await createTimeline(api, 'Valuation history UI');
   const path = historyPath(account.id);
@@ -231,6 +232,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
 
   await page.goto(`/manual-accounts/${account.id}`);
   await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
+  await selectAnalysis(page, 'history');
   await expect(
     page.getByRole('heading', { name: 'История стоимости счёта', exact: true }),
   ).toBeVisible();
@@ -267,6 +269,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   await expect(
     region.getByRole('img', { name: 'График стоимости счёта', exact: true }),
   ).toBeVisible();
+  await inspectAnalysis(page, testInfo, region, 'history');
 
   await page.getByRole('button', { name: 'Операции', exact: true }).click();
   const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });

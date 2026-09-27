@@ -6,6 +6,7 @@ import {
   hostSubject,
   ledger,
 } from './admission-fixtures';
+import { selectAnalysis } from './analytics-workbench-fixtures';
 import { navigateToAccount } from './csv-import-fixtures';
 import { type Instrument, openingInput, providerRequests } from './manual-opening-fixtures';
 import { fingerprint, test } from './mfa-fixtures';
@@ -85,6 +86,7 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
     );
     await page.goto(`/manual-accounts/${previous.id}`);
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
+    await selectAnalysis(page, 'accounting');
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
@@ -105,6 +107,17 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
 
     await navigateToAccount(page, selected.id);
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Задача анализа', exact: true })).toHaveValue(
+      'valuation',
+    );
+    await expect(
+      page.getByRole('table', {
+        name: 'Позиции на выбранный момент',
+        exact: true,
+        includeHidden: true,
+      }),
+    ).toHaveCount(0);
+    await selectAnalysis(page, 'accounting');
     await expect(page).toHaveURL(new RegExp(`/manual-accounts/${selected.id}$`));
     await expect(page.getByRole('heading', { name: selected.name, exact: true })).toBeVisible();
     release();
@@ -266,6 +279,7 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
   try {
     await page.goto(`/manual-accounts/${account.id}`);
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
+    await selectAnalysis(page, 'accounting');
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();

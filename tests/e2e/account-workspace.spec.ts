@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { type Page, expect } from '@playwright/test';
+import { isAnalysisRequest, selectAnalysis } from './analytics-workbench-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
-import { query, test } from './mfa-fixtures';
+import { fingerprint, query, test } from './mfa-fixtures';
 import {
   type TradeReceipt,
   browserPost,
@@ -35,8 +36,10 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   const providers = providerRequests();
   const writes: unknown[] = [];
   let analyses = 0;
+  const analyticsRequests: string[] = [];
   page.on('request', (request) => {
     const path = new URL(request.url()).pathname;
+    if (isAnalysisRequest(request)) analyticsRequests.push(request.url());
     if (path.startsWith('/api/accounting/') && request.method() === 'POST')
       writes.push(request.postDataJSON());
     if (path === `/api/accounting/accounts/${account.id}/trade-journal/history`) analyses++;
@@ -60,6 +63,63 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   const originalInput = await quantity.elementHandle();
 
   await selectSection(page, 'Аналитика');
+  // ANALYTICS-001: direct bounded predecessor RED, before selecting any new task.
+  await expect(
+    page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
+  ).not.toBeVisible({ timeout: 10_000 });
+  const analysisChoice = page.getByRole('combobox', { name: 'Задача анализа', exact: true });
+  await expect(analysisChoice).toBeVisible();
+  expect(await analysisChoice.evaluate((node) => node.tagName)).toBe('SELECT');
+  await expect(analysisChoice).toHaveValue('valuation');
+  expect(await analysisChoice.locator('option').allTextContents()).toEqual([
+    'Оценка на дату',
+    'История стоимости',
+    'Учётные позиции',
+  ]);
+  const owners = [
+    page.getByRole('region', { name: 'Оценка счёта на дату', exact: true, includeHidden: true }),
+    page.getByRole('region', { name: 'История стоимости счёта', exact: true, includeHidden: true }),
+    page.getByRole('region', { name: 'Учётный срез на дату', exact: true, includeHidden: true }),
+  ];
+  const originalOwners = await Promise.all(owners.map((owner) => owner.elementHandle()));
+  await expect(owners[0]).toBeVisible();
+  await expect(owners[1]).toBeHidden();
+  await expect(owners[2]).toBeHidden();
+  const controlledPanel = await analysisChoice.getAttribute('aria-controls');
+  expect(controlledPanel).toBeTruthy();
+  await expect(page.locator(`[id="${controlledPanel}"]`)).toBeVisible();
+  const valuationInstant = page.getByLabel('Момент оценки (ISO)', { exact: true });
+  await analysisChoice.focus();
+  await page.keyboard.press('Tab');
+  await expect(valuationInstant).toBeFocused();
+  await valuationInstant.fill('2025-01-04T00:00:00.000Z');
+  const beforeTaskNavigation = fingerprint(['auth_sessions', 'auth_request_limits']);
+  await analysisChoice.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(analysisChoice).toHaveValue('history');
+  await expect(analysisChoice).toBeFocused();
+  await expect(owners[1]).toBeVisible();
+  await expect(owners[0]).toBeHidden();
+  const historyFrom = page.getByLabel('Начало периода (ISO)', { exact: true });
+  const historyTo = page.getByLabel('Конец периода (ISO)', { exact: true });
+  await historyFrom.fill('2025-01-01T00:00:00.000Z');
+  await historyTo.fill('2025-01-04T00:00:00.000Z');
+  await analysisChoice.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(analysisChoice).toHaveValue('accounting');
+  await expect(analysisChoice).toBeFocused();
+  await expect(owners[2]).toBeVisible();
+  await expect(owners[1]).toBeHidden();
+  for (const [index, owner] of owners.entries()) {
+    expect(await owner.evaluate((node, original) => node === original, originalOwners[index])).toBe(
+      true,
+    );
+    expect(await originalOwners[index]?.evaluate((node) => node.isConnected)).toBe(true);
+  }
+  expect(analyticsRequests).toEqual([]);
+  expect(writes).toEqual([]);
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeTaskNavigation);
+  expect(providerRequests()).toEqual(providers);
   await expect(form).toBeHidden();
   await instant.fill('2025-01-02T00:00:00Z');
   await page.getByRole('button', { name: 'Показать учётный срез', exact: true }).click();
@@ -67,6 +127,25 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await expect(positions.getByRole('cell', { name: '1', exact: true })).toBeVisible();
   await expect(positions.getByRole('cell', { name: '100', exact: true })).toBeVisible();
   const originalResult = await positions.elementHandle();
+  const taskReads = [...analyticsRequests];
+  const taskRows = fingerprint(['auth_sessions', 'auth_request_limits']);
+  for (const task of ['valuation', 'history', 'accounting'] as const) {
+    await selectAnalysis(page, task);
+    await expect(analysisChoice).toHaveValue(task);
+  }
+  await expect(valuationInstant).toHaveValue('2025-01-04T00:00:00.000Z');
+  await expect(historyFrom).toHaveValue('2025-01-01T00:00:00.000Z');
+  await expect(historyTo).toHaveValue('2025-01-04T00:00:00.000Z');
+  await expect(instant).toHaveValue('2025-01-02T00:00:00Z');
+  await expect(positions.getByRole('cell', { name: '100', exact: true })).toBeVisible();
+  expect(await positions.evaluate((node, original) => node === original, originalResult)).toBe(
+    true,
+  );
+  expect(analyticsRequests).toEqual(taskReads);
+  expect(writes).toEqual([]);
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(taskRows);
+  expect(providerRequests()).toEqual(providers);
+  for (const node of originalOwners) await node?.dispose();
   await selectSection(page, 'Начальные данные');
   await instrumentName.fill('Несохраненный инструмент');
   await expect(
@@ -104,6 +183,8 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   expect(analyses).toBe(1);
   expect(writes).toEqual([]);
   await selectSection(page, 'Аналитика');
+  await expect(analysisChoice).toHaveValue('accounting');
+  expect(analyticsRequests).toEqual(taskReads);
   await expect(instant).toHaveValue('2025-01-02T00:00:00Z');
   await expect(positions.getByRole('cell', { name: '100', exact: true })).toBeVisible();
   await selectSection(page, 'Операции');
@@ -192,6 +273,15 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await selectSection(page, 'Начальные данные');
     await expect(instrumentName).toHaveValue('');
     await selectSection(page, 'Аналитика');
+    await expect(analysisChoice).toHaveValue('valuation');
+    await expect(
+      page.getByRole('table', {
+        name: 'Позиции на выбранный момент',
+        exact: true,
+        includeHidden: true,
+      }),
+    ).toHaveCount(0);
+    await selectAnalysis(page, 'accounting');
     await expect(instant).toHaveValue('');
     await expect(positions).toHaveCount(0);
     // Exercise parameter-only SPA reuse without the directory unmounting this page.
@@ -207,6 +297,21 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await expect(form).toBeVisible();
     await expect.poll(() => context.evaluate((node: HTMLDetailsElement) => node.open)).toBe(false);
     await expect(quantity).toHaveValue('');
+    await selectSection(page, 'Аналитика');
+    await expect(analysisChoice).toHaveValue('valuation');
+    await expect(valuationInstant).toHaveValue('');
+    await expect(historyFrom).toHaveValue('');
+    await expect(historyTo).toHaveValue('');
+    await expect(
+      page.getByRole('table', {
+        name: 'Позиции на выбранный момент',
+        exact: true,
+        includeHidden: true,
+      }),
+    ).toHaveCount(0);
+    await selectAnalysis(page, 'accounting');
+    await expect(instant).toHaveValue('');
+    await expect(positions).toHaveCount(0);
     await selectSection(page, 'Начальные данные');
     await expect(instrumentName).toHaveValue('');
     await expect(symbol).toHaveValue('');

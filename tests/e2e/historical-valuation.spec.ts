@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type Locator, expect } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
+import { inspectAnalysis } from './analytics-workbench-fixtures';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { coverageFrom, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -265,7 +266,7 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
 
 test('VAL-UI: account valuation refreshes exact totals, preserves the trade draft and ignores late results', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const { account, first, second, firstTrade } = await createPositions(api, 'Valuation UI');
   const firstSet = await setPrice(api, first.id, 0, '300');
@@ -325,6 +326,7 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
     await expect(firstPosition.getByRole('cell').nth(4)).toHaveText('150');
     await expect(secondPosition.getByRole('cell').nth(3)).toHaveText('Нет точной цены');
     await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('—');
+    await inspectAnalysis(page, testInfo, section, 'valuation');
 
     await page.getByRole('button', { name: 'Операции', exact: true }).click();
     const tradeTable = page.getByRole('table', { name: 'Сделки журнала', exact: true });
