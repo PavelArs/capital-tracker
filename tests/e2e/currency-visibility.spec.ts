@@ -334,7 +334,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
     await expect(reload).toBeEnabled();
     expect(currencyRequests.filter((row) => row.method === 'GET')).toEqual(beforeCommandReads);
     expect(currencyRequests.filter((row) => row.method === 'POST')).toEqual([
-      { method: 'POST', path: hidePath, body: { currencyId: system.id } },
+      { method: 'POST', path: hidePath, body: { currencyId: system.id, isHidden: true } },
     ]);
   } finally {
     release();
@@ -584,11 +584,11 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
   verifyPreferences(false);
   page.off('request', record);
   expect(currencyRequests.filter((row) => row.method === 'POST')).toEqual([
-    { method: 'POST', path: hidePath, body: { currencyId: system.id } },
-    { method: 'POST', path: showPath, body: { currencyId: system.id } },
-    { method: 'POST', path: hidePath, body: { currencyId: system.id } },
-    { method: 'POST', path: showPath, body: { currencyId: system.id } },
-    { method: 'POST', path: showPath, body: { currencyId: inactive.id } },
+    { method: 'POST', path: hidePath, body: { currencyId: system.id, isHidden: true } },
+    { method: 'POST', path: showPath, body: { currencyId: system.id, isHidden: false } },
+    { method: 'POST', path: hidePath, body: { currencyId: system.id, isHidden: true } },
+    { method: 'POST', path: showPath, body: { currencyId: system.id, isHidden: false } },
+    { method: 'POST', path: showPath, body: { currencyId: inactive.id, isHidden: false } },
   ]);
   expect(
     currencyRequests.every((row) => [listPath, hiddenPath, hidePath, showPath].includes(row.path)),

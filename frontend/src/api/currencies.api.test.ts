@@ -72,7 +72,10 @@ describe('currenciesApi', () => {
 
       const result = await currenciesApi.hide('currency-1');
 
-      expect(apiClient.post).toHaveBeenCalledWith('/currencies/hide', { currencyId: 'currency-1' });
+      expect(apiClient.post).toHaveBeenCalledWith('/currencies/hide', {
+        currencyId: 'currency-1',
+        isHidden: true,
+      });
       expect(result).toEqual({ message: 'Currency hidden' });
     });
   });
@@ -83,7 +86,10 @@ describe('currenciesApi', () => {
 
       const result = await currenciesApi.show('currency-1');
 
-      expect(apiClient.post).toHaveBeenCalledWith('/currencies/show', { currencyId: 'currency-1' });
+      expect(apiClient.post).toHaveBeenCalledWith('/currencies/show', {
+        currencyId: 'currency-1',
+        isHidden: false,
+      });
       expect(result).toEqual({ message: 'Currency shown' });
     });
   });
