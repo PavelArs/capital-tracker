@@ -21,6 +21,10 @@ const tool=path.basename(process.argv[1]),a=process.argv.slice(2),root=process.e
 fs.appendFileSync(process.env.FIXTURE_LOG,JSON.stringify({tool,args:a,backend:process.env.BACKEND_IMAGE,frontend:process.env.FRONTEND_IMAGE})+'\\n');
 const candidate=path.join(root,'candidate-up'),changed=path.join(root,'schema-changed'),rollback=path.join(root,'rollback-up');
 const original=['MigrateCurrencyToForeignKey1764000000000','DropStubModuleTables1764100000000','DropRemovedModuleTables1764200000000','CleanupCryptoTypeEnum1764300000000'].join('\\n');
+if(tool==='mv'){
+ if(mode==='metadata-publication'&&a[0]===path.join(root,'docker-compose.yml.next'))process.exit(1);
+ fs.renameSync(a[0],a[1]);
+}
 if(tool==='flock'){process.exit(mode==='lock'?1:0);}
 if(tool==='stat'){process.stdout.write(a[1]==='%a'?'600':String(fs.statSync(a[2]).size));}
 if(tool==='jq'){
@@ -97,7 +101,7 @@ beforeAll(() => {
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'capital-mvp-process-'));
   mkdirSync(join(directory, 'bin'));
-  for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat'])
+  for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat', 'mv'])
     writeFileSync(join(directory, 'bin', tool), stub, { mode: 0o700 });
   writeFileSync(join(directory, 'docker-compose.yml'), '# Synthetic previous configuration\n');
   for (const file of ['.env', '.env.release', 'candidate.yml'])
@@ -213,6 +217,32 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
     ).toBe(true);
     expect(result.stdout).not.toContain('previous application pair readiness and privacy verified');
     expect(existsSync(join(directory, '.env.images'))).toBe(false);
+  }, 20000);
+  it('metadata publication failure restores original selection/configuration before verified paired rollback', () => {
+    const oldSelection = `BACKEND_IMAGE=${previousBackend}\nFRONTEND_IMAGE=${previousFrontend}\n`;
+    writeFileSync(join(directory, '.env.images'), oldSelection);
+    writeFileSync(join(directory, '.release-managed-env'), 'previous-managed-marker\n');
+    const { result, calls } = release('metadata-publication');
+    expect(result.status).not.toBe(0);
+    const refused = calls.findIndex(
+      (call) => call.tool === 'mv' && call.args[0] === join(directory, 'docker-compose.yml.next'),
+    );
+    expect(refused).toBeGreaterThan(0);
+    const rollback = calls.findIndex(
+      (call, index) => index > refused && appUp(call) && call.backend === previousBackend,
+    );
+    expect(rollback).toBeGreaterThan(refused);
+    expect(calls[rollback].frontend).toBe(previousFrontend);
+    expect(readFileSync(join(directory, '.env.images'), 'utf8')).toBe(oldSelection);
+    expect(readFileSync(join(directory, 'docker-compose.yml'), 'utf8')).toBe(
+      '# Synthetic previous configuration\n',
+    );
+    expect(readFileSync(join(directory, '.release-managed-env'), 'utf8')).toBe(
+      'previous-managed-marker\n',
+    );
+    expect(existsSync(join(directory, 'releases', commit, 'receipt'))).toBe(false);
+    expect(result.stdout).not.toContain('Release verified;');
+    expect(result.stdout).toContain('previous application pair readiness and privacy verified');
   }, 20000);
   it('stops safely after changed schema without rolling old images forward or restoring owner database', () => {
     const { result, calls } = release('health-changed');
