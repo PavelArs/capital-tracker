@@ -220,3 +220,5 @@ The settings-workbench gate also exited0 with the same two moderate findings
 and unchanged lockfile: `/private/tmp/capital-settings-workbench-audit.log`.
 The acquisition-focus gate also exited0 with the same two moderate findings
 and unchanged lockfile: `/private/tmp/capital-acquisition-focus-audit.log`.
+The account-analytics gate also exited0 with the same two moderate findings
+and unchanged lockfile: `/private/tmp/capital-analytics-workbench-audit.log`.

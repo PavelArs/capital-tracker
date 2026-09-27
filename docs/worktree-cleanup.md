@@ -20,8 +20,8 @@ on backend/coverage in two link-only worktrees omitted from the initial clean-ca
 ignored inventory; those generated paths were inspected before the allowlist was amended.
 The subsequent full preflight and removal passed.
 
-Final verification found all101paths absent and every corresponding branch still at
-its original HEAD. Seven worktrees remain:
+The first-stage verification found all101paths absent and every corresponding branch
+still at its original HEAD. Seven worktrees remained at that checkpoint:
 
 | Worktree | Why retained |
 | --- | --- |
@@ -33,10 +33,10 @@ its original HEAD. Seven worktrees remain:
 | capital-tracker-transfer-page | HEAD1a53400 has a non-equivalent migration-sync commit |
 | capital-tracker-worktrees/manual-opening-backend | HEADcf83aae has a non-equivalent storage commit |
 
-These three exceptions retain their original working trees and branches. Their eventual
-cleanup requires reconciling the unique commits; they are not treated as merged.
+These three exceptions initially required a deeper integration proof; see the resolved
+followup below. Their branches remain retained.
 
-Main remainsc3a4dbd with only the original frontend/nginx.conf modification. Its SHA256
+At that checkpoint main remainedc3a4dbd with only the original frontend/nginx.conf modification. Its SHA256
 is115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432; lockSHA256 remains
 6a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d. Primary dependencies,
 preview volume capital-tracker-preview_preview_data, original image7eff01d1 and stopped
@@ -47,3 +47,31 @@ Local operational evidence: `/private/tmp/capital-merged-worktrees-inventory.jso
 `capital-merged-worktrees-preflight.log`, `capital-merged-worktrees-removal.json` and
 `capital-merged-worktrees-removal.log`. Original project consolidation remains governed
 by [consolidation-plan.md](consolidation-plan.md).
+
+## Resolved integration exceptions
+
+Luna inspected the three initially positive git-cherry cases; a separate reviewer and
+root independently verified exact proof before deletion:
+
+- Transfer acceptance: stable patch identities68daaa3→7f87f15,
+  f802a34→530c8a5,5add71a→89aac53,6be8548→4fbf2bf; all right-hand commits
+  are main ancestors. Mergee0a5f3d has empty remerge diff and its second parent
+  20b94ac is already ancestral, so there is no unique merge resolution.
+- Transfer page: ffb4367's migration file blob and complete file diff are identical
+  to main-ancestor b200e64, then1a53400→bbe99ee is patch-equivalent.
+- Opening backend: all seven resultant d01fc1b files match ancestor f537161;
+  the five backend entity/migration files are still byte-identical in current main.
+  The original tasks/verification are retained in the completed opening archive.
+  cf83aae→d646507 is patch-equivalent.
+
+Root's first additional preflight refused unlisted dist directories before any removal.
+Inspection found only compiled backend JS/declarations/maps/build-info and frontend
+HTML/JS/CSS, with no symlinks; the allowlist was updated. Exact HEAD/status/proofs,
+owner hashes, preview directory and dependency targets were rechecked. The three
+worktrees were then removed without force and every original branch HEAD verified.
+Total removed now104; main plus three active analytics worktrees remain.
+
+Evidence: `/private/tmp/capital-remove-integrated-exceptions.py`,
+`capital-integrated-exceptions-removal.log` (initial refusal),
+`capital-integrated-exceptions-removal-final.log` and
+`capital-integrated-exceptions-removal.json`. No original project or owner data removed.

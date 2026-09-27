@@ -6,7 +6,8 @@ section “Учётный срез на дату”. Its
 records nine selected HTTPS cases and real PostgreSQL/source checks. The full
 140-case browser suite was not rerun under the owner-authorized targeted policy.
 
-Enter an ISO timestamp with a time-zone offset, then explicitly request a snapshot.
+Open **Аналитика**, choose **Учётные позиции** under **Задача анализа**, enter an ISO
+timestamp with a time-zone offset, then explicitly request a snapshot.
 The response shows the normalized UTC instant, declared accounting coverage and
 current journal revision. It reconstructs quantities and FIFO cost from the current
 effective trade versions and any immutable known-cost opening lots. A correction to

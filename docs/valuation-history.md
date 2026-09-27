@@ -4,7 +4,8 @@ This view compares sampled valuations for one account over a bounded period. The
 [verification record](../openspec/changes/archive/2026-09-24-chart-account-valuations/verification.md)
 tracks the selected checks; consult it for their current status.
 
-On an account detail page, enter `Начало периода (ISO)` and
+On an account detail page, open **Аналитика** and choose **История стоимости** under
+**Задача анализа**. Enter `Начало периода (ISO)` and
 `Конец периода (ISO)`, then select `Показать историю`. The interval is measured in
 elapsed UTC milliseconds, not local calendar days. It may span at most 30 days.
 The service samples the start, every 24 hours from the start, and the exact end if

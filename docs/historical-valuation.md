@@ -8,7 +8,8 @@ records exact arithmetic, real PostgreSQL and three selected HTTPS checks.
 For several sampled dates in one coherent read, use the separate
 [account valuation history](valuation-history.md) view, limited to 30 elapsed days.
 
-Enter an ISO timestamp including its time-zone offset and request the calculation.
+Open **Аналитика** and its default **Оценка на дату** task. Enter an ISO timestamp
+including its time-zone offset and request the calculation.
 The view uses effective trades up to and including the normalized UTC instant and
 any immutable known-cost carry-in lots. It shows only the tracked positions in
 this account. It does not add proceeds as cash, combine other accounts, infer

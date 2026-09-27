@@ -88,7 +88,7 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03/04/05 remain partial; FUI-06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: remaining analytics and editor focus, then integration-health/legacy screens. Retain chart
+work: integration-health/legacy screens and remaining whole-screen UX findings. Retain chart
 maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -159,6 +159,13 @@ a closed panel. Original reset/recovery/exact command behavior remains. Selected
 SWAP-UI/REWARD-UI/WORKFLOW-UI pass3/3;19new360dark/1440light focus frames were independently
 reviewed. See [verification](../openspec/changes/archive/2026-09-27-focus-acquisition-review/verification.md).
 This does not complete wider analytics, integration health, FUI-06 or owner approval.
+
+`redesign-account-analytics` focuses the three existing read tools behind a native task
+selector, preserves mounted intent/results, associates UTC/price/sampling guidance and
+leads with exact results before secondary evidence. Real WORKSPACE/HISTlate/HISTpinned/
+VAL/VCH journeys pass5/5; the chart retains30elapsed-day/31point bounds. See
+[analytics verification](../openspec/changes/archive/2026-09-27-redesign-account-analytics/verification.md).
+This completes a bounded account-analysis slice, not whole-portfolio history or FUI-06.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Give the swap editor focus outline more breathing room before the following record

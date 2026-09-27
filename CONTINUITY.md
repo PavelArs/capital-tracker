@@ -512,32 +512,47 @@ Owner explicitly requested removal now. Luna inventory and independent review co
 108registered worktrees. Root removed101 using non-force git worktree remove after
 ancestry(19)/patch-equivalence(82), immediate HEAD/status, exact dependency-link and
 generated-artifact/synthetic-runtime guards. Branches retained;101paths absent verified.
-Main+3activeanalytics+3unprovenexceptions remain. No unique working edits, original
+Followup exact proof resolved the3exceptions and they were also removed (104total);
+main+3activeanalytics remain. No unique working edits, original
 repositories, primary dependencies or preview resources removed. Full record and
 exceptions: docs/worktree-cleanup.md. Evidence /private/tmp/capital-merged-worktrees-*.
 
-## Current analytics change
+## Account analytics — verified, archive/integration in progress
 
-Active `redesign-account-analytics` in capital-tracker-analytics-workbench,
-refactor/redesign-account-analytics, basec3a4dbd. Proposal/design/spec/tasks59b19bd ready;
-strict43itemsPASS,118frontend baselinePASS3.29s. RootownsnewAccountAnalytics/3readTSX/
-TradeJournal composition; Solacceptance in capital-test-analytics-workbench; LunaCSS in
-capital-tracker-analytics-styles. No product changes yet; acceptance-first RED pending.
-Defaultvaluation selector plus retained mounted history/accounting, associatedguidance/
-methoddisclosure, exactresult hierarchy and keyboard-scroll tables; originalcontrollers
-and30day/31pointchartbounds unchanged. Required5realjourneys WORKSPACE,HISTlate/HISTpinned,
-VAL,VCH. Independentdesignreviewadds loadedchart hide/resize/reveal identity/dimensions
-and account-navigation default/reset checks. Goal and wholefrontend remain incomplete.
+`redesign-account-analytics` basec3a4dbd introduces a labeled native task selector:
+valuation initially, sampled history and accounting positions. Original owners stay
+mounted; drafts/results/retry identity survive switching without requests. Associated
+UTC/price/sampling help, native method disclosure, exact-result-first hierarchy and
+named keyboard-scroll tables preserve every original financial/provenance distinction.
+Rootcompositionfc7c389/9a5c82a, LunaCSS7039fc4, readability6c06299, Solacceptance
+992afd3→ebfa44b and corrections628f847/ab357f5→db77ca5/47c78f5. Fourcontrollers,
+27protected signatures and chart transforms/options remain unchanged;30daybound kept.
+
+Real predecessor RED reached intended old-panel-visible failure before product edits.
+First GREEN3/5 found native Mac popup keyboard automation and setup-call-budget issues.
+Corrected trusted Russian type-ahead input and actualPG bulk catalogue-only fixture;
+all originalfinancial/quota/admission oracles retained. Account/opening/carry/trade
+commands remain real API. Dark-chart contrast finding fixed with a light plot surface.
+Final five real WORKSPACE/HISTlate/HISTpinned/VAL/VCH journeys PASS1.2m,1worker0retries.
+Frontend118/21PASS4.04s, build/lint/types/style/audit/strict43items PASS. Existing27lint/
+bundle warnings and2moderate advisories remain. Full suites/release/security unrun.
+Separate review approved source/oracles and all38final themed360/768/1440frames.
+Evidence and limits: this change's verification/review.md; no owner UX approval.
+
+Accepted FEsha256:6ee61c50a0ea62d6e6542bd794a3de444312edd39ac2c3d6fc0114f8863aa479;
+unchanged BEsha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
+Logs/artifacts `/private/tmp/capital-analytics-workbench-*`. E2Econtainers/networks empty;
+preview remains stopped46hours, original volume/tag/MFA/TLS/credentials preserved.
+Owner Nginx/lock hashes unchanged. Main integration/last3worktree cleanup pending.
 
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04 has its first bounded period-review slice and remains partial;
 FUI-05 has its first Settings slice and remains partial; FUI-06 and owner visual
-approval remain open. Next coherent workflow: wider selected-account history/valuation
-hierarchy: HistoricalAccounting, HistoricalValuation and
-ValuationHistory, retaining HIST-004-A/VAL-UI/VCH-UI/MPV-UI and current supportedperiods.
-Analytics specification is active; product edits await real acceptance RED. Legacy routes remain subordinate;
+approval remain open. Next coherent workflow: integration-health/legacy screens and remaining whole-screen
+UX findings, then broader portfolio/allocation/cash work. The bounded account-analysis
+slice is verified; archive/integration remain in progress. Legacy routes remain subordinate;
 Settings visibility is not integration health or complete accounting.
 Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and

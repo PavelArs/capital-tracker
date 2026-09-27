@@ -25,7 +25,7 @@ Use separate review contexts with bounded file ownership. Do not concurrently ed
 migrations, dependency locks or deployment files. Preserve the existing owner's
 frontend/nginx.conf modification. No real database access, production deployment
 or private data disclosure during isolated preparation. The owner authorized removing
-already integrated worktrees on2026-09-27: verify ancestry or patch equivalence and
+already integrated worktrees on 2026-09-27: verify ancestry or patch equivalence and
 absence of unique working changes, preserve branches, active worktrees and owner data,
 then use non-force `git worktree remove`. Original-project consolidation is separate.
 Destructive schema changes need backup/export, migration plan and owner approval.
