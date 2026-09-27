@@ -10,6 +10,13 @@ import {
 import { test } from './external-usd-flows-fixtures';
 import { noStore, providerRequests } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep } from './mfa-fixtures';
+import {
+  capturePeriodWorkbench,
+  expectNativeDisclosure,
+  inspectPeriodMethods,
+  openPeriodEvidence,
+  withoutWorkbenchRequests,
+} from './period-workbench-fixtures';
 import { browserPost, coverageFrom, tradeApi } from './usd-trades-fixtures';
 
 const journalPath = '/portfolio/cash-flow-journal';
@@ -269,7 +276,7 @@ test('LTWR-API: actual revision-pinned boundary plan and linked preview remain p
 
 test('LTWR-UI: linked boundary review resets on edits and refuses stale plans and replies', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   await api.result('POST', journalPath, 201, {
     requestId: randomUUID(),
@@ -292,6 +299,17 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
 
   try {
     await page.goto('/period-profit');
+    await inspectPeriodMethods(page);
+    const linkedSummary = page
+      .locator('summary')
+      .filter({ hasText: /^TWR с промежуточными оценками$/ });
+    const linkedDisclosure = await expectNativeDisclosure(linkedSummary);
+    await expect(linkedDisclosure).not.toHaveAttribute('open', '');
+    await withoutWorkbenchRequests(page, async () => {
+      await linkedSummary.focus();
+      await page.keyboard.press('Enter');
+      await expect(linkedDisclosure).toHaveAttribute('open', '');
+    });
     await expect(
       page.getByRole('heading', { name: 'TWR с промежуточными оценками', exact: true }),
     ).toBeVisible();
@@ -381,11 +399,20 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
     const pendingPlanClick = loadPlan.click();
     try {
       await planFetched;
+      await withoutWorkbenchRequests(page, async () => {
+        await linkedSummary.click();
+      });
+      await expect(linkedDisclosure).not.toHaveAttribute('open', '');
       await toInput.fill('2025-01-04T00:00:00.000Z');
       await expect(valuation).toHaveCount(0);
       planRelease();
       expect((await latePlanResponse).status()).toBe(200);
       await pendingPlanClick;
+      await expect(valuation).toHaveCount(0);
+      await withoutWorkbenchRequests(page, async () => {
+        await linkedSummary.click();
+      });
+      await expect(linkedDisclosure).toHaveAttribute('open', '');
       await expect(valuation).toHaveCount(0);
     } finally {
       planRelease();
@@ -403,17 +430,59 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
     expect((await refreshedPlanResponse).status()).toBe(200);
     await valuation.fill('1100');
     await review.check();
+    await withoutWorkbenchRequests(page, async () => {
+      await linkedSummary.click();
+      await expect(linkedDisclosure).not.toHaveAttribute('open', '');
+      await linkedSummary.click();
+      await expect(linkedDisclosure).toHaveAttribute('open', '');
+      await expect(valuation).toHaveValue('1100');
+      await expect(review).toBeChecked();
+      await expect(section).toContainText('Ревизия журнала: 1');
+      await expect(calculate).toBeEnabled();
+    });
     const availableResponse = await browserPost(page, linkedPath, () => calculate.click());
     expect(availableResponse.status()).toBe(200);
     assertLinked(await availableResponse.json(), 1);
     await expect(result).toBeVisible();
     await expect(rate).toHaveText('21');
+    await expect(rate).toBeVisible();
+    await expect(result.getByText('Ревизия журнала: 1', { exact: true })).toBeHidden();
+    const evidence = await openPeriodEvidence(page, result);
+    await expect(evidence).toContainText(coverageFrom);
+    await expect(result.getByText('Ревизия журнала: 1', { exact: true })).toBeVisible();
     await expect(
       result.getByText('Прибыль, USD', { exact: true }).locator('xpath=following-sibling::dd[1]'),
     ).toHaveText('310');
     await expect(result).toContainText('Ревизия журнала: 1');
 
+    await withoutWorkbenchRequests(page, async () => {
+      await linkedSummary.click();
+      await expect(linkedDisclosure).not.toHaveAttribute('open', '');
+      await linkedSummary.click();
+      await expect(linkedDisclosure).toHaveAttribute('open', '');
+      await expect(valuation).toHaveValue('1100');
+      await expect(review).toBeChecked();
+      await expect(result).toBeVisible();
+      await expect(rate).toHaveText('21');
+      await expect(evidence).toHaveAttribute('open', '');
+    });
+    await capturePeriodWorkbench(
+      page,
+      testInfo,
+      'linked-review',
+      [page.getByRole('region', { name: 'Ручные оценки и период', exact: true }), section, result],
+      result.getByRole('region', { name: 'Таблица промежуточных оценок', exact: true }),
+    );
+
+    await withoutWorkbenchRequests(page, async () => {
+      await linkedSummary.click();
+    });
+    await expect(linkedDisclosure).not.toHaveAttribute('open', '');
     await closingInput.fill('2311');
+    await withoutWorkbenchRequests(page, async () => {
+      await linkedSummary.click();
+    });
+    await expect(linkedDisclosure).toHaveAttribute('open', '');
     await expect(result).toBeHidden();
     await expect(review).not.toBeChecked();
     await expect(valuation).toHaveValue('1100');

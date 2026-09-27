@@ -10,6 +10,12 @@ import {
 import { test } from './external-usd-flows-fixtures';
 import { literal, noStore, providerRequests } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, query } from './mfa-fixtures';
+import {
+  capturePeriodWorkbench,
+  inspectPeriodMethods,
+  openPeriodEvidence,
+  withoutWorkbenchRequests,
+} from './period-workbench-fixtures';
 import { browserPost, coverageFrom, tradeApi } from './usd-trades-fixtures';
 
 const journalPath = '/portfolio/cash-flow-journal';
@@ -193,7 +199,7 @@ test('PROFIT-CAPITAL / PROFIT-PERIOD / PROFIT-COVERAGE / PROFIT-PRIVATE: exact a
 
 test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors and late responses', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   await api.result('POST', journalPath, 201, {
     requestId: randomUUID(),
@@ -217,6 +223,8 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     await expect(
       page.getByRole('heading', { name: 'Прибыль за период', exact: true }),
     ).toBeVisible();
+
+    await inspectPeriodMethods(page);
 
     const fromInput = page.getByLabel('Начало периода (UTC)', { exact: true });
     const toInput = page.getByLabel('Конец периода (UTC)', { exact: true });
@@ -255,6 +263,9 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     const definitionValue = (label: string) =>
       result.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]');
     await expect(definitionValue('Прибыль, USD')).toHaveText('0');
+    await expect(definitionValue('Прибыль, USD')).toBeVisible();
+    await expect(result.getByText('Ревизия журнала: 1', { exact: true })).toBeHidden();
+    const evidence = await openPeriodEvidence(page, result);
     await expect(definitionValue('Вводы, USD')).toHaveText('1000');
     await expect(definitionValue('Выводы, USD')).toHaveText('0');
     await expect(definitionValue('Оценка в начале, USD')).toHaveText('1000');
@@ -264,6 +275,25 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     await expect(result).toContainText('Ревизия журнала: 1');
     await expect(result).toContainText('Оценка вручную');
     await expect(result).toContainText('Потоки не сверены');
+    await expect(result.getByText('Ревизия журнала: 1', { exact: true })).toBeVisible();
+    await expect(evidence).toContainText(coverageFrom);
+    await withoutWorkbenchRequests(page, async () => {
+      const summary = result.getByText('Основание расчёта', { exact: true });
+      await summary.focus();
+      await page.keyboard.press('Space');
+      await expect(evidence).not.toHaveAttribute('open', '');
+      await expect(definitionValue('Прибыль, USD')).toBeVisible();
+      await page.keyboard.press('Enter');
+      await expect(evidence).toHaveAttribute('open', '');
+      await expect(openingInput).toHaveValue('1000');
+      await expect(closingInput).toHaveValue('2000');
+      await expect(review).toBeChecked();
+      await expect(definitionValue('Прибыль, USD')).toHaveText('0');
+    });
+    await capturePeriodWorkbench(page, testInfo, 'profit-review', [
+      page.getByRole('region', { name: 'Ручные оценки и период', exact: true }),
+      result,
+    ]);
 
     // A delivery failure after a genuine backend calculation must hide the old result.
     let finishFailed: () => void = () => {};
@@ -358,6 +388,9 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     });
     await expect(result).toBeVisible();
     await expect(definitionValue('Прибыль, USD')).toHaveText('-100');
+    await expect(definitionValue('Прибыль, USD')).toBeVisible();
+    await openPeriodEvidence(page, result);
+    await expect(result).toContainText('Ревизия журнала: 1');
   } finally {
     await expectAdmissionDelta(admissionsBefore, [
       {
