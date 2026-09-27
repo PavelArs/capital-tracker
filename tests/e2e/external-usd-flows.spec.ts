@@ -320,6 +320,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
 
     const rulesSummary = page.getByText('Правила учёта потоков', { exact: true });
     const rules = rulesSummary.locator('..');
+    await expect(rulesSummary).toBeVisible();
     expect(await rulesSummary.evaluate((node) => node.tagName)).toBe('SUMMARY');
     expect(await rules.evaluate((node) => node.tagName)).toBe('DETAILS');
     await expect(rules).not.toHaveAttribute('open', '');
@@ -340,8 +341,6 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     await expect(coverage).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
     const periodStart = page.getByLabel('Начало периода (ISO, включительно)', { exact: true });
     const periodEnd = page.getByLabel('Конец периода (ISO, не включительно)', { exact: true });
-    await expect(periodStart).toHaveAccessibleDescription(/включ|\[from,\s*to\)/i);
-    await expect(periodEnd).toHaveAccessibleDescription(/не включ|исключ|\[from,\s*to\)/i);
 
     const checkPresentation = async (phase: 'initialization' | 'recorded') => {
       const rowsBefore = fingerprint(['auth_sessions', 'auth_request_limits']);
@@ -470,6 +469,9 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       coverageFrom,
       createdAt: expect.any(String),
     });
+
+    await expect(periodStart).toHaveAccessibleDescription(/включ|\[from,\s*to\)/i);
+    await expect(periodEnd).toHaveAccessibleDescription(/не включ|исключ|\[from,\s*to\)/i);
 
     const direction = page.getByRole('combobox', { name: 'Направление', exact: true });
     await direction.selectOption({ label: 'Ввод' });
