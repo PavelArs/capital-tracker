@@ -3,9 +3,8 @@ import {
   historicalValuationApi,
 } from '@api/historical-valuation.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { accountingError } from './feedback';
-import './HistoricalValuation.css';
 
 type Loaded = {
   snapshot: HistoricalValuationSnapshot;
@@ -20,6 +19,7 @@ export function HistoricalValuation({
   accountId: string;
   journalRevision: number | null;
 }) {
+  const id = useId();
   const [instant, setInstant] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
@@ -101,19 +101,33 @@ export function HistoricalValuation({
   const snapshot = visible?.snapshot;
 
   return (
-    <section className="historical-valuation" aria-label="Оценка счёта на дату">
+    <section
+      className="historical-valuation account-analytics__tool"
+      aria-label="Оценка счёта на дату"
+    >
       <h3>Оценка счёта на дату</h3>
-      <form className="historical-valuation__form" onSubmit={submit}>
-        <label>
-          Момент оценки (ISO)
-          <input
-            type="text"
-            value={instant}
-            onChange={(event) => edit(event.target.value)}
-            placeholder="2025-01-04T00:00:00.000Z"
-            required
-          />
-        </label>
+      <p className="account-analytics__scope">
+        Стоимость только позиций этого счёта по точным ручным ценам. Денежный остаток и весь
+        портфель не включены.
+      </p>
+      <form className="historical-valuation__form account-analytics__form" onSubmit={submit}>
+        <div className="account-analytics__field">
+          <label>
+            Момент оценки (ISO)
+            <input
+              aria-describedby={`${id}-field-0-hint`}
+              type="text"
+              value={instant}
+              onChange={(event) => edit(event.target.value)}
+              placeholder="2025-01-04T00:00:00.000Z"
+              required
+            />
+          </label>
+          <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
+            Укажите дату и время с часовым поясом. Ручная цена должна точно совпадать с выбранным
+            моментом UTC.
+          </small>
+        </div>
         <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
           Рассчитать стоимость
         </button>
@@ -128,31 +142,22 @@ export function HistoricalValuation({
           </button>
         )}
       </form>
-      <p className="manual-muted">
-        Только позиции этого счёта по текущему исправленному журналу. Ручные цены USD за единицу
-        применяются только при точном совпадении момента UTC. Нет переноса предыдущей цены,
-        интерполяции или цены по символу. Результат не включает денежный остаток, весь портфель,
-        прибыль или доходность; исправления могут пересчитать прошлую оценку.
-      </p>
+      <details className="account-analytics__method">
+        <summary>Как устроена оценка</summary>
+        <p className="manual-muted">
+          Только позиции этого счёта по текущему исправленному журналу. Ручные цены USD за единицу
+          применяются только при точном совпадении момента UTC. Нет переноса предыдущей цены,
+          интерполяции или цены по символу. Результат не включает денежный остаток, весь портфель,
+          прибыль или доходность; исправления могут пересчитать прошлую оценку.
+        </p>
+      </details>
       {loading && <p>Расчёт стоимости…</p>}
       {error && <p role="alert">{error}</p>}
       {snapshot && (
-        <div className="historical-valuation__results">
+        <div className="historical-valuation__results account-analytics__results">
           <p>
             Момент оценки UTC: <span>{snapshot.at}</span>
           </p>
-          <p>
-            Граница покрытия UTC: <span>{snapshot.coverageFrom}</span>
-          </p>
-          <p>
-            Ревизия журнала: <span>{snapshot.journalRevision}</span>
-          </p>
-          <p>
-            Основа: текущая исправленная история;{' '}
-            {snapshot.originKind === 'known-cost-carry-in' ? 'перенесённые лоты' : 'пустое начало'}.
-            {snapshot.openingRevision !== null && ` Ревизия открытия: ${snapshot.openingRevision}.`}
-          </p>
-          <p>Источник цены: вручную, USD за единицу; только точный момент.</p>
           {snapshot.completeness === 'complete' ? (
             <dl>
               <dt>Стоимость позиций, USD</dt>
@@ -173,7 +178,12 @@ export function HistoricalValuation({
           {snapshot.items.length === 0 ? (
             <p>На этот момент позиций нет. Стоимость позиций: 0 USD.</p>
           ) : (
-            <div className="historical-valuation__table-wrap">
+            <div
+              className="historical-valuation__table-wrap account-analytics__table-wrap"
+              role="region"
+              aria-label="Прокрутка оценки позиций"
+              tabIndex={0}
+            >
               <table aria-label="Оценка позиций">
                 <caption>Оценка позиций</caption>
                 <thead>
@@ -222,6 +232,24 @@ export function HistoricalValuation({
               </table>
             </div>
           )}
+          <div className="account-analytics__evidence">
+            <p>
+              Граница покрытия UTC: <span>{snapshot.coverageFrom}</span>
+            </p>
+            <p>
+              Ревизия журнала: <span>{snapshot.journalRevision}</span>
+            </p>
+            <p>
+              Основа: текущая исправленная история;{' '}
+              {snapshot.originKind === 'known-cost-carry-in'
+                ? 'перенесённые лоты'
+                : 'пустое начало'}
+              .
+              {snapshot.openingRevision !== null &&
+                ` Ревизия открытия: ${snapshot.openingRevision}.`}
+            </p>
+            <p>Источник цены: вручную, USD за единицу; только точный момент.</p>
+          </div>
         </div>
       )}
     </section>

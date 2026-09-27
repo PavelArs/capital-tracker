@@ -1,11 +1,10 @@
 import { type ValuationHistorySeries, valuationHistoryApi } from '@api/valuation-history.api';
 import { isAxiosError } from 'axios';
 import { Chart as ChartJS, Legend, LinearScale, PointElement, Title, Tooltip } from 'chart.js';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Scatter } from 'react-chartjs-2';
 import { accountingError } from './feedback';
 import { toValuationChartData, valuationChartOptions } from './valuation-chart';
-import './ValuationHistory.css';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend, Title);
 
@@ -22,6 +21,7 @@ export function ValuationHistory({
   accountId: string;
   journalRevision: number | null;
 }) {
+  const id = useId();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -107,29 +107,50 @@ export function ValuationHistory({
   const hasCompletePoints = (chart?.datasets[0].data.length ?? 0) > 0;
 
   return (
-    <section className="valuation-history" aria-label="История стоимости счёта">
+    <section
+      className="valuation-history account-analytics__tool"
+      aria-label="История стоимости счёта"
+    >
       <h3>История стоимости счёта</h3>
-      <form className="valuation-history__form" onSubmit={submit}>
-        <label>
-          Начало периода (ISO)
-          <input
-            type="text"
-            value={from}
-            onChange={(event) => edit('from', event.target.value)}
-            placeholder="2025-01-01T00:00:00.000Z"
-            required
-          />
-        </label>
-        <label>
-          Конец периода (ISO)
-          <input
-            type="text"
-            value={to}
-            onChange={(event) => edit('to', event.target.value)}
-            placeholder="2025-01-04T00:00:00.000Z"
-            required
-          />
-        </label>
+      <p className="account-analytics__scope">
+        Стоимость позиций этого счёта: до 30 истекших дней, шаг 24 часа и точный конец. Пробелы не
+        заменяются нулём; это не прибыль или доходность.
+      </p>
+      <form className="valuation-history__form account-analytics__form" onSubmit={submit}>
+        <div className="account-analytics__field">
+          <label>
+            Начало периода (ISO)
+            <input
+              aria-describedby={`${id}-field-0-hint`}
+              type="text"
+              value={from}
+              onChange={(event) => edit('from', event.target.value)}
+              placeholder="2025-01-01T00:00:00.000Z"
+              required
+            />
+          </label>
+          <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
+            Дата и время с часовым поясом, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа
+            от начала и точный конец.
+          </small>
+        </div>
+        <div className="account-analytics__field">
+          <label>
+            Конец периода (ISO)
+            <input
+              aria-describedby={`${id}-field-1-hint`}
+              type="text"
+              value={to}
+              onChange={(event) => edit('to', event.target.value)}
+              placeholder="2025-01-04T00:00:00.000Z"
+              required
+            />
+          </label>
+          <small className="account-analytics__hint" id={`${id}-field-1-hint`}>
+            Дата и время с часовым поясом, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа
+            от начала и точный конец.
+          </small>
+        </div>
         <button
           className="manual-button"
           type="submit"
@@ -148,30 +169,22 @@ export function ValuationHistory({
           </button>
         )}
       </form>
-      <p className="manual-muted">
-        Период до 30 истекших дней. Точки через каждые 24 часа от начала и точный конец периода; это
-        не непрерывная история цен. Только позиции этого счёта и ручные цены USD за единицу на
-        точный момент UTC: без переноса цены, интерполяции или внешнего провайдера. Исправления
-        журнала и цен пересчитывают прошлые точки после обновления. Денежный остаток, весь портфель,
-        прибыль и доходность сюда не входят.
-      </p>
+      <details className="account-analytics__method">
+        <summary>Как строится история</summary>
+        <p className="manual-muted">
+          Период до 30 истекших дней. Точки через каждые 24 часа от начала и точный конец периода;
+          это не непрерывная история цен. Только позиции этого счёта и ручные цены USD за единицу на
+          точный момент UTC: без переноса цены, интерполяции или внешнего провайдера. Исправления
+          журнала и цен пересчитывают прошлые точки после обновления. Денежный остаток, весь
+          портфель, прибыль и доходность сюда не входят.
+        </p>
+      </details>
       {loading && <p>Загрузка истории стоимости…</p>}
       {error && <p role="alert">{error}</p>}
       {series && chart && (
-        <div className="valuation-history__results">
+        <div className="valuation-history__results account-analytics__results">
           <p>
             Период UTC: <span>{series.from}</span> — <span>{series.to}</span>
-          </p>
-          <p>
-            Граница покрытия UTC: <span>{series.coverageFrom}</span>
-          </p>
-          <p>
-            Ревизия журнала: <span>{series.journalRevision}</span>
-          </p>
-          <p>
-            Основа: текущая исправленная история;{' '}
-            {series.originKind === 'known-cost-carry-in' ? 'перенесённые лоты' : 'пустое начало'}.
-            {series.openingRevision !== null && ` Ревизия открытия: ${series.openingRevision}.`}
           </p>
           <p>
             График показывает приближённые координаты. Точные суммы приведены в таблице и
@@ -189,7 +202,12 @@ export function ValuationHistory({
           ) : (
             <p>Нет полных оценок для графика</p>
           )}
-          <div className="valuation-history__table-wrap">
+          <div
+            className="valuation-history__table-wrap account-analytics__table-wrap"
+            role="region"
+            aria-label="Прокрутка истории стоимости"
+            tabIndex={0}
+          >
             <table aria-label="Оценки по датам">
               <caption>Оценки по датам</caption>
               <thead>
@@ -215,6 +233,19 @@ export function ValuationHistory({
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="account-analytics__evidence">
+            <p>
+              Граница покрытия UTC: <span>{series.coverageFrom}</span>
+            </p>
+            <p>
+              Ревизия журнала: <span>{series.journalRevision}</span>
+            </p>
+            <p>
+              Основа: текущая исправленная история;{' '}
+              {series.originKind === 'known-cost-carry-in' ? 'перенесённые лоты' : 'пустое начало'}.
+              {series.openingRevision !== null && ` Ревизия открытия: ${series.openingRevision}.`}
+            </p>
           </div>
         </div>
       )}

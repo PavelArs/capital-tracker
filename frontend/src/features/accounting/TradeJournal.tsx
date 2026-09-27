@@ -10,6 +10,7 @@ import {
 } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { AccountAnalytics } from './AccountAnalytics';
 import { AccountOperations, type OperationWorkflow } from './AccountOperations';
 import { type AccountSection, AccountWorkspace } from './AccountWorkspace';
 import { AssetRewards } from './AssetRewards';
@@ -680,20 +681,26 @@ export function TradeJournal({
           </>
         }
         analytics={
-          <>
-            <HistoricalAccounting
-              accountId={accountId}
-              journalRevision={journal?.journalRevision ?? null}
-            />
-            <HistoricalValuation
-              accountId={accountId}
-              journalRevision={journal?.journalRevision ?? null}
-            />
-            <ValuationHistory
-              accountId={accountId}
-              journalRevision={journal?.journalRevision ?? null}
-            />
-          </>
+          <AccountAnalytics
+            valuation={
+              <HistoricalValuation
+                accountId={accountId}
+                journalRevision={journal?.journalRevision ?? null}
+              />
+            }
+            history={
+              <ValuationHistory
+                accountId={accountId}
+                journalRevision={journal?.journalRevision ?? null}
+              />
+            }
+            accounting={
+              <HistoricalAccounting
+                accountId={accountId}
+                journalRevision={journal?.journalRevision ?? null}
+              />
+            }
+          />
         }
         setup={
           <>

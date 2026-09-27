@@ -4,10 +4,9 @@ import {
   historicalAccountingApi,
 } from '@api/historical-accounting.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { AssetSwapTotals } from './AssetSwapTotals';
 import { accountingError } from './feedback';
-import './HistoricalAccounting.css';
 
 type Loaded = {
   snapshot: HistoricalSnapshot;
@@ -23,6 +22,7 @@ export function HistoricalAccounting({
   accountId: string;
   journalRevision: number | null;
 }) {
+  const id = useId();
   const [instant, setInstant] = useState('');
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,28 +114,46 @@ export function HistoricalAccounting({
   const snapshot = visible?.snapshot;
 
   return (
-    <section className="historical-accounting" aria-label="Учётный срез на дату">
+    <section
+      className="historical-accounting account-analytics__tool"
+      aria-label="Учётный срез на дату"
+    >
       <h3>Учётный срез на дату</h3>
-      <form onSubmit={submit} className="historical-accounting__form">
-        <label>
-          Момент времени (ISO, с часовым поясом)
-          <input
-            type="text"
-            value={instant}
-            onChange={(event) => edit(event.target.value)}
-            placeholder="2025-01-02T00:00:00Z"
-            required
-          />
-        </label>
+      <p className="account-analytics__scope">
+        Количество и себестоимость позиций по исправленному журналу. Это не рыночная стоимость или
+        доходность.
+      </p>
+      <form onSubmit={submit} className="historical-accounting__form account-analytics__form">
+        <div className="account-analytics__field">
+          <label>
+            Момент времени (ISO, с часовым поясом)
+            <input
+              aria-describedby={`${id}-field-0-hint`}
+              type="text"
+              value={instant}
+              onChange={(event) => edit(event.target.value)}
+              placeholder="2025-01-02T00:00:00Z"
+              required
+            />
+          </label>
+          <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
+            Укажите дату и время с часовым поясом. Срез включает операции до выбранного момента UTC
+            включительно.
+          </small>
+        </div>
         <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
           Показать учётный срез
         </button>
       </form>
-      <p className="manual-muted">
-        Реконструкция по текущему исправленному журналу на выбранный момент UTC. Это не наблюдаемый
-        баланс, не рыночная стоимость и не инвестиционная доходность. Периоды до границы покрытия не
-        восстановлены; суммы накоплены с начала покрытия, а не за выбранный период.
-      </p>
+      <details className="account-analytics__method">
+        <summary>Как читать учётный срез</summary>
+        <p className="manual-muted">
+          Реконструкция по текущему исправленному журналу на выбранный момент UTC. Это не
+          наблюдаемый баланс, не рыночная стоимость и не инвестиционная доходность. Периоды до
+          границы покрытия не восстановлены; суммы накоплены с начала покрытия, а не за выбранный
+          период.
+        </p>
+      </details>
       {loading && <output>Загрузка учётного среза…</output>}
       {error && (
         <p role="alert" className="manual-feedback manual-feedback--error">
@@ -143,21 +161,66 @@ export function HistoricalAccounting({
         </p>
       )}
       {snapshot && (
-        <div className="historical-accounting__results">
+        <div className="historical-accounting__results account-analytics__results">
           <p>
             Момент UTC: <span>{snapshot.at}</span>
           </p>
-          <p>Граница покрытия UTC: {snapshot.coverageFrom}</p>
-          <p>Ревизия журнала: {snapshot.journalRevision}</p>
-          <p>
-            Начало:{' '}
-            {snapshot.originKind === 'known-cost-carry-in'
-              ? 'перенесённые лоты с известной себестоимостью'
-              : 'заявленные пустые позиции'}
-            .
-            {snapshot.openingRevision !== null &&
-              ` Ревизия начальных позиций: ${snapshot.openingRevision}.`}
-          </p>
+          {visible.items.length === 0 ? (
+            <p>На выбранный момент учётных позиций нет.</p>
+          ) : (
+            <div
+              className="historical-accounting__table-wrap account-analytics__table-wrap"
+              role="region"
+              aria-label="Прокрутка учётных позиций"
+              tabIndex={0}
+            >
+              <table>
+                <caption>Позиции на выбранный момент</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Инструмент</th>
+                    <th scope="col">UUID</th>
+                    <th scope="col">Количество</th>
+                    <th scope="col">Себестоимость, USD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.items.map((item) => (
+                    <tr key={item.instrumentId}>
+                      <td>
+                        {item.instrumentName}
+                        {item.instrumentSymbol ? ` (${item.instrumentSymbol})` : ''}
+                      </td>
+                      <td>{item.instrumentId}</td>
+                      <td>{item.quantity}</td>
+                      <td>
+                        {item.costUsd ?? 'Неизвестно'}
+                        {item.costUsd === null && item.knownCostSubtotalUsd !== undefined && (
+                          <small>
+                            Известная часть: {item.knownCostSubtotalUsd} USD; количество с
+                            неизвестной себестоимостью: {item.unknownCostQuantity}.
+                          </small>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {snapshot.nextOffset !== null && (
+            <button
+              type="button"
+              className="manual-button manual-button--secondary"
+              disabled={loading}
+              onClick={() => {
+                if (snapshot.nextOffset !== null)
+                  void fetchSnapshot(snapshot.at, snapshot.nextOffset, snapshot.journalRevision);
+              }}
+            >
+              Следующая страница
+            </button>
+          )}
           <dl className="trade-summary">
             <dt>Начальная учётная стоимость, USD</dt>
             <dd>{snapshot.initialCostUsd}</dd>
@@ -236,57 +299,19 @@ export function HistoricalAccounting({
               </dd>
             </dl>
           )}
-          {visible.items.length === 0 ? (
-            <p>На выбранный момент учётных позиций нет.</p>
-          ) : (
-            <div className="historical-accounting__table-wrap">
-              <table>
-                <caption>Позиции на выбранный момент</caption>
-                <thead>
-                  <tr>
-                    <th>Инструмент</th>
-                    <th>UUID</th>
-                    <th>Количество</th>
-                    <th>Себестоимость, USD</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.items.map((item) => (
-                    <tr key={item.instrumentId}>
-                      <td>
-                        {item.instrumentName}
-                        {item.instrumentSymbol ? ` (${item.instrumentSymbol})` : ''}
-                      </td>
-                      <td>{item.instrumentId}</td>
-                      <td>{item.quantity}</td>
-                      <td>
-                        {item.costUsd ?? 'Неизвестно'}
-                        {item.costUsd === null && item.knownCostSubtotalUsd !== undefined && (
-                          <small>
-                            Известная часть: {item.knownCostSubtotalUsd} USD; количество с
-                            неизвестной себестоимостью: {item.unknownCostQuantity}.
-                          </small>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {snapshot.nextOffset !== null && (
-            <button
-              type="button"
-              className="manual-button manual-button--secondary"
-              disabled={loading}
-              onClick={() => {
-                if (snapshot.nextOffset !== null)
-                  void fetchSnapshot(snapshot.at, snapshot.nextOffset, snapshot.journalRevision);
-              }}
-            >
-              Следующая страница
-            </button>
-          )}
+          <div className="account-analytics__evidence">
+            <p>Граница покрытия UTC: {snapshot.coverageFrom}</p>
+            <p>Ревизия журнала: {snapshot.journalRevision}</p>
+            <p>
+              Начало:{' '}
+              {snapshot.originKind === 'known-cost-carry-in'
+                ? 'перенесённые лоты с известной себестоимостью'
+                : 'заявленные пустые позиции'}
+              .
+              {snapshot.openingRevision !== null &&
+                ` Ревизия начальных позиций: ${snapshot.openingRevision}.`}
+            </p>
+          </div>
         </div>
       )}
     </section>
