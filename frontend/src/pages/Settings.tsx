@@ -1,4 +1,4 @@
-import CurrenciesSection from '@components/CurrenciesSection';
+import CurrencyManager from '@components/CurrencyManager';
 import LanguageSwitcher from '@components/LanguageSwitcher';
 import ThemeSwitcher from '@components/ThemeSwitcher';
 import { DisplayFxPanel } from '@features/display-fx/DisplayFxPanel';
@@ -93,11 +93,7 @@ export default function Settings() {
 
           {activeSection === 'currencies' && (
             <div className="settings-section">
-              <p className="settings-legacy-note">
-                Прежний список валют: настройки видимости. Учёт инструментов и справочный пересчёт
-                USD ведутся отдельно.
-              </p>
-              <CurrenciesSection />
+              <CurrencyManager />
             </div>
           )}
           {activeSection === 'display-fx' && <DisplayFxPanel />}

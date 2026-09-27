@@ -33,7 +33,8 @@ No API/auth/schema/dependency/deployment changes; rollback is frontend-only.
   Before initial successful pair, counts are unavailable, not fabricated zero. Switching
   lists changes no requests. Keep selected list on refresh/mutation. Status distinguishes
   catalogue activation from preference; only system rows get an enabled hide action.
-- Load both endpoints together with Promise.all and publish both lists only on success.
+- Load both endpoints together with Promise.allSettled, keep busy until both settle and
+  publish both lists only on success.
   A failed initial pair gives an inline error/retry, not an empty-state claim. Later
   failures retain the last successful lists with a stale warning. A generation/lifetime
   guard prevents an obsolete completion from replacing a current result. A tiny

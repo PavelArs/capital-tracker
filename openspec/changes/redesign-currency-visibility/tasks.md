@@ -1,7 +1,7 @@
 ## 1. Specify and establish acceptance
 
 - [x] 1.1 Audit requirements/specs/callers/API/pipeline, record inventory and118test baseline; define scenarios/ownership/scoped gates.
-- [ ] 1.2 Review and add CVIS-UI acceptance plus relevant lower-level cases; run real expected predecessor load-error RED before product edits.
+- [x] 1.2 Review and add CVIS-UI acceptance plus relevant lower-level cases; run real expected predecessor load-error RED before product edits.
 
 ## 2. Implement and review
 
