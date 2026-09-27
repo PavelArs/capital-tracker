@@ -2,13 +2,14 @@ import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import './ThemeSwitcher.css';
 
-export default function ThemeSwitcher() {
+export default function ThemeSwitcher({ id }: { id?: string }) {
   const { theme, setTheme } = useTheme();
   const { t } = useTranslation();
 
   return (
     <div className="theme-switcher">
       <select
+        id={id}
         value={theme}
         onChange={(e) => setTheme(e.target.value as 'light' | 'dark' | 'system')}
         className="theme-select"

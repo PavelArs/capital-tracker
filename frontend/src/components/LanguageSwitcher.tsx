@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import './LanguageSwitcher.css';
 
-export default function LanguageSwitcher() {
+export default function LanguageSwitcher({ id }: { id?: string }) {
   const { i18n } = useTranslation();
 
   const changeLanguage = (lng: string) => {
@@ -11,6 +11,7 @@ export default function LanguageSwitcher() {
   return (
     <div className="language-switcher">
       <select
+        id={id}
         value={i18n.language}
         onChange={(e) => changeLanguage(e.target.value)}
         className="language-select"

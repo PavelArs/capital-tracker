@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
 - [x] 1.1 Inspect target/specs/pipeline, record keep/simplify/remove inventory and scoped manifest, run118frontend baseline.
-- [ ] 1.2 Independently extend existing DFX-UI for SETTINGS-UX scenarios, review retained financial/provider oracles and observe intended predecessor RED.
+- [x] 1.2 Independently extend existing DFX-UI for SETTINGS-UX scenarios, review retained financial/provider oracles and observe intended predecessor RED.
 
 ## 2. Implement and review
 

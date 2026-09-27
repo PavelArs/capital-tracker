@@ -153,22 +153,41 @@ export function DisplayFxPanel() {
         исторический курс на дату операции. Суммы USD в учёте, прибыли и XIRR не меняются.
       </p>
       <form className="display-fx__form" onSubmit={readSaved}>
-        <label>
-          Сумма в USD
+        <div className="display-fx__field">
+          <label htmlFor="display-fx-amount">Сумма в USD</label>
           <input
+            id="display-fx-amount"
+            aria-describedby="display-fx-amount-help"
             type="text"
             value={amount}
             onChange={(event) => edit(event.target.value)}
             required
             inputMode="decimal"
           />
-        </label>
-        <button type="submit" disabled={reading || !amount.trim()}>
-          Рассчитать по сохранённым курсам
-        </button>
-        <button type="button" disabled={reading || !amount.trim()} onClick={() => readSaved()}>
-          Обновить из базы
-        </button>
+          <small id="display-fx-amount-help">
+            Точная неотрицательная сумма USD, с точкой для дробной части. Ноль — допустимая сумма.
+            Расчёт использует сохранённые в базе курсы без запроса к поставщику.
+          </small>
+        </div>
+        <div className="display-fx__actions">
+          <button
+            className="display-fx__primary"
+            type="submit"
+            disabled={reading || !amount.trim()}
+          >
+            Рассчитать по сохранённым курсам
+          </button>
+          <button type="button" disabled={reading || !amount.trim()} onClick={() => readSaved()}>
+            Обновить из базы
+          </button>
+        </div>
+      </form>
+      <section className="display-fx__collection" aria-label="Получение новых курсов">
+        <h3>Получение новых курсов</h3>
+        <p>
+          Эта команда обращается к поставщику. Доступность следующей попытки зависит от суточного
+          обновления и ограничений сбора.
+        </p>
         <button
           type="button"
           disabled={collecting || reading || enabled !== true || collectionBusy}
@@ -176,8 +195,8 @@ export function DisplayFxPanel() {
         >
           Получить свежие курсы
         </button>
-      </form>
-      <p>
+      </section>
+      <p className="display-fx__source">
         Источник: <a href="https://www.exchangerate-api.com">Rates By Exchange Rate API</a>. Курсы
         публикуются раз в сутки и предназначены только для справочного отображения.
       </p>
@@ -204,21 +223,12 @@ export function DisplayFxPanel() {
           )}
           {report.observation && (
             <>
-              <p>
-                Публикация поставщика UTC: <span>{report.observation.observedAt}</span>
-              </p>
-              <p>
-                Загружено UTC: <span>{report.observation.fetchedAt}</span>
-              </p>
-              <p>
-                Следующее обновление поставщика UTC: <span>{report.observation.nextUpdateAt}</span>
-              </p>
-              {report.observation.endOfLifeAt && (
-                <p>
-                  Окончание работы источника UTC: <span>{report.observation.endOfLifeAt}</span>
-                </p>
-              )}
-              <div className="display-fx__table-wrap">
+              <div
+                className="display-fx__table-wrap"
+                role="region"
+                aria-label="Таблица справочного пересчёта"
+                tabIndex={0}
+              >
                 <table aria-label="Справочный пересчёт">
                   <caption>Справочный пересчёт</caption>
                   <thead>
@@ -238,6 +248,23 @@ export function DisplayFxPanel() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="display-fx__metadata">
+                <p>
+                  Публикация поставщика UTC: <span>{report.observation.observedAt}</span>
+                </p>
+                <p>
+                  Загружено UTC: <span>{report.observation.fetchedAt}</span>
+                </p>
+                <p>
+                  Следующее обновление поставщика UTC:{' '}
+                  <span>{report.observation.nextUpdateAt}</span>
+                </p>
+                {report.observation.endOfLifeAt && (
+                  <p>
+                    Окончание работы источника UTC: <span>{report.observation.endOfLifeAt}</span>
+                  </p>
+                )}
               </div>
             </>
           )}
