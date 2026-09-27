@@ -6,8 +6,13 @@ Owner authorized the manual-accounting + CSV MVP to deploy through the existing
 GitHub Actions/server path using the remaining quota; network sync and AI are
 deferred. This is **IN PROGRESS**, not a deployment-complete or whole-product claim.
 Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, base `a03371b`. At this checkpoint no release result is
-recorded here. After actual deployment, append the tested commit, immutable image
+branch `release/manual-mvp`, descending from `a03371b`; the handoff docs are committed
+at `141e382`. OpenSpec change `release-manual-mvp` is drafted and validated at QA
+commit `1d52f44` in `/Users/pavelars/Projects/temp/capital-test-manual-mvp` on
+`test/manual-mvp`; its runtime, release and actual deployment tasks are still pending.
+Integrate that change before implementation/release. Runtime and deploy work use their
+separately assigned worktrees; root coordinates integration and exclusive ownership.
+No release result is recorded here. After actual deployment, append the tested commit, immutable image
 digests, migration, encrypted backup/restore evidence, health/security checks and
 outcome; never infer success from an accepted workflow dispatch. Read
 [`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased

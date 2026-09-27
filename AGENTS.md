@@ -53,7 +53,8 @@ Never use the production Compose file for tests or alter the owner Nginx edit.
 
 For the current authorized manual + CSV MVP release and durable whole-target
 handoff, read [docs/post-mvp-backlog.md](docs/post-mvp-backlog.md) and the top
-checkpoint in CONTINUITY.md first. Astra coordinates; Sol implements and reviews;
-Luna handles bounded documentation/audit/simple tasks. The backlog distinguishes
+checkpoint in CONTINUITY.md first. Astra handles orchestration only; Root
+coordinates integration and assigns exclusive ownership; Sol implements/reviews
+when assigned; Luna handles bounded documentation/audit/simple tasks. The backlog distinguishes
 mandatory in-progress release gates from deferred product work; it does not replace
 the full target brief or canonical OpenSpecs.
