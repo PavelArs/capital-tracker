@@ -60,7 +60,7 @@ function environment(value) {
   return env;
 }
 
-function safeOutput(output, rejectedValue) {
+function safeOutput(output, rejectedValue, caseName = 'validation') {
   const secrets = [sentinel, settings.DB_PASSWORD, 'Synthetic-password-42!'];
   const key = readFileSync(process.env.MFA_KEY_FILE);
   secrets.push(key.toString('hex'), key.toString('base64'));
@@ -68,7 +68,17 @@ function safeOutput(output, rejectedValue) {
     assert.ok(!output.includes(secret), 'Startup/CLI output must not disclose synthetic secrets');
   }
   if (typeof rejectedValue === 'string' && rejectedValue.length > 2) {
-    assert.ok(!output.includes(rejectedValue), 'Configuration refusal must not echo its input');
+    const position = output.indexOf(rejectedValue);
+    if (position !== -1) {
+      const lineStart = output.lastIndexOf('\n', position) + 1;
+      const lineEnd = output.indexOf('\n', position);
+      const line = output.slice(lineStart, lineEnd === -1 ? output.length : lineEnd);
+      const location = line.search(/:\d+:\d+\)?$/);
+      const matchClass = /^\s+at\s/.test(line) && location !== -1 && position - lineStart >= location
+        ? 'stack-location' : /^\s+at\s/.test(line) ? 'stack-frame' : 'non-stack-output';
+      // Only fixed case name and positional classification; never print captured output/input/secrets.
+      assert.fail(`Configuration refusal must not echo its input: case=${caseName}, match=${matchClass}, offset=${position}`);
+    }
   }
 }
 
@@ -111,7 +121,7 @@ function listening() {
   });
 }
 
-async function startup(value) {
+async function startup(value, caseName) {
   assert.equal(await listening(), false, 'Probe requires its own unused container-local port');
   let served = false;
   let output = '';
@@ -143,7 +153,7 @@ async function startup(value) {
   assert.equal(closed.signal, null, 'Invalid configuration must terminate promptly, not time out');
   assert.notEqual(closed.code, null);
   assert.notEqual(closed.code, 0, 'Invalid proxy configuration must refuse HTTP startup');
-  safeOutput(output, value);
+  safeOutput(output, value, caseName);
   assert.match(output, /Invalid TRUSTED_PROXY_IPS configuration/,
     'Refusal must come from actual proxy validation, not an unrelated startup failure');
   assert.doesNotMatch(output, /Cannot find module|MODULE_NOT_FOUND|ENOTFOUND|ECONNREFUSED|password authentication failed|Unable to connect to the database/i);
@@ -189,7 +199,7 @@ async function main() {
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
     const before = await fingerprint(client);
     for (const [name, value] of invalid) {
-      await startup(value);
+      await startup(value, name);
       assert.equal(await fingerprint(client), before, `Rejected startup must preserve all database state: ${name}`);
     }
     console.log(`PASS PROXY-001-B ${invalid.length} actual HTTP startup refusals without listener, secret output or database changes`);
