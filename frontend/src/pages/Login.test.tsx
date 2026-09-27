@@ -38,10 +38,7 @@ async function renderLogin() {
   });
   render(
     <I18nextProvider i18n={i18n}>
-      <MemoryRouter
-        initialEntries={['/login']}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <MemoryRouter initialEntries={['/login']}>
         <AuthProvider>
           <ProfileStatus />
           <Routes>
