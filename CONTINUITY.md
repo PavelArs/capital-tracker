@@ -2,19 +2,30 @@
 
 ## Current handoff — manual + CSV MVP release in progress
 
-Owner authorized the manual-accounting + CSV MVP to deploy through the existing
-GitHub Actions/server path using the remaining quota; network sync and AI are
-deferred. This is **IN PROGRESS**, not a deployment-complete or whole-product claim.
+Checkpoint: 2026-09-27 10:58 UTC. Owner authorized the manual-accounting + CSV MVP
+through existing GitHub Actions/server path using remaining quota; network sync and
+AI are deferred. This is **IN PROGRESS**, not deployed or whole-product complete.
 Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, descending from `a03371b`; the handoff docs are committed
-at `141e382`. OpenSpec change `release-manual-mvp` is drafted and validated at QA
-commit `1d52f44` in `/Users/pavelars/Projects/temp/capital-test-manual-mvp` on
-`test/manual-mvp`; its runtime, release and actual deployment tasks are still pending.
-Integrate that change before implementation/release. Runtime and deploy work use their
-separately assigned worktrees; root coordinates integration and exclusive ownership.
-No release result is recorded here. After actual deployment, append the tested commit, immutable image
-digests, migration, encrypted backup/restore evidence, health/security checks and
-outcome; never infer success from an accepted workflow dispatch. Read
+branch `release/manual-mvp`, HEAD `d8eb886`, baseline `0f96749`. OpenSpec change
+`release-manual-mvp` is drafted/validated in QA commit `1d52f44` at
+`/Users/pavelars/Projects/temp/capital-test-manual-mvp` branch `test/manual-mvp`.
+Router-shell/auth/manual-provider-independence passed. Focused VCH responsive passed
+1/1 in 15.9s on FE `FE28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
+and BE `BE049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`.
+Eighteen previously passing journeys used FE `FEbd407fdd…`; do not combine these
+split results into a 19/19 single-image claim. Security
+startup27 and artifact/migration checks passed. Still pending: image audit and current
+hosted CI, actual deployment, real PG backup/restore fingerprint mismatch, off-host
+backup/key recovery, restricted deployment privilege and verified host bootstrap/
+HTTPS. Manual diagnostic [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
+passed read-only; it found project writable, `.env` unreadable, no noninteractive sudo,
+Docker access, no named app containers/volumes, and vhost disabled. QA is assessing
+the existing `.env` read-only before the owner runs privileged sudo commands. Runtime
+work is relinquished; QA owns that bounded assessment, the owner handles sudo, and
+root coordinates integration/release ownership. No archive/full-target completion
+claim. After actual deployment, record exact tested commit and image digests, migration,
+encrypted backup/restore evidence, health/security checks and outcome; never infer
+success from an accepted workflow dispatch. Read
 [`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased
 follow-up, hard release gates and continuation roles. Do not start broad UI work
 until this authorized release is resolved. Preserve owner Nginx/preview/data and

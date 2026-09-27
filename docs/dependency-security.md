@@ -24,8 +24,13 @@ in 22 files**, and **32 focused runtime/scheduler/display-FX provider tests in
 the obsolete v6-only MemoryRouter future option was removed from the login test
 without changing assertions. The existing Vite chunk-size warning remains.
 **Real HTTPS navigation/login/MFA/logout and supported manual-provider independence
-release acceptance are still pending.** Dependency/unit results do not establish
-full application, image or production security readiness.
+release acceptance now pass. Focused VCH responsive acceptance also passed 1/1 in
+15.9s on FE image `FE28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
+with unchanged BE image
+`BE049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`. Eighteen
+previously passing browser journeys used FE `FEbd407fdd…`; do not combine these
+split results into a 19/19 single-image claim. Image audit, current hosted CI and production security
+readiness remain pending. Dependency/unit results do not establish those gates.
 
 Audited lockfile SHA-256:
 `7db95986acc2a8c4fbef9bf9be34c7296b51fe2aa821bcc215db5d8e36f289ba`.
@@ -155,11 +160,13 @@ The selective resolution also refreshed shared development graph entries, includ
 Babel 7.29.7 and brace-expansion major 1/5 branches within their parent ranges;
 this does not establish a clean development-dependency audit.
 
-## Open Router findings and deadline
+## Historical Router findings — resolved 2026-09-27
 
-**Owner: project maintainer. Follow-up: resolve and verify these findings before
-any production release, and no later than 2026-10-06.** Keep them in audit output;
-there is no advisory ignore entry or blanket risk acceptance.
+The findings below were open in the earlier Router 6 review and carried a
+2026-10-06 deadline. The 2026-09-27 exact-version Router 7.18.4 migration and
+full production registry audit above resolved both; the resulting audit reported
+zero findings. This historical review remains for rationale and migration context,
+not as a current release blocker. No advisory ignore entry was added.
 
 - [GHSA-337j-9hxr-rhxg](https://github.com/remix-run/react-router/security/advisories/GHSA-337j-9hxr-rhxg),
   moderate: SSR error hydration. The maintainer excludes Declarative Mode. This
@@ -171,14 +178,11 @@ there is no advisory ignore entry or blanket risk acceptance.
   entries. No untrusted target was found in that bounded review. This does not
   justify suppressing the advisory or assuming future navigation is safe.
 
-A separately tested Router migration is required to remove both version-based
-findings. Do not select 7.18.0 solely from their fix floor: it has the additional
-high [GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-vcr4-c8h2),
-fixed in 7.18.2. Version 7.18.4 is the current v7 maintenance candidate as of this
-review; re-audit it when implementing the follow-up. Current React 18/Node 22 meet
-v7's minimums, but the [upgrade guide](https://raw.githubusercontent.com/remix-run/react-router/react-router@7.18.0/docs/upgrading/v6.md)
-requires checking splat/transition behavior. Test `assets/*`, tab navigation,
-unknown-route redirects and login/MFA/logout flows before adopting it.
+The migration selected 7.18.4 rather than the 7.18.0 fix floor because 7.18.0 has
+the additional high
+[GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-c8h2),
+fixed in 7.18.2. The actual upgrade tested `assets/*`, tab navigation,
+unknown-route redirects and login/MFA/logout. Keep re-auditing on future updates.
 
 ## CSV parser addition — 2026-09-23
 
