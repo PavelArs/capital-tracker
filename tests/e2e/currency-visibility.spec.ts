@@ -497,10 +497,13 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
     await expect(reload).toBeDisabled();
     for (const action of await manager.getByRole('button', { name: /^(?:Скрыть|Показать) / }).all())
       await expect(action).toBeDisabled();
-    // Keep the request listener through an observable interval after the navigation.
-    await page.waitForTimeout(500);
-    expect(currencyRequests.filter((row) => row.method === 'GET')).toEqual(readsBeforeRemount);
+    await expect(manager.getByText('Загрузка списков…', { exact: true })).toBeVisible();
     const general = page.getByRole('button', { name: 'Общие', exact: true });
+    await general.focus();
+    await page.keyboard.press('Tab');
+    await expect(page.getByRole('button', { name: 'Валюты', exact: true })).toBeFocused();
+    // Keep the request listener through observable waiting state and native keyboard input.
+    expect(currencyRequests.filter((row) => row.method === 'GET')).toEqual(readsBeforeRemount);
     await general.focus();
     await reloadPair(async () => {
       releaseRemount();
