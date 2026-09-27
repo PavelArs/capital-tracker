@@ -210,13 +210,8 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
     providersBefore,
   );
   await restartBackends();
-  // CryptoPricesService already warms its cache once in each process constructor.
-  // Characterize only that exact lifecycle delta; manual flows still permit none.
-  const startupRequest = {
-    method: 'GET',
-    url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
-  };
-  const providersAfterRestart = [...providersBefore, startupRequest, startupRequest];
+  // The isolated manual profile disables all automatic startup provider collection.
+  const providersAfterRestart = providersBefore;
   await expect.poll(() => providerRequests(), { timeout: 10_000 }).toEqual(providersAfterRestart);
   await page.reload();
   await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();

@@ -446,11 +446,8 @@ export function tradeRows(accountId: string): unknown {
 export async function restartWithExactProviderWarmup(): Promise<{ method: string; url: string }[]> {
   const before = providerRequests();
   await restartBackends();
-  const warmup = {
-    method: 'GET',
-    url: 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=usd',
-  };
-  const expected = [...before, warmup, warmup];
+  // Both replicas run the explicit manual profile: restart permits zero provider calls.
+  const expected = before;
   await expect.poll(providerRequests, { timeout: 10_000 }).toEqual(expected);
   return expected;
 }
