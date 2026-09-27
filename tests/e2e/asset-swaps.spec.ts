@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect } from '@playwright/test';
+import { type Locator, type Request, type Route, expect } from '@playwright/test';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { browserPost, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -500,6 +500,110 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   const lots = page.getByRole('table', { name: 'Открытые лоты', exact: true });
   await expect(lots).toContainText(`Обмен ${receipt?.swap.swapId}, версия 1`);
   await expect(lots).toContainText('Интервал исходного лота: 0–3');
+  const captureFocusContext = async (focusTarget: Locator, boundsTarget: Locator, name: string) => {
+    const viewport = page.viewportSize();
+    const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    const rowsBefore = businessRows();
+    const providersBefore = providerRequests();
+    try {
+      for (const [width, themeName] of [
+        [360, 'dark'],
+        [1440, 'light'],
+      ] as const) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-theme', value),
+          themeName,
+        );
+        await focusTarget.focus();
+        await expect(focusTarget).toBeFocused();
+        await expect
+          .poll(() =>
+            page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+          )
+          .toBe(true);
+        const bounds = await boundsTarget.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return { top: box.top + window.scrollY, height: box.height };
+        });
+        for (let index = 0; index < Math.ceil(bounds.height / 800); index++) {
+          const offset = Math.min(index * 800, Math.max(0, bounds.height - 800));
+          await page.evaluate(
+            (top) => window.scrollTo(0, Math.max(0, top - 16)),
+            bounds.top + offset,
+          );
+          await expect(
+            page.getByRole('link', { name: 'К содержимому', exact: true }),
+          ).not.toBeInViewport();
+          await page.screenshot({
+            path: testInfo.outputPath(`swap-focus-${name}-${themeName}-${width}-${index + 1}.png`),
+            animations: 'disabled',
+            fullPage: false,
+          });
+        }
+      }
+    } finally {
+      await page.evaluate((value) => {
+        if (value === null) document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', value);
+      }, theme);
+      if (viewport) await page.setViewportSize(viewport);
+    }
+    expect(businessRows()).toBe(rowsBefore);
+    expect(providerRequests()).toEqual(providersBefore);
+  };
+  const observeNavigation = async (navigate: () => Promise<void>) => {
+    const rowsBefore = businessRows();
+    const providersBefore = providerRequests();
+    const posts: string[] = [];
+    const recordPost = (request: Request) => {
+      if (
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname.startsWith('/api/accounting/')
+      )
+        posts.push(request.url());
+    };
+    page.on('request', recordPost);
+    try {
+      await navigate();
+      expect(posts, 'Review navigation must not submit commands').toEqual([]);
+      expect(businessRows()).toBe(rowsBefore);
+      expect(providerRequests()).toEqual(providersBefore);
+      await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
+    } finally {
+      page.off('request', recordPost);
+    }
+  };
+  await observeNavigation(async () => {
+    for (const [buttonName, editorName, submitName, captureName] of [
+      ['Исправить обмен', 'Исправление обмена', 'Записать исправление', 'correction'],
+      ['Отменить обмен', 'Отмена обмена', 'Отменить обмен', 'void'],
+    ]) {
+      const opener = article.getByRole('button', { name: buttonName, exact: true });
+      await opener.click();
+      const editor = section.getByRole('region', { name: editorName, exact: true });
+      // ENTRY-004: meaningful bounded RED before any other newly required behavior.
+      await expect(editor).toBeFocused({ timeout: 10_000 });
+      await expect(editor).toHaveAttribute('tabindex', '-1');
+      await expect(form.getByRole('button', { name: submitName, exact: true })).toBeDisabled();
+      await expect(form.getByRole('checkbox')).not.toBeChecked();
+      await expect(form.getByLabel('Отдаваемое количество', { exact: true })).toHaveValue('1');
+      await captureFocusContext(editor, editor, captureName);
+      await form.getByRole('button', { name: 'Отменить редактирование', exact: true }).click();
+      await expect(opener).toBeEnabled();
+      await expect(opener).toBeFocused();
+      await expect(section.getByRole('region', { name: 'Новый обмен', exact: true })).toBeVisible();
+      await expect(form.getByLabel('Отдаваемое количество', { exact: true })).toHaveValue('');
+      await expect(form.getByLabel('Отдаваемый актив', { exact: true })).toHaveValue('');
+      await expect(form.getByLabel('Получаемый актив', { exact: true })).toHaveValue('');
+      await expect(
+        form.getByLabel('Получаемое количество до комиссии', { exact: true }),
+      ).toHaveValue('');
+      await expect(form.getByLabel('Оценка обмена в USD', { exact: true })).toHaveValue('unknown');
+      await expect(form.getByLabel('Источник комиссии', { exact: true })).toHaveValue('none');
+      await expect(form.getByRole('checkbox')).not.toBeChecked();
+    }
+  });
   await article.getByRole('button', { name: 'Исправить обмен', exact: true }).click();
   await form.getByLabel('Оценка обмена в USD', { exact: true }).selectOption({ label: 'Известна' });
   await form.getByLabel('Сумма оценки, USD', { exact: true }).fill('0');
@@ -562,6 +666,112 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   expect(corrected.status()).toBe(201);
   expect(await corrected.json()).toMatchObject({
     swap: { version: 2, considerationUsd: '0' },
+  });
+  await expect(article.getByText('Версия', { exact: true }).locator('+ dd')).toHaveText(
+    '2 · Активно',
+  );
+  await form.getByLabel('Отдаваемое количество', { exact: true }).fill('23');
+  const historyOpener = article.getByRole('button', { name: 'История обмена', exact: true });
+  const historyRegion = article.getByRole('region', { name: 'История обмена', exact: true });
+  const historyHeading = historyRegion.getByRole('heading', {
+    name: 'История обмена',
+    exact: true,
+    level: 4,
+  });
+  const historyPath = `/api/accounting${swapsPath(account.id)}/${receipt?.swap.swapId}/versions`;
+  const historyPattern = (url: URL) => url.pathname === historyPath;
+  const readHistoryWithDelay = async (closePending: boolean) => {
+    let release = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let complete = () => {};
+    const handlerDone = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    let started = false;
+    let held = false;
+    const holdActualHistory = async (route: Route) => {
+      started = true;
+      try {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        expect(await response.json()).toMatchObject({
+          items: [
+            expect.objectContaining({
+              swapId: receipt?.swap.swapId,
+              version: 2,
+              journalRevision: 4,
+              kind: 'correct',
+              outgoingQuantity: '1',
+              incomingQuantity: '3',
+              considerationUsd: '0',
+            }),
+            expect.objectContaining({
+              swapId: receipt?.swap.swapId,
+              version: 1,
+              journalRevision: 2,
+              kind: 'create',
+              considerationUsd: null,
+            }),
+          ],
+          nextBeforeVersion: null,
+        });
+        held = true;
+        await gate;
+        await route.fulfill({ response });
+      } finally {
+        complete();
+      }
+    };
+    await page.route(historyPattern, holdActualHistory, { times: 1 });
+    try {
+      await historyOpener.click();
+      await expect(historyHeading).toBeFocused();
+      await expect(historyHeading).toHaveAttribute('tabindex', '-1');
+      await expect.poll(() => held).toBe(true);
+      await expect(historyOpener).toBeDisabled();
+      if (closePending) {
+        await historyRegion.getByRole('button', { name: 'Закрыть историю', exact: true }).click();
+        await expect(historyRegion).toHaveCount(0);
+        await expect(historyOpener).toBeEnabled();
+        await expect(historyOpener).toBeFocused();
+      } else {
+        // Focus only: the own unsaved quantity remains exactly 23 throughout the read.
+        await form.getByLabel('Отдаваемое количество', { exact: true }).focus();
+      }
+      const delivered = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === historyPath,
+      );
+      release();
+      const response = await delivered;
+      expect(response.status()).toBe(200);
+      await response.finished();
+      await handlerDone;
+      await page.waitForLoadState('networkidle');
+      await expect(form.getByLabel('Отдаваемое количество', { exact: true })).toHaveValue('23');
+      if (closePending) {
+        await expect(historyRegion).toHaveCount(0);
+        await expect(historyOpener).toBeFocused();
+        await expect(historyOpener).toBeEnabled();
+      } else {
+        await expect(form.getByLabel('Отдаваемое количество', { exact: true })).toBeFocused();
+        await expect(historyRegion).toContainText('Версия 2');
+        await expect(historyRegion).toContainText('Версия 1');
+        await captureFocusContext(historyHeading, historyRegion, 'history');
+        await historyRegion.getByRole('button', { name: 'Закрыть историю', exact: true }).click();
+        await expect(historyRegion).toHaveCount(0);
+        await expect(historyOpener).toBeFocused();
+      }
+    } finally {
+      release();
+      if (started) await handlerDone;
+      await page.unroute(historyPattern, holdActualHistory);
+    }
+  };
+  await observeNavigation(async () => {
+    await readHistoryWithDelay(false);
+    await readHistoryWithDelay(true);
   });
   await article.getByRole('button', { name: 'Отменить обмен', exact: true }).click();
   await form.getByRole('button', { name: 'Проверить отмену', exact: true }).click();
