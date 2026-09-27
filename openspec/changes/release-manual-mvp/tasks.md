@@ -17,6 +17,6 @@
 
 ## 4. Verify and deploy
 
-- [ ] 4.1 Independent source/oracle review; baseline lint/build/unit/types/spec/audit gates, actual isolated PostgreSQL migration/backup/restore/artifact probes and existing18critical real journeys in verification.md. Record any explicit fixture setup and retain exact oracles.
+- [ ] 4.1 Independent source/oracle review; baseline lint/build/unit/types/spec/audit gates, actual isolated PostgreSQL migration/backup/restore/artifact probes and existing19critical real journeys in verification.md. Record any explicit fixture setup and retain exact oracles.
 - [ ] 4.2 Run trusted candidate Actions gates and privately discover actual server prerequisites; perform actual Actions deployment only after backup/restore/preflight success. Record candidate/deployed commit, digests, schema and health/privacy/MFA/manual-read/logout evidence.
 - [ ] 4.3 Update operator/MVP/deferred-backlog documentation, review limitations, archive after actual required completion and guard integration. Do not claim whole-target completion or consolidate original projects.

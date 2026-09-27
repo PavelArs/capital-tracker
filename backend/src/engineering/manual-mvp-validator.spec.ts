@@ -3,7 +3,9 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const validatorPath = resolve(__dirname, '../../../scripts/validate-manual-mvp-release.cjs');
+const validatorPath =
+  process.env.MVP_RELEASE_VALIDATOR_UNDER_TEST ??
+  resolve(__dirname, '../../../scripts/validate-manual-mvp-release.cjs');
 const commit = 'a'.repeat(40);
 const runId = '123456789';
 const manifest = () => ({
@@ -25,7 +27,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'capital-mvp-validator-'));
 });
 afterEach(() => {
-  rmSync(directory, { recursive: true, force: true });
+  if (directory) rmSync(directory, { recursive: true, force: true });
 });
 function invoke(value: unknown, expectedCommit = commit, expectedRunId = runId) {
   const path = join(directory, 'synthetic-manifest.json');

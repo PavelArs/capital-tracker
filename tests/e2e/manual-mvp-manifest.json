@@ -1,0 +1,78 @@
+[
+  {
+    "file": "tests/e2e/mfa.spec.ts",
+    "title": "MFA-002-A: real password submission grants only five-minute pending state and no private access"
+  },
+  {
+    "file": "tests/e2e/mfa.spec.ts",
+    "title": "MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable full session"
+  },
+  {
+    "file": "tests/e2e/sessions.spec.ts",
+    "title": "SES-001-B: real browser logout revokes a copied issued credential"
+  },
+  {
+    "file": "tests/e2e/sessions.spec.ts",
+    "title": "SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies"
+  },
+  {
+    "file": "tests/e2e/manual-opening.spec.ts",
+    "title": "OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown and zero through restart and history"
+  },
+  {
+    "file": "tests/e2e/usd-trades.spec.ts",
+    "title": "TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock in-flight edits, survive restart and retain corrected history"
+  },
+  {
+    "file": "tests/e2e/asset-swaps.spec.ts",
+    "title": "SWAP-UI: owner reviews exact evidence and retries a committed exchange across SPA remount"
+  },
+  {
+    "file": "tests/e2e/asset-rewards.spec.ts",
+    "title": "REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry intent"
+  },
+  {
+    "file": "tests/e2e/owned-transfers.spec.ts",
+    "title": "TRANSFER-UI: review, exact create retry, correction and terminal void use real receipts"
+  },
+  {
+    "file": "tests/e2e/csv-import-journey.spec.ts",
+    "title": "CSV-006-A: full Russian sale-first import retains250/100/0.5, source provenance and exact replay across restart, then rolls back the complete batch"
+  },
+  {
+    "file": "tests/e2e/external-usd-flows.spec.ts",
+    "title": "FLOW-004-A: real Russian owner explicitly initializes, records, corrects and reviews a contribution"
+  },
+  {
+    "file": "tests/e2e/manual-usd-prices.spec.ts",
+    "title": "PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed command and ignores a late instrument read"
+  },
+  {
+    "file": "tests/e2e/historical-valuation.spec.ts",
+    "title": "VAL-UI: account valuation refreshes exact totals, preserves the trade draft and ignores late results"
+  },
+  {
+    "file": "tests/e2e/valuation-history.spec.ts",
+    "title": "VCH-UI: chart history refreshes zero data and ignores a late period response without losing the trade draft"
+  },
+  {
+    "file": "tests/e2e/manual-portfolio-valuation.spec.ts",
+    "title": "MPV-UI: selected exact portfolio displays explicit gaps and ignores a late stale request"
+  },
+  {
+    "file": "tests/e2e/period-profit.spec.ts",
+    "title": "PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors and late responses"
+  },
+  {
+    "file": "tests/e2e/xirr-preview.spec.ts",
+    "title": "XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewed inputs"
+  },
+  {
+    "file": "tests/e2e/twr-preview.spec.ts",
+    "title": "TWR-UI: reviewed return, missing flow valuation and delayed result invalidation"
+  },
+  {
+    "file": "tests/e2e/application-shell.spec.ts",
+    "title": "SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout"
+  }
+]
