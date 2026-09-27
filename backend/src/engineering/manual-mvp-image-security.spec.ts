@@ -1,5 +1,7 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const scannerPath =
   process.env.MVP_IMAGE_SECURITY_UNDER_TEST ??
@@ -24,7 +26,7 @@ describe('MVP-002: exact tested image security report', () => {
     expect(() => checkReport(candidate, imageId)).not.toThrow();
     expect(JSON.stringify(candidate)).toBe(before);
   });
-  it.each(['LOW', 'MODERATE'])(
+  it.each(['LOW', 'MEDIUM'])(
     'retains permitted %s vulnerability and secret findings',
     (Severity) => {
       const candidate = {
@@ -129,4 +131,34 @@ describe('MVP-002: exact tested image security report', () => {
     // Sanitization must not turn a blocking report into a passing report.
     expect(() => checkReport(sanitized, imageId)).toThrow(/high\/critical/);
   });
+  it.each([{ args: [] as string[] }, { args: ['--redact-only'] }])(
+    'malformed CLI report fails without printing private report input: %p',
+    ({ args }) => {
+      const directory = mkdtempSync(join(tmpdir(), 'capital-image-report-'));
+      try {
+        mkdirSync(join(directory, 'bin'));
+        writeFileSync(
+          join(directory, 'bin', 'docker'),
+          `#!/usr/bin/env node\nconsole.log('${imageId}')\n`,
+          { mode: 0o700 },
+        );
+        writeFileSync(join(directory, 'backend-image-security.json'), '{PRIVATE_REPORT_CANARY');
+        const result = spawnSync(process.execPath, [scannerPath, ...args], {
+          cwd: directory,
+          env: { ...process.env, PATH: `${join(directory, 'bin')}:${process.env.PATH}` },
+          encoding: 'utf8',
+          timeout: 5000,
+        });
+        expect(result.error).toBeUndefined();
+        expect(result.signal).toBeNull();
+        expect(result.status).not.toBe(0);
+        expect(result.stdout + result.stderr).not.toContain('PRIVATE_REPORT_CANARY');
+        expect(result.stderr.trim()).toBe(
+          'Image security gate failed; inspect the sanitized report and scanner status',
+        );
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 });
