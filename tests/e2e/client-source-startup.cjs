@@ -76,8 +76,20 @@ function safeOutput(output, rejectedValue, caseName = 'validation') {
       const location = line.search(/:\d+:\d+\)?$/);
       const matchClass = /^\s+at\s/.test(line) && location !== -1 && position - lineStart >= location
         ? 'stack-location' : /^\s+at\s/.test(line) ? 'stack-frame' : 'non-stack-output';
-      // Only fixed case name and positional classification; never print captured output/input/secrets.
-      assert.fail(`Configuration refusal must not echo its input: case=${caseName}, match=${matchClass}, offset=${position}`);
+      const moduleMatch = line.match(/(\/app\/node_modules\/\.pnpm\/[^()\s]+):\d+:\d+\)?$/);
+      let pathKind = 'none';
+      let directoryMatch = false;
+      let segmentHash = 'none';
+      if (moduleMatch && existsSync(moduleMatch[1])) {
+        pathKind = 'installed-pnpm';
+        const pathStart = line.indexOf(moduleMatch[1]);
+        const directory = moduleMatch[1].slice('/app/node_modules/.pnpm/'.length).split('/')[0];
+        const directoryStart = pathStart + '/app/node_modules/.pnpm/'.length;
+        directoryMatch = position - lineStart >= directoryStart && position - lineStart < directoryStart + directory.length;
+        segmentHash = createHash('sha256').update(directory).digest('hex');
+      }
+      // Fixed labels, booleans and a package-segment hash only; never captured output/input/secrets.
+      assert.fail(`Configuration refusal must not echo its input: case=${caseName}, match=${matchClass}, offset=${position}, pathKind=${pathKind}, directoryMatch=${directoryMatch}, segmentHash=${segmentHash}`);
     }
   }
 }
