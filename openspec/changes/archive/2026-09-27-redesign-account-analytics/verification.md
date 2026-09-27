@@ -1,7 +1,7 @@
 # Account analytics workbench verification
 
-Status: required implementation, independent review and scoped gates pass. Archive,
-guarded integration and final worktree cleanup follow; the whole goal remains active.
+Status: verified and archived; guarded integration and final worktree cleanup follow.
+The whole goal remains active.
 
 Basec3a4dbd,42canonical specs, audited target/AGENTS/continuity/current UI/specs and
 manually gated pipeline. Inventory and ownership are in design.md. No backend,
@@ -131,3 +131,14 @@ release suites; directory MPV-UI is unchanged and outside scoped styles. SimpleH
 separate account-switch preconditions are updated/typechecked but not part of selected
 GREEN; WORKSPACE provides bounded runtime account-navigation evidence. No production/
 preview rollout or original-project consolidation is authorized by this slice.
+
+## Archive checkpoint
+
+OpenSpec1.2.0 `archive redesign-account-analytics --yes` exited0 and created
+`2026-09-27-redesign-account-analytics`, adding3requirements. It reported5/6tasks:
+only3.2 (archive/comparison/integration/cleanup itself) remained in progress, with no
+functional or review work skipped. Generated Purpose was replaced with a concrete scope.
+Post-archive comparison passes:42old canonical files byte-identical,3new blocks match
+exactly,43canonical specs and no active changes. Evidence:
+`...-archive.log`, `/private/tmp/capital-analytics-canonical-comparison.log`.
+Integration/cleanup bookkeeping is completed after those actions, not prechecked.
