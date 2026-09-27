@@ -15,10 +15,19 @@ import {
   subscribeFlowRecovery,
 } from '@features/accounting/flow-recovery';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import './CapitalFlows.css';
 
 type ReadState = 'loading' | 'ready' | 'error';
+type FlowPanel = 'entry' | 'void' | 'versions';
 
 function directionLabel(direction: FlowDirection): string {
   return direction === 'contribution' ? 'Ввод' : 'Вывод';
@@ -55,6 +64,35 @@ async function sendCommand(command: OriginalFlowCommand) {
 }
 
 function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
+  const hintId = useId();
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const entryHeading = useRef<HTMLHeadingElement>(null);
+  const voidHeading = useRef<HTMLHeadingElement>(null);
+  const versionsHeading = useRef<HTMLHeadingElement>(null);
+  const editAction = useRef<HTMLButtonElement | null>(null);
+  const voidAction = useRef<HTMLButtonElement | null>(null);
+  const versionsAction = useRef<HTMLButtonElement | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ panel: FlowPanel; sequence: number }>({
+    panel: 'entry',
+    sequence: 0,
+  });
+  useLayoutEffect(() => {
+    if (focusRequest.sequence === 0) return;
+    const heading =
+      focusRequest.panel === 'entry'
+        ? entryHeading.current
+        : focusRequest.panel === 'void'
+          ? voidHeading.current
+          : versionsHeading.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: 'start' });
+  }, [focusRequest]);
+  const focusPanel = (panel: FlowPanel) =>
+    setFocusRequest((current) => ({ panel, sequence: current.sequence + 1 }));
+  const restoreActionFocus = (action: HTMLButtonElement | null) => {
+    if (action?.isConnected && !action.disabled) action.focus();
+    else pageHeading.current?.focus();
+  };
   const recovery = useSyncExternalStore(subscribeFlowRecovery, () => flowRecovery(ownerId));
   const [journalState, setJournalState] = useState<FlowJournalState | null>(null);
   const [journalRead, setJournalRead] = useState<ReadState>('loading');
@@ -260,21 +298,26 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
   return (
     <div className="flow-page">
       <header className="flow-header">
-        <h1>Внешние денежные потоки</h1>
+        <h1 ref={pageHeading} tabIndex={-1} className="flow-page-heading">
+          Внешние денежные потоки
+        </h1>
         <p>
           Только ваши объявленные вводы и выводы USD через границу отслеживаемого портфеля. Данные
           не сверены с банком и не подтверждают полноту операций.
         </p>
-        <p>
-          Покупки, продажи, переводы между своими счетами, начальные остатки, награды, комиссии и
-          переводы активов не являются внешними потоками. Этот журнал не рассчитывает денежный
-          остаток, стоимость активов или доходность.
-        </p>
-        <p className="flow-note">
-          Восстановление исходной команды хранится в памяти этой вкладки при переходах и повторном
-          входе. Полная перезагрузка страницы очищает память; проверьте журнал и период перед новой
-          записью.
-        </p>
+        <details className="flow-rules">
+          <summary>Правила учёта потоков</summary>
+          <p>
+            Покупки, продажи, переводы между своими счетами, начальные остатки, награды, комиссии и
+            переводы активов не являются внешними потоками. Этот журнал не рассчитывает денежный
+            остаток, стоимость активов или доходность.
+          </p>
+          <p className="flow-note">
+            Восстановление исходной команды хранится в памяти этой вкладки при переходах и повторном
+            входе. Полная перезагрузка страницы очищает память; проверьте журнал и период перед
+            новой записью.
+          </p>
+        </details>
       </header>
 
       <section className="flow-card" aria-label="Состояние журнала">
@@ -346,7 +389,7 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
       )}
 
       {journalRead === 'ready' && !journal && (
-        <section className="flow-card">
+        <section className="flow-card" aria-label="Начало учёта">
           <h2>Начало учёта</h2>
           <form
             className="flow-form"
@@ -363,14 +406,21 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
               });
             }}
           >
-            <label className="flow-field">
-              <span>Граница учёта потоков (ISO)</span>
-              <input
-                value={coverageFrom}
-                onChange={(event) => setCoverageFrom(event.target.value)}
-                required
-              />
-            </label>
+            <div className="flow-field-with-hint">
+              <label className="flow-field">
+                <span>Граница учёта потоков (ISO)</span>
+                <input
+                  aria-describedby={`${hintId}-coverage`}
+                  value={coverageFrom}
+                  onChange={(event) => setCoverageFrom(event.target.value)}
+                  required
+                />
+              </label>
+              <p className="flow-hint" id={`${hintId}-coverage`}>
+                Укажите начало учёта с часовым поясом, например 2025-01-01T00:00:00Z (UTC). Записать
+                более ранние потоки нельзя. Эта граница не подтверждает полноту данных.
+              </p>
+            </div>
             <label className="flow-check">
               <input
                 type="checkbox"
@@ -392,8 +442,10 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
 
       {journalRead === 'ready' && journal && (
         <>
-          <section className="flow-card">
-            <h2>{editingFlowId ? 'Исправление потока' : 'Новый внешний поток'}</h2>
+          <section className="flow-card" aria-label="Команда потока">
+            <h2 ref={entryHeading} tabIndex={-1} className="flow-panel-heading">
+              {editingFlowId ? 'Исправление потока' : 'Новый внешний поток'}
+            </h2>
             {editingFlowId && <p>Исправляется поток {editingFlowId}. История версий сохранится.</p>}
             <form
               className="flow-form"
@@ -415,33 +467,56 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                 );
               }}
             >
-              <label className="flow-field">
-                <span>Направление</span>
-                <select
-                  value={direction}
-                  onChange={(event) => setDirection(event.target.value as FlowDirection)}
-                >
-                  <option value="contribution">Ввод</option>
-                  <option value="withdrawal">Вывод</option>
-                </select>
-              </label>
-              <label className="flow-field">
-                <span>Момент операции (ISO)</span>
-                <input
-                  value={occurredAt}
-                  onChange={(event) => setOccurredAt(event.target.value)}
-                  required
-                />
-              </label>
-              <label className="flow-field">
-                <span>Сумма, USD</span>
-                <input
-                  value={amountUsd}
-                  onChange={(event) => setAmountUsd(event.target.value)}
-                  required
-                  inputMode="decimal"
-                />
-              </label>
+              <h3 className="flow-section-heading">Направление, сумма и время</h3>
+              <div className="flow-fields">
+                <div className="flow-field-with-hint">
+                  <label className="flow-field">
+                    <span>Направление</span>
+                    <select
+                      aria-describedby={`${hintId}-direction`}
+                      value={direction}
+                      onChange={(event) => setDirection(event.target.value as FlowDirection)}
+                    >
+                      <option value="contribution">Ввод</option>
+                      <option value="withdrawal">Вывод</option>
+                    </select>
+                  </label>
+                  <p className="flow-hint" id={`${hintId}-direction`}>
+                    USD пересекает границу портфеля. Перевод между своими счетами сюда не относится.
+                  </p>
+                </div>
+                <div className="flow-field-with-hint">
+                  <label className="flow-field">
+                    <span>Сумма, USD</span>
+                    <input
+                      aria-describedby={`${hintId}-amount`}
+                      value={amountUsd}
+                      onChange={(event) => setAmountUsd(event.target.value)}
+                      required
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <p className="flow-hint" id={`${hintId}-amount`}>
+                    Положительная сумма в USD, с точкой для дробной части. Для вывода выберите
+                    направление, не ставьте минус. Запись не меняет денежный остаток.
+                  </p>
+                </div>
+                <div className="flow-field-with-hint flow-field-with-hint--wide">
+                  <label className="flow-field">
+                    <span>Момент операции (ISO)</span>
+                    <input
+                      aria-describedby={`${hintId}-time`}
+                      value={occurredAt}
+                      onChange={(event) => setOccurredAt(event.target.value)}
+                      required
+                    />
+                  </label>
+                  <p className="flow-hint" id={`${hintId}-time`}>
+                    Дата и время с часовым поясом: 2025-01-02T12:30:00Z (UTC) или со смещением,
+                    например +03:00. В журнале время приводится к UTC.
+                  </p>
+                </div>
+              </div>
               <label className="flow-check">
                 <input
                   type="checkbox"
@@ -462,7 +537,11 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                   <button
                     type="button"
                     className="flow-button flow-button--secondary"
-                    onClick={() => setEditingFlowId(null)}
+                    onClick={() => {
+                      setEditingFlowId(null);
+                      restoreActionFocus(editAction.current);
+                      editAction.current = null;
+                    }}
                   >
                     Отменить исправление
                   </button>
@@ -471,7 +550,7 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
             </form>
           </section>
 
-          <section className="flow-card">
+          <section className="flow-card" aria-label="Потоки за период">
             <h2>Потоки за период</h2>
             <p>
               Период включает начало и исключает конец. Итоги отражают только записанные активные
@@ -484,28 +563,40 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                 void showPeriod(0, null);
               }}
             >
-              <label className="flow-field">
-                <span>Начало периода (ISO, включительно)</span>
-                <input
-                  value={from}
-                  onChange={(event) => {
-                    setFrom(event.target.value);
-                    invalidatePeriod();
-                  }}
-                  required
-                />
-              </label>
-              <label className="flow-field">
-                <span>Конец периода (ISO, не включительно)</span>
-                <input
-                  value={to}
-                  onChange={(event) => {
-                    setTo(event.target.value);
-                    invalidatePeriod();
-                  }}
-                  required
-                />
-              </label>
+              <div className="flow-field-with-hint">
+                <label className="flow-field">
+                  <span>Начало периода (ISO, включительно)</span>
+                  <input
+                    aria-describedby={`${hintId}-from`}
+                    value={from}
+                    onChange={(event) => {
+                      setFrom(event.target.value);
+                      invalidatePeriod();
+                    }}
+                    required
+                  />
+                </label>
+                <p className="flow-hint" id={`${hintId}-from`}>
+                  Начало включается. Укажите часовой пояс: Z означает UTC.
+                </p>
+              </div>
+              <div className="flow-field-with-hint">
+                <label className="flow-field">
+                  <span>Конец периода (ISO, не включительно)</span>
+                  <input
+                    aria-describedby={`${hintId}-to`}
+                    value={to}
+                    onChange={(event) => {
+                      setTo(event.target.value);
+                      invalidatePeriod();
+                    }}
+                    required
+                  />
+                </label>
+                <p className="flow-hint" id={`${hintId}-to`}>
+                  Конец не включается. Укажите часовой пояс: Z означает UTC.
+                </p>
+              </div>
               <button
                 type="submit"
                 className="flow-button"
@@ -531,57 +622,80 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                 {period.items.length === 0 ? (
                   <p>За этот период записанных потоков нет.</p>
                 ) : (
-                  <div className="flow-table-wrap">
+                  <div
+                    className="flow-table-wrap"
+                    role="region"
+                    aria-label="Таблица потоков"
+                    tabIndex={0}
+                  >
                     <table className="flow-table">
+                      <caption>Записанные потоки за период</caption>
                       <thead>
                         <tr>
-                          <th>Поток</th>
-                          <th>Версия</th>
                           <th>Момент UTC</th>
                           <th>Направление</th>
                           <th>USD</th>
+                          <th>Версия</th>
+                          <th>Поток</th>
                           <th>Действия</th>
                         </tr>
                       </thead>
                       <tbody>
                         {period.items.map((item) => (
                           <tr key={item.flowId}>
-                            <td>{item.flowId}</td>
-                            <td>{item.version}</td>
                             <td>{item.occurredAt}</td>
                             <td>{directionLabel(item.direction)}</td>
                             <td>{item.amountUsd}</td>
-                            <td className="flow-actions">
-                              <button
-                                type="button"
-                                className="flow-button flow-button--secondary"
-                                disabled={writeBlocked}
-                                onClick={() => {
-                                  setEditingFlowId(item.flowId);
-                                  setDirection(item.direction);
-                                  setOccurredAt(item.occurredAt);
-                                  setAmountUsd(item.amountUsd);
-                                  setExternalReviewed(true);
-                                  setVoidFlowId(null);
-                                }}
-                              >
-                                Исправить
-                              </button>
-                              <button
-                                type="button"
-                                className="flow-button flow-button--secondary"
-                                disabled={writeBlocked}
-                                onClick={() => setVoidFlowId(item.flowId)}
-                              >
-                                Аннулировать
-                              </button>
-                              <button
-                                type="button"
-                                className="flow-button flow-button--secondary"
-                                onClick={() => void showVersions(item.flowId)}
-                              >
-                                Версии
-                              </button>
+                            <td>{item.version}</td>
+                            <td>
+                              <details className="flow-identity">
+                                <summary>Идентификатор потока</summary>
+                                <code>{item.flowId}</code>
+                              </details>
+                            </td>
+                            <td>
+                              <div className="flow-actions">
+                                <button
+                                  type="button"
+                                  className="flow-button flow-button--secondary"
+                                  disabled={writeBlocked}
+                                  onClick={(event) => {
+                                    setEditingFlowId(item.flowId);
+                                    setDirection(item.direction);
+                                    setOccurredAt(item.occurredAt);
+                                    setAmountUsd(item.amountUsd);
+                                    setExternalReviewed(true);
+                                    setVoidFlowId(null);
+                                    editAction.current = event.currentTarget;
+                                    focusPanel('entry');
+                                  }}
+                                >
+                                  Исправить
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flow-button flow-button--secondary"
+                                  disabled={writeBlocked}
+                                  onClick={(event) => {
+                                    setVoidFlowId(item.flowId);
+                                    voidAction.current = event.currentTarget;
+                                    focusPanel('void');
+                                  }}
+                                >
+                                  Аннулировать
+                                </button>
+                                <button
+                                  type="button"
+                                  className="flow-button flow-button--secondary"
+                                  onClick={(event) => {
+                                    versionsAction.current = event.currentTarget;
+                                    void showVersions(item.flowId);
+                                    focusPanel('versions');
+                                  }}
+                                >
+                                  Версии
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -603,8 +717,10 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
           </section>
 
           {voidFlowId && (
-            <section className="flow-card flow-alert">
-              <h2>Аннулирование потока</h2>
+            <section className="flow-card flow-alert" aria-label="Аннулирование потока">
+              <h2 ref={voidHeading} tabIndex={-1} className="flow-panel-heading">
+                Аннулирование потока
+              </h2>
               <p>Поток {voidFlowId} станет неактивным. Версии останутся доступными.</p>
               <div className="flow-row">
                 <button
@@ -627,7 +743,11 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                 <button
                   type="button"
                   className="flow-button flow-button--secondary"
-                  onClick={() => setVoidFlowId(null)}
+                  onClick={() => {
+                    setVoidFlowId(null);
+                    restoreActionFocus(voidAction.current);
+                    voidAction.current = null;
+                  }}
                 >
                   Отмена
                 </button>
@@ -636,15 +756,34 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
           )}
 
           {versionFlowId && (
-            <section className="flow-card">
-              <h2>Версии потока</h2>
+            <section className="flow-card" aria-label="Версии потока">
+              <h2 ref={versionsHeading} tabIndex={-1} className="flow-panel-heading">
+                Версии потока
+              </h2>
               <p>Неизменяемая история потока {versionFlowId}.</p>
+              <button
+                type="button"
+                className="flow-button flow-button--secondary"
+                onClick={() => {
+                  invalidateVersions();
+                  restoreActionFocus(versionsAction.current);
+                  versionsAction.current = null;
+                }}
+              >
+                Закрыть версии
+              </button>
               {versionsRead === 'loading' && <output>Загрузка версий…</output>}
               {versionsRead === 'error' && <p role="alert">{versionsError}</p>}
               {versions && (
                 <>
-                  <div className="flow-table-wrap">
+                  <div
+                    className="flow-table-wrap"
+                    role="region"
+                    aria-label="Таблица версий потока"
+                    tabIndex={0}
+                  >
                     <table className="flow-table">
+                      <caption>Неизменяемые версии потока</caption>
                       <thead>
                         <tr>
                           <th>Версия</th>

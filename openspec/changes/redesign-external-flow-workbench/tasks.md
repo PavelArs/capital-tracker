@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
 - [x] 1.1 Inspect current source/spec/pipeline, record keep/simplify/remove scope and baseline118tests, prepare supported OpenSpec artifacts and verification manifest.
-- [ ] 1.2 Independently extend FLOW-004-A for FLOW-UX-001/002/003, preserve exact financial/security oracles and demonstrate new-behavior RED on predecessor.
+- [x] 1.2 Independently extend FLOW-004-A for FLOW-UX-001/002/003, preserve exact financial/security oracles and demonstrate new-behavior RED on predecessor.
 
 ## 2. Implement and review
 
