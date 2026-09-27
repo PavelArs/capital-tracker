@@ -5,8 +5,9 @@ using the latest saved daily observation. It is an indicative display only: it
 does not change USD trades, account values, profit, or XIRR. It is not a trade
 quote or historical exchange rate.
 
-The panel reads only stored data. Opening it, editing the amount, and choosing
-“Рассчитать по сохранённым курсам” make a private read; none calls the provider.
+The panel reads only stored data. Opening it or choosing “Рассчитать по сохранённым
+курсам” or “Обновить из базы” makes a private read; none calls the provider.
+Editing the amount clears the old result and does not itself request data.
 “Получить свежие курсы” explicitly requests collection, then reads the saved
 observation. When enabled, the scheduled collector uses the same persistent
 limits. No collection happens at startup. With no observation, the result is
@@ -40,3 +41,8 @@ The [verification record](../openspec/changes/archive/2026-09-24-collect-daily-d
 records real fresh/populated PostgreSQL migration, concurrency/failure checks and
 three selected HTTPS acceptance cases, all passing. External provider responses
 were controlled fixtures; no live-provider success is claimed.
+
+The [Settings workbench](settings-workbench.md) provides labeled preferences,
+explicit section selection and separate stored-read/provider-collection areas.
+Exact conversion now precedes its timestamp evidence in a contained keyboard
+scroll region. Existing freshness, failed-provider and stale-intent behavior remains.

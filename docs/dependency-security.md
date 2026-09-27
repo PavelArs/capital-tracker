@@ -216,3 +216,5 @@ The period-review-workbench gate also exited0 with the same two moderate finding
 and unchanged lockfile: `/private/tmp/capital-period-workbench-audit.log`.
 The manual-price-workbench gate also exited0 with the same two moderate findings
 and unchanged lockfile: `/private/tmp/capital-price-workbench-audit.log`.
+The settings-workbench gate also exited0 with the same two moderate findings
+and unchanged lockfile: `/private/tmp/capital-settings-workbench-audit.log`.

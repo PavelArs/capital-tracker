@@ -86,9 +86,9 @@ instrument-draft retention on parameter-only account navigation. Earlier scoped
 checks retain their recorded image/date limits. No full-suite or whole-redesign
 completion is claimed. The preserved local preview still uses its old image/data.
 
-FUI-01/02/03/04 remain partial; FUI-05/06 and owner visual approval remain open.
+FUI-01/02/03/04/05 remain partial; FUI-06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: settings, remaining analytics and editor focus. Retain chart
+work: remaining analytics and editor focus, then integration-health/legacy screens. Retain chart
 maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -143,6 +143,14 @@ return. Existing recovery/receipt/selection guards remain. The selected real pri
 journey passes;24light/dark360/768/1440 viewport frames have separate product review.
 See [manual-price workbench verification](../openspec/changes/archive/2026-09-27-redesign-manual-price-workbench/verification.md).
 Settings, wider analytics, remaining editor focus and whole-redesign review remain open.
+
+`redesign-settings-workbench` starts FUI-05 with announced section selection, labeled
+language/theme preferences and clear stored-read versus external-collection actions.
+Exact FX results precede original timestamp evidence; all controllers/guards and
+conditional mounting remain. The selected real DFX-UI journey passes and18actual
+light/dark360/768/1440 frames support review. See
+[Settings guide](settings-workbench.md) and [verification](../openspec/changes/archive/2026-09-27-redesign-settings-workbench/verification.md).
+Broader integration health and legacy currency-manager redesign remain separate.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to

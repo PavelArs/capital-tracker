@@ -452,18 +452,46 @@ complete. Seven exact temporary dependency links unlinked; primary dependencies 
 all source worktrees retained. Owner Nginx/lock, preview image/volume and stopped
 containers remain preserved; no disposable E2E resources remain.
 
+## Settings workbench — 2026-09-27
+
+`redesign-settings-workbench` follows628581c. RootTSX8bbc194, LunaCSS5f31f98
+integrated7d1d4a0 and rootfollowup6a65642 add named native section selection, associated
+language/theme labels, exact amount guidance, separate stored-read/collect actions and
+result-before-metadata evidence. Fourteen control signatures plus module/pre-render
+logic remain structurally unchanged; reviewer separately checked original FX types
+and conditional mounting. Unused invitation-code CSS removed after consumer search.
+No backend/API/auth/schema/dependency/pipeline changes. Soltestse9b23c83/8a6fb431
+integrated607a992/cc632da; latter corrects no-refetch observation to cover500ms afterclick.
+
+Actual predecessor RED onFE0ffbe36b: missing named Settings group. Candidate118/21
+frontendPASS5.33s; build1.06s/lint/types/Biome7/audit pass; existing27warnings,bundle
+warning and2moderate/nohighcritical remain. Actual GREEN DFX-UI1/1PASS17.9s, one worker/
+zero retries, realHTTPS/password/MFA/backend/PG22migrations. Exact123.45→111.105/11125.314,
+lateamount rejection, failedcollection last-good200→180/18024, financialfingerprints
+and exactly2provider calls preserved. Generalcontrols/keyboardselection, noFXbefore
+activation, repeatedactivebutton no-refetch and theme/viewport assertions pass.
+FEsha256:9f53b3f46a042d5759c91956e86295563186c0124826f34bc7b8230e30279571;
+unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-settings-workbench-*`.
+Actual18frames:6general/12FX atlight/dark360/768/1440. Independent source/oracle/FXreview
+and separate generalproductvisualreview have no blocking findings. Captures cover normal
+preferences/freshconversion, not every error-state or a complete accessibility audit.
+Archived as2026-09-27-redesign-settings-workbench:3newrequirement blocks match,
+41previouscanonical files remain byte-identical; strict42canonical specs pass and active
+changes empty. Guarded integration and temporary-link cleanup pending.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04 has its first bounded period-review slice and remains partial;
-FUI-05/06 and owner visual approval remain open. Next: settings, then wider account/
-portfolio result hierarchy. Settings mixes legacy currency visibility and verified
-indicative display FX; do not invent integration-health capability. The manual-price
-workbench is verified; no next-slice product/spec changes have started. Luna read-only
-Settings audit recommends a bounded selector/layout refresh in Settings.tsx/CSS with
-announced active state, visible focus and responsive44px buttons. Preserve conditional
-DisplayFxPanel mounting and existing DFX-UI exact conversion123.45, explicit-only
-collection/provider calls and stale/error last-good guards; avoid incomplete tab roles.
+FUI-05 has its first Settings slice and remains partial; FUI-06 and owner visual
+approval remain open. Next coherent workflow: finish correction/void/history navigation
+for AssetSwaps.tsx and AssetRewards.tsx, preserving independent draft/recovery controllers
+and existing SWAP-UI/REWARD-UI/WORKFLOW-UI. Read-only Luna inventory found these lack the
+event-only heading focus/origin return already used by TradeJournal. Then wider selected-
+account history/valuation hierarchy: HistoricalAccounting, HistoricalValuation and
+ValuationHistory, retaining HIST-004-A/VAL-UI/VCH-UI/MPV-UI and current supportedperiods.
+No next-slice product/spec changes have started. Legacy routes remain subordinate;
+Settings visibility is not integration health or complete accounting.
 Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
