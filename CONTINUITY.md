@@ -424,17 +424,43 @@ complete. Seven exact temporary dependency links unlinked; primary dependencies 
 all worktrees retained. Owner Nginx/lock and stopped preview containers/image/volume
 remain preserved; no E2E resources remain.
 
+## Manual price workbench — 2026-09-27
+
+`redesign-manual-price-workbench` followsd4dd415. RootTSX62c1eb2, LunaCSSeb5a3c6
+integrated0716ee4 and rootfollowup366b1b3 add focused entry before evidence, native rules,
+associated exact guidance, void/history focus and close/cancel return, semantic contained
+tables and responsive controls. Four input signatures,20financial/read/recovery
+controllers and six save/confirm/load guards/callbacks remain structurally unchanged.
+No backend/API/auth/schema/dependency/pipeline changes. Sol acceptance9263a91 integratedc7937ab.
+
+Actual predecessor RED onFE78436d00: missing native rules. Candidate118/21frontend
+PASS3.95s; build/lint/types/style/audit pass; existing27warnings,bundle warning and
+2moderate/nohighcritical remain. Actual GREEN PRICE-UI/PRICE-RECOVERY1/1PASS16.7s,
+realHTTPS/password/MFA/backend/PG22migrations, one worker/zero retries. Original exact
+100/110, identical retry/receipt, accepted-refresh lock, late selection, void/history,
+accounting/provider/admission assertions retained. New native keyboard/focus/close and
+115draft preservation pass. Independent source/oracle plus18header/book/history frame
+review and separate6editor frame review found no blockers. Runtime live-origin focus;
+disconnected/disabled fallback source-reviewed only. Native select popup readability,
+all error-state visuals and whole-product accessibility are not established.
+FEsha256:0ffbe36b31fa94fe3a8e931b2f6bdd4e53f2065916d12069ffb75245d6a26c3f;
+unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-price-workbench-*`.
+Archived as2026-09-27-redesign-manual-price-workbench:3newrequirement blocks match,
+40previouscanonical files remain byte-identical, strict41canonical specs pass and
+active changes are empty. Guarded integration/temporary-link cleanup pending.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04 has its first bounded period-review slice and remains partial;
-FUI-05/06 and owner visual approval remain open. Next: /manual-prices workbench, then
-settings and wider account/portfolio result hierarchy. Luna read-only audit is in
-`/private/tmp/capital-next-settings-prices-audit.md`: row void action needs event-only
-focus/cancel return, exact price guidance and responsive evidence, preserving PRICE-UI/
-PRICE-RECOVERY, revision/accepted-refresh locks and provider-free behavior. Settings
-mixes legacy currency visibility and verified indicative display FX; do not invent
-integration-health capability. No next-slice product/spec changes have started.
+FUI-05/06 and owner visual approval remain open. Next: settings, then wider account/
+portfolio result hierarchy. Settings mixes legacy currency visibility and verified
+indicative display FX; do not invent integration-health capability. The manual-price
+workbench is verified; no next-slice product/spec changes have started. Luna read-only
+Settings audit recommends a bounded selector/layout refresh in Settings.tsx/CSS with
+announced active state, visible focus and responsive44px buttons. Preserve conditional
+DisplayFxPanel mounting and existing DFX-UI exact conversion123.45, explicit-only
+collection/provider calls and stale/error last-good guards; avoid incomplete tab roles.
 Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.

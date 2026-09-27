@@ -88,7 +88,7 @@ completion is claimed. The preserved local preview still uses its old image/data
 
 FUI-01/02/03/04 remain partial; FUI-05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: manual prices, settings, remaining analytics and editor focus. Retain chart
+work: settings, remaining analytics and editor focus. Retain chart
 maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -136,6 +136,13 @@ date/valuation invalidation and stale-plan refusal remain. Four selected real jo
 pass, including late responses and unavailable rates. See
 [period workbench verification](../openspec/changes/archive/2026-09-27-redesign-period-review-workbench/verification.md).
 This does not complete portfolio/allocation/history/chart redesign or owner approval.
+
+`redesign-manual-price-workbench` adds focused entry before evidence, associated
+identity/time/exact-unit guidance, native rules, void/history focus and close/cancel
+return. Existing recovery/receipt/selection guards remain. The selected real price
+journey passes;24light/dark360/768/1440 viewport frames have separate product review.
+See [manual-price workbench verification](../openspec/changes/archive/2026-09-27-redesign-manual-price-workbench/verification.md).
+Settings, wider analytics, remaining editor focus and whole-redesign review remain open.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to

@@ -35,3 +35,19 @@ still be replayed. The UI and API page current points and immutable history.
 The new storage is additive migration18. Existing instruments, positions, trades,
 manual profit/XIRR previews and legacy provider caches retain their behavior.
 No dependency, external provider, paid service or production deployment is added.
+
+## Focused price workbench
+
+The editor now appears before saved prices and history. **Правила ручных цен**
+opens the full identity/correction rules; essential manual and incomplete-coverage
+limits stay visible. Field guidance explains instrument UUID, explicit timezone/UTC
+and exact nonnegative USD/unit values, including zero.
+
+**Исключить цену** and **История** move keyboard focus to their review area.
+Cancel exclusion or **Закрыть историю** returns to the initiating control when it
+remains available. Cancelling keeps the date/price draft; closing invalidates late
+history responses. History completion does not move focus. Wide saved-price tables
+scroll inside a named keyboard-focusable region on narrow screens.
+
+The scoped real save/recovery journey and responsive light/dark review are recorded
+in the [workbench verification](../openspec/changes/archive/2026-09-27-redesign-manual-price-workbench/verification.md).
