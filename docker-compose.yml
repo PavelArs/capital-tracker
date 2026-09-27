@@ -5,7 +5,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set the existing database password}
       POSTGRES_DB: ${DB_NAME:-capital_tracker}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -40,11 +40,13 @@ services:
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:?Set the existing database password}
       DB_NAME: ${DB_NAME:-capital_tracker}
       PORT: 3000
       NODE_ENV: production
-      FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:?Set the exact production HTTPS origin}
+      BACKGROUND_JOBS_ENABLED: "false"
+      DISPLAY_FX_ENABLED: "false"
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:?Set exact observed proxy socket IPs as JSON or explicit [] for direct mode}
       MFA_KEY_FILE: /run/secrets/ct-mfa-key
       MFA_KEY_ID: ${MFA_KEY_ID:?Set the non-secret MFA key identifier}

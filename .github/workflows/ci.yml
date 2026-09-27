@@ -223,6 +223,30 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - name: Export the actual tested candidate images
+        env:
+          CANDIDATE_COMMIT: ${{ github.sha }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+        run: |
+          mkdir -p candidate
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const manifest = { schemaVersion: 1, commit: process.env.CANDIDATE_COMMIT, runId: process.env.CANDIDATE_RUN_ID };
+          for (const name of ['backend', 'frontend']) {
+            const tag = `capital-tracker-${name}:acceptance`;
+            manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
+          }
+          fs.writeFileSync('candidate/manifest.json', JSON.stringify(manifest));
+          NODE
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance | gzip > candidate/images.tar.gz
+          sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manual-mvp-candidate
+          path: candidate/
+          retention-days: 7
+          compression-level: 0
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
