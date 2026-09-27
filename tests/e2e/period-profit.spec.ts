@@ -291,6 +291,7 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
       await expect(definitionValue('Прибыль, USD')).toHaveText('0');
     });
     await capturePeriodWorkbench(page, testInfo, 'profit-review', [
+      page.locator('.profit-header'),
       page.getByRole('region', { name: 'Ручные оценки и период', exact: true }),
       result,
     ]);
