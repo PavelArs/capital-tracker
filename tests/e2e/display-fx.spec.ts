@@ -1,4 +1,4 @@
-import { type Locator, expect } from '@playwright/test';
+import { type Locator, type Request, expect } from '@playwright/test';
 import { noStore, providerRequests } from './manual-opening-fixtures';
 import { compose, fingerprint, origin, passwordStep, query, test } from './mfa-fixtures';
 import { tradeApi } from './usd-trades-fixtures';
@@ -283,12 +283,197 @@ test('DFX-API: private stored conversion, explicit collection, cooldown and last
 
 test('DFX-UI: Settings explicitly collects, converts exact amounts and discards stale amount reads', async ({
   page,
-}) => {
+}, testInfo) => {
   await tradeApi(page);
+  const beforeActivationRequests: string[] = [];
+  const recordFxRequest = (request: Request) => {
+    if (new URL(request.url()).pathname.startsWith(displayPath))
+      beforeActivationRequests.push(`${request.method()} ${request.url()}`);
+  };
+  page.on('request', recordFxRequest);
   await page.goto('/settings');
   const nav = page.getByRole('button', { name: 'Курсы для отображения', exact: true });
   await expect(nav).toBeVisible();
-  // This first new-UI assertion must fail before SQL reaches migration19 on predecessor images.
+  // Bounded new-behavior RED precedes any fixture reset or product modification.
+  const sections = page.getByRole('group', { name: 'Разделы настроек', exact: true });
+  await expect(sections).toBeVisible({ timeout: 10_000 });
+  const general = sections.getByRole('button', { name: 'Общие', exact: true });
+  const currencies = sections.getByRole('button', { name: 'Валюты', exact: true });
+  const content = page.locator('#settings-panel');
+  const settingsPage = page.locator('.settings-page');
+  const language = page.getByLabel('Язык', { exact: true });
+  const themeControl = page.getByLabel('Тема', { exact: true });
+  const preferencesRows = displayFingerprint();
+  const preferencesProviders = providerRequests();
+  const viewport = page.viewportSize();
+  const originalScheme = await page.evaluate(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+  );
+
+  const expectSelection = async (selected: Locator) => {
+    await expect(selected).toHaveAttribute('aria-pressed', 'true');
+    await expect(content).toHaveAttribute('role', 'region');
+    const buttonId = await selected.getAttribute('id');
+    expect(buttonId).toBeTruthy();
+    await expect(content).toHaveAttribute('aria-labelledby', buttonId!);
+    for (const button of await sections.getByRole('button').all()) {
+      expect(await button.evaluate((node) => node.tagName)).toBe('BUTTON');
+      await expect(button).toHaveAttribute('aria-controls', 'settings-panel');
+    }
+    await expect(sections.locator('button[aria-pressed="true"]')).toHaveCount(1);
+  };
+  await expectSelection(general);
+  await expect(nav).toHaveAttribute('aria-pressed', 'false');
+  await expect(currencies).toHaveAttribute('aria-pressed', 'false');
+  await expect(
+    page.getByRole('region', { name: 'Пересчёт USD в EUR и RUB', exact: true }),
+  ).toHaveCount(0);
+  await expect(language).toBeVisible();
+  await expect(themeControl).toBeVisible();
+  await expect(content.locator('label').filter({ hasText: /^Язык$/ })).toBeVisible();
+  await expect(content.locator('label').filter({ hasText: /^Тема$/ })).toBeVisible();
+  await language.selectOption('en');
+  await expect(page.getByRole('combobox', { name: 'Language', exact: true })).toHaveValue('en');
+  await expect(settingsPage.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('i18nextLng'))).toBe('en');
+  await page.getByRole('combobox', { name: 'Language', exact: true }).selectOption('ru');
+  await expect(language).toHaveValue('ru');
+  expect(await page.evaluate(() => localStorage.getItem('i18nextLng'))).toBe('ru');
+  await themeControl.selectOption('dark');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(await page.evaluate(() => localStorage.getItem('theme'))).toBe('dark');
+  await themeControl.selectOption('light');
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+  expect(await page.evaluate(() => localStorage.getItem('theme'))).toBe('light');
+
+  const capturePresentation = async (kind: 'general' | 'fx', scrollRegion?: Locator) => {
+    const rowsBefore = displayFingerprint();
+    const callsBefore = providerRequests();
+    const capture = async (name: string) => {
+      const bounds = await settingsPage.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top + window.scrollY, height: box.height };
+      });
+      for (let index = 0; index < Math.ceil(bounds.height / 900); index++) {
+        const offset = Math.min(index * 900, Math.max(0, bounds.height - 900));
+        await page.evaluate(
+          (top) => window.scrollTo(0, Math.max(0, top - 16)),
+          bounds.top + offset,
+        );
+        await expect(
+          page.getByRole('link', { name: 'К содержимому', exact: true }),
+        ).not.toBeInViewport();
+        await testInfo.attach(`${name}-${index + 1}`, {
+          body: await page.screenshot({
+            path: testInfo.outputPath(`${name}-${index + 1}.png`),
+            animations: 'disabled',
+            fullPage: false,
+          }),
+          contentType: 'image/png',
+        });
+      }
+    };
+    try {
+      for (const theme of ['light', 'dark'] as const) {
+        if (kind === 'general') await themeControl.selectOption(theme);
+        else await page.emulateMedia({ colorScheme: theme });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        for (const width of [360, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          await expect
+            .poll(() =>
+              page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            )
+            .toBe(true);
+          expect(await sections.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(
+            true,
+          );
+          for (const button of await sections.getByRole('button').all()) {
+            const box = await button.boundingBox();
+            expect(box).not.toBeNull();
+            expect(box!.x).toBeGreaterThanOrEqual(0);
+            expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+          }
+          const controls = await settingsPage
+            .locator('input:not([type="checkbox"]), select, button')
+            .evaluateAll((nodes) =>
+              nodes
+                .filter((node) => node.getClientRects().length > 0)
+                .map((node) => ({
+                  label: node.textContent || node.getAttribute('aria-label') || node.tagName,
+                  height: node.getBoundingClientRect().height,
+                })),
+            );
+          expect(controls.length).toBeGreaterThan(0);
+          for (const control of controls)
+            expect(control.height, control.label).toBeGreaterThanOrEqual(44);
+          if (scrollRegion && width === 360) {
+            await expect(scrollRegion).toHaveAttribute('tabindex', '0');
+            expect(await scrollRegion.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
+              true,
+            );
+            await scrollRegion.evaluate((node) => {
+              node.scrollLeft = 0;
+            });
+            await scrollRegion.focus();
+            await page.keyboard.press('ArrowRight');
+            await expect
+              .poll(() => scrollRegion.evaluate((node) => node.scrollLeft))
+              .toBeGreaterThan(0);
+            await scrollRegion.evaluate((node) => {
+              node.scrollLeft = 0;
+            });
+          }
+          await capture(`settings-${kind}-${theme}-${width}`);
+          if (kind === 'fx') {
+            const exactTable = page.getByRole('table', {
+              name: 'Справочный пересчёт',
+              exact: true,
+            });
+            await expectCurrencyRow(exactTable, 'EUR', '0.9', '111.105');
+            await expectCurrencyRow(exactTable, 'RUB', '90.12', '11125.314');
+            await expect(page.getByLabel('Сумма в USD', { exact: true })).toHaveValue('123.45');
+          }
+        }
+      }
+    } finally {
+      if (kind === 'general') await themeControl.selectOption('system');
+      await page.emulateMedia({ colorScheme: originalScheme });
+      if (viewport) await page.setViewportSize(viewport);
+    }
+    expect(displayFingerprint()).toBe(rowsBefore);
+    expect(providerRequests()).toEqual(callsBefore);
+  };
+  await capturePresentation('general');
+  await expect(themeControl).toHaveValue('system');
+  expect(await page.evaluate(() => localStorage.getItem('theme'))).toBe('system');
+  await currencies.focus();
+  await page.keyboard.press('Enter');
+  await expect(currencies).toBeFocused();
+  await expectSelection(currencies);
+  await expect(
+    content.getByText(
+      'Прежний список валют: настройки видимости. Учёт инструментов и справочный пересчёт USD ведутся отдельно.',
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: 'Пересчёт USD в EUR и RUB', exact: true }),
+  ).toHaveCount(0);
+  await general.focus();
+  await page.keyboard.press('Space');
+  await expect(general).toBeFocused();
+  await expectSelection(general);
+  await expect(language).toHaveValue('ru');
+  await expect(themeControl).toHaveValue('system');
+  expect(
+    beforeActivationRequests,
+    'Inactive FX stays unmounted and performs no read or collection',
+  ).toEqual([]);
+  expect(displayFingerprint()).toBe(preferencesRows);
+  expect(providerRequests()).toEqual(preferencesProviders);
+  page.off('request', recordFxRequest);
+
   resetFxRows();
   const validBody = validProviderBody();
   setProviderResponse(fixtureFxResponse(200, validBody.body));
@@ -298,16 +483,58 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
     (response) =>
       new URL(response.url()).pathname === displayPath && response.request().method() === 'GET',
   );
-  await nav.click();
+  await nav.focus();
+  await page.keyboard.press('Enter');
+  await expect(nav).toBeFocused();
+  await expectSelection(nav);
   const panel = page.getByRole('region', { name: 'Пересчёт USD в EUR и RUB', exact: true });
   await expect(
     page.getByRole('heading', { name: 'Пересчёт USD в EUR и RUB', exact: true }),
   ).toBeVisible();
   const amount = page.getByLabel('Сумма в USD', { exact: true });
   await expect(amount).toHaveValue('1');
+  await expect(amount).toHaveAccessibleDescription(/USD/);
+  await expect(amount).toHaveAccessibleDescription(/неотрицательн|не меньше нуля|≥\s*0|>=\s*0/i);
+  await expect(amount).toHaveAccessibleDescription(/точк/i);
+  await expect(amount).toHaveAccessibleDescription(/нол|нулев|\b0\b/i);
+  await expect(amount).toHaveAccessibleDescription(/точн|округл|строк/i);
+  await expect(amount).toHaveAccessibleDescription(/баз|сохран/i);
+  const savedForm = amount.locator('xpath=ancestor::form');
+  await expect(
+    savedForm.getByRole('button', { name: 'Рассчитать по сохранённым курсам', exact: true }),
+  ).toBeVisible();
+  await expect(
+    savedForm.getByRole('button', { name: 'Обновить из базы', exact: true }),
+  ).toBeVisible();
+  await expect(
+    savedForm.getByRole('button', { name: 'Получить свежие курсы', exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    panel
+      .getByRole('region', { name: 'Получение новых курсов', exact: true })
+      .getByRole('button', { name: 'Получить свежие курсы', exact: true }),
+  ).toBeVisible();
   const initial = await initialRead;
   expect(initial.status()).toBe(200);
   expect((await initial.json()).status).toBe('unavailable');
+  await expect(panel.getByText('Нет сохранённых курсов', { exact: true })).toBeVisible();
+  const repeatedActivationRead = page
+    .waitForRequest((request) => new URL(request.url()).pathname === displayPath, { timeout: 500 })
+    .then(
+      () => true,
+      (error: Error) => {
+        expect(error.name).toBe('TimeoutError');
+        return false;
+      },
+    );
+  await nav.click();
+  await expect(nav).toBeFocused();
+  await expectSelection(nav);
+  expect(
+    await repeatedActivationRead,
+    'The selected section stays mounted without a new read',
+  ).toBe(false);
+  await expect(amount).toHaveValue('1');
   await expect(panel.getByText('Нет сохранённых курсов', { exact: true })).toBeVisible();
   expect(providerRequests()).toEqual(providersBefore);
   expect(displayFingerprint()).toBe(financialBefore);
@@ -359,6 +586,25 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
   await expectCurrencyRow(table, 'RUB', '90.12', '11125.314');
   expect(providerRequests()).toEqual([...providersBefore, { method: 'GET', url: providerUrl }]);
   expect(displayFingerprint()).toBe(financialBefore);
+  const tableRegion = panel.getByRole('region', {
+    name: 'Таблица справочного пересчёта',
+    exact: true,
+  });
+  await expect(
+    tableRegion.getByRole('table', { name: 'Справочный пересчёт', exact: true }),
+  ).toBeVisible();
+  expect(
+    await table.evaluate((node) => {
+      const result = node.closest('.display-fx__result');
+      const publication = [...(result?.querySelectorAll('p') ?? [])].find((item) =>
+        item.textContent?.includes('Публикация поставщика UTC:'),
+      );
+      return Boolean(
+        publication && node.compareDocumentPosition(publication) & Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }),
+  ).toBe(true);
+  await capturePresentation('fx', tableRegion);
 
   const pattern = (url: URL) => url.pathname === displayPath && url.searchParams.has('amountUsd');
   let release = () => {};
