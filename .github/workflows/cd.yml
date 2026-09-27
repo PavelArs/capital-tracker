@@ -12,6 +12,12 @@ on:
         default: preflight
         type: choice
         options: [preflight, deploy]
+      installation:
+        description: Existing upgrade or first install after verified absence of application data
+        required: true
+        default: existing
+        type: choice
+        options: [existing, fresh]
 permissions:
   contents: read
 concurrency:
@@ -19,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' || (inputs.mode == 'preflight' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -32,6 +38,7 @@ jobs:
         with:
           node-version: '22.21.1'
       - name: Validate trusted successful candidate provenance
+        if: inputs.mode == 'deploy'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.ci_run_id }}
@@ -91,18 +98,24 @@ jobs:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
           RELEASE_MODE: ${{ inputs.mode }}
+          RELEASE_INSTALLATION: ${{ inputs.installation }}
         run: |
           set -euo pipefail
           [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_USER" =~ ^[A-Za-z0-9_-]+$ ]]
           [[ "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
+          [[ "$RELEASE_INSTALLATION" == existing || "$RELEASE_INSTALLATION" == fresh ]]
           target="$DEPLOY_USER@$DEPLOY_HOST"
           port=${DEPLOY_SSH_PORT:-22}
           [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
           options=(-p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes)
+          if [[ "$RELEASE_MODE" == preflight ]]; then
+            ssh "${options[@]}" "$target" 'bash -s' < scripts/manual-mvp-inventory.sh
+            exit 0
+          fi
           remote_dir="/tmp/capital-release-$GITHUB_RUN_ID"
           ssh "${options[@]}" "$target" "umask 077; mkdir '$remote_dir'"
           scp -P "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes scripts/manual-mvp-release.sh docker-compose.yml "$target:$remote_dir/"
-          ssh "${options[@]}" "$target" "RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
+          ssh "${options[@]}" "$target" "RELEASE_INSTALLATION='$RELEASE_INSTALLATION' RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
       - name: Remove runner credentials
         if: always()
         run: rm -f ~/.ssh/release-key
