@@ -1,5 +1,13 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -240,7 +248,14 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
     expect(readFileSync(join(directory, '.release-managed-env'), 'utf8')).toBe(
       'previous-managed-marker\n',
     );
-    expect(existsSync(join(directory, 'releases', commit, 'receipt'))).toBe(false);
+    const releaseRoot = join(directory, 'releases', commit);
+    const attempts = readdirSync(releaseRoot, { withFileTypes: true }).filter((entry) =>
+      entry.isDirectory(),
+    );
+    expect(attempts).toHaveLength(1);
+    for (const attempt of attempts) {
+      expect(existsSync(join(releaseRoot, attempt.name, 'receipt'))).toBe(false);
+    }
     expect(result.stdout).not.toContain('Release verified;');
     expect(result.stdout).toContain('previous application pair readiness and privacy verified');
   }, 20000);
