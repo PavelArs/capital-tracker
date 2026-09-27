@@ -43,7 +43,7 @@ The Router major update also requires existing `SHELL-UI` in tests/e2e/applicati
 ## Staged release gates
 
 1. Scoped RED/GREEN unit/process contracts, independent source review, baseline lint/build/unit/types/specs/audit and no unresolved documented production dependency finding.
-2. Actual isolated release-image/artifact/network/migration probes, encrypted backup/checksum/restore rehearsal and18retained journeys; record exact candidate image digests and unrun scope.
+2. Actual isolated release-image/artifact/network/migration probes, encrypted backup/checksum/restore rehearsal and19retained journeys; record exact candidate image digests and unrun scope.
 3. Trusted Actions promotion/provenance; pinned-host read-only actual server preflight (origin, volumes/schema, secrets/MFA readiness). No owner-data mutation before verified backup/migration preflight.
 4. Locked actual Actions release with explicit migrations/refusal, app-only update and compatible rollback; HTTPS minimal health/private denial, real MFA/manual-read/logout. Record actual deployed identities/results privately without leaking credentials.
 
@@ -58,3 +58,5 @@ Focused engineering/manual-mvp against integrated4cc54a8 exited0:38/38tests acro
 First real scoped harness attempt stopped at stale client-source-startup expectation16 while current22migration probes passed (`/private/tmp/capital-mvp-scoped-attempt1.log`, runtime-agent execution). QA5e58c6d corrects exact count22 and checks latest AddAssetSwaps1790300000000, retaining all startup/refusal/security/fingerprint assertions. No probe skipped and no image rebuild inferred. Subsequent real execution remains required.
 
 Existing-mode orchestration rerun against the deployment worktree's c8b2957 plus pending fresh-mode preparation passes13/13 in32.138s (`/private/tmp/capital-manual-mvp-process-configuration.log`). Added unsafe historical-ledger refusal and verifies original Compose bytes used for paired rollback. Fresh-mode behavior is not covered by this result; it still needs separate collision/initialization acceptance. External commands remain synthetic stubs only.
+
+The second/third real scoped attempts stopped before browser execution on the numeric invalid-proxy fixture privacy assertion (`/private/tmp/capital-mvp-scoped-attempt2.log`, `/private/tmp/capital-mvp-scoped-attempt3.log`). Bounded diagnostic identifies the short literal match as a stack frame, not proof of a settings echo. QA replaces numeric123 with distinct safe-integer canary812734650918273, retaining numeric-type rejection, full unfiltered output no-echo and all secret scans; temporary diagnostics removed. No backend change or security-probe skip. The corrected runtime result remains pending.

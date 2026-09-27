@@ -26,7 +26,8 @@ const invalid = [
   ['null', 'null'],
   ['object', '{"synthetic-startup-config-value":"must-not-be-echoed"}'],
   ['string', '"127.0.0.1"'],
-  ['number', '123'],
+  // Distinct safe-integer canary avoids incidental short stack/path substrings.
+  ['number', '812734650918273'],
   ['boolean', 'false'],
   ['nonstring-null', '[null]'],
   ['nonstring-number', '[1]'],
@@ -60,7 +61,7 @@ function environment(value) {
   return env;
 }
 
-function safeOutput(output, rejectedValue, caseName = 'validation') {
+function safeOutput(output, rejectedValue) {
   const secrets = [sentinel, settings.DB_PASSWORD, 'Synthetic-password-42!'];
   const key = readFileSync(process.env.MFA_KEY_FILE);
   secrets.push(key.toString('hex'), key.toString('base64'));
@@ -68,29 +69,7 @@ function safeOutput(output, rejectedValue, caseName = 'validation') {
     assert.ok(!output.includes(secret), 'Startup/CLI output must not disclose synthetic secrets');
   }
   if (typeof rejectedValue === 'string' && rejectedValue.length > 2) {
-    const position = output.indexOf(rejectedValue);
-    if (position !== -1) {
-      const lineStart = output.lastIndexOf('\n', position) + 1;
-      const lineEnd = output.indexOf('\n', position);
-      const line = output.slice(lineStart, lineEnd === -1 ? output.length : lineEnd);
-      const location = line.search(/:\d+:\d+\)?$/);
-      const matchClass = /^\s+at\s/.test(line) && location !== -1 && position - lineStart >= location
-        ? 'stack-location' : /^\s+at\s/.test(line) ? 'stack-frame' : 'non-stack-output';
-      const moduleMatch = line.match(/(\/app\/node_modules\/\.pnpm\/[^()\s]+):\d+:\d+\)?$/);
-      let pathKind = 'none';
-      let directoryMatch = false;
-      let segmentHash = 'none';
-      if (moduleMatch && existsSync(moduleMatch[1])) {
-        pathKind = 'installed-pnpm';
-        const pathStart = line.indexOf(moduleMatch[1]);
-        const directory = moduleMatch[1].slice('/app/node_modules/.pnpm/'.length).split('/')[0];
-        const directoryStart = pathStart + '/app/node_modules/.pnpm/'.length;
-        directoryMatch = position - lineStart >= directoryStart && position - lineStart < directoryStart + directory.length;
-        segmentHash = createHash('sha256').update(directory).digest('hex');
-      }
-      // Fixed labels, booleans and a package-segment hash only; never captured output/input/secrets.
-      assert.fail(`Configuration refusal must not echo its input: case=${caseName}, match=${matchClass}, offset=${position}, pathKind=${pathKind}, directoryMatch=${directoryMatch}, segmentHash=${segmentHash}`);
-    }
+    assert.ok(!output.includes(rejectedValue), 'Configuration refusal must not echo its input');
   }
 }
 
@@ -133,7 +112,7 @@ function listening() {
   });
 }
 
-async function startup(value, caseName) {
+async function startup(value) {
   assert.equal(await listening(), false, 'Probe requires its own unused container-local port');
   let served = false;
   let output = '';
@@ -165,7 +144,7 @@ async function startup(value, caseName) {
   assert.equal(closed.signal, null, 'Invalid configuration must terminate promptly, not time out');
   assert.notEqual(closed.code, null);
   assert.notEqual(closed.code, 0, 'Invalid proxy configuration must refuse HTTP startup');
-  safeOutput(output, value, caseName);
+  safeOutput(output, value);
   assert.match(output, /Invalid TRUSTED_PROXY_IPS configuration/,
     'Refusal must come from actual proxy validation, not an unrelated startup failure');
   assert.doesNotMatch(output, /Cannot find module|MODULE_NOT_FOUND|ENOTFOUND|ECONNREFUSED|password authentication failed|Unable to connect to the database/i);
@@ -211,7 +190,7 @@ async function main() {
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
     const before = await fingerprint(client);
     for (const [name, value] of invalid) {
-      await startup(value, name);
+      await startup(value);
       assert.equal(await fingerprint(client), before, `Rejected startup must preserve all database state: ${name}`);
     }
     console.log(`PASS PROXY-001-B ${invalid.length} actual HTTP startup refusals without listener, secret output or database changes`);
