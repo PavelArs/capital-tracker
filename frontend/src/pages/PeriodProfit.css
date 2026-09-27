@@ -14,6 +14,7 @@
 .profit-header h1 {
   margin-bottom: 0.5rem;
   color: var(--text-color);
+  font-size: clamp(1.5rem, 3vw, 2rem);
 }
 
 .profit-header > p,
@@ -31,7 +32,7 @@
 }
 
 .profit-header a {
-  color: var(--primary-color-dark);
+  color: var(--text-color);
   text-underline-offset: 0.15em;
 }
 
@@ -65,7 +66,7 @@
 }
 
 .profit-fields {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
 }
 
 .profit-field {
@@ -107,6 +108,7 @@
 }
 
 .profit-review input[type="checkbox"] {
+  flex: 0 0 1.15rem;
   width: 1.15rem;
   height: 1.15rem;
   min-height: 1.15rem;
@@ -171,7 +173,7 @@
 
 .profit-period dt,
 .profit-result dt {
-  color: var(--text-secondary);
+  color: var(--text-color);
   font-weight: 600;
 }
 
@@ -199,9 +201,13 @@
 }
 
 .profit-metric dd {
+  min-width: 0;
+  margin: 0;
   font-size: clamp(1.25rem, 3vw, 1.8rem);
   font-weight: 700;
   line-height: 1.25;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .profit-result {
@@ -220,14 +226,14 @@
 .profit-disclosure summary {
   min-height: 44px;
   padding: 0.55rem 0;
-  color: var(--primary-color-dark);
+  color: var(--text-color);
   font-weight: 600;
   line-height: 1.4;
   cursor: pointer;
 }
 
-.profit-disclosure summary:focus-visible {
-  outline: 2px solid var(--primary-color-dark);
+.profit-page :is(input, button, a, summary):focus-visible {
+  outline: 2px solid var(--text-color);
   outline-offset: 2px;
 }
 
@@ -247,8 +253,17 @@
 }
 
 .profit-linked-inputs {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   margin-top: 0.75rem;
+}
+
+.profit-linked-inputs > p,
+.profit-disclosure-body > p {
+  margin: 0;
+}
+
+.profit-linked-inputs > .profit-button {
+  justify-self: start;
 }
 
 .profit-linked-result {
@@ -271,7 +286,7 @@
 }
 
 .linked-twr-table-wrap:focus-visible {
-  outline: 2px solid var(--primary-color-dark);
+  outline: 2px solid var(--text-color);
   outline-offset: 2px;
 }
 
