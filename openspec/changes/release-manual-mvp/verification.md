@@ -1,0 +1,46 @@
+# Manual MVP acceptance manifest and evidence
+
+Preparation at a03371b only; no product changes, Docker, provider/server access, publish/push or deployment by acceptance author. Actual OpenSpec1.2 new/status/instructions(proposal/design/specs/tasks) generated this change. The18 retained real journeys below are selected gates, not newly authored cases or a full-suite claim.
+
+## Genuine predecessor RED
+
+`pnpm --dir backend exec jest engineering/manual-mvp --runInBand` against existing source:
+first run8tests:6FAIL/2PASS. Runtime false still invokes crypto constructor collection and fiat module-init collection; true/unset startup characterization passes. Existing runnable CD fails skippable-backup, SSH TOFU, destructive down/prune and missing explicit migration policy assertions. Log `/private/tmp/capital-manual-mvp-predecessor-red.log`.
+
+Final rerun with the bounded fiat HTTP timeout assertion exited1:7FAIL/2PASS (9tests). The additional failure observes the real enabled fiat request omitting its timeout option. Log `/private/tmp/capital-manual-mvp-predecessor-final-red.log`. Mocks are confined to lower-level service/external process contracts. No backend/auth E2E response is fabricated. Policy regex gates establish predecessor defects only: successful regex assertions cannot establish safe provenance, backup/restore, rollback or deployment. Executable negative validator/orchestration acceptance and real isolated/server proof remain required.
+
+## Retained real browser manifest (18)
+
+Each is one existing named test; file line anchors describe the preparation commit and may shift. Invoke concrete files/tests with exact names; do not widen grep unintentionally.
+
+| Existing journey | Source |
+| --- | --- |
+| MFA-002-A password grants pending only | tests/e2e/mfa.spec.ts:121 |
+| MFA-002-B actual TOTP full-session rotation | tests/e2e/mfa.spec.ts:155 |
+| SES-001-B copied-cookie logout revocation | tests/e2e/sessions.spec.ts:172 |
+| SES-002-A CSRF/foreign Origin denial | tests/e2e/sessions.spec.ts:251 |
+| OPEN-001-A/OPEN-002-A exact opening unknown/zero/restart | tests/e2e/manual-opening.spec.ts:66 |
+| TRADE-003-A/TRADE-006-A FIFO250/100/0.5 correction/history | tests/e2e/usd-trades.spec.ts:139 |
+| SWAP-UI exact review/committed retry | tests/e2e/asset-swaps.spec.ts:243 |
+| REWARD-UI unknown/zero/category/retry | tests/e2e/asset-rewards.spec.ts:328 |
+| TRANSFER-UI create retry/correction/void | tests/e2e/owned-transfers.spec.ts:285 |
+| CSV-006-A full sale-first import/restart/rollback | tests/e2e/csv-import-journey.spec.ts:407 |
+| FLOW-004-A initialize/contribution/correction/history | tests/e2e/external-usd-flows.spec.ts:293 |
+| PRICE-UI/PRICE-RECOVERY exact prices/committed retry/late read | tests/e2e/manual-usd-prices.spec.ts:242 |
+| VAL-UI exact valuation/late result/draft | tests/e2e/historical-valuation.spec.ts:267 |
+| VCH-UI zero history/late response/draft | tests/e2e/valuation-history.spec.ts:219 |
+| MPV-UI selected portfolio/gaps/stale read | tests/e2e/manual-portfolio-valuation.spec.ts:380 |
+| PROFIT-UI/PROFIT-LATE reviewed inputs/late/error | tests/e2e/period-profit.spec.ts:200 |
+| XIRR-UI/XIRR-LATE available/unavailable | tests/e2e/xirr-preview.spec.ts:172 |
+| TWR-UI boundary coverage/late invalidation | tests/e2e/twr-preview.spec.ts:203 |
+
+Reuse archived financial/security source evidence and independently reviewed responsive frames when untouched; final candidate needs actual selected HTTPS/MFA/backend/PostgreSQL execution with external fixtures only. Keep existing whole-suite/CI gates intact. Manual-mode changes must not fabricate cache prices or weaken precision/provider/admission/fingerprint assertions. Supported manual/CSV views stay provider-independent; explicit FX/legacy demand reads retain their own semantics and need separate retained coverage when affected.
+
+## Staged release gates
+
+1. Scoped RED/GREEN unit/process contracts, independent source review, baseline lint/build/unit/types/specs/audit and no unresolved documented production dependency finding.
+2. Actual isolated release-image/artifact/network/migration probes, encrypted backup/checksum/restore rehearsal and18retained journeys; record exact candidate image digests and unrun scope.
+3. Trusted Actions promotion/provenance; pinned-host read-only actual server preflight (origin, volumes/schema, secrets/MFA readiness). No owner-data mutation before verified backup/migration preflight.
+4. Locked actual Actions release with explicit migrations/refusal, app-only update and compatible rollback; HTTPS minimal health/private denial, real MFA/manual-read/logout. Record actual deployed identities/results privately without leaking credentials.
+
+No runtime deployment/restore success, hosted CI success, production readiness or whole-target completion is claimed by this preparation.
