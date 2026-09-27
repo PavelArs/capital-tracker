@@ -9,7 +9,14 @@ import {
 import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import { AssetSwapAllocation } from './AssetSwapAllocation';
 import { AssetSwapFields, AssetSwapReview, savedSwapName } from './AssetSwapEvidence';
 import { AssetSwapForm } from './AssetSwapForm';
@@ -132,6 +139,32 @@ function AssetSwapsOwner({
   const parentRevision = useRef(journalRevision);
   const callbacks = useRef({ onChanged });
   callbacks.current = { onChanged };
+
+  const sectionHeading = useRef<HTMLHeadingElement>(null);
+  const editor = useRef<HTMLDivElement>(null);
+  const historyHeading = useRef<HTMLHeadingElement>(null);
+  const editorAction = useRef<HTMLButtonElement | null>(null);
+  const historyAction = useRef<HTMLButtonElement | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{
+    kind: 'editor' | 'history' | 'return-editor' | 'return-history';
+    sequence: number;
+  }>({ kind: 'editor', sequence: 0 });
+
+  useLayoutEffect(() => {
+    if (focusRequest.sequence === 0) return;
+    if (focusRequest.kind === 'editor' || focusRequest.kind === 'history') {
+      const destination = focusRequest.kind === 'editor' ? editor.current : historyHeading.current;
+      destination?.focus({ preventScroll: true });
+      destination?.scrollIntoView({ block: 'start' });
+      return;
+    }
+    const origin = focusRequest.kind === 'return-editor' ? editorAction : historyAction;
+    const destination = origin.current;
+    // The originating history button becomes enabled in this commit after closing.
+    if (destination?.isConnected && !destination.disabled) destination.focus();
+    else sectionHeading.current?.focus();
+    origin.current = null;
+  }, [focusRequest]);
 
   const clearHistory = useCallback(() => {
     historyGeneration.current++;
@@ -374,7 +407,7 @@ function AssetSwapsOwner({
     }
   }
 
-  function stage(nextMode: 'correct' | 'void', swap: SwapVersion) {
+  function stage(nextMode: 'correct' | 'void', swap: SwapVersion, trigger: HTMLButtonElement) {
     if (recoverySnapshot(key) || writeLock.current) return;
     setMode(nextMode);
     setTarget(swap);
@@ -386,6 +419,8 @@ function AssetSwapsOwner({
     setReviewError('');
     clearHistory();
     // Attestation resets on staging, so the user explicitly reviews this target.
+    editorAction.current = trigger;
+    setFocusRequest((previous) => ({ kind: 'editor', sequence: previous.sequence + 1 }));
   }
 
   function cancelEdit() {
@@ -397,6 +432,7 @@ function AssetSwapsOwner({
     setReviewRead('idle');
     setReviewError('');
     setWriteError('');
+    setFocusRequest((previous) => ({ kind: 'return-editor', sequence: previous.sequence + 1 }));
   }
 
   async function loadHistory(
@@ -472,7 +508,9 @@ function AssetSwapsOwner({
 
   return (
     <section className="manual-card" aria-label="Обмены активов">
-      <h2>Обмены активов</h2>
+      <h2 ref={sectionHeading} tabIndex={-1} className="operation-focus-target">
+        Обмены активов
+      </h2>
       <p className="manual-muted">
         Записывайте уже выполненный обмен двух активов внутри этого счёта. Оценка в USD задаётся
         явно; она не создаёт денежного поступления или вывода. Списанная себестоимость комиссии — её
@@ -531,60 +569,76 @@ function AssetSwapsOwner({
       >
         Обновить обмены
       </button>
-      <AssetSwapForm
-        draft={draft}
-        instruments={instruments}
-        mode={mode}
-        busy={blocked || catalogRead !== 'ready' || listRead !== 'ready'}
-        reviewed={reviewed}
-        reviewError={reviewError}
-        review={
-          review ? (
-            <AssetSwapReview
-              draft={review.draft}
-              journalRevision={review.journalRevision}
-              mode={mode}
-              targetId={target?.swapId}
-              targetVersion={review.version ?? undefined}
-              instrumentName={instrumentName}
-            />
-          ) : undefined
+      <div
+        ref={editor}
+        className="operation-workbench"
+        role="region"
+        tabIndex={-1}
+        aria-label={
+          mode === 'correct'
+            ? 'Исправление обмена'
+            : mode === 'void'
+              ? 'Отмена обмена'
+              : 'Новый обмен'
         }
-        recovery={
-          recovery ? (
-            <>
-              {recovery.phase === 'unknown' && (
-                <button
-                  className="manual-button"
-                  type="button"
-                  disabled={writing}
-                  onClick={() => void send(recovery.command, true)}
-                >
-                  Повторить тот же запрос
-                </button>
-              )}
+      >
+        <AssetSwapForm
+          draft={draft}
+          instruments={instruments}
+          mode={mode}
+          busy={blocked || catalogRead !== 'ready' || listRead !== 'ready'}
+          reviewed={reviewed}
+          reviewError={reviewError}
+          review={
+            review ? (
               <AssetSwapReview
-                draft={recovery.draft}
-                journalRevision={recovery.command.body.expectedJournalRevision}
-                mode={recovery.command.kind}
-                targetId={recovery.command.kind === 'create' ? undefined : recovery.command.swapId}
-                targetVersion={
-                  'expectedVersion' in recovery.command.body
-                    ? recovery.command.body.expectedVersion
-                    : undefined
-                }
+                draft={review.draft}
+                journalRevision={review.journalRevision}
+                mode={mode}
+                targetId={target?.swapId}
+                targetVersion={review.version ?? undefined}
                 instrumentName={instrumentName}
-                requestId={recovery.command.body.requestId}
-                frozen
               />
-            </>
-          ) : undefined
-        }
-        onChange={edit}
-        onReview={() => void check(mode, target)}
-        onSubmit={submit}
-        onCancel={target ? cancelEdit : undefined}
-      />
+            ) : undefined
+          }
+          recovery={
+            recovery ? (
+              <>
+                {recovery.phase === 'unknown' && (
+                  <button
+                    className="manual-button"
+                    type="button"
+                    disabled={writing}
+                    onClick={() => void send(recovery.command, true)}
+                  >
+                    Повторить тот же запрос
+                  </button>
+                )}
+                <AssetSwapReview
+                  draft={recovery.draft}
+                  journalRevision={recovery.command.body.expectedJournalRevision}
+                  mode={recovery.command.kind}
+                  targetId={
+                    recovery.command.kind === 'create' ? undefined : recovery.command.swapId
+                  }
+                  targetVersion={
+                    'expectedVersion' in recovery.command.body
+                      ? recovery.command.body.expectedVersion
+                      : undefined
+                  }
+                  instrumentName={instrumentName}
+                  requestId={recovery.command.body.requestId}
+                  frozen
+                />
+              </>
+            ) : undefined
+          }
+          onChange={edit}
+          onReview={() => void check(mode, target)}
+          onSubmit={submit}
+          onCancel={target ? cancelEdit : undefined}
+        />
+      </div>
       {writeError && (
         <p className="manual-feedback manual-feedback--error" role="alert">
           {writeError}
@@ -618,7 +672,7 @@ function AssetSwapsOwner({
                     className="manual-button manual-button--secondary"
                     type="button"
                     disabled={blocked}
-                    onClick={() => stage('correct', swap)}
+                    onClick={(event) => stage('correct', swap, event.currentTarget)}
                   >
                     Исправить обмен
                   </button>
@@ -626,7 +680,7 @@ function AssetSwapsOwner({
                     className="manual-button manual-button--secondary"
                     type="button"
                     disabled={blocked}
-                    onClick={() => stage('void', swap)}
+                    onClick={(event) => stage('void', swap, event.currentTarget)}
                   >
                     Отменить обмен
                   </button>
@@ -643,12 +697,35 @@ function AssetSwapsOwner({
                 className="manual-button manual-button--secondary"
                 type="button"
                 disabled={blocked || (historyId === swap.swapId && historyRead === 'loading')}
-                onClick={() => void loadHistory(swap.swapId)}
+                onClick={(event) => {
+                  historyAction.current = event.currentTarget;
+                  void loadHistory(swap.swapId);
+                  setFocusRequest((previous) => ({
+                    kind: 'history',
+                    sequence: previous.sequence + 1,
+                  }));
+                }}
               >
                 История обмена
               </button>
               {historyId === swap.swapId && (
                 <section aria-label="История обмена">
+                  <h4 ref={historyHeading} tabIndex={-1} className="operation-focus-target">
+                    История обмена
+                  </h4>
+                  <button
+                    className="manual-button manual-button--secondary"
+                    type="button"
+                    onClick={() => {
+                      clearHistory();
+                      setFocusRequest((previous) => ({
+                        kind: 'return-history',
+                        sequence: previous.sequence + 1,
+                      }));
+                    }}
+                  >
+                    Закрыть историю
+                  </button>
                   {historyError && <p role="alert">{historyError}</p>}
                   {history?.items.map((version) => (
                     <div key={version.version}>

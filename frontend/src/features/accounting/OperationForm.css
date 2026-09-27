@@ -65,3 +65,16 @@
 .operation-form button {
   min-height: 44px;
 }
+
+.operation-workbench,
+.operation-focus-target {
+  min-width: 0;
+  scroll-margin-block: 1rem;
+  border-radius: 4px;
+}
+
+.operation-workbench:focus,
+.operation-focus-target:focus {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 4px;
+}
