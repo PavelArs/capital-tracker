@@ -39,3 +39,22 @@ synthetic trace/screenshot in `...-red-artifacts`.
 Sol's three independent coordinator unit scenarios are integrated from9204697. Their
 pre-implementation import-resolution failure is narrower scaffolding evidence, not
 an observed concurrency behavior failure. Real browser RED above is the ATDD gate.
+
+## Candidate findings and correction
+
+First candidate de5e3b6 / FEc8cef0be passed121frontend tests/22files3.95s, build/lint,
+strict E2E types/scopedBiome and strict44spec items. Existing27lint warnings and Vite
+large-chunk warning remain. Actual CVIS/DFX first GREEN failed2/2 (13.1s/21.8s):
+- CVIS reached the actual hide request and got400: `isHidden should not be empty,
+  isHidden must be a boolean value`. The old frontend wrapper omitted the field
+  required by shared ToggleCurrencyDto. No preference commit/lost-command success
+  was claimed. Sol corrected exact unit/E2E bodies; root observed2unit failures
+  (4pass) before adding true/false to hide/show. Backend contract remains unchanged.
+- DFX required the original legacy-scope sentence. Replacing that copy was an
+  unintended retained-journey regression. Restore the exact original sentence in
+  the manager's visible scope and keep the entire DFX test unchanged.
+
+Independent reviewer confirmed both fixes preserve rather than relax the contract.
+Scoped wrapper/coordinator tests then passed9/9. Logs `...-dto-red.log`,
+`...-dto-green.log`, `...-green.log`; first GREEN trace/screenshots in
+`/private/tmp/capital-currency-workbench-green-artifacts`. Final runtime pending.

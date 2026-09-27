@@ -33,12 +33,18 @@ export const currenciesApi = {
   },
 
   hide: async (currencyId: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/currencies/hide', { currencyId });
+    const response = await apiClient.post<{ message: string }>('/currencies/hide', {
+      currencyId,
+      isHidden: true,
+    });
     return response.data;
   },
 
   show: async (currencyId: string): Promise<{ message: string }> => {
-    const response = await apiClient.post<{ message: string }>('/currencies/show', { currencyId });
+    const response = await apiClient.post<{ message: string }>('/currencies/show', {
+      currencyId,
+      isHidden: false,
+    });
     return response.data;
   },
 };

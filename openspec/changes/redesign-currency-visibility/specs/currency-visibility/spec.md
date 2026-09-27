@@ -16,6 +16,8 @@ identity disclosure SHALL NOT fetch providers, reload data or change preferences
 
 ### Requirement: CVIS-002 Explicit recoverable owner preference commands
 Hide/show SHALL keep their existing authenticated owner-scoped API/storage semantics.
+Client commands SHALL supply the existing DTO's required currency identity and explicit
+isHidden boolean matching the hide/show endpoint.
 The UI SHALL prevent overlapping client commands, including section/route remounts,
 preserve last-good lists during a request,
 and move rows only from successful paired reads. Failures SHALL be visible and mark
@@ -26,6 +28,7 @@ not replace current intent or steal focus after the owner has moved elsewhere.
 
 #### Scenario: CVIS-002-A Resolve a committed command with a lost response
 - **GIVEN** the owner starts hiding a stored system currency
+- **AND** the command satisfies the existing validated request DTO with the intended identity and visibility boolean
 - **WHEN** the real command commits but its genuine response is lost
 - **THEN** the last-good row remains with an inline warning and disabled visibility actions, without an automatic command replay
 - **WHEN** the owner explicitly reloads then shows the row again from the hidden list

@@ -121,8 +121,12 @@ export default function CurrencyManager() {
       <header className="currency-visibility__header">
         <h2>Прежний список валют</h2>
         <p className="currency-visibility__scope">
-          Настройка показа записей прежнего каталога. Учёт инструментов, справочные курсы USD и
-          поддержка сетей ведутся отдельно. Скрытие не удаляет валюту или историю операций.
+          Прежний список валют: настройки видимости. Учёт инструментов и справочный пересчёт USD
+          ведутся отдельно.
+        </p>
+        <p className="currency-visibility__scope">
+          Видимость записи не определяет поддержку сети. Скрытие не удаляет валюту или историю
+          операций.
         </p>
       </header>
       <div className="currency-visibility__toolbar">

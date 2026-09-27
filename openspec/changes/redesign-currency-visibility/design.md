@@ -20,11 +20,18 @@ CurrenciesSection wrapper after Settings imports manager directly. No data delet
 visibility changes and readable evidence at360/768/1440 in both themes.
 **Non-Goals:** provider health/collection, network coverage, accounting instrument
 availability, catalogue editing, new backend consistency guarantees or pricing.
-No API/auth/schema/dependency/deployment changes; rollback is frontend-only.
+No backend API/auth/schema/dependency/deployment changes; rollback is frontend-only.
+Real first GREEN exposed an existing client-contract bug: both hide/show endpoints use
+ToggleCurrencyDto, requiring isHidden despite deriving direction from the route. The old
+frontend omitted it and real validation returned400. Supply true for hide, false for
+show in the existing wrapper, and correct its two unit/body oracles to enforce that
+existing DTO. Keep server validation and route semantics unchanged.
 
 ## Decisions
 
-- Root owns CurrencyManager TSX and direct Settings import/removal of dead wrappers.
+- Root owns CurrencyManager TSX, existing currency API wrapper and direct Settings
+  import/removal of dead wrappers and their unused styles. Move the original scope
+  notice into the manager without changing its text or retained DFX assertion.
   Luna owns only CurrencyManager.css in a separate worktree after RED. Sol owns new
   currency-visibility.spec.ts and necessary focused acceptance helpers. A separate
   reviewer owns no product/test edits. Root alone owns Docker/integration/archive.
