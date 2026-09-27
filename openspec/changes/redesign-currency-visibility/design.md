@@ -36,16 +36,23 @@ No API/auth/schema/dependency/deployment changes; rollback is frontend-only.
 - Load both endpoints together with Promise.all and publish both lists only on success.
   A failed initial pair gives an inline error/retry, not an empty-state claim. Later
   failures retain the last successful lists with a stale warning. A generation/lifetime
-  guard prevents an obsolete completion from replacing a current result; pending work
-  blocks overlapping reload/mutations. No new generic state abstraction is needed.
+  guard prevents an obsolete completion from replacing a current result. A tiny
+  currency-specific module retains only the pending mutation promise, no rows/auth data.
+  A remounted component waits for it to settle before paired reads, blocking commands
+  meanwhile; the old instance cannot publish or refetch. Synchronously reserve the
+  pending operation so a second client command cannot overlap. This covers section and
+  route leave/return while retaining original conditional mounting. It is client HTTP
+  serialization, not new cross-session/server transaction locking or timeout guarantees.
 - Use original hide/show commands with explicit row identity. While pending, disable
   visibility actions; do not optimistically move rows. On any command/read failure,
   explain that current visibility needs reloading and disable stale row commands until
   an explicit successful `Обновить списки`. This safely handles genuine lost responses,
   including a committed preference whose response was lost, without automatic replay.
   Successful refresh publishes actual state. Announce completion inline, not alert().
-  Return focus to the active list button only when the removed action still owned focus;
-  delayed completion must not steal focus from another control.
+  Capture initiating focus ownership before disabling, observe subsequent focus movement
+  during the request, and return focus post-commit only within the same mounted lifetime
+  when the initiating action retained ownership (including native disabled-button blur).
+  Delayed completion must not steal focus from another control or remounted page.
 - Group existing fiat/crypto/stablecoin rows. Primary code/name/symbol/status and named
   `Скрыть CODE` / `Показать CODE` actions precede native `Реквизиты CODE` details with full
   stored UUID/contract (explicit absent contract). These identifiers do not assert a
@@ -64,7 +71,10 @@ No API/auth/schema/dependency/deployment changes; rollback is frontend-only.
   retained DFX-UI plus frontend build/tests/lint; do not change shared page styles.
 - Owner data modified in tests → only synthetic E2E project/DB and external fixtures;
   fingerprint all business tables except expected owner preference change, then inspect
-  that row and foreign preferences exactly. No production/preview access.
+  ALL preference rows exactly: unrelated/foreign rows byte-identical; a changed existing
+  row retains id/owner/currency/createdAt with intended isHidden and valid updatedAt.
+  Inactive hidden show must not add an active-list row; old hidden non-system can show.
+  No production/preview access.
 
 ## Verification
 

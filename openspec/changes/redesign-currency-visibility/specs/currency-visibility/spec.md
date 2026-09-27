@@ -16,10 +16,12 @@ identity disclosure SHALL NOT fetch providers, reload data or change preferences
 
 ### Requirement: CVIS-002 Explicit recoverable owner preference commands
 Hide/show SHALL keep their existing authenticated owner-scoped API/storage semantics.
-The UI SHALL prevent overlapping commands, preserve last-good lists during a request,
+The UI SHALL prevent overlapping client commands, including section/route remounts,
+preserve last-good lists during a request,
 and move rows only from successful paired reads. Failures SHALL be visible and mark
 last-good lists as potentially stale; another visibility command SHALL remain disabled
-until an explicit successful reload resolves actual state. Obsolete completions SHALL
+until an explicit successful reload resolves actual state. A remount during a pending
+client command SHALL await its settlement before reading/enabling new actions. Obsolete completions SHALL
 not replace current intent or steal focus after the owner has moved elsewhere.
 
 #### Scenario: CVIS-002-A Resolve a committed command with a lost response
@@ -29,6 +31,9 @@ not replace current intent or steal focus after the owner has moved elsewhere.
 - **WHEN** the owner explicitly reloads then shows the row again from the hidden list
 - **THEN** actual PostgreSQL preference state and both displayed lists agree, only the owner's intended preference changes, and no accounting/provider state changes
 - **AND** non-system rows cannot initiate unsupported hide commands and inactive catalogue status remains distinct from visibility
+- **WHEN** the owner leaves and returns while a real command response is held
+- **THEN** the new view waits without an overlapping command or premature list read, then reconciles from fresh real reads after settlement
+- **AND** showing an inactive hidden row does not make it an active visible currency; unrelated and foreign preference rows remain byte-identical
 
 ### Requirement: CVIS-003 Readable exact catalogue evidence
 The view SHALL clearly scope preferences to the legacy catalogue, separately from
