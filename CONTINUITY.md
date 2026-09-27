@@ -2,30 +2,38 @@
 
 ## Current handoff — manual + CSV MVP release in progress
 
-Checkpoint: 2026-09-27 10:58 UTC. Owner authorized the manual-accounting + CSV MVP
+Checkpoint: 2026-09-27 11:06 UTC. Owner authorized the manual-accounting + CSV MVP
 through existing GitHub Actions/server path using remaining quota; network sync and
 AI are deferred. This is **IN PROGRESS**, not deployed or whole-product complete.
 Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, HEAD `d8eb886`, baseline `0f96749`. OpenSpec change
+branch `release/manual-mvp`, HEAD `fc7fad5`, baseline `0f96749`. OpenSpec change
 `release-manual-mvp` is drafted/validated in QA commit `1d52f44` at
 `/Users/pavelars/Projects/temp/capital-test-manual-mvp` branch `test/manual-mvp`.
 Router-shell/auth/manual-provider-independence passed. Focused VCH responsive passed
 1/1 in 15.9s on FE `FE28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
 and BE `BE049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`.
 Eighteen previously passing journeys used FE `FEbd407fdd…`; do not combine these
-split results into a 19/19 single-image claim. Security
-startup27 and artifact/migration checks passed. Still pending: image audit and current
-hosted CI, actual deployment, real PG backup/restore fingerprint mismatch, off-host
-backup/key recovery, restricted deployment privilege and verified host bootstrap/
-HTTPS. Manual diagnostic [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
+split results into a 19/19 single-image claim. Security startup27 and artifact/
+migration checks passed. PG16.10 schema-22 backup/restore verified full schema/data
+fingerprints with the three approved canonical CHECK mappings; safe log:
+`/private/tmp/capital-mvp-backup-rehearsal3.log`. Off-host encrypted copy and
+independent key recovery remain pending. Trivy found inherited base-image/toolkit
+findings (BE 5 critical/55 high, FE 2 critical/35 high); application dependency graph
+audit is zero. Runtime owns minimal-base remediation and final image scans. Current
+hosted CI, image promotion, actual deployment, restricted deploy privilege and host
+bootstrap/HTTPS remain pending. Manual diagnostic [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
 passed read-only; it found project writable, `.env` unreadable, no noninteractive sudo,
-Docker access, no named app containers/volumes, and vhost disabled. QA is assessing
-the existing `.env` read-only before the owner runs privileged sudo commands. Runtime
-work is relinquished; QA owns that bounded assessment, the owner handles sudo, and
-root coordinates integration/release ownership. No archive/full-target completion
-claim. After actual deployment, record exact tested commit and image digests, migration,
-encrypted backup/restore evidence, health/security checks and outcome; never infer
-success from an accepted workflow dispatch. Read
+Docker access, no named app containers/volumes, and vhost disabled. Owner-readonly
+`.env` assessment passed 22 synthetic tests (QA `eef9922`, integrated `81af470`);
+the verified setup bundle is staged for host user `agmin` under
+`$HOME/capital-mvp-setup`. Owner will run sudo commands and return flags; bootstrap
+has not run. OpenSpec task 2.2 is complete; remaining release gates are image
+remediation/audit, current hosted CI, host bootstrap/HTTPS, least-privilege deployment,
+off-host backup/key recovery and production deployment. Runtime image patch work is
+actively owned there; root coordinates integration/release ownership. No archive or
+full-target completion claim. After actual deployment, record exact tested commit and
+image digests, migration, encrypted backup/restore evidence, health/security checks
+and outcome; never infer success from an accepted workflow dispatch. Read
 [`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased
 follow-up, hard release gates and continuation roles. Do not start broad UI work
 until this authorized release is resolved. Preserve owner Nginx/preview/data and

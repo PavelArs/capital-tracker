@@ -29,8 +29,11 @@ release acceptance now pass. Focused VCH responsive acceptance also passed 1/1 i
 with unchanged BE image
 `BE049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`. Eighteen
 previously passing browser journeys used FE `FEbd407fdd…`; do not combine these
-split results into a 19/19 single-image claim. Image audit, current hosted CI and production security
-readiness remain pending. Dependency/unit results do not establish those gates.
+split results into a 19/19 single-image claim. The application dependency graph
+audit reported zero findings, but Trivy found inherited image findings (BE 5
+critical/55 high; FE 2 critical/35 high). Runtime owns the minimal-base remediation
+and final image scans. Current hosted CI and production security readiness remain
+pending; the dependency audit does not establish those gates.
 
 Audited lockfile SHA-256:
 `7db95986acc2a8c4fbef9bf9be34c7296b51fe2aa821bcc215db5d8e36f289ba`.
