@@ -24,6 +24,32 @@ async function selectSection(page: Page, name: string) {
   await expect(page.locator(`[id="${id}"]`)).toBeVisible();
 }
 
+// The installed macOS Chromium native popup ignores automation arrow navigation.
+// Root's isolated browser diagnostic verified trusted Russian-layout type-ahead keys.
+async function typeAnalysisChoice(page: Page, key: 'И' | 'У') {
+  const session = await page.context().newCDPSession(page);
+  const code = key === 'И' ? 'KeyB' : 'KeyE';
+  const windowsVirtualKeyCode = key === 'И' ? 66 : 69;
+  try {
+    await session.send('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key,
+      code,
+      text: key,
+      unmodifiedText: key.toLowerCase(),
+      windowsVirtualKeyCode,
+    });
+    await session.send('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key,
+      code,
+      windowsVirtualKeyCode,
+    });
+  } finally {
+    await session.detach();
+  }
+}
+
 test('WORKSPACE-UI: sections retain exact drafts, historical results and original committed trade retry', async ({
   page,
 }, testInfo) => {
@@ -95,9 +121,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await valuationInstant.fill('2025-01-04T00:00:00.000Z');
   const beforeTaskNavigation = fingerprint(['auth_sessions', 'auth_request_limits']);
   await analysisChoice.focus();
-  await page.keyboard.press('Space');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
+  await typeAnalysisChoice(page, 'И');
   await expect(analysisChoice).toHaveValue('history');
   await expect(analysisChoice).toBeFocused();
   await expect(owners[1]).toBeVisible();
@@ -107,9 +131,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await historyFrom.fill('2025-01-01T00:00:00.000Z');
   await historyTo.fill('2025-01-04T00:00:00.000Z');
   await analysisChoice.focus();
-  await page.keyboard.press('Space');
-  await page.keyboard.press('ArrowDown');
-  await page.keyboard.press('Enter');
+  await typeAnalysisChoice(page, 'У');
   await expect(analysisChoice).toHaveValue('accounting');
   await expect(analysisChoice).toBeFocused();
   await expect(owners[2]).toBeVisible();
