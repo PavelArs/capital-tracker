@@ -2,7 +2,7 @@
 
 - [x] 1.1 Specify manual + CSV scope and startup/demand-read boundary; retain the deferred whole-target backlog.
 - [x] 1.2 Observe genuine current-runtime and current-CD policy RED, preserving true/unset characterization (verification.md); policy tests do not prove actual deployment.
-- [ ] 1.3 Complete executable release-validator/orchestrator rejection tests for provenance/digest, missing DB, backup/encryption/restore failure, migration refusal and compatible two-image rollback; coordinate implementation interface.
+- [x] 1.3 Complete executable release-validator/orchestrator rejection tests for provenance/digest, missing DB, backup/encryption/restore failure, migration refusal and compatible two-image rollback; coordinate implementation interface.
 
 ## 2. Runtime and trusted candidate
 
@@ -10,10 +10,14 @@
 - [x] 2.2 Resolve Router release advisories, retain routing/authentication and production audit evidence.
 - [ ] 2.3 Neutralize upstream automatic CD safely before main integration; implement trusted immutable tested candidate promotion and pinned SSH identity with existing Actions/GHCR.
 
+Task2.3 has approved workflow/script implementation and lower-level contracts; actual trusted candidate promotion remains required. It is not a deployed-server gate.
+
 ## 3. Server preparation and recovery
 
 - [ ] 3.1 Implement and verify locked read-only preflight, mandatory encrypted backup/checksum and isolated restoration; reject preparation failures before server mutation.
 - [ ] 3.2 Invoke existing explicit migration refusal, app-only update without down/prune/volume replacement, readiness/privacy checks and compatible two-image rollback; preserve owner data/config/key/preview.
+
+Tasks3.1/3.2 have approved implementation and integrated synthetic failure/recovery tests. Owner-side assessment/preflight, verified server backup/restore and actual migration/application rollout remain separate required evidence; keep these tasks open.
 
 ## 4. Verify and deploy
 
