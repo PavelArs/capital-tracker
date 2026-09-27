@@ -60,7 +60,7 @@ services:
         bind:
           create_host_path: false
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,7 +80,7 @@ services:
     container_name: capital_tracker_frontend
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3001:80"
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-3001}:80"
     depends_on:
       - backend
     healthcheck:
