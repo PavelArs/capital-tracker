@@ -48,6 +48,7 @@ if(tool==='docker'){
    if(mode==='migration')process.exit(1);
    if(mode==='health-changed')fs.writeFileSync(changed,'yes');
   }
+  if(a.includes('stop')&&mode==='partial-stop'&&!fs.existsSync(path.join(root,'stop-refused'))){fs.writeFileSync(path.join(root,'stop-refused'),'yes');process.exit(1);}
   if(a.includes('up')){
    if((process.env.BACKEND_IMAGE||'').startsWith('ghcr.io/'))fs.writeFileSync(candidate,'yes');
    else {fs.writeFileSync(rollback,'yes');if(mode==='rollback-start')process.exit(1);}
@@ -58,7 +59,7 @@ if(tool==='docker'){
   if(s.includes('SELECT name FROM migrations'))process.stdout.write(original+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore')process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
-  else if(s.includes('pg_dump'))process.stdout.write('SYNTHETIC_LOGICAL_ROWS_AND_SCHEMA\\n');
+  else if(s.includes('pg_dump'))process.stdout.write(mode==='fingerprint'&&a[1]!=='db'?'DIFFERENT_RESTORED_ROWS\\n':'SYNTHETIC_LOGICAL_ROWS_AND_SCHEMA\\n');
  }
 }
 if(tool==='openssl'){
@@ -89,6 +90,7 @@ beforeEach(() => {
   mkdirSync(join(directory, 'bin'));
   for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat'])
     writeFileSync(join(directory, 'bin', tool), stub, { mode: 0o700 });
+  writeFileSync(join(directory, 'docker-compose.yml'), '# Synthetic previous configuration\n');
   for (const file of ['.env', '.env.release', 'candidate.yml'])
     writeFileSync(join(directory, file), '# Synthetic release fixture\n');
   writeFileSync(join(directory, 'mfa-key'), Buffer.alloc(32, 1), { mode: 0o600 });
@@ -129,7 +131,7 @@ const appUp = (call: Command) =>
   call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('up');
 
 describe('MVP-003/004: failure-safe server process orchestration', () => {
-  it.each(['lock', 'missing-db', 'dump', 'encrypt', 'restore'])(
+  it.each(['lock', 'missing-db', 'dump', 'encrypt', 'restore', 'fingerprint'])(
     'refuses %s before migration or candidate application update',
     (failure) => {
       const { result, calls } = release(failure);
@@ -143,6 +145,8 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
         dump: (call) => call.tool === 'docker' && call.args.join(' ').includes('pg_dump -Fc'),
         encrypt: (call) => call.tool === 'openssl' && !call.args.includes('-d'),
         restore: (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
+        fingerprint: (call) =>
+          call.tool === 'docker' && call.args.join(' ').includes('pg_dump --no-owner'),
       };
       expect(calls.some(witness[failure])).toBe(true);
       expect(calls.filter(migration)).toEqual([]);
@@ -155,7 +159,7 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
     },
     20000,
   );
-  it.each(['migration', 'health-same'])(
+  it.each(['migration', 'health-same', 'partial-stop'])(
     'restores both prior application images after %s only against unchanged schema and checks readiness',
     (failure) => {
       const { result, calls } = release(failure);
@@ -176,6 +180,20 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
     },
     20000,
   );
+  it('failed prior-pair restart stops applications without claiming verified recovery', () => {
+    const { result, calls } = release('rollback-start');
+    expect(result.status).not.toBe(0);
+    const attempted = calls.findIndex((call) => appUp(call) && call.backend === previousBackend);
+    expect(attempted).toBeGreaterThan(0);
+    expect(calls[attempted].frontend).toBe(previousFrontend);
+    expect(
+      calls
+        .slice(attempted + 1)
+        .some((call) => call.tool === 'docker' && call.args.includes('stop')),
+    ).toBe(true);
+    expect(result.stdout).not.toContain('previous application pair readiness and privacy verified');
+    expect(existsSync(join(directory, '.env.images'))).toBe(false);
+  }, 20000);
   it('stops safely after changed schema without rolling old images forward or restoring owner database', () => {
     const { result, calls } = release('health-changed');
     expect(result.status).not.toBe(0);

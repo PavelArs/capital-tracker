@@ -48,3 +48,7 @@ The Router major update also requires existing `SHELL-UI` in tests/e2e/applicati
 4. Locked actual Actions release with explicit migrations/refusal, app-only update and compatible rollback; HTTPS minimal health/private denial, real MFA/manual-read/logout. Record actual deployed identities/results privately without leaking credentials.
 
 No runtime deployment/restore success, hosted CI success, production readiness or whole-target completion is claimed by this preparation.
+
+## Lower-level release contracts
+
+QA acceptance against actual release candidate bfb8f42 uses only synthetic external-command executables in test-owned temporary directories. Exact candidate validator20tests and server orchestration12tests PASS32/32 in31.056s; `/private/tmp/capital-manual-mvp-process-expanded.log`. Covers refusal stage witnesses, dump/encryption/restore/fingerprint failure before migration, partial-stop recovery, exact previous pair with readiness, failed rollback startup fail-closed, changed schema stopping without owner DB restoration, and successful ordering/persistence. This is process-contract evidence, not real Docker/PostgreSQL restore, trusted Actions promotion or server deployment proof. Candidate-path overrides permit bounded read-only cross-worktree evaluation; final integrated tests default to their checkout's scripts.

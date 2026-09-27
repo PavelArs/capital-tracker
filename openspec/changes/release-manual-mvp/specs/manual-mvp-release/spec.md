@@ -21,11 +21,11 @@ GitHub Actions SHALL release the exact backend/frontend image digests tested for
 - **THEN** no server application/database mutation occurs
 
 ### Requirement: MVP-003 Preflight and recoverability precede mutation
-Actions SHALL inspect actual origin, volumes, runtime/MFA configuration and schema read-only before deployment. A verified encrypted PostgreSQL backup with checksum and isolated successful restoration into a disposable database (never owner data) SHALL be required before mutating owner application/data. Missing database, dump/encryption/restore failure SHALL fail closed; no skip override SHALL exist.
+Actions SHALL inspect actual origin, volumes, runtime/MFA configuration and schema read-only before deployment. A verified encrypted PostgreSQL backup with checksum and isolated successful restoration into a disposable database (never owner data) SHALL be required before mutating owner database data or activating the candidate. A reversible maintenance stop to quiesce writes SHALL recover the prior application pair on preparation failure against unchanged schema. Missing database, dump/encryption/restore failure SHALL fail closed; no skip override SHALL exist.
 
 #### Scenario: MVP-003-A Failed preparation preserves the server
 - **WHEN** preflight, dump, encryption or isolated restoration fails
-- **THEN** the release stops without changing running applications, owner tables, original volumes or authentication configuration
+- **THEN** the release stops without mutating owner tables, original volumes or authentication configuration, restoring any quiesced previous application pair with readiness/privacy checks when schema is unchanged
 
 ### Requirement: MVP-004 Explicit migration and compatible recovery
 A server lock SHALL serialize release execution. Deployment SHALL invoke the existing explicit migration CLI and honor its legacy-schema refusal. Application updates SHALL NOT run compose down, prune recovery images or recreate original data volumes. Recovery SHALL restore both previous application digests only with verified schema compatibility; automatic old-database restoration SHALL NOT overwrite newer writes.
