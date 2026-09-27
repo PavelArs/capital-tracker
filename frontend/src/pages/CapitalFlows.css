@@ -136,12 +136,16 @@
 }
 
 .flow-check {
+  align-items: flex-start;
+  flex-wrap: nowrap;
   min-height: 44px;
+  padding: 0.5rem 0;
   color: var(--text-color);
   font-weight: 600;
 }
 
 .flow-check input[type="checkbox"] {
+  flex: 0 0 1.15rem;
   width: 1.15rem;
   height: 1.15rem;
   min-height: 1.15rem;
