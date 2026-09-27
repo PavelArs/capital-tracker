@@ -513,11 +513,13 @@ Owner explicitly requested removal now. Luna inventory and independent review co
 ancestry(19)/patch-equivalence(82), immediate HEAD/status, exact dependency-link and
 generated-artifact/synthetic-runtime guards. Branches retained;101paths absent verified.
 Followup exact proof resolved the3exceptions and they were also removed (104total);
-main+3activeanalytics remain. No unique working edits, original
+after verified analytics integration its3trees were removed too (107total). Only main
+remains registered; all104named branches retained and3detached review HEADs ancestral.
+No unique working edits, original
 repositories, primary dependencies or preview resources removed. Full record and
 exceptions: docs/worktree-cleanup.md. Evidence /private/tmp/capital-merged-worktrees-*.
 
-## Account analytics — archived, integration in progress
+## Account analytics — archived and integrated
 
 `redesign-account-analytics` basec3a4dbd introduces a labeled native task selector:
 valuation initially, sampled history and accounting positions. Original owners stay
@@ -539,13 +541,15 @@ bundle warnings and2moderate advisories remain. Full suites/release/security unr
 Separate review approved source/oracles and all38final themed360/768/1440frames.
 Evidence and limits: archived2026-09-27-redesign-account-analytics verification/review.md;
 no owner UX approval. Archive comparison:42old specs byte-identical,3new blocks exact;
-43canonical specs, no active changes. Integration/cleanup remains before final3.2.
+43canonical specs, no active changes. Integrated2f9ba1f; last3worktrees removed after
+guards, all6tasks complete. See docs/worktree-cleanup.md for107total removal evidence.
 
 Accepted FEsha256:6ee61c50a0ea62d6e6542bd794a3de444312edd39ac2c3d6fc0114f8863aa479;
 unchanged BEsha256:dd90a8c5bc87122a0105d8e3012dea5e446dfc31db51dc6615b6e224f32369b2.
 Logs/artifacts `/private/tmp/capital-analytics-workbench-*`. E2Econtainers/networks empty;
 preview remains stopped46hours, original volume/tag/MFA/TLS/credentials preserved.
-Owner Nginx/lock hashes unchanged. Main integration/last3worktree cleanup pending.
+Owner Nginx/lock hashes unchanged. Only the primary checkout remains registered;
+all named source branches retained. No preview/production deployment.
 
 ## Next work and remaining whole goal
 
@@ -554,7 +558,7 @@ are partial; FUI-04 has its first bounded period-review slice and remains partia
 FUI-05 has its first Settings slice and remains partial; FUI-06 and owner visual
 approval remain open. Next coherent workflow: integration-health/legacy screens and remaining whole-screen
 UX findings, then broader portfolio/allocation/cash work. The bounded account-analysis
-slice is archived; integration remains in progress. Legacy routes remain subordinate;
+slice is archived and integrated. Legacy routes remain subordinate;
 Settings visibility is not integration health or complete accounting.
 Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and

@@ -1,6 +1,6 @@
 # Account analytics workbench verification
 
-Status: verified and archived; guarded integration and final worktree cleanup follow.
+Status: verified, archived and integrated; guarded worktree cleanup complete.
 The whole goal remains active.
 
 Basec3a4dbd,42canonical specs, audited target/AGENTS/continuity/current UI/specs and
@@ -142,3 +142,13 @@ Post-archive comparison passes:42old canonical files byte-identical,3new blocks 
 exactly,43canonical specs and no active changes. Evidence:
 `...-archive.log`, `/private/tmp/capital-analytics-canonical-comparison.log`.
 Integration/cleanup bookkeeping is completed after those actions, not prechecked.
+
+
+Final integration2f9ba1f fast-forwarded the primary refactor branch without touching
+the owner Nginx edit. All three now-integrated analytics worktrees were removed without
+force after ancestry/patch-equivalence, clean-status, dependency-link and synthetic-data
+checks. Combined cleanup removed107trees and retained every named branch;3detached
+review HEADs are main ancestors. Only the primary checkout remains. Full evidence:
+docs/worktree-cleanup.md and `/private/tmp/capital-analytics-integration-cleanup.log`.
+Task3.2 is now complete after the actual actions. All6tasks checked;43canonical specs
+and zero active changes.

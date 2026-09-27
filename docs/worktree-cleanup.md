@@ -69,9 +69,36 @@ Inspection found only compiled backend JS/declarations/maps/build-info and front
 HTML/JS/CSS, with no symlinks; the allowlist was updated. Exact HEAD/status/proofs,
 owner hashes, preview directory and dependency targets were rechecked. The three
 worktrees were then removed without force and every original branch HEAD verified.
-Total removed now104; main plus three active analytics worktrees remain.
+At this second checkpoint104had been removed; main plus three active analytics
+worktrees remained until the verified integration below.
 
 Evidence: `/private/tmp/capital-remove-integrated-exceptions.py`,
 `capital-integrated-exceptions-removal.log` (initial refusal),
 `capital-integrated-exceptions-removal-final.log` and
 `capital-integrated-exceptions-removal.json`. No original project or owner data removed.
+
+## Final integrated analytics cleanup
+
+After genuine5/5HTTPS/MFA/PostgreSQL acceptance, local gates, independent source and
+38-frame review, and OpenSpec archive/comparison, analytics commit2f9ba1f was
+fast-forward integrated into refactor/brownfield-baseline. Main's only unrelated edit
+remained frontend/nginx.conf with its original bytes/mode; lockfile stayed unchanged.
+
+All three analytics trees passed immediate HEAD/status/generated-file/dependency-link
+checks. Root HEAD was ancestral after integration; all three acceptance commits and
+the styling commit were patch-equivalent. The six disposable E2E runtime files had
+expected names, no symlinks/preview subtree and synthetic certificate subjects. The
+38final screenshots were already copied outside those trees. Seven validated links
+to primary dependency directories were unlinked; actual dependencies were retained.
+Normal non-force worktree removal then deleted all three trees, preserving branches.
+
+Final total:107integrated worktrees removed, only capital-tracker remains registered.
+All107unique paths are absent. All104named source branches retain their recorded HEADs;
+the other3were detached review trees with HEADs already ancestral to main. The now-empty
+capital-tracker-worktrees grouping directory was also removed. Original repositories,
+durable preview files/volume/images and owner data remain. No deployment.
+
+Evidence: `/private/tmp/capital-integrate-analytics-cleanup.py`,
+`capital-analytics-integration-cleanup.log`, `capital-analytics-integration-cleanup.json`
+and `capital-all-worktrees-cleanup-verification.log`. Future independent changes may
+create new worktrees; remove them after verified integration under the same guards.

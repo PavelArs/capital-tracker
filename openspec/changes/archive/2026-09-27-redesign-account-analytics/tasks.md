@@ -11,4 +11,4 @@
 ## 3. Verify and archive
 
 - [x] 3.1 Pass WORKSPACE-UI, HIST late-read/pinned-pagination, VAL-UI and VCH-UI through real HTTPS/MFA/backend/PostgreSQL; frontend/local/types/style/audit/OpenSpec gates; record actual results/unrun scope.
-- [ ] 3.2 Update guides/continuity, archive/compare canonical specs, guard integration and remove only authorized proven-merged disposable worktrees.
+- [x] 3.2 Update guides/continuity, archive/compare canonical specs, guard integration and remove only authorized proven-merged disposable worktrees.
