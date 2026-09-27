@@ -1,6 +1,47 @@
 # Production dependency security record
 
-Latest scoped recheck,2026-09-26, independent review followup: required
+## Manual MVP Router resolution — 2026-09-27
+
+Exact `react-router-dom@7.18.4` and its pinned `react-router@7.18.4` resolve
+both previously documented Router findings. The actual predecessor registry audit
+still reported two moderate findings; the post-update `pnpm audit --prod --json`
+exited **0**, with **0 info, low, moderate, high or critical findings** across
+**332 production dependencies**. Required `pnpm audit:production` also exited
+**0**, reporting no known vulnerabilities. No advisory suppression was added.
+
+The [official upgrade guide](https://raw.githubusercontent.com/remix-run/react-router/react-router@7.18.4/docs/upgrading/v6.md)
+and exact registry metadata require Node >=20 and React/React DOM >=18; the retained
+Node 22 and React 18.3.1 meet those requirements. The exact
+[7.18.4 release](https://github.com/remix-run/react-router/releases/tag/react-router@7.18.4)
+exceeds the 7.18.0 fix floor of both historical findings and the 7.18.2 floor of
+[GHSA-qwww-vcr4-c8h2](https://github.com/remix-run/react-router/security/advisories/GHSA-qwww-vcr4-c8h2).
+The latter advisory is currently classified moderate upstream; the older review
+below recorded it as high.
+
+Frozen isolated installation, backend/frontend builds, all **121 frontend tests
+in 22 files**, and **32 focused runtime/scheduler/display-FX provider tests in
+3 suites** passed. Existing assets splat navigation uses absolute destinations;
+the obsolete v6-only MemoryRouter future option was removed from the login test
+without changing assertions. The existing Vite chunk-size warning remains.
+**Real HTTPS navigation/login/MFA/logout and supported manual-provider independence
+release acceptance are still pending.** Dependency/unit results do not establish
+full application, image or production security readiness.
+
+Audited lockfile SHA-256:
+`7db95986acc2a8c4fbef9bf9be34c7296b51fe2aa821bcc215db5d8e36f289ba`.
+Local evidence: `/private/tmp/capital-mvp-runtime-audit-before-live.json`,
+`/private/tmp/capital-mvp-runtime-audit-after.json`,
+`/private/tmp/capital-mvp-runtime-audit-gate.log`,
+`/private/tmp/capital-mvp-router-metadata-live.json`,
+`/private/tmp/capital-mvp-runtime-frozen.log`,
+`/private/tmp/capital-mvp-runtime-build2.log`,
+`/private/tmp/capital-mvp-router-build2.log`,
+`/private/tmp/capital-mvp-router-unit.log`, and
+`/private/tmp/capital-mvp-runtime-isolated-green.log`.
+Initial sandbox DNS failures were not counted as passing registry verification;
+the recorded passing audits used the live registry.
+
+Historical scoped recheck,2026-09-26, independent review followup: required
 `pnpm audit:production` exited0; two moderate Router findings remain, with no
 high/critical findings. Evidence `/private/tmp/capital-reviews-production-audit.log`.
 No dependency/lock changes; the existing findings and release deadline below remain.
