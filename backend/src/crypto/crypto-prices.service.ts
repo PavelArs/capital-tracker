@@ -31,8 +31,9 @@ export class CryptoPricesService {
     @InjectPinoLogger(CryptoPricesService.name)
     private readonly logger: PinoLogger,
   ) {
-    // Initialize on startup
-    this.updatePrices();
+    if (process.env.BACKGROUND_JOBS_ENABLED !== 'false') {
+      void this.updatePrices();
+    }
   }
 
   private isCacheValid(lastUpdated: Date): boolean {
