@@ -482,16 +482,31 @@ Seven exact temporary dependency links unlinked; primary dependencies/sourcework
 retained. Owner Nginx/lock, preview image/volume/stoppedcontainers preserved; no E2E
 resources remain.
 
+## Acquisition review focus — 2026-09-27
+
+`focus-acquisition-review` follows2616db4. Acceptancefe5f713/e81ecd8 preceded product:
+both predecessor9f53b3f4 real journeys failed expected10s oldcorrectionopener focus.
+RootSwaps/CSSfcd3e00, LunaRewards92f9f2c→15d0ba2, rootconsistencyf18a1c7 add explicit
+postcommit editor/history focus, cancel/close return and late-history invalidation.
+Original controller/reset prefixes and19control/form/pagination signatures retained.
+Independent review closed an undefined focus-color token; source/oracle and all19new
+360dark/1440light frames pass review. Minor outline/record-count spacing remains
+nonblocking for whole-screen polish. Detached-origin fallback/pagination source-reviewed.
+Final118frontend/21files PASS3.65s; build1.07s,lint27existingwarnings,strictE2Etypes,
+Biome/audit2moderate/nohighcritical/strict43activeitems pass. RealGREEN3/3 in52.1s:
+WORKFLOW16.0s/REWARD17.5s/SWAP18.0s, actualHTTPS/password/MFA/PostgreSQL22migrations and
+artifact/proxy checks; onlyexternalprovidersfixtures. FEeedaddee6de4eb8719c7fe19d09400716a0d96ea994bef525c426ad99788a810,
+BEdd90a8c5 unchanged. Evidence `/private/tmp/capital-acquisition-focus-*`.
+No fullsuite/liveproviders/security/release/previewrollout. E2Eresourcesempty; preview
+stopped45h with originalimage/volume intact. Archive/integration procedure pending.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04 has its first bounded period-review slice and remains partial;
 FUI-05 has its first Settings slice and remains partial; FUI-06 and owner visual
-approval remain open. Next coherent workflow: finish correction/void/history navigation
-for AssetSwaps.tsx and AssetRewards.tsx, preserving independent draft/recovery controllers
-and existing SWAP-UI/REWARD-UI/WORKFLOW-UI. Read-only Luna inventory found these lack the
-event-only heading focus/origin return already used by TradeJournal. Then wider selected-
-account history/valuation hierarchy: HistoricalAccounting, HistoricalValuation and
+approval remain open. Next coherent workflow: wider selected-account history/valuation
+hierarchy: HistoricalAccounting, HistoricalValuation and
 ValuationHistory, retaining HIST-004-A/VAL-UI/VCH-UI/MPV-UI and current supportedperiods.
 No next-slice product/spec changes have started. Legacy routes remain subordinate;
 Settings visibility is not integration health or complete accounting.

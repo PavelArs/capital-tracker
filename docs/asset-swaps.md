@@ -49,6 +49,13 @@ ordinary USD trade drafts remain separate. The allocation view includes original
 identity, exact original intervals, latest transfer arrival and complete totals across
 pages. History shows saved versions separately from current FIFO evidence.
 
+Row correction/void actions move focus to the named editor. Cancelling the edit
+returns focus to its row action and restores the original blank new-exchange form;
+the independent USD trade draft is retained. Opening history focuses its heading.
+**Закрыть историю** returns to the history button even while loading; a late response
+cannot reopen the closed panel or move focus away from another control. These
+navigation actions do not save or send financial commands.
+
 Limits:1000 active swaps per owner/account/component,10000 swap versions per owner/account,
 10000 shared revision ticks per participant and32 connected accounts. Other documented
 trade/reward/transfer/replay limits remain. Exact stored retries precede live capacity

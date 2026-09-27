@@ -152,7 +152,17 @@ light/dark360/768/1440 frames support review. See
 [Settings guide](settings-workbench.md) and [verification](../openspec/changes/archive/2026-09-27-redesign-settings-workbench/verification.md).
 Broader integration health and legacy currency-manager redesign remain separate.
 
+`focus-acquisition-review` completes bounded swap/reward correction/void/history focus:
+explicit actions enter named editors/history headings, cancel/close return to their
+origin after rendering, and late genuine history delivery cannot steal focus or reopen
+a closed panel. Original reset/recovery/exact command behavior remains. Selected
+SWAP-UI/REWARD-UI/WORKFLOW-UI pass3/3;19new360dark/1440light focus frames were independently
+reviewed. See [verification](../openspec/changes/archive/2026-09-27-focus-acquisition-review/verification.md).
+This does not complete wider analytics, integration health, FUI-06 or owner approval.
+
 Carry these nonblocking review findings into the next suitable UX slice:
+- Give the swap editor focus outline more breathing room before the following record
+  count when polishing the whole screen; current text remains readable.
 - Trade correction/void focus is handled by the workbench; carry this convention to
   remaining operation editors as they are redesigned.
 - Avoid stealing focus when a delayed account creation completes after the owner

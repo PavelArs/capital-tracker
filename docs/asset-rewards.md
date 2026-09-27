@@ -39,6 +39,12 @@ back within the same browser application; a full browser reload is not durable r
 A receipt confirms the original command, not the
 current derived result. Refreshes/corrections preserve the separate trade draft.
 
+Row correction/void actions focus the named editor. Cancelling returns to that row
+action and restores the original blank new-reward form, preserving the independent
+trade draft. History opens with focus on its heading; **Закрыть историю** returns
+to the opener even during loading. Late history delivery cannot reopen a closed
+panel, steal focus or change the editor draft. Navigation does not save commands.
+
 The owner and each account allow1000active rewards and10000saved reward versions.
 The shared account journal has10000revision ticks; edits can also advance connected
 accounts. Old identical commands remain replayable at these limits. A bounded
