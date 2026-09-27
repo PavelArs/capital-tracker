@@ -269,6 +269,10 @@
   border-radius: 4px;
 }
 
+.account-analytics .valuation-history__chart canvas {
+  max-width: 100%;
+}
+
 @media (max-width: 420px) {
   .account-analytics__tool {
     padding: 0.75rem;
