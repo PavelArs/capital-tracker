@@ -417,7 +417,12 @@ FEsha256:78436d00c6a36f0109abe0505dbff20fc21d8fe67642cc605b79d3dc51b3fa41;
 unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-period-workbench-*`.
 Captures cover reviewed profit/linked states; XIRR/TWR have runtime assertions but no
 dedicated card screenshots. Broad accessibility/full suites/release gates remain unrun.
-Archive/integration procedure is the remaining slice task.
+Archived as2026-09-27-redesign-period-review-workbench:3newrequirement blocks match,
+39previouscanonical files remain byte-identical, strict40canonical specs pass and
+active changes are empty. Product/archive55600d8 fast-forward integrated; all6tasks
+complete. Seven exact temporary dependency links unlinked; primary dependencies and
+all worktrees retained. Owner Nginx/lock and stopped preview containers/image/volume
+remain preserved; no E2E resources remain.
 
 ## Next work and remaining whole goal
 

@@ -11,4 +11,4 @@
 ## 3. Verify and archive
 
 - [x] 3.1 Pass four selected real PROFIT/XIRR/TWR/LTWR UI journeys and local frontend/types/style/audit/OpenSpec gates; record actual results, images and unrun checks.
-- [ ] 3.2 Update guides/continuity, archive and compare canonical specs, integrate reviewed commits and remove only disposable resources/temporary links.
+- [x] 3.2 Update guides/continuity, archive and compare canonical specs, integrate reviewed commits and remove only disposable resources/temporary links.

@@ -1,6 +1,6 @@
 # Period-review workbench verification
 
-Status: product, scoped runtime gates, independent review and archive comparison passed; integration procedure pending. Whole-refactor goal remains active.
+Status: archived and integrated; all six slice tasks complete. Whole-refactor goal remains active.
 
 Base97ca8da, root branch refactor/redesign-period-review-workbench. Read AGENTS, target brief/redesign amendment, current continuity, canonical profit/XIRR/TWR specifications, source/controllers and current manually gated CI/CD. Keep/simplify/remove inventory and isolated file ownership are in design.md. No backend/auth/API/migration/dependency/pipeline changes planned.
 
@@ -56,3 +56,10 @@ All39previous canonical files remain byte-identical to97ca8da; all3new requireme
 blocks match the archived delta after blank-line normalization. Generated Purpose
 placeholder replaced with the actual capability purpose. Strict40canonical specs pass;
 active changes are empty. Logs `...-canonical.log` and `...-specs-archived.log`.
+
+Product/archive55600d8 fast-forward integrated into refactor/brownfield-baseline after
+guarding its starting97ca8da HEAD, sole owner Nginx edit and protected file hashes.
+Only seven exact temporary dependency symlinks in the integration/QA/CSS worktrees
+were unlinked; all primary dependencies and source worktrees remain. Task3.2 was then
+completed. Final bookkeeping changes documentation only and claims no extra product
+test run or whole-redesign completion.
