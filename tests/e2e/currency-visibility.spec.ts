@@ -184,7 +184,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
     // Genuine predecessor RED: the original catch silently loses this actual backend response.
     await expect(
       page
-        .getByRole('region', { name: 'Видимость валют', exact: true })
+        .locator('#settings-panel')
         .getByRole('alert')
         .filter({ hasText: 'Не удалось загрузить списки валют. Повторите загрузку.' }),
     ).toBeVisible({ timeout: 10_000 });
