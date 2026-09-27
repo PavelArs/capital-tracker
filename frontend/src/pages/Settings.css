@@ -14,6 +14,7 @@
 .settings-header h1 {
   margin: 0 0 0.5rem;
   color: var(--text-color);
+  font-size: clamp(1.5rem, 4vw, 2rem);
 }
 
 .settings-header .settings-description {
@@ -140,6 +141,10 @@
 .settings-control input,
 .settings-control button {
   min-height: 44px;
+}
+
+.settings-control select {
+  transition: none;
 }
 
 .settings-control select:focus,
