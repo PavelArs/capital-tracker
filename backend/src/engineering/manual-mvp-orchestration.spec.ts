@@ -37,7 +37,9 @@ if(tool==='flock'){process.exit(mode==='lock'?1:0);}
 if(tool==='stat'){process.stdout.write(a[1]==='%a'?'600':String(fs.statSync(a[2]).size));}
 if(tool==='jq'){
  const q=a[a.length-1];let v='true';
- if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
+ if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major')?'18':'16';
+ else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
+ else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
  else if(q.includes('volumes[]'))v=path.join(root,'mfa-key');
  else if(q.includes('BACKGROUND_JOBS_ENABLED'))v='false';
@@ -77,7 +79,8 @@ if(tool==='docker'){
  }
  if(a[0]==='exec'){
   const s=a.join(' ');
-  if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
+  if(s.includes('PG_VERSION'))process.stdout.write('16');
+  else if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore')process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
   else if(s.includes('pg_dump'))process.stdout.write(mode==='fingerprint'&&a[1]!=='db'?'DIFFERENT_RESTORED_ROWS\\n':'SYNTHETIC_LOGICAL_ROWS_AND_SCHEMA\\n');
@@ -344,4 +347,38 @@ describe('MVP-003: explicit fresh-install absence preflight', () => {
       ),
     ).toEqual([]);
   });
+});
+
+describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
+  it.each([
+    ['existing-major', 'existing'],
+    ['existing-layout', 'existing'],
+    ['fresh-old-major', 'fresh'],
+    ['fresh-old-layout', 'fresh'],
+  ])(
+    'refuses %s before downtime, database creation, backup or migration',
+    (failure, installation) => {
+      const { result, calls } = release(failure, installation, 'preflight');
+      expect(calls.some((call) => call.tool === 'docker' && call.args.includes('config'))).toBe(
+        true,
+      );
+      expect(result.status).not.toBe(0);
+      expect(
+        calls.filter(
+          (call) =>
+            call.tool === 'docker' &&
+            (call.args.includes('pull') ||
+              call.args.includes('stop') ||
+              call.args.includes('up') ||
+              call.args[0] === 'run' ||
+              call.args.join(' ').includes('pg_dump')),
+        ),
+      ).toEqual([]);
+      expect(calls.filter(migration)).toEqual([]);
+      expect(readFileSync(join(directory, 'docker-compose.yml'), 'utf8')).toBe(
+        '# Synthetic previous configuration\n',
+      );
+      expect(existsSync(join(directory, '.env.images'))).toBe(false);
+    },
+  );
 });

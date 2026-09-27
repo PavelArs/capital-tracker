@@ -19,6 +19,11 @@ Task2.3 has approved workflow/script implementation and lower-level contracts; a
 
 Tasks3.1/3.2 have approved implementation and integrated synthetic failure/recovery tests. Owner-side assessment/preflight, verified server backup/restore and actual migration/application rollout remain separate required evidence; keep these tasks open.
 
+## PostgreSQL18 fresh-target acceptance
+
+- [ ] 3.3 Pin fresh PostgreSQL18 and its versioned PGDATA/parent volume layout; preserve existing PostgreSQL16 defaults/data/preview and prove fail-closed major/layout mismatch before downtime or mutation.
+- [ ] 3.4 Run actual PostgreSQL18 current migrations and retained exact release journeys, encrypted backup/checksum/disconnected restore with logical schema/data equality. Record image/version and source-preservation evidence separately from historical PostgreSQL16 results.
+
 ## 4. Verify and deploy
 
 - [ ] 4.1 Independent source/oracle review; baseline lint/build/unit/types/spec/audit gates, actual isolated PostgreSQL migration/backup/restore/artifact probes and existing19critical real journeys in verification.md. Record any explicit fixture setup and retain exact oracles.

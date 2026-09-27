@@ -45,3 +45,22 @@ Required existing manual/authentication acceptance and production dependency/sec
 - **WHEN** the candidate passes staged gates and Actions deploys it safely
 - **THEN** existing manual + CSV capabilities work on the server with real authentication and recorded release/recovery evidence
 - **AND** automatic networks, AI and whole-target completion are not claimed
+
+### Requirement: MVP-006 PostgreSQL18 fresh installation preserves existing major versions
+The new manual MVP installation SHALL use a pinned tested PostgreSQL18 image. Fresh acceptance SHALL execute the current migration ledger, retained exact financial/security journeys and encrypted backup/checksum/isolated restore with logical schema/data equality on PostgreSQL18. PostgreSQL16 rehearsal results SHALL remain historical evidence, not PostgreSQL18 verification. Existing PostgreSQL16 volumes and the protected preview SHALL remain untouched. Application promotion SHALL NOT implicitly change a database major version, relocate existing data or perform pg_upgrade; a major upgrade requires a separate data-preserving plan.
+
+#### Scenario: MVP-006-A Verify a fresh PostgreSQL18 installation
+- **GIVEN** read-only assessment proves no unexplained application data and fresh mode is explicitly selected
+- **WHEN** PostgreSQL18 initializes a new dedicated volume
+- **THEN** the mounted volume covers /var/lib/postgresql and PGDATA uses /var/lib/postgresql/18/docker
+- **AND** actual PostgreSQL18 migration/schema and exact decimal/JSON/bytea data backup/restore evidence pass before release mutation
+
+#### Scenario: MVP-006-B Refuse an implicit database major upgrade
+- **GIVEN** an existing PostgreSQL16 installation or mismatched database major/layout
+- **WHEN** a release candidate requests PostgreSQL18 or a different mount layout
+- **THEN** preflight refuses before pulling/starting replacement database services, stopping applications, dumping or migrating
+- **AND** existing volumes, data/configuration and preview remain unchanged; compatible same-major application release remains allowed
+
+#### Scenario: MVP-006-C Refuse an incorrect fresh layout
+- **WHEN** fresh mode requests PostgreSQL16, the old /var/lib/postgresql/data mount, or initialized major is not18
+- **THEN** release refuses without implicitly treating old data as an empty PostgreSQL18 installation
