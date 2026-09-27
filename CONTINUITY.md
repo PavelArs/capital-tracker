@@ -569,8 +569,10 @@ bundle/http2 warnings and2moderate advisories remain; no high/critical dependenc
 No full-suite, release, owner UX approval or preview deployment claim.
 
 Archived as2026-09-27-redesign-currency-visibility:43old specs byte-identical,3new
-blocks match,44strict canonical specs pass, no active change. Guarded integration and
-three-worktree cleanup remain the final procedural step. Root owns that integration. Main Nginx/lock hashes remain
+blocks match,44strict canonical specs pass, no active change. Archive c7a8090 was fast-forward integrated. All three completed currency worktrees
+were removed without force; all six change tasks are complete. Aggregate110paths are
+absent,107named branch HEADs retained,3detached reviewHEADs ancestral. Only main remains
+registered at this checkpoint. Main Nginx/lock hashes remain
 unchanged; preview remains stopped with its original image, files and durable volume.
 No backend/schema/auth/provider/deployment change. Whole frontend and target remain open.
 
@@ -587,6 +589,13 @@ Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.
+
+Planning estimate reviewed against the remaining whole target on2026-09-27: roughly
+32–50 small OpenSpec changes including optional AI, not a fixed backlog or percentage.
+Existing-screen UX4–7; whole-portfolio analytics4–6; automatic prices/history/FX4–6;
+six networks plus shared synchronization/reconciliation/import12–18; AI2–3; security/
+release/restore5–8; final consolidation1–2. UI for new features is counted in its feature
+block, not again in frontend. Provider feasibility and discovered defects can change it.
 
 Still required: broader import/automatic reward and chain reconciliation; automatic
 prices/retention/history; whole-portfolio allocation/cash UI; six network adapters with

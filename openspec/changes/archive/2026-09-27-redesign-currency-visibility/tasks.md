@@ -11,4 +11,4 @@
 ## 3. Verify and integrate
 
 - [x] 3.1 Pass real CVIS-UI and retained DFX-UI through HTTPS/MFA/PostgreSQL, local tests/build/lint/types/style/audit/strict OpenSpec; record actual evidence/unrun checks.
-- [ ] 3.2 Update guides/continuity, archive/compare canonical specs, guard integration and remove proven merged temporary worktrees.
+- [x] 3.2 Update guides/continuity, archive/compare canonical specs, guard integration and remove proven merged temporary worktrees.

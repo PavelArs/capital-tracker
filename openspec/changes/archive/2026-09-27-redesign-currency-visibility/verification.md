@@ -1,7 +1,7 @@
 # Currency visibility verification
 
 Status: implementation, required scoped verification and independent source/visual review
-pass. Archived after the required gates; integration cleanup follows. Whole product/redesign
+pass. Archived and integrated after the required gates; temporary worktrees removed. Whole product/redesign
 remains incomplete.
 
 Base `1fd044f`, 43 canonical specs. Actual proposal/status/instructions(proposal/design/specs/
@@ -117,3 +117,24 @@ acceptance or independent-review task remained. After archive, all43previous can
 files are byte-identical; all3added blocks match the delta;44canonical specs pass strict
 validation and active changes are empty. New Purpose text describes the actual scope.
 Evidence: `...-archive.log`, `...-compare-specs.log`, `...-archived-specs.log`.
+
+
+## Integration and cleanup completed
+
+Archive commit `c7a8090` was fast-forward integrated into `refactor/brownfield-baseline`.
+A separately reviewed preflight rechecked every HEAD, status, patch equivalence,
+dependency link and ignored artifact. The six runtime files were synthetic E2E
+fixtures with expected certificate subjects, no symlinks or preview subtree. All
+36 final frames had already been copied outside the worktrees. Seven dependency
+links were unlinked; real dependency directories remain in the primary checkout.
+
+Normal `git worktree remove` deleted the three completed currency worktrees, with
+branches retained at their recorded HEADs. Aggregate verification confirms 110 removed
+paths absent, 107 named source branches unchanged and three detached review HEADs
+ancestral. Only the primary checkout remains; owner Nginx/lock hashes, durable preview
+and original repositories/data are preserved. All six tasks are now complete.
+
+Evidence: `/private/tmp/capital-currency-integration-cleanup.log`,
+`capital-currency-integration-cleanup.json`, `capital-currency-all-cleanup-verification.log`.
+Whole target work remains active; this does not authorize production deployment or
+premature original-project consolidation.

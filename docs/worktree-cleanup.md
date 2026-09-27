@@ -102,3 +102,23 @@ Evidence: `/private/tmp/capital-integrate-analytics-cleanup.py`,
 `capital-analytics-integration-cleanup.log`, `capital-analytics-integration-cleanup.json`
 and `capital-all-worktrees-cleanup-verification.log`. Future independent changes may
 create new worktrees; remove them after verified integration under the same guards.
+
+
+## Currency visibility followup
+
+After the independently reviewed currency visibility change passed its scoped gates,
+archive `c7a8090` was fast-forward integrated into the primary branch. The three currency
+worktrees passed current HEAD/status and ancestry/patch-equivalence checks. Their seven
+validated dependency links pointed only to main dependency directories. The six
+synthetic E2E runtime files had expected names/certificate subjects, no symlinks or
+preview subtree; all 36 final frames were already copied outside the worktrees.
+Non-force `git worktree remove` removed all three; all source branches remain.
+
+Aggregate verified total is now **110 integrated worktrees removed**, with **107 named
+source branches preserved** and three detached review HEADs ancestral. Only the primary
+checkout remains registered at this checkpoint. Main Nginx/lock hashes, preview files/
+volume/image, actual dependency directories and original repositories remain unchanged.
+Future active worktrees should be removed after their verified integration.
+
+Evidence: `/private/tmp/capital-currency-integration-cleanup.{log,json}` and
+`capital-currency-all-cleanup-verification.log`. No original-project consolidation.
