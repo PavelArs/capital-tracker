@@ -13,7 +13,7 @@ candidate=${RELEASE_COMPOSE_FILE:?Required candidate Compose file}
 runtime=${RELEASE_RUNTIME_FILE:-$root/.env.release}
 cd "$root"
 for tool in docker jq flock curl openssl sha256sum; do command -v "$tool" >/dev/null; done
-[[ -f .env && -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
+[[ -f .env && -f "$root/docker-compose.yml" && -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
 # This lock serializes server operations independently of Actions concurrency.
 exec 9>"$root/.release.lock"
 flock -n 9 || { echo 'Another release holds the server lock'; exit 1; }
@@ -70,6 +70,7 @@ pg_image=$(docker inspect "$db" --format '{{.Image}}')
 restore_container="capital-release-restore-${commit:0:12}-$$"
 state="$root/releases/$commit"
 mkdir -p "$state" "$root/backups"
+cp "$root/docker-compose.yml" "$state/previous-compose.yml"
 backup="$root/backups/$commit-$(date -u +%Y%m%dT%H%M%SZ).dump.enc"
 apps_stopped=false
 success=false
@@ -79,6 +80,7 @@ cleanup() {
   docker container rm -f "$restore_container" >/dev/null 2>&1 || true
   if [[ $success != true && $apps_stopped == true ]]; then
     if [[ $(ledger) == "$before" ]]; then
+      candidate="$state/previous-compose.yml"
       if BACKEND_IMAGE="$previous_backend" FRONTEND_IMAGE="$previous_frontend" dc up -d --no-deps --wait --wait-timeout 120 backend frontend && smoke; then
         echo 'Release failed; previous application pair readiness and privacy verified against unchanged schema'
       else
