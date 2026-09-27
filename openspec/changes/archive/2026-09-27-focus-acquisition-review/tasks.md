@@ -11,4 +11,4 @@
 ## 3. Verify and archive
 
 - [x] 3.1 Pass selected SWAP-UI/REWARD-UI/WORKFLOW-UI through real PostgreSQL/HTTPS/MFA and required local frontend/types/style/audit/OpenSpec gates; record actual evidence/unrun checks.
-- [ ] 3.2 Update guides/continuity, archive/compare canonical specs, integrate reviewed commits and clean only disposable resources/temporary links.
+- [x] 3.2 Update guides/continuity, archive/compare canonical specs, integrate reviewed commits and clean only disposable resources/temporary links.

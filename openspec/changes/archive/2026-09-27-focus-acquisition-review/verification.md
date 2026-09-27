@@ -1,7 +1,7 @@
 # Acquisition review focus verification
 
-Status: product/source/oracle/visual review and selected runtime verification pass;
-archive/integration procedure remains pending.
+Status: archived and integrated; all six slice tasks complete. The whole refactor
+and full frontend redesign remain incomplete.
 
 Base2616db4, isolated rootbranch refactor/focus-acquisition-review;42canonical specs.
 Scope/inventory/ownership in design.md. CI/CD inspected; production stays manually
@@ -115,4 +115,12 @@ after trailing blank normalization. The first temporary comparison parser used a
 heading regex and failed its block-count assertion; restricting the heading to one line
 made the actual comparison pass. This did not change specification text beyond normal
 EOF whitespace. Log `...-canonical.log`. Strict42canonical specs PASS, no activechanges;
-`...-specs-archived.log`. Integration and exact temporary-link cleanup remain pending.
+`...-specs-archived.log`.
+
+Archive/product60c28d8 fast-forward integrated into refactor/brownfield-baseline after
+checking starting2616db4, sole owner Nginx edit and protected hashes. Exactly7temporary
+dependency symlinks in root/QA/Rewards worktrees were unlinked only after validating all
+targets; primary dependency directories and every source worktree remain. Task3.2 is
+complete. Final bookkeeping changes only documentation; no further product test rerun
+or whole-goal completion claim. No owner data, original folders or preview resources
+were removed; no remote push or deployment occurred.

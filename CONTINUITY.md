@@ -498,7 +498,11 @@ WORKFLOW16.0s/REWARD17.5s/SWAP18.0s, actualHTTPS/password/MFA/PostgreSQL22migrat
 artifact/proxy checks; onlyexternalprovidersfixtures. FEeedaddee6de4eb8719c7fe19d09400716a0d96ea994bef525c426ad99788a810,
 BEdd90a8c5 unchanged. Evidence `/private/tmp/capital-acquisition-focus-*`.
 No fullsuite/liveproviders/security/release/previewrollout. E2Eresourcesempty; preview
-stopped45h with originalimage/volume intact. Archive/integration procedure pending.
+stopped45h with originalimage/volume intact. Archived2026-09-27-focus-acquisition-review:
+41othercanonicalfiles byte-identical,3oldrequirements preserved,2newblocks match;
+strict42canonical specs pass/noactivechanges. Archive/product60c28d8 fast-forward
+integrated; all6tasks complete. Exactly7temporarydependencylinks unlinked; primary
+dependencies and allsourceworktrees retained. Owner Nginx/lock unchanged.
 
 ## Next work and remaining whole goal
 
