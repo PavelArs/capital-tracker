@@ -477,7 +477,10 @@ and separate generalproductvisualreview have no blocking findings. Captures cove
 preferences/freshconversion, not every error-state or a complete accessibility audit.
 Archived as2026-09-27-redesign-settings-workbench:3newrequirement blocks match,
 41previouscanonical files remain byte-identical; strict42canonical specs pass and active
-changes empty. Guarded integration and temporary-link cleanup pending.
+changes empty. Product/archive d69ea20 fast-forward integrated; all6tasks complete.
+Seven exact temporary dependency links unlinked; primary dependencies/sourceworktrees
+retained. Owner Nginx/lock, preview image/volume/stoppedcontainers preserved; no E2E
+resources remain.
 
 ## Next work and remaining whole goal
 

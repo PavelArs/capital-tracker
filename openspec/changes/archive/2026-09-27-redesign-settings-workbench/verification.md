@@ -1,6 +1,6 @@
 # Settings workbench verification
 
-Status: product and scoped verification complete; archive/integration pending. Whole-refactor goal remains active.
+Status: archived and integrated; all six slice tasks complete. Whole-refactor goal remains active.
 
 Base628581c, isolated rootbranchrefactor/redesign-settings-workbench;41canonical specs/no prior active change. Read AGENTS, continuity/targetredesignamendment, Settings/switch/FX source and daily-display-fx spec/DFX-UI, current manually gated CI/CD. Inventory/ownership in design.md. No backend/API/auth/schema/dependency/pipeline changes planned.
 
@@ -51,3 +51,5 @@ Independent source/oracle and all12FX-frame review found no blocking findings: [
 OpenSpec1.2.0 `openspec archive redesign-settings-workbench --yes` exited0 and created `2026-09-27-redesign-settings-workbench`, synchronizing3requirements. CLI warned5/6tasks because task3.2 includes archive/comparison/integration/cleanup, not unfinished product verification. It stays pending until that procedure completes. Log `/private/tmp/capital-settings-workbench-archive.log`.
 
 All41previous canonical files remain byte-identical to628581c; all3newrequirement blocks match archived delta after blank-line normalization. Generated Purpose placeholder and EOF blank line replaced with the concrete purpose and normal file ending. Strict42canonical specs pass; active changes empty. Logs `...-canonical.log` and `...-specs-archived.log`.
+
+Product/archive d69ea20 fast-forward integrated into refactor/brownfield-baseline after guarding starting628581c HEAD, sole owner Nginx edit and protected hashes. Only seven exact temporary dependency links in integration/QA/CSS worktrees were unlinked after validating all targets; primary dependencies and all source worktrees remain. Task3.2 is complete. Final bookkeeping changes documentation only, with no additional product test run or whole-redesign completion claim.
