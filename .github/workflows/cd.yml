@@ -1,458 +1,60 @@
-name: Deploy to Production
-
+name: Read-only Deployment Inventory
+# Legacy automatic production deployment is contained. This workflow cannot deploy.
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      skip_backup:
-        description: "Skip database backup"
-        required: false
-        default: false
-        type: boolean
-      version_bump:
-        description: "Version bump type (auto, major, minor, patch)"
-        required: false
-        default: "auto"
-        type: choice
-        options:
-          - auto
-          - major
-          - minor
-          - patch
-
+permissions:
+  contents: read
 concurrency:
-  group: deploy-production
+  group: deployment-inventory
   cancel-in-progress: false
-
-env:
-  GHCR_REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/capital-tracker-backend
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/capital-tracker-frontend
-  NODE_VERSION: "22"
-  HEALTH_CHECK_INTERVAL: 5
-  HEALTH_CHECK_RETRIES: 6
-
 jobs:
-  # ============================================
-  # Version Calculation
-  # ============================================
-  version:
-    name: Calculate Version
+  inventory:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      previous_version: ${{ steps.version.outputs.previous_version }}
-      commit_short: ${{ steps.version.outputs.commit_short }}
-      changelog: ${{ steps.changelog.outputs.changelog }}
-      commit_count: ${{ steps.changelog.outputs.commit_count }}
-
+    timeout-minutes: 5
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Calculate semantic version
-        id: version
+      - name: Inspect existing deployment identity with pinned SSH
         env:
-          BUMP_INPUT: ${{ github.event.inputs.version_bump || 'auto' }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
         run: |
-          COMMIT_SHORT=${GITHUB_SHA:0:7}
-          echo "commit_short=$COMMIT_SHORT" >> $GITHUB_OUTPUT
-
-          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
-          if [ -z "$LATEST_TAG" ]; then
-            LATEST_TAG="v0.0.0"
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_USER" =~ ^[A-Za-z0-9_-]+$ ]]
+          port=${DEPLOY_SSH_PORT:-22}
+          [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/inventory-key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/inventory-key ~/.ssh/known_hosts
+          ssh -p "$port" -i ~/.ssh/inventory-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'INVENTORY'
+          set -Eeuo pipefail
+          printf 'deployment_user=%s\n' "$(id -un)"
+          printf 'project_directory_writable=%s\n' "$(test -w /opt/capital-tracker && echo yes || echo no)"
+          printf 'existing_env_readable=%s\n' "$(test -r /opt/capital-tracker/.env && echo yes || echo no)"
+          printf 'noninteractive_sudo=%s\n' "$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
+          if [[ -r /opt/capital-tracker/.env ]]; then
+            echo 'existing_setting_names:'
+            sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' /opt/capital-tracker/.env | sort -u
           fi
-          echo "previous_version=$LATEST_TAG" >> $GITHUB_OUTPUT
-
-          VERSION=${LATEST_TAG#v}
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          PATCH=$(echo "$VERSION" | cut -d. -f3)
-
-          BUMP_TYPE="$BUMP_INPUT"
-          if [ "$BUMP_TYPE" = "auto" ]; then
-            if [ "$LATEST_TAG" != "v0.0.0" ]; then
-              COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"%s" 2>/dev/null || echo "")
-            else
-              COMMITS=$(git log --pretty=format:"%s" -20 2>/dev/null || echo "")
-            fi
-            if echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?!:|BREAKING CHANGE"; then
-              BUMP_TYPE="major"
-            elif echo "$COMMITS" | grep -qiE "^(feat|feature)(\(.*\))?:"; then
-              BUMP_TYPE="minor"
-            else
-              BUMP_TYPE="patch"
-            fi
-          fi
-
-          case $BUMP_TYPE in
-            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
-            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
-            patch) PATCH=$((PATCH + 1)) ;;
-          esac
-
-          echo "version=v${MAJOR}.${MINOR}.${PATCH}" >> $GITHUB_OUTPUT
-
-      - name: Generate changelog
-        id: changelog
-        env:
-          LATEST_TAG: ${{ steps.version.outputs.previous_version }}
-        run: |
-          if [ "$LATEST_TAG" != "v0.0.0" ] && git rev-parse "$LATEST_TAG" >/dev/null 2>&1; then
-            COMMITS=$(git log "${LATEST_TAG}..HEAD" --pretty=format:"- %s (%h)" 2>/dev/null | head -20)
-            COMMIT_COUNT=$(git rev-list "${LATEST_TAG}..HEAD" --count 2>/dev/null || echo "0")
+          if docker info >/dev/null 2>&1; then
+            echo 'docker_access=yes'
+            containers=$(docker ps -a --format '{{.Names}} {{.Status}}')
+            volumes=$(docker volume ls --format '{{.Name}}')
+            echo 'application_container_metadata:'
+            grep -E '^capital_tracker_' <<<"$containers" || true
+            echo 'application_volume_names:'
+            grep -Ei 'capital|tracker' <<<"$volumes" || true
           else
-            COMMITS=$(git log --pretty=format:"- %s (%h)" -20 2>/dev/null)
-            COMMIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo "0")
+            echo 'docker_access=no'
           fi
-
-          {
-            echo "changelog<<CHANGELOG_EOF"
-            echo "$COMMITS" | head -15
-            echo "CHANGELOG_EOF"
-          } >> $GITHUB_OUTPUT
-
-          echo "commit_count=$COMMIT_COUNT" >> $GITHUB_OUTPUT
-
-  # ============================================
-  # Build Backend Docker Image
-  # ============================================
-  build-backend:
-    name: Build Backend Image
-    runs-on: ubuntu-latest
-    needs: version
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push backend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.version }}
-            ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.commit_short }}
-            ${{ env.BACKEND_IMAGE }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-
-  # ============================================
-  # Build Frontend Docker Image
-  # ============================================
-  build-frontend:
-    name: Build Frontend Image
-    runs-on: ubuntu-latest
-    needs: version
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.GHCR_REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.version }}
-            ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.commit_short }}
-            ${{ env.FRONTEND_IMAGE }}:latest
-          build-args: |
-            VITE_API_URL=/api
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          provenance: false
-
-  # ============================================
-  # Deploy to Production
-  # ============================================
-  deploy:
-    name: Deploy
-    runs-on: ubuntu-latest
-    needs: [version, build-backend, build-frontend]
-    permissions:
-      contents: write
-
-    outputs:
-      backup_filename: ${{ steps.backup-db.outputs.backup_filename }}
-      previous_backend: ${{ steps.get-versions.outputs.current_backend }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-
-      - name: Add host to known hosts
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-
-      - name: Get current running version
-        id: get-versions
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          CURRENT_BACKEND=$(ssh "${DEPLOY_USER}@${DEPLOY_HOST}" \
-            "docker inspect capital_tracker_backend --format='{{.Config.Image}}' 2>/dev/null || echo 'none'")
-          echo "current_backend=$CURRENT_BACKEND" >> $GITHUB_OUTPUT
-
-      - name: Create database backup
-        id: backup-db
-        if: github.event.inputs.skip_backup != 'true'
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          BACKUP_FILENAME="capital-tracker-backup-$(date +%Y%m%d-%H%M%S).sql.gz"
-
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "BACKUP_FILENAME=$BACKUP_FILENAME bash -s" << 'BACKUP_SCRIPT'
-            set -e
-            cd /opt/capital-tracker
-            mkdir -p backups
-
-            DB_NAME=$(grep DB_NAME .env 2>/dev/null | cut -d '=' -f2 || echo 'capital_tracker')
-            DB_USER=$(grep DB_USERNAME .env 2>/dev/null | cut -d '=' -f2 || echo 'postgres')
-
-            POSTGRES_CONTAINER=$(docker compose ps -q postgres 2>/dev/null)
-            if [ -z "$POSTGRES_CONTAINER" ]; then
-              POSTGRES_CONTAINER=$(docker ps -q -f name=capital_tracker_db)
-            fi
-
-            if [ -z "$POSTGRES_CONTAINER" ]; then
-              echo "Postgres container not found, skipping backup"
-              exit 0
-            fi
-
-            docker exec "$POSTGRES_CONTAINER" pg_dump -U "$DB_USER" -d "$DB_NAME" | gzip > "backups/$BACKUP_FILENAME"
-            ls -t backups/capital-tracker-backup-*.sql.gz | tail -n +11 | xargs -r rm
-          BACKUP_SCRIPT
-
-          echo "backup_filename=$BACKUP_FILENAME" >> $GITHUB_OUTPUT
-
-      - name: Deploy application
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          NEW_BACKEND_IMAGE: ${{ env.BACKEND_IMAGE }}:${{ needs.version.outputs.version }}
-          NEW_FRONTEND_IMAGE: ${{ env.FRONTEND_IMAGE }}:${{ needs.version.outputs.version }}
-        run: |
-          scp docker-compose.yml "${DEPLOY_USER}@${DEPLOY_HOST}:/opt/capital-tracker/docker-compose.yml"
-
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "NEW_BACKEND_IMAGE=$NEW_BACKEND_IMAGE NEW_FRONTEND_IMAGE=$NEW_FRONTEND_IMAGE bash -s" << 'DEPLOY_SCRIPT'
-            set -e
-            cd /opt/capital-tracker
-
-            # Update image references in .env
-            for VAR in BACKEND_IMAGE FRONTEND_IMAGE; do
-              eval VALUE=\$"NEW_${VAR}"
-              grep -q "^${VAR}=" .env 2>/dev/null && \
-                sed -i "s|^${VAR}=.*|${VAR}=$VALUE|" .env || \
-                echo "${VAR}=$VALUE" >> .env
-            done
-
-            docker compose pull
-            docker compose down
-            docker compose up -d
-            docker image prune -f
-          DEPLOY_SCRIPT
-
-      - name: Wait for services to initialize
-        run: sleep 10
-
-      - name: Health check
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          MAX_ATTEMPTS=${{ env.HEALTH_CHECK_RETRIES }}
-          ATTEMPT=0
-
-          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            echo "Health check attempt $ATTEMPT/$MAX_ATTEMPTS..."
-
-            if ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
-              echo "Health check passed"
-              exit 0
-            fi
-
-            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
-              sleep ${{ env.HEALTH_CHECK_INTERVAL }}
-            fi
-          done
-
-          echo "Health check failed"
-          exit 1
-
-      - name: Create version tag
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
-
-  # ============================================
-  # Rollback on Failure
-  # ============================================
-  rollback:
-    name: Rollback on Failure
-    runs-on: ubuntu-latest
-    needs: [version, deploy]
-    if: failure() && needs.deploy.outputs.previous_backend != 'none'
-
-    steps:
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
-
-      - name: Add host to known hosts
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          mkdir -p ~/.ssh
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
-
-      - name: Rollback deployment
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          PREV_BACKEND: ${{ needs.deploy.outputs.previous_backend }}
-        run: |
-          ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "PREV_BACKEND=$PREV_BACKEND bash -s" << 'ROLLBACK_SCRIPT'
-            set -e
-            cd /opt/capital-tracker
-
-            if [ -n "$PREV_BACKEND" ] && [ "$PREV_BACKEND" != "none" ]; then
-              grep -q "^BACKEND_IMAGE=" .env 2>/dev/null && \
-                sed -i "s|^BACKEND_IMAGE=.*|BACKEND_IMAGE=$PREV_BACKEND|" .env || \
-                echo "BACKEND_IMAGE=$PREV_BACKEND" >> .env
-            fi
-
-            docker compose down
-            docker compose up -d
-            sleep 20
-          ROLLBACK_SCRIPT
-
-      - name: Verify rollback health
-        env:
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-        run: |
-          ATTEMPTS=0
-          while [ $ATTEMPTS -lt ${{ env.HEALTH_CHECK_RETRIES }} ]; do
-            ATTEMPTS=$((ATTEMPTS + 1))
-            if ssh "${DEPLOY_USER}@${DEPLOY_HOST}" "curl -sf http://localhost:3000/health" >/dev/null 2>&1; then
-              echo "Rollback successful"
-              exit 0
-            fi
-            sleep 10
-          done
-          echo "Rollback health check failed - manual intervention required"
-          exit 1
-
-  # ============================================
-  # Notifications
-  # ============================================
-  notify:
-    name: Send Notifications
-    runs-on: ubuntu-latest
-    needs: [version, deploy, rollback]
-    if: always() && (needs.deploy.result == 'success' || needs.deploy.result == 'failure')
-
-    steps:
-      - name: Send Telegram notification
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          DEPLOY_STATUS: ${{ needs.deploy.result }}
-          ROLLBACK_STATUS: ${{ needs.rollback.result }}
-          VERSION: ${{ needs.version.outputs.version }}
-          PREV_VERSION: ${{ needs.version.outputs.previous_version }}
-          COMMIT_SHORT: ${{ needs.version.outputs.commit_short }}
-          COMMIT_COUNT: ${{ needs.version.outputs.commit_count }}
-          CHANGELOG: ${{ needs.version.outputs.changelog }}
-          BACKUP_FILENAME: ${{ needs.deploy.outputs.backup_filename }}
-          BACKEND_IMG: ghcr.io/${{ github.repository_owner }}/capital-tracker-backend
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-            echo "Telegram secrets not configured, skipping notification"
-            exit 0
-          fi
-
-          REPO_URL="https://github.com/${REPO}"
-          SAFE_CHANGELOG=$(echo "$CHANGELOG" | sed 's/`//g' | sed 's/\*/•/g' | sed 's/_/-/g' | head -15)
-
-          if [ "$DEPLOY_STATUS" = "success" ]; then
-            MESSAGE="<b>Capital Tracker Deployed</b>
-<b>Version:</b> <code>${VERSION}</code>
-<b>Changes:</b> ${COMMIT_COUNT} commit(s)
-<b>Image:</b> <code>${BACKEND_IMG}:${VERSION}</code>
-
-${SAFE_CHANGELOG}
-
-<a href=\"${REPO_URL}/compare/${PREV_VERSION}...${VERSION}\">Full Changelog</a>"
-          else
-            MESSAGE="<b>Capital Tracker Deploy FAILED</b>
-<b>Version:</b> <code>${VERSION}</code> (attempted)
-<b>Rollback:</b> ${ROLLBACK_STATUS}
-<a href=\"${REPO_URL}/actions/runs/${RUN_ID}\">View Details</a>"
-          fi
-
-          PAYLOAD=$(jq -n \
-            --arg chat_id "$TELEGRAM_CHAT_ID" \
-            --arg text "$MESSAGE" \
-            '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}')
-
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "$PAYLOAD" || echo "Failed to send Telegram notification"
+          printf 'capital_vhost_enabled=%s\n' "$(test -L /etc/nginx/sites-enabled/capital.pavelars.ru && echo yes || echo no)"
+          INVENTORY
+      - name: Remove ephemeral runner SSH credential
+        if: always()
+        run: rm -f ~/.ssh/inventory-key
