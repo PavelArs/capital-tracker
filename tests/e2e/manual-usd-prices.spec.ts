@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { type Locator, type Page, type Request, expect } from '@playwright/test';
 import {
   browserCsrfAdmissions,
   expectAdmissionDelta,
@@ -241,7 +241,7 @@ test('PRICE-1 / PRICE-2 / PRICE-3: real private API records exact manual version
 
 test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed command and ignores a late instrument read', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const account = await api.account(`Manual-price UI ${randomUUID()}`);
   const firstInstrument = await api.instrument(`UI shared ticker A ${randomUUID()}`, 'SAME');
@@ -264,6 +264,174 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   const instrumentPicker = page.getByLabel('Инструмент', { exact: true });
   const load = page.getByRole('button', { name: 'Загрузить цены', exact: true });
   const save = page.getByRole('button', { name: 'Сохранить цену', exact: true });
+
+  const dateInput = page.getByLabel('Дата цены (UTC)', { exact: true });
+  const editPrice = page.getByLabel('Цена за единицу, USD', { exact: true });
+  const editor = page.getByRole('region', { name: 'Редактирование цены', exact: true });
+  const currentRegion = page.getByRole('region', { name: 'Сохранённые цены', exact: true });
+  const historyRegion = page.getByRole('region', { name: 'История цены', exact: true });
+  const rulesSummary = page.getByText('Правила ручных цен', { exact: true });
+  await expect(rulesSummary).toBeVisible();
+  expect(await rulesSummary.evaluate((node) => node.tagName)).toBe('SUMMARY');
+  const rules = rulesSummary.locator('..');
+  expect(await rules.evaluate((node) => node.tagName)).toBe('DETAILS');
+  await expect(rules).not.toHaveAttribute('open', '');
+  const header = page.locator('.prices-page > header');
+  for (const scope of [/ручн|вручную/i, /не\s*свер|несверенн/i, /отдельн|точк|непрерывн/i]) {
+    await expect(header.locator('p').filter({ hasText: scope }).first()).toBeVisible();
+  }
+  await expect(instrumentPicker).toHaveAccessibleDescription(/UUID|идентификатор/i);
+  await expect(dateInput).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
+  await expect(editPrice).toHaveAccessibleDescription(/USD/);
+  await expect(editPrice).toHaveAccessibleDescription(/единиц/i);
+  await expect(editPrice).toHaveAccessibleDescription(/неотрицательн|не меньше нуля|≥\s*0|>=\s*0/i);
+  await expect(editPrice).toHaveAccessibleDescription(/нол|нулев|\b0\b/i);
+  await expect(editPrice).toHaveAccessibleDescription(/точн|округл|строк/i);
+  expect(
+    await editor.evaluate((node) => {
+      const book = document.querySelector('[aria-label="Сохранённые цены"]');
+      return Boolean(book && node.compareDocumentPosition(book) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }),
+  ).toBe(true);
+
+  const withoutRequests = async (action: () => Promise<void>, postOnly = false) => {
+    const requests: string[] = [];
+    const record = (request: Request) => {
+      if (!postOnly || request.method() === 'POST') requests.push(request.url());
+    };
+    page.on('request', record);
+    try {
+      await action();
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+      expect(
+        requests,
+        postOnly
+          ? 'Staging/cancel/close send no price command'
+          : 'Native rules toggle makes no request',
+      ).toEqual([]);
+    } finally {
+      page.off('request', record);
+    }
+  };
+  const rulesRows = priceRows(firstInstrument.id, secondInstrument.id);
+  await withoutRequests(async () => {
+    await rulesSummary.focus();
+    await page.keyboard.press('Enter');
+    await expect(rules).toHaveAttribute('open', '');
+    await expect(rules).toContainText(/UUID|идентификатор/i);
+    await expect(rules).toContainText(/исправ|повтор/i);
+    await expect(rules).toContainText(/исключ/i);
+    await page.keyboard.press('Space');
+    await expect(rules).not.toHaveAttribute('open', '');
+  });
+  expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(rulesRows);
+
+  const capturePresentation = async () => {
+    const rowsBefore = priceRows(firstInstrument.id, secondInstrument.id);
+    const callsBefore = providerRequests();
+    const viewport = page.viewportSize();
+    const originalTheme = await page.evaluate(() =>
+      document.documentElement.getAttribute('data-theme'),
+    );
+    const capture = async (target: Locator, name: string) => {
+      const bounds = await target.evaluate((node) => {
+        const box = node.getBoundingClientRect();
+        return { top: box.top + window.scrollY, height: box.height };
+      });
+      for (let index = 0; index < Math.ceil(bounds.height / 900); index++) {
+        const offset = Math.min(index * 900, Math.max(0, bounds.height - 900));
+        await page.evaluate(
+          (top) => window.scrollTo(0, Math.max(0, top - 16)),
+          bounds.top + offset,
+        );
+        await expect(
+          page.getByRole('link', { name: 'К содержимому', exact: true }),
+        ).not.toBeInViewport();
+        await testInfo.attach(`${name}-${index + 1}`, {
+          body: await page.screenshot({
+            path: testInfo.outputPath(`${name}-${index + 1}.png`),
+            animations: 'disabled',
+            fullPage: false,
+          }),
+          contentType: 'image/png',
+        });
+      }
+    };
+    try {
+      for (const theme of ['light', 'dark']) {
+        await page.evaluate(
+          (value) => document.documentElement.setAttribute('data-theme', value),
+          theme,
+        );
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        for (const width of [360, 768, 1440]) {
+          await page.setViewportSize({ width, height: 1000 });
+          await expect
+            .poll(() =>
+              page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+            )
+            .toBe(true);
+          const controls = await page
+            .locator(
+              '.prices-page input:not([type="checkbox"]), .prices-page select, .prices-page button, .prices-page summary, .prices-page .prices-review',
+            )
+            .evaluateAll((nodes) =>
+              nodes
+                .filter((node) => node.getClientRects().length > 0)
+                .map((node) => ({
+                  label: node.textContent || node.getAttribute('aria-label') || node.tagName,
+                  height: node.getBoundingClientRect().height,
+                })),
+            );
+          expect(controls.length).toBeGreaterThan(0);
+          for (const control of controls)
+            expect(control.height, control.label).toBeGreaterThanOrEqual(44);
+          const region = currentRegion.getByRole('region', {
+            name: 'Таблица сохранённых цен',
+            exact: true,
+          });
+          await expect(region).toHaveAttribute('tabindex', '0');
+          await expect(region.locator('caption')).toBeVisible();
+          if (width === 360) {
+            expect(await region.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+            await region.evaluate((node) => {
+              node.scrollLeft = 0;
+            });
+            await region.focus();
+            await page.keyboard.press('ArrowRight');
+            await expect.poll(() => region.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+            await region.evaluate((node) => {
+              node.scrollLeft = 0;
+            });
+          }
+          for (const [name, target] of [
+            ['header', header],
+            ['editor', editor],
+            ['book', currentRegion],
+            ['history', historyRegion],
+          ] as const) {
+            await capture(target, `manual-price-${name}-${theme}-${width}`);
+          }
+          await expect(editPrice).toHaveValue('115');
+          await expect(currentRegion.getByText('110', { exact: true })).toBeVisible();
+          await expect(historyRegion.getByText('100', { exact: true })).toBeVisible();
+        }
+      }
+    } finally {
+      await page.evaluate((value) => {
+        if (value === null) document.documentElement.removeAttribute('data-theme');
+        else document.documentElement.setAttribute('data-theme', value);
+      }, originalTheme);
+      if (viewport) await page.setViewportSize(viewport);
+    }
+    expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(rowsBefore);
+    expect(providerRequests()).toEqual(callsBefore);
+  };
 
   await instrumentPicker.selectOption(firstInstrument.id);
   const initialRead = await browserGet(page, firstInstrument.id, () => load.click());
@@ -312,9 +480,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   expect(browserWrites).toHaveLength(2);
   expect(browserWrites[1]).toEqual(browserWrites[0]);
 
-  const currentRegion = page.getByRole('region', { name: 'Сохранённые цены', exact: true });
   await expect(currentRegion.getByText('100', { exact: true })).toBeVisible();
-  const editPrice = page.getByLabel('Цена за единицу, USD', { exact: true });
   await editPrice.fill('110');
   await expect(review).not.toBeChecked();
   await review.check();
@@ -342,10 +508,111 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   expect(recoveredRead.status()).toBe(200);
   expect(await recoveredRead.json()).toMatchObject({ currentRevision: 2 });
 
-  await page.getByRole('button', { name: 'История', exact: true }).click();
-  const historyRegion = page.getByRole('region', { name: 'История цены', exact: true });
+  await editPrice.fill('115');
+  const savedRow = currentRegion.getByRole('row').filter({ hasText: '110' });
+  const voidAction = savedRow.getByRole('button', { name: 'Исключить цену', exact: true });
+  const historyAction = savedRow.getByRole('button', { name: 'История', exact: true });
+  const stageRows = priceRows(firstInstrument.id, secondInstrument.id);
+  await withoutRequests(async () => {
+    await voidAction.click();
+    await expect(
+      editor.getByRole('heading', { name: 'Исключение цены', exact: true }),
+    ).toBeFocused();
+    await expect(review).not.toBeChecked();
+    await expect(
+      page.getByRole('button', { name: 'Подтвердить исключение', exact: true }),
+    ).toBeDisabled();
+    await expect(editPrice).toHaveValue('115');
+    await page.getByRole('button', { name: 'Отменить исключение', exact: true }).click();
+    await expect(voidAction).toBeFocused();
+    await expect(review).not.toBeChecked();
+    await expect(editPrice).toHaveValue('115');
+    await expect(dateInput).toHaveValue(pointAt);
+  }, true);
+  expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(stageRows);
+
+  const historyEndpoint = `${endpoint}/history`;
+  const historyPattern = `**${historyEndpoint}?*`;
+  const delayedHistory = async (closeBeforeDelivery: boolean) => {
+    let release: () => void = () => {};
+    let fetched = false;
+    let started = false;
+    let finish: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const done = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    await page.route(
+      historyPattern,
+      async (route) => {
+        started = true;
+        try {
+          expect(new URL(route.request().url()).pathname).toBe(historyEndpoint);
+          expect(route.request().method()).toBe('GET');
+          const response = await route.fetch();
+          expect(response.status()).toBe(200);
+          expect(await response.json()).toMatchObject({
+            instrumentId: firstInstrument.id,
+            observedAt: pointAt,
+            items: [
+              { revision: 2, priceUsd: '110' },
+              { revision: 1, priceUsd: '100' },
+            ],
+          });
+          fetched = true;
+          await gate;
+          await route.fulfill({ response });
+        } finally {
+          finish();
+        }
+      },
+      { times: 1 },
+    );
+    const before = priceRows(firstInstrument.id, secondInstrument.id);
+    try {
+      await historyAction.click();
+      await expect(
+        historyRegion.getByRole('heading', { name: 'История цены', exact: true }),
+      ).toBeFocused();
+      await expect.poll(() => fetched).toBe(true);
+      await editPrice.focus();
+      const delivered = page.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === historyEndpoint &&
+          response.request().method() === 'GET',
+      );
+      if (closeBeforeDelivery) {
+        await withoutRequests(async () => {
+          await page.getByRole('button', { name: 'Закрыть историю', exact: true }).click();
+          await expect(historyRegion).toHaveCount(0);
+          await expect(historyAction).toBeFocused();
+        }, true);
+      }
+      release();
+      expect((await delivered).status()).toBe(200);
+      if (closeBeforeDelivery) {
+        await expect(historyRegion).toHaveCount(0);
+        await expect(historyAction).toBeFocused();
+      } else {
+        await expect(historyRegion.getByText('110', { exact: true })).toBeVisible();
+        await expect(historyRegion.getByText('100', { exact: true })).toBeVisible();
+        await expect(editPrice).toBeFocused();
+      }
+      await expect(editPrice).toHaveValue('115');
+      expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(before);
+    } finally {
+      release();
+      if (started) await done;
+      await page.unroute(historyPattern);
+    }
+  };
+  await delayedHistory(false);
   await expect(historyRegion.getByText('110', { exact: true })).toBeVisible();
   await expect(historyRegion.getByText('100', { exact: true })).toBeVisible();
+  await capturePresentation();
+  await delayedHistory(true);
 
   let releaseLateRead!: () => void;
   let reportReadStarted!: () => void;
@@ -388,15 +655,30 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   expect(backToFirst.status()).toBe(200);
   const firstRow = page.getByRole('row').filter({ hasText: '110' });
   await firstRow.getByRole('button', { name: 'Исключить цену', exact: true }).click();
+  await expect(editor.getByRole('heading', { name: 'Исключение цены', exact: true })).toBeFocused();
   await expect(review).not.toBeChecked();
   await review.check();
   await page.getByRole('button', { name: 'Подтвердить исключение', exact: true }).click();
   await expect(page.getByText('Сохранённых цен нет.', { exact: true })).toBeVisible();
   await page.getByLabel('Дата цены (UTC)', { exact: true }).fill(pointAt);
-  await page.getByRole('button', { name: 'История указанной даты', exact: true }).click();
+  const dateHistoryAction = page.getByRole('button', {
+    name: 'История указанной даты',
+    exact: true,
+  });
+  await dateHistoryAction.click();
+  await expect(
+    historyRegion.getByRole('heading', { name: 'История цены', exact: true }),
+  ).toBeFocused();
   await expect(historyRegion.getByText('Исключена', { exact: true })).toBeVisible();
   await expect(historyRegion.getByText('110', { exact: true })).toBeVisible();
   await expect(historyRegion.getByText('100', { exact: true })).toBeVisible();
+  const closeRows = priceRows(firstInstrument.id, secondInstrument.id);
+  await withoutRequests(async () => {
+    await page.getByRole('button', { name: 'Закрыть историю', exact: true }).click();
+    await expect(historyRegion).toHaveCount(0);
+    await expect(dateHistoryAction).toBeFocused();
+  }, true);
+  expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(closeRows);
   await page.reload();
   await instrumentPicker.selectOption(firstInstrument.id);
   const afterReload = await browserGet(page, firstInstrument.id, () => load.click());
