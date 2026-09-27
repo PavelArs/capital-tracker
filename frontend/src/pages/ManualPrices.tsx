@@ -10,7 +10,14 @@ import {
 import { useAuth } from '@contexts/AuthContext';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import './ManualPrices.css';
 
 type PriceCommand =
@@ -41,6 +48,28 @@ function priceError(error: unknown, action: string): string {
 }
 
 function ManualPricesOwner({ ownerId }: { ownerId: string }) {
+  const pageHeading = useRef<HTMLHeadingElement>(null);
+  const editorHeading = useRef<HTMLHeadingElement>(null);
+  const historyHeading = useRef<HTMLHeadingElement>(null);
+  const voidAction = useRef<HTMLButtonElement | null>(null);
+  const historyAction = useRef<HTMLButtonElement | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{
+    panel: 'editor' | 'history';
+    sequence: number;
+  }>({ panel: 'editor', sequence: 0 });
+  useLayoutEffect(() => {
+    if (focusRequest.sequence === 0) return;
+    const heading =
+      focusRequest.panel === 'editor' ? editorHeading.current : historyHeading.current;
+    heading?.focus({ preventScroll: true });
+    heading?.scrollIntoView({ block: 'start' });
+  }, [focusRequest]);
+  const focusPanel = (panel: 'editor' | 'history') =>
+    setFocusRequest((previous) => ({ panel, sequence: previous.sequence + 1 }));
+  const restoreActionFocus = (action: HTMLButtonElement | null) => {
+    if (action?.isConnected && !action.disabled) action.focus();
+    else pageHeading.current?.focus();
+  };
   const recovery = useSyncExternalStore(subscribeRecovery, () => recoveryFor(ownerId));
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -291,18 +320,33 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
   return (
     <div className="prices-page">
       <header>
-        <h1>Ручные цены инструментов</h1>
+        <h1 ref={pageHeading} tabIndex={-1}>
+          Ручные цены инструментов
+        </h1>
         <p>
-          Это отдельные, не сверенные вручную заявленные цены USD за единицу инструмента. Они не
-          подтверждают непрерывное покрытие, текущую оценку портфеля или себестоимость. Символы не
-          устанавливают тождество актива: выбирайте инструмент по имени и UUID.
+          Это отдельные ручные цены USD за единицу инструмента. Данные не сверены и не подтверждают
+          непрерывное покрытие, текущую оценку портфеля или себестоимость.
         </p>
+        <details className="prices-rules">
+          <summary>Правила ручных цен</summary>
+          <p>
+            Символы не устанавливают тождество актива: выбирайте инструмент по имени и UUID.
+            Повторная запись для того же момента исправляет цену и сохраняет прежние версии. Для
+            ошибочной даты сначала исключите старый момент, затем сохраните новый. Ноль означает
+            заявленную нулевую цену, а не отсутствие данных.
+          </p>
+          <p>
+            Исходная команда для повтора хранится в памяти этой вкладки. Полная перезагрузка
+            страницы очищает эту память; перед новой записью проверьте сохранённые цены и историю.
+          </p>
+        </details>
       </header>
 
       <section className="prices-card" aria-label="Выбор инструмента">
         <label htmlFor="prices-instrument">Инструмент</label>
         <select
           id="prices-instrument"
+          aria-describedby="prices-instrument-help"
           value={instrumentId}
           disabled={saving}
           onChange={(event) => selectInstrument(event.target.value)}
@@ -317,6 +361,9 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
             </option>
           ))}
         </select>
+        <p id="prices-instrument-help">
+          Выбирайте по имени и UUID: одинаковый символ не означает один и тот же актив.
+        </p>
         <div className="prices-actions">
           <button
             type="button"
@@ -361,109 +408,10 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
       )}
       {commandError && <p role="alert">{commandError}</p>}
 
-      <section className="prices-card" aria-label="Сохранённые цены">
-        <h2>Сохранённые цены</h2>
-        {!instrumentId && <p>Выберите инструмент, затем загрузите его цены.</p>}
-        {instrumentId && bookRead === 'idle' && <p>Нажмите «Загрузить цены».</p>}
-        {bookRead === 'loading' && <p>Загрузка цен…</p>}
-        {bookError && <p role="alert">{bookError}</p>}
-        {bookRead === 'ready' && book && (
-          <>
-            <p>Ревизия цен инструмента: {book.currentRevision}</p>
-            {book.items.length === 0 ? (
-              <p>Сохранённых цен нет.</p>
-            ) : (
-              <div className="prices-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Дата цены (UTC)</th>
-                      <th>Цена за единицу, USD</th>
-                      <th>Источник</th>
-                      <th>Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {book.items.map((item) => (
-                      <tr key={item.observedAt}>
-                        <td>{item.observedAt}</td>
-                        <td>{item.priceUsd}</td>
-                        <td>Ручная</td>
-                        <td className="prices-row-actions">
-                          <button type="button" onClick={() => void showHistory(item.observedAt)}>
-                            История
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!canEdit}
-                            onClick={() => {
-                              clearHistory();
-                              setStagedVoidAt(item.observedAt);
-                              setReviewed(false);
-                              setCommandError('');
-                            }}
-                          >
-                            Исключить цену
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {book.nextOffset !== null && (
-              <button type="button" onClick={() => void loadPrices(book.nextOffset!, book)}>
-                Загрузить ещё цены
-              </button>
-            )}
-          </>
-        )}
-      </section>
-
-      {historyAt && (
-        <section className="prices-card" aria-label="История цены">
-          <h2>История цены</h2>
-          <p>Момент UTC: {historyAt}</p>
-          {historyRead === 'loading' && <p>Загрузка истории…</p>}
-          {historyError && <p role="alert">{historyError}</p>}
-          {historyRead === 'ready' && history && (
-            <>
-              {history.items.length === 0 ? (
-                <p>Версий для этого момента нет.</p>
-              ) : (
-                <ul className="prices-history">
-                  {history.items.map((item) => (
-                    <li key={item.revision}>
-                      Ревизия {item.revision}:{' '}
-                      <span>{item.kind === 'void' ? 'Исключена' : item.priceUsd}</span>{' '}
-                      {item.kind === 'set' && 'USD за единицу'} — {item.createdAt}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {history.nextBeforeRevision !== null && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    void showHistory(historyAt, history.nextBeforeRevision ?? undefined, history)
-                  }
-                >
-                  Загрузить ещё версии
-                </button>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
       <section className="prices-card" aria-label="Редактирование цены">
-        <h2>Сохранить или исправить цену</h2>
-        <p>
-          Повторная запись для того же момента исправляет цену и сохраняет прежние версии. Для
-          ошибочной даты сначала исключите старый момент, затем сохраните новый. Ноль означает
-          заявленную нулевую цену, а не отсутствие данных.
-        </p>
+        <h2 ref={editorHeading} tabIndex={-1}>
+          {voidAt ? 'Исключение цены' : 'Сохранить или исправить цену'}
+        </h2>
         <p>Историю исключённой цены можно открыть, указав её дату в поле ниже.</p>
         {voidAt && (
           <p className="prices-notice">
@@ -472,22 +420,36 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           </p>
         )}
         <div className="prices-fields">
-          <label htmlFor="prices-at">Дата цены (UTC)</label>
-          <input
-            id="prices-at"
-            value={observedAt}
-            placeholder="2025-01-01T00:00:00.000Z"
-            disabled={saving || Boolean(recovery) || stagedVoidAt !== null}
-            onChange={(event) => editForm(setObservedAt, event.target.value)}
-          />
-          <label htmlFor="prices-value">Цена за единицу, USD</label>
-          <input
-            id="prices-value"
-            value={priceUsd}
-            inputMode="decimal"
-            disabled={saving || Boolean(recovery) || stagedVoidAt !== null}
-            onChange={(event) => editForm(setPriceUsd, event.target.value)}
-          />
+          <div className="prices-field">
+            <label htmlFor="prices-at">Дата цены (UTC)</label>
+            <input
+              id="prices-at"
+              aria-describedby="prices-at-help"
+              value={observedAt}
+              placeholder="2025-01-01T00:00:00.000Z"
+              disabled={saving || Boolean(recovery) || stagedVoidAt !== null}
+              onChange={(event) => editForm(setObservedAt, event.target.value)}
+            />
+            <small id="prices-at-help">
+              Укажите ISO-время с явным часовым поясом: Z означает UTC, допустимо смещение, например
+              +03:00. Сохранённый момент приводится к UTC.
+            </small>
+          </div>
+          <div className="prices-field">
+            <label htmlFor="prices-value">Цена за единицу, USD</label>
+            <input
+              id="prices-value"
+              aria-describedby="prices-value-help"
+              value={priceUsd}
+              inputMode="decimal"
+              disabled={saving || Boolean(recovery) || stagedVoidAt !== null}
+              onChange={(event) => editForm(setPriceUsd, event.target.value)}
+            />
+            <small id="prices-value-help">
+              Точная неотрицательная цена USD за единицу, с точкой для дробной части. Ноль — явная
+              нулевая цена, а не отсутствие данных; значение сохраняется без округления.
+            </small>
+          </div>
         </div>
         <label className="prices-review">
           <input
@@ -501,8 +463,13 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
         <div className="prices-actions">
           <button
             type="button"
+            className="prices-secondary"
             disabled={!instrumentId || !observedAt || saving || bookRead !== 'ready'}
-            onClick={() => void showHistory(observedAt)}
+            onClick={(event) => {
+              historyAction.current = event.currentTarget;
+              void showHistory(observedAt);
+              focusPanel('history');
+            }}
           >
             История указанной даты
           </button>
@@ -558,11 +525,14 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           {stagedVoidAt && !recovery && (
             <button
               type="button"
+              className="prices-secondary"
               disabled={saving}
               onClick={() => {
                 clearHistory();
                 setStagedVoidAt(null);
                 setReviewed(false);
+                restoreActionFocus(voidAction.current);
+                voidAction.current = null;
               }}
             >
               Отменить исключение
@@ -570,6 +540,133 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
           )}
         </div>
       </section>
+
+      <section className="prices-card" aria-label="Сохранённые цены">
+        <h2>Сохранённые цены</h2>
+        {!instrumentId && <p>Выберите инструмент, затем загрузите его цены.</p>}
+        {instrumentId && bookRead === 'idle' && <p>Нажмите «Загрузить цены».</p>}
+        {bookRead === 'loading' && <p>Загрузка цен…</p>}
+        {bookError && <p role="alert">{bookError}</p>}
+        {bookRead === 'ready' && book && (
+          <>
+            <p>Ревизия цен инструмента: {book.currentRevision}</p>
+            {book.items.length === 0 ? (
+              <p>Сохранённых цен нет.</p>
+            ) : (
+              <div
+                className="prices-table-wrap"
+                role="region"
+                aria-label="Таблица сохранённых цен"
+                tabIndex={0}
+              >
+                <table>
+                  <caption>Ручные цены за единицу инструмента</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Дата цены (UTC)</th>
+                      <th scope="col">Цена за единицу, USD</th>
+                      <th scope="col">Источник</th>
+                      <th scope="col">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {book.items.map((item) => (
+                      <tr key={item.observedAt}>
+                        <td>{item.observedAt}</td>
+                        <td>{item.priceUsd}</td>
+                        <td>Ручная</td>
+                        <td>
+                          <div className="prices-row-actions">
+                            <button
+                              type="button"
+                              className="prices-secondary"
+                              onClick={(event) => {
+                                historyAction.current = event.currentTarget;
+                                void showHistory(item.observedAt);
+                                focusPanel('history');
+                              }}
+                            >
+                              История
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={(event) => {
+                                voidAction.current = event.currentTarget;
+                                clearHistory();
+                                setStagedVoidAt(item.observedAt);
+                                setReviewed(false);
+                                setCommandError('');
+                                focusPanel('editor');
+                              }}
+                            >
+                              Исключить цену
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {book.nextOffset !== null && (
+              <button type="button" onClick={() => void loadPrices(book.nextOffset!, book)}>
+                Загрузить ещё цены
+              </button>
+            )}
+          </>
+        )}
+      </section>
+
+      {historyAt && (
+        <section className="prices-card" aria-label="История цены">
+          <h2 ref={historyHeading} tabIndex={-1}>
+            История цены
+          </h2>
+          <button
+            type="button"
+            className="prices-secondary"
+            onClick={() => {
+              clearHistory();
+              restoreActionFocus(historyAction.current);
+              historyAction.current = null;
+            }}
+          >
+            Закрыть историю
+          </button>
+          <p>Момент UTC: {historyAt}</p>
+          {historyRead === 'loading' && <p>Загрузка истории…</p>}
+          {historyError && <p role="alert">{historyError}</p>}
+          {historyRead === 'ready' && history && (
+            <>
+              {history.items.length === 0 ? (
+                <p>Версий для этого момента нет.</p>
+              ) : (
+                <ul className="prices-history">
+                  {history.items.map((item) => (
+                    <li key={item.revision}>
+                      Ревизия {item.revision}:{' '}
+                      <span>{item.kind === 'void' ? 'Исключена' : item.priceUsd}</span>{' '}
+                      {item.kind === 'set' && 'USD за единицу'} — {item.createdAt}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {history.nextBeforeRevision !== null && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    void showHistory(historyAt, history.nextBeforeRevision ?? undefined, history)
+                  }
+                >
+                  Загрузить ещё версии
+                </button>
+              )}
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }

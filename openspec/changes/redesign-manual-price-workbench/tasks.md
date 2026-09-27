@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
 - [x] 1.1 Inspect target/specs/pipeline and record keep/simplify/remove inventory, baseline118characterization and scoped verification manifest.
-- [ ] 1.2 Independently extend PRICE-UI/PRICE-RECOVERY for PRICE-UX scenarios, review unchanged financial/security oracles and observe intended predecessor RED.
+- [x] 1.2 Independently extend PRICE-UI/PRICE-RECOVERY for PRICE-UX scenarios, review unchanged financial/security oracles and observe intended predecessor RED.
 
 ## 2. Implement and review
 
