@@ -36,6 +36,10 @@ Each is one existing named test; file line anchors describe the preparation comm
 
 Reuse archived financial/security source evidence and independently reviewed responsive frames when untouched; final candidate needs actual selected HTTPS/MFA/backend/PostgreSQL execution with external fixtures only. Keep existing whole-suite/CI gates intact. Manual-mode changes must not fabricate cache prices or weaken precision/provider/admission/fingerprint assertions. Supported manual/CSV views stay provider-independent; explicit FX/legacy demand reads retain their own semantics and need separate retained coverage when affected.
 
+## Router compatibility supplement
+
+The Router major update also requires existing `SHELL-UI` in tests/e2e/application-shell.spec.ts:14 as the19th selected journey. Its original real password/TOTP, navigation, private entry and logout assertions remain; bounded read-only additions exercise `/assets/*`, all three fixed tab URLs and anonymous unknown-route redirect. This supplement is compatibility characterization, not a manufactured financial RED.
+
 ## Staged release gates
 
 1. Scoped RED/GREEN unit/process contracts, independent source review, baseline lint/build/unit/types/specs/audit and no unresolved documented production dependency finding.

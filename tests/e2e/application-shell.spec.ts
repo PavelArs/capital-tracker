@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { type Page, expect } from '@playwright/test';
 import { nextFactor, origin, owner, passwordStep, test } from './mfa-fixtures';
 
 async function fitsViewport(page: Page) {
@@ -133,12 +133,29 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(nav.locator('a[href="/assets"]')).toBeVisible();
   await expect(nav.locator('a[href="/crypto"]')).toBeVisible();
   await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
+  // Router-major compatibility: the retained assets splat and fixed absolute tab paths.
+  await nav.locator('a[href="/assets"]').click();
+  await expect(page).toHaveURL(`${origin}/assets/overview`);
+  for (const [label, path] of [
+    ['Балансовые активы', '/assets/stock'],
+    ['Потоковые активы', '/assets/flow'],
+    ['Обзор', '/assets/overview'],
+  ] as const) {
+    const tab = page.getByRole('button', { name: label, exact: true });
+    await tab.click();
+    await expect(page).toHaveURL(`${origin}${path}`);
+    await expect(tab).toHaveAttribute('aria-current', 'page');
+  }
   await nav.getByRole('link', { name: 'Ручные счета', exact: true }).click();
   await page.setViewportSize({ width: 360, height: 800 });
   await toggle.click();
   await nav.getByRole('button', { name: 'Выход', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/login`);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
+  await expect(page.getByRole('navigation')).toHaveCount(0);
+  await page.goto('/mvp-unknown-route');
+  await expect(page).toHaveURL(`${origin}/login`);
+  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
