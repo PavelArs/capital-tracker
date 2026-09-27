@@ -147,7 +147,7 @@ export default function LinkedTwr({ from, to, openingValueUsd, closingValueUsd }
 
   return (
     <>
-      <section className="profit-card" aria-label="TWR с промежуточными оценками">
+      <section className="profit-linked-inputs" aria-label="TWR с промежуточными оценками">
         <h2>TWR с промежуточными оценками</h2>
         <p>
           Оценка вручную. Потоки не сверены. Укажите стоимость всего портфеля в USD, включая
@@ -230,55 +230,77 @@ export default function LinkedTwr({ from, to, openingValueUsd, closingValueUsd }
       </section>
 
       {result && (
-        <section className="profit-card" aria-label="Результат связанного TWR">
+        <section className="profit-linked-result" aria-label="Результат связанного TWR">
           <h2>Результат связанного TWR</h2>
           <p>Оценка вручную. Потоки не сверены. Это временный расчёт за период.</p>
-          <p>Ревизия журнала: {result.journalRevision}</p>
-          <p>Граница учёта потоков: {result.coverageFrom}</p>
+          {result.linkedTwr.status === 'available' ? (
+            <dl className="profit-metric">
+              <dt>TWR, % за период</dt>
+              <dd>{result.linkedTwr.periodPercent}</dd>
+            </dl>
+          ) : (
+            <p>{unavailableReason[result.linkedTwr.reason]}</p>
+          )}
+          <dl className="profit-result profit-period">
+            <dt>Начало периода (UTC)</dt>
+            <dd>{result.from}</dd>
+            <dt>Конец периода (UTC)</dt>
+            <dd>{result.to}</dd>
+          </dl>
           <dl className="profit-result">
             <dt>Прибыль, USD</dt>
             <dd>{result.profitUsd}</dd>
-            <dt>Чистый поток в начале, USD</dt>
-            <dd>{result.linkedTwr.netFlowAtStartUsd}</dd>
-            <dt>Начальный капитал после потоков, USD</dt>
-            <dd>{result.linkedTwr.startingCapitalUsd}</dd>
-            <dt>Ненулевых промежуточных моментов</dt>
-            <dd>{result.linkedTwr.interiorNetFlowDateCount}</dd>
-            {result.linkedTwr.status === 'available' && (
-              <>
-                <dt>TWR, % за период</dt>
-                <dd>{result.linkedTwr.periodPercent}</dd>
-              </>
-            )}
           </dl>
-          {result.linkedTwr.status === 'unavailable' && (
-            <p>{unavailableReason[result.linkedTwr.reason]}</p>
-          )}
-          {result.linkedTwr.boundaries.length > 0 && (
-            <div className="linked-twr-table-wrap">
-              <table className="linked-twr-table">
-                <caption>Оценки и потоки по моментам UTC</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Момент UTC</th>
-                    <th scope="col">Поток, USD</th>
-                    <th scope="col">До потока, USD</th>
-                    <th scope="col">После потока, USD</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.linkedTwr.boundaries.map((boundary) => (
-                    <tr key={boundary.at}>
-                      <td>{boundary.at}</td>
-                      <td>{boundary.netFlowUsd}</td>
-                      <td>{boundary.valueBeforeUsd ?? '—'}</td>
-                      <td>{boundary.valueAfterUsd ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <p>
+            Доходность за период, без годового пересчёта и прогноза. Процент округлён до 10 знаков
+            после запятой; небольшая доходность может отображаться как 0. Точность зависит от ручных
+            оценок.
+          </p>
+          <details className="profit-disclosure">
+            <summary>Основание расчёта</summary>
+            <div className="profit-disclosure-body">
+              <p>Ревизия журнала: {result.journalRevision}</p>
+              <p>Граница учёта потоков: {result.coverageFrom}</p>
+              <dl className="profit-result">
+                <dt>Чистый поток в начале, USD</dt>
+                <dd>{result.linkedTwr.netFlowAtStartUsd}</dd>
+                <dt>Начальный капитал после потоков, USD</dt>
+                <dd>{result.linkedTwr.startingCapitalUsd}</dd>
+                <dt>Ненулевых промежуточных моментов</dt>
+                <dd>{result.linkedTwr.interiorNetFlowDateCount}</dd>
+              </dl>
+              {result.linkedTwr.boundaries.length > 0 && (
+                <div
+                  className="linked-twr-table-wrap"
+                  role="region"
+                  aria-label="Таблица промежуточных оценок"
+                  tabIndex={0}
+                >
+                  <table className="linked-twr-table">
+                    <caption>Оценки и потоки по моментам UTC</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Момент UTC</th>
+                        <th scope="col">Поток, USD</th>
+                        <th scope="col">До потока, USD</th>
+                        <th scope="col">После потока, USD</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {result.linkedTwr.boundaries.map((boundary) => (
+                        <tr key={boundary.at}>
+                          <td>{boundary.at}</td>
+                          <td>{boundary.netFlowUsd}</td>
+                          <td>{boundary.valueBeforeUsd ?? '—'}</td>
+                          <td>{boundary.valueAfterUsd ?? '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
-          )}
+          </details>
         </section>
       )}
     </>

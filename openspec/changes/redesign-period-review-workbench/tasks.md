@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
 - [x] 1.1 Inspect requirements/specs/pipeline, record keep/simplify/remove inventory, baseline characterization and risk-based verification manifest.
-- [ ] 1.2 Independently extend existing PROFIT-UI/LATE and LTWR-UI for PERIOD-UX scenarios; review unchanged financial/security oracles and demonstrate intended missing-disclosure RED.
+- [x] 1.2 Independently extend existing PROFIT-UI/LATE and LTWR-UI for PERIOD-UX scenarios; review unchanged financial/security oracles and demonstrate intended missing-disclosure RED.
 
 ## 2. Implement and review
 

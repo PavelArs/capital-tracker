@@ -126,19 +126,26 @@ function PeriodProfitOwner() {
           Введите две ручные оценки всей стоимости отслеживаемого портфеля в USD. Предпросмотр
           временный: оценки и результат не сохраняются.
         </p>
-        <p>
-          Прибыль = оценка в конце − оценка в начале − внешние вводы + внешние выводы. Оценка
-          вручную; потоки не сверены. Эта формула показывает прибыль, а XIRR отдельно оценивает
-          годовую доходность по времени внешних потоков. Ни один расчёт не показывает текущий
-          денежный остаток.
+        <p className="profit-scope">
+          Оценка вручную. Потоки не сверены. Ни один расчёт не показывает текущий денежный остаток.
         </p>
-        <p>
-          TWR показывает доходность только за выбранный период, без пересчёта в годовую ставку.
-          Расчёт по двум ручным оценкам доступен, только когда внутри периода нет ненулевых внешних
-          потоков после объединения потоков в один момент UTC. Иначе нужны оценки на границах этих
-          потоков. Потоки точно в начале меняют начальный капитал, а потоки точно в конце не входят
-          в период.
-        </p>
+        <details className="profit-disclosure">
+          <summary>Как считаются показатели</summary>
+          <div className="profit-disclosure-body">
+            <p>
+              Прибыль = оценка в конце − оценка в начале − внешние вводы + внешние выводы. Эта
+              формула показывает прибыль, а XIRR отдельно оценивает годовую доходность по времени
+              внешних потоков.
+            </p>
+            <p>
+              TWR показывает доходность только за выбранный период, без пересчёта в годовую ставку.
+              Расчёт по двум ручным оценкам доступен, только когда внутри периода нет ненулевых
+              внешних потоков после объединения потоков в один момент UTC. Иначе нужны оценки на
+              границах этих потоков. Потоки точно в начале меняют начальный капитал, а потоки точно
+              в конце не входят в период.
+            </p>
+          </div>
+        </details>
         <p>
           <Link to="/capital-flows">Проверить журнал внешних потоков и границу учёта</Link>
         </p>
@@ -147,57 +154,59 @@ function PeriodProfitOwner() {
       <section className="profit-card" aria-labelledby="profit-input-heading">
         <h2 id="profit-input-heading">Ручные оценки и период</h2>
         <form className="profit-form" onSubmit={(event) => void submit(event)}>
-          <div className="profit-field">
-            <label htmlFor="profit-from">Начало периода (UTC)</label>
-            <input
-              id="profit-from"
-              value={from}
-              onChange={(event) => edit(setFrom, event.target.value)}
-              placeholder="2025-01-01T00:00:00.000Z"
-              aria-describedby="profit-from-help"
-              required
-            />
-            <small id="profit-from-help">
-              Укажите ISO-время с часовым поясом. Оценка в начале берётся непосредственно перед
-              всеми потоками в этот момент; потоки точно в начале включаются.
-            </small>
-          </div>
-          <div className="profit-field">
-            <label htmlFor="profit-to">Конец периода (UTC)</label>
-            <input
-              id="profit-to"
-              value={to}
-              onChange={(event) => edit(setTo, event.target.value)}
-              placeholder="2026-01-01T00:00:00.000Z"
-              aria-describedby="profit-to-help"
-              required
-            />
-            <small id="profit-to-help">
-              Конец не включается. Оценка в конце берётся непосредственно перед потоком точно в этот
-              момент.
-            </small>
-          </div>
-          <div className="profit-field">
-            <label htmlFor="profit-opening">Оценка в начале, USD</label>
-            <input
-              id="profit-opening"
-              value={openingValueUsd}
-              onChange={(event) => edit(setOpeningValueUsd, event.target.value)}
-              aria-describedby="profit-from-help profit-amount-help"
-              inputMode="decimal"
-              required
-            />
-          </div>
-          <div className="profit-field">
-            <label htmlFor="profit-closing">Оценка в конце, USD</label>
-            <input
-              id="profit-closing"
-              value={closingValueUsd}
-              onChange={(event) => edit(setClosingValueUsd, event.target.value)}
-              aria-describedby="profit-to-help profit-amount-help"
-              inputMode="decimal"
-              required
-            />
+          <div className="profit-fields">
+            <div className="profit-field">
+              <label htmlFor="profit-from">Начало периода (UTC)</label>
+              <input
+                id="profit-from"
+                value={from}
+                onChange={(event) => edit(setFrom, event.target.value)}
+                placeholder="2025-01-01T00:00:00.000Z"
+                aria-describedby="profit-from-help"
+                required
+              />
+              <small id="profit-from-help">
+                Укажите ISO-время с часовым поясом. Оценка в начале берётся непосредственно перед
+                всеми потоками в этот момент; потоки точно в начале включаются.
+              </small>
+            </div>
+            <div className="profit-field">
+              <label htmlFor="profit-to">Конец периода (UTC)</label>
+              <input
+                id="profit-to"
+                value={to}
+                onChange={(event) => edit(setTo, event.target.value)}
+                placeholder="2026-01-01T00:00:00.000Z"
+                aria-describedby="profit-to-help"
+                required
+              />
+              <small id="profit-to-help">
+                Конец не включается. Оценка в конце берётся непосредственно перед потоком точно в
+                этот момент.
+              </small>
+            </div>
+            <div className="profit-field">
+              <label htmlFor="profit-opening">Оценка в начале, USD</label>
+              <input
+                id="profit-opening"
+                value={openingValueUsd}
+                onChange={(event) => edit(setOpeningValueUsd, event.target.value)}
+                aria-describedby="profit-from-help profit-amount-help"
+                inputMode="decimal"
+                required
+              />
+            </div>
+            <div className="profit-field">
+              <label htmlFor="profit-closing">Оценка в конце, USD</label>
+              <input
+                id="profit-closing"
+                value={closingValueUsd}
+                onChange={(event) => edit(setClosingValueUsd, event.target.value)}
+                aria-describedby="profit-to-help profit-amount-help"
+                inputMode="decimal"
+                required
+              />
+            </div>
           </div>
           <p id="profit-amount-help">
             Укажите неотрицательные суммы, включая весь учитываемый капитал и денежные остатки по
@@ -222,7 +231,7 @@ function PeriodProfitOwner() {
               Рассчитать прибыль
             </button>
             <button
-              className="profit-button"
+              className="profit-button profit-secondary"
               type="button"
               disabled={!canSubmit}
               onClick={() => void runPreview('xirr')}
@@ -230,7 +239,7 @@ function PeriodProfitOwner() {
               Рассчитать XIRR
             </button>
             <button
-              className="profit-button"
+              className="profit-button profit-secondary"
               type="button"
               disabled={!canSubmit}
               onClick={() => void runPreview('twr')}
@@ -238,6 +247,10 @@ function PeriodProfitOwner() {
               Рассчитать TWR
             </button>
           </div>
+          <p className="profit-action-help">
+            Прибыль — сумма в USD. XIRR — годовая ставка. TWR — доходность за период; для потоков
+            внутри периода раскройте промежуточные оценки ниже.
+          </p>
         </form>
       </section>
 
@@ -252,29 +265,38 @@ function PeriodProfitOwner() {
         <section className="profit-card" aria-label="Результат расчёта">
           <h2>Результат расчёта</h2>
           <p>Оценка вручную. Потоки не сверены. Это временный расчёт для ревизии журнала.</p>
-          <p>Ревизия журнала: {result.preview.journalRevision}</p>
-          <p>Исправления и аннулирования потоков изменят следующий расчёт за этот период.</p>
-          <p>Граница учёта потоков: {result.preview.coverageFrom}</p>
-          <dl className="profit-result">
+          <dl className="profit-metric">
+            <dt>Прибыль, USD</dt>
+            <dd>{result.preview.profitUsd}</dd>
+          </dl>
+          <dl className="profit-result profit-period">
             <dt>Начало периода (UTC)</dt>
             <dd>{result.preview.from}</dd>
             <dt>Конец периода (UTC)</dt>
             <dd>{result.preview.to}</dd>
-            <dt>Оценка в начале, USD</dt>
-            <dd>{result.preview.openingValueUsd}</dd>
-            <dt>Оценка в конце, USD</dt>
-            <dd>{result.preview.closingValueUsd}</dd>
-            <dt>Вводы, USD</dt>
-            <dd>{result.preview.flows.contributionsUsd}</dd>
-            <dt>Выводы, USD</dt>
-            <dd>{result.preview.flows.withdrawalsUsd}</dd>
-            <dt>Чистые вводы, USD</dt>
-            <dd>{result.preview.flows.netContributionsUsd}</dd>
-            <dt>Количество потоков</dt>
-            <dd>{result.preview.flows.flowCount}</dd>
-            <dt>Прибыль, USD</dt>
-            <dd>{result.preview.profitUsd}</dd>
           </dl>
+          <details className="profit-disclosure">
+            <summary>Основание расчёта</summary>
+            <div className="profit-disclosure-body">
+              <p>Ревизия журнала: {result.preview.journalRevision}</p>
+              <p>Исправления и аннулирования потоков изменят следующий расчёт за этот период.</p>
+              <p>Граница учёта потоков: {result.preview.coverageFrom}</p>
+              <dl className="profit-result">
+                <dt>Оценка в начале, USD</dt>
+                <dd>{result.preview.openingValueUsd}</dd>
+                <dt>Оценка в конце, USD</dt>
+                <dd>{result.preview.closingValueUsd}</dd>
+                <dt>Вводы, USD</dt>
+                <dd>{result.preview.flows.contributionsUsd}</dd>
+                <dt>Выводы, USD</dt>
+                <dd>{result.preview.flows.withdrawalsUsd}</dd>
+                <dt>Чистые вводы, USD</dt>
+                <dd>{result.preview.flows.netContributionsUsd}</dd>
+                <dt>Количество потоков</dt>
+                <dd>{result.preview.flows.flowCount}</dd>
+              </dl>
+            </div>
+          </details>
         </section>
       )}
 
@@ -285,13 +307,8 @@ function PeriodProfitOwner() {
             Приблизительная годовая ставка по ручным оценкам и внешним потокам. Оценка вручную.
             Потоки не сверены. Это годовая ставка, а не прогноз.
           </p>
-          <p>
-            ACT/365F по времени UTC до миллисекунды. Поддерживаются ставки от −99.9999% до 100000%
-            годовых и не более 64 ненулевых моментов денежных потоков после объединения совпадающих
-            моментов.
-          </p>
           {result.preview.xirr.status === 'available' ? (
-            <dl className="profit-result">
+            <dl className="profit-metric">
               <dt>XIRR, % годовых</dt>
               <dd>{result.preview.xirr.annualPercent}</dd>
             </dl>
@@ -301,6 +318,11 @@ function PeriodProfitOwner() {
           {result.preview.xirr.shortPeriod && (
             <p>Короткий период: годовая ставка не является прогнозом.</p>
           )}
+          <p>
+            ACT/365F по времени UTC до миллисекунды. Поддерживаются ставки от −99.9999% до 100000%
+            годовых и не более 64 ненулевых моментов денежных потоков после объединения совпадающих
+            моментов.
+          </p>
         </section>
       )}
 
@@ -312,10 +334,14 @@ function PeriodProfitOwner() {
             пересчёта и без прогноза. Совпадающие по времени UTC потоки объединяются точно; при
             ненулевом промежуточном потоке результат недоступен без оценки на его границе.
           </p>
-          <p>
-            Процент округлён до 10 знаков после запятой; небольшая доходность может отображаться как
-            0. Точность результата зависит от ручных оценок.
-          </p>
+          {result.preview.twr.status === 'available' ? (
+            <dl className="profit-metric">
+              <dt>TWR, % за период</dt>
+              <dd>{result.preview.twr.periodPercent}</dd>
+            </dl>
+          ) : (
+            <p>{twrUnavailableReason[result.preview.twr.reason]}</p>
+          )}
           <dl className="profit-result">
             <dt>Чистый поток в начале, USD</dt>
             <dd>{result.preview.twr.netFlowAtStartUsd}</dd>
@@ -323,25 +349,25 @@ function PeriodProfitOwner() {
             <dd>{result.preview.twr.startingCapitalUsd}</dd>
             <dt>Моменты ненулевых промежуточных потоков</dt>
             <dd>{result.preview.twr.interiorNetFlowDateCount}</dd>
-            {result.preview.twr.status === 'available' && (
-              <>
-                <dt>TWR, % за период</dt>
-                <dd>{result.preview.twr.periodPercent}</dd>
-              </>
-            )}
           </dl>
-          {result.preview.twr.status === 'unavailable' && (
-            <p>{twrUnavailableReason[result.preview.twr.reason]}</p>
-          )}
+          <p>
+            Процент округлён до 10 знаков после запятой; небольшая доходность может отображаться как
+            0. Точность результата зависит от ручных оценок.
+          </p>
         </section>
       )}
-      <LinkedTwr
-        key={`${from}\u0000${to}`}
-        from={from}
-        to={to}
-        openingValueUsd={openingValueUsd}
-        closingValueUsd={closingValueUsd}
-      />
+      <details className="profit-card profit-disclosure">
+        <summary>TWR с промежуточными оценками</summary>
+        <div className="profit-disclosure-body">
+          <LinkedTwr
+            key={`${from}\u0000${to}`}
+            from={from}
+            to={to}
+            openingValueUsd={openingValueUsd}
+            closingValueUsd={closingValueUsd}
+          />
+        </div>
+      </details>
     </div>
   );
 }
