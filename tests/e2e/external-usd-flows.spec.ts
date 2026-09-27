@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect } from '@playwright/test';
+import { type Locator, type Request, expect } from '@playwright/test';
 import {
   browserCsrfAdmissions,
   expectAdmissionDelta,
@@ -292,7 +292,7 @@ test('FLOW-001-A / FLOW-002-A: exact external USD flows, correction, void and hi
 
 test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects and reviews a contribution', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const account = await api.account(`External-flow UI trade ${randomUUID()}`);
   const instrument = await api.instrument(`External-flow UI token ${randomUUID()}`, 'FLOW');
@@ -318,7 +318,137 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       page.getByRole('heading', { name: 'Внешние денежные потоки', exact: true }),
     ).toBeVisible();
 
-    await page.getByLabel('Граница учёта потоков (ISO)', { exact: true }).fill(coverageFrom);
+    const rulesSummary = page.getByText('Правила учёта потоков', { exact: true });
+    const rules = rulesSummary.locator('..');
+    expect(await rulesSummary.evaluate((node) => node.tagName)).toBe('SUMMARY');
+    expect(await rules.evaluate((node) => node.tagName)).toBe('DETAILS');
+    await expect(rules).not.toHaveAttribute('open', '');
+    await expect(page.getByText(/объявленные.*USD|USD.*объявленные/)).toBeVisible();
+    await expect(page.getByText(/не сверены|не сверено/)).toBeVisible();
+    await rulesSummary.focus();
+    await page.keyboard.press('Enter');
+    await expect(rules).toHaveAttribute('open', '');
+    await expect(rules).toContainText(/покупки.*продажи/i);
+    await expect(rules).toContainText(/своими счетами|собственными счетами/i);
+    await expect(rules).toContainText(/остатки.*награды.*комиссии/i);
+    await expect(rules).toContainText(/памят.*вкладк|вкладк.*памят/i);
+    await expect(rules).toContainText(/перезагруз.*очища|очища.*перезагруз/i);
+    await page.keyboard.press('Space');
+    await expect(rules).not.toHaveAttribute('open', '');
+
+    const coverage = page.getByLabel('Граница учёта потоков (ISO)', { exact: true });
+    await expect(coverage).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
+    const periodStart = page.getByLabel('Начало периода (ISO, включительно)', { exact: true });
+    const periodEnd = page.getByLabel('Конец периода (ISO, не включительно)', { exact: true });
+    await expect(periodStart).toHaveAccessibleDescription(/включ|\[from,\s*to\)/i);
+    await expect(periodEnd).toHaveAccessibleDescription(/не включ|исключ|\[from,\s*to\)/i);
+
+    const checkPresentation = async (phase: 'initialization' | 'recorded') => {
+      const rowsBefore = fingerprint(['auth_sessions', 'auth_request_limits']);
+      const providersBefore = providerRequests();
+      const viewport = page.viewportSize();
+      const originalTheme = await page.evaluate(() =>
+        document.documentElement.getAttribute('data-theme'),
+      );
+      const capture = async (target: Locator, name: string, firstOnly = false) => {
+        const bounds = await target.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return { top: box.top + window.scrollY, height: box.height };
+        });
+        const segments = firstOnly ? 1 : Math.ceil(bounds.height / 900);
+        for (let index = 0; index < segments; index++) {
+          const offset = Math.min(index * 900, Math.max(0, bounds.height - 900));
+          await page.evaluate(
+            (top) => window.scrollTo(0, Math.max(0, top - 16)),
+            bounds.top + offset,
+          );
+          await expect(
+            page.getByRole('link', { name: 'К содержимому', exact: true }),
+          ).not.toBeInViewport();
+          await testInfo.attach(`${name}-${index + 1}`, {
+            body: await page.screenshot({
+              path: testInfo.outputPath(`${name}-${index + 1}.png`),
+              animations: 'disabled',
+              fullPage: false,
+            }),
+            contentType: 'image/png',
+          });
+        }
+      };
+      try {
+        for (const theme of ['light', 'dark']) {
+          await page.evaluate(
+            (value) => document.documentElement.setAttribute('data-theme', value),
+            theme,
+          );
+          await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+          for (const width of [360, 768, 1440]) {
+            await page.setViewportSize({ width, height: 1000 });
+            await expect
+              .poll(() =>
+                page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+              )
+              .toBe(true);
+            const controls = await page
+              .locator(
+                '.flow-page input:not([type="checkbox"]), .flow-page select, .flow-page button, .flow-page summary',
+              )
+              .evaluateAll((nodes) =>
+                nodes
+                  .filter((node) => node.getClientRects().length > 0)
+                  .map((node) => ({
+                    label: node.textContent || node.getAttribute('aria-label') || node.tagName,
+                    height: node.getBoundingClientRect().height,
+                  })),
+              );
+            expect(controls.length).toBeGreaterThan(0);
+            for (const control of controls)
+              expect(control.height, control.label).toBeGreaterThanOrEqual(44);
+            if (phase === 'recorded' && width === 360) {
+              for (const name of ['Таблица потоков', 'Таблица версий потока']) {
+                const region = page.getByRole('region', { name, exact: true });
+                await expect(region).toHaveAttribute('tabindex', '0');
+                expect(await region.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(
+                  true,
+                );
+                await region.evaluate((node) => {
+                  node.scrollLeft = 0;
+                });
+                await region.focus();
+                await page.keyboard.press('ArrowRight');
+                await expect
+                  .poll(() => region.evaluate((node) => node.scrollLeft))
+                  .toBeGreaterThan(0);
+                await region.evaluate((node) => {
+                  node.scrollLeft = 0;
+                });
+              }
+            }
+            if (phase === 'initialization') {
+              await capture(page.locator('.flow-page'), `flow-${phase}-${theme}-${width}`, true);
+            } else {
+              for (const name of ['Команда потока', 'Потоки за период', 'Версии потока']) {
+                await capture(
+                  page.getByRole('region', { name, exact: true }),
+                  `flow-${phase}-${name}-${theme}-${width}`,
+                );
+              }
+            }
+          }
+        }
+      } finally {
+        await page.evaluate((value) => {
+          if (value === null) document.documentElement.removeAttribute('data-theme');
+          else document.documentElement.setAttribute('data-theme', value);
+        }, originalTheme);
+        if (viewport) await page.setViewportSize(viewport);
+      }
+      expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(rowsBefore);
+      expect(providerRequests()).toEqual(providersBefore);
+    };
+    await checkPresentation('initialization');
+
+    await coverage.fill(coverageFrom);
     const coverageReview = page.getByRole('checkbox', {
       name: 'Я проверил границу учёта',
       exact: true,
@@ -345,6 +475,11 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     await direction.selectOption({ label: 'Ввод' });
     await page.getByLabel('Момент операции (ISO)', { exact: true }).fill('2025-01-02T00:00:00Z');
     const amount = page.getByLabel('Сумма, USD', { exact: true });
+    await expect(
+      page.getByLabel('Момент операции (ISO)', { exact: true }),
+    ).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
+    await expect(amount).toHaveAccessibleDescription(/положительн|больше нуля|>\s*0/i);
+    await expect(amount).toHaveAccessibleDescription(/USD/);
     await amount.fill('1000');
     const externalReview = page.getByRole('checkbox', {
       name: 'Это внешний ввод или вывод USD',
@@ -385,11 +520,60 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       },
       completeness: 'unreconciled',
     });
-    await expect(page.getByText(created.flow.flowId, { exact: true })).toBeVisible();
+    const periodTable = page.getByRole('table', {
+      name: 'Записанные потоки за период',
+      exact: true,
+    });
+    const row = periodTable.getByRole('row').filter({ hasText: created.flow.flowId });
+    const identity = row.getByText('Идентификатор потока', { exact: true });
+    const identityDisclosure = identity.locator('..');
+    expect(await identity.evaluate((node) => node.tagName)).toBe('SUMMARY');
+    expect(await identityDisclosure.evaluate((node) => node.tagName)).toBe('DETAILS');
+    const exactId = identityDisclosure.locator('code');
+    await expect(exactId).toBeHidden();
+    await identity.focus();
+    await page.keyboard.press('Enter');
+    await expect(exactId).toBeVisible();
+    await expect(exactId).toHaveText(created.flow.flowId);
+    await page.keyboard.press('Space');
+    await expect(exactId).toBeHidden();
     await expect(page.getByText('1000', { exact: true })).toBeVisible();
 
-    const row = page.getByRole('row').filter({ hasText: created.flow.flowId });
-    await row.getByRole('button', { name: 'Исправить', exact: true }).click();
+    const correctAction = row.getByRole('button', { name: 'Исправить', exact: true });
+    const voidAction = row.getByRole('button', { name: 'Аннулировать', exact: true });
+    const selectionRows = fingerprint(['auth_sessions', 'auth_request_limits']);
+    const selectionWrites: string[] = [];
+    const recordSelectionWrite = (request: Request) => {
+      if (
+        request.method() === 'POST' &&
+        new URL(request.url()).pathname.startsWith('/api/accounting/portfolio/cash-flow')
+      )
+        selectionWrites.push(request.url());
+    };
+    page.on('request', recordSelectionWrite);
+    try {
+      await correctAction.click();
+      await expect(
+        page.getByRole('heading', { name: 'Исправление потока', exact: true }),
+      ).toBeFocused();
+      await expect(amount).toHaveValue('1000');
+      await page.getByRole('button', { name: 'Отменить исправление', exact: true }).click();
+      await expect(correctAction).toBeFocused();
+      await voidAction.click();
+      await expect(
+        page.getByRole('heading', { name: 'Аннулирование потока', exact: true }),
+      ).toBeFocused();
+      await page.getByRole('button', { name: 'Отмена', exact: true }).click();
+      await expect(voidAction).toBeFocused();
+      expect(selectionWrites).toEqual([]);
+      expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(selectionRows);
+    } finally {
+      page.off('request', recordSelectionWrite);
+    }
+    await correctAction.click();
+    await expect(
+      page.getByRole('heading', { name: 'Исправление потока', exact: true }),
+    ).toBeFocused();
     await amount.fill('1200');
     await expect(externalReview).toBeChecked();
     const correctionResponse = await browserPost(
@@ -445,7 +629,25 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
         { version: 1, kind: 'create', amountUsd: '1000' },
       ],
     });
+    await expect(page.getByRole('heading', { name: 'Версии потока', exact: true })).toBeFocused();
+    await expect(
+      page.getByRole('table', { name: 'Неизменяемые версии потока', exact: true }),
+    ).toBeVisible();
     await expect(page.getByText('1000', { exact: true })).toBeVisible();
+    await correctAction.click();
+    await amount.fill('1300');
+    await checkPresentation('recorded');
+    const closeRows = fingerprint(['auth_sessions', 'auth_request_limits']);
+    page.on('request', recordSelectionWrite);
+    try {
+      await page.getByRole('button', { name: 'Закрыть версии', exact: true }).click();
+      await expect(page.getByRole('region', { name: 'Версии потока', exact: true })).toHaveCount(0);
+      await expect(row.getByRole('button', { name: 'Версии', exact: true })).toBeFocused();
+      expect(selectionWrites).toEqual([]);
+      expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(closeRows);
+    } finally {
+      page.off('request', recordSelectionWrite);
+    }
     expect(page.url()).toContain('/capital-flows');
 
     // Keep an unsaved correction while a real completed read is delivered late.
@@ -482,6 +684,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       await delivered;
       await expect(page.getByText('Количество потоков: 1', { exact: true })).toHaveCount(0);
       await expect(amount).toHaveValue('1300');
+      await expect(periodEnd).toBeFocused();
     } finally {
       releaseRead();
       await page.unroute(pattern);
@@ -562,16 +765,16 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     );
     await row.getByRole('button', { name: 'Версии', exact: true }).click();
     expect((await oldHistory).status()).toBe(200);
-    const historyPanel = page
-      .getByRole('heading', { name: 'Версии потока', exact: true })
-      .locator('..');
+    const historyPanel = page.getByRole('region', { name: 'Версии потока', exact: true });
     await expect(historyPanel.getByRole('cell', { name: '1000', exact: true })).toBeVisible();
     const other = page
       .getByRole('row')
       .filter({ hasNotText: created.flow.flowId })
       .filter({ has: page.getByRole('button', { name: 'Версии', exact: true }) })
       .first();
-    const otherId = await other.getByRole('cell').first().innerText();
+    await other.getByText('Идентификатор потока', { exact: true }).click();
+    const otherId = await other.locator('details code').innerText();
+    expect(otherId).toMatch(/^[a-f0-9-]{36}$/);
     let releaseHistory: () => void = () => {};
     let historyFetched = false;
     const historyGate = new Promise<void>((resolve) => {
@@ -596,7 +799,9 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     });
     try {
       await other.getByRole('button', { name: 'Версии', exact: true }).click();
+      await expect(page.getByRole('heading', { name: 'Версии потока', exact: true })).toBeFocused();
       await expect.poll(() => historyFetched).toBe(true);
+      await amount.focus();
       await expect(historyPanel.getByRole('cell', { name: '1000', exact: true })).toHaveCount(0);
       const nextHistory = page.waitForResponse(
         (response) => new URL(response.url()).pathname === `${periodPath}/${otherId}/versions`,
@@ -605,10 +810,77 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       await nextHistory;
       await expect(historyPanel.getByRole('cell', { name: '1', exact: true })).toHaveCount(2);
       await expect(amount).toHaveValue('1300');
+      await expect(amount).toBeFocused();
+      const closeHistoryRows = fingerprint(['auth_sessions', 'auth_request_limits']);
+      page.on('request', recordSelectionWrite);
+      try {
+        await page.getByRole('button', { name: 'Закрыть версии', exact: true }).click();
+        await expect(historyPanel).toHaveCount(0);
+        await expect(other.getByRole('button', { name: 'Версии', exact: true })).toBeFocused();
+        expect(selectionWrites).toEqual([]);
+        expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(closeHistoryRows);
+      } finally {
+        page.off('request', recordSelectionWrite);
+      }
     } finally {
       releaseHistory();
       await historyDone;
       await page.unroute(historyPattern);
+    }
+
+    // Closing a panel invalidates an actual read that has completed on the backend.
+    let releaseClosedHistory: () => void = () => {};
+    let closedHistoryFetched = false;
+    const closedHistoryGate = new Promise<void>((resolve) => {
+      releaseClosedHistory = resolve;
+    });
+    let closedHistoryDelivered: () => void = () => {};
+    const closedHistoryDone = new Promise<void>((resolve) => {
+      closedHistoryDelivered = resolve;
+    });
+    await page.route(
+      historyPattern,
+      async (route) => {
+        const response = await route.fetch();
+        expect(response.status()).toBe(200);
+        expect(await response.json()).toMatchObject({
+          flowId: otherId,
+          items: [{ amountUsd: '1' }],
+        });
+        closedHistoryFetched = true;
+        await closedHistoryGate;
+        try {
+          await route.fulfill({ response });
+        } finally {
+          closedHistoryDelivered();
+        }
+      },
+      { times: 1 },
+    );
+    const pendingCloseRows = fingerprint(['auth_sessions', 'auth_request_limits']);
+    page.on('request', recordSelectionWrite);
+    try {
+      const versionsAction = other.getByRole('button', { name: 'Версии', exact: true });
+      await versionsAction.click();
+      await expect(page.getByRole('heading', { name: 'Версии потока', exact: true })).toBeFocused();
+      await expect.poll(() => closedHistoryFetched).toBe(true);
+      await page.getByRole('button', { name: 'Закрыть версии', exact: true }).click();
+      await expect(versionsAction).toBeFocused();
+      const closedDelivery = page.waitForResponse(
+        (response) => new URL(response.url()).pathname === `${periodPath}/${otherId}/versions`,
+      );
+      releaseClosedHistory();
+      await closedDelivery;
+      await expect(historyPanel).toHaveCount(0);
+      await expect(versionsAction).toBeFocused();
+      await expect(amount).toHaveValue('1300');
+      expect(selectionWrites).toEqual([]);
+      expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(pendingCloseRows);
+    } finally {
+      releaseClosedHistory();
+      await closedHistoryDone;
+      await page.unroute(historyPattern);
+      page.off('request', recordSelectionWrite);
     }
   } finally {
     expect(oldFinancialFingerprint(), 'Flow UI preserves every prior financial row').toBe(
