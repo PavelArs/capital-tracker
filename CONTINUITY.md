@@ -4,7 +4,9 @@
 
 Continue the WHOLE target in capital-tracker-openspec-prompt.md. It remains
 substantially incomplete. Read AGENTS.md, Git diff and current OpenSpec first.
-No paid services, production/owner database access, remote push or folder deletion.
+No paid services, production/owner database access or remote push. Owner2026-09-27
+authorized deletion of proven merged worktrees; original-project deletion remains gated
+by the final consolidation inventory and data-preservation requirements.
 Consolidate into capital-tracker-old only after the whole verified refactor and
 inventory in docs/consolidation-plan.md. Original projects/data remain untouched.
 The user defers chart/max-period review; current chart remains a bounded 30-day
@@ -504,6 +506,29 @@ strict42canonical specs pass/noactivechanges. Archive/product60c28d8 fast-forwar
 integrated; all6tasks complete. Exactly7temporarydependencylinks unlinked; primary
 dependencies and allsourceworktrees retained. Owner Nginx/lock unchanged.
 
+## Merged worktree cleanup — 2026-09-27
+
+Owner explicitly requested removal now. Luna inventory and independent review covered
+108registered worktrees. Root removed101 using non-force git worktree remove after
+ancestry(19)/patch-equivalence(82), immediate HEAD/status, exact dependency-link and
+generated-artifact/synthetic-runtime guards. Branches retained;101paths absent verified.
+Main+3activeanalytics+3unprovenexceptions remain. No unique working edits, original
+repositories, primary dependencies or preview resources removed. Full record and
+exceptions: docs/worktree-cleanup.md. Evidence /private/tmp/capital-merged-worktrees-*.
+
+## Current analytics change
+
+Active `redesign-account-analytics` in capital-tracker-analytics-workbench,
+refactor/redesign-account-analytics, basec3a4dbd. Proposal/design/spec/tasks59b19bd ready;
+strict43itemsPASS,118frontend baselinePASS3.29s. RootownsnewAccountAnalytics/3readTSX/
+TradeJournal composition; Solacceptance in capital-test-analytics-workbench; LunaCSS in
+capital-tracker-analytics-styles. No product changes yet; acceptance-first RED pending.
+Defaultvaluation selector plus retained mounted history/accounting, associatedguidance/
+methoddisclosure, exactresult hierarchy and keyboard-scroll tables; originalcontrollers
+and30day/31pointchartbounds unchanged. Required5realjourneys WORKSPACE,HISTlate/HISTpinned,
+VAL,VCH. Independentdesignreviewadds loadedchart hide/resize/reveal identity/dimensions
+and account-navigation default/reset checks. Goal and wholefrontend remain incomplete.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
@@ -512,7 +537,7 @@ FUI-05 has its first Settings slice and remains partial; FUI-06 and owner visual
 approval remain open. Next coherent workflow: wider selected-account history/valuation
 hierarchy: HistoricalAccounting, HistoricalValuation and
 ValuationHistory, retaining HIST-004-A/VAL-UI/VCH-UI/MPV-UI and current supportedperiods.
-No next-slice product/spec changes have started. Legacy routes remain subordinate;
+Analytics specification is active; product edits await real acceptance RED. Legacy routes remain subordinate;
 Settings visibility is not integration health or complete accounting.
 Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
@@ -531,6 +556,7 @@ immutable; future catalog edits require explicit receipt preservation.
 
 No preview update, owner DB access, production rollout, remote push or project cleanup.
 Preserve preview volume/MFA/TLS/credentials, old image tag7eff01d1 and stopped containers.
-Review worktrees remain for inspection. Root alone owns Docker, migrations, locks and
+Retain active/unproven worktrees; remove proven integrated worktrees after guarded
+verification as now authorized. Root alone owns Docker, migrations, locks and
 deployment; protect owner Nginx/lock hashes above. Follow worktree/model-routing rules
 for the next independent tasks; prior quota errors are historical, not a current blocker.
