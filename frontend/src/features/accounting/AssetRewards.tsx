@@ -283,32 +283,24 @@ function AssetRewardsOwner({
   const historyHeading = useRef<HTMLHeadingElement>(null);
   const editorAction = useRef<HTMLButtonElement | null>(null);
   const historyAction = useRef<HTMLButtonElement | null>(null);
-  const focusSequence = useRef(0);
-
   const requestFocus = useCallback((kind: FocusKind) => {
-    setFocusRequest({ kind, sequence: ++focusSequence.current });
+    setFocusRequest((previous) => ({ kind, sequence: (previous?.sequence ?? 0) + 1 }));
   }, []);
 
   useLayoutEffect(() => {
     if (!focusRequest) return;
-    const origin =
-      focusRequest.kind === 'return-editor'
-        ? editorAction.current
-        : focusRequest.kind === 'return-history'
-          ? historyAction.current
-          : null;
-    if (origin?.isConnected && !origin.disabled) {
-      origin.focus();
-    } else {
-      const target =
-        focusRequest.kind === 'editor'
-          ? editor.current
-          : focusRequest.kind === 'history'
-            ? historyHeading.current
-            : sectionHeading.current;
-      target?.focus();
+    if (focusRequest.kind === 'editor' || focusRequest.kind === 'history') {
+      const destination = focusRequest.kind === 'editor' ? editor.current : historyHeading.current;
+      destination?.focus({ preventScroll: true });
+      destination?.scrollIntoView({ block: 'start' });
+      return;
     }
-    setFocusRequest(null);
+    const origin = focusRequest.kind === 'return-editor' ? editorAction : historyAction;
+    const destination = origin.current;
+    // The originating history button becomes enabled in this commit after closing.
+    if (destination?.isConnected && !destination.disabled) destination.focus();
+    else sectionHeading.current?.focus();
+    origin.current = null;
   }, [focusRequest]);
   const live = useRef(false);
   const writeLock = useRef(false);
