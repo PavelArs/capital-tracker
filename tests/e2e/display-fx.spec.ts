@@ -518,22 +518,25 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
   expect(initial.status()).toBe(200);
   expect((await initial.json()).status).toBe('unavailable');
   await expect(panel.getByText('Нет сохранённых курсов', { exact: true })).toBeVisible();
-  const repeatedActivationRead = page
-    .waitForRequest((request) => new URL(request.url()).pathname === displayPath, { timeout: 500 })
-    .then(
-      () => true,
-      (error: Error) => {
-        expect(error.name).toBe('TimeoutError');
-        return false;
-      },
-    );
-  await nav.click();
-  await expect(nav).toBeFocused();
-  await expectSelection(nav);
-  expect(
-    await repeatedActivationRead,
-    'The selected section stays mounted without a new read',
-  ).toBe(false);
+  const repeatedActivationRequests: string[] = [];
+  const recordRepeatedActivation = (request: Request) => {
+    if (new URL(request.url()).pathname === displayPath)
+      repeatedActivationRequests.push(`${request.method()} ${request.url()}`);
+  };
+  page.on('request', recordRepeatedActivation);
+  try {
+    await nav.click();
+    await expect(nav).toBeFocused();
+    await expectSelection(nav);
+    // Observe after the action completes as well as throughout the action itself.
+    await page.waitForTimeout(500);
+    expect(
+      repeatedActivationRequests,
+      'The selected section stays mounted without a new read',
+    ).toEqual([]);
+  } finally {
+    page.off('request', recordRepeatedActivation);
+  }
   await expect(amount).toHaveValue('1');
   await expect(panel.getByText('Нет сохранённых курсов', { exact: true })).toBeVisible();
   expect(providerRequests()).toEqual(providersBefore);
