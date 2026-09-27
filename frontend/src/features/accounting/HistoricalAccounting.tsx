@@ -141,9 +141,11 @@ export function HistoricalAccounting({
             включительно.
           </small>
         </div>
-        <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
-          Показать учётный срез
-        </button>
+        <div className="account-analytics__actions">
+          <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
+            Показать учётный срез
+          </button>
+        </div>
       </form>
       <details className="account-analytics__method">
         <summary>Как читать учётный срез</summary>

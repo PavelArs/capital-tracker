@@ -128,19 +128,21 @@ export function HistoricalValuation({
             моментом UTC.
           </small>
         </div>
-        <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
-          Рассчитать стоимость
-        </button>
-        {snapshot && (
-          <button
-            className="manual-button"
-            type="button"
-            disabled={loading}
-            onClick={() => void calculate()}
-          >
-            Обновить оценку
+        <div className="account-analytics__actions">
+          <button className="manual-button" type="submit" disabled={loading || !instant.trim()}>
+            Рассчитать стоимость
           </button>
-        )}
+          {snapshot && (
+            <button
+              className="manual-button"
+              type="button"
+              disabled={loading}
+              onClick={() => void calculate()}
+            >
+              Обновить оценку
+            </button>
+          )}
+        </div>
       </form>
       <details className="account-analytics__method">
         <summary>Как устроена оценка</summary>

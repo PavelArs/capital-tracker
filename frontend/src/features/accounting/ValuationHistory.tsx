@@ -151,23 +151,25 @@ export function ValuationHistory({
             от начала и точный конец.
           </small>
         </div>
-        <button
-          className="manual-button"
-          type="submit"
-          disabled={loading || !from.trim() || !to.trim()}
-        >
-          Показать историю
-        </button>
-        {series && (
+        <div className="account-analytics__actions">
           <button
             className="manual-button"
-            type="button"
-            disabled={loading}
-            onClick={() => void calculate()}
+            type="submit"
+            disabled={loading || !from.trim() || !to.trim()}
           >
-            Обновить историю
+            Показать историю
           </button>
-        )}
+          {series && (
+            <button
+              className="manual-button"
+              type="button"
+              disabled={loading}
+              onClick={() => void calculate()}
+            >
+              Обновить историю
+            </button>
+          )}
+        </div>
       </form>
       <details className="account-analytics__method">
         <summary>Как строится история</summary>
