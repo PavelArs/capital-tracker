@@ -223,6 +223,43 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm test:e2e
+      - name: Scan the tested backend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: capital-tracker-backend:acceptance
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: backend-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Scan the tested frontend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          skip-setup-trivy: true
+          scan-type: image
+          image-ref: capital-tracker-frontend:acceptance
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: frontend-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Redact potentially sensitive scanner details
+        id: redact-image-security
+        if: always()
+        run: node scripts/check-release-image-security.cjs --redact-only
+      - name: Enforce exact-image high and critical security gate
+        run: node scripts/check-release-image-security.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && steps.redact-image-security.conclusion == 'success'
+        with:
+          name: release-image-security
+          path: '*-image-security.json'
+          retention-days: 7
       - name: Export the actual tested candidate images
         env:
           CANDIDATE_COMMIT: ${{ github.sha }}

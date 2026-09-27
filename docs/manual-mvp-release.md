@@ -33,8 +33,11 @@ commit/run manifest. Manual deploy selects a successful main-push CI run for the
 current main commit, requires every named gate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
 No deployment rebuild or mutable latest promotion is used. Private server receipts record
-registry digests, schema ledgers, backup path and verified health. Image scanning and a
-real isolated backup-restore rehearsal still require recorded evidence before production.
+registry digests, schema ledgers, backup path and verified health. Pinned Trivy v0.74.0 scans exact tested images for vulnerabilities and secrets;
+unresolved high/critical findings block export. Complete finding identifiers and lower
+severities remain in sanitized reports; raw secret matches/image environment details are
+removed before upload. Actual scan results and a real isolated backup-restore rehearsal
+still require recorded evidence before production.
 
 ## Fresh server setup
 
@@ -73,6 +76,10 @@ is separate from the backup directory and independently generated from the MFA k
 Copy both keys into access-controlled encrypted operator storage through a trusted
 channel; losing the MFA key breaks factor decryption, losing the backup key prevents DB
 recovery. Do not upload keys, enrollment, recovery codes or real dumps as CI artifacts.
+
+Every attempt keeps distinct UTC/PID receipt and prior selection snapshots under its
+commit directory. Generated fresh installations persist a managed-environment marker so
+later upgrades never read the preserved unknown original `.env`.
 
 On a failed existing upgrade, both prior images and preserved Compose configuration
 return only if the migration ledger is unchanged, followed by readiness/privacy checks.
