@@ -1,6 +1,6 @@
 # External-flow workbench verification
 
-Status: product, selected runtime checks, independent review and archive comparison passed; integration procedure pending.
+Status: archived and integrated; all six slice tasks complete. The whole-refactor goal remains active.
 
 ## Baseline and manifest
 
@@ -53,4 +53,10 @@ OpenSpec1.2.0 `openspec archive redesign-external-flow-workbench --yes` exited0,
 
 All38previous canonical files remain byte-identical to75a0f6b. All3new requirement blocks match the archived delta after blank-line normalization. The generated Purpose placeholder now states the verified capability. Strict39canonical specs pass and active changes are empty. Logs `...-canonical.log` and `...-specs-archived.log`.
 
-Final labeled Docker inventory has no E2E containers/networks. Preview containers remain exited43hours, preserved volume `capital-tracker-preview_preview_data` exists, and original FE preview sha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c remains unchanged. Main still starts at75a0f6b with only the owner Nginx edit. Owner Nginx SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432 and lock SHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d remain preserved. No owner data, production rollout, remote push or original project cleanup.
+Final labeled Docker inventory has no E2E containers/networks. Preview containers remain exited43hours, preserved volume `capital-tracker-preview_preview_data` exists, and original FE preview sha256:7eff01d148e8f286c025655ffa0dd88cfa842fc051d9dd9240318c11cc60768c remains unchanged. Main was verified at75a0f6b with only the owner Nginx edit before integration. Owner Nginx SHA256115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432 and lock SHA2566a6ee2c908a07c1a362e5a0dafdfd49f920e5090dbec2c701c6f8d8e005d883d remain preserved. No owner data, production rollout, remote push or original project cleanup.
+
+Product/archive a5bc7f3 fast-forward integrated into refactor/brownfield-baseline after
+the guarded HEAD/owner-file checks. Only the five exact temporary dependency symlinks
+in the integration and acceptance worktrees were unlinked; primary dependencies and
+all source worktrees remain. Task3.2 was then completed. The final bookkeeping commit
+changes documentation only and does not claim an additional product test run.

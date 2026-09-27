@@ -11,4 +11,4 @@
 ## 3. Verify and archive
 
 - [x] 3.1 Pass selected real FLOW-004-A/B through HTTPS/MFA/PostgreSQL and local frontend/types/style/audit/OpenSpec gates; record actual images, results, failures and unrun checks.
-- [ ] 3.2 Update guides/continuity, archive with canonical comparison, integrate reviewed commits and clean only disposable resources while preserving owner files/data/preview.
+- [x] 3.2 Update guides/continuity, archive with canonical comparison, integrate reviewed commits and clean only disposable resources while preserving owner files/data/preview.

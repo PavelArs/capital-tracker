@@ -388,14 +388,22 @@ FEsha256:048b059e457731b7692617f1484d9d8fac29bc50cae7aecbc8fc758516ba089c;
 unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-flow-workbench-*`.
 No blocking source/visual findings; native ISO inputs can clip their visible text at768,
 with complete returned interval still readable. Full suites and broader release gates
-were not repeated. Archive/integration procedure is the only remaining slice task.
+were not repeated. Archived as2026-09-27-redesign-external-flow-workbench: all3new
+requirement blocks match,38previous canonical files remain byte-identical, strict39
+canonical specs pass and active changes are empty. Product/archive a5bc7f3 is
+fast-forward integrated; all6tasks complete. Five exact temporary dependency links
+unlinked; primary dependencies and all worktrees retained. Owner Nginx/lock and the
+stopped preview containers/image/volume remain preserved. No E2E resources remain.
 
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
 are partial; FUI-04/05/06 and owner visual approval remain open. Next small slices:
-analytical/settings screens and wider result hierarchy. Compact context and trade
-entry/focus are complete.
+period-review workbench on /period-profit, then settings and wider result hierarchy.
+Luna read-only audit recommends PeriodProfit.tsx/CSS and LinkedTwr.tsx with retained
+PROFIT/XIRR/TWR/LTWR acceptance; `/private/tmp/capital-next-ui-audit.md` has candidates,
+risks and exact assertions. No next-slice product/spec changes have started. Compact
+context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.
