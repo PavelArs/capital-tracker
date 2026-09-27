@@ -361,7 +361,7 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
             </option>
           ))}
         </select>
-        <p id="prices-instrument-help">
+        <p id="prices-instrument-help" className="prices-instrument-help">
           Выбирайте по имени и UUID: одинаковый символ не означает один и тот же актив.
         </p>
         <div className="prices-actions">
@@ -463,18 +463,6 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
         <div className="prices-actions">
           <button
             type="button"
-            className="prices-secondary"
-            disabled={!instrumentId || !observedAt || saving || bookRead !== 'ready'}
-            onClick={(event) => {
-              historyAction.current = event.currentTarget;
-              void showHistory(observedAt);
-              focusPanel('history');
-            }}
-          >
-            История указанной даты
-          </button>
-          <button
-            type="button"
             disabled={!canSave}
             onClick={() => {
               if (retrySet && recovery?.phase === 'unknown') {
@@ -538,6 +526,18 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
               Отменить исключение
             </button>
           )}
+          <button
+            type="button"
+            className="prices-secondary"
+            disabled={!instrumentId || !observedAt || saving || bookRead !== 'ready'}
+            onClick={(event) => {
+              historyAction.current = event.currentTarget;
+              void showHistory(observedAt);
+              focusPanel('history');
+            }}
+          >
+            История указанной даты
+          </button>
         </div>
       </section>
 

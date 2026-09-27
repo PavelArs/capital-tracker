@@ -20,6 +20,7 @@
 
 .prices-page h1 {
   margin-bottom: 0.5rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
 }
 
 .prices-page h2 {
@@ -82,7 +83,7 @@
 .prices-fields {
   display: grid;
   min-width: 0;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
   gap: 1rem;
   margin: 1rem 0;
 }
@@ -138,7 +139,7 @@
   margin-top: 0.6rem;
 }
 
-.prices-review {
+.prices-card .prices-review {
   display: flex;
   min-height: 44px;
   align-items: center;
@@ -149,6 +150,7 @@
 }
 
 .prices-review input[type="checkbox"] {
+  flex: 0 0 1.15rem;
   width: 1.15rem;
   height: 1.15rem;
   min-height: 1.15rem;
