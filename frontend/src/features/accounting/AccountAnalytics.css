@@ -263,6 +263,10 @@
   width: 100%;
   height: 20rem;
   min-width: 0;
+  /* Chart.js uses fixed dark labels; keep its plotting surface readable in both themes. */
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
 }
 
 @media (max-width: 420px) {
