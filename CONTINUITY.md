@@ -395,15 +395,42 @@ fast-forward integrated; all6tasks complete. Five exact temporary dependency lin
 unlinked; primary dependencies and all worktrees retained. Owner Nginx/lock and the
 stopped preview containers/image/volume remain preserved. No E2E resources remain.
 
+## Period review workbench — 2026-09-27
+
+`redesign-period-review-workbench` follows97ca8da. RootTSX17d5d46, LunaCSS7418c04
+integrated7312fbb and rootstylefixbcb9699 add native method/evidence disclosures,
+grouped period/valuation fields, distinct exact primary metrics and an optional mounted
+linked-TWR workflow. The native wrapper is outside the unchanged period-key component;
+folding preserves reviewed values/plan/result, while original date/valuation changes
+and delayed replies retain their invalidation semantics. All15control/props signatures
+and module/pre-render controller logic remain structurally unchanged. No backend/auth/
+schema/dependency/pipeline change. Sol acceptance74f464c/b8a229a integrated7a7c22e/5c3824a.
+
+Actual predecessor RED onFE048b059e: missing method disclosure. Final118/21frontend
+PASS3.94s; build/lint/types/style/audit/specs pass; existing27warnings,bundle warning
+and2moderate/nohighcritical remain. Actual GREEN4/4PASS51.7s: LTWR14.7,PROFIT13.1,
+TWR11.7,XIRR11.5, one worker/zero retries, realHTTPS/password/MFA/backend/PG22migrations.
+Existing exact finance, error, stale-plan, late-response, fingerprint, admission and
+provider assertions retained. Source/oracle review and20profit screenshots independently
+approved; separate product review approved22linked frames. No blocking findings.
+FEsha256:78436d00c6a36f0109abe0505dbff20fc21d8fe67642cc605b79d3dc51b3fa41;
+unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-period-workbench-*`.
+Captures cover reviewed profit/linked states; XIRR/TWR have runtime assertions but no
+dedicated card screenshots. Broad accessibility/full suites/release gates remain unrun.
+Archive/integration procedure is the remaining slice task.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03
-are partial; FUI-04/05/06 and owner visual approval remain open. Next small slices:
-period-review workbench on /period-profit, then settings and wider result hierarchy.
-Luna read-only audit recommends PeriodProfit.tsx/CSS and LinkedTwr.tsx with retained
-PROFIT/XIRR/TWR/LTWR acceptance; `/private/tmp/capital-next-ui-audit.md` has candidates,
-risks and exact assertions. No next-slice product/spec changes have started. Compact
-context and trade entry/focus are complete.
+are partial; FUI-04 has its first bounded period-review slice and remains partial;
+FUI-05/06 and owner visual approval remain open. Next: /manual-prices workbench, then
+settings and wider account/portfolio result hierarchy. Luna read-only audit is in
+`/private/tmp/capital-next-settings-prices-audit.md`: row void action needs event-only
+focus/cancel return, exact price guidance and responsive evidence, preserving PRICE-UI/
+PRICE-RECOVERY, revision/accepted-refresh locks and provider-free behavior. Settings
+mixes legacy currency visibility and verified indicative display FX; do not invent
+integration-health capability. No next-slice product/spec changes have started.
+Compact context and trade entry/focus are complete.
 Carry the focus convention into other editors; track delayed create completion and
 focused desktop-navigation collapse on resize as nonblocking UX review followups.
 Keep chart/max-period expansion deferred for the owner's later review.

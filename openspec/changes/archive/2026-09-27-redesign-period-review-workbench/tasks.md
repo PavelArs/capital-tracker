@@ -5,10 +5,10 @@
 
 ## 2. Implement and review
 
-- [ ] 2.1 Implement native disclosures, focused input/result hierarchy and responsive styles while preserving financial controllers and mounted linked state.
-- [ ] 2.2 Independently review product/source, acceptance oracles and actual light/dark360/768/1440 captures; resolve blocking findings.
+- [x] 2.1 Implement native disclosures, focused input/result hierarchy and responsive styles while preserving financial controllers and mounted linked state.
+- [x] 2.2 Independently review product/source, acceptance oracles and actual light/dark360/768/1440 captures; resolve blocking findings.
 
 ## 3. Verify and archive
 
-- [ ] 3.1 Pass four selected real PROFIT/XIRR/TWR/LTWR UI journeys and local frontend/types/style/audit/OpenSpec gates; record actual results, images and unrun checks.
+- [x] 3.1 Pass four selected real PROFIT/XIRR/TWR/LTWR UI journeys and local frontend/types/style/audit/OpenSpec gates; record actual results, images and unrun checks.
 - [ ] 3.2 Update guides/continuity, archive and compare canonical specs, integrate reviewed commits and remove only disposable resources/temporary links.

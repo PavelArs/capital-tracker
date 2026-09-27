@@ -31,6 +31,19 @@ Values/results are not persisted in the database or browser storage. Navigation,
 reload and authentication loss can clear the form. No valuation or return rate is
 silently recovered or posted after login.
 
+The page groups period boundaries and valuations, keeps manual/unreconciled/temporary
+scope visible and exposes full methods under **Как считаются показатели**. Exact profit
+and the selected period lead the result; **Основание расчёта** reveals original input
+values, flow totals, coverage and journal revision. XIRR remains explicitly annualized;
+TWR remains period-only. Unavailable rates retain their reason without a numeric value.
+
+The **TWR с промежуточными оценками** disclosure opens the separate linked workflow.
+Folding it preserves its current plan, entered boundary values, review and result;
+changing dates or valuations still invalidates them under the existing rules. Opening
+or closing detail does not request a calculation. The
+[period workbench verification](../openspec/changes/archive/2026-09-27-redesign-period-review-workbench/verification.md)
+records scoped browser/database and responsive evidence.
+
 ## API
 
 Authenticated `POST /accounting/portfolio/profit-preview`, status 200. Existing
@@ -63,9 +76,10 @@ input precision without rounding. All monetary fields remain exact strings.
 One read-only repeatable-read snapshot reads the complete eligible current flow
 set; the preview is unpaginated. Household income, asset trades and unrelated
 owners do not contribute.
-No schema migration, provider call or stored valuation is introduced. XIRR, TWR,
-marked values, gains by lot, signed portfolio valuations and charts remain future
-contracts; profit here is an absolute USD amount, not a percentage or tax report.
+No schema migration, provider call or stored valuation is introduced. Profit here is
+an absolute USD amount, not a percentage or tax report. The separately implemented
+[XIRR](xirr-preview.md), [endpoint TWR](endpoint-twr.md) and [linked TWR](linked-twr.md)
+previews have their own contracts and limitations.
 
 ## Verification
 

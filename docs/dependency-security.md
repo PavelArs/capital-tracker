@@ -212,3 +212,5 @@ The transfer-workbench gate also exited0 with the same two moderate findings and
 unchanged lockfile: `/private/tmp/capital-transfer-workbench-audit.log`.
 The external-flow-workbench gate on2026-09-27 also exited0 with the same two moderate
 findings and unchanged lockfile: `/private/tmp/capital-flow-workbench-audit.log`.
+The period-review-workbench gate also exited0 with the same two moderate findings
+and unchanged lockfile: `/private/tmp/capital-period-workbench-audit.log`.

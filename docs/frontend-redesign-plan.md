@@ -86,9 +86,9 @@ instrument-draft retention on parameter-only account navigation. Earlier scoped
 checks retain their recorded image/date limits. No full-suite or whole-redesign
 completion is claimed. The preserved local preview still uses its old image/data.
 
-FUI-01/02/03 remain partial; FUI-04/05/06 and owner visual approval remain open.
+FUI-01/02/03/04 remain partial; FUI-05/06 and owner visual approval remain open.
 Responsive evidence exists for the completed slices, not every screen. Next bounded
-work: analytical/settings screens and remaining editor focus. Retain chart
+work: manual prices, settings, remaining analytics and editor focus. Retain chart
 maximum-period review separately.
 
 The next bounded step, `compact-journal-context`, reduces initialized-journal prose
@@ -128,6 +128,14 @@ and contained exact result tables. Both selected real flow/recovery journeys pas
 26 light/dark360/768/1440 viewport frames have independent product review. See
 [flow workbench verification](../openspec/changes/archive/2026-09-27-redesign-external-flow-workbench/verification.md).
 Remaining editor focus, analytics/settings and whole-redesign review remain open.
+
+`redesign-period-review-workbench` starts FUI-04 with compact method disclosure,
+grouped manual period inputs, distinct primary profit/XIRR/TWR results and an optional
+mounted linked-TWR editor. Folding retains boundary values/review/results; original
+date/valuation invalidation and stale-plan refusal remain. Four selected real journeys
+pass, including late responses and unavailable rates. See
+[period workbench verification](../openspec/changes/archive/2026-09-27-redesign-period-review-workbench/verification.md).
+This does not complete portfolio/allocation/history/chart redesign or owner approval.
 
 Carry these nonblocking review findings into the next suitable UX slice:
 - Trade correction/void focus is handled by the workbench; carry this convention to
