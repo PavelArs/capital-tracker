@@ -502,7 +502,9 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   await expect(lots).toContainText('Интервал исходного лота: 0–3');
   const captureFocusContext = async (focusTarget: Locator, boundsTarget: Locator, name: string) => {
     const viewport = page.viewportSize();
-    const theme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
+    const colorScheme = await page.evaluate(() =>
+      window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+    );
     const rowsBefore = businessRows();
     const providersBefore = providerRequests();
     try {
@@ -511,10 +513,8 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
         [1440, 'light'],
       ] as const) {
         await page.setViewportSize({ width, height: 900 });
-        await page.evaluate(
-          (value) => document.documentElement.setAttribute('data-theme', value),
-          themeName,
-        );
+        await page.emulateMedia({ colorScheme: themeName });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', themeName);
         await focusTarget.focus();
         await expect(focusTarget).toBeFocused();
         await expect
@@ -543,10 +543,8 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
         }
       }
     } finally {
-      await page.evaluate((value) => {
-        if (value === null) document.documentElement.removeAttribute('data-theme');
-        else document.documentElement.setAttribute('data-theme', value);
-      }, theme);
+      await page.emulateMedia({ colorScheme });
+      await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme);
       if (viewport) await page.setViewportSize(viewport);
     }
     expect(businessRows()).toBe(rowsBefore);
@@ -581,6 +579,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     ]) {
       const opener = article.getByRole('button', { name: buttonName, exact: true });
       await opener.click();
+      await expect(opener).not.toBeFocused({ timeout: 10_000 });
       const editor = section.getByRole('region', { name: editorName, exact: true });
       // ENTRY-004: meaningful bounded RED before any other newly required behavior.
       await expect(editor).toBeFocused({ timeout: 10_000 });
