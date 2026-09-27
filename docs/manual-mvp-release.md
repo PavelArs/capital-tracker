@@ -15,8 +15,13 @@ No Capital Tracker containers, named/project application volumes or networks wer
 The unknown `/opt/capital-tracker/.env` is root-owned0600 and is preserved. Port3000
 belongs to another service; the dedicated application uses loopback3100/3101 only.
 The existing `pavelars` login lacks passwordless sudo. `deploy` rejects the same SSH key.
-GitHub's existing dedicated deployment key may differ; the reviewed read-only Actions
-inventory establishes its permissions without exposing secret values.
+The existing GitHub deployment key successfully completed read-only Actions run36313627415:
+project directory writable, Docker access present, existing `.env` unreadable, no
+noninteractive sudo and no enabled capital vhost. Docker access remains host-root
+equivalent; this is an explicit operational limitation, not least-privilege proof.
+A dedicated restricted SSH identity with a root-owned fixed release dispatcher can
+reduce this capability without changing the stack or removing shared deploy rights.
+Do not expose an arbitrary shell/script/upload through that dispatcher.
 
 ## Pipeline and trusted promotion
 
@@ -112,3 +117,30 @@ For older installations also include their original `.env` before `.env.release`
 the observed project name, never a guessed volume project. Runtime credentials remain
 private. Hosted CI, privileged setup, owner login and actual deployment must be recorded
 as completed evidence before calling this release delivered.
+
+## Current isolated evidence (2026-09-27)
+
+Actual PostgreSQL16.10 rehearsal migrated schema22 and seeded independent exact decimal,
+JSON and bytea rows. Encrypted custom backup, disconnected tmpfs restore, direct source
+schema/data comparison, unchanged source and real failed-dump propagation passed.
+Initial attempts failed exact SQL equality because PostgreSQL reparses three CHECK
+expressions into equivalent deparser forms. `normalize-release-snapshot.awk` maps only
+those three exact reviewed complete lines; altered bounds/operands, all other DDL and
+all COPY rows remain fingerprint-visible. It protects COPY/dollar-quoted contents and
+never strips constraints. Evidence: `/private/tmp/capital-mvp-backup-rehearsal{,2,3}.log`.
+This is synthetic restoration evidence; the real server backup still executes in release.
+
+Actual Trivy0.74.0 scan of BE049c5e91 and FE28faa7ab found5critical/55high and2critical/35high
+respectively, with no secret findings. The gate correctly blocks both artifacts. Backend
+language findings belong to inherited global npm tooling, while OpenSSL/musl/zlib and
+frontend image OS packages also need fixes. No finding is suppressed. Full sanitized
+reports are `/private/tmp/capital-{backend,frontend}-image-security.json`; updated image
+builds and rescans are still required. Dependency audit0 does not override image findings.
+The scanner release tarball checksum was verified against the official release checksum.
+
+Before setup, the privileged owner executes the independently tested read-only
+`manual-mvp-data-assessment.sh`; it reports only flags, fails closed on unparsed/unknown
+configuration or possible external/local database references and unexpected stored data,
+and makes no database connection or filesystem change. Do not paste `.env` values.
+Only a clear assessment permits the separately reviewed root bootstrap. Off-host key/
+backup custody remains an operator action; server-local copies alone are insufficient.

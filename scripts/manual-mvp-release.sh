@@ -13,6 +13,8 @@ frontend=${4:-}
 root=${RELEASE_ROOT:-/opt/capital-tracker}
 candidate=${RELEASE_COMPOSE_FILE:?Required candidate Compose file}
 runtime=${RELEASE_RUNTIME_FILE:-$root/.env.release}
+normalizer=$(cd "$(dirname "$0")" && pwd)/normalize-release-snapshot.awk
+[[ -f $normalizer ]] || exit 1
 cd "$root"
 for tool in docker jq flock curl openssl sha256sum; do command -v "$tool" >/dev/null; done
 [[ -f .env && -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
@@ -179,7 +181,7 @@ openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$backup_key" -in "$
 # Compare normalized logical SQL output, including actual rows and schema, not merely exit codes.
 fingerprint() {
   docker exec "$1" sh -c 'pg_dump --no-owner --no-privileges -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"' \
-    | sed '/^--/d; /^\\restrict /d; /^\\unrestrict /d; /^$/d' | sha256sum | cut -d' ' -f1
+    | awk -f "$normalizer" | sha256sum | cut -d' ' -f1
 }
 [[ $(fingerprint "$db") == $(fingerprint "$restore_container") ]] || { echo 'Isolated backup restore fingerprint mismatch'; exit 1; }
 printf '%s\n' "$before" >"$state/migrations-before"

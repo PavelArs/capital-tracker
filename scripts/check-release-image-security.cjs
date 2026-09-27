@@ -37,5 +37,5 @@ if (require.main === module) {
       checkReport(JSON.parse(readFileSync(`${name}-image-security.json`, 'utf8')), expected);
     }
     console.log('Both exact tested images passed the high/critical vulnerability and secret gate; complete findings retained');
-  } catch (error) { console.error(error.message); process.exitCode = 1; }
+  } catch { console.error('Image security gate failed; inspect the sanitized report and scanner status'); process.exitCode = 1; }
 }

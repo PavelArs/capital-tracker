@@ -121,7 +121,7 @@ jobs:
           trap cleanup_remote_auth EXIT
           [[ "$GITHUB_ACTOR" =~ ^[A-Za-z0-9_-]+$ ]]
           printf '%s' "$GH_TOKEN" | ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
-          scp -P "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes scripts/manual-mvp-release.sh docker-compose.yml "$target:$remote_dir/"
+          scp -P "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes scripts/manual-mvp-release.sh scripts/normalize-release-snapshot.awk docker-compose.yml "$target:$remote_dir/"
           ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' RELEASE_INSTALLATION='$RELEASE_INSTALLATION' RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
       - name: Remove runner credentials
         if: always()
