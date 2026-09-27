@@ -32,6 +32,15 @@ if(tool==='jq'){
  process.stdout.write(v);
 }
 if(tool==='docker'){
+ if(a[0]==='ps'){
+  if(mode==='fresh-container-inventory')process.exit(1);
+  if(mode==='fresh-container')process.stdout.write('capital_tracker_db');
+ }
+ if(a[0]==='volume'&&a[1]==='ls'){
+  const labeled=a.includes('--filter');
+  if(mode===(labeled?'fresh-label-inventory':'fresh-volume-inventory'))process.exit(1);
+  if(mode===(labeled?'fresh-labeled-volume':'fresh-named-volume'))process.stdout.write(labeled?'unexplained_owner_data':'capital_tracker_postgres_data');
+ }
  if(a[0]==='inspect'){
   if(mode==='missing-db'&&a[1]==='capital_tracker_db')process.exit(1);
   if(a.includes('--format')){
@@ -99,13 +108,14 @@ beforeEach(() => {
 afterEach(() => {
   if (directory) rmSync(directory, { recursive: true, force: true });
 });
-function release(failure: string) {
+function release(failure: string, installation = 'existing', action = 'deploy') {
   const log = join(directory, 'commands.jsonl');
-  const result = spawnSync('bash', [script, 'deploy', commit, backend, frontend], {
+  const result = spawnSync('bash', [script, action, commit, backend, frontend], {
     env: {
       ...process.env,
       PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
       RELEASE_ROOT: directory,
+      RELEASE_INSTALLATION: installation,
       RELEASE_COMPOSE_FILE: join(directory, 'candidate.yml'),
       RELEASE_RUNTIME_FILE: join(directory, '.env.release'),
       RELEASE_BACKUP_KEY_FILE: join(directory, '.backup-key'),
@@ -237,4 +247,56 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
     ).toBe(true);
     expect(calls.some((call) => call.tool === 'docker' && call.args.includes('down'))).toBe(false);
   }, 20000);
+});
+
+describe('MVP-003: explicit fresh-install absence preflight', () => {
+  it.each([
+    'fresh-container',
+    'fresh-named-volume',
+    'fresh-labeled-volume',
+    'fresh-container-inventory',
+    'fresh-volume-inventory',
+    'fresh-label-inventory',
+  ])('refuses %s without creating or changing application data', (failure) => {
+    const { result, calls } = release(failure, 'fresh', 'preflight');
+    expect(result.status).not.toBe(0);
+    const inventory = failure.includes('container')
+      ? (call: Command) => call.tool === 'docker' && call.args[0] === 'ps'
+      : (call: Command) =>
+          call.tool === 'docker' &&
+          call.args[0] === 'volume' &&
+          call.args[1] === 'ls' &&
+          call.args.includes('--filter') === failure.includes('label');
+    expect(calls.some(inventory)).toBe(true);
+    expect(calls.filter(appUp)).toEqual([]);
+    expect(calls.filter(migration)).toEqual([]);
+    expect(
+      calls.filter(
+        (call) => call.tool === 'docker' && ['run', 'exec', 'create'].includes(call.args[0]),
+      ),
+    ).toEqual([]);
+    expect(existsSync(join(directory, '.env.images'))).toBe(false);
+  });
+  it('explicit empty-inventory preflight checks configuration and TLS without provisioning', () => {
+    const { result, calls } = release('success', 'fresh', 'preflight');
+    expect(result.status).toBe(0);
+    expect(calls.some((call) => call.tool === 'docker' && call.args[0] === 'ps')).toBe(true);
+    expect(
+      calls.filter(
+        (call) => call.tool === 'docker' && call.args[0] === 'volume' && call.args[1] === 'ls',
+      ),
+    ).toHaveLength(2);
+    expect(
+      calls.some(
+        (call) => call.tool === 'curl' && call.args.at(-1) === 'https://mvp.example.invalid/',
+      ),
+    ).toBe(true);
+    expect(calls.filter(appUp)).toEqual([]);
+    expect(calls.filter(migration)).toEqual([]);
+    expect(
+      calls.filter(
+        (call) => call.tool === 'docker' && ['run', 'exec', 'create'].includes(call.args[0]),
+      ),
+    ).toEqual([]);
+  });
 });
