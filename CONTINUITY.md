@@ -551,6 +551,19 @@ preview remains stopped46hours, original volume/tag/MFA/TLS/credentials preserve
 Owner Nginx/lock hashes unchanged. Only the primary checkout remains registered;
 all named source branches retained. No preview/production deployment.
 
+## Current currency visibility change
+
+Active `redesign-currency-visibility` at capital-tracker-currency-visibility,
+refactor/redesign-currency-visibility, base1fd044f. Proposal3d792e8/design followup4ac0091;
+43canonical+active strict44itemsPASS, baseline118/21PASS3.45s. Dependency gate initial
+sandbox DNS refusal, authorized retryPASS2moderate/nohighcritical. No product edits yet.
+Read active artifacts for honest failed-list handling, paired last-good reads, serialized
+owner visibility across remount, full identity evidence and responsive scoped tables.
+One new CVIS-UI plus retained DFX-UI planned; real predecessor RED pending. No backend/
+schema/provider changes or integration-health promises. Sol acceptance separateworktree,
+Luna CSS separateworktree afterRED, root product/Docker and separate gate review. Preserve
+owner Nginx/lock/preview and remove these temporary trees only after verified integration.
+
 ## Next work and remaining whole goal
 
 Continue complete frontend/UX redesign in docs/frontend-redesign-plan.md. FUI-01/02/03

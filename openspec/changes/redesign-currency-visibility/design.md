@@ -42,7 +42,10 @@ No API/auth/schema/dependency/deployment changes; rollback is frontend-only.
   meanwhile; the old instance cannot publish or refetch. Synchronously reserve the
   pending operation so a second client command cannot overlap. This covers section and
   route leave/return while retaining original conditional mounting. It is client HTTP
-  serialization, not new cross-session/server transaction locking or timeout guarantees.
+  serialization, not new cross-session/server transaction locking or timeout guarantees;
+  a transport-failed request could still commit later. Remount reconciliation reads
+  freshly after the client request settles; the still-mounted failure needs explicit
+  reload. Last-good rows remain local and are discarded on actual unmount.
 - Use original hide/show commands with explicit row identity. While pending, disable
   visibility actions; do not optimistically move rows. On any command/read failure,
   explain that current visibility needs reloading and disable stale row commands until
