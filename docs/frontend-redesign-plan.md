@@ -150,7 +150,8 @@ Exact FX results precede original timestamp evidence; all controllers/guards and
 conditional mounting remain. The selected real DFX-UI journey passes and18actual
 light/dark360/768/1440 frames support review. See
 [Settings guide](settings-workbench.md) and [verification](../openspec/changes/archive/2026-09-27-redesign-settings-workbench/verification.md).
-Broader integration health and legacy currency-manager redesign remain separate.
+The subsequent currency visibility slice below completes the legacy manager; broader
+integration health remains separate.
 
 `focus-acquisition-review` completes bounded swap/reward correction/void/history focus:
 explicit actions enter named editors/history headings, cancel/close return to their
@@ -180,3 +181,14 @@ Carry these nonblocking review findings into the next suitable UX slice:
 
 Original repositories, owner data, preview volume/MFA/credentials and Nginx edit
 remain preserved. Broader providers/import/security/release work remains separate.
+
+
+`redesign-currency-visibility` completes the existing legacy Settings preference view:
+selected lists, paired successful publication, explicit retry/stale/pending states,
+serialized commands across remounts, and full stored identity disclosures in scoped
+responsive tables. Actual HTTP acceptance also exposed and fixed the old frontend's
+missing required visibility flag; backend validation remains intact. CVIS/retainedDFX
+pass2/2 through actual HTTPS/MFA/PostgreSQL. All 36 actual final frames have independent approval;
+see [Settings guide](settings-workbench.md) and
+[verification](../openspec/changes/archive/2026-09-27-redesign-currency-visibility/verification.md). This does
+not supply integration health, accounting instruments, network support or FUI-06.

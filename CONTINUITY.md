@@ -551,18 +551,27 @@ preview remains stopped46hours, original volume/tag/MFA/TLS/credentials preserve
 Owner Nginx/lock hashes unchanged. Only the primary checkout remains registered;
 all named source branches retained. No preview/production deployment.
 
-## Current currency visibility change
+## Verified currency visibility — 2026-09-27
 
-Active `redesign-currency-visibility` at capital-tracker-currency-visibility,
-refactor/redesign-currency-visibility, base1fd044f. Proposal3d792e8/design followup4ac0091;
-43canonical+active strict44itemsPASS, baseline118/21PASS3.45s. Dependency gate initial
-sandbox DNS refusal, authorized retryPASS2moderate/nohighcritical. No product edits yet.
-Read active artifacts for honest failed-list handling, paired last-good reads, serialized
-owner visibility across remount, full identity evidence and responsive scoped tables.
-One new CVIS-UI plus retained DFX-UI planned; real predecessor RED pending. No backend/
-schema/provider changes or integration-health promises. Sol acceptance separateworktree,
-Luna CSS separateworktree afterRED, root product/Docker and separate gate review. Preserve
-owner Nginx/lock/preview and remove these temporary trees only after verified integration.
+`redesign-currency-visibility`, base1fd044f, product87cf954: recoverable paired stored
+lists, explicit hide/show with the required DTO flags, serialized requests across
+remount, last-good failure state, identity disclosures and scoped responsive tables.
+Genuine preproduct RED confirmed the missing inline error after actual response loss.
+First GREEN failed on old missing isHidden and changed scope copy; both corrected
+without weakening backend validation or retained DFX assertions. See verification.
+
+Final real CVIS/DFX2/2 PASS37.7s,1worker0retries through HTTPS/password/MFA/backend/PG.
+FE7190d650fb98b2d77ad5e79272fccf6cb5e790ea8dcee355fca9d97ad9682a36;
+BEdd90a8c5 unchanged. All36light/dark360/768/1440frames independently reviewed and
+approved with final source. Frontend121/22PASS3.95s, corrected API/coordinator9/9PASS,
+build/lint/types/scopedBiome/strict44items and dependency gate pass. Existing27lint/
+bundle/http2 warnings and2moderate advisories remain; no high/critical dependency finding.
+No full-suite, release, owner UX approval or preview deployment claim.
+
+Archival/canonical comparison and guarded integration/three-worktree cleanup pending
+as the final procedural step. Root owns that integration. Main Nginx/lock hashes remain
+unchanged; preview remains stopped with its original image, files and durable volume.
+No backend/schema/auth/provider/deployment change. Whole frontend and target remain open.
 
 ## Next work and remaining whole goal
 
