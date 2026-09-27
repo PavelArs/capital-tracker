@@ -568,8 +568,9 @@ build/lint/types/scopedBiome/strict44items and dependency gate pass. Existing27l
 bundle/http2 warnings and2moderate advisories remain; no high/critical dependency finding.
 No full-suite, release, owner UX approval or preview deployment claim.
 
-Archival/canonical comparison and guarded integration/three-worktree cleanup pending
-as the final procedural step. Root owns that integration. Main Nginx/lock hashes remain
+Archived as2026-09-27-redesign-currency-visibility:43old specs byte-identical,3new
+blocks match,44strict canonical specs pass, no active change. Guarded integration and
+three-worktree cleanup remain the final procedural step. Root owns that integration. Main Nginx/lock hashes remain
 unchanged; preview remains stopped with its original image, files and durable volume.
 No backend/schema/auth/provider/deployment change. Whole frontend and target remain open.
 

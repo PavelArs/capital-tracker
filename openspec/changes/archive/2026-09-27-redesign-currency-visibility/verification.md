@@ -1,7 +1,8 @@
 # Currency visibility verification
 
 Status: implementation, required scoped verification and independent source/visual review
-pass. Archive/integration procedure follows; whole product/redesign remains incomplete.
+pass. Archived after the required gates; integration cleanup follows. Whole product/redesign
+remains incomplete.
 
 Base `1fd044f`, 43 canonical specs. Actual proposal/status/instructions(proposal/design/specs/
 tasks/apply) used installed OpenSpec 1.2.0; strict 44 items PASS. Root main Nginx remains
@@ -105,3 +106,14 @@ against the same E2E file passed (`...-e2e-style-package.log`); no source change
 The final procedural task remains unchecked until archive/comparison, guarded main
 integration and temporary-worktree removal actually complete. All functional gates
 and independent review are complete before archive.
+
+
+## Archive comparison
+
+Installed OpenSpec1.2.0 archived `redesign-currency-visibility` on2026-09-27 and synced
+three new requirement blocks. The CLI reported5/6tasks because the final task includes
+this archive, its comparison and the subsequent guarded integration/cleanup. No product,
+acceptance or independent-review task remained. After archive, all43previous canonical
+files are byte-identical; all3added blocks match the delta;44canonical specs pass strict
+validation and active changes are empty. New Purpose text describes the actual scope.
+Evidence: `...-archive.log`, `...-compare-specs.log`, `...-archived-specs.log`.
