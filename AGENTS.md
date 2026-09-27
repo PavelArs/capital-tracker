@@ -50,3 +50,10 @@ CI gates stay intact. Review the E2E pyramid separately: move suitable coverage 
 before removing redundant cases, preserving critical financial/authentication paths.
 See docs/testing-and-migrations.md for the isolated environment and commands.
 Never use the production Compose file for tests or alter the owner Nginx edit.
+
+For the current authorized manual + CSV MVP release and durable whole-target
+handoff, read [docs/post-mvp-backlog.md](docs/post-mvp-backlog.md) and the top
+checkpoint in CONTINUITY.md first. Astra coordinates; Sol implements and reviews;
+Luna handles bounded documentation/audit/simple tasks. The backlog distinguishes
+mandatory in-progress release gates from deferred product work; it does not replace
+the full target brief or canonical OpenSpecs.

@@ -1,5 +1,20 @@
 # Capital Tracker refactor continuity
 
+## Current handoff — manual + CSV MVP release in progress
+
+Owner authorized the manual-accounting + CSV MVP to deploy through the existing
+GitHub Actions/server path using the remaining quota; network sync and AI are
+deferred. This is **IN PROGRESS**, not a deployment-complete or whole-product claim.
+Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
+branch `release/manual-mvp`, base `a03371b`. At this checkpoint no release result is
+recorded here. After actual deployment, append the tested commit, immutable image
+digests, migration, encrypted backup/restore evidence, health/security checks and
+outcome; never infer success from an accepted workflow dispatch. Read
+[`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased
+follow-up, hard release gates and continuation roles. Do not start broad UI work
+until this authorized release is resolved. Preserve owner Nginx/preview/data and
+the existing consolidation cleanup guard.
+
 ## Goal and limits
 
 Continue the WHOLE target in capital-tracker-openspec-prompt.md. It remains
