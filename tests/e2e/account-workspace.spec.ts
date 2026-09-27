@@ -95,7 +95,9 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await valuationInstant.fill('2025-01-04T00:00:00.000Z');
   const beforeTaskNavigation = fingerprint(['auth_sessions', 'auth_request_limits']);
   await analysisChoice.focus();
+  await page.keyboard.press('Space');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(analysisChoice).toHaveValue('history');
   await expect(analysisChoice).toBeFocused();
   await expect(owners[1]).toBeVisible();
@@ -105,7 +107,9 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await historyFrom.fill('2025-01-01T00:00:00.000Z');
   await historyTo.fill('2025-01-04T00:00:00.000Z');
   await analysisChoice.focus();
+  await page.keyboard.press('Space');
   await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Enter');
   await expect(analysisChoice).toHaveValue('accounting');
   await expect(analysisChoice).toBeFocused();
   await expect(owners[2]).toBeVisible();

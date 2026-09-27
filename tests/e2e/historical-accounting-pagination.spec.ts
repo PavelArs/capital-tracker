@@ -8,9 +8,35 @@ import {
 } from './admission-fixtures';
 import { selectAnalysis } from './analytics-workbench-fixtures';
 import { navigateToAccount } from './csv-import-fixtures';
-import { type Instrument, openingInput, providerRequests } from './manual-opening-fixtures';
-import { fingerprint, test } from './mfa-fixtures';
+import {
+  type Instrument,
+  literal,
+  openingInput,
+  providerRequests,
+  readInstrument,
+} from './manual-opening-fixtures';
+import { fingerprint, owner, query, test } from './mfa-fixtures';
 import { coverageFrom, trackBrowserRequests, tradeApi, tradeInput } from './usd-trades-fixtures';
+
+// Bulk catalogue discovery setup follows seedDiscovery's sanctioned real PostgreSQL pattern.
+// Financial opening/carry-in/trade commands below still use the actual authenticated API.
+function seedPinnedInstruments(): Instrument[] {
+  const values = Array.from({ length: 51 }, (_, index) => {
+    const name = `Pinned history ${index + 1} ${randomUUID()}`;
+    return `('${randomUUID()}', '${owner.id}', '${randomUUID()}', ${literal(JSON.stringify({ name, symbol: 'SAME' }))}, ${literal(name)}, 'SAME')`;
+  });
+  // One statement is atomic; read back actual database identities/defaults through RETURNING.
+  const seeded = JSON.parse(
+    query(`WITH seeded AS (
+    INSERT INTO accounting_instruments (id, "ownerId", "requestId", "canonicalPayload", name, symbol)
+    VALUES ${values.join(',')}
+    RETURNING id, name, symbol, namespace,
+      to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
+  ) SELECT jsonb_agg(to_jsonb(seeded) ORDER BY id)::text FROM seeded`),
+  ) as unknown[];
+  expect(seeded).toHaveLength(51);
+  return seeded.map(readInstrument);
+}
 
 const historyPath = (accountId: string) =>
   `/api/accounting/accounts/${accountId}/trade-journal/history`;
@@ -204,10 +230,7 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
 }) => {
   const api = await tradeApi(page);
   const account = await api.account(`Pinned history pages ${randomUUID()}`);
-  const instruments: Instrument[] = [];
-  for (let index = 0; index < 51; index++) {
-    instruments.push(await api.instrument(`Pinned history ${index + 1} ${randomUUID()}`, 'SAME'));
-  }
+  const instruments = seedPinnedInstruments();
   const sortedInstruments = [...instruments].sort((left, right) =>
     left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
   );
