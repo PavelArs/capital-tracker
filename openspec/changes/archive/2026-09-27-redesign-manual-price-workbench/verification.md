@@ -1,6 +1,6 @@
 # Manual-price workbench verification
 
-Status: product and scoped verification complete; archive/integration procedure pending. Whole-refactor goal remains active.
+Status: archived and integrated; all six slice tasks complete. Whole-refactor goal remains active.
 
 Based4dd415, root refactor/redesign-manual-price-workbench. Read AGENTS, target brief/redesign amendment, current continuity, manual-price spec/controller/API/tests and current manually gated CI/CD. Inventory and file ownership are in design.md. No backend/API/auth/schema/dependency/pipeline changes planned.
 
@@ -49,3 +49,7 @@ Pre-archive strict OpenSpec validation PASS41items (40canonical plus change); `.
 OpenSpec1.2.0 `openspec archive redesign-manual-price-workbench --yes` exited0 and created `2026-09-27-redesign-manual-price-workbench`, synchronizing3requirements. The CLI warned5/6tasks because final task3.2 includes archive/comparison/integration; required product checks were complete. Its checkbox remains pending until that procedure finishes. Log `/private/tmp/capital-price-workbench-archive.log`.
 
 All40previous canonical files remain byte-identical tod4dd415; all3new requirement blocks match the archived delta after blank-line normalization. The first local comparison script failed because its heading regex greedily consumed multiple blocks; correcting that script's heading match established the three-block equality without editing requirement text. Generated Purpose placeholder replaced with the actual capability purpose. Strict41canonical specs pass; active changes are empty. Logs `...-canonical.log` and `...-specs-archived.log`.
+
+Product/archive dc5aada fast-forward integrated into refactor/brownfield-baseline after guarding startingd4dd415 HEAD, sole owner Nginx edit and protected hashes. Seven exact temporary dependency links in integration/QA/CSS worktrees were unlinked after validating all targets; primary dependencies and all source worktrees remain. Task3.2 is now complete. The first staged diff check flagged the generated canonical spec's extra EOF blank line; final bookkeeping removes that blank line and repeats the diff/spec checks. No requirement text or product changes follow the reviewed candidate. No additional product test run or whole-redesign completion is claimed.
+
+Final diff check and strict41canonical specs pass after EOF cleanup; canonical comparison still passes. Log `...-specs-final.log`.

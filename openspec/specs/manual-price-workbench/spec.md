@@ -48,4 +48,3 @@ At360,768and1440pixels in light/dark themes, the page SHALL have no horizontal p
 - **THEN** the unchanged original command returns its original receipt with no duplicate
 - **WHEN** an accepted correction is followed by a failed refresh or an old book response arrives after another instrument is selected
 - **THEN** new writes stay blocked until the required successful refresh, and old evidence cannot populate the new selection
-

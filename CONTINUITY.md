@@ -447,7 +447,10 @@ FEsha256:0ffbe36b31fa94fe3a8e931b2f6bdd4e53f2065916d12069ffb75245d6a26c3f;
 unchangedBEdd90a8c5. Logs/artifacts `/private/tmp/capital-price-workbench-*`.
 Archived as2026-09-27-redesign-manual-price-workbench:3newrequirement blocks match,
 40previouscanonical files remain byte-identical, strict41canonical specs pass and
-active changes are empty. Guarded integration/temporary-link cleanup pending.
+active changes are empty. Product/archive dc5aada fast-forward integrated; all6tasks
+complete. Seven exact temporary dependency links unlinked; primary dependencies and
+all source worktrees retained. Owner Nginx/lock, preview image/volume and stopped
+containers remain preserved; no disposable E2E resources remain.
 
 ## Next work and remaining whole goal
 
