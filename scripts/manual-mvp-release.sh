@@ -16,7 +16,7 @@ runtime=${RELEASE_RUNTIME_FILE:-$root/.env.release}
 normalizer=$(cd "$(dirname "$0")" && pwd)/normalize-release-snapshot.awk
 [[ -f $normalizer ]] || exit 1
 cd "$root"
-for tool in docker jq flock curl openssl sha256sum; do command -v "$tool" >/dev/null; done
+for tool in docker jq flock curl openssl sha256sum awk; do command -v "$tool" >/dev/null; done
 [[ -f .env && -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
 # This lock serializes server operations independently of Actions concurrency.
 exec 9>"$root/.release.lock"
@@ -25,7 +25,7 @@ if [[ $installation == existing ]]; then
   [[ -f "$root/docker-compose.yml" ]] || exit 1
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
   project=$(docker inspect "$db" --format '{{index .Config.Labels "com.docker.compose.project"}}')
-  volume=$(docker inspect "$db" | jq -er '.[0].Mounts[] | select(.Destination=="/var/lib/postgresql/data" and .Type=="volume") | .Name')
+  actual_major=$(docker exec "$db" sh -c 'cat "$PGDATA/PG_VERSION"')
 else
   project=capital-tracker
   # An orphan volume is owner data until positively reviewed. Never attach it implicitly.
@@ -44,6 +44,17 @@ base_env=(--env-file "$root/.env")
 dc() { docker compose --project-directory "$root" -p "$project" "${base_env[@]}" --env-file "$runtime" "${image_env[@]}" -f "$candidate" "$@"; }
 # Never print rendered configuration, which contains passwords.
 config=$(dc config --format json)
+expected_major=$(jq -er '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR' <<<"$config")
+candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume" and .source=="postgres_data") | .target' <<<"$config")
+[[ $expected_major == 16 || $expected_major == 18 ]] || { echo 'Unsupported PostgreSQL major'; exit 1; }
+if [[ $expected_major == 18 ]]; then expected_target=/var/lib/postgresql; else expected_target=/var/lib/postgresql/data; fi
+[[ $candidate_target == "$expected_target" ]] || { echo 'PostgreSQL volume layout mismatch'; exit 1; }
+if [[ $installation == existing ]]; then
+  [[ $actual_major == "$expected_major" ]] || { echo 'PostgreSQL major change refused; preserve existing data'; exit 1; }
+  volume=$(docker inspect "$db" | jq -er --arg target "$candidate_target" '.[0].Mounts[] | select(.Destination==$target and .Type=="volume") | .Name')
+else
+  [[ $expected_major == 18 ]] || { echo 'Fresh installation requires PostgreSQL18'; exit 1; }
+fi
 origin=$(jq -er '.services.backend.environment.FRONTEND_URL' <<<"$config")
 [[ $origin =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo 'Invalid HTTPS origin'; exit 1; }
 key=$(jq -er '.services.backend.volumes[] | select(.target=="/run/secrets/ct-mfa-key") | .source' <<<"$config")
@@ -150,6 +161,7 @@ else
   # Fresh data creation follows explicit absence proof; never overwrite an existing project.
   dc up -d --wait --wait-timeout 120 postgres redis
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
+  [[ $(docker exec "$db" sh -c 'cat "$PGDATA/PG_VERSION"') == "$expected_major" ]] || { echo 'Initialized PostgreSQL major mismatch'; exit 1; }
   network=$(docker inspect "$db" | jq -er '.[0].NetworkSettings.Networks | keys | select(length==1) | .[0]')
   # Observe the actual host->container socket path, never infer it from forwarding headers.
   docker run -d --name "$probe_container" --network "$network" -p 127.0.0.1:3102:3000 --entrypoint node "$backend" \
@@ -170,7 +182,7 @@ docker exec "$db" sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
 sha256sum "$backup" >"$backup.sha256"
 sha256sum -c "$backup.sha256" >/dev/null
 # Dedicated disconnected, tmpfs-only rehearsal; never restore into owner's PostgreSQL.
-docker run -d --name "$restore_container" --network none --tmpfs /var/lib/postgresql/data \
+docker run -d --name "$restore_container" --network none --tmpfs "$candidate_target" \
   -e POSTGRES_HOST_AUTH_METHOD=trust "$pg_image" >/dev/null
 for attempt in {1..60}; do
   if docker exec "$restore_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi

@@ -1,14 +1,15 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16.10-alpine}
     container_name: capital_tracker_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${DB_USERNAME:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set the existing database password}
       POSTGRES_DB: ${DB_NAME:-capital_tracker}
+      CAPITAL_EXPECTED_MAJOR: ${POSTGRES_EXPECTED_MAJOR:-16}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:${POSTGRES_VOLUME_TARGET:-/var/lib/postgresql/data}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
       interval: 10s
@@ -18,7 +19,7 @@ services:
       - capital-tracker-network
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7.4.2-alpine}
     container_name: capital_tracker_redis
     restart: unless-stopped
     command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru

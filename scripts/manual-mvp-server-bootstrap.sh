@@ -4,6 +4,9 @@ set -Eeuo pipefail
 umask 077
 [[ $(id -u) == 0 ]] || { echo 'Root setup privileges required'; exit 1; }
 account=${1:?Required dedicated deployment account}
+postgres_image=${2:?Required scanned PostgreSQL18 image digest}
+redis_image=${3:?Required scanned Redis image digest}
+[[ $postgres_image =~ ^postgres@sha256:[a-f0-9]{64}$ && $redis_image =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Pinned official infrastructure images required'; exit 1; }
 [[ $account =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || exit 2
 id "$account" >/dev/null
 root=/opt/capital-tracker
@@ -20,7 +23,7 @@ for port in 3100 3101 3102; do [[ -z $(ss -ltnH "sport = :$port") ]] || { echo '
 [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]] || { echo 'Existing domain TLS certificate unavailable'; exit 1; }
 install -d -o "$account" -g "$account" -m 700 "$root"
 # Exclusive create. Keys are independent; preserve the unknown existing .env entirely.
-python3 - "$root" "$account" <<'PY'
+python3 - "$root" "$account" "$postgres_image" "$redis_image" <<'PY'
 import json, os, pwd, secrets, sys
 from pathlib import Path
 root=Path(sys.argv[1]); owner=pwd.getpwnam(sys.argv[2])
@@ -34,6 +37,8 @@ password=secrets.token_urlsafe(32)
 private('.owner-password.json',json.dumps({'password':password,'confirmation':password}).encode())
 private('.env.release',('\n'.join([
  'DB_USERNAME=capital_owner', 'DB_PASSWORD='+secrets.token_hex(32), 'DB_NAME=capital_tracker',
+ 'POSTGRES_IMAGE='+sys.argv[3], 'POSTGRES_EXPECTED_MAJOR=18', 'POSTGRES_VOLUME_TARGET=/var/lib/postgresql',
+ 'REDIS_IMAGE='+sys.argv[4],
  'FRONTEND_URL=https://capital.pavelars.ru', 'BACKEND_HOST_PORT=3100','FRONTEND_HOST_PORT=3101',
  'MFA_KEY_FILE=/opt/capital-tracker/.mfa-key', 'MFA_KEY_ID=capital-production-1',
  'TRUSTED_PROXY_IPS=[]', 'OWNER_EMAIL=owner@capital.pavelars.ru',

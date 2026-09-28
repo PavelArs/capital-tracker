@@ -1,5 +1,10 @@
 # Manual + CSV MVP release
 
+**Release checkpoint:** PostgreSQL18 fresh-install guards are implemented, but the
+four-image manifest, pinned infrastructure image checks, PostgreSQL18/Redis8 acceptance,
+host bootstrap, least-privilege dispatcher and production deployment remain pending.
+Do not run bootstrap or production CD from this checkpoint.
+
 Supported first release: manually entered accounts/operations, CSV import and rollback,
 manual USD prices and existing accounting previews. Automatic network synchronization
 and AI remain deferred. Background collection and optional display FX are disabled.
@@ -22,6 +27,19 @@ equivalent; this is an explicit operational limitation, not least-privilege proo
 A dedicated restricted SSH identity with a root-owned fixed release dispatcher can
 reduce this capability without changing the stack or removing shared deploy rights.
 Do not expose an arbitrary shell/script/upload through that dispatcher.
+
+Least privilege remains an unfinished release security requirement. Its bounded
+follow-up needs a new Capital-only account/key without Docker-group membership,
+restricted SSH forced command and an exact sudo allowlist for one installed dispatcher.
+The dispatcher and its runner, Compose, runtime configuration, state and parent
+directories must be root-owned regular files, protected against symlink substitution.
+It must accept only validated inventory/preflight/deploy requests, bind requested image
+digests to successful trusted CI provenance, and use fixed application container,
+volume, network, mount and capability settings. It must not evaluate a client command,
+accept uploaded executable/configuration files or permit generic Docker/shell operations.
+Adversarial command, path, metadata and state-race checks plus operator installation
+are necessary before marking this requirement complete. Shared deployment rights stay
+unchanged so unrelated hosted services are preserved.
 
 ## Pipeline and trusted promotion
 
@@ -46,12 +64,17 @@ still require recorded evidence before production.
 
 ## Fresh server setup
 
-A privileged operator runs the reviewed `scripts/manual-mvp-server-bootstrap.sh ACCOUNT`
+A privileged operator runs the reviewed `scripts/manual-mvp-server-bootstrap.sh ACCOUNT POSTGRES_DIGEST REDIS_DIGEST`
 from the reviewed checkout. It refuses existing application data, occupied3100/3101/3102,
 and existing release secret files. It creates independent random MFA and backup keys,
 strong owner-password input and a private `.env.release`. It preserves existing `.env`,
 the inactive capital vhost, apex and other services. It tests Nginx before reloading;
 failed configuration retains secrets for inspection and restores the prior target edge.
+The public image arguments must be the scanned, accepted official repository digests
+for PostgreSQL18.6 and Redis8.10.2. Fresh PostgreSQL18 mounts `/var/lib/postgresql`,
+including its version-specific PGDATA directory. Existing PostgreSQL16 retains
+`/var/lib/postgresql/data`; a major or mount mismatch refuses the release before downtime.
+No in-place major upgrade of owner data or the PostgreSQL16 preview is authorized.
 The owner login name is privately configured `OWNER_EMAIL` in `.env.release`; the default
 is `owner@capital.pavelars.ru`, which is only the application login identifier.
 
