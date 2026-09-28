@@ -12,6 +12,8 @@
 
 Task2.3 has approved workflow/script implementation and lower-level contracts; actual trusted candidate promotion remains required. It is not a deployed-server gate.
 
+- [ ] 2.4 Require schema-v2 manifest and independent trusted pins for both exact scanned PostgreSQL/Redis images; reject mutable fresh Compose references and existing database/cache image drift before downtime. Prove actual four-image scanner/architecture/artifact identity in trusted Actions.
+
 ## 3. Server preparation and recovery
 
 - [ ] 3.1 Implement and verify locked read-only preflight, mandatory encrypted backup/checksum and isolated restoration; reject preparation failures before server mutation.

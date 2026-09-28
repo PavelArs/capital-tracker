@@ -37,7 +37,9 @@ if(tool==='flock'){process.exit(mode==='lock'?1:0);}
 if(tool==='stat'){process.stdout.write(a[1]==='%a'?'600':String(fs.statSync(a[2]).size));}
 if(tool==='jq'){
  const q=a[a.length-1];let v='true';
- if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major')?'18':'16';
+ if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-postgres'?'postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
+ else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
+ else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major')?'18':'16';
  else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
  else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
@@ -54,6 +56,10 @@ if(tool==='docker'){
   const labeled=a.includes('--filter');
   if(mode===(labeled?'fresh-label-inventory':'fresh-volume-inventory'))process.exit(1);
   if(mode===(labeled?'fresh-labeled-volume':'fresh-named-volume'))process.stdout.write(labeled?'unexplained_owner_data':'capital_tracker_postgres_data');
+ }
+ if(a[0]==='image'&&a[1]==='inspect'){
+  const drift=(mode==='existing-postgres-drift'&&a[2].startsWith('postgres'))||(mode==='existing-redis-drift'&&a[2].startsWith('redis'));
+  process.stdout.write('sha256:'+(drift?'f':'b').repeat(64));
  }
  if(a[0]==='inspect'){
   if(mode==='missing-db'&&a[1]==='capital_tracker_db')process.exit(1);
@@ -355,6 +361,10 @@ describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
     ['existing-layout', 'existing'],
     ['fresh-old-major', 'fresh'],
     ['fresh-old-layout', 'fresh'],
+    ['fresh-mutable-postgres', 'fresh'],
+    ['fresh-mutable-redis', 'fresh'],
+    ['existing-postgres-drift', 'existing'],
+    ['existing-redis-drift', 'existing'],
   ])(
     'refuses %s before downtime, database creation, backup or migration',
     (failure, installation) => {

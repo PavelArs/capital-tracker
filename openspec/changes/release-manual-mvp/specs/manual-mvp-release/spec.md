@@ -14,7 +14,12 @@ Configured `BACKGROUND_JOBS_ENABLED=false` SHALL suppress automatic constructor/
 - **AND** explicit display-FX collection retains its existing quota/provenance/precision contract
 
 ### Requirement: MVP-002 Only trusted tested immutable artifacts are promoted
-GitHub Actions SHALL release the exact backend/frontend image digests tested for a successful trusted candidate commit/run. Invalid, incomplete, foreign, failed, skipped or mismatched provenance SHALL stop before deployment. It SHALL NOT rebuild different release images, rely on mutable latest tags, or execute untrusted PR code with deployment credentials. SSH identity SHALL be pinned from a trusted source.
+GitHub Actions SHALL release the exact backend/frontend image digests tested for a successful trusted candidate commit/run. For a fresh PostgreSQL18 release, PostgreSQL and Redis infrastructure images SHALL also be exact tested/scanned linux/amd64 images identified by immutable reviewed registry digests and local image IDs; a versioned manifest SHALL be checked against a separately trusted pin file. Invalid, incomplete, foreign, failed, skipped or mismatched provenance SHALL stop before deployment. It SHALL NOT rebuild different release images, rely on mutable latest tags, or execute untrusted PR code with deployment credentials. SSH identity SHALL be pinned from a trusted source.
+
+#### Scenario: MVP-002-B Refuse untrusted infrastructure images
+- **WHEN** a fresh candidate supplies mutable PostgreSQL/Redis image tags, omits either scan report, lacks a separately reviewed registry pin, or image identity differs from the tested artifact
+- **THEN** validation/preflight refuses before creating a database or modifying application services
+- **AND** existing PostgreSQL/Redis image identity is checked locally without pulling or replacing either service
 
 #### Scenario: MVP-002-A Refuse an untrusted candidate or host
 - **WHEN** a candidate lacks required successful gates, identities/digests do not agree, or SSH host verification fails
