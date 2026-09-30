@@ -27,11 +27,13 @@ Tasks3.1/3.2 have approved implementation and integrated synthetic failure/recov
 
 ## PostgreSQL18 fresh-target acceptance
 
-- [ ] 3.3 Pin fresh PostgreSQL18 and its versioned PGDATA/parent volume layout; preserve existing PostgreSQL16 defaults/data/preview and prove fail-closed major/layout mismatch before downtime or mutation.
-- [ ] 3.4 Run actual PostgreSQL18 current migrations and retained exact release journeys, encrypted backup/checksum/disconnected restore with logical schema/data equality. Record image/version and source-preservation evidence separately from historical PostgreSQL16 results.
+- [x] 3.3 Pin fresh PostgreSQL18 and its versioned PGDATA/parent volume layout; preserve existing PostgreSQL16 defaults/data/preview and prove fail-closed major/layout mismatch before downtime or mutation. Source/process major-layout refusals and actual PGDATA fresh/reuse contract are recorded in verification.md.
+- [x] 3.4 Run actual PostgreSQL18 current migrations and retained exact release journeys, encrypted backup/checksum/disconnected restore with logical schema/data equality. Record image/version and source-preservation evidence separately from historical PostgreSQL16 results. Exact four-image 19/19, migrations, encrypted disconnected restore and source-preservation evidence are in verification.md, “Current local runtime and hosted checkpoint”.
 
 ## 4. Verify and deploy
 
 - [ ] 4.1 Independent source/oracle review; baseline lint/build/unit/types/spec/audit gates, actual isolated PostgreSQL migration/backup/restore/artifact probes and existing19critical real journeys in verification.md. Record any explicit fixture setup and retain exact oracles.
+
+Tasks3.3/3.4 local acceptance is complete, but task4.1 remains open: the hosted CI acceptance rerun is pending, and explicit types evidence is not yet linked here.
 - [ ] 4.2 Run trusted candidate Actions gates and privately discover actual server prerequisites; perform actual Actions deployment only after backup/restore/preflight success. Record candidate/deployed commit, digests, schema and health/privacy/MFA/manual-read/logout evidence.
 - [ ] 4.3 Update operator/MVP/deferred-backlog documentation, review limitations, archive after actual required completion and guard integration. Do not claim whole-target completion or consolidate original projects.
