@@ -363,9 +363,12 @@ export function installCommitFailure(accountId: string, marker: string): () => v
     );
 }
 
+let manualWriteBlockerPid: number | undefined;
+
 export async function withManualWritesBlocked<T>(
   action: (release: () => Promise<void>) => Promise<T>,
 ): Promise<T> {
+  expect(manualWriteBlockerPid, 'The synthetic manual write blocker is not nested').toBeUndefined();
   const root = resolve(__dirname, '../..');
   const child = spawn(
     'docker',
@@ -391,12 +394,13 @@ export async function withManualWritesBlocked<T>(
     { cwd: root, stdio: ['pipe', 'pipe', 'pipe'], timeout: 60_000 },
   );
   const closed = new Promise<number | null>((resolve) => child.once('close', resolve));
-  let timer: ReturnType<typeof setTimeout>;
-  const ready = new Promise<void>((resolve, reject) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ready = new Promise<number>((resolve, reject) => {
     let output = '';
     child.stdout.on('data', (value) => {
       output += value.toString();
-      if (output.includes('SYNTHETIC_ACCOUNT_WRITE_LOCK')) resolve();
+      const marker = output.match(/SYNTHETIC_ACCOUNT_WRITE_LOCK:([0-9]+)\r?\n/);
+      if (marker) resolve(Number(marker[1]));
     });
     child.once('error', reject);
     child.once('exit', () => reject(new Error('Synthetic account lock exited before readiness')));
@@ -407,7 +411,7 @@ export async function withManualWritesBlocked<T>(
   });
   // SHARE permits account reads, then holds the actual pointer UPDATE at the database.
   child.stdin.write(
-    "BEGIN; LOCK TABLE manual_accounts IN SHARE MODE; SELECT 'SYNTHETIC_ACCOUNT_WRITE_LOCK';\n",
+    "BEGIN; LOCK TABLE manual_accounts IN SHARE MODE; SELECT 'SYNTHETIC_ACCOUNT_WRITE_LOCK:' || pg_backend_pid();\n",
   );
   let released = false;
   const release = async () => {
@@ -420,25 +424,58 @@ export async function withManualWritesBlocked<T>(
     );
   };
   try {
-    await ready;
-    clearTimeout(timer!);
+    manualWriteBlockerPid = await ready;
+    expect(Number.isInteger(manualWriteBlockerPid) && manualWriteBlockerPid > 0).toBe(true);
+    clearTimeout(timer);
     return await action(release);
   } finally {
-    clearTimeout(timer!);
-    await release();
+    clearTimeout(timer);
+    try {
+      await release();
+    } finally {
+      manualWriteBlockerPid = undefined;
+    }
   }
 }
 
 export async function expectBlockedManualWrites(count: number): Promise<void> {
+  expect([1, 2]).toContain(count);
+  const blocker = manualWriteBlockerPid;
+  expect(typeof blocker === 'number' && Number.isInteger(blocker) && blocker > 0).toBe(true);
+  const update = 'UPDATE manual_accounts SET "currentRevision"=$3 WHERE "ownerId"=$1 AND id=$2';
+  const ownerLock =
+    "SELECT pg_advisory_xact_lock(hashtextextended('accounting-owner:' || $1::text, 0))";
   await expect
     .poll(
-      () =>
-        query(`SELECT count(*) FROM pg_stat_activity
-    WHERE datname = current_database() AND wait_event_type = 'Lock'
-      AND query LIKE '%manual_accounts%'`),
+      () => {
+        const waiters: {
+          pid: number;
+          blockers: number[];
+          accountWrite: boolean;
+          ownerLock: boolean;
+        }[] = JSON.parse(
+          query(`SELECT COALESCE(jsonb_agg(jsonb_build_object(
+            'pid', pid, 'blockers', pg_blocking_pids(pid),
+            'accountWrite', query = ${literal(update)}, 'ownerLock', query = ${literal(ownerLock)})), '[]')
+          FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'
+            AND cardinality(pg_blocking_pids(pid)) > 0`),
+        );
+        if (waiters.length !== count || new Set(waiters.map(({ pid }) => pid)).size !== count)
+          return false;
+        const writer = waiters.find(({ accountWrite }) => accountWrite);
+        if (!writer || writer.blockers.length !== 1 || writer.blockers[0] !== blocker) return false;
+        if (count === 1) return true;
+        const follower = waiters.find(({ ownerLock }) => ownerLock);
+        return (
+          !!follower &&
+          follower.pid !== writer.pid &&
+          follower.blockers.length === 1 &&
+          follower.blockers[0] === writer.pid
+        );
+      },
       { timeout: 5_000 },
     )
-    .toBe(String(count));
+    .toBe(true);
 }
 
 export async function raceAcrossReplicas(
