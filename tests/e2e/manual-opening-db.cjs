@@ -392,6 +392,7 @@ async function processRace(source, commands, table, accountId) {
     assert.equal(new Set(pids).size, commands.length, 'Real distinct Node processes contend for the same persisted identity');
     pids.forEach((pid, index) => assert.equal(pid, workers[index].child.pid));
     await blocker.connect(); await blocker.startTransaction();
+    const [{ pid: blockerPid }] = await blocker.query('SELECT pg_backend_pid() AS pid');
     if (accountId) await blocker.query('SELECT id FROM manual_accounts WHERE id=$1 FOR UPDATE', [accountId]);
     else {
       assert.ok(['manual_accounts', 'accounting_instruments'].includes(table));
@@ -400,14 +401,24 @@ async function processRace(source, commands, table, accountId) {
     workers.forEach((worker, index) => worker.go(commands[index]));
     const deadline = performance.now() + 3000;
     let observed = false;
-    // Row-lock waiters can queue behind one another: the second process need not
-    // name the original holder directly in pg_blocking_pids. This fresh database
-    // has only these two writers, the idle blocker and the observing connection.
+    // Opening writes take the owner advisory lock before the account-row lock.
+    // Observe both real writers and their chain back to this explicit blocker.
+    const ownerLockQuery = "SELECT pg_advisory_xact_lock(hashtextextended('accounting-owner:' || $1::text, 0))";
     while (performance.now() < deadline) {
-      const [{ waiting }] = await source.query(`SELECT count(*)::int AS waiting FROM pg_stat_activity
+      const waiting = await source.query(`SELECT pid,pg_blocking_pids(pid) AS blockers,
+        query=$4 AS owner_lock FROM pg_stat_activity
         WHERE datname=$1 AND wait_event_type='Lock' AND cardinality(pg_blocking_pids(pid))>0
-        AND position($2 in query)>0`, [database, table]);
-      if (waiting === workers.length) { observed = true; break; }
+        AND (position($2 in query)>0 OR ($3 AND query=$4))`,
+      [database, table, Boolean(accountId), ownerLockQuery]);
+      if (accountId) {
+        const rowWait = waiting.find(value => !value.owner_lock);
+        const ownerWait = waiting.find(value => value.owner_lock);
+        observed = waiting.length === workers.length && rowWait && ownerWait
+          && rowWait.pid !== ownerWait.pid && rowWait.blockers.includes(blockerPid)
+          && ownerWait.blockers.includes(rowWait.pid);
+      } else observed = waiting.length === workers.length
+        && waiting.every(value => value.blockers.includes(blockerPid));
+      if (observed) break;
       await new Promise(resolve => setTimeout(resolve, 10));
     }
     assert.ok(observed, 'Both real production writers must reach an observed database lock wait before release');
