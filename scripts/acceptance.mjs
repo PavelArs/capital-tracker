@@ -10,6 +10,11 @@ import { assertSyntheticNetworks } from './acceptance-networks.cjs';
 import { renderAcceptanceProxy } from './render-acceptance-proxy.cjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
+const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+if (process.env.CAPITAL_RELEASE_COMMIT && process.env.CAPITAL_RELEASE_COMMIT !== releaseCommit) {
+  throw new Error('Acceptance image revision must match the checkout commit');
+}
+process.env.CAPITAL_RELEASE_COMMIT = releaseCommit;
 const project = 'capital-tracker-e2e';
 const composeArgs = ['compose', '-p', project, '-f', join(root, 'tests/e2e/compose.yml')];
 const run = (command, args) => execFileSync(command, args, { cwd: root, stdio: 'inherit' });
