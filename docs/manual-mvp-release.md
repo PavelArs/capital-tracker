@@ -84,6 +84,14 @@ DOCKER_CONFIG=/etc/capital-tracker/docker-config docker login ghcr.io -u OWNER
 # Then fix every path the install step reports under /opt/capital-tracker.
 ```
 
+Private GHCR pull access remains an operator prerequisite: provision a protected
+`read:packages` credential with access to the three Capital image packages, log in
+interactively through the dedicated root Docker configuration, and never put it in
+a receipt, workflow request, shell argument or log. The data-only dispatcher cannot
+install credentials; it does not inherit an old CD token or root’s general login.
+Verify package access privately before deployment. This source change does not claim
+that the server already has that access.
+
 Re-run `install` whenever a release changes a server file listed in the receipt;
 otherwise the dispatcher refuses the mismatch. The install step reports existing
 `AllowUsers`/`AllowGroups` rules and any runtime path that the dispatcher will refuse.
@@ -111,9 +119,10 @@ one reviewed published commit on `release/manual-mvp`; the workflow permits that
 ref/commit and `mode=inventory`. Production promotion remains main-only.
 
 CI exports the actual release images that passed real acceptance, their image IDs and
-commit/run version-2 manifest. Reviewed linux/amd64 PostgreSQL18.6 and Redis8.10.2
-platform digests are in `deploy/manual-mvp-infrastructure-pins.json`, separate from
-the candidate manifest. CI pulls those digests before acceptance, scans all four
+commit/run schema-v3 manifest. Reviewed PostgreSQL Dockerfile hash and official
+18.6 Alpine3.24 base digest, plus the official Redis8.10.2 platform digest, are in `deploy/manual-mvp-infrastructure-pins.json`, separate from
+the candidate manifest. CI verifies the Dockerfile hash, builds the derived PostgreSQL image with the exact
+commit revision label through acceptance, pulls the Redis digest, scans all four
 exact images and saves them in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
 current main commit, requires every named gate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
@@ -121,29 +130,38 @@ No deployment rebuild or mutable latest promotion is used. Private server receip
 registry digests, schema ledgers, backup path and verified health. Pinned Trivy v0.74.0 scans exact tested images for vulnerabilities and secrets;
 unresolved high/critical findings block export. Complete finding identifiers and lower
 severities remain in sanitized reports; raw secret matches/image environment details are
-removed before upload. Fresh bootstrap checks the infrastructure arguments against
-the reviewed pins. Existing releases compare candidate infrastructure image IDs to
+removed before upload. Fresh bootstrap checks PostgreSQL’s actual promoted GHCR digest against a root-reviewed
+fresh receipt; its official base digest is only a source input. Redis stays official and
+must match the reviewed pin. Existing releases compare candidate infrastructure image IDs to
 the running PostgreSQL and Redis before downtime; fresh releases require the pinned
 digest references. Actual four-image scan results and a real PostgreSQL18 backup-restore rehearsal
 still require recorded evidence before production.
 
 ## Fresh server setup
 
-A privileged operator runs the reviewed `scripts/manual-mvp-server-bootstrap.sh ACCOUNT POSTGRES_DIGEST REDIS_DIGEST`
+A privileged operator runs the reviewed `scripts/manual-mvp-server-bootstrap.sh ACCOUNT POSTGRES_DIGEST REDIS_DIGEST /root/capital-release/COMMIT-RUN.json`
 from the reviewed checkout. It refuses existing application data, occupied3100/3101/3102,
 and existing release secret files. It creates independent random MFA and backup keys,
 strong owner-password input and a private `.env.release`. It preserves existing `.env`,
 the inactive capital vhost, apex and other services. It tests Nginx before reloading;
 failed configuration retains secrets for inspection and restores the prior target edge.
-The public image arguments must be the scanned, accepted official repository digests
-for PostgreSQL18.6 and Redis8.10.2. Fresh PostgreSQL18 mounts `/var/lib/postgresql`,
+First promote the successful exact candidate with `installation=fresh`. Privately
+review its receipt and place it under `/root/capital-release/` with root ownership,
+mode0600 and root-owned, non-writable, non-symlink ancestors. This is reviewed bootstrap
+metadata, not the final single-use deployment approval. Both digest arguments must
+match this strict receipt: PostgreSQL uses `ghcr.io/pavelars/capital-tracker-postgres@sha256:…`,
+Redis uses the reviewed official `redis@sha256:…`. Receipt identity and every reviewed
+server source hash must match before bootstrap changes any server file. Fresh PostgreSQL18 mounts `/var/lib/postgresql`,
 including its version-specific PGDATA directory. Existing PostgreSQL16 retains
 `/var/lib/postgresql/data`; a major or mount mismatch refuses the release before downtime.
 No in-place major upgrade of owner data or the PostgreSQL16 preview is authorized.
 The owner login name is privately configured `OWNER_EMAIL` in `.env.release`; the default
 is `owner@capital.pavelars.ru`, which is only the application login identifier.
 
-Promote with `installation=fresh`, approve that receipt, then dispatch `mode=deploy` with the same CI run.
+After bootstrap, install the root-owned dispatcher/server files, then approve the
+same receipt through the installer’s `approve` operation. Dispatch `mode=deploy` with
+the same commit/CI run. This order avoids requiring the runtime directory before
+bootstrap; bootstrap metadata alone does not authorize a dispatcher deployment.
 Fresh mode proves absence again; unexplained volumes prevent installation. It creates
 only its dedicated database/cache, observes the actual host-to-container socket peer using
 a loopback-only temporary probe, then sets exact proxy trust. It backs up the fresh DB,

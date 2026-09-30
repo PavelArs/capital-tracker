@@ -61,8 +61,8 @@ if [[ $installation == existing ]]; then
     && $(docker image inspect "$redis_ref" --format '{{.Id}}') == "$running_redis" ]] || { echo 'Infrastructure image change refused'; exit 1; }
 else
   [[ $expected_major == 18 ]] || { echo 'Fresh installation requires PostgreSQL18'; exit 1; }
-  [[ $postgres_ref =~ ^postgres@sha256:[a-f0-9]{64}$ \
-    && $redis_ref =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Fresh infrastructure must use immutable official digests'; exit 1; }
+  [[ $postgres_ref =~ ^ghcr\.io/pavelars/capital-tracker-postgres@sha256:[a-f0-9]{64}$ \
+    && $redis_ref =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Fresh infrastructure must use immutable reviewed digests'; exit 1; }
   [[ $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" \
     && $redis_ref == "${RELEASE_REDIS_IMAGE:-}" ]] || { echo 'Fresh infrastructure differs from reviewed candidate pins'; exit 1; }
 fi

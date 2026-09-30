@@ -79,24 +79,25 @@ jobs:
           node - <<'NODE'
           const manifest = require('./candidate/manifest.json');
           const { execFileSync } = require('node:child_process');
-          for (const image of [manifest.backend, manifest.frontend, ...Object.values(manifest.infrastructure)]) {
-            const inspect = (format) => execFileSync('docker', ['image', 'inspect', image.tag, '--format', format], { encoding: 'utf8' }).trim();
-            if (inspect('{{.Id}}') !== image.imageId || inspect('{{.Os}}/{{.Architecture}}') !== 'linux/amd64') {
-              throw new Error('Candidate image identity or architecture mismatch');
-            }
-          }
+          const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
+          validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
           NODE
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           owner=${GITHUB_REPOSITORY_OWNER,,}
-          for name in backend frontend; do
-            tested=$(jq -r ".$name.imageId" candidate/manifest.json)
-            tag=$(jq -r ".$name.tag" candidate/manifest.json)
+          for name in backend frontend postgres; do
+            if [[ $name == postgres ]]; then
+              tested=$(jq -r '.infrastructure.postgres.imageId' candidate/manifest.json)
+              tag=$(jq -r '.infrastructure.postgres.tag' candidate/manifest.json)
+            else
+              tested=$(jq -r ".$name.imageId" candidate/manifest.json)
+              tag=$(jq -r ".$name.tag" candidate/manifest.json)
+            fi
             test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$tested"
             destination="ghcr.io/$owner/capital-tracker-$name:$GITHUB_SHA"
             docker tag "$tested" "$destination"
             docker push "$destination"
             digest=$(docker image inspect "$destination" --format '{{index .RepoDigests 0}}')
-            [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend)@sha256:[a-f0-9]{64}$ ]]
+            [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend|postgres)@sha256:[a-f0-9]{64}$ ]]
             echo "RELEASE_${name^^}=$digest" >> "$GITHUB_ENV"
           done
           docker logout ghcr.io
@@ -108,7 +109,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir receipt
-          python3 scripts/manual-mvp-receipt.py "$GITHUB_SHA" "$RUN_ID" "$RELEASE_INSTALLATION" "$RELEASE_BACKEND" "$RELEASE_FRONTEND" "receipt/$GITHUB_SHA-$RUN_ID.json"
+          python3 scripts/manual-mvp-receipt.py "$GITHUB_SHA" "$RUN_ID" "$RELEASE_INSTALLATION" "$RELEASE_BACKEND" "$RELEASE_FRONTEND" "$RELEASE_POSTGRES" "receipt/$GITHUB_SHA-$RUN_ID.json"
           # The receipt holds only public commit/run/digest/hash identities for owner review.
           { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the release receipt

@@ -12,7 +12,7 @@
 
 Task2.3 has approved workflow/script implementation and lower-level contracts; actual trusted candidate promotion remains required. It is not a deployed-server gate.
 
-- [ ] 2.4 Require schema-v2 manifest and independent trusted pins for both exact scanned PostgreSQL/Redis images; reject mutable fresh Compose references and existing database/cache image drift before downtime. Prove actual four-image scanner/architecture/artifact identity in trusted Actions.
+- [ ] 2.4 Require schema-v3 manifest and independent reviewed PostgreSQL build inputs/official Redis pin for both exact scanned images; reject mutable fresh Compose references and existing database/cache image drift before downtime. Prove actual four-image scanner/architecture/artifact identity in trusted Actions.
 
 - [ ] 2.5 Replace the Docker-capable deployment SSH path with the MVP-007 restricted principal, forced root-owned dispatcher, owner-approved receipts and receipt-producing promotion; realign ENG-002 gates to the replaced workflow.
 

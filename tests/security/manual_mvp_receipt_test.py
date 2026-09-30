@@ -24,6 +24,7 @@ dispatcher = receipts.dispatcher
 
 COMMIT = "f" * 40
 BACKEND = "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64
+POSTGRES = "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64
 FRONTEND = "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64
 
 
@@ -39,10 +40,10 @@ class ReceiptAcceptance(unittest.TestCase):
                 shutil.copyfile(ROOT / source, target)
                 target.chmod(0o644)
             output = receipts_dir / "{}-77.json".format(COMMIT)
-            self.assertEqual(receipts.main(["receipt", COMMIT, "77", "fresh", BACKEND, FRONTEND, str(output)]), 0)
+            self.assertEqual(receipts.main(["receipt", COMMIT, "77", "fresh", BACKEND, FRONTEND, POSTGRES, str(output)]), 0)
             output.chmod(0o600)
             pins = json.loads((ROOT / receipts.SOURCES["pins"]).read_text())
-            self.assertEqual(json.loads(output.read_text())["postgres"], pins["postgres"]["registryDigest"])
+            self.assertEqual(json.loads(output.read_text())["postgres"], POSTGRES)
             calls = []
             runtime = base / "runtime"
             runtime.mkdir(mode=0o755)
@@ -63,7 +64,33 @@ class ReceiptAcceptance(unittest.TestCase):
             (COMMIT, "77", "fresh", BACKEND, BACKEND),
         ):
             with self.subTest(arguments=arguments):
-                self.assertRaises(dispatcher.Refusal, receipts.build_receipt, *arguments)
+                self.assertRaises(dispatcher.Refusal, receipts.build_receipt, *arguments, POSTGRES)
+
+
+    def test_bootstrap_receipt_requires_trusted_exact_fresh_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = pathlib.Path(directory)
+            receipt = receipts.build_receipt(COMMIT, "77", "fresh", BACKEND, FRONTEND, POSTGRES)
+            path = base / "reviewed.json"
+            path.write_text(json.dumps(receipt))
+            path.chmod(0o600)
+            redis = receipt["redis"]
+            self.assertEqual(receipts.validate_bootstrap_receipt(path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base), receipt)
+            for postgres in ("postgres@sha256:" + "d" * 64, POSTGRES[:-1] + "0"):
+                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, postgres, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+            path.chmod(0o666)
+            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+            path.chmod(0o600)
+            link = base / "linked.json"
+            link.symlink_to(path)
+            self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, link, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+            for changes in ({"installation": "existing"}, {"commit": "invalid"}, {"commit": "0" * 40}, {"runId": "01"}, {"extra": True}, {"files": {**receipt["files"], "pins": "0" * 64}}):
+                path.write_text(json.dumps({**receipt, **changes}))
+                self.assertRaises(dispatcher.Refusal, receipts.validate_bootstrap_receipt, path, POSTGRES, redis, COMMIT, owner_uid=os.getuid(), stop_at=base)
+
+    def test_receipt_rejects_official_base_and_foreign_final_postgres(self):
+        for postgres in ("postgres@sha256:" + "d" * 64, "ghcr.io/other/capital-tracker-postgres@sha256:" + "d" * 64):
+            self.assertRaises(dispatcher.Refusal, receipts.build_receipt, COMMIT, "77", "fresh", BACKEND, FRONTEND, postgres)
 
 
 if __name__ == "__main__":

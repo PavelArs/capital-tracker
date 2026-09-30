@@ -6,15 +6,24 @@ umask 077
 account=${1:?Required dedicated deployment account}
 postgres_image=${2:?Required scanned PostgreSQL18 image digest}
 redis_image=${3:?Required scanned Redis image digest}
-[[ $postgres_image =~ ^postgres@sha256:[a-f0-9]{64}$ && $redis_image =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Pinned official infrastructure images required'; exit 1; }
+receipt=${4:?Required root-reviewed fresh candidate receipt}
+[[ $postgres_image =~ ^ghcr\.io/pavelars/capital-tracker-postgres@sha256:[a-f0-9]{64}$ && $redis_image =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Pinned reviewed infrastructure images required'; exit 1; }
 [[ $account =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || exit 2
 source_dir=$(cd "$(dirname "$0")/.." && pwd)
-python3 - "$source_dir/deploy/manual-mvp-infrastructure-pins.json" "$postgres_image" "$redis_image" <<'PY'
-import json, sys
-pins = json.load(open(sys.argv[1], encoding='utf-8'))
-if pins['postgres']['registryDigest'] != sys.argv[2] or pins['redis']['registryDigest'] != sys.argv[3]:
-    raise SystemExit('Infrastructure digests differ from reviewed release pins')
-PY
+# Root-reviewed metadata can precede runtime creation; final single-use dispatcher
+# approval follows bootstrap/installation. Never source the receipt or runtime data.
+python3 - "$source_dir" "$receipt" "$postgres_image" "$redis_image" <<'PYTHON'
+import importlib.util, pathlib, subprocess, sys
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location('receipt', root / 'scripts/manual-mvp-receipt.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+try:
+    commit = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+    module.validate_bootstrap_receipt(sys.argv[2], sys.argv[3], sys.argv[4], commit, root)
+except (module.dispatcher.Refusal, KeyError, TypeError, OSError, subprocess.SubprocessError):
+    raise SystemExit('Bootstrap receipt validation refused')
+PYTHON
 id "$account" >/dev/null
 root=/opt/capital-tracker
 domain=capital.pavelars.ru

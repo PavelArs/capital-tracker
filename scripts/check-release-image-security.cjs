@@ -3,7 +3,7 @@ const { execFileSync } = require('node:child_process');
 const images = {
   backend: 'capital-tracker-backend:acceptance',
   frontend: 'capital-tracker-frontend:acceptance',
-  postgres: 'postgres:18.6-alpine3.24',
+  postgres: 'capital-tracker-postgres:acceptance',
   redis: 'redis:8.10.2-alpine3.23',
 };
 function checkReport(report, expectedImageId) {

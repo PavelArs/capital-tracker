@@ -9,7 +9,7 @@ const validatorPath =
 const commit = 'a'.repeat(40);
 const runId = '123456789';
 const manifest = () => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   commit,
   runId,
   backend: { imageId: `sha256:${'b'.repeat(64)}`, tag: 'capital-tracker-backend:acceptance' },
@@ -17,8 +17,11 @@ const manifest = () => ({
   infrastructure: {
     postgres: {
       imageId: `sha256:${'d'.repeat(64)}`,
-      tag: 'postgres:18.6-alpine3.24',
-      registryDigest: `postgres@sha256:${'d'.repeat(64)}`,
+      tag: 'capital-tracker-postgres:acceptance',
+      dockerfile: 'deploy/postgres.Dockerfile',
+      dockerfileSha256: 'f'.repeat(64),
+      baseRegistryDigest:
+        'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66',
     },
     redis: {
       imageId: `sha256:${'e'.repeat(64)}`,
@@ -29,8 +32,11 @@ const manifest = () => ({
 });
 const pins = () => ({
   postgres: {
-    tag: 'postgres:18.6-alpine3.24',
-    registryDigest: `postgres@sha256:${'d'.repeat(64)}`,
+    tag: 'capital-tracker-postgres:acceptance',
+    dockerfile: 'deploy/postgres.Dockerfile',
+    dockerfileSha256: 'f'.repeat(64),
+    baseRegistryDigest:
+      'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66',
   },
   redis: { tag: 'redis:8.10.2-alpine3.23', registryDigest: `redis@sha256:${'e'.repeat(64)}` },
 });
@@ -40,11 +46,12 @@ let validateRelease: (
   expectedRunId: string,
   infrastructurePins: unknown,
 ) => unknown;
+let validateLoadedImages: (value: unknown, inspect: (tag: string) => unknown) => unknown;
 let directory: string;
 beforeAll(() => {
   // Missing new helper is scaffolding only; actual predecessor RED is recorded separately.
   expect(existsSync(validatorPath)).toBe(true);
-  ({ validateRelease } = require(validatorPath));
+  ({ validateRelease, validateLoadedImages } = require(validatorPath));
   expect(typeof validateRelease).toBe('function');
 });
 beforeEach(() => {
@@ -163,7 +170,13 @@ describe('MVP-002: exact tested candidate manifest', () => {
         { ...original, imageId: `sha256:${'a'.repeat(63)}` },
         { ...original, registryDigest: `${name}@sha256:${'A'.repeat(64)}` },
         { ...original, registryDigest: `foreign@sha256:${'a'.repeat(64)}` },
-        { ...original, registryDigest: original.registryDigest.slice(0, -1) },
+        {
+          ...original,
+          registryDigest: ('registryDigest' in original
+            ? original.registryDigest
+            : original.baseRegistryDigest
+          ).slice(0, -1),
+        },
       ]) {
         expect(() =>
           validateRelease(
@@ -176,6 +189,62 @@ describe('MVP-002: exact tested candidate manifest', () => {
       }
     },
   );
+  it('rejects a self-asserted PostgreSQL source or official base final identity', () => {
+    const original = manifest().infrastructure.postgres;
+    for (const identity of [
+      { ...original, tag: 'postgres:18.6-alpine3.24' },
+      { ...original, dockerfile: 'attacker.Dockerfile' },
+      { ...original, dockerfileSha256: '0'.repeat(64) },
+      { ...original, baseRegistryDigest: `postgres@sha256:${'0'.repeat(64)}` },
+    ]) {
+      expect(() =>
+        validateRelease(
+          { ...manifest(), infrastructure: { ...manifest().infrastructure, postgres: identity } },
+          commit,
+          runId,
+          pins(),
+        ),
+      ).toThrow();
+    }
+  });
+  it('checks every loaded image ID and architecture plus the derived build revision', () => {
+    const candidate = manifest();
+    const images = [
+      candidate.backend,
+      candidate.frontend,
+      ...Object.values(candidate.infrastructure),
+    ];
+    const actual = Object.fromEntries(
+      images.map((image) => [
+        image.tag,
+        {
+          Id: image.imageId,
+          Os: 'linux',
+          Architecture: 'amd64',
+          Config: { Labels: { 'org.opencontainers.image.revision': commit } },
+        },
+      ]),
+    );
+    const inspect = (tag: string) => actual[tag];
+    expect(() => validateLoadedImages(candidate, inspect)).not.toThrow();
+    for (const image of images) {
+      const original = actual[image.tag];
+      for (const change of [
+        { Id: `sha256:${'0'.repeat(64)}` },
+        { Os: 'windows' },
+        { Architecture: 'arm64' },
+      ]) {
+        actual[image.tag] = { ...original, ...change };
+        expect(() => validateLoadedImages(candidate, inspect)).toThrow();
+      }
+      actual[image.tag] = original;
+    }
+    const postgres = actual[candidate.infrastructure.postgres.tag];
+    for (const revision of ['', '0'.repeat(40), 'local-acceptance']) {
+      postgres.Config.Labels['org.opencontainers.image.revision'] = revision;
+      expect(() => validateLoadedImages(candidate, inspect)).toThrow();
+    }
+  });
   it('requires a complete reviewed infrastructure pin set, not only self-asserted manifest digests', () => {
     for (const infrastructurePins of [
       undefined,

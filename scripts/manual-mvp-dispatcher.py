@@ -54,7 +54,7 @@ APPLICATION_IMAGE = {
     for name in ('backend', 'frontend')
 }
 INFRASTRUCTURE_IMAGE = {
-    'postgres': re.compile(r'postgres@sha256:[a-f0-9]{64}'),
+    'postgres': re.compile(r'ghcr\.io/' + REGISTRY_NAMESPACE + r'/capital-tracker-postgres@sha256:[a-f0-9]{64}'),
     'redis': re.compile(r'redis@sha256:[a-f0-9]{64}'),
 }
 
@@ -303,7 +303,17 @@ def verify_installation(receipt, config):
             raise Refusal('installed {} differs from the reviewed receipt'.format(name))
         if name == 'pins':
             pins = parse_json(content)
-            for service in ('postgres', 'redis'):
+            source = pins.get('postgres')
+            if (not isinstance(source, dict)
+                    or set(source) != {'tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest'}
+                    or source['tag'] != 'capital-tracker-postgres:acceptance'
+                    or source['dockerfile'] != 'deploy/postgres.Dockerfile'
+                    or not _full(SHA256, source['dockerfileSha256'])
+                    or source['baseRegistryDigest'] != 'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'):
+                raise Refusal('invalid reviewed PostgreSQL source pins')
+            # The derived PostgreSQL digest comes from owner approval, never its base pin.
+            # The hash above binds the separately reviewed source inputs.
+            for service in ('redis',):
                 entry = pins.get(service)
                 if not isinstance(entry, dict) or entry.get('registryDigest') != receipt[service]:
                     raise Refusal('receipt infrastructure differs from reviewed pins')

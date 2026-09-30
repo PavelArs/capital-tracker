@@ -110,3 +110,37 @@ ENG-002 was already RED at 976f917 before this work: 3 gates.spec cases asserted
 Independent security review (two rounds) found: root code execution through `approve` via `python3 -` importing from the working directory (fixed with `/usr/bin/python3 -I`), replayable receipts (now consumed before deploy), unchecked runtime tree/registry plugins, double-read approval, installer reuse/symlink gaps and an unpinned registry namespace; all fixed with tests. It also caught that the whole-tree check would have refused bootstrap's uid1000 `.mfa-key`/`operator/`, now an explicit narrow delegation.
 
 Not verified: Biome lint (only a darwin binary is installed and the registry refused the Linux package), real host install/sshd/sudo behaviour, an actual Actions inventory/promote/deploy through the dispatcher, and GHCR pulls through `/etc/capital-tracker/docker-config`.
+
+## MVP-002-C derived PostgreSQL candidate identity (2026-09-30)
+
+Bounded source work from `c9dc2b9`, paired with runtime `f0f14b4` Dockerfile and
+`7274076` acceptance revision label. Source pin binds Dockerfile SHA256
+`76b06e0a59cb0ca7a47497ebbd8c0b6de803752bf99850ef5c7dda409832b5b4` and official
+base `postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66`.
+Neither is the final derived image identity. Schema3 records the tested derived
+image ID; export/promotion verifies all four local IDs and linux/amd64 plus the
+PostgreSQL build revision. CD publishes the unchanged derived image to the exact
+Capital PostgreSQL GHCR repository, and passes its actual registry digest to the
+receipt. Official-base/foreign-repository final PostgreSQL receipts now refuse.
+
+ATDD: changed MVP-002-C/source contract first; predecessor validator rejected the
+valid schema3 derived candidate (1 failed/25 passed). Separately observed the
+actual `c9dc2b9` dispatcher accepting the vulnerable official base digest as a
+final fresh receipt identity, violating MVP-002-C. That official final-identity
+negative case now refuses. Focused GREEN: validator+scanner Jest 43/43; Python
+manual-MVP dispatcher/receipt process contracts 36 passed/1 existing root-boundary
+skip; Biome focused validator file passed; strict active OpenSpec validation passed;
+workflow YAML parsed and 35 shell/4 embedded JavaScript bodies syntax checked;
+release/bootstrap shell syntax and diff whitespace passed.
+
+Bootstrap now reads strict root-reviewed fresh metadata from a root-owned,
+non-writable, ancestor/symlink-checked receipt before runtime creation; commit,
+image arguments and reviewed source hashes must match. Final installer approval
+follows bootstrap/runtime ownership setup, avoiding an approval/setup dependency
+cycle. Root-protected private GHCR read access remains an actual operator
+prerequisite. Existing PostgreSQL16 same-major/data-layout refusal remains intact.
+
+These source/process tests do not prove actual Docker builds, scans, retained real
+PostgreSQL18 journeys/restore, hosted CI, GHCR promotion, server bootstrap or
+production deployment. Those gates remain open and require the runtime/root
+agents' exact-image evidence. No server, Docker or remote Git mutation here.

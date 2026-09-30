@@ -17,7 +17,7 @@ spec.loader.exec_module(dispatcher)
 
 COMMIT = "a" * 40
 RUN_ID = "123"
-POSTGRES = "postgres@sha256:" + "d" * 64
+POSTGRES = "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64
 REDIS = "redis@sha256:" + "e" * 64
 
 
@@ -40,7 +40,7 @@ class Installation:
             "inventory": b"#!/usr/bin/env bash\necho inventory\n",
             "normalizer": b"{ print }\n",
             "compose": b"services: {}\n",
-            "pins": json.dumps({"postgres": {"registryDigest": POSTGRES}, "redis": {"registryDigest": REDIS}}).encode(),
+            "pins": json.dumps({"postgres": json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())["postgres"], "redis": {"registryDigest": REDIS}}).encode(),
         }
         self.hashes = {}
         for name, content in contents.items():
@@ -154,8 +154,8 @@ class DispatchFlowAcceptance(unittest.TestCase):
         self.assertEqual(self.calls, [])
 
     def test_refuses_receipt_infrastructure_that_differs_from_pins(self):
-        other = "postgres@sha256:" + "0" * 64
-        self.install.install_receipt(self.install.receipt(postgres=other))
+        other = "redis@sha256:" + "0" * 64
+        self.install.install_receipt(self.install.receipt(redis=other))
         self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy")
         self.assertEqual(self.calls, [])
 

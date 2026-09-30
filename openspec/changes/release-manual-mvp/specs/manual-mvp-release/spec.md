@@ -14,7 +14,7 @@ Configured `BACKGROUND_JOBS_ENABLED=false` SHALL suppress automatic constructor/
 - **AND** explicit display-FX collection retains its existing quota/provenance/precision contract
 
 ### Requirement: MVP-002 Only trusted tested immutable artifacts are promoted
-GitHub Actions SHALL release the exact backend/frontend image digests tested for a successful trusted candidate commit/run. For a fresh PostgreSQL18 release, PostgreSQL and Redis infrastructure images SHALL also be exact tested/scanned linux/amd64 images identified by immutable reviewed registry digests and local image IDs; a versioned manifest SHALL be checked against a separately trusted pin file. Invalid, incomplete, foreign, failed, skipped or mismatched provenance SHALL stop before deployment. It SHALL NOT rebuild different release images, rely on mutable latest tags, or execute untrusted PR code with deployment credentials. SSH identity SHALL be pinned from a trusted source.
+GitHub Actions SHALL release the exact backend/frontend image digests tested for a successful trusted candidate commit/run. For a fresh PostgreSQL18 release, PostgreSQL and Redis infrastructure images SHALL also be exact tested/scanned linux/amd64 images. PostgreSQL SHALL be the reviewed derived image built from the digest-pinned official PostgreSQL18.6 Alpine3.24 base with the pinned su-exec substitution. Its schema-v3 manifest SHALL bind its distinct tested image ID to independently reviewed Dockerfile hash and base digest; the base digest SHALL never identify the final derived image. Redis SHALL retain its separately reviewed official registry digest and tested image ID. CI SHALL scan/export the same tested derived PostgreSQL image; promotion SHALL load and verify its ID/architecture and publish that exact image to ghcr.io/pavelars/capital-tracker-postgres. The owner-reviewed receipt SHALL contain its actual promoted digest. Fresh setup and deployment SHALL use that receipt digest without rebuilding. Invalid, incomplete, foreign, failed, skipped or mismatched provenance SHALL stop before deployment. It SHALL NOT rebuild different release images, rely on mutable latest tags, or execute untrusted PR code with deployment credentials. SSH identity SHALL be pinned from a trusted source.
 
 #### Scenario: MVP-002-B Refuse untrusted infrastructure images
 - **WHEN** a fresh candidate supplies mutable PostgreSQL/Redis image tags, omits either scan report, lacks a separately reviewed registry pin, or image identity differs from the tested artifact
@@ -86,3 +86,8 @@ Deployment SHALL reach the server only through a dedicated Capital-only SSH prin
 #### Scenario: MVP-007-C Run only the approved fixed release
 - **WHEN** an approved receipt and identical installed files are present
 - **THEN** only the fixed runner receives the requested operation, commit and receipt application digests, with receipt installation/infrastructure values and no inherited environment
+
+#### Scenario: MVP-002-C Preserve derived PostgreSQL identity
+- **WHEN** a candidate substitutes the official base for the derived PostgreSQL image, alters the Dockerfile hash/base source, changes the loaded image ID/architecture, or presents an official/foreign PostgreSQL digest as the final receipt image
+- **THEN** validation, promotion or fresh preflight refuses before database creation
+- **AND** a matching derived image is scanned, exported, loaded, promoted and deployed by its actual final digest, with the base recorded only as a source input

@@ -28,7 +28,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             "version": 1, "commit": self.request["commit"], "runId": self.request["runId"],
             "installation": "fresh", "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
             "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
-            "postgres": "postgres@sha256:" + "d" * 64,
+            "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
             "redis": "redis@sha256:" + "e" * 64,
             "files": {name: "f" * 64 for name in ("runner", "inventory", "normalizer", "compose", "pins")},
         }
@@ -121,7 +121,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
                 path.write_bytes(b"reviewed")
                 files[name] = path
                 receipt["files"][name] = __import__("hashlib").sha256(b"reviewed").hexdigest()
-            pins = {"postgres": {"registryDigest": receipt["postgres"]}, "redis": {"registryDigest": receipt["redis"]}}
+            pins = {"postgres": json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())["postgres"], "redis": {"registryDigest": receipt["redis"]}}
             files["pins"].write_text(json.dumps(pins))
             receipt["files"]["pins"] = __import__("hashlib").sha256(files["pins"].read_bytes()).hexdigest()
             config = dispatcher.Config(release_dir=directory, owner_uid=os.getuid(), stop_at=directory)
@@ -129,7 +129,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             files["compose"].write_bytes(b"attacker")
             self.assertRaises(dispatcher.Refusal, dispatcher.verify_installation, receipt, config)
             files["compose"].write_bytes(b"reviewed")
-            pins["postgres"]["registryDigest"] = "postgres@sha256:" + "0" * 64
+            pins["redis"]["registryDigest"] = "redis@sha256:" + "0" * 64
             files["pins"].write_text(json.dumps(pins))
             receipt["files"]["pins"] = __import__("hashlib").sha256(files["pins"].read_bytes()).hexdigest()
             self.assertRaises(dispatcher.Refusal, dispatcher.verify_installation, receipt, config)
