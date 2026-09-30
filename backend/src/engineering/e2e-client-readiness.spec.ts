@@ -9,7 +9,15 @@ const compose = parse(
 ) as {
   services: Record<
     string,
-    { healthcheck: { disable?: boolean; test?: string[]; interval: string; timeout: string; retries: number } }
+    {
+      healthcheck: {
+        disable?: boolean;
+        test?: string[];
+        interval: string;
+        timeout: string;
+        retries: number;
+      };
+    }
   >;
 };
 
@@ -26,11 +34,12 @@ describe('Synthetic source clients have real process and fixture readiness', () 
     writeFileSync(ca, 'Synthetic public certificate fixture\n');
     // Execute the actual predicate against real files. The local Jest parent is
     // the live process fixture; container PID1 is verified separately with Compose.
-    const command = health.test![3]
-      .replace('process.kill(1,0)', `process.kill(${process.pid},0)`)
+    const command = health
+      .test![3].replace('process.kill(1,0)', `process.kill(${process.pid},0)`)
       .replace("'/tests/client.cjs'", JSON.stringify(script))
       .replace("'/tests/public-ca.pem'", JSON.stringify(ca));
-    const run = () => spawnSync(process.execPath, ['-e', command], { encoding: 'utf8', timeout: 5000 });
+    const run = () =>
+      spawnSync(process.execPath, ['-e', command], { encoding: 'utf8', timeout: 5000 });
     try {
       expect(run().status).toBe(0);
       for (const path of [script, ca]) {
