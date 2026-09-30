@@ -22,8 +22,47 @@ def docker(*args):
     if result.returncode: refuse('inventory_unavailable')
     return result.stdout
 def labels(item):
-    # Docker reports absent labels as null; treat them as unlabelled.
-    return (item.get('Labels') or {}) if isinstance(item,dict) else {}
+    # Docker reports absent labels as null. Other shapes must not erase evidence.
+    if not isinstance(item,dict) or 'Labels' not in item: refuse('inventory_unavailable')
+    value=item['Labels']
+    if value is None: return {}
+    if not isinstance(value,dict) or any(not isinstance(v,str) for v in value.values()):
+        refuse('inventory_unavailable')
+    return value
+def inspect_records(records,requested,kind):
+    if not isinstance(records,list) or len(records)!=len(requested) or len(set(requested))!=len(requested):
+        refuse('inventory_unavailable')
+    identities=[]
+    for record in records:
+        if not isinstance(record,dict): refuse('inventory_unavailable')
+        name=record.get('Name')
+        identity=record.get('Name' if kind=='volume' else 'Id')
+        if not isinstance(name,str) or not name or not isinstance(identity,str) or not identity:
+            refuse('inventory_unavailable')
+        identities.append(identity)
+        labels(record.get('Config') if kind=='container' else record)
+        if kind=='container':
+            if 'Mounts' not in record: refuse('inventory_unavailable')
+            mounts=record['Mounts']
+            if mounts is not None:
+                if not isinstance(mounts,list): refuse('inventory_unavailable')
+                for mount in mounts:
+                    if not isinstance(mount,dict): refuse('inventory_unavailable')
+                    mount_type=mount.get('Type');source=mount.get('Source')
+                    if not isinstance(mount_type,str) or not mount_type or not isinstance(source,str):
+                        refuse('inventory_unavailable')
+                    if mount_type=='bind' and not source: refuse('inventory_unavailable')
+    if len(set(identities))!=len(identities): refuse('inventory_unavailable')
+    # ps/network ls normally return short hex IDs; inspect returns full IDs.
+    # Every requested resource must have exactly one distinct inspected record.
+    matched=[]
+    for requested_id in requested:
+        candidates=[identity for identity in identities if identity==requested_id or
+            (kind!='volume' and re.fullmatch(r'[a-f0-9]{12,64}',requested_id) and
+             re.fullmatch(r'[a-f0-9]{64}',identity) and identity.startswith(requested_id))]
+        if len(candidates)!=1: refuse('inventory_unavailable')
+        matched.extend(candidates)
+    if len(set(matched))!=len(records): refuse('inventory_unavailable')
 try:
     phase='docker_inventory'
     container_ids=docker('ps','-aq').split()
@@ -32,13 +71,17 @@ try:
     containers=json.loads(docker('inspect',*container_ids)) if container_ids else []
     volumes=json.loads(docker('volume','inspect',*volume_names)) if volume_names else []
     networks=json.loads(docker('network','inspect',*network_ids)) if network_ids else []
+    inspect_records(containers,container_ids,'container')
+    inspect_records(volumes,volume_names,'volume')
+    inspect_records(networks,network_ids,'network')
     phase='docker_classification'
     def related(value): return bool(re.search(r'capital|tracker',str(value),re.I))
     mounts=[m for c in containers for m in (c.get('Mounts') or [])]
-    container_refs=sum(related(c.get('Name','')) or related(labels(c.get('Config') or {}).get('com.docker.compose.project','')) for c in containers)
+    container_refs=sum(related(c.get('Name','')) or related(labels(c['Config']).get('com.docker.compose.project','')) for c in containers)
     volume_refs=sum(related(v.get('Name','')) or related(labels(v).get('com.docker.compose.project','')) for v in volumes)
     network_refs=sum(related(n.get('Name','')) or related(labels(n).get('com.docker.compose.project','')) for n in networks)
-    bind_refs=sum(m.get('Type')=='bind' and (str(m.get('Source',''))==str(root) or str(m.get('Source','')).startswith(str(root)+'/')) for m in mounts)
+    # A project-backed source is data evidence even for an unfamiliar mount type.
+    bind_refs=sum(m['Source']==str(root) or m['Source'].startswith(str(root)+'/') for m in mounts)
     print(f'application_container_references={container_refs}; volume_references={volume_refs}; network_references={network_refs}; project_bind_references={bind_refs}')
     if container_refs or volume_refs or network_refs or bind_refs: refuse('existing_application_data_references')
     phase='env_read'
