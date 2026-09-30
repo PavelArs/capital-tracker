@@ -1,10 +1,13 @@
 # Manual + CSV MVP release
 
-**Release checkpoint:** PostgreSQL18 fresh-install guards, a four-image manifest,
-reviewed infrastructure digests and exact image checks are implemented locally.
-PostgreSQL18/Redis8 acceptance, actual four-image scans, host bootstrap, host
-installation of the least-privilege dispatcher and production deployment remain pending.
-Do not run bootstrap or production CD from this checkpoint.
+**Release checkpoint (2026-09-30):** isolated manual/auth acceptance passed 19/19,
+PostgreSQL18 encrypted backup/restore and the actual four-image security scans passed.
+Hosted CI run 36687877047 failed the auth fixture's stale schema 16 expectation against
+schema 22. The auth-fixture correction is integrated at `9ea156a`; its scoped check passed 14 tests, and the
+hosted retry is pending. These results do not supply a successful main-push candidate.
+Host bootstrap, restricted dispatcher installation and production deployment have not
+run. Bootstrap/deploy await the exact successful current-main CI run and its promoted,
+owner-reviewed receipt.
 
 Supported first release: manually entered accounts/operations, CSV import and rollback,
 manual USD prices and existing accounting previews. Automatic network synchronization
@@ -18,7 +21,9 @@ fingerprint `SHA256:KsIoiJpnYR1x29u2mdomeqq4PYAOem22YaJAKjL62KU`.
 `capital.pavelars.ru` resolves to that host and has a valid Let's Encrypt certificate.
 Its inactive Nginx configuration currently serves static HTTP; HTTPS `/health` returns404.
 No Capital Tracker containers, named/project application volumes or networks were found.
-The unknown `/opt/capital-tracker/.env` is root-owned0600 and is preserved. Port3000
+The preserved `/opt/capital-tracker/.env` is root-owned0600. The owner has since
+confirmed it is an unused old template; the read-only assessment found zero application
+resource counts. This does not authorize ignoring an assessment refusal. Port3000
 belongs to another service; the dedicated application uses loopback3100/3101 only.
 The existing `pavelars` login lacks passwordless sudo. `deploy` rejects the same SSH key.
 The existing GitHub deployment key successfully completed read-only Actions run36313627415:
@@ -45,8 +50,10 @@ Unknown or duplicate fields, trailing data and command-line arguments are refuse
 owner-approved receipt `/etc/capital-tracker/release-receipts/<commit>-<runId>.json`;
 image digests and installation mode come only from it. Before starting the runner it
 checks that the installed runner, inventory, normalizer, Compose and pin files match the
-receipt SHA256 values, that receipt PostgreSQL/Redis equal the reviewed pins and that
-application images are `ghcr.io/pavelars/capital-tracker-{backend,frontend}` digests.
+receipt SHA256 values and that Redis equals its reviewed digest. PostgreSQL is the
+owner-approved promoted derived-image digest; its official base digest and Dockerfile
+hash are separately reviewed source pins, not the final image identity. The dispatcher
+also checks that application images are `ghcr.io/pavelars/capital-tracker-{backend,frontend}` digests.
 The receipt, installed files, their ancestors and the entire `/opt/capital-tracker` tree
 (including `.env`, `.env.release`, `.backup-key`, `releases/` and `backups/`) must be
 root-owned, free of symlinks and not group/world writable. The only exceptions are the
@@ -62,26 +69,29 @@ Inventory now runs as root: it reports root's view, including `.env` setting nam
 
 Release flow:
 
-1. `mode=inventory` (pinned release commit or main) runs the read-only inventory.
-2. `mode=promote` on main validates the successful CI run, pushes the identical tested
-   images to GHCR and uploads the `manual-mvp-release-receipt` artifact; the job summary
-   shows the same JSON for review.
-3. The owner reviews the receipt and, as root on the server, runs
-   `scripts/manual-mvp-dispatcher-install.sh approve RECEIPT` from a clean Git checkout
-   of exactly that commit (after `install` below if server files changed). It validates
-   and installs one private copy and warns when installed server files differ. Git's
-   ownership check may require `git config --global --add safe.directory <checkout>`
-   for root when the checkout belongs to another user.
-4. `mode=preflight`, then `mode=deploy`, with the same `ci_run_id`.
+1. After successful main-push CI for the exact current main commit, run `mode=promote`
+   on main with that `ci_run_id` and `installation=fresh` for the first installation.
+   It publishes the identical tested images and uploads `manual-mvp-release-receipt`.
+   The receipt records the CI run id, not the separate promotion workflow run id.
+2. Review that receipt and complete fresh bootstrap and dispatcher installation below.
+3. As root, run `scripts/manual-mvp-dispatcher-install.sh approve RECEIPT` from the
+   clean root-owned Git checkout of exactly that commit. It validates and installs one
+   private copy and warns when installed server files differ; re-run `install` first
+   for changed server files. Keep `.git`: a source archive alone cannot satisfy the
+   bootstrap/approval checkout identity checks.
+4. Run main `mode=inventory`, then `mode=preflight` and `mode=deploy` with the same
+   `ci_run_id`. Keep main at the candidate commit throughout; obsolete candidates are
+   refused. Preflight preserves approval; deploy consumes it before starting.
 
-One-time operator setup, as root from the reviewed checkout of the release commit:
+After fresh bootstrap, run the one-time operator setup as root from the reviewed
+Git checkout of the release commit:
 
 ```sh
 scripts/manual-mvp-dispatcher-install.sh install /path/to/capital-release.pub
 # Registry read access for private GHCR packages (read:packages token only):
 install -d -o root -g root -m 0700 /etc/capital-tracker/docker-config
 DOCKER_CONFIG=/etc/capital-tracker/docker-config docker login ghcr.io -u OWNER
-# Then fix every path the install step reports under /opt/capital-tracker.
+# Inspect any refused runtime paths before proceeding; never repair through symlinks.
 ```
 
 Private GHCR pull access remains an operator prerequisite: provision a protected
@@ -107,8 +117,8 @@ the restricted principal works, retire the obsolete repository-level
 cutover. Its retained root-equivalent authority would bypass the new boundary.
 Do not revoke shared host keys or change unrelated services’ deployment access;
 least-privilege operational completion requires evidence of this credential cutover. A main-only
-branch rule would also block `mode=inventory` from `release/manual-mvp`; allow that
-branch or run inventory from main; keep `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` and
+branch rule also blocks `mode=inventory` from `release/manual-mvp`; run inventory
+from main with the configured production protection; keep `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` and
 `DEPLOY_SSH_PORT=2211`. `/opt/capital-tracker` was writable by the shared deploy user
 on 2026-09-27; it must become root-owned before preflight/deploy.
 
@@ -122,9 +132,10 @@ Keep old upstream automatic CD disabled until replacement is reviewed. Publish t
 an explicit GitHub remote, preserving the local repository's existing origin.
 Set `DEPLOY_KNOWN_HOSTS` from the verified existing known-host entry, never connection
 key discovery; set `DEPLOY_SSH_PORT=2211`. Reuse existing `DEPLOY_HOST`; the release no longer
-uses `DEPLOY_USER`/`DEPLOY_SSH_KEY` (see MVP-007 above). For pre-main inventory only, root sets `MVP_PREFLIGHT_COMMIT` to
-one reviewed published commit on `release/manual-mvp`; the workflow permits that exact
-ref/commit and `mode=inventory`. Production promotion remains main-only.
+uses `DEPLOY_USER`/`DEPLOY_SSH_KEY` (see MVP-007 above). The workflow's optional
+`MVP_PREFLIGHT_COMMIT` release-branch inventory route remains blocked by the configured
+main-only production environment; no branch-policy relaxation is needed. Production
+promotion requires a successful main-push CI run, not a pull-request CI result.
 
 CI exports the actual release images that passed real acceptance, their image IDs and
 commit/run schema-v3 manifest. Reviewed PostgreSQL Dockerfile hash and official
@@ -142,13 +153,27 @@ removed before upload. Fresh bootstrap checks PostgreSQL’s actual promoted GHC
 fresh receipt; its official base digest is only a source input. Redis stays official and
 must match the reviewed pin. Existing releases compare candidate infrastructure image IDs to
 the running PostgreSQL and Redis before downtime; fresh releases require the pinned
-digest references. Actual four-image scan results and a real PostgreSQL18 backup-restore rehearsal
-still require recorded evidence before production.
+digest references. The isolated four-image scans and PostgreSQL18 backup/restore now
+passed; successful hosted main CI and the real server release's backup/restore remain
+separate required evidence.
 
 ## Fresh server setup
 
-A privileged operator runs the reviewed `scripts/manual-mvp-server-bootstrap.sh ACCOUNT POSTGRES_DIGEST REDIS_DIGEST /root/capital-release/COMMIT-RUN.json`
-from the reviewed checkout. It refuses existing application data, occupied3100/3101/3102,
+A privileged operator uses a clean root-owned Git checkout, including `.git`, of the
+exact promoted receipt commit and runs:
+
+```sh
+scripts/manual-mvp-server-bootstrap.sh root POSTGRES_DIGEST REDIS_DIGEST /root/capital-release/COMMIT-RUN.json
+```
+
+The bootstrap account argument is explicitly `root`: it owns the runtime directory,
+`.env.release`, `.backup-key` and owner-password file. Only `.mfa-key` and `operator/`
+belong to container uid1000. `capital-release` is the distinct restricted SSH principal,
+not the bootstrap/runtime owner. `POSTGRES_DIGEST` must be the receipt's promoted
+`ghcr.io/pavelars/capital-tracker-postgres@sha256:…` reference, never the official base
+pin. `REDIS_DIGEST` must be the receipt's reviewed official Redis digest.
+
+The script refuses existing application data, occupied3100/3101/3102,
 and existing release secret files. It creates independent random MFA and backup keys,
 strong owner-password input and a private `.env.release`. It preserves existing `.env`,
 the inactive capital vhost, apex and other services. It tests Nginx before reloading;
@@ -167,7 +192,8 @@ The owner login name is privately configured `OWNER_EMAIL` in `.env.release`; th
 is `owner@capital.pavelars.ru`, which is only the application login identifier.
 
 After bootstrap, install the root-owned dispatcher/server files, then approve the
-same receipt through the installer’s `approve` operation. Dispatch `mode=deploy` with
+same receipt through the installer’s `approve` operation. Run main inventory/preflight,
+then dispatch `mode=deploy` with
 the same commit/CI run. This order avoids requiring the runtime directory before
 bootstrap; bootstrap metadata alone does not authorize a dispatcher deployment.
 Fresh mode proves absence again; unexplained volumes prevent installation. It creates
@@ -232,9 +258,9 @@ the observed project name, never a guessed volume project. Runtime credentials r
 private. Hosted CI, privileged setup, owner login and actual deployment must be recorded
 as completed evidence before calling this release delivered.
 
-## Current isolated evidence (2026-09-27)
+## Historical isolated evidence (2026-09-27)
 
-Actual PostgreSQL16.10 rehearsal migrated schema22 and seeded independent exact decimal,
+Actual PostgreSQL16.10 rehearsal migrated schema 22 and seeded independent exact decimal,
 JSON and bytea rows. Encrypted custom backup, disconnected tmpfs restore, direct source
 schema/data comparison, unchanged source and real failed-dump propagation passed.
 Initial attempts failed exact SQL equality because PostgreSQL reparses three CHECK
@@ -248,13 +274,17 @@ Actual Trivy0.74.0 scan of BE049c5e91 and FE28faa7ab found5critical/55high and2c
 respectively, with no secret findings. The gate correctly blocks both artifacts. Backend
 language findings belong to inherited global npm tooling, while OpenSSL/musl/zlib and
 frontend image OS packages also need fixes. No finding is suppressed. Full sanitized
-reports are `/private/tmp/capital-{backend,frontend}-image-security.json`; updated image
-builds and rescans are still required. Dependency audit0 does not override image findings.
+reports are `/private/tmp/capital-{backend,frontend}-image-security.json`. These historical
+images were blocked; the later remediated four-image scans passed as recorded in the
+current checkpoint. Dependency audit0 does not override image findings.
 The scanner release tarball checksum was verified against the official release checksum.
 
 Before setup, the privileged owner executes the independently tested read-only
 `manual-mvp-data-assessment.sh`; it reports only flags, fails closed on unparsed/unknown
 configuration or possible external/local database references and unexpected stored data,
 and makes no database connection or filesystem change. Do not paste `.env` values.
-Only a clear assessment permits the separately reviewed root bootstrap. Off-host key/
-backup custody remains an operator action; server-local copies alone are insufficient.
+The owner's unused-template confirmation and zero resource counts establish the
+reviewed fresh-install basis; the assessment must still be clear before the separately
+reviewed root bootstrap. Unknown references, unexpected data or a refusal remain a
+stop condition. Reassess if the host state changes. Off-host key/backup custody remains
+an operator action; server-local copies alone are insufficient.
