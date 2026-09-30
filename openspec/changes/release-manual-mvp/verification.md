@@ -287,3 +287,49 @@ shell syntax and diff checks passed. Independent source review approved the exac
 source; host bootstrap and deployment remain pending. Public HTTPS had valid TLS,
 but `/health` returned 404. The public deploy key remains staged, not installed;
 no production bootstrap/deploy or private-key read occurred.
+
+## Hosted CI follow-up — run 36701142974 (source `26b7b91`)
+
+GitHub Actions PR #26 [run 36701142974](https://github.com/PavelArs/capital-tracker/actions/runs/36701142974)
+passed all eight basic jobs, then failed in `Release Images and Real Acceptance`
+at `docker compose up --wait`, before `pnpm test:e2e` could launch browsers. The
+actual error was `container capital-tracker-e2e-client-b-1 has no healthcheck
+configured` at 10:26:35Z. Backend, backend replica, frontend, proxy, PostgreSQL,
+Redis and provider services were healthy; client-a/client-b remained `Waiting`.
+Thus this run provides no browser acceptance, image-scan or candidate-export result.
+An attempted cancellation raced with natural completion and did not cancel the run.
+Full failed log: `/private/tmp/capital-mvp-third-ci-failed.log`.
+
+The separate manual-opening browser lock observer change is integrated at `bd15e40`.
+The predecessor exposed a stale helper expectation (RED log:
+`/private/tmp/capital-mvp-opening-browser-red.log`); the reviewed replacement observes
+the actual advisory-lock follower → writer → captured-psql-blocker sequence and keeps
+the original acceptance oracles unchanged. The two retained cases then passed in
+53.6s and 38.5s, without rebuilding images. Strict TypeScript checking of all E2E
+files also passed (`/private/tmp/capital-mvp-final-e2e-types.log`, using
+`backend/node_modules/.bin/tsc --noEmit --strict --skipLibCheck --target ES2022
+--module commonjs --moduleResolution node --esModuleInterop
+--typeRoots backend/node_modules/@types tests/e2e/*.ts`). These focused results do
+not replace hosted browser acceptance. Local current-migration, MFA/session, and 27
+startup-refusal PostgreSQL checks remain green. The later client-readiness fix is
+covered by scoped tests below; hosted image scans and release/deployment gates remain
+open.
+
+## Post-failure readiness and CI checks (integrated sources)
+
+Approved readiness source `618a532` is integrated as `d10e633`; scoped tests against
+the real readiness predicate pass 2/2, and the Compose configuration checks against
+Compose v5.5.1. CI ceiling-only source `e99fd54`, integrated as `732567c`, raises the
+Docker build timeout from 35 to 120 minutes for headroom. This is not a measured
+174-test runtime; per-test limits, worker count, retries, test selection and gates
+remain unchanged. Formatting-only source `10aa507`, integrated as `55aec09`, passes
+scoped Biome (`/private/tmp/capital-e2e-client-readiness-biome.log`), final readiness
+Jest 2/2 (`/private/tmp/capital-e2e-client-readiness-unit-final.log`) and engineering
+gates 165/165 (`/private/tmp/capital-ci-release-budget-engineering.log`). Strict
+all-E2E TypeScript also passed above. These local checks do not constitute hosted
+Compose/Firefox or image-scan acceptance.
+
+The combined real Compose and Firefox run has not started: Docker access approval
+blocked the attempted execution, and the pending attempt was interrupted. Hosted
+browser acceptance, image scans and deployment remain open; no release-task closure
+depends on this documentation checkpoint.

@@ -17,7 +17,7 @@ preservation; four image scans reported zero critical/high/secrets and one backe
 MEDIUM. See the detailed receipt in
 [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
 
-Latest hosted run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787)
+Previous hosted run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787)
 on published source `670b8c1` passed eight basic CI jobs but failed database
 opening acceptance before browser execution. Safe PostgreSQL diagnostics confirm
 a stale `RESTRICT` delete expectation (expected `23503`, actual `23001` for the
@@ -25,6 +25,28 @@ opening snapshot FK); the visible `costStatus` NOT NULL stage label is stale and
 that preceding null-status case passed. This does not establish an accounting
 regression. Independent scoped manual
 opening acceptance passes 6/6 against real PostgreSQL (`/private/tmp/capital-mvp-manual-opening-green2.log`). The initial 24-scenario actual-DB batch had 19 original PASS and five `RESTRICT` expectation failures. Reviewed source `9ec4e40` corrected all five, and all 24 real DB scripts now pass across the initial run plus targeted reruns; this is not one uninterrupted 24/24 run. Receipt `/private/tmp/capital-mvp-db-compat-evidence.json` records the exact same four image IDs, linux/amd64 and zero remaining containers; no image rebuild or browser rerun. Hosted CI remains pending.
+
+Latest hosted PR #26 run [36701142974](https://github.com/PavelArs/capital-tracker/actions/runs/36701142974)
+tested source `26b7b91` and passed all eight basic CI jobs. Its release job failed at
+`docker compose up --wait` before browser execution: `capital-tracker-e2e-client-b-1`
+had no healthcheck configured (10:26:35Z). Backend, replica, frontend, proxy,
+PostgreSQL, Redis and provider containers were healthy; both browser clients remained
+waiting. This is an E2E harness readiness failure, not browser acceptance evidence.
+The authorized cancellation raced with natural completion and did not cancel the run.
+Current migration/MFA/session and 27 startup-refusal real-DB evidence remains green.
+The separately fixed opening lock observer at `bd15e40` follows the actual
+advisory-follower → writer → captured-psql-blocker chain; its two retained browser
+cases pass in 53.6s and 38.5s (`/private/tmp/capital-mvp-opening-browser-red.log`
+records predecessor RED; `/private/tmp/capital-mvp-final-e2e-types.log` records
+strict all-E2E TypeScript). Readiness fix `d10e633` and Compose v5.5.1 configuration
+passed scoped real-predicate tests 2/2. CI ceiling-only change `732567c` raises the
+Docker build timeout from 35 to 120 minutes for headroom; this is not a measured
+174-test runtime, and per-test limits, workers, retries, selection and gates are
+unchanged. Formatting follow-up `55aec09` passes scoped Biome, final readiness Jest
+2/2 and engineering gates 165/165. These focused checks did not rebuild images or
+rerun hosted CI. The combined real Compose/Firefox acceptance has not started because
+Docker access approval blocked the attempt; hosted image scans and deployment remain
+pending. Full failed hosted log: `/private/tmp/capital-mvp-third-ci-failed.log`.
 
 Snap compatibility verified native Docker CLI 29.8, Compose 5.5.1 and daemon API.
 Native CLI/Compose via isolated `cliPluginsExtraDirs` passed on the server; the
