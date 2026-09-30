@@ -8,30 +8,45 @@ import json,re,subprocess,sys
 from pathlib import Path
 from urllib.parse import urlsplit
 root=Path(sys.argv[1]); env=root/'.env'
-def refuse(reason):
-    print('fresh_setup_gate=blocked; reason='+reason);sys.exit(1)
+phase='start'
+def refuse(reason,detail=''):
+    print('fresh_setup_gate=blocked; reason='+reason+'; phase='+phase+detail);sys.exit(1)
+def error_class(error):
+    # Coarse, value-free class names only; messages may contain private values.
+    for kind in (UnicodeError,json.JSONDecodeError,OSError,KeyError,TypeError,AttributeError,ValueError):
+        if isinstance(error,kind): return kind.__name__
+    return 'Exception'
 def docker(*args):
+    # Docker stderr may echo private names; it is captured and never printed.
     result=subprocess.run(['docker',*args],capture_output=True,text=True)
     if result.returncode: refuse('inventory_unavailable')
     return result.stdout
+def labels(item):
+    # Docker reports absent labels as null; treat them as unlabelled.
+    return (item.get('Labels') or {}) if isinstance(item,dict) else {}
 try:
+    phase='docker_inventory'
     container_ids=docker('ps','-aq').split()
     volume_names=docker('volume','ls','-q').split()
     network_ids=docker('network','ls','-q').split()
     containers=json.loads(docker('inspect',*container_ids)) if container_ids else []
     volumes=json.loads(docker('volume','inspect',*volume_names)) if volume_names else []
     networks=json.loads(docker('network','inspect',*network_ids)) if network_ids else []
+    phase='docker_classification'
     def related(value): return bool(re.search(r'capital|tracker',str(value),re.I))
-    mounts=[m for c in containers for m in c.get('Mounts',[])]
-    container_refs=sum(related(c.get('Name','')) or related(c.get('Config',{}).get('Labels',{}).get('com.docker.compose.project','')) for c in containers)
-    volume_refs=sum(related(v.get('Name','')) or related(v.get('Labels',{}).get('com.docker.compose.project','')) for v in volumes)
-    network_refs=sum(related(n.get('Name','')) or related(n.get('Labels',{}).get('com.docker.compose.project','')) for n in networks)
+    mounts=[m for c in containers for m in (c.get('Mounts') or [])]
+    container_refs=sum(related(c.get('Name','')) or related(labels(c.get('Config') or {}).get('com.docker.compose.project','')) for c in containers)
+    volume_refs=sum(related(v.get('Name','')) or related(labels(v).get('com.docker.compose.project','')) for v in volumes)
+    network_refs=sum(related(n.get('Name','')) or related(labels(n).get('com.docker.compose.project','')) for n in networks)
     bind_refs=sum(m.get('Type')=='bind' and (str(m.get('Source',''))==str(root) or str(m.get('Source','')).startswith(str(root)+'/')) for m in mounts)
     print(f'application_container_references={container_refs}; volume_references={volume_refs}; network_references={network_refs}; project_bind_references={bind_refs}')
     if container_refs or volume_refs or network_refs or bind_refs: refuse('existing_application_data_references')
+    phase='env_read'
     if not env.is_file() or env.is_symlink(): refuse('existing_env_unavailable_or_symlink')
+    text=env.read_bytes().decode('utf-8')
+    phase='env_parse'
     values={}; malformed=False
-    for line in env.read_text().splitlines():
+    for line in text.splitlines():
         if not line.strip() or line.lstrip().startswith('#'): continue
         match=re.fullmatch(r'\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*',line)
         if not match: malformed=True;continue
@@ -61,6 +76,7 @@ try:
     if connection and not targets: targets.append('unrecognized')
     print('database_connection_key_names='+','.join(sorted(connection)))
     print('database_target_classes='+(','.join(sorted(set(targets))) or 'not_configured'))
+    phase='project_entries'
     unexpected=sum(p.name not in {'.env','.gitignore'} for p in root.iterdir())
     print('unexpected_project_data_entries='+str(unexpected))
     print('existing_env_preserved=yes')
@@ -68,6 +84,8 @@ try:
     if 'external' in targets or 'local_native' in targets: refuse('external_or_native_database_requires_private_review')
     if unexpected: refuse('unexpected_project_data_entries')
     print('fresh_setup_gate=passed; existing configuration preserved; no data modified')
-except Exception:
-    refuse('assessment_unavailable')
+except SystemExit:
+    raise
+except Exception as error:
+    refuse('assessment_unavailable','; error_class='+error_class(error))
 PY

@@ -63,7 +63,11 @@ ENG-002 delta/tests (ENG-002 was already RED at 976f917) and `pnpm test:security
 Evidence and unrun checks: `openspec/changes/release-manual-mvp/verification.md` (MVP-007).
 Task 2.5 stays open for host install, `production` environment secret and an actual
 dispatcher run. Claude's device shell is a Linux VM: no Docker/Colima, pnpm, gh or server
-SSH; Biome unrun there. Next release gates unchanged (image remediation/PG18 acceptance,
+SSH; Biome unrun there. The real-server assessment failed on Docker `"Labels": null`;
+Codex's 3 RED process tests now pass with null-safe labels/mounts and value-free
+`phase=`/`error_class=` refusal details (jest assessment 22/22). New helper SHA256
+`03026ef7a44eee880f6e5c5a722c0d2e38237c5266d95f99df37bfdd03ca0a99` supersedes
+the staged `59e99ed8…` copy; re-stage before the owner reruns it. Next release gates unchanged (image remediation/PG18 acceptance,
 host bootstrap, hosted CI, deploy). Not merged into `release/manual-mvp` yet.
 
 ## Goal and limits
