@@ -2,36 +2,49 @@
 
 ## Current handoff — manual + CSV MVP release in progress
 
-Checkpoint: 2026-09-27 11:06 UTC. Owner authorized the manual-accounting + CSV MVP
-through existing GitHub Actions/server path using remaining quota; network sync and
-AI are deferred. This is **IN PROGRESS**, not deployed or whole-product complete.
+Checkpoint: 2026-09-30. After pausing, the owner explicitly resumed the authorized
+manual-accounting + CSV MVP release through the existing GitHub Actions/server path;
+network sync and AI remain deferred. This is **IN PROGRESS**, not deployed or
+whole-product complete. Current release facts below supersede the 2026-09-27
+preparation snapshot; historical evidence remains labeled by its actual scope.
 Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, HEAD `fc7fad5`, baseline `0f96749`. OpenSpec change
+branch `release/manual-mvp`, HEAD `4dd81e5`, baseline `0f96749`. The primary
+`capital-tracker` checkout remains at `0f96749`; its owner edit to
+`frontend/nginx.conf` is dirty and must be preserved. OpenSpec change
 `release-manual-mvp` is drafted/validated in QA commit `1d52f44` at
 `/Users/pavelars/Projects/temp/capital-test-manual-mvp` branch `test/manual-mvp`.
 Router-shell/auth/manual-provider-independence passed. Focused VCH responsive passed
-1/1 in 15.9s on FE `FE28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
-and BE `BE049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`.
-Eighteen previously passing journeys used FE `FEbd407fdd…`; do not combine these
-split results into a 19/19 single-image claim. Security startup27 and artifact/
+1/1 in 15.9s on frontend SHA256 `28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
+and backend SHA256 `049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`.
+Eighteen previously passing journeys used frontend SHA256
+`bd407fdd78986c185583421a50bb7f871d329eec22e2e3907ba0d6d7eb4e6495`; do not
+combine these split results into a 19/19 single-image claim. Security startup27 and artifact/
 migration checks passed. PG16.10 schema-22 backup/restore verified full schema/data
 fingerprints with the three approved canonical CHECK mappings; safe log:
 `/private/tmp/capital-mvp-backup-rehearsal3.log`. Off-host encrypted copy and
 independent key recovery remain pending. Trivy found inherited base-image/toolkit
 findings (BE 5 critical/55 high, FE 2 critical/35 high); application dependency graph
-audit is zero. Runtime owns minimal-base remediation and final image scans. Current
-hosted CI, image promotion, actual deployment, restricted deploy privilege and host
-bootstrap/HTTPS remain pending. Manual diagnostic [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
-passed read-only; it found project writable, `.env` unreadable, no noninteractive sudo,
-Docker access, no named app containers/volumes, and vhost disabled. Owner-readonly
-`.env` assessment passed 22 synthetic tests (QA `eef9922`, integrated `81af470`);
-the verified setup bundle is staged for host user `agmin` under
-`$HOME/capital-mvp-setup`. Owner will run sudo commands and return flags; bootstrap
-has not run. OpenSpec task 2.2 is complete; remaining release gates are image
-remediation/audit, current hosted CI, host bootstrap/HTTPS, least-privilege deployment,
-off-host backup/key recovery and production deployment. Runtime image patch work is
-actively owned there; root coordinates integration/release ownership. No archive or
-full-target completion claim. After actual deployment, record exact tested commit and
+audit is zero. A fresh installation now targets PostgreSQL 18.6; the existing PG16
+data and preview remain preserved, and no actual PostgreSQL 18 gate has run. Runtime
+branch `fix/manual-mvp-runtime` is at `fc7fad5` with an uncommitted Node
+22.23.3-alpine3.24/Nginx 1.30.5-alpine-slim image patch, not yet verified. Deployment
+branch `build/manual-mvp-deploy` is at `51f0da5` with a PG18 guard; QA branch
+`test/manual-mvp` is at `0bc6fd2` with additional unintegrated tests to review.
+Docker Desktop is unavailable; runtime work is using isolated Colima per command
+context, but a running Colima state has not been verified. Current hosted CI, image
+promotion, actual deployment, restricted deploy privilege and host bootstrap/HTTPS
+remain pending. Diagnostic run [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
+is historical read-only evidence from `37fd35d`, not a fresh network check. The
+owner-readonly `.env` assessment passed 22 synthetic tests (QA `eef9922`, integrated
+`81af470`); its helper SHA256 is
+`59e99ed8bf450a1667732a7abef681f51734521497591badaea76760b579a205`. It is staged
+for SSH user `pavelars` (host alias `agm`, not `agmin`) under
+`$HOME/.capital-mvp-setup`. The owner has not returned assessment flags; bootstrap
+has not run. OpenSpec task 2.2 is complete; remaining release gates include reviewing
+PG18 acceptance, image remediation/audit, current hosted CI, host bootstrap/HTTPS,
+least-privilege deployment, off-host backup/key recovery and production deployment.
+Root coordinates integration/release ownership. No archive or full-target completion
+claim. After actual deployment, record exact tested commit and
 image digests, migration, encrypted backup/restore evidence, health/security checks
 and outcome; never infer success from an accepted workflow dispatch. Read
 [`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased
@@ -43,7 +56,9 @@ the existing consolidation cleanup guard.
 
 Continue the WHOLE target in capital-tracker-openspec-prompt.md. It remains
 substantially incomplete. Read AGENTS.md, Git diff and current OpenSpec first.
-No paid services, production/owner database access or remote push. Owner2026-09-27
+Historical isolated-preparation limits prohibited paid services, production/owner
+database access and remote push; they do not revoke the owner's current explicit
+authorization for the manual MVP actions described above. Owner2026-09-27
 authorized deletion of proven merged worktrees; original-project deletion remains gated
 by the final consolidation inventory and data-preservation requirements.
 Consolidate into capital-tracker-old only after the whole verified refactor and
@@ -646,8 +661,10 @@ as shared release hardening. Current race tests prove serialization, not bounded
 Instrument receipt labels currently depend on the create/read-only catalog remaining
 immutable; future catalog edits require explicit receipt preservation.
 
-No preview update, owner DB access, production rollout, remote push or project cleanup.
-Preserve preview volume/MFA/TLS/credentials, old image tag7eff01d1 and stopped containers.
+At the pre-resume whole-goal checkpoint, preview updates, owner DB access, production
+rollout, remote push and project cleanup were out of scope; the resumed manual MVP
+authorization above governs its release path. Preserve preview volume/MFA/TLS/credentials,
+old image tag7eff01d1 and stopped containers.
 Retain active/unproven worktrees; remove proven integrated worktrees after guarded
 verification as now authorized. Root alone owns Docker, migrations, locks and
 deployment; protect owner Nginx/lock hashes above. Follow worktree/model-routing rules
