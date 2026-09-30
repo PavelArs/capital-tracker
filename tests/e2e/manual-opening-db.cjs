@@ -81,7 +81,7 @@ async function insert(source, table, row) {
     VALUES (${fields.map((_, index) => `$${index + 1}`).join(',')})`, Object.values(row));
 }
 
-async function rejectedSql(source, action, codes) {
+async function rejectedSql(source, action, codes, constraint) {
   // Always roll back, including an unexpectedly accepted invalid row. A constraint
   // failure must have its expected SQLSTATE; unrelated setup/query failures fail.
   const runner = source.createQueryRunner();
@@ -94,6 +94,7 @@ async function rejectedSql(source, action, codes) {
     finally { await runner.release(); }
   }
   assert.ok(codes.includes(failure?.code), 'Actual PostgreSQL must reject at the intended constraint');
+  if (constraint) assert.equal(failure.constraint, constraint, 'Reject at the selected foreign-key constraint');
 }
 
 async function seed(source) {
@@ -274,9 +275,15 @@ async function constraints(source, fixture) {
     ...bases.account_opening_snapshots, requestId: existingSnapshot.requestId }), ['23505']);
   await rejectedSql(source, runner => insert(runner, 'account_opening_positions', {
     ...position, instrumentId: instruments[0].toUpperCase() }), ['23505']);
+  stage = 'OPEN-004 legacy user deletion foreign-key refusal';
   await rejectedSql(source, runner => runner.query('DELETE FROM users WHERE id=$1', [owner]), ['23503']);
-  await rejectedSql(source, runner => runner.query('DELETE FROM accounting_instruments WHERE id=$1', [instruments[0]]), ['23503']);
-  await rejectedSql(source, runner => runner.query('DELETE FROM manual_accounts WHERE id=$1', [account]), ['23503']);
+  // PostgreSQL18 reports the dedicated RESTRICT SQLSTATE for these parent deletes.
+  stage = 'OPEN-004 referenced instrument deletion RESTRICT refusal';
+  await rejectedSql(source, runner => runner.query('DELETE FROM accounting_instruments WHERE id=$1', [instruments[0]]),
+    ['23001'], 'account_opening_positions_ownerId_instrumentId_fkey');
+  stage = 'OPEN-004 referenced account deletion RESTRICT refusal';
+  await rejectedSql(source, runner => runner.query('DELETE FROM manual_accounts WHERE id=$1', [account]),
+    ['23001'], 'account_opening_snapshots_ownerId_accountId_fkey');
   const temporary = source.createQueryRunner();
   try {
     await temporary.connect(); await temporary.startTransaction();
