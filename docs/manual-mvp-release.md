@@ -85,12 +85,15 @@ DOCKER_CONFIG=/etc/capital-tracker/docker-config docker login ghcr.io -u OWNER
 ```
 
 Private GHCR pull access remains an operator prerequisite: provision a protected
-`read:packages` credential with access to the three Capital image packages, log in
+personal access token (classic) with only `read:packages` and access to the three Capital image packages, log in
 interactively through the dedicated root Docker configuration, and never put it in
 a receipt, workflow request, shell argument or log. The data-only dispatcher cannot
 install credentials; it does not inherit an old CD token or root’s general login.
 Verify package access privately before deployment. This source change does not claim
-that the server already has that access.
+that the server already has that access. GitHub’s [Container registry authentication
+documentation](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry#authenticating-to-the-container-registry)
+requires a classic token and the account’s package read permission for private pulls;
+no repository/write/delete scope is requested here.
 
 Re-run `install` whenever a release changes a server file listed in the receipt;
 otherwise the dispatcher refuses the mismatch. The install step reports existing
