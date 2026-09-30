@@ -178,8 +178,13 @@ services:
       - ./source-client.cjs:/tests/client.cjs:ro
       - ./.runtime/tls/fullchain.pem:/tests/public-ca.pem:ro
     read_only: true
-    healthcheck:
-      disable: true
+    # Dormant request clients have no HTTP server; wait for their actual process
+    # and the two read-only request fixtures rather than the image's backend health.
+    healthcheck: &client-readiness
+      test: [CMD, node, -e, "process.kill(1,0); const fs=require('node:fs'); for (const file of ['/tests/client.cjs','/tests/public-ca.pem']) fs.accessSync(file,fs.constants.R_OK)"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
   client-b:
     image: capital-tracker-backend:acceptance
@@ -191,8 +196,7 @@ services:
       - ./source-client.cjs:/tests/client.cjs:ro
       - ./.runtime/tls/fullchain.pem:/tests/public-ca.pem:ro
     read_only: true
-    healthcheck:
-      disable: true
+    healthcheck: *client-readiness
 
 networks:
   ingress:
