@@ -336,6 +336,13 @@ describe('MVP-003: explicit fresh-install absence preflight', () => {
   it('explicit empty-inventory preflight checks configuration and TLS without provisioning', () => {
     const { result, calls } = release('success', 'fresh', 'preflight');
     expect(result.status).toBe(0);
+    for (const query of [
+      '.services.postgres.image',
+      '.services.redis.image',
+      '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR',
+    ]) {
+      expect(calls.some((call) => call.tool === 'jq' && call.args.at(-1) === query)).toBe(true);
+    }
     expect(calls.some((call) => call.tool === 'docker' && call.args[0] === 'ps')).toBe(true);
     expect(
       calls.filter(
