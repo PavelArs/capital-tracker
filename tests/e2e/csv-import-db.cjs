@@ -79,7 +79,7 @@ async function status(action, expected) {
   assert.equal(actual, expected, 'Reject for the specified domain boundary, not incidental SQL failure');
 }
 
-async function rejectedSql(source, action, codes) {
+async function rejectedSql(source, action, codes, constraint) {
   const runner = source.createQueryRunner();
   let failure;
   try {
@@ -91,6 +91,7 @@ async function rejectedSql(source, action, codes) {
   }
   assert.ok(codes.includes(failure?.driverError?.code ?? failure?.code),
     'Actual PostgreSQL must reject for the intended SQLSTATE');
+  if (constraint) assert.equal(failure?.driverError?.constraint ?? failure?.constraint, constraint);
 }
 
 async function workerMain() {
@@ -819,11 +820,14 @@ async function sqlIntegrity(source, svc, fixture) {
   await rejectedSql(source, runner => runner.query(`INSERT INTO account_csv_import_rows
     ("ownerId","accountId","batchId",ordinal,"startLine","tradeId","createVersion") VALUES($1,$2,$3,1,2,$4,1)`,
     [owner, account, another.uploaded.batchId, provenance.tradeId]), ['23505']);
-  for (const [table, predicate, parameters] of [
-    ['account_csv_imports', 'id=$1', [value.uploaded.batchId]],
-    ['account_trade_versions', '"tradeId"=$1 AND version=1', [provenance.tradeId]],
-    ['account_trade_journals', '"accountId"=$1', [account]],
-  ]) await rejectedSql(source, runner => runner.query(`DELETE FROM ${table} WHERE ${predicate}`, parameters), ['23503']);
+  for (const [table, predicate, parameters, constraint] of [
+    ['account_csv_imports', 'id=$1', [value.uploaded.batchId], 'account_csv_import_commands_ownerId_accountId_batchId_fkey'],
+    ['account_trade_versions', '"tradeId"=$1 AND version=1', [provenance.tradeId], 'account_trades_current_version'],
+    ['account_trade_journals', '"accountId"=$1', [account], 'account_trades_ownerId_accountId_fkey'],
+  ]) {
+    stage = `CSV-007-A referenced ${table} deletion RESTRICT refusal`;
+    await rejectedSql(source, runner => runner.query(`DELETE FROM ${table} WHERE ${predicate}`, parameters), ['23001'], constraint);
+  }
   // Owner binding is transient authentication state, not the parent of retained evidence.
   const runner = source.createQueryRunner();
   try {

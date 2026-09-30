@@ -875,9 +875,9 @@ async function main() {
 async function storageConstraints(source, _flows, owner) {
   stage = 'FLOW-MIG-001 actual SQL exact finite fields and owner/history constraints';
   const before = await fingerprint(source);
-  const reject = async (sql, values, codes = ['23514']) => {
+  const reject = async (sql, values, codes = ['23514'], expectedConstraint) => {
     const runner = source.createQueryRunner();
-    let code;
+    let code, constraint;
     try {
       await runner.connect();
       await runner.startTransaction();
@@ -885,6 +885,7 @@ async function storageConstraints(source, _flows, owner) {
         await runner.query(sql, values);
       } catch (error) {
         code = error?.driverError?.code ?? error?.code;
+        constraint = error?.driverError?.constraint ?? error?.constraint;
       }
     } finally {
       if (runner.isTransactionActive) await runner.rollbackTransaction();
@@ -894,6 +895,7 @@ async function storageConstraints(source, _flows, owner) {
       codes.includes(code),
       'PostgreSQL rejects the intended constraint, not incidental fixture SQL',
     );
+    if (expectedConstraint) assert.equal(constraint, expectedConstraint);
   };
   const columns =
     await source.query(`SELECT column_name,numeric_precision,numeric_scale,datetime_precision
@@ -975,16 +977,21 @@ async function storageConstraints(source, _flows, owner) {
   await invalidVersion({ ownerId: randomUUID() }, ['23503']);
   await invalidVersion({ requestId: first.requestId }, ['23505']);
   await invalidVersion({ journalRevision: first.journalRevision }, ['23505']);
+  stage = 'FLOW-MIG-001 referenced journal deletion RESTRICT refusal';
   await reject(
     'DELETE FROM portfolio_flow_journals WHERE "ownerId"=$1',
     [owner.timeline],
-    ['23503'],
+    ['23001'],
+    'portfolio_flow_versions_ownerId_fkey',
   );
-  await reject('DELETE FROM users WHERE id=$1', [owner.timeline], ['23503']);
+  stage = 'FLOW-MIG-001 referenced user deletion RESTRICT refusal';
+  await reject('DELETE FROM users WHERE id=$1', [owner.timeline], ['23001'], 'portfolio_flow_journals_ownerId_fkey');
+  stage = 'FLOW-MIG-001 referenced version deletion RESTRICT refusal';
   await reject(
     'DELETE FROM portfolio_flow_versions WHERE "ownerId"=$1 AND "flowId"=$2 AND version=1',
     [owner.timeline, first.flowId],
-    ['23503'],
+    ['23001'],
+    'portfolio_flow_versions_ownerId_flowId_previousVersion_fkey',
   );
   for (const coverageFrom of ['infinity', '1969-12-31T23:59:59Z', '10000-01-01T00:00:00Z'])
     await reject('UPDATE portfolio_flow_journals SET "coverageFrom"=$2 WHERE "ownerId"=$1', [

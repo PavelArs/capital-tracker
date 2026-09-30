@@ -344,7 +344,8 @@ async function sqlConstraints(db, s, f) {
   const id = saved.swap.swapId;
   const before = await fingerprint(db);
   let refused = 0;
-  const rejectSql = async (label, statement, parameters, code) => {
+  const rejectSql = async (label, statement, parameters, code, constraint) => {
+    stage = `SWAP-006 ${label}`;
     const runner = db.createQueryRunner();
     await runner.connect();
     await runner.startTransaction();
@@ -354,7 +355,8 @@ async function sqlConstraints(db, s, f) {
           await runner.query(statement, parameters);
           await runner.query('SET CONSTRAINTS ALL IMMEDIATE');
         },
-        (error) => error.driverError?.code === code,
+        (error) => error.driverError?.code === code &&
+          (!constraint || error.driverError?.constraint === constraint),
         `${label}: expected PostgreSQL ${code}`,
       );
     } finally {
@@ -462,13 +464,15 @@ async function sqlConstraints(db, s, f) {
     'referenced head cannot disappear',
     'DELETE FROM account_swaps WHERE id=$1',
     [id],
-    '23503',
+    '23001',
+    'account_swap_versions_ownerId_accountId_swapId_fkey',
   );
   await rejectSql(
     'referenced current version cannot disappear',
     'DELETE FROM account_swap_versions WHERE "swapId"=$1',
     [id],
-    '23503',
+    '23001',
+    'account_swaps_current_version',
   );
 
   // Positive controls distinguish valid zero/unknown/exact precision and fee shapes

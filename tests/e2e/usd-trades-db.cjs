@@ -76,7 +76,7 @@ async function status(action, expected) {
   assert.equal(actual, expected, 'Reject for the specified domain boundary, not incidental SQL failure');
 }
 
-async function rejectedSql(source, action, codes) {
+async function rejectedSql(source, action, codes, constraint) {
   const runner = source.createQueryRunner();
   let failure;
   try {
@@ -88,6 +88,7 @@ async function rejectedSql(source, action, codes) {
   }
   assert.ok(codes.includes(failure?.driverError?.code ?? failure?.code),
     'Actual PostgreSQL must reject for the intended SQLSTATE');
+  if (constraint) assert.equal(failure?.driverError?.constraint ?? failure?.constraint, constraint);
 }
 
 const origin = (changes = {}) => ({ requestId: randomUUID(), coverageFrom, assertEmpty: true, ...changes });
@@ -450,9 +451,14 @@ async function sqlConstraints(source, fixture) {
       WHERE "accountId"=$2 AND "tradeId"=$3 AND version=$4`,
     [distinct[field], version.accountId, version.tradeId, version.version]), ['23505']);
   }
-  for (const table of ['manual_accounts', 'accounting_instruments', 'users']) {
+  for (const [table, code, constraint] of [
+    ['manual_accounts', '23001', 'account_trade_journals_ownerId_accountId_fkey'],
+    ['accounting_instruments', '23001', 'account_opening_positions_ownerId_instrumentId_fkey'],
+    ['users', '23503', 'FK_d8cf9bdec7d2fad0852aec349c1'],
+  ]) {
+    stage = `TRADE-006-B referenced ${table} deletion refusal`;
     const key = table === 'manual_accounts' ? version.accountId : table === 'accounting_instruments' ? version.instrumentId : owner;
-    await rejectedSql(source, runner => runner.query(`DELETE FROM ${table} WHERE id=$1`, [key]), ['23503']);
+    await rejectedSql(source, runner => runner.query(`DELETE FROM ${table} WHERE id=$1`, [key]), [code], constraint);
   }
   const runner = source.createQueryRunner();
   try {

@@ -81,7 +81,7 @@ async function status(action, expected) {
   assert.equal(actual, expected, 'Reject for the specified domain boundary, not incidental SQL failure');
 }
 
-async function rejectedSql(source, action, codes) {
+async function rejectedSql(source, action, codes, constraint) {
   const runner = source.createQueryRunner();
   let failure;
   try {
@@ -93,6 +93,7 @@ async function rejectedSql(source, action, codes) {
   }
   assert.ok(codes.includes(failure?.driverError?.code ?? failure?.code),
     'Actual PostgreSQL must reject for the intended SQLSTATE');
+  if (constraint) assert.equal(failure?.driverError?.constraint ?? failure?.constraint, constraint);
 }
 
 async function workerMain() {
@@ -647,8 +648,12 @@ async function sqlIntegrity(source, svc, f) {
   }
   await rejectedSql(source,r=>r.query('UPDATE account_trade_journals SET "openingRevision"=NULL WHERE "accountId"=$1',[value.account]),['23514']);
   await rejectedSql(source,r=>r.query("UPDATE account_trade_journals SET \"originKind\"='declared-empty' WHERE \"accountId\"=$1",[value.account]),['23514']);
-  for (const table of ['account_trade_journals','account_opening_snapshots','account_opening_positions']) {
-    await rejectedSql(source,r=>r.query(`DELETE FROM ${table} WHERE "accountId"=$1`,[value.account]),['23503']);
+  for (const [table,constraint] of [
+    ['account_trade_journals','account_carry_in_lots_journal_fk'],
+    ['account_opening_snapshots','account_opening_positions_ownerId_accountId_revision_fkey'],
+    ['account_opening_positions','account_carry_in_lots_position_fk']]) {
+    stage = `CARRY-006-A referenced ${table} deletion RESTRICT refusal`;
+    await rejectedSql(source,r=>r.query(`DELETE FROM ${table} WHERE "accountId"=$1`,[value.account]),['23001'],constraint);
   }
   const transaction = source.createQueryRunner();
   try {
