@@ -193,8 +193,16 @@ Current hosted evidence is separate. GitHub Actions PR #26 run
 passed lint, unit, build, spec, security and audit, then failed acceptance before
 browser execution because a fixture expected 16 migrations while the actual
 current ledger is 22. This is a stale fixture, not an authentication regression.
-The approved correction `b887a4c` is pending an actual scoped green run and CI
-rerun. No hosted CI acceptance or browser green is claimed.
+The approved correction `b887a4c` now passes actual scoped PostgreSQL auth-limit
+acceptance: exit 0 with 14 original PASS lines in
+`/private/tmp/capital-mvp-auth-limits-green.log`. Coverage includes all auth
+families; cross-process and last-slot races; 4096-row capacity and expiry;
+advisory/target/pruning locks; safe lock timeout and retry; query and COMMIT
+refusal with rollback and no internal retry; 5000 ms pool exhaustion; SQL
+constraints/indexes; and preservation of all prior ledger rows. The preceding
+`/private/tmp/capital-mvp-auth-limits-red.log` records the setup refusal and
+explicitly does not claim a behavioral product RED. Hosted CI rerun remains
+pending; no hosted acceptance/browser green is claimed.
 
 The owner confirmed the existing server `.env` is an unused template and no
 owner database ever existed. The strict helper preserved that env and observed

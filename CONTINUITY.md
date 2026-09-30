@@ -20,8 +20,9 @@ finding history. GitHub Actions PR #26 run [36687877047](https://github.com/Pave
 passed lint, unit, build, spec, security and audit jobs, then failed acceptance
 before browser execution because one fixture still expects 16 migrations rather
 than the current 22. This is a stale fixture, not evidence of an authentication
-regression. The approved fixture correction `b887a4c` awaits an actual scoped
-green run and CI rerun; do not claim CI or acceptance green yet.
+regression. The approved fixture correction `b887a4c` now passes its actual
+scoped PostgreSQL acceptance (14 original PASS lines, exit 0); the hosted CI rerun
+remains pending, so do not claim hosted CI green.
 
 The owner confirmed the old server `.env` is an unused template and no owner
 database ever existed. The strict helper preserved the environment and observed
