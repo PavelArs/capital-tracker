@@ -36,6 +36,8 @@ if(tool==='mv'){
 if(tool==='flock'){process.exit(mode==='lock'?1:0);}
 if(tool==='stat'){process.stdout.write(a[1]==='%a'?'600':String(fs.statSync(a[2]).size));}
 if(tool==='jq'){
+ // Every fixture jq call uses stdin (a pipe or here-string); consume it before returning output.
+ fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
  if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-postgres'?'postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
  else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
