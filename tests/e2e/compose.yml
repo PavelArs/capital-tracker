@@ -41,7 +41,10 @@ x-backend: &backend
 
 services:
   postgres:
-    image: postgres:18.6-alpine3.24@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66
+    image: capital-tracker-postgres:acceptance
+    build:
+      context: ../..
+      dockerfile: deploy/postgres.Dockerfile
     platform: linux/amd64
     environment:
       POSTGRES_DB: capital_tracker_e2e

@@ -54,7 +54,7 @@ if (command === 'down') {
       '-addext', 'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com']);
     compose('down', '--remove-orphans');
     try {
-      compose('build', 'backend', 'frontend');
+      compose('build', 'backend', 'frontend', 'postgres');
       if (process.platform === 'linux') run('docker', ['run', '--rm', '--network', 'none', '--user', '0',
         '--mount', `type=bind,src=${key},dst=/synthetic-key`, '--entrypoint', 'node',
         'capital-tracker-backend:acceptance', '-e',
