@@ -3,7 +3,7 @@
 **Release checkpoint (2026-09-30):** isolated manual/auth acceptance passed 19/19,
 PostgreSQL18 encrypted backup/restore and the actual four-image security scans passed.
 Hosted CI run 36687877047 failed the auth fixture's stale schema 16 expectation against
-schema 22. The auth-fixture correction is integrated at `9ea156a`; its scoped check passed 14 tests, and the
+schema 22. The auth-fixture correction is integrated at `9ea156a`; its scoped check recorded 14 PASS scenarios, and the
 hosted retry is pending. These results do not supply a successful main-push candidate.
 Host bootstrap, restricted dispatcher installation and production deployment have not
 run. Bootstrap/deploy await the exact successful current-main CI run and its promoted,
@@ -22,8 +22,10 @@ fingerprint `SHA256:KsIoiJpnYR1x29u2mdomeqq4PYAOem22YaJAKjL62KU`.
 Its inactive Nginx configuration currently serves static HTTP; HTTPS `/health` returns404.
 No Capital Tracker containers, named/project application volumes or networks were found.
 The preserved `/opt/capital-tracker/.env` is root-owned0600. The owner has since
-confirmed it is an unused old template; the read-only assessment found zero application
-resource counts. This does not authorize ignoring an assessment refusal. Port3000
+confirmed it is an unused old template; actual read-only inventory found zero application
+resources. Together these resolve the first-install history. The original `.env` remains
+preserved and the helper's earlier refusal remains recorded; no successful helper result
+is claimed. Port3000
 belongs to another service; the dedicated application uses loopback3100/3101 only.
 The existing `pavelars` login lacks passwordless sudo. `deploy` rejects the same SSH key.
 The existing GitHub deployment key successfully completed read-only Actions run36313627415:
@@ -151,9 +153,10 @@ unresolved high/critical findings block export. Complete finding identifiers and
 severities remain in sanitized reports; raw secret matches/image environment details are
 removed before upload. Fresh bootstrap checks PostgreSQL’s actual promoted GHCR digest against a root-reviewed
 fresh receipt; its official base digest is only a source input. Redis stays official and
-must match the reviewed pin. Existing releases compare candidate infrastructure image IDs to
-the running PostgreSQL and Redis before downtime; fresh releases require the pinned
-digest references. The isolated four-image scans and PostgreSQL18 backup/restore now
+must match the reviewed pin. Existing releases compare the infrastructure references
+preserved in the server's `.env.release` to the running PostgreSQL and Redis image IDs
+before downtime. The fresh receipt's PostgreSQL digest does not authorize replacing
+existing infrastructure. Fresh releases require the promoted/reviewed digest references. The isolated four-image scans and PostgreSQL18 backup/restore now
 passed; successful hosted main CI and the real server release's backup/restore remain
 separate required evidence.
 
@@ -279,12 +282,13 @@ images were blocked; the later remediated four-image scans passed as recorded in
 current checkpoint. Dependency audit0 does not override image findings.
 The scanner release tarball checksum was verified against the official release checksum.
 
-Before setup, the privileged owner executes the independently tested read-only
-`manual-mvp-data-assessment.sh`; it reports only flags, fails closed on unparsed/unknown
-configuration or possible external/local database references and unexpected stored data,
-and makes no database connection or filesystem change. Do not paste `.env` values.
-The owner's unused-template confirmation and zero resource counts establish the
-reviewed fresh-install basis; the assessment must still be clear before the separately
-reviewed root bootstrap. Unknown references, unexpected data or a refusal remain a
-stop condition. Reassess if the host state changes. Off-host key/backup custody remains
-an operator action; server-local copies alone are insufficient.
+The independently tested read-only `manual-mvp-data-assessment.sh` reports only flags,
+makes no database connection or filesystem change and refuses unparsed configuration,
+possible database references or unexpected stored data. Its earlier refusal is preserved
+as historical evidence, not rewritten as a pass. Actual zero-resource inventory plus
+the owner's explicit confirmation that the old `.env` is an unused template resolve the
+first-install history; no repeat successful helper assessment is required for that
+resolved state. New unknown references, unexplained resources/data or changed host state
+at setup inspection stop setup for reassessment and review. Preserve the original `.env`
+and never paste its values. Off-host key/backup custody remains an operator action;
+server-local copies alone are insufficient.
