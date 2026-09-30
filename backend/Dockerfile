@@ -1,4 +1,4 @@
-FROM node:22.21.1-alpine AS dependencies
+FROM node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS dependencies
 
 WORKDIR /app
 
@@ -16,7 +16,12 @@ RUN pnpm --dir backend build
 FROM dependencies AS production-dependencies
 RUN pnpm --filter capital-tracker-backend... install --prod --frozen-lockfile
 
-FROM node:22.21.1-alpine AS release
+FROM node:22.23.3-alpine3.24@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS release
+
+# The compiled application and operational CLIs need Node, not package managers.
+RUN rm -rf /usr/local/lib/node_modules /opt/yarn-v* \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
 
 ENV NODE_ENV=production
 WORKDIR /app
