@@ -4,49 +4,47 @@
 
 Checkpoint: 2026-09-30. The authorized manual-accounting + CSV MVP is **IN
 PROGRESS**, not deployed or whole-product complete; network sync and AI remain
-deferred. Authoritative integration is `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, HEAD `9ea156a`, based on `0f96749`. The primary
-checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749`
-with the owner’s dirty `frontend/nginx.conf` edit; preserve it. The latest local
-evidence is for source commit `7274076` and one exact four-image runtime. Nineteen retained real HTTPS/MFA/accounting journeys passed
-in 12.7 minutes with one worker and zero retries. The migration matrix has 16
-PASS lines; current startup refusals (27), CLI ledger and artifact checks passed.
-The same-image encrypted disconnected PostgreSQL 18 restore matched fingerprints
-and preserved its source. See [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md)
-for concise release evidence and historical scope; no full test suite was rerun
-for this documentation update.
+deferred. Integration is `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
+branch `release/manual-mvp`; this documentation checkpoint follows integrated
+`0ebd7a5` (individual evidence labels identify the exact tested source). The
+primary checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at
+`0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
 
-Four local image scans reported zero critical/high findings and zero secrets;
-backend has one MEDIUM finding. The official PostgreSQL base's historical 1
-critical/21 high findings are remediated in the derived candidate; preserve that
-finding history. GitHub Actions PR #26 run [36687877047](https://github.com/PavelArs/capital-tracker/actions/runs/36687877047)
-passed lint, unit, build, spec, security and audit jobs, then failed acceptance
-before browser execution because one fixture still expects 16 migrations rather
-than the current 22. This is a stale fixture, not evidence of an authentication
-regression. The approved fixture correction `b887a4c` now passes its actual
-scoped PostgreSQL acceptance (14 original PASS lines, exit 0); the hosted CI rerun
-remains pending, so do not claim hosted CI green.
+The exact local PG18 four-image runtime at `7274076` passed 19/19 retained
+HTTPS/MFA/accounting journeys, current migrations, 27 startup refusals, CLI and
+artifact checks, encrypted disconnected restore/fingerprint and source
+preservation; four image scans reported zero critical/high/secrets and one backend
+MEDIUM. See the detailed receipt in
+[`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
 
-The strict helper preserved the old server `.env` and observed zero related
-resources. The owner confirmed it is an unused template and no owner database
-ever existed, resolving first-install history. The helper refusal remains
-historical evidence; bootstrap has not run. GitHub `production` environment and
-main-only branch rule are configured. `DEPLOY_DISPATCH_SSH_KEY` and
-`DEPLOY_DISPATCH_USER=capital-release` are configured. The owner has a classic
-PAT with `read:packages` and will enter it directly; no token value was received.
-A new private deploy key is held at `/Users/pavelars/.ssh/capital-tracker-actions`;
-never read or print it. Its public fingerprint is
-`SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`. Server key installation,
-bootstrap, off-host custody/recovery and deployment remain pending. Retire the
-old repository-level Docker-capable `DEPLOY_SSH_KEY` only after cutover.
+Latest hosted run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787)
+on published source `670b8c1` passed eight basic CI jobs but failed database
+opening acceptance before browser execution. Safe PostgreSQL diagnostics confirm
+a stale `RESTRICT` delete expectation (expected `23503`, actual `23001` for the
+opening snapshot FK); the visible `costStatus` NOT NULL stage label is stale and
+that preceding null-status case passed. This does not establish an accounting
+regression. Independent scoped manual
+opening acceptance passes 6/6 against real PostgreSQL (`/private/tmp/capital-mvp-manual-opening-green2.log`). The initial 24-scenario actual-DB batch had 19 original PASS and five `RESTRICT` expectation failures. Reviewed source `9ec4e40` corrected all five, and all 24 real DB scripts now pass across the initial run plus targeted reruns; this is not one uninterrupted 24/24 run. Receipt `/private/tmp/capital-mvp-db-compat-evidence.json` records the exact same four image IDs, linux/amd64 and zero remaining containers; no image rebuild or browser rerun. Hosted CI remains pending.
 
-Preserve existing installed-infrastructure pins; fresh-install receipts use the
-new derived PostgreSQL digest. Do not infer deployment from a workflow dispatch,
-claim the failed CI acceptance passed, archive the release, or mark the full
-target complete. `docs/deployment-security-verification.md` is the deployment
-control record; `docs/post-mvp-backlog.md` retains the complete deferred target.
-Keep the primary checkout's owner `frontend/nginx.conf` edit, preview, data and
-existing cleanup guard intact.
+Snap compatibility verified native Docker CLI 29.8, Compose 5.5.1 and daemon API.
+Native CLI/Compose via isolated `cliPluginsExtraDirs` passed on the server; the
+temporary nonsecret config was cleaned. A public bind under `/opt` failed; the
+owner probe `98482852…` checksum-verifies `capital_snap_common_bind=PASS` under
+`/var/snap/docker/common`. The reviewed fixed managed runtime is integrated at
+`/var/snap/docker/common/capital-tracker` with Capital-only native PATH and
+registry extraDirs; no global Docker CLI override. Preserve both legacy `/opt`
+`.env` and `.gitignore`. The public deploy key is staged at
+`agm:~/.capital-mvp-setup/capital-tracker-actions.pub` with fingerprint
+`SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`; it is not installed. The
+owner selected an encrypted recovery archive on the Mac plus password manager and
+authorized deletion of only the unused deploy key after the replacement path works;
+do not delete other home-directory files. They will enter their classic
+`read:packages` PAT directly; no token value was received. GitHub dispatcher
+credentials are configured, but the public key is not installed. Do not read the
+private key, bootstrap production or deploy. First-install history is resolved by
+zero inventory and owner confirmation that `.env` was an unused template; bootstrap
+remains pending. Current public HTTPS had valid TLS but `/health` returned 404.
+Preserve owner data, preview and Nginx edit.
 
 ### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
 

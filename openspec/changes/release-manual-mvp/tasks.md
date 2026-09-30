@@ -42,4 +42,4 @@ Tasks3.3/3.4 local acceptance is complete, but task4.1 remains open: the hosted 
 
 - [x] 5.1 Specify fixed managed runtime, preserve legacy files/defaults, and observe process/security RED for fresh configuration and unsafe setup paths.
 - [x] 5.2 Implement trusted fresh bootstrap, fixed dispatcher runtime/native PATH and exact dedicated plugin configuration; pass scoped process/security checks and independent review.
-- [ ] 5.3 Record actual public Snap-common bind and isolated native Compose lookup evidence separately from bootstrap/deploy/recovery; retain the actual deployment tasks above until their own evidence exists.
+- [x] 5.3 Record actual public Snap-common bind and isolated native Compose lookup evidence separately from bootstrap/deploy/recovery; retain the actual deployment tasks above until their own evidence exists. Owner public bind probe and server native Compose lookup passed; see `verification.md`, “Snap host compatibility final evidence”. Bootstrap/deploy/recovery tasks remain open.

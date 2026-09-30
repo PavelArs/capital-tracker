@@ -217,3 +217,68 @@ No server key installation, bootstrap, off-host custody/recovery or deployment
 has occurred. Retirement of the old repository-level Docker-capable
 `DEPLOY_SSH_KEY` remains pending cutover. No archive or deployed status is
 claimed.
+
+## Follow-on release checkpoint (2026-09-30; source snapshot 0ebd7a5)
+
+Hosted PR #26 run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787)
+for published source `670b8c1` passed eight basic CI jobs, then failed database-opening
+acceptance before browser execution. Safe diagnostic `/private/tmp/capital-mvp-manual-opening-delete-diagnostic.log`
+confirms a stale `RESTRICT` delete expectation (`23503` expected, PostgreSQL 18
+returns `23001` for the opening-snapshot FK). The printed `costStatus` NOT NULL
+stage label is stale; that preceding null-status case passed. Do not infer a product
+accounting regression from this fixture mismatch.
+Minimal opening changes `9cc9b85` and `b0d377e` were integrated in `f523` and
+`c49f2f3`. Independent actual PostgreSQL opening acceptance passes 6/6 in
+`/private/tmp/capital-mvp-manual-opening-green2.log`; it verifies exact numeric text
+and UTC handling, replay/history, SQL constraints and preservation, atomic type/date/
+owner failures, process/race/CAS behavior, commit rollback/retry and safe diagnostics.
+The initial actual-DB 24-scenario batch had 19 original PASS and five
+`RESTRICT` expectation failures. Reviewed source `9ec4e40` corrected all five; all
+24 real PostgreSQL scripts passed across the initial run plus targeted reruns, not
+as one uninterrupted 24/24 run. Machine receipt `/private/tmp/capital-mvp-db-compat-evidence.json` records exact same four image IDs, linux/amd64, all five targeted fixtures exit 0 and zero remaining containers. Summary `/private/tmp/capital-mvp-corrected-db-summary.tsv`;
+original batch `/private/tmp/capital-mvp-remaining-db-summary.tsv`. Targeted logs are
+`/private/tmp/capital-mvp-db-green-<fixture>.cjs.log`. All runs used the same
+backend image `sha256:366e4c76d62c91fbf1dc474665b059cc8212e319b84f83b673f9438305b7c8ad`
+and PostgreSQL image `sha256:52b47063956def54ddf45b5eb2f0fe1e5b9d6a6590e824088814f174d69d79ae`; no image rebuild or browser rerun. The separate reviewed opening suite passed 6/6 on c49f2f3. Hosted CI and browser acceptance remain pending.
+
+A separate host compatibility probe verified native Docker CLI 29.8, Compose 5.5.1
+and the daemon API. Native tools via isolated `cliPluginsExtraDirs` passed on the
+server; the temporary nonsecret config was cleaned. Public binding under `/opt`
+failed. The owner-run public probe `98482852…` checksum-verifies
+`capital_snap_common_bind=PASS` under `/var/snap/docker/common`. Fixed managed runtime is integrated at `/var/snap/docker/common/capital-tracker`,
+using Capital-only native PATH and registry extraDirs without a global Docker CLI
+override. Task 5.3 evidence covers the actual public bind and isolated native Compose
+lookup only; it does not close bootstrap/deployment tasks. The owner reconfirmed old
+`/opt` `.env` mode 0600 and `.gitignore` mode 0644; contents were not read. Public
+deploy key is staged
+at `agm:~/.capital-mvp-setup/capital-tracker-actions.pub`, fingerprint
+`SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`, not installed. The owner selected
+an encrypted recovery archive on the Mac plus password-manager custody, and authorized
+deleting only the unused deploy key after the new path works. No unrelated home-file deletions, private-key reads, production bootstrap or deployment occurred. Current public HTTPS had valid TLS but `/health` returned 404; no deployment occurred.
+
+
+## Snap host compatibility final evidence (MVP-008, source `036d3ca`)
+
+The actual public bind probe returned checksum-verified
+`capital_snap_common_bind=PASS` under `/var/snap/docker/common`; a bind under `/opt`
+failed. Native Docker CLI 29.8 and Compose 5.5.1 were found and run with the
+isolated `cliPluginsExtraDirs` configuration; the temporary nonsecret config was
+cleaned. This closes only task 5.3's host compatibility evidence. It does not claim
+bootstrap, recovery or deployment. The reviewed managed runtime uses
+`/var/snap/docker/common/capital-tracker`, a Capital-only native PATH and registry
+extraDirs; there is no global Docker CLI override.
+
+Final scoped checks against source `036d3ca`: security suite 74 total (73 passed,
+one root-only skip), dispatcher runner 32 passed, installer 14 passed and fresh
+bootstrap 7 passed after the curated PATH fix. These are separate overlapping
+suites; do not add their counts together. The actual baseline bootstrap RED was 6
+failures (`/private/tmp/capital-snap-bootstrap-baseline-red.log`); dispatcher
+runner RED was 2 failures with 30 passing (`/private/tmp/capital-snap-runner-red.log`).
+Final GREEN logs: `/private/tmp/capital-snap-security-final.log`,
+`/private/tmp/capital-snap-runner-green.log`,
+`/private/tmp/capital-snap-installer-green.log` and
+`/private/tmp/capital-snap-bootstrap-final.log`. Strict OpenSpec validation,
+shell syntax and diff checks passed. Independent source review approved the exact
+source; host bootstrap and deployment remain pending. Public HTTPS had valid TLS,
+but `/health` returned 404. The public deploy key remains staged, not installed;
+no production bootstrap/deploy or private-key read occurred.
