@@ -72,6 +72,20 @@ with null-safe labels/mounts and value-free
 the staged `59e99ed8…` copy; re-stage before the owner reruns it. Next release gates unchanged (image remediation/PG18 acceptance,
 host bootstrap, hosted CI, deploy). Not merged into `release/manual-mvp` yet.
 
+
+### 2026-09-30 operator resolution: first-install history
+
+The owner ran the strict assessment: all four related-resource counts and
+`unexpected_project_data_entries` were 0; `existing_env_preserved=yes`. It found
+only `DB_NAME`, `DB_PASSWORD` and `DB_USERNAME`, classified the target as
+`unrecognized`, and correctly returned `fresh_setup_gate=blocked` with
+`reason=configuration_requires_private_review`. The owner then explicitly confirmed
+that the old `.env` is an unused template and no working database containing owner
+data ever existed. First-install history is resolved through actual inventory plus
+owner confirmation; this does not turn the helper refusal into a passing result.
+Preserve the old `.env`. Bootstrap, host privilege verification and deployment
+remain pending.
+
 ## Goal and limits
 
 Continue the WHOLE target in capital-tracker-openspec-prompt.md. It remains
