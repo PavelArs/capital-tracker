@@ -311,7 +311,9 @@ files also passed (`/private/tmp/capital-mvp-final-e2e-types.log`, using
 --module commonjs --moduleResolution node --esModuleInterop
 --typeRoots backend/node_modules/@types tests/e2e/*.ts`). These focused results do
 not replace hosted browser acceptance. Local current-migration, MFA/session, and 27
-startup-refusal PostgreSQL checks remain green. The later client-readiness fix is
+startup-refusal PostgreSQL checks remain green; all current real-DB scripts passed.
+The two-case browser GREEN evidence is `/private/tmp/capital-mvp-opening-browser-green.log`
+and `/private/tmp/capital-mvp-opening-browser-evidence.json`. The later client-readiness fix is
 covered by scoped tests below; hosted image scans and release/deployment gates remain
 open.
 
@@ -329,7 +331,9 @@ gates 165/165 (`/private/tmp/capital-ci-release-budget-engineering.log`). Strict
 all-E2E TypeScript also passed above. These local checks do not constitute hosted
 Compose/Firefox or image-scan acceptance.
 
-The combined real Compose and Firefox run has not started: Docker access approval
-blocked the attempted execution, and the pending attempt was interrupted. Hosted
-browser acceptance, image scans and deployment remain open; no release-task closure
-depends on this documentation checkpoint.
+The earlier combined-run attempt was blocked by Docker access approval and then
+interrupted. Approval has since succeeded; the combined real Compose/Firefox run for
+source `55aec09` is now underway. Migrations and seed passed, Compose startup is in
+progress, and Firefox is at 0/4. This is pending evidence, not an acceptance result.
+Hosted image scans and deployment remain open; no release-task closure depends on this
+documentation checkpoint.

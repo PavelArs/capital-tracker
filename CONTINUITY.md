@@ -37,16 +37,19 @@ Current migration/MFA/session and 27 startup-refusal real-DB evidence remains gr
 The separately fixed opening lock observer at `bd15e40` follows the actual
 advisory-follower → writer → captured-psql-blocker chain; its two retained browser
 cases pass in 53.6s and 38.5s (`/private/tmp/capital-mvp-opening-browser-red.log`
-records predecessor RED; `/private/tmp/capital-mvp-final-e2e-types.log` records
+records predecessor RED; `/private/tmp/capital-mvp-opening-browser-green.log` and
+`/private/tmp/capital-mvp-opening-browser-evidence.json` record GREEN; `/private/tmp/capital-mvp-final-e2e-types.log` records
 strict all-E2E TypeScript). Readiness fix `d10e633` and Compose v5.5.1 configuration
 passed scoped real-predicate tests 2/2. CI ceiling-only change `732567c` raises the
 Docker build timeout from 35 to 120 minutes for headroom; this is not a measured
 174-test runtime, and per-test limits, workers, retries, selection and gates are
 unchanged. Formatting follow-up `55aec09` passes scoped Biome, final readiness Jest
 2/2 and engineering gates 165/165. These focused checks did not rebuild images or
-rerun hosted CI. The combined real Compose/Firefox acceptance has not started because
-Docker access approval blocked the attempt; hosted image scans and deployment remain
-pending. Full failed hosted log: `/private/tmp/capital-mvp-third-ci-failed.log`.
+rerun hosted CI. Docker approval blocked the earlier attempt, but has since succeeded.
+The combined real Compose/Firefox acceptance for source `55aec09` is now underway:
+migrations and seed passed, Compose startup is running, and Firefox is at 0/4.
+Hosted image scans and deployment remain pending. Full failed hosted log from the
+previous run: `/private/tmp/capital-mvp-third-ci-failed.log`.
 
 Snap compatibility verified native Docker CLI 29.8, Compose 5.5.1 and daemon API.
 Native CLI/Compose via isolated `cliPluginsExtraDirs` passed on the server; the
