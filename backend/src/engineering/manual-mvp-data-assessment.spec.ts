@@ -11,6 +11,7 @@ beforeEach(() => {
   writeFileSync(join(directory, 'bin', 'id'), '#!/usr/bin/env node\nconsole.log("0")\n', {
     mode: 0o700,
   });
+  // Inspect identities match the preceding synthetic Docker inventory, as real Docker does.
   writeFileSync(
     join(directory, 'bin', 'docker'),
     `#!/usr/bin/env node
@@ -19,8 +20,8 @@ if(mode==='failure')process.exit(1);
 if(a[0]==='ps')process.stdout.write(['container','bind'].includes(mode)?'synthetic-container':'');
 if(a[0]==='volume'&&a[1]==='ls')process.stdout.write(mode==='volume'?'synthetic-volume':'');
 if(a[0]==='network'&&a[1]==='ls')process.stdout.write(mode==='network'?'synthetic-network':'');
-if(a[0]==='inspect')console.log(JSON.stringify([{Name:mode==='container'?'/capital_tracker_db':'/unrelated',Mounts:mode==='bind'?[{Type:'bind',Source:process.env.FIXTURE_ROOT+'/data'}]:[],Config:{Labels:{}}}]));
-if(['volume','network'].includes(a[0])&&a[1]==='inspect')console.log(JSON.stringify([{Name:'unrelated',Labels:{'com.docker.compose.project':'capital-tracker'}}]));
+if(a[0]==='inspect')console.log(JSON.stringify([{Id:'synthetic-container',Name:mode==='container'?'/capital_tracker_db':'/unrelated',Mounts:mode==='bind'?[{Type:'bind',Source:process.env.FIXTURE_ROOT+'/data'}]:[],Config:{Labels:{}}}]));
+if(['volume','network'].includes(a[0])&&a[1]==='inspect')console.log(JSON.stringify([{...(a[0]==='volume'?{Name:'synthetic-volume'}:{Id:'synthetic-network',Name:'synthetic-network'}),Labels:{'com.docker.compose.project':'capital-tracker'}}]));
 `,
     { mode: 0o700 },
   );
