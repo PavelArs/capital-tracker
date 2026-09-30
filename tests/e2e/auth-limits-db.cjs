@@ -20,6 +20,30 @@ const policies = [
   ['csrf-ip', 30, 60], ['login-ip', 5, 60], ['mfa-ip', 5, 60],
   ['login-account', 10, 600],
 ];
+const expectedMigrationNames = [
+  'Init1763669182662',
+  'AddCurrencySystemAndPreferences1763741417438',
+  'AddInvitationCodes1763800000000',
+  'AddEmailVerificationAndResetFields1763900000000',
+  'MigrateCurrencyToForeignKey1764000000000',
+  'DropStubModuleTables1764100000000',
+  'DropRemovedModuleTables1764200000000',
+  'CleanupCryptoTypeEnum1764300000000',
+  'AddOwnerBinding1789990000000',
+  'AddOwnerSessions1790000000000',
+  'AddOwnerMfa1790010000000',
+  'AddAuthRequestLimits1790020000000',
+  'AddManualOpeningPositions1790030000000',
+  'AddUsdTradeJournal1790040000000',
+  'AddUsdCsvImports1790050000000',
+  'AddKnownCostCarryIn1790060000000',
+  'AddExternalUsdFlows1790070000000',
+  'AddManualUsdPrices1790080000000',
+  'AddDailyDisplayFx1790090000000',
+  'AddOwnedTransfers1790100000000',
+  'AddAssetRewards1790200000000',
+  'AddAssetSwaps1790300000000',
+];
 const children = new Set();
 let stage = 'isolated setup';
 const digest = (scope, subject) => createHash('sha256')
@@ -533,7 +557,11 @@ async function main() {
   const source = productionSource(); await source.initialize();
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
-    assert.equal((await source.query('SELECT count(*)::int AS count FROM migrations'))[0].count, 16);
+    assert.deepEqual(
+      (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
+      expectedMigrationNames,
+      'The actual migration CLI must build the complete current twenty-two-migration ledger',
+    );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {
       await run(source);
