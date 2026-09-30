@@ -137,6 +137,8 @@ function release(failure: string, installation = 'existing', action = 'deploy') 
       PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
       RELEASE_ROOT: directory,
       RELEASE_INSTALLATION: installation,
+      RELEASE_POSTGRES_IMAGE: `postgres@sha256:${'d'.repeat(64)}`,
+      RELEASE_REDIS_IMAGE: `redis@sha256:${'e'.repeat(64)}`,
       RELEASE_COMPOSE_FILE: join(directory, 'candidate.yml'),
       RELEASE_RUNTIME_FILE: join(directory, '.env.release'),
       RELEASE_BACKUP_KEY_FILE: join(directory, '.backup-key'),
@@ -373,6 +375,26 @@ describe('MVP-006: refuse implicit PostgreSQL major/layout changes', () => {
         true,
       );
       expect(result.status).not.toBe(0);
+      const inspected = failure === 'existing-postgres-drift' ? 'postgres' : 'redis';
+      if (failure.startsWith('existing-') && failure.endsWith('-drift')) {
+        expect(
+          calls.some(
+            (call) =>
+              call.tool === 'docker' &&
+              call.args[0] === 'image' &&
+              call.args[1] === 'inspect' &&
+              call.args[2]?.startsWith(inspected),
+          ),
+        ).toBe(true);
+      }
+      if (failure.startsWith('fresh-mutable-')) {
+        const service = failure === 'fresh-mutable-postgres' ? 'postgres' : 'redis';
+        expect(
+          calls.some(
+            (call) => call.tool === 'jq' && call.args.at(-1) === `.services.${service}.image`,
+          ),
+        ).toBe(true);
+      }
       expect(
         calls.filter(
           (call) =>

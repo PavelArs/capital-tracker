@@ -193,6 +193,25 @@ describe('MVP-002: exact tested candidate manifest', () => {
       expect(() => validateRelease(manifest(), commit, runId, infrastructurePins)).toThrow();
     }
   });
+  it('refuses a manifest whose infrastructure digest differs from the separate CLI pin file', () => {
+    const path = join(directory, 'synthetic-manifest.json');
+    const pinPath = join(directory, 'synthetic-pins.json');
+    writeFileSync(path, JSON.stringify(manifest()));
+    writeFileSync(
+      pinPath,
+      JSON.stringify({
+        ...pins(),
+        redis: { ...pins().redis, registryDigest: `redis@sha256:${'f'.repeat(64)}` },
+      }),
+    );
+    const result = spawnSync(process.execPath, [validatorPath, path, commit, runId, pinPath], {
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.signal).toBeNull();
+    expect(result.status).not.toBe(0);
+  });
   it('fails CLI safely without echoing untrusted manifest contents', () => {
     const secret = 'SYNTHETIC_PRIVATE_VALUE_NEVER_ECHO';
     const result = invoke({ ...manifest(), credentials: secret });
