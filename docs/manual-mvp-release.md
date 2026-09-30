@@ -2,8 +2,8 @@
 
 **Release checkpoint:** PostgreSQL18 fresh-install guards, a four-image manifest,
 reviewed infrastructure digests and exact image checks are implemented locally.
-PostgreSQL18/Redis8 acceptance, actual four-image scans, host bootstrap, the
-least-privilege dispatcher and production deployment remain pending.
+PostgreSQL18/Redis8 acceptance, actual four-image scans, host bootstrap, host
+installation of the least-privilege dispatcher and production deployment remain pending.
 Do not run bootstrap or production CD from this checkpoint.
 
 Supported first release: manually entered accounts/operations, CSV import and rollback,
@@ -29,28 +29,86 @@ A dedicated restricted SSH identity with a root-owned fixed release dispatcher c
 reduce this capability without changing the stack or removing shared deploy rights.
 Do not expose an arbitrary shell/script/upload through that dispatcher.
 
-Least privilege remains an unfinished release security requirement. Its bounded
-follow-up needs a new Capital-only account/key without Docker-group membership,
-restricted SSH forced command and an exact sudo allowlist for one installed dispatcher.
-The dispatcher and its runner, Compose, runtime configuration, state and parent
-directories must be root-owned regular files, protected against symlink substitution.
-It must accept only validated inventory/preflight/deploy requests, bind requested image
-digests to successful trusted CI provenance, and use fixed application container,
-volume, network, mount and capability settings. It must not evaluate a client command,
-accept uploaded executable/configuration files or permit generic Docker/shell operations.
-Adversarial command, path, metadata and state-race checks plus operator installation
-are necessary before marking this requirement complete. Shared deployment rights stay
-unchanged so unrelated hosted services are preserved.
+### Restricted release dispatcher (MVP-007)
+
+Implemented, not yet installed on the host. Actions no longer uses the shared
+Docker-capable key. It reaches the server only as the Capital-only `capital-release`
+principal, which is not in the docker group. Its root-owned `authorized_keys` entry is
+`restrict,command="sudo -n /usr/local/libexec/capital-tracker/manual-mvp-dispatcher"`,
+and `/etc/sudoers.d/capital-release` allows exactly that dispatcher with no arguments.
+Shared deployment rights of other hosted services are unchanged.
+
+The dispatcher reads one JSON request of at most 4096 bytes:
+`{"version":1,"operation":"inventory|preflight|deploy","commit":"<40 hex>","runId":"<digits>"}`.
+Unknown or duplicate fields, trailing data and command-line arguments are refused.
+`inventory` runs the installed read-only inventory. `preflight`/`deploy` require the
+owner-approved receipt `/etc/capital-tracker/release-receipts/<commit>-<runId>.json`;
+image digests and installation mode come only from it. Before starting the runner it
+checks that the installed runner, inventory, normalizer, Compose and pin files match the
+receipt SHA256 values, that receipt PostgreSQL/Redis equal the reviewed pins and that
+application images are `ghcr.io/pavelars/capital-tracker-{backend,frontend}` digests.
+The receipt, installed files, their ancestors and the entire `/opt/capital-tracker` tree
+(including `.env`, `.env.release`, `.backup-key`, `releases/` and `backups/`) must be
+root-owned, free of symlinks and not group/world writable. The only exceptions are the
+bootstrap-created `.mfa-key` and `operator/` subtree, which may belong to the container
+user uid1000; they remain symlink-free and not group/world writable. Host uid1000 can
+therefore read the MFA key; that is an existing bootstrap property, not added here. The runner starts with a
+constructed environment and `DOCKER_CONFIG=/etc/capital-tracker/docker-config`, never
+root's general registry login; that directory must not contain `cli-plugins`.
+A deploy moves its receipt to `release-receipts/used/` before the runner starts, so
+each approval authorizes exactly one deploy attempt; a retry needs a new `approve`.
+Inventory now runs as root: it reports root's view, including `.env` setting names
+(never values), not the capabilities of the restricted principal.
+
+Release flow:
+
+1. `mode=inventory` (pinned release commit or main) runs the read-only inventory.
+2. `mode=promote` on main validates the successful CI run, pushes the identical tested
+   images to GHCR and uploads the `manual-mvp-release-receipt` artifact; the job summary
+   shows the same JSON for review.
+3. The owner reviews the receipt and, as root on the server, runs
+   `scripts/manual-mvp-dispatcher-install.sh approve RECEIPT` from a clean Git checkout
+   of exactly that commit (after `install` below if server files changed). It validates
+   and installs one private copy and warns when installed server files differ. Git's
+   ownership check may require `git config --global --add safe.directory <checkout>`
+   for root when the checkout belongs to another user.
+4. `mode=preflight`, then `mode=deploy`, with the same `ci_run_id`.
+
+One-time operator setup, as root from the reviewed checkout of the release commit:
+
+```sh
+scripts/manual-mvp-dispatcher-install.sh install /path/to/capital-release.pub
+# Registry read access for private GHCR packages (read:packages token only):
+install -d -o root -g root -m 0700 /etc/capital-tracker/docker-config
+DOCKER_CONFIG=/etc/capital-tracker/docker-config docker login ghcr.io -u OWNER
+# Then fix every path the install step reports under /opt/capital-tracker.
+```
+
+Re-run `install` whenever a release changes a server file listed in the receipt;
+otherwise the dispatcher refuses the mismatch. The install step reports existing
+`AllowUsers`/`AllowGroups` rules and any runtime path that the dispatcher will refuse.
+In GitHub, create environment `production` (recommended: required reviewer and main-only
+deployment branch), add its secret `DEPLOY_DISPATCH_SSH_KEY` (new ED25519 private key)
+and variable `DEPLOY_DISPATCH_USER=capital-release`. The key must be an environment
+secret, not a repository secret, for the environment protection to matter. A main-only
+branch rule would also block `mode=inventory` from `release/manual-mvp`; allow that
+branch or run inventory from main; keep `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` and
+`DEPLOY_SSH_PORT=2211`. `/opt/capital-tracker` was writable by the shared deploy user
+on 2026-09-27; it must become root-owned before preflight/deploy.
+
+Evidence: `pnpm test:security` (Python request/receipt/file/runtime/entry-point cases)
+and ENG-002 gates. Not yet evidenced: installation on the real host, sshd/sudo behaviour
+there, and an actual Actions inventory/deploy through the dispatcher.
 
 ## Pipeline and trusted promotion
 
 Keep old upstream automatic CD disabled until replacement is reviewed. Publish through
 an explicit GitHub remote, preserving the local repository's existing origin.
 Set `DEPLOY_KNOWN_HOSTS` from the verified existing known-host entry, never connection
-key discovery; set `DEPLOY_SSH_PORT=2211`. Reuse existing `DEPLOY_HOST`, `DEPLOY_USER`
-and `DEPLOY_SSH_KEY`. For pre-main inventory only, root sets `MVP_PREFLIGHT_COMMIT` to
+key discovery; set `DEPLOY_SSH_PORT=2211`. Reuse existing `DEPLOY_HOST`; the release no longer
+uses `DEPLOY_USER`/`DEPLOY_SSH_KEY` (see MVP-007 above). For pre-main inventory only, root sets `MVP_PREFLIGHT_COMMIT` to
 one reviewed published commit on `release/manual-mvp`; the workflow permits that exact
-ref/commit and `mode=preflight`. Production promotion remains main-only.
+ref/commit and `mode=inventory`. Production promotion remains main-only.
 
 CI exports the actual release images that passed real acceptance, their image IDs and
 commit/run version-2 manifest. Reviewed linux/amd64 PostgreSQL18.6 and Redis8.10.2
@@ -85,7 +143,7 @@ No in-place major upgrade of owner data or the PostgreSQL16 preview is authorize
 The owner login name is privately configured `OWNER_EMAIL` in `.env.release`; the default
 is `owner@capital.pavelars.ru`, which is only the application login identifier.
 
-Dispatch reviewed CD with `installation=fresh`, `mode=deploy` and the successful CI run.
+Promote with `installation=fresh`, approve that receipt, then dispatch `mode=deploy` with the same CI run.
 Fresh mode proves absence again; unexplained volumes prevent installation. It creates
 only its dedicated database/cache, observes the actual host-to-container socket peer using
 a loopback-only temporary probe, then sets exact proxy trust. It backs up the fresh DB,

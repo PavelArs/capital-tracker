@@ -14,6 +14,10 @@ Task2.3 has approved workflow/script implementation and lower-level contracts; a
 
 - [ ] 2.4 Require schema-v2 manifest and independent trusted pins for both exact scanned PostgreSQL/Redis images; reject mutable fresh Compose references and existing database/cache image drift before downtime. Prove actual four-image scanner/architecture/artifact identity in trusted Actions.
 
+- [ ] 2.5 Replace the Docker-capable deployment SSH path with the MVP-007 restricted principal, forced root-owned dispatcher, owner-approved receipts and receipt-producing promotion; realign ENG-002 gates to the replaced workflow.
+
+Task2.5 has implementation plus adversarial request/receipt/file/runtime-secret tests and updated ENG-002 gates. Operator installation on the real host, the new `DEPLOY_DISPATCH_SSH_KEY` secret/`DEPLOY_DISPATCH_USER` variable, registry read configuration and an actual Actions inventory through the dispatcher remain required; keep it open.
+
 ## 3. Server preparation and recovery
 
 - [ ] 3.1 Implement and verify locked read-only preflight, mandatory encrypted backup/checksum and isolated restoration; reject preparation failures before server mutation.

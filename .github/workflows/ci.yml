@@ -353,6 +353,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm specs:validate
       - run: pnpm test:engineering
+      - run: pnpm test:security
 
   dependency-audit:
     name: Production Dependency Audit

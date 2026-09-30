@@ -1,0 +1,379 @@
+#!/usr/bin/python3 -I
+"""Fixed server-side command for the restricted manual MVP SSH principal.
+
+Installed root-owned and invoked only through an SSH forced command plus an exact
+sudo rule without arguments. The client supplies one small JSON data request on
+stdin; it never supplies commands, paths, images, environment or files. Image
+digests, installation mode and reviewed server-file hashes come from an owner-
+installed receipt for the exact requested commit and CI run. A deploy consumes its
+receipt before the runner starts, so an approval cannot be replayed.
+"""
+
+import hashlib
+import json
+import os
+import pathlib
+import re
+import stat
+import subprocess
+import sys
+
+MAX_REQUEST_BYTES = 4096
+MAX_TRUSTED_FILE_BYTES = 1024 * 1024
+MAX_TREE_ENTRIES = 100000
+
+RELEASE_DIR = pathlib.Path('/usr/local/libexec/capital-tracker/release')
+RECEIPTS_DIR = pathlib.Path('/etc/capital-tracker/release-receipts')
+DOCKER_CONFIG_DIR = pathlib.Path('/etc/capital-tracker/docker-config')
+RUNTIME_DIR = pathlib.Path('/opt/capital-tracker')
+RUNTIME_FILES = ('.env', '.env.release', '.backup-key')
+# Bootstrap gives the container user (uid 1000, `node`) its MFA key and the operator
+# output directory. Only these exact runtime paths may belong to that account; the
+# runner never writes through them as root and symlinks remain refused everywhere.
+APPLICATION_UID = 1000
+APPLICATION_OWNED = ('.mfa-key', 'operator')
+REGISTRY_NAMESPACE = 'pavelars'
+
+# Installed names are fixed; the runner locates the normalizer beside itself.
+FILES = {
+    'runner': 'manual-mvp-release.sh',
+    'inventory': 'manual-mvp-inventory.sh',
+    'normalizer': 'normalize-release-snapshot.awk',
+    'compose': 'docker-compose.yml',
+    'pins': 'manual-mvp-infrastructure-pins.json',
+}
+OPERATIONS = ('inventory', 'preflight', 'deploy')
+INSTALLATIONS = ('existing', 'fresh')
+SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+COMMIT = re.compile(r'[a-f0-9]{40}')
+RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
+SHA256 = re.compile(r'[a-f0-9]{64}')
+APPLICATION_IMAGE = {
+    name: re.compile(r'ghcr\.io/' + REGISTRY_NAMESPACE + '/capital-tracker-' + name + r'@sha256:[a-f0-9]{64}')
+    for name in ('backend', 'frontend')
+}
+INFRASTRUCTURE_IMAGE = {
+    'postgres': re.compile(r'postgres@sha256:[a-f0-9]{64}'),
+    'redis': re.compile(r'redis@sha256:[a-f0-9]{64}'),
+}
+
+REQUEST_KEYS = {'version', 'operation', 'commit', 'runId'}
+RECEIPT_KEYS = {
+    'version', 'commit', 'runId', 'installation',
+    'backend', 'frontend', 'postgres', 'redis', 'files',
+}
+
+
+class Refusal(Exception):
+    pass
+
+
+def _reject_duplicates(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise Refusal('duplicate JSON key')
+        result[key] = value
+    return result
+
+
+def _reject_constant(name):
+    raise Refusal('non-finite JSON number')
+
+
+def parse_json(data):
+    if not isinstance(data, bytes):
+        raise Refusal('expected bytes')
+    try:
+        text = data.decode('utf-8')
+        # json.loads rejects any trailing value after optional whitespace.
+        value = json.loads(text, object_pairs_hook=_reject_duplicates, parse_constant=_reject_constant)
+    except Refusal:
+        raise
+    except (UnicodeDecodeError, ValueError, RecursionError) as error:
+        raise Refusal('malformed JSON') from error
+    if not isinstance(value, dict):
+        raise Refusal('expected JSON object')
+    return value
+
+
+def _is_int(value, expected):
+    return type(value) is int and value == expected
+
+
+def _full(pattern, value):
+    return isinstance(value, str) and pattern.fullmatch(value) is not None
+
+
+def read_request(stream):
+    data = stream.read(MAX_REQUEST_BYTES + 1)
+    if len(data) > MAX_REQUEST_BYTES:
+        raise Refusal('request too large')
+    request = parse_json(data)
+    if set(request) != REQUEST_KEYS:
+        raise Refusal('unexpected request fields')
+    if not _is_int(request['version'], 1):
+        raise Refusal('unsupported request version')
+    if request['operation'] not in OPERATIONS:
+        raise Refusal('unapproved operation')
+    if not _full(COMMIT, request['commit']):
+        raise Refusal('malformed commit')
+    if not _full(RUN_ID, request['runId']):
+        raise Refusal('malformed run id')
+    return request
+
+
+def validate_receipt(request, receipt):
+    if not isinstance(receipt, dict):
+        raise Refusal('independent release receipt required')
+    if set(receipt) != RECEIPT_KEYS:
+        raise Refusal('unexpected receipt fields')
+    if not _is_int(receipt['version'], 1):
+        raise Refusal('unsupported receipt version')
+    if receipt['commit'] != request['commit'] or receipt['runId'] != request['runId']:
+        raise Refusal('receipt belongs to another commit or run')
+    if receipt['installation'] not in INSTALLATIONS:
+        raise Refusal('unapproved installation mode')
+    for field, pattern in APPLICATION_IMAGE.items():
+        if not _full(pattern, receipt[field]):
+            raise Refusal('unpinned application image')
+    for field, pattern in INFRASTRUCTURE_IMAGE.items():
+        if not _full(pattern, receipt[field]):
+            raise Refusal('unpinned infrastructure image')
+    files = receipt['files']
+    if not isinstance(files, dict) or set(files) != set(FILES):
+        raise Refusal('unexpected receipt file set')
+    for digest in files.values():
+        if not _full(SHA256, digest):
+            raise Refusal('malformed file digest')
+    return receipt
+
+
+def _check_owner_and_mode(info, owner_uid):
+    if info.st_uid not in (owner_uid, 0):
+        raise Refusal('untrusted owner')
+    if info.st_mode & 0o022:
+        raise Refusal('group or world writable')
+
+
+def _normalized(path):
+    path = pathlib.Path(path)
+    if not path.is_absolute() or '..' in path.parts:
+        raise Refusal('trusted path must be absolute and normalized')
+    return path
+
+
+def _check_ancestors(path, owner_uid, stop_at):
+    stop = pathlib.Path(stop_at) if stop_at is not None else None
+    for parent in path.parents:
+        parent_info = os.lstat(parent)
+        if not stat.S_ISDIR(parent_info.st_mode):
+            raise Refusal('trusted ancestor is not a directory')
+        _check_owner_and_mode(parent_info, owner_uid)
+        if stop is not None and parent == stop:
+            return
+    if stop is not None:
+        raise Refusal('trusted boundary is not an ancestor')
+
+
+def check_trusted_tree(path, owner_uid, stop_at=None, application_owned=(), application_uid=None):
+    """Require a directory whose whole subtree only the owner (or root) can change.
+
+    Every entry must be a non-symlink directory or regular file, owner/root-owned and
+    not group/world writable, so a privileged process cannot be redirected through it.
+    Top-level names in ``application_owned`` (and their subtrees) may instead belong to
+    ``application_uid``; they are still symlink-free and not group/world writable.
+    """
+    path = _normalized(path)
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISDIR(info.st_mode):
+            raise Refusal('trusted path is not a directory')
+        _check_owner_and_mode(info, owner_uid)
+        _check_ancestors(path, owner_uid, stop_at)
+        count = 0
+        pending = [(str(path), False)]
+        while pending:
+            directory, delegated = pending.pop()
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    count += 1
+                    if count > MAX_TREE_ENTRIES:
+                        raise Refusal('trusted tree too large')
+                    entry_info = entry.stat(follow_symlinks=False)
+                    entry_delegated = delegated or (directory == str(path) and entry.name in application_owned)
+                    if stat.S_ISDIR(entry_info.st_mode):
+                        pending.append((entry.path, entry_delegated))
+                    elif not stat.S_ISREG(entry_info.st_mode):
+                        raise Refusal('untrusted entry type in {}'.format(directory))
+                    allowed = application_uid if entry_delegated and application_uid is not None else owner_uid
+                    try:
+                        _check_owner_and_mode(entry_info, allowed)
+                    except Refusal as refusal:
+                        raise Refusal('{}: {}'.format(entry.path, refusal))
+    except OSError as error:
+        raise Refusal('trusted tree unavailable') from error
+
+
+def check_trusted_file(path, owner_uid, stop_at=None):
+    """Return the SHA256 of a regular file that only the owner (or root) can replace.
+
+    The file and every ancestor up to ``stop_at`` (or ``/``) must be non-symlink,
+    owner/root-owned and not group/world writable. Content is hashed through a
+    descriptor opened without following links and matched to the checked inode.
+    """
+    path = _normalized(path)
+    try:
+        info = os.lstat(path)
+        if not stat.S_ISREG(info.st_mode):
+            raise Refusal('trusted path is not a regular file')
+        _check_owner_and_mode(info, owner_uid)
+        _check_ancestors(path, owner_uid, stop_at)
+        descriptor = os.open(str(path), os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_CLOEXEC', 0))
+    except OSError as error:
+        raise Refusal('trusted file unavailable') from error
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino) or not stat.S_ISREG(opened.st_mode):
+            raise Refusal('trusted file changed during verification')
+        chunks = []
+        size = 0
+        while True:
+            chunk = os.read(descriptor, 65536)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_TRUSTED_FILE_BYTES:
+                raise Refusal('trusted file too large')
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+    content = b''.join(chunks)
+    return hashlib.sha256(content).hexdigest(), content
+
+
+class Config:
+    def __init__(self, release_dir=RELEASE_DIR, receipts_dir=RECEIPTS_DIR,
+                 docker_config_dir=DOCKER_CONFIG_DIR, owner_uid=0, stop_at=None,
+                 runtime_dir=RUNTIME_DIR, application_uid=APPLICATION_UID):
+        self.release_dir = pathlib.Path(release_dir)
+        self.receipts_dir = pathlib.Path(receipts_dir)
+        self.docker_config_dir = pathlib.Path(docker_config_dir)
+        self.owner_uid = owner_uid
+        self.stop_at = stop_at
+        self.runtime_dir = pathlib.Path(runtime_dir)
+        self.application_uid = application_uid
+
+
+def _installed(config, name):
+    return config.release_dir / FILES[name]
+
+
+def _receipt_path(request, config):
+    return config.receipts_dir / '{}-{}.json'.format(request['commit'], request['runId'])
+
+
+def load_receipt(request, config):
+    path = _receipt_path(request, config)
+    if not os.path.lexists(str(path)):
+        raise Refusal('independent release receipt required')
+    _, content = check_trusted_file(path, config.owner_uid, config.stop_at)
+    return validate_receipt(request, parse_json(content))
+
+
+def consume_receipt(request, config):
+    """Move an approved receipt out of reach before deploying; retries need re-approval."""
+    path = _receipt_path(request, config)
+    used = config.receipts_dir / 'used'
+    try:
+        if not os.path.lexists(str(used)):
+            os.mkdir(str(used), 0o700)
+        check_trusted_tree(used, config.owner_uid, config.stop_at)
+        os.replace(str(path), str(used / path.name))
+    except OSError as error:
+        raise Refusal('approved receipt could not be consumed') from error
+
+
+def verify_installation(receipt, config):
+    """Every reviewed server file must match the receipt; pins must match its images."""
+    for name, expected in sorted(receipt['files'].items()):
+        digest, content = check_trusted_file(_installed(config, name), config.owner_uid, config.stop_at)
+        if digest != expected:
+            raise Refusal('installed {} differs from the reviewed receipt'.format(name))
+        if name == 'pins':
+            pins = parse_json(content)
+            for service in ('postgres', 'redis'):
+                entry = pins.get(service)
+                if not isinstance(entry, dict) or entry.get('registryDigest') != receipt[service]:
+                    raise Refusal('receipt infrastructure differs from reviewed pins')
+
+
+def build_command(request, config, receipt=None):
+    """Return the fixed argv and complete environment for an approved request."""
+    environment = {'PATH': SAFE_PATH, 'HOME': '/root', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
+    if request['operation'] == 'inventory':
+        check_trusted_file(_installed(config, 'inventory'), config.owner_uid, config.stop_at)
+        return ['/bin/bash', str(_installed(config, 'inventory'))], environment
+    if receipt is None:
+        raise Refusal('independent release receipt required')
+    verify_installation(receipt, config)
+    # The privileged runner reads and writes throughout the runtime directory, so no
+    # other account may own or be able to redirect any entry there.
+    check_trusted_tree(config.runtime_dir, config.owner_uid, config.stop_at,
+                       APPLICATION_OWNED, config.application_uid)
+    for name in RUNTIME_FILES:
+        check_trusted_file(config.runtime_dir / name, config.owner_uid, config.stop_at)
+    environment.update({
+        'RELEASE_ROOT': str(config.runtime_dir),
+        'RELEASE_RUNTIME_FILE': str(config.runtime_dir / '.env.release'),
+        'RELEASE_BACKUP_KEY_FILE': str(config.runtime_dir / '.backup-key'),
+        'RELEASE_INSTALLATION': receipt['installation'],
+        'RELEASE_POSTGRES_IMAGE': receipt['postgres'],
+        'RELEASE_REDIS_IMAGE': receipt['redis'],
+        'RELEASE_COMPOSE_FILE': str(_installed(config, 'compose')),
+    })
+    # Never fall back to root's general registry login; Docker also executes
+    # cli-plugins from this directory, so plugins are refused outright.
+    environment['DOCKER_CONFIG'] = str(config.docker_config_dir)
+    if os.path.lexists(str(config.docker_config_dir)):
+        check_trusted_tree(config.docker_config_dir, config.owner_uid, config.stop_at)
+        if os.path.lexists(str(config.docker_config_dir / 'cli-plugins')):
+            raise Refusal('registry configuration must not contain CLI plugins')
+    argv = ['/bin/bash', str(_installed(config, 'runner')), request['operation'], request['commit']]
+    if request['operation'] == 'deploy':
+        argv += [receipt['backend'], receipt['frontend']]
+    return argv, environment
+
+
+def dispatch(request, config, run):
+    receipt = None if request['operation'] == 'inventory' else load_receipt(request, config)
+    argv, environment = build_command(request, config, receipt)
+    if request['operation'] == 'deploy':
+        consume_receipt(request, config)
+    return run(argv, environment)
+
+
+def _run(argv, environment):
+    return subprocess.run(argv, env=environment, stdin=subprocess.DEVNULL, cwd='/', check=False).returncode
+
+
+def main(argv=None, stdin=None):
+    argv = sys.argv if argv is None else argv
+    stdin = sys.stdin.buffer if stdin is None else stdin
+    try:
+        if len(argv) != 1:
+            raise Refusal('arguments are not accepted')
+        if os.geteuid() != 0:
+            raise Refusal('dispatcher must run through its exact sudo rule')
+        request = read_request(stdin)
+        print('dispatch operation={} commit={} run={}'.format(
+            request['operation'], request['commit'], request['runId']), file=sys.stderr, flush=True)
+        return dispatch(request, Config(), _run)
+    except Refusal as refusal:
+        print('refused: {}'.format(refusal), file=sys.stderr)
+        return 2
+
+
+if __name__ == '__main__':
+    sys.exit(main())

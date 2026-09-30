@@ -52,6 +52,20 @@ follow-up, hard release gates and continuation roles. Do not start broad UI work
 until this authorized release is resolved. Preserve owner Nginx/preview/data and
 the existing consolidation cleanup guard.
 
+### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
+
+Codex hit its limit; Claude continued in worktree `capital-tracker-mvp-boundary`, branch
+`fix/manual-mvp-boundary` from `976f917` (integration HEAD is `976f917`, not `4dd81e5`).
+Implemented root-owned `scripts/manual-mvp-dispatcher.py`, `manual-mvp-receipt.py`,
+`manual-mvp-dispatcher-install.sh`, cd.yml modes inventory/promote/preflight/deploy through
+`capital-release` (no docker group), single-use owner-approved receipts, MVP-007 spec,
+ENG-002 delta/tests (ENG-002 was already RED at 976f917) and `pnpm test:security` in CI.
+Evidence and unrun checks: `openspec/changes/release-manual-mvp/verification.md` (MVP-007).
+Task 2.5 stays open for host install, `production` environment secret and an actual
+dispatcher run. Claude's device shell is a Linux VM: no Docker/Colima, pnpm, gh or server
+SSH; Biome unrun there. Next release gates unchanged (image remediation/PG18 acceptance,
+host bootstrap, hosted CI, deploy). Not merged into `release/manual-mvp` yet.
+
 ## Goal and limits
 
 Continue the WHOLE target in capital-tracker-openspec-prompt.md. It remains

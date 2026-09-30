@@ -26,6 +26,7 @@
   "scripts": {
     "specs:validate": "OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive",
     "test:engineering": "pnpm --dir backend exec jest engineering/gates --runInBand",
+    "test:security": "python3 -B -m unittest discover -s tests/security -p '*_test.py'",
     "audit:production": "pnpm audit --prod --audit-level high",
     "lint": "pnpm --dir backend lint && pnpm --dir frontend lint",
     "build": "pnpm --dir backend build && pnpm --dir frontend build",

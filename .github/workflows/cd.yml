@@ -3,17 +3,17 @@ on:
   workflow_dispatch:
     inputs:
       ci_run_id:
-        description: Successful main CI run for this exact commit
+        description: Successful main CI run for this exact commit (ignored for inventory)
         required: true
         type: string
       mode:
-        description: Read-only preflight or verified production deployment
+        description: inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
         required: true
-        default: preflight
+        default: inventory
         type: choice
-        options: [preflight, deploy]
+        options: [inventory, promote, preflight, deploy]
       installation:
-        description: Existing upgrade or first install after verified absence of application data
+        description: Recorded in the promoted receipt; existing upgrade or first install after verified absence of application data
         required: true
         default: existing
         type: choice
@@ -25,9 +25,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' || (inputs.mode == 'preflight' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
+    if: github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Holds DEPLOY_DISPATCH_SSH_KEY; the owner can add required reviewers and a main-only branch rule.
+    environment: production
     permissions:
       contents: read
       actions: read
@@ -38,7 +40,7 @@ jobs:
         with:
           node-version: '22.21.1'
       - name: Validate trusted successful candidate provenance
-        if: inputs.mode == 'deploy'
+        if: inputs.mode != 'inventory'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ inputs.ci_run_id }}
@@ -57,11 +59,18 @@ jobs:
           NODE
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+      - name: Download and verify the tested candidate
+        if: inputs.mode == 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
-        if: inputs.mode == 'deploy'
+        if: inputs.mode == 'promote'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -87,55 +96,64 @@ jobs:
             docker tag "$tested" "$destination"
             docker push "$destination"
             digest=$(docker image inspect "$destination" --format '{{index .RepoDigests 0}}')
-            [[ "$digest" =~ ^ghcr.io/.*@sha256:[a-f0-9]{64}$ ]]
+            [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend)@sha256:[a-f0-9]{64}$ ]]
             echo "RELEASE_${name^^}=$digest" >> "$GITHUB_ENV"
           done
-      - name: Configure existing deployment SSH with pinned identity
+          docker logout ghcr.io
+      - name: Write the release receipt for owner approval
+        if: inputs.mode == 'promote'
         env:
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+          RELEASE_INSTALLATION: ${{ inputs.installation }}
+        run: |
+          set -euo pipefail
+          mkdir receipt
+          python3 scripts/manual-mvp-receipt.py "$GITHUB_SHA" "$RUN_ID" "$RELEASE_INSTALLATION" "$RELEASE_BACKEND" "$RELEASE_FRONTEND" "receipt/$GITHUB_SHA-$RUN_ID.json"
+          # The receipt holds only public commit/run/digest/hash identities for owner review.
+          { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the release receipt
+        if: inputs.mode == 'promote'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manual-mvp-release-receipt
+          path: receipt/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Configure restricted release SSH with pinned identity
+        if: inputs.mode != 'promote'
+        env:
+          DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
           test -n "$DEPLOY_KNOWN_HOSTS"
-          test -n "$DEPLOY_SSH_KEY"
+          test -n "$DEPLOY_DISPATCH_SSH_KEY"
           install -d -m 700 ~/.ssh
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/release-key
+          printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
           chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
-      - name: Locked server preflight and release
+      - name: Send a data-only request to the root-owned release dispatcher
+        if: inputs.mode != 'promote'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
           RELEASE_MODE: ${{ inputs.mode }}
-          RELEASE_INSTALLATION: ${{ inputs.installation }}
-          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
-          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_USER" =~ ^[A-Za-z0-9_-]+$ ]]
-          [[ "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
-          [[ "$RELEASE_INSTALLATION" == existing || "$RELEASE_INSTALLATION" == fresh ]]
-          target="$DEPLOY_USER@$DEPLOY_HOST"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_DISPATCH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$RELEASE_MODE" == inventory || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
+          # Inventory is not bound to a candidate; it only names this workflow run.
+          if [[ "$RELEASE_MODE" == inventory ]]; then RUN_ID=$GITHUB_RUN_ID; fi
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
           port=${DEPLOY_SSH_PORT:-22}
           [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
-          options=(-p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes)
-          if [[ "$RELEASE_MODE" == preflight ]]; then
-            ssh "${options[@]}" "$target" 'bash -s' < scripts/manual-mvp-inventory.sh
-            exit 0
-          fi
-          release_postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
-          release_redis=$(jq -er '.redis.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
-          [[ "$release_postgres" =~ ^postgres@sha256:[a-f0-9]{64}$ && "$release_redis" =~ ^redis@sha256:[a-f0-9]{64}$ ]]
-          remote_dir="/tmp/capital-release-$GITHUB_RUN_ID"
-          ssh "${options[@]}" "$target" "umask 077; mkdir '$remote_dir'"
-          cleanup_remote_auth() {
-            ssh "${options[@]}" "$target" "rm -f '$remote_dir/docker-auth/config.json'" >/dev/null 2>&1 || true
-          }
-          trap cleanup_remote_auth EXIT
-          [[ "$GITHUB_ACTOR" =~ ^[A-Za-z0-9_-]+$ ]]
-          printf '%s' "$GH_TOKEN" | ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
-          scp -P "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes scripts/manual-mvp-release.sh scripts/normalize-release-snapshot.awk docker-compose.yml "$target:$remote_dir/"
-          ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' RELEASE_INSTALLATION='$RELEASE_INSTALLATION' RELEASE_POSTGRES_IMAGE='$release_postgres' RELEASE_REDIS_IMAGE='$release_redis' RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
+          # The forced command ignores any remote command; the request is data on stdin.
+          jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+            '{version: 1, operation: $operation, commit: $commit, runId: $runId}' \
+            | ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+              "$DEPLOY_DISPATCH_USER@$DEPLOY_HOST"
       - name: Remove runner credentials
         if: always()
         run: rm -f ~/.ssh/release-key

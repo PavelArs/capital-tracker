@@ -260,64 +260,66 @@ describe('DEP-001: required production dependency audit', () => {
   });
 });
 
-describe('ENG-002-A: controlled legacy deployment entry', () => {
+describe('ENG-002: controlled manual MVP deployment entry', () => {
   let cd: Workflow;
+  let inputs: Record<string, { options?: string[] }>;
+  let steps: (WorkflowStep & { name?: string; with?: Record<string, unknown> })[];
 
   beforeAll(() => {
     cd = workflow('cd');
-  });
-
-  it('permits manual dispatch only, without automatic push deployment', () => {
-    // The original push trigger is a behavioral RED independent of the new CLI.
-    expect(Object.keys(cd.on)).toEqual(['workflow_dispatch']);
-  });
-
-  it('requires main and explicit owner opt-in before the initial version job runs', () => {
-    const clauses = expression(cd.jobs.version.if).split(/\s*&&\s*/);
-    const required = [
-      "github.ref == 'refs/heads/main'",
-      "vars.PRODUCTION_ROLLOUT_ENABLED == 'true'",
-    ];
-    expect(clauses).toEqual(expect.arrayContaining(required));
-    // Restrict to conjunctions: an OR/always() escape must not pass string-presence checks.
-    const allowed = [...required, "github.event_name == 'workflow_dispatch'"];
-    for (const clause of clauses) expect(allowed).toContain(clause);
-    expect(dependencies(cd.jobs.version)).toEqual([]);
-  });
-
-  it('keeps every existing publishing, deployment and follow-up job behind version', () => {
-    const originalJobs = [
-      'version',
-      'build-backend',
-      'build-frontend',
-      'deploy',
-      'rollback',
-      'notify',
-    ];
-    expect(Object.keys(cd.jobs).sort()).toEqual(originalJobs.sort());
-    const reachesVersion = (name: string, visited = new Set<string>()): boolean => {
-      if (name === 'version') return true;
-      if (visited.has(name)) return false;
-      visited.add(name);
-      expect(cd.jobs[name]).toBeDefined();
-      return dependencies(cd.jobs[name]).some((dependency) => reachesVersion(dependency, visited));
+    const dispatch = cd.on.workflow_dispatch as unknown as {
+      inputs: Record<string, { options?: string[] }>;
     };
-    for (const name of originalJobs.filter((job) => job !== 'version')) {
-      expect({ job: name, guarded: reachesVersion(name) }).toEqual({ job: name, guarded: true });
-    }
+    inputs = dispatch.inputs;
+    steps = cd.jobs.deploy.steps ?? [];
   });
 
-  it('ENG-002-B permits rollback only after guarded deployment failure with a prior image', () => {
-    const clauses = expression(cd.jobs.rollback.if).split(/\s*&&\s*/);
-    const required = [
-      "needs.version.result == 'success'",
-      "needs.deploy.result == 'failure'",
-      "needs.deploy.outputs.previous_backend != ''",
-      "needs.deploy.outputs.previous_backend != 'none'",
-    ];
-    expect(clauses).toEqual(expect.arrayContaining(required));
-    // Exact conjunctions forbid OR/always() escapes. These clauses exclude version
-    // failure, skipped deployment after a build failure, and missing image output.
-    for (const clause of clauses) expect([...required, 'failure()']).toContain(clause);
+  it('ENG-002-A permits manual dispatch only, without automatic push deployment', () => {
+    expect(Object.keys(cd.on)).toEqual(['workflow_dispatch']);
+    expect(Object.keys(cd.jobs)).toEqual(['deploy']);
+    expect(inputs.mode.options).toEqual(['inventory', 'promote', 'preflight', 'deploy']);
+    // Deployment credentials live in an owner-protectable environment.
+    const deploy = cd.jobs.deploy as WorkflowJob & { environment?: string };
+    expect(deploy.environment).toBe('production');
+    for (const step of cd.jobs.deploy.steps ?? []) expect(step.run ?? '').not.toContain('${{');
+  });
+
+  it('ENG-002-A allows only read-only inventory of one pinned commit outside main', () => {
+    // Exact expression: an OR/always() escape must not pass string-presence checks.
+    expect(expression(cd.jobs.deploy.if)).toBe(
+      "github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)",
+    );
+  });
+
+  it('ENG-002-B reaches the server only through the restricted data-only dispatcher', () => {
+    const commands = steps.map((step) => step.run ?? '').join('\n');
+    const serverSteps = steps.filter((step) => /(?:^|[\s|])ssh\s+-/m.test(step.run ?? ''));
+    expect(serverSteps.map((step) => step.name)).toEqual([
+      'Send a data-only request to the root-owned release dispatcher',
+    ]);
+    expect(serverSteps[0].if).toBe("inputs.mode != 'promote'");
+    // The Docker-capable shared deployment key, uploads and remote shell execution are gone.
+    expect(JSON.stringify(cd)).not.toMatch(/DEPLOY_SSH_KEY\b|DEPLOY_USER\b/);
+    expect(commands).not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
+    expect(serverSteps[0].run).toMatch(
+      /jq -cn [^|]*'\{version: 1, operation: \$operation, commit: \$commit, runId: \$runId\}' \\\n\s*\| ssh -T /,
+    );
+    expect(serverSteps[0].run).toMatch(/"\$DEPLOY_DISPATCH_USER@\$DEPLOY_HOST"\s*$/);
+  });
+
+  it('ENG-002-B publishes images and an approval receipt only from validated promotion', () => {
+    const promote = steps.filter((step) => step.if === "inputs.mode == 'promote'");
+    expect(promote.map((step) => step.name)).toEqual([
+      'Download and verify the tested candidate',
+      'Promote the identical tested images',
+      'Write the release receipt for owner approval',
+      'Upload the release receipt',
+    ]);
+    const validation = steps.find(
+      (step) => step.name === 'Validate trusted successful candidate provenance',
+    );
+    expect(validation?.if).toBe("inputs.mode != 'inventory'");
+    expect(steps.indexOf(validation as never)).toBeLessThan(steps.indexOf(promote[0] as never));
+    expect(promote[2].run).toMatch(/python3 scripts\/manual-mvp-receipt\.py /);
   });
 });

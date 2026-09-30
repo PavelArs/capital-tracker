@@ -69,3 +69,20 @@ The new manual MVP installation SHALL use a pinned tested PostgreSQL18 image. Fr
 #### Scenario: MVP-006-C Refuse an incorrect fresh layout
 - **WHEN** fresh mode requests PostgreSQL16, the old /var/lib/postgresql/data mount, or initialized major is not18
 - **THEN** release refuses without implicitly treating old data as an empty PostgreSQL18 installation
+
+### Requirement: MVP-007 Least-privilege release dispatch
+Deployment SHALL reach the server only through a dedicated Capital-only SSH principal without Docker-group membership. Its root-owned key entry SHALL restrict it to a forced command that runs one root-owned dispatcher through an exact argument-free sudo rule. The dispatcher SHALL accept only one bounded strict JSON request containing version, an `inventory`/`preflight`/`deploy` operation, a lowercase commit and a CI run id. Image digests, installation mode and reviewed server-file digests SHALL come only from an owner-installed receipt for that exact commit and run; a deploy SHALL consume its receipt before starting, so one approval authorizes one attempt. The dispatcher SHALL run only the fixed installed runner or inventory with a newly constructed environment and a dedicated registry configuration. It SHALL NOT evaluate client commands, accept uploaded files, paths, images or environment, or permit generic Docker or shell operations. Shared deployment rights for unrelated hosted services SHALL remain unchanged.
+
+#### Scenario: MVP-007-A Refuse a request that carries commands, paths or images
+- **WHEN** a request has unknown, duplicate or extra fields, trailing data, oversize input, an unapproved operation, malformed identity or any command-line argument
+- **THEN** the dispatcher refuses before reading receipts or starting any process
+
+#### Scenario: MVP-007-B Refuse unapproved or tampered release inputs
+- **WHEN** preflight or deploy lacks a receipt for the exact commit and run, the receipt has foreign identity, mutable images or unknown fields, receipt infrastructure differs from the reviewed pins, or an installed runner, inventory, normalizer, Compose or pin file differs from the receipt digest
+- **OR** application images are not `ghcr.io/pavelars/capital-tracker-backend`/`capital-tracker-frontend` digests, or the receipt was already consumed
+- **OR** a receipt, installed file, any entry of the runtime directory tree, the registry configuration tree or any ancestor directory is a symlink, group/world writable, or not root-owned (only the bootstrap `.mfa-key` and `operator/` subtree may belong to the container user), or the registry configuration contains CLI plugins
+- **THEN** the dispatcher refuses before starting the runner and the server remains unchanged
+
+#### Scenario: MVP-007-C Run only the approved fixed release
+- **WHEN** an approved receipt and identical installed files are present
+- **THEN** only the fixed runner receives the requested operation, commit and receipt application digests, with receipt installation/infrastructure values and no inherited environment
