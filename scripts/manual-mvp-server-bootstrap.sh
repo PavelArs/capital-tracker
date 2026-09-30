@@ -12,7 +12,7 @@ receipt=${4:?Required root-reviewed fresh candidate receipt}
 source_dir=$(cd "$(dirname "$0")/.." && pwd)
 # Root-reviewed metadata can precede runtime creation; final single-use dispatcher
 # approval follows bootstrap/installation. Never source the receipt or runtime data.
-python3 - "$source_dir" "$receipt" "$postgres_image" "$redis_image" <<'PYTHON'
+/usr/bin/python3 -I - "$source_dir" "$receipt" "$postgres_image" "$redis_image" <<'PYTHON'
 import importlib.util, pathlib, subprocess, sys
 root = pathlib.Path(sys.argv[1])
 spec = importlib.util.spec_from_file_location('receipt', root / 'scripts/manual-mvp-receipt.py')
@@ -39,7 +39,7 @@ for port in 3100 3101 3102; do [[ -z $(ss -ltnH "sport = :$port") ]] || { echo '
 [[ -f "/etc/letsencrypt/live/$domain/fullchain.pem" && -f "/etc/letsencrypt/live/$domain/privkey.pem" ]] || { echo 'Existing domain TLS certificate unavailable'; exit 1; }
 install -d -o "$account" -g "$account" -m 700 "$root"
 # Exclusive create. Keys are independent; preserve the unknown existing .env entirely.
-python3 - "$root" "$account" "$postgres_image" "$redis_image" <<'PY'
+/usr/bin/python3 -I - "$root" "$account" "$postgres_image" "$redis_image" <<'PY'
 import json, os, pwd, secrets, sys
 from pathlib import Path
 root=Path(sys.argv[1]); owner=pwd.getpwnam(sys.argv[2])

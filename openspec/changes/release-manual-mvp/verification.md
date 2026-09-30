@@ -151,3 +151,11 @@ without privilege escalation; a configured hosted step is not observed CI proof.
 Operational completion also requires owner-coordinated retirement of the obsolete
 repository-level Docker-capable deployment credential after restricted-key cutover,
 without revoking shared host access for other services.
+
+Independent source review caught bootstrap's inherited Python cwd/PYTHONPATH import
+exposure. A bounded fake-id/non-root process test with malicious pathlib/json/subprocess
+modules actually executed its sentinel before receipt refusal (RED1/1). Both privileged
+bootstrap inline interpreters now use fixed `/usr/bin/python3 -I -`; the same sentinel
+process acceptance passes, while missing metadata still refuses before server mutation.
+Focused GREEN after this fix: bootstrap1/1; manual-MVP security37 passed/1 root-only
+skip; shell syntax passed. These are process fixtures, not a privileged server run.
