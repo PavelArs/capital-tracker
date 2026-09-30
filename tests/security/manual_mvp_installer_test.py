@@ -100,7 +100,7 @@ class InstallerProcessAcceptance(unittest.TestCase):
     def run_installer(self, operation="install", *, real_root_uid=False, bad_install=False):
         source = INSTALLER.read_text()
         source = source.replace('source=$(cd "$(dirname "$0")/.." && pwd -P)', 'source=' + str(self.checkout))
-        for original in ("/var/lib/capital-release", "/usr/local/libexec/capital-tracker", "/etc/capital-tracker", "/etc/sudoers.d/capital-release", "/opt/capital-tracker"):
+        for original in ("/var/lib/capital-release", "/usr/local/libexec/capital-tracker", "/etc/capital-tracker", "/etc/sudoers.d/capital-release", "/opt/capital-tracker", "/var/snap/docker/common/capital-tracker", "/snap/docker/current"):
             source = source.replace(original, str(self.server) + original)
         source = source.replace("/usr/bin/python3", sys.executable)
         source = source.replace(".pending-$$", ".pending-fixture")
@@ -123,6 +123,50 @@ class InstallerProcessAcceptance(unittest.TestCase):
         self.assertFalse((self.root / "dispatcher-executed").exists(), "untrusted dispatcher executed")
         self.assertEqual(self.mutations(), "", result.stdout + result.stderr)
         self.assertIn("Refusing", result.stdout + result.stderr)
+
+    def test_native_snap_config_is_scoped_and_preserves_auth(self):
+        native = self.server / "snap/docker/current/bin/docker"
+        native.parent.mkdir(parents=True)
+        native.write_text("synthetic native Docker")
+        native.chmod(0o755)
+        config = self.server / "etc/capital-tracker/docker-config"
+        config.mkdir(parents=True, mode=0o700)
+        settings = config / "config.json"
+        settings.write_text(json.dumps({"auths": {"ghcr.io": {"auth": "synthetic"}}}))
+        settings.chmod(0o600)
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        data = json.loads(settings.read_text())
+        self.assertEqual(data["cliPluginsExtraDirs"], [str(self.server / "snap/docker/current/usr/libexec/docker/cli-plugins")])
+        self.assertEqual(data["auths"], {"ghcr.io": {"auth": "synthetic"}})
+        self.assertNotIn("synthetic", result.stdout + result.stderr)
+
+    def test_config_and_pending_config_symlinks_refuse_before_authorization(self):
+        config = self.server / "etc/capital-tracker/docker-config"
+        config.mkdir(parents=True, mode=0o700)
+        target = self.root / "unrelated-config"
+        target.write_text("preserved")
+        for name in ("config.json", "config.json.next"):
+            with self.subTest(name=name):
+                link = config / name
+                link.symlink_to(target)
+                try:
+                    self.assert_clean_refusal(self.run_installer())
+                    self.assertEqual(target.read_text(), "preserved")
+                finally:
+                    link.unlink()
+
+    def test_refresh_preserves_private_registry_authentication(self):
+        config = self.server / "etc/capital-tracker/docker-config"
+        config.mkdir(parents=True, mode=0o700)
+        settings = config / "config.json"
+        settings.write_text(json.dumps({"auths": {"ghcr.io": {"auth": "synthetic"}}}))
+        settings.chmod(0o600)
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(settings.read_text())["auths"], {"ghcr.io": {"auth": "synthetic"}})
+        self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn("synthetic", result.stdout + result.stderr)
 
     def test_rejects_writable_existing_ancestors_before_any_mutation(self):
         for relative in ("usr", "usr/local", "usr/local/libexec", "etc", "etc/sudoers.d", "var", "var/lib"):

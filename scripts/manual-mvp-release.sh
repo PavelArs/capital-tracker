@@ -17,7 +17,11 @@ normalizer=$(cd "$(dirname "$0")" && pwd)/normalize-release-snapshot.awk
 [[ -f $normalizer ]] || exit 1
 cd "$root"
 for tool in docker jq flock curl openssl sha256sum awk; do command -v "$tool" >/dev/null; done
-[[ -f .env && -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
+[[ -f $runtime && ! -L $runtime ]] || { echo 'Missing private release runtime configuration'; exit 1; }
+# Only an unmanaged existing installation depends on its preserved legacy env.
+if [[ $installation == existing && ! -f "$root/.release-managed-env" ]]; then
+  [[ -f "$root/.env" && ! -L "$root/.env" ]] || { echo 'Missing legacy runtime configuration'; exit 1; }
+fi
 # This lock serializes server operations independently of Actions concurrency.
 exec 9>"$root/.release.lock"
 flock -n 9 || { echo 'Another release holds the server lock'; exit 1; }

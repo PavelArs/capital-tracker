@@ -307,6 +307,28 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
   }, 20000);
 });
 
+describe('MVP-008: generated runtime does not depend on the legacy template', () => {
+  it('fresh preflight succeeds without a legacy .env', () => {
+    rmSync(join(directory, '.env'));
+    const { result, calls } = release('success', 'fresh', 'preflight');
+    expect(result.status).toBe(0);
+    expect(calls.filter(appUp)).toEqual([]);
+    expect(calls.filter(migration)).toEqual([]);
+  });
+  it('unmanaged existing preflight still requires its legacy .env', () => {
+    rmSync(join(directory, '.env'));
+    const { result, calls } = release('success', 'existing', 'preflight');
+    expect(result.status).not.toBe(0);
+    expect(calls.some((call) => call.tool === 'docker')).toBe(false);
+  });
+  it('managed existing preflight uses generated runtime without legacy .env', () => {
+    rmSync(join(directory, '.env'));
+    writeFileSync(join(directory, '.release-managed-env'), 'generated-runtime-only\n');
+    const { result } = release('success', 'existing', 'preflight');
+    expect(result.status).toBe(0);
+  });
+});
+
 describe('MVP-003: explicit fresh-install absence preflight', () => {
   it.each([
     'fresh-container',

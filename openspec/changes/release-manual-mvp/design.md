@@ -35,3 +35,7 @@ Contain remote auto-CD; integrate reviewed change via PR; run trusted candidate 
 ## Open Questions
 
 Trusted host-key source, actual HTTPS origin/proxy peers, server database/volume and schema state, encryption recipient and recovery-key custody, MFA/bootstrap readiness, and schema compatibility of prior application images must be established privately before deployment. These are operational prerequisites, not missing manual/network features.
+
+## MVP-008 Snap host compatibility
+The existing strict Docker Snap daemon cannot bind the preserved `/opt` runtime. Keep that daemon and unrelated applications intact; use one fixed new root-owned managed runtime under `/var/snap/docker/common/capital-tracker`. Validate existing ancestors with lstat before fresh setup and reject populated targets. The direct runner/inventory retain `/opt` defaults for unmanaged compatibility; the dispatcher supplies its fixed managed root. Generated fresh/managed releases do not require a legacy `.env`.
+Capital's clean PATH appends the already installed native Snap client; the dedicated root-owned Docker config permits only the standard `cliPluginsExtraDirs` exact Snap plugin path. Validate the root-managed `current` symlink and its resolved plugin tree, while refusing other links or writable/foreign components. No global shim or daemon replacement is introduced. Actual public bind and isolated Compose lookup probes remain separate from source checks and production deployment evidence.

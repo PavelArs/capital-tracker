@@ -27,3 +27,5 @@ Backend startup/scheduling configuration, production Compose wiring, Router depe
 Dependencies: the delivered manual accounting/authentication capabilities and current isolated HTTPS/PostgreSQL acceptance harness. Non-goals: automatic network synchronization, AI, new whole-portfolio analytics, chart expansion, further UX redesign or original-project consolidation; these remain the post-MVP backlog.
 
 The owner additionally selects PostgreSQL18 for the new fresh installation. This adds version/layout compatibility and refusal acceptance, not an upgrade of existing PostgreSQL16 data or preview. No wider package upgrade is included.
+
+MVP-008 scopes compatibility with the existing strict Docker Snap to a fixed new managed runtime under `/var/snap/docker/common/capital-tracker` and Capital-only native CLI/plugin configuration. Preserve the old `/opt` files and direct unmanaged defaults; no daemon replacement or global executable override.

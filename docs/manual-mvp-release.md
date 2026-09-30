@@ -56,18 +56,24 @@ receipt SHA256 values and that Redis equals its reviewed digest. PostgreSQL is t
 owner-approved promoted derived-image digest; its official base digest and Dockerfile
 hash are separately reviewed source pins, not the final image identity. The dispatcher
 also checks that application images are `ghcr.io/pavelars/capital-tracker-{backend,frontend}` digests.
-The receipt, installed files, their ancestors and the entire `/opt/capital-tracker` tree
-(including `.env`, `.env.release`, `.backup-key`, `releases/` and `backups/`) must be
+The receipt, installed files, their ancestors and the entire `/var/snap/docker/common/capital-tracker` managed tree
+(including `.env.release`, `.backup-key`, `releases/` and `backups/`) must be
 root-owned, free of symlinks and not group/world writable. The only exceptions are the
 bootstrap-created `.mfa-key` and `operator/` subtree, which may belong to the container
 user uid1000; they remain symlink-free and not group/world writable. Host uid1000 can
 therefore read the MFA key; that is an existing bootstrap property, not added here. The runner starts with a
 constructed environment and `DOCKER_CONFIG=/etc/capital-tracker/docker-config`, never
-root's general registry login; that directory must not contain `cli-plugins`.
+root's general registry login; that directory must not contain `cli-plugins`. The clean
+PATH appends `/snap/docker/current/bin` for the native Snap client. On this Snap host,
+the installer sets the exact standard `cliPluginsExtraDirs` path
+`/snap/docker/current/usr/libexec/docker/cli-plugins`, preserving private registry auth.
+The dispatcher verifies its root-managed `current` link, resolved plugin tree and native
+client; arbitrary extra directories are refused. No global Docker override is installed.
 A deploy moves its receipt to `release-receipts/used/` before the runner starts, so
 each approval authorizes exactly one deploy attempt; a retry needs a new `approve`.
-Inventory now runs as root: it reports root's view, including `.env` setting names
-(never values), not the capabilities of the restricted principal.
+Inventory now runs as root: it reports the fixed managed runtime and Docker view,
+including legacy setting names only if that managed directory contains `.env` (never
+values). Direct unmanaged inventory/runner use retains the `/opt/capital-tracker` default.
 
 Release flow:
 
@@ -92,6 +98,7 @@ Git checkout of the release commit:
 scripts/manual-mvp-dispatcher-install.sh install /path/to/capital-release.pub
 # Registry read access for private GHCR packages (read:packages token only):
 install -d -o root -g root -m 0700 /etc/capital-tracker/docker-config
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin \
 DOCKER_CONFIG=/etc/capital-tracker/docker-config docker login ghcr.io -u OWNER
 # Inspect any refused runtime paths before proceeding; never repair through symlinks.
 ```
@@ -168,6 +175,14 @@ exact promoted receipt commit and runs:
 ```sh
 scripts/manual-mvp-server-bootstrap.sh root POSTGRES_DIGEST REDIS_DIGEST /root/capital-release/COMMIT-RUN.json
 ```
+
+Fresh bootstrap uses only `/var/snap/docker/common/capital-tracker`, accessible to
+the existing strict Snap daemon. It rejects unsafe ancestors or a populated target
+before setup writes; the preserved old `/opt/capital-tracker/.env` and `.gitignore`
+are not moved, changed or required by the generated fresh runtime. The existing
+daemon and unrelated applications remain intact. Actual public bind and isolated
+native Compose lookup probes must pass separately before deployment; source checks
+alone do not prove host compatibility.
 
 The bootstrap account argument is explicitly `root`: it owns the runtime directory,
 `.env.release`, `.backup-key` and owner-password file. Only `.mfa-key` and `operator/`
@@ -252,7 +267,9 @@ Restart the installed existing project with its recorded project name and every 
 environment file, including `.env.images`:
 
 ```sh
-cd /opt/capital-tracker
+cd /var/snap/docker/common/capital-tracker
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin \
+DOCKER_CONFIG=/etc/capital-tracker/docker-config \
 docker compose -p capital-tracker --env-file .env.release --env-file .env.images up -d --no-deps --wait backend frontend
 ```
 

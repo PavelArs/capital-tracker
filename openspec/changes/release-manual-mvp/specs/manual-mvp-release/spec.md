@@ -91,3 +91,22 @@ Deployment SHALL reach the server only through a dedicated Capital-only SSH prin
 - **WHEN** a candidate substitutes the official base for the derived PostgreSQL image, alters the Dockerfile hash/base source, changes the loaded image ID/architecture, or presents an official/foreign PostgreSQL digest as the final receipt image
 - **THEN** validation, promotion or fresh preflight refuses before database creation
 - **AND** a matching derived image is scanned, exported, loaded, promoted and deployed by its actual final digest, with the base recorded only as a source input
+
+### Requirement: MVP-008 Fixed Snap-compatible managed runtime
+The restricted dispatcher and fresh bootstrap SHALL use only `/var/snap/docker/common/capital-tracker` for the managed runtime, preserving the old `/opt/capital-tracker/.env` and `.gitignore` unchanged. Bootstrap SHALL reject unsafe existing ancestors or a populated managed target before any file, account or Nginx mutation. Direct unmanaged release/inventory use SHALL retain the legacy `/opt` default. Fresh and previously managed releases SHALL use generated `.env.release` without requiring the preserved legacy `.env`.
+
+#### Scenario: MVP-008-A Prepare only a trusted fresh target
+- **WHEN** bootstrap encounters a symlink, foreign-owned, group/world-writable or non-directory ancestor, or an already populated managed target
+- **THEN** it refuses before setup mutations and preserves the legacy files
+- **AND** a trusted empty target receives root-owned runtime/recovery files, with only the existing container-owned MFA/operator exceptions
+
+#### Scenario: MVP-008-B Scope native Snap tools to Capital
+- **WHEN** the fixed dispatcher runs inventory, preflight or deploy
+- **THEN** it constructs its own trusted PATH with native `/snap/docker/current/bin` fallback and uses only its dedicated registry configuration
+- **AND** the sole permitted extra CLI-plugin directory is the fixed root-managed `/snap/docker/current/usr/libexec/docker/cli-plugins`, with trusted resolved ancestors; arbitrary extra directories and local config plugins are refused
+- **AND** no global Docker executable, daemon, unrelated service, legacy runtime or existing database is replaced
+
+#### Scenario: MVP-008-C Prove host compatibility separately
+- **WHEN** source/process checks pass
+- **THEN** an actual public non-secret bind under Snap common and isolated native Compose lookup must also pass before managed deployment is claimed
+- **AND** these compatibility probes do not count as actual bootstrap, deployment or recovery verification

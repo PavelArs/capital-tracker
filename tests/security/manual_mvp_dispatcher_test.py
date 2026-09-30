@@ -100,7 +100,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
         self.assertEqual(argv[:3], ["/bin/bash", str(dispatcher.RELEASE_DIR / dispatcher.FILES["runner"]), "deploy"])
         self.assertEqual(argv[3:], [self.request["commit"], receipt["backend"], receipt["frontend"]])
         self.assertNotIn("BASH_ENV", environment)
-        self.assertEqual(environment["RELEASE_ROOT"], "/opt/capital-tracker")
+        self.assertEqual(environment.get("RELEASE_ROOT"), "/var/snap/docker/common/capital-tracker")
         self.assertEqual(environment["RELEASE_COMPOSE_FILE"], str(dispatcher.RELEASE_DIR / dispatcher.FILES["compose"]))
 
     def test_checks_root_owned_runtime_inputs_before_privileged_runner(self):
@@ -109,8 +109,27 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             with mock.patch.object(dispatcher, "check_trusted_file", return_value=("0" * 64, b"")) as checked:
                 dispatcher.build_command(self.request, dispatcher.Config(), receipt)
         paths = {str(call.args[0]) for call in checked.call_args_list}
-        self.assertIn("/opt/capital-tracker", {str(call.args[0]) for call in tree.call_args_list})
-        self.assertTrue({"/opt/capital-tracker/.env", "/opt/capital-tracker/.env.release", "/opt/capital-tracker/.backup-key"} <= paths)
+        self.assertIn("/var/snap/docker/common/capital-tracker", {str(call.args[0]) for call in tree.call_args_list})
+        self.assertTrue({"/var/snap/docker/common/capital-tracker/.env.release", "/var/snap/docker/common/capital-tracker/.backup-key"} <= paths)
+
+    def test_inventory_has_fixed_managed_root_and_dedicated_registry_config(self):
+        request = {**self.request, "operation": "inventory"}
+        with mock.patch.object(dispatcher, "check_trusted_file", return_value=("0" * 64, b"")):
+            _, environment = dispatcher.build_command(request, dispatcher.Config())
+        self.assertEqual(environment.get("RELEASE_ROOT"), "/var/snap/docker/common/capital-tracker")
+        self.assertEqual(environment.get("DOCKER_CONFIG"), str(dispatcher.DOCKER_CONFIG_DIR))
+        self.assertTrue(environment["PATH"].endswith(":/snap/docker/current/bin"))
+
+    def test_inventory_refuses_arbitrary_extra_plugin_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            config_dir = root / "docker-config"
+            config_dir.mkdir()
+            (config_dir / "config.json").write_text(json.dumps({"cliPluginsExtraDirs": ["/tmp/attacker"]}))
+            config = dispatcher.Config(docker_config_dir=config_dir, owner_uid=os.getuid(), stop_at=root)
+            with mock.patch.object(dispatcher, "_installed", return_value=config_dir / "config.json"):
+                with self.assertRaises(dispatcher.Refusal):
+                    dispatcher.build_command({**self.request, "operation": "inventory"}, config)
 
     def test_rejects_modified_installed_file_and_unreviewed_pins(self):
         receipt = self.receipt()
@@ -158,6 +177,43 @@ class TrustedFileAcceptance(unittest.TestCase):
             receipt.write_text("{}")
             receipt.chmod(0o666)
             self.assertRaises(dispatcher.Refusal, dispatcher.check_trusted_file, receipt, os.getuid(), root)
+
+
+class SnapPluginBoundary(unittest.TestCase):
+    def test_only_root_managed_current_link_and_trusted_resolved_tree_are_allowed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory).resolve()
+            revision = root / "snap/docker/3613"
+            plugins = revision / "usr/libexec/docker/cli-plugins"
+            plugins.mkdir(parents=True)
+            (plugins / "docker-compose").write_text("synthetic native plugin")
+            (revision / "bin").mkdir()
+            (revision / "bin/docker").write_text("synthetic native client")
+            current = revision.with_name("current")
+            current.symlink_to(revision, target_is_directory=True)
+            config_dir = root / "config"
+            config_dir.mkdir()
+            fixed = current / "usr/libexec/docker/cli-plugins"
+            settings = config_dir / "config.json"
+            settings.write_text(json.dumps({"cliPluginsExtraDirs": [str(fixed)], "auths": {"ghcr.io": {"auth": "synthetic"}}}))
+            config = dispatcher.Config(docker_config_dir=config_dir, owner_uid=os.getuid(), stop_at=root)
+            with mock.patch.object(dispatcher, "SNAP_PLUGINS_DIR", fixed):
+                dispatcher.check_registry_config(config)
+                plugins.chmod(0o777)
+                self.assertRaises(dispatcher.Refusal, dispatcher.check_registry_config, config)
+                plugins.chmod(0o755)
+                native = revision / "bin/docker"
+                native.chmod(0o666)
+                self.assertRaises(dispatcher.Refusal, dispatcher.check_registry_config, config)
+                native.chmod(0o644)
+                config_dir.joinpath("cli-plugins").mkdir()
+                self.assertRaises(dispatcher.Refusal, dispatcher.check_registry_config, config)
+                config_dir.joinpath("cli-plugins").rmdir()
+                actual = revision / "usr/libexec"
+                renamed = actual.with_name("actual-libexec")
+                actual.rename(renamed)
+                actual.symlink_to(renamed, target_is_directory=True)
+                self.assertRaises(dispatcher.Refusal, dispatcher.check_registry_config, config)
 
 
 if __name__ == "__main__":

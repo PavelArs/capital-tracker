@@ -37,3 +37,9 @@ Tasks3.1/3.2 have approved implementation and integrated synthetic failure/recov
 Tasks3.3/3.4 local acceptance is complete, but task4.1 remains open: the hosted CI acceptance rerun is pending, and explicit types evidence is not yet linked here.
 - [ ] 4.2 Run trusted candidate Actions gates and privately discover actual server prerequisites; perform actual Actions deployment only after backup/restore/preflight success. Record candidate/deployed commit, digests, schema and health/privacy/MFA/manual-read/logout evidence.
 - [ ] 4.3 Update operator/MVP/deferred-backlog documentation, review limitations, archive after actual required completion and guard integration. Do not claim whole-target completion or consolidate original projects.
+
+## 5. Bounded Snap host compatibility (MVP-008)
+
+- [x] 5.1 Specify fixed managed runtime, preserve legacy files/defaults, and observe process/security RED for fresh configuration and unsafe setup paths.
+- [x] 5.2 Implement trusted fresh bootstrap, fixed dispatcher runtime/native PATH and exact dedicated plugin configuration; pass scoped process/security checks and independent review.
+- [ ] 5.3 Record actual public Snap-common bind and isolated native Compose lookup evidence separately from bootstrap/deploy/recovery; retain the actual deployment tasks above until their own evidence exists.

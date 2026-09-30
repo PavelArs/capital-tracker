@@ -15,6 +15,7 @@ libexec=/usr/local/libexec/capital-tracker
 release=$libexec/release
 dispatcher=$libexec/manual-mvp-dispatcher
 receipts=/etc/capital-tracker/release-receipts
+docker_config=/etc/capital-tracker/docker-config
 sudoers=/etc/sudoers.d/capital-release
 files=(
   scripts/manual-mvp-release.sh:manual-mvp-release.sh
@@ -55,7 +56,8 @@ PYGUARD
 }
 
 installation_paths=(
-  "d:$home" "d:$home/.ssh" "d:$libexec" "d:$release" "d:$receipts"
+  "d:$home" "d:$home/.ssh" "d:$libexec" "d:$release" "d:$receipts" "d:$docker_config"
+  "f:$docker_config/config.json" "f:$docker_config/config.json.next"
   "f:$home/.ssh/authorized_keys" "f:$home/.ssh/authorized_keys.next" "f:$home/.ssh/authorized_keys2"
   "f:$dispatcher" "f:$dispatcher.next" "f:$sudoers" "f:$sudoers.next"
 )
@@ -108,8 +110,8 @@ case ${1:-} in
       [[ $group == "$user" ]] || { echo "Refusing: $user belongs to $group"; exit 1; }
     done
     install -d -o root -g root -m 0755 "$home" "$home/.ssh" "$libexec" "$release" /etc/capital-tracker
-    install -d -o root -g root -m 0700 "$receipts"
-    validate_paths required "d:$home/.ssh" "d:$release" "d:$receipts"
+    install -d -o root -g root -m 0700 "$receipts" "$docker_config"
+    validate_paths required "d:$home/.ssh" "d:$release" "d:$receipts" "d:$docker_config"
     install -o root -g root -m 0755 "$source/scripts/manual-mvp-dispatcher.py" "$dispatcher.next"
     validate_paths required "f:$dispatcher.next"
     mv -T "$dispatcher.next" "$dispatcher"
@@ -120,6 +122,29 @@ case ${1:-} in
       validate_paths required "f:$release/${pair#*:}"
     done
     validate_paths required "f:$dispatcher"
+    # Keep registry authentication private while configuring only the installed
+    # native Snap Compose directory. No global Docker executable/plugin changes.
+    staged=$(mktemp)
+    /usr/bin/python3 -I - "$docker_config/config.json" "$staged" <<'PYCONFIG'
+import json, os, pathlib, sys
+settings = pathlib.Path(sys.argv[1])
+try:
+    data = json.loads(settings.read_text()) if settings.exists() else {}
+    if not isinstance(data, dict):
+        raise ValueError()
+    if os.access('/snap/docker/current/bin/docker', os.X_OK):
+        data['cliPluginsExtraDirs'] = ['/snap/docker/current/usr/libexec/docker/cli-plugins']
+    elif 'cliPluginsExtraDirs' in data:
+        raise ValueError()
+    pathlib.Path(sys.argv[2]).write_text(json.dumps(data) + '\n')
+except (OSError, ValueError):
+    raise SystemExit('Refusing invalid dedicated Docker configuration')
+PYCONFIG
+    install -o root -g root -m 0600 "$staged" "$docker_config/config.json.next"
+    rm -f "$staged"
+    validate_paths required "f:$docker_config/config.json.next"
+    mv -T "$docker_config/config.json.next" "$docker_config/config.json"
+    validate_paths required "f:$docker_config/config.json"
     # Root owns the home and key file, so the principal cannot add keys or options.
     rm -f "$home/.ssh/authorized_keys.next" "$home/.ssh/authorized_keys2"
     staged=$(mktemp)
@@ -143,11 +168,11 @@ case ${1:-} in
     mv -T "$sudoers.next" "$sudoers"
     validate_paths required "f:$sudoers"
     # The dispatcher refuses runtime inputs that another account could replace.
-    if [[ -d /opt/capital-tracker ]]; then
-      find /opt/capital-tracker \( -type l -o ! -user root -o -perm /022 \) -print \
+    if [[ -d /var/snap/docker/common/capital-tracker ]]; then
+      find /var/snap/docker/common/capital-tracker \( -type l -o ! -user root -o -perm /022 \) -print \
         | sed 's/^/Will be refused until root-owned, not a link and not group\/world writable: /' | head -50
     fi
-    for path in /opt/capital-tracker/.env /opt/capital-tracker/.env.release /opt/capital-tracker/.backup-key; do
+    for path in /var/snap/docker/common/capital-tracker/.env.release /var/snap/docker/common/capital-tracker/.backup-key; do
       [[ -e $path ]] || echo "Not yet present (required before preflight/deploy): $path"
     done
     sshd -T 2>/dev/null | grep -Ei '^(allowusers|allowgroups) ' || true
@@ -157,7 +182,7 @@ case ${1:-} in
   approve)
     file=${2:?Receipt file}
     validate_paths existing "${installation_paths[@]}"
-    validate_paths required "f:$dispatcher" "d:$release" "d:$receipts"
+    validate_paths required "f:$dispatcher" "d:$release" "d:$receipts" "d:$docker_config"
     head=$(git -C "$source" rev-parse HEAD)
     [[ -z $(git -C "$source" status --porcelain --untracked-files=no) ]] || { echo 'Checkout has local changes'; exit 1; }
     # Validate and install the same private copy, never a second read of the original.

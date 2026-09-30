@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Fixed read-only deployment-identity inventory. Never emit runtime values.
 set -Eeuo pipefail
+root=${RELEASE_ROOT:-/opt/capital-tracker}
+printf 'runtime_directory=%s\n' "$root"
 printf 'deployment_user=%s\n' "$(id -un)"
-printf 'project_directory_writable=%s\n' "$(test -w /opt/capital-tracker && echo yes || echo no)"
-printf 'existing_env_readable=%s\n' "$(test -r /opt/capital-tracker/.env && echo yes || echo no)"
+printf 'project_directory_writable=%s\n' "$(test -w "$root" && echo yes || echo no)"
+printf 'existing_env_readable=%s\n' "$(test -r "$root/.env" && echo yes || echo no)"
 printf 'noninteractive_sudo=%s\n' "$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
-if [[ -r /opt/capital-tracker/.env ]]; then
+if [[ -r "$root/.env" ]]; then
   echo 'existing_setting_names:'
-  sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' /opt/capital-tracker/.env | sort -u
+  sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$root/.env" | sort -u
 fi
 if docker info >/dev/null 2>&1; then
   echo 'docker_access=yes'

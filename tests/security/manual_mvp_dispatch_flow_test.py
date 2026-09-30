@@ -32,7 +32,7 @@ class Installation:
         self.runtime = self.root / "runtime"
         for path in (self.release, self.receipts, self.runtime):
             path.mkdir(mode=0o755)
-        for name in dispatcher.RUNTIME_FILES:
+        for name in (*dispatcher.RUNTIME_FILES, ".env"):
             (self.runtime / name).write_text("synthetic")
             (self.runtime / name).chmod(0o600)
         contents = {
@@ -90,7 +90,7 @@ class DispatchFlowAcceptance(unittest.TestCase):
         self.assertEqual(self.run_dispatch("inventory"), 0)
         argv, environment = self.calls[0]
         self.assertEqual(argv, ["/bin/bash", str(self.install.release / "manual-mvp-inventory.sh")])
-        self.assertEqual(set(environment), {"PATH", "HOME", "LANG", "LC_ALL"})
+        self.assertEqual(set(environment), {"PATH", "HOME", "LANG", "LC_ALL", "DOCKER_CONFIG", "RELEASE_ROOT"})
 
     def test_deploy_uses_only_receipt_values_and_a_clean_environment(self):
         receipt = self.install.receipt()
@@ -115,6 +115,16 @@ class DispatchFlowAcceptance(unittest.TestCase):
         self.assertEqual(environment["RELEASE_ROOT"], str(self.install.runtime))
         self.assertEqual(environment["RELEASE_RUNTIME_FILE"], str(self.install.runtime / ".env.release"))
         self.assertEqual(environment["RELEASE_BACKUP_KEY_FILE"], str(self.install.runtime / ".backup-key"))
+
+    def test_fresh_and_managed_existing_preflight_do_not_require_legacy_env(self):
+        (self.install.runtime / ".env").unlink()
+        self.install.install_receipt(self.install.receipt())
+        self.assertEqual(self.run_dispatch("preflight"), 0)
+        self.install.install_receipt(self.install.receipt(installation="existing"))
+        with self.assertRaises(dispatcher.Refusal):
+            self.run_dispatch("preflight")
+        (self.install.runtime / ".release-managed-env").write_text("generated-runtime-only")
+        self.assertEqual(self.run_dispatch("preflight"), 0)
 
     def test_preflight_passes_no_application_images(self):
         self.install.install_receipt(self.install.receipt(installation="existing"))
@@ -227,6 +237,7 @@ class DispatchFlowAcceptance(unittest.TestCase):
         config = dispatcher.Config(self.install.release, self.install.receipts, self.install.docker,
                                    0, self.install.root, runtime, 1000)
         dispatcher.check_trusted_tree(runtime, 0, self.install.root, dispatcher.APPLICATION_OWNED, 1000)
+        (runtime / ".env").write_text("synthetic legacy env")
         os.chown(runtime / ".env", 1000, 1000)
         self.install.install_receipt(self.install.receipt())
         self.assertRaises(dispatcher.Refusal, dispatcher.dispatch,

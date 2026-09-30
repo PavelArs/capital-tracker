@@ -25,8 +25,8 @@ MAX_TREE_ENTRIES = 100000
 RELEASE_DIR = pathlib.Path('/usr/local/libexec/capital-tracker/release')
 RECEIPTS_DIR = pathlib.Path('/etc/capital-tracker/release-receipts')
 DOCKER_CONFIG_DIR = pathlib.Path('/etc/capital-tracker/docker-config')
-RUNTIME_DIR = pathlib.Path('/opt/capital-tracker')
-RUNTIME_FILES = ('.env', '.env.release', '.backup-key')
+RUNTIME_DIR = pathlib.Path('/var/snap/docker/common/capital-tracker')
+RUNTIME_FILES = ('.env.release', '.backup-key')
 # Bootstrap gives the container user (uid 1000, `node`) its MFA key and the operator
 # output directory. Only these exact runtime paths may belong to that account; the
 # runner never writes through them as root and symlinks remain refused everywhere.
@@ -44,7 +44,8 @@ FILES = {
 }
 OPERATIONS = ('inventory', 'preflight', 'deploy')
 INSTALLATIONS = ('existing', 'fresh')
-SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin'
+SNAP_PLUGINS_DIR = pathlib.Path('/snap/docker/current/usr/libexec/docker/cli-plugins')
 
 COMMIT = re.compile(r'[a-f0-9]{40}')
 RUN_ID = re.compile(r'[1-9][0-9]{0,19}')
@@ -319,9 +320,61 @@ def verify_installation(receipt, config):
                     raise Refusal('receipt infrastructure differs from reviewed pins')
 
 
+def check_snap_plugins(config):
+    """Allow only the root-managed Snap revision link, then verify its real tree."""
+    path = SNAP_PLUGINS_DIR
+    revision = path.parents[3]  # /snap/docker/current, the one system-managed link.
+    stop = pathlib.Path(config.stop_at) if config.stop_at is not None else pathlib.Path('/')
+    try:
+        chain = [path] + list(path.parents)
+        for component in chain:
+            info = os.lstat(component)
+            if component == revision and stat.S_ISLNK(info.st_mode):
+                if info.st_uid not in (0, config.owner_uid):
+                    raise Refusal('untrusted Snap revision owner')
+            else:
+                if not stat.S_ISDIR(info.st_mode):
+                    raise Refusal('untrusted Snap plugin ancestor')
+                _check_owner_and_mode(info, config.owner_uid)
+            if component == stop:
+                break
+        else:
+            raise Refusal('trusted boundary is not an ancestor')
+        check_trusted_tree(path.resolve(strict=True), config.owner_uid, config.stop_at)
+        native = (revision / 'bin/docker').resolve(strict=True)
+        info = os.lstat(native)
+        if not stat.S_ISREG(info.st_mode):
+            raise Refusal('untrusted native Snap client')
+        _check_owner_and_mode(info, config.owner_uid)
+        _check_ancestors(native, config.owner_uid, config.stop_at)
+    except OSError as error:
+        raise Refusal('trusted Snap plugins unavailable') from error
+
+
+def check_registry_config(config):
+    # Never use root's general registry login or plugins from the private config.
+    if os.path.lexists(str(SNAP_PLUGINS_DIR.parents[3] / 'bin/docker')):
+        check_snap_plugins(config)
+    if not os.path.lexists(str(config.docker_config_dir)):
+        return
+    check_trusted_tree(config.docker_config_dir, config.owner_uid, config.stop_at)
+    if os.path.lexists(str(config.docker_config_dir / 'cli-plugins')):
+        raise Refusal('registry configuration must not contain CLI plugins')
+    settings = config.docker_config_dir / 'config.json'
+    if os.path.lexists(str(settings)):
+        _, content = check_trusted_file(settings, config.owner_uid, config.stop_at)
+        value = parse_json(content)
+        if 'cliPluginsExtraDirs' in value:
+            if value['cliPluginsExtraDirs'] != [str(SNAP_PLUGINS_DIR)]:
+                raise Refusal('unapproved extra CLI plugin directory')
+            check_snap_plugins(config)
+
+
 def build_command(request, config, receipt=None):
     """Return the fixed argv and complete environment for an approved request."""
-    environment = {'PATH': SAFE_PATH, 'HOME': '/root', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8'}
+    environment = {'PATH': SAFE_PATH, 'HOME': '/root', 'LANG': 'C.UTF-8', 'LC_ALL': 'C.UTF-8',
+                   'DOCKER_CONFIG': str(config.docker_config_dir), 'RELEASE_ROOT': str(config.runtime_dir)}
+    check_registry_config(config)
     if request['operation'] == 'inventory':
         check_trusted_file(_installed(config, 'inventory'), config.owner_uid, config.stop_at)
         return ['/bin/bash', str(_installed(config, 'inventory'))], environment
@@ -334,6 +387,8 @@ def build_command(request, config, receipt=None):
                        APPLICATION_OWNED, config.application_uid)
     for name in RUNTIME_FILES:
         check_trusted_file(config.runtime_dir / name, config.owner_uid, config.stop_at)
+    if receipt['installation'] == 'existing' and not os.path.lexists(str(config.runtime_dir / '.release-managed-env')):
+        check_trusted_file(config.runtime_dir / '.env', config.owner_uid, config.stop_at)
     environment.update({
         'RELEASE_ROOT': str(config.runtime_dir),
         'RELEASE_RUNTIME_FILE': str(config.runtime_dir / '.env.release'),
@@ -343,13 +398,6 @@ def build_command(request, config, receipt=None):
         'RELEASE_REDIS_IMAGE': receipt['redis'],
         'RELEASE_COMPOSE_FILE': str(_installed(config, 'compose')),
     })
-    # Never fall back to root's general registry login; Docker also executes
-    # cli-plugins from this directory, so plugins are refused outright.
-    environment['DOCKER_CONFIG'] = str(config.docker_config_dir)
-    if os.path.lexists(str(config.docker_config_dir)):
-        check_trusted_tree(config.docker_config_dir, config.owner_uid, config.stop_at)
-        if os.path.lexists(str(config.docker_config_dir / 'cli-plugins')):
-            raise Refusal('registry configuration must not contain CLI plugins')
     argv = ['/bin/bash', str(_installed(config, 'runner')), request['operation'], request['commit']]
     if request['operation'] == 'deploy':
         argv += [receipt['backend'], receipt['frontend']]
