@@ -205,9 +205,9 @@ explicitly does not claim a behavioral product RED. Hosted CI rerun remains
 pending; no hosted acceptance/browser green is claimed.
 
 The owner confirmed the existing server `.env` is an unused template and no
-owner database ever existed. The strict helper preserved that env and observed
-zero related resources, but refused while the DB target is unknown. Bootstrap
-has not run. GitHub `production` environment and main-only branch rule are
+owner database ever existed, resolving first-install history. The strict
+helper preserved that env and observed zero related resources; its refusal is
+historical evidence. Bootstrap has not run. GitHub `production` environment and main-only branch rule are
 configured; `DEPLOY_DISPATCH_SSH_KEY` and
 `DEPLOY_DISPATCH_USER=capital-release` are configured. The owner has a classic
 `read:packages` PAT and will enter it themselves; no value was received. The new

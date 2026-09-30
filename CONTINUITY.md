@@ -4,8 +4,11 @@
 
 Checkpoint: 2026-09-30. The authorized manual-accounting + CSV MVP is **IN
 PROGRESS**, not deployed or whole-product complete; network sync and AI remain
-deferred. The latest local evidence is for source commit `7274076` and one exact
-four-image runtime. Nineteen retained real HTTPS/MFA/accounting journeys passed
+deferred. Authoritative integration is `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
+branch `release/manual-mvp`, HEAD `9ea156a`, based on `0f96749`. The primary
+checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749`
+with the owner’s dirty `frontend/nginx.conf` edit; preserve it. The latest local
+evidence is for source commit `7274076` and one exact four-image runtime. Nineteen retained real HTTPS/MFA/accounting journeys passed
 in 12.7 minutes with one worker and zero retries. The migration matrix has 16
 PASS lines; current startup refusals (27), CLI ledger and artifact checks passed.
 The same-image encrypted disconnected PostgreSQL 18 restore matched fingerprints
@@ -24,10 +27,10 @@ regression. The approved fixture correction `b887a4c` now passes its actual
 scoped PostgreSQL acceptance (14 original PASS lines, exit 0); the hosted CI rerun
 remains pending, so do not claim hosted CI green.
 
-The owner confirmed the old server `.env` is an unused template and no owner
-database ever existed. The strict helper preserved the environment and observed
-zero related resources, but returned a refusal; bootstrap has not run and the
-unknown database target remains unverified. GitHub `production` environment and
+The strict helper preserved the old server `.env` and observed zero related
+resources. The owner confirmed it is an unused template and no owner database
+ever existed, resolving first-install history. The helper refusal remains
+historical evidence; bootstrap has not run. GitHub `production` environment and
 main-only branch rule are configured. `DEPLOY_DISPATCH_SSH_KEY` and
 `DEPLOY_DISPATCH_USER=capital-release` are configured. The owner has a classic
 PAT with `read:packages` and will enter it directly; no token value was received.
