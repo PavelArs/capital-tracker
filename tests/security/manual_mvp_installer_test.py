@@ -207,7 +207,7 @@ class InstallerProcessAcceptance(unittest.TestCase):
         receipt = {"version": 1, "commit": COMMIT, "runId": "123", "installation": "fresh",
                    "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
                    "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
-                   "postgres": pins["postgres"]["registryDigest"], "redis": pins["redis"]["registryDigest"],
+                   "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64, "redis": pins["redis"]["registryDigest"],
                    "files": {key: hashlib.sha256((self.libexec / "release" / name).read_bytes()).hexdigest()
                              for key, name in mapping.items()}}
         path = self.root / "receipt.json"

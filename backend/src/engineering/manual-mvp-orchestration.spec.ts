@@ -39,7 +39,7 @@ if(tool==='jq'){
  // Every fixture jq call uses stdin (a pipe or here-string); consume it before returning output.
  fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
- if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-postgres'?'postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
+ if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
  else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
  else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major')?'18':'16';
  else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
@@ -139,7 +139,7 @@ function release(failure: string, installation = 'existing', action = 'deploy') 
       PATH: `${join(directory, 'bin')}:${process.env.PATH}`,
       RELEASE_ROOT: directory,
       RELEASE_INSTALLATION: installation,
-      RELEASE_POSTGRES_IMAGE: `postgres@sha256:${'d'.repeat(64)}`,
+      RELEASE_POSTGRES_IMAGE: `ghcr.io/pavelars/capital-tracker-postgres@sha256:${'d'.repeat(64)}`,
       RELEASE_REDIS_IMAGE: `redis@sha256:${'e'.repeat(64)}`,
       RELEASE_COMPOSE_FILE: join(directory, 'candidate.yml'),
       RELEASE_RUNTIME_FILE: join(directory, '.env.release'),
