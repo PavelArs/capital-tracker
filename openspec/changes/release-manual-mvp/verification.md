@@ -159,3 +159,53 @@ bootstrap inline interpreters now use fixed `/usr/bin/python3 -I -`; the same se
 process acceptance passes, while missing metadata still refuses before server mutation.
 Focused GREEN after this fix: bootstrap1/1; manual-MVP security37 passed/1 root-only
 skip; shell syntax passed. These are process fixtures, not a privileged server run.
+
+
+## Current local runtime and hosted checkpoint (2026-09-30)
+
+Latest evidence is explicitly local runtime, not deployment: source commit
+`7274076cd4456708b98b630e92aaeca11bc9226a`, Dockerfile SHA256
+`76b06e0a59cb0ca7a47497ebbd8c0b6de803752bf99850ef5c7dda409832b5b4`,
+official base `postgres:18.6-alpine3.24@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66`.
+Exact tested runtime image IDs:
+
+| Image | Local image ID |
+| --- | --- |
+| Backend | `sha256:366e4c76d62c91fbf1dc474665b059cc8212e319b84f83b673f9438305b7c8ad` |
+| Frontend | `sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c` |
+| Derived PostgreSQL 18 | `sha256:52b47063956def54ddf45b5eb2f0fe1e5b9d6a6590e824088814f174d69d79ae` |
+| Redis | `sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23` |
+
+The 19 retained real HTTPS/MFA/accounting browser journeys passed 19/19 in
+12.7 minutes, one worker, zero retries on this runtime. Migration matrix: 16
+PASS lines. Current startup refusals: 27; CLI ledger and artifact checks passed.
+The same-image encrypted disconnected PostgreSQL 18 restore matched source and
+restored fingerprints, with source preservation. Four final scans found zero
+critical/high and zero secrets; backend has one MEDIUM, other three images have
+no findings. The historical official PostgreSQL base findings (1 critical/21
+high) are remediated in the derived candidate; retain this history. Existing
+installed infrastructure pins remain as installed; the fresh-install receipt
+uses the derived PostgreSQL digest. Machine-readable summary is
+`/private/tmp/capital-mvp-local-runtime-evidence.json`.
+
+Current hosted evidence is separate. GitHub Actions PR #26 run
+[36687877047](https://github.com/PavelArs/capital-tracker/actions/runs/36687877047)
+passed lint, unit, build, spec, security and audit, then failed acceptance before
+browser execution because a fixture expected 16 migrations while the actual
+current ledger is 22. This is a stale fixture, not an authentication regression.
+The approved correction `b887a4c` is pending an actual scoped green run and CI
+rerun. No hosted CI acceptance or browser green is claimed.
+
+The owner confirmed the existing server `.env` is an unused template and no
+owner database ever existed. The strict helper preserved that env and observed
+zero related resources, but refused while the DB target is unknown. Bootstrap
+has not run. GitHub `production` environment and main-only branch rule are
+configured; `DEPLOY_DISPATCH_SSH_KEY` and
+`DEPLOY_DISPATCH_USER=capital-release` are configured. The owner has a classic
+`read:packages` PAT and will enter it themselves; no value was received. The new
+private key path is `/Users/pavelars/.ssh/capital-tracker-actions`; never read or
+print it. Public fingerprint: `SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`.
+No server key installation, bootstrap, off-host custody/recovery or deployment
+has occurred. Retirement of the old repository-level Docker-capable
+`DEPLOY_SSH_KEY` remains pending cutover. No archive or deployed status is
+claimed.

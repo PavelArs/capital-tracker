@@ -2,55 +2,47 @@
 
 ## Current handoff — manual + CSV MVP release in progress
 
-Checkpoint: 2026-09-30. After pausing, the owner explicitly resumed the authorized
-manual-accounting + CSV MVP release through the existing GitHub Actions/server path;
-network sync and AI remain deferred. This is **IN PROGRESS**, not deployed or
-whole-product complete. Current release facts below supersede the 2026-09-27
-preparation snapshot; historical evidence remains labeled by its actual scope.
-Authoritative integration checkout: `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`, HEAD `4dd81e5`, baseline `0f96749`. The primary
-`capital-tracker` checkout remains at `0f96749`; its owner edit to
-`frontend/nginx.conf` is dirty and must be preserved. OpenSpec change
-`release-manual-mvp` is drafted/validated in QA commit `1d52f44` at
-`/Users/pavelars/Projects/temp/capital-test-manual-mvp` branch `test/manual-mvp`.
-Router-shell/auth/manual-provider-independence passed. Focused VCH responsive passed
-1/1 in 15.9s on frontend SHA256 `28faa7ab8a7d695c1f4859d95669a340d7e7f2a6da8889f55d0471ddaa76f86`
-and backend SHA256 `049c5e91b667e737aeee06823d28931e290a29671e1693f84998228f528f4400`.
-Eighteen previously passing journeys used frontend SHA256
-`bd407fdd78986c185583421a50bb7f871d329eec22e2e3907ba0d6d7eb4e6495`; do not
-combine these split results into a 19/19 single-image claim. Security startup27 and artifact/
-migration checks passed. PG16.10 schema-22 backup/restore verified full schema/data
-fingerprints with the three approved canonical CHECK mappings; safe log:
-`/private/tmp/capital-mvp-backup-rehearsal3.log`. Off-host encrypted copy and
-independent key recovery remain pending. Trivy found inherited base-image/toolkit
-findings (BE 5 critical/55 high, FE 2 critical/35 high); application dependency graph
-audit is zero. A fresh installation now targets PostgreSQL 18.6; the existing PG16
-data and preview remain preserved, and no actual PostgreSQL 18 gate has run. Runtime
-branch `fix/manual-mvp-runtime` is at `fc7fad5` with an uncommitted Node
-22.23.3-alpine3.24/Nginx 1.30.5-alpine-slim image patch, not yet verified. Deployment
-branch `build/manual-mvp-deploy` is at `51f0da5` with a PG18 guard; QA branch
-`test/manual-mvp` is at `0bc6fd2` with additional unintegrated tests to review.
-Docker Desktop is unavailable; runtime work is using isolated Colima per command
-context, but a running Colima state has not been verified. Current hosted CI, image
-promotion, actual deployment, restricted deploy privilege and host bootstrap/HTTPS
-remain pending. Diagnostic run [36313627415](https://github.com/PavelArs/capital-tracker/actions/runs/36313627415)
-is historical read-only evidence from `37fd35d`, not a fresh network check. The
-owner-readonly `.env` assessment passed 22 synthetic tests (QA `eef9922`, integrated
-`81af470`); its helper SHA256 is
-`59e99ed8bf450a1667732a7abef681f51734521497591badaea76760b579a205`. It is staged
-for SSH user `pavelars` (host alias `agm`, not `agmin`) under
-`$HOME/.capital-mvp-setup`. The owner has not returned assessment flags; bootstrap
-has not run. OpenSpec task 2.2 is complete; remaining release gates include reviewing
-PG18 acceptance, image remediation/audit, current hosted CI, host bootstrap/HTTPS,
-least-privilege deployment, off-host backup/key recovery and production deployment.
-Root coordinates integration/release ownership. No archive or full-target completion
-claim. After actual deployment, record exact tested commit and
-image digests, migration, encrypted backup/restore evidence, health/security checks
-and outcome; never infer success from an accepted workflow dispatch. Read
-[`docs/post-mvp-backlog.md`](docs/post-mvp-backlog.md) for the full target's phased
-follow-up, hard release gates and continuation roles. Do not start broad UI work
-until this authorized release is resolved. Preserve owner Nginx/preview/data and
-the existing consolidation cleanup guard.
+Checkpoint: 2026-09-30. The authorized manual-accounting + CSV MVP is **IN
+PROGRESS**, not deployed or whole-product complete; network sync and AI remain
+deferred. The latest local evidence is for source commit `7274076` and one exact
+four-image runtime. Nineteen retained real HTTPS/MFA/accounting journeys passed
+in 12.7 minutes with one worker and zero retries. The migration matrix has 16
+PASS lines; current startup refusals (27), CLI ledger and artifact checks passed.
+The same-image encrypted disconnected PostgreSQL 18 restore matched fingerprints
+and preserved its source. See [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md)
+for concise release evidence and historical scope; no full test suite was rerun
+for this documentation update.
+
+Four local image scans reported zero critical/high findings and zero secrets;
+backend has one MEDIUM finding. The official PostgreSQL base's historical 1
+critical/21 high findings are remediated in the derived candidate; preserve that
+finding history. GitHub Actions PR #26 run [36687877047](https://github.com/PavelArs/capital-tracker/actions/runs/36687877047)
+passed lint, unit, build, spec, security and audit jobs, then failed acceptance
+before browser execution because one fixture still expects 16 migrations rather
+than the current 22. This is a stale fixture, not evidence of an authentication
+regression. The approved fixture correction `b887a4c` awaits an actual scoped
+green run and CI rerun; do not claim CI or acceptance green yet.
+
+The owner confirmed the old server `.env` is an unused template and no owner
+database ever existed. The strict helper preserved the environment and observed
+zero related resources, but returned a refusal; bootstrap has not run and the
+unknown database target remains unverified. GitHub `production` environment and
+main-only branch rule are configured. `DEPLOY_DISPATCH_SSH_KEY` and
+`DEPLOY_DISPATCH_USER=capital-release` are configured. The owner has a classic
+PAT with `read:packages` and will enter it directly; no token value was received.
+A new private deploy key is held at `/Users/pavelars/.ssh/capital-tracker-actions`;
+never read or print it. Its public fingerprint is
+`SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`. Server key installation,
+bootstrap, off-host custody/recovery and deployment remain pending. Retire the
+old repository-level Docker-capable `DEPLOY_SSH_KEY` only after cutover.
+
+Preserve existing installed-infrastructure pins; fresh-install receipts use the
+new derived PostgreSQL digest. Do not infer deployment from a workflow dispatch,
+claim the failed CI acceptance passed, archive the release, or mark the full
+target complete. `docs/deployment-security-verification.md` is the deployment
+control record; `docs/post-mvp-backlog.md` retains the complete deferred target.
+Keep the primary checkout's owner `frontend/nginx.conf` edit, preview, data and
+existing cleanup guard intact.
 
 ### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
 
