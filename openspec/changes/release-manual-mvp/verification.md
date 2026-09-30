@@ -144,3 +144,10 @@ These source/process tests do not prove actual Docker builds, scans, retained re
 PostgreSQL18 journeys/restore, hosted CI, GHCR promotion, server bootstrap or
 production deployment. Those gates remain open and require the runtime/root
 agents' exact-image evidence. No server, Docker or remote Git mutation here.
+
+CI now explicitly runs the one root-only application-UID delegation acceptance in
+its disposable temporary tree using hosted Ubuntu sudo. It remains unrun locally
+without privilege escalation; a configured hosted step is not observed CI proof.
+Operational completion also requires owner-coordinated retirement of the obsolete
+repository-level Docker-capable deployment credential after restricted-key cutover,
+without revoking shared host access for other services.

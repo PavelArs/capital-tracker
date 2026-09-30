@@ -359,6 +359,8 @@ jobs:
       - run: pnpm specs:validate
       - run: pnpm test:engineering
       - run: pnpm test:security
+      - name: Verify application ownership delegation as root in disposable fixtures
+        run: sudo python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths
 
   dependency-audit:
     name: Production Dependency Audit

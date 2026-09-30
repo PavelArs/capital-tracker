@@ -98,7 +98,12 @@ otherwise the dispatcher refuses the mismatch. The install step reports existing
 In GitHub, create environment `production` (recommended: required reviewer and main-only
 deployment branch), add its secret `DEPLOY_DISPATCH_SSH_KEY` (new ED25519 private key)
 and variable `DEPLOY_DISPATCH_USER=capital-release`. The key must be an environment
-secret, not a repository secret, for the environment protection to matter. A main-only
+secret, not a repository secret, for the environment protection to matter. After
+the restricted principal works, retire the obsolete repository-level
+`DEPLOY_SSH_KEY` from this repository’s Actions access through an owner-coordinated
+cutover. Its retained root-equivalent authority would bypass the new boundary.
+Do not revoke shared host keys or change unrelated services’ deployment access;
+least-privilege operational completion requires evidence of this credential cutover. A main-only
 branch rule would also block `mode=inventory` from `release/manual-mvp`; allow that
 branch or run inventory from main; keep `DEPLOY_HOST`, `DEPLOY_KNOWN_HOSTS` and
 `DEPLOY_SSH_PORT=2211`. `/opt/capital-tracker` was writable by the shared deploy user
