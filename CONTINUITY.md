@@ -37,11 +37,13 @@ registry extraDirs; no global Docker CLI override. Preserve both legacy `/opt`
 `agm:~/.capital-mvp-setup/capital-tracker-actions.pub` with fingerprint
 `SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`; it is not installed. The
 owner selected an encrypted recovery archive on the Mac plus password manager and
-authorized deletion of only the unused deploy key after the replacement path works;
-do not delete other home-directory files. They will enter their classic
+authorized deletion of the unused deploy account and key after the new
+`capital-release` path is installed and verified; preserve other home-directory
+files (in particular, do not use `userdel -r`). They will enter their classic
 `read:packages` PAT directly; no token value was received. GitHub dispatcher
 credentials are configured, but the public key is not installed. Do not read the
-private key, bootstrap production or deploy. First-install history is resolved by
+private key. Bootstrap and deployment remain pending until the current-main
+candidate and required operator/release gates are verified. First-install history is resolved by
 zero inventory and owner confirmation that `.env` was an unused template; bootstrap
 remains pending. Current public HTTPS had valid TLS but `/health` returned 404.
 Preserve owner data, preview and Nginx edit.

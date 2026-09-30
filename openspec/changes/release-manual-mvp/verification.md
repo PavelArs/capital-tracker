@@ -254,7 +254,12 @@ deploy key is staged
 at `agm:~/.capital-mvp-setup/capital-tracker-actions.pub`, fingerprint
 `SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`, not installed. The owner selected
 an encrypted recovery archive on the Mac plus password-manager custody, and authorized
-deleting only the unused deploy key after the new path works. No unrelated home-file deletions, private-key reads, production bootstrap or deployment occurred. Current public HTTPS had valid TLS but `/health` returned 404; no deployment occurred.
+deleting the unused deploy account and key after the new `capital-release` path works.
+Preserve other home files (do not use `userdel -r`); no unrelated home-file deletions,
+private-key reads, production bootstrap or deployment had occurred at this checkpoint.
+Bootstrap/deployment remain pending until the current-main candidate and required
+operator/release gates are verified. Current public HTTPS had valid TLS but `/health`
+returned 404; no deployment occurred.
 
 
 ## Snap host compatibility final evidence (MVP-008, source `036d3ca`)
