@@ -1,8 +1,9 @@
 # Manual + CSV MVP release
 
-**Release checkpoint:** PostgreSQL18 fresh-install guards are implemented, but the
-four-image manifest, pinned infrastructure image checks, PostgreSQL18/Redis8 acceptance,
-host bootstrap, least-privilege dispatcher and production deployment remain pending.
+**Release checkpoint:** PostgreSQL18 fresh-install guards, a four-image manifest,
+reviewed infrastructure digests and exact image checks are implemented locally.
+PostgreSQL18/Redis8 acceptance, actual four-image scans, host bootstrap, the
+least-privilege dispatcher and production deployment remain pending.
 Do not run bootstrap or production CD from this checkpoint.
 
 Supported first release: manually entered accounts/operations, CSV import and rollback,
@@ -52,14 +53,20 @@ one reviewed published commit on `release/manual-mvp`; the workflow permits that
 ref/commit and `mode=preflight`. Production promotion remains main-only.
 
 CI exports the actual release images that passed real acceptance, their image IDs and
-commit/run manifest. Manual deploy selects a successful main-push CI run for the exact
+commit/run version-2 manifest. Reviewed linux/amd64 PostgreSQL18.6 and Redis8.10.2
+platform digests are in `deploy/manual-mvp-infrastructure-pins.json`, separate from
+the candidate manifest. CI pulls those digests before acceptance, scans all four
+exact images and saves them in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
 current main commit, requires every named gate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
 No deployment rebuild or mutable latest promotion is used. Private server receipts record
 registry digests, schema ledgers, backup path and verified health. Pinned Trivy v0.74.0 scans exact tested images for vulnerabilities and secrets;
 unresolved high/critical findings block export. Complete finding identifiers and lower
 severities remain in sanitized reports; raw secret matches/image environment details are
-removed before upload. Actual scan results and a real isolated backup-restore rehearsal
+removed before upload. Fresh bootstrap checks the infrastructure arguments against
+the reviewed pins. Existing releases compare candidate infrastructure image IDs to
+the running PostgreSQL and Redis before downtime; fresh releases require the pinned
+digest references. Actual four-image scan results and a real PostgreSQL18 backup-restore rehearsal
 still require recorded evidence before production.
 
 ## Fresh server setup

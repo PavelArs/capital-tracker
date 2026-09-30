@@ -44,6 +44,8 @@ base_env=(--env-file "$root/.env")
 dc() { docker compose --project-directory "$root" -p "$project" "${base_env[@]}" --env-file "$runtime" "${image_env[@]}" -f "$candidate" "$@"; }
 # Never print rendered configuration, which contains passwords.
 config=$(dc config --format json)
+postgres_ref=$(jq -er '.services.postgres.image' <<<"$config")
+redis_ref=$(jq -er '.services.redis.image' <<<"$config")
 expected_major=$(jq -er '.services.postgres.environment.CAPITAL_EXPECTED_MAJOR' <<<"$config")
 candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume" and .source=="postgres_data") | .target' <<<"$config")
 [[ $expected_major == 16 || $expected_major == 18 ]] || { echo 'Unsupported PostgreSQL major'; exit 1; }
@@ -52,8 +54,17 @@ if [[ $expected_major == 18 ]]; then expected_target=/var/lib/postgresql; else e
 if [[ $installation == existing ]]; then
   [[ $actual_major == "$expected_major" ]] || { echo 'PostgreSQL major change refused; preserve existing data'; exit 1; }
   volume=$(docker inspect "$db" | jq -er --arg target "$candidate_target" '.[0].Mounts[] | select(.Destination==$target and .Type=="volume") | .Name')
+  # Resolve locally. Never pull or restart infrastructure during an application release.
+  running_postgres=$(docker inspect "$db" --format '{{.Image}}')
+  running_redis=$(docker inspect capital_tracker_redis --format '{{.Image}}')
+  [[ $(docker image inspect "$postgres_ref" --format '{{.Id}}') == "$running_postgres" \
+    && $(docker image inspect "$redis_ref" --format '{{.Id}}') == "$running_redis" ]] || { echo 'Infrastructure image change refused'; exit 1; }
 else
   [[ $expected_major == 18 ]] || { echo 'Fresh installation requires PostgreSQL18'; exit 1; }
+  [[ $postgres_ref =~ ^postgres@sha256:[a-f0-9]{64}$ \
+    && $redis_ref =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Fresh infrastructure must use immutable official digests'; exit 1; }
+  [[ $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" \
+    && $redis_ref == "${RELEASE_REDIS_IMAGE:-}" ]] || { echo 'Fresh infrastructure differs from reviewed candidate pins'; exit 1; }
 fi
 origin=$(jq -er '.services.backend.environment.FRONTEND_URL' <<<"$config")
 [[ $origin =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { echo 'Invalid HTTPS origin'; exit 1; }
@@ -153,6 +164,7 @@ cleanup() {
 trap cleanup EXIT
 # Pull candidates before downtime; retain existing images and durable containers.
 BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc pull backend frontend
+if [[ $installation == fresh ]]; then dc pull postgres redis; fi
 # Maintenance window makes dump, restored fingerprint and migration one write-free boundary.
 apps_stopped=true
 if [[ $installation == existing ]]; then

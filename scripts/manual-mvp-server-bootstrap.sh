@@ -8,6 +8,13 @@ postgres_image=${2:?Required scanned PostgreSQL18 image digest}
 redis_image=${3:?Required scanned Redis image digest}
 [[ $postgres_image =~ ^postgres@sha256:[a-f0-9]{64}$ && $redis_image =~ ^redis@sha256:[a-f0-9]{64}$ ]] || { echo 'Pinned official infrastructure images required'; exit 1; }
 [[ $account =~ ^[A-Za-z_][A-Za-z0-9_-]*$ ]] || exit 2
+source_dir=$(cd "$(dirname "$0")/.." && pwd)
+python3 - "$source_dir/deploy/manual-mvp-infrastructure-pins.json" "$postgres_image" "$redis_image" <<'PY'
+import json, sys
+pins = json.load(open(sys.argv[1], encoding='utf-8'))
+if pins['postgres']['registryDigest'] != sys.argv[2] or pins['redis']['registryDigest'] != sys.argv[3]:
+    raise SystemExit('Infrastructure digests differ from reviewed release pins')
+PY
 id "$account" >/dev/null
 root=/opt/capital-tracker
 domain=capital.pavelars.ru
@@ -48,7 +55,6 @@ install -d -o 1000 -g 1000 -m 700 "$root/operator"
 # Preserve the old inactive target vhost; never modify apex or other service configurations.
 site=/etc/nginx/sites-available/capital.pavelars.ru
 if [[ -f $site ]]; then cp -p "$site" "$root/capital-vhost-before.conf"; fi
-source_dir=$(cd "$(dirname "$0")/.." && pwd)
 sed -e "s/<your-domain>/$domain/g" -e 's/127.0.0.1:3000/127.0.0.1:3100/g' -e 's/127.0.0.1:3001/127.0.0.1:3101/g' "$source_dir/deploy/nginx.conf" > "$site"
 ln -s "$site" /etc/nginx/sites-enabled/capital.pavelars.ru
 if ! nginx -t; then

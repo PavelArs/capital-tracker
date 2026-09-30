@@ -58,7 +58,7 @@ jobs:
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
-          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID"
+          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
         if: inputs.mode == 'deploy'
@@ -67,6 +67,16 @@ jobs:
         run: |
           set -euo pipefail
           gzip -dc candidate/images.tar.gz | docker load
+          node - <<'NODE'
+          const manifest = require('./candidate/manifest.json');
+          const { execFileSync } = require('node:child_process');
+          for (const image of [manifest.backend, manifest.frontend, ...Object.values(manifest.infrastructure)]) {
+            const inspect = (format) => execFileSync('docker', ['image', 'inspect', image.tag, '--format', format], { encoding: 'utf8' }).trim();
+            if (inspect('{{.Id}}') !== image.imageId || inspect('{{.Os}}/{{.Architecture}}') !== 'linux/amd64') {
+              throw new Error('Candidate image identity or architecture mismatch');
+            }
+          }
+          NODE
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           owner=${GITHUB_REPOSITORY_OWNER,,}
           for name in backend frontend; do
@@ -113,6 +123,9 @@ jobs:
             ssh "${options[@]}" "$target" 'bash -s' < scripts/manual-mvp-inventory.sh
             exit 0
           fi
+          release_postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+          release_redis=$(jq -er '.redis.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+          [[ "$release_postgres" =~ ^postgres@sha256:[a-f0-9]{64}$ && "$release_redis" =~ ^redis@sha256:[a-f0-9]{64}$ ]]
           remote_dir="/tmp/capital-release-$GITHUB_RUN_ID"
           ssh "${options[@]}" "$target" "umask 077; mkdir '$remote_dir'"
           cleanup_remote_auth() {
@@ -122,7 +135,7 @@ jobs:
           [[ "$GITHUB_ACTOR" =~ ^[A-Za-z0-9_-]+$ ]]
           printf '%s' "$GH_TOKEN" | ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin"
           scp -P "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes scripts/manual-mvp-release.sh scripts/normalize-release-snapshot.awk docker-compose.yml "$target:$remote_dir/"
-          ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' RELEASE_INSTALLATION='$RELEASE_INSTALLATION' RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
+          ssh "${options[@]}" "$target" "DOCKER_CONFIG='$remote_dir/docker-auth' RELEASE_INSTALLATION='$RELEASE_INSTALLATION' RELEASE_POSTGRES_IMAGE='$release_postgres' RELEASE_REDIS_IMAGE='$release_redis' RELEASE_COMPOSE_FILE='$remote_dir/docker-compose.yml' bash '$remote_dir/manual-mvp-release.sh' '$RELEASE_MODE' '$GITHUB_SHA' '${RELEASE_BACKEND:-}' '${RELEASE_FRONTEND:-}'"
       - name: Remove runner credentials
         if: always()
         run: rm -f ~/.ssh/release-key
