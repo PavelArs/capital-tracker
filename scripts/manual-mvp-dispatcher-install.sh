@@ -24,6 +24,45 @@ files=(
   deploy/manual-mvp-infrastructure-pins.json:manual-mvp-infrastructure-pins.json
 )
 
+# Check every existing component before changing accounts or publishing authorization.
+# Only custom installation paths are checked: system interpreter symlinks are valid.
+validate_paths() {
+  /usr/bin/python3 -I - "$@" <<'PYGUARD'
+import os, pathlib, stat, sys
+ROOT_UID = 0
+TRUST_ROOT = pathlib.Path("/")
+required = sys.argv[1] == 'required'
+for entry in sys.argv[2:]:
+    kind, name = entry.split(':', 1)
+    path = pathlib.Path(name)
+    if not path.is_absolute() or (path != TRUST_ROOT and TRUST_ROOT not in path.parents):
+        raise SystemExit('Refusing invalid installation path: ' + name)
+    chain = [TRUST_ROOT]
+    for part in path.relative_to(TRUST_ROOT).parts:
+        chain.append(chain[-1] / part)
+    for component in chain:
+        try:
+            info = os.lstat(component)
+        except FileNotFoundError:
+            if required:
+                raise SystemExit('Refusing missing installation path: ' + str(component))
+            break
+        directory = component != path or kind == 'd'
+        trusted_type = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
+        if not trusted_type or info.st_uid != ROOT_UID or info.st_mode & 0o022:
+            raise SystemExit('Refusing untrusted installation path: ' + str(component))
+PYGUARD
+}
+
+installation_paths=(
+  "d:$home" "d:$home/.ssh" "d:$libexec" "d:$release" "d:$receipts"
+  "f:$home/.ssh/authorized_keys" "f:$home/.ssh/authorized_keys.next" "f:$home/.ssh/authorized_keys2"
+  "f:$dispatcher" "f:$dispatcher.next" "f:$sudoers" "f:$sudoers.next"
+)
+for pair in "${files[@]}"; do
+  installation_paths+=("f:$release/${pair#*:}" "f:$release/${pair#*:}.next")
+done
+
 # -I isolates Python from the current directory, PYTHON* variables and user site.
 validate_receipt() {
   /usr/bin/python3 -I - "$dispatcher" "$1" <<'PY'
@@ -51,6 +90,7 @@ PY
 case ${1:-} in
   install)
     key=${2:?Public key file}
+    validate_paths existing "${installation_paths[@]}"
     for tool in /usr/bin/python3 sudo visudo sshd useradd usermod install git; do command -v "$tool" >/dev/null; done
     [[ $(wc -l <"$key") -le 1 ]] || { echo 'Exactly one public key is required'; exit 1; }
     public=$(tr -d '\n' <"$key")
@@ -67,25 +107,28 @@ case ${1:-} in
     for group in $(id -nG "$user"); do
       [[ $group == "$user" ]] || { echo "Refusing: $user belongs to $group"; exit 1; }
     done
-    # Root owns the home and key file, so the principal cannot add keys or options.
-    for path in "$home" "$home/.ssh"; do
-      [[ ! -L $path ]] || { echo "Refusing symlinked $path"; exit 1; }
-      install -d -o root -g root -m 0755 "$path"
+    install -d -o root -g root -m 0755 "$home" "$home/.ssh" "$libexec" "$release" /etc/capital-tracker
+    install -d -o root -g root -m 0700 "$receipts"
+    validate_paths required "d:$home/.ssh" "d:$release" "d:$receipts"
+    install -o root -g root -m 0755 "$source/scripts/manual-mvp-dispatcher.py" "$dispatcher.next"
+    validate_paths required "f:$dispatcher.next"
+    mv -T "$dispatcher.next" "$dispatcher"
+    for pair in "${files[@]}"; do
+      install -o root -g root -m 0644 "$source/${pair%%:*}" "$release/${pair#*:}.next"
+      validate_paths required "f:$release/${pair#*:}.next"
+      mv -T "$release/${pair#*:}.next" "$release/${pair#*:}"
+      validate_paths required "f:$release/${pair#*:}"
     done
+    validate_paths required "f:$dispatcher"
+    # Root owns the home and key file, so the principal cannot add keys or options.
     rm -f "$home/.ssh/authorized_keys.next" "$home/.ssh/authorized_keys2"
     staged=$(mktemp)
     printf 'restrict,command="sudo -n %s" %s\n' "$dispatcher" "$public" >"$staged"
     install -o root -g root -m 0644 "$staged" "$home/.ssh/authorized_keys.next"
     rm -f "$staged"
+    validate_paths required "f:$home/.ssh/authorized_keys.next"
     mv -T "$home/.ssh/authorized_keys.next" "$home/.ssh/authorized_keys"
-    install -d -o root -g root -m 0755 "$libexec" "$release" /etc/capital-tracker
-    install -d -o root -g root -m 0700 "$receipts"
-    install -o root -g root -m 0755 "$source/scripts/manual-mvp-dispatcher.py" "$dispatcher.next"
-    mv -T "$dispatcher.next" "$dispatcher"
-    for pair in "${files[@]}"; do
-      install -o root -g root -m 0644 "$source/${pair%%:*}" "$release/${pair#*:}.next"
-      mv -T "$release/${pair#*:}.next" "$release/${pair#*:}"
-    done
+    validate_paths required "f:$home/.ssh/authorized_keys"
     # Empty argument list: sudo refuses any argument appended to the dispatcher.
     staged=$(mktemp)
     {
@@ -96,7 +139,9 @@ case ${1:-} in
     # sudo ignores sudoers.d names containing a dot, so the staged name is inert.
     install -o root -g root -m 0440 "$staged" "$sudoers.next"
     rm -f "$staged"
+    validate_paths required "f:$sudoers.next"
     mv -T "$sudoers.next" "$sudoers"
+    validate_paths required "f:$sudoers"
     # The dispatcher refuses runtime inputs that another account could replace.
     if [[ -d /opt/capital-tracker ]]; then
       find /opt/capital-tracker \( -type l -o ! -user root -o -perm /022 \) -print \
@@ -111,12 +156,15 @@ case ${1:-} in
     ;;
   approve)
     file=${2:?Receipt file}
-    [[ -f $dispatcher ]] || { echo 'Run install first'; exit 1; }
+    validate_paths existing "${installation_paths[@]}"
+    validate_paths required "f:$dispatcher" "d:$release" "d:$receipts"
     head=$(git -C "$source" rev-parse HEAD)
     [[ -z $(git -C "$source" status --porcelain --untracked-files=no) ]] || { echo 'Checkout has local changes'; exit 1; }
     # Validate and install the same private copy, never a second read of the original.
     staged="$receipts/.pending-$$"
+    validate_paths existing "f:$staged"
     install -o root -g root -m 0600 "$file" "$staged"
+    validate_paths required "f:$staged"
     trap 'rm -f "$staged"' EXIT
     summary=$(validate_receipt "$staged")
     printf '%s\n' "$summary"
@@ -129,7 +177,9 @@ case ${1:-} in
       installed=$(sha256sum "$release/$name" 2>/dev/null | cut -d' ' -f1 || true)
       [[ $expected == "$installed" ]] || echo "Server file $name differs from this checkout; run install first"
     done
+    validate_paths existing "f:$receipts/$commit-$run.json"
     mv -T "$staged" "$receipts/$commit-$run.json"
+    validate_paths required "f:$receipts/$commit-$run.json"
     trap - EXIT
     echo "Approved single-use receipt for commit $commit run $run"
     ;;

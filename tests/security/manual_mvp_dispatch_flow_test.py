@@ -255,10 +255,11 @@ class DispatchFlowAcceptance(unittest.TestCase):
         auth = self.install.docker / "config.json"
         auth.write_text("{}")
         auth.chmod(0o600)
-        self.run_dispatch("deploy")
+        self.run_dispatch("preflight")
         self.assertEqual(self.calls[0][1]["DOCKER_CONFIG"], str(self.install.docker))
         auth.chmod(0o666)
-        self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy")
+        self.assertRaisesRegex(dispatcher.Refusal, "config.json: group or world writable", self.run_dispatch, "preflight")
+        self.assertEqual(len(self.calls), 1)
 
 
 class EntryPointAcceptance(unittest.TestCase):
