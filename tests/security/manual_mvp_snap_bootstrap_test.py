@@ -70,7 +70,7 @@ def fixture_chown(path, uid, gid):
     with open(os.path.join(os.environ['FIXTURE_ROOT'], 'ownership'), 'a') as output:
         output.write(json.dumps([candidate, uid, gid]) + '\\n')
 os.chown = fixture_chown
-pwd.getpwnam = lambda account: types.SimpleNamespace(pw_uid=1234, pw_gid=1234)
+pwd.getpwnam = lambda account: types.SimpleNamespace(pw_uid=0 if account == 'root' else 1234, pw_gid=0 if account == 'root' else 1234)
 '''
 
 
@@ -101,6 +101,8 @@ class SnapBootstrapProcessAcceptance(unittest.TestCase):
         (self.checkout / "deploy").mkdir()
         shutil.copyfile(REPO / "deploy/nginx.conf", self.checkout / "deploy/nginx.conf")
         (self.checkout / "scripts/manual-mvp-receipt.py").write_text(
+            "import types\n"
+            "dispatcher = types.SimpleNamespace(Config=lambda: None, check_registry_config=lambda config: None)\n"
             "def validate_bootstrap_receipt(*args): pass\n")
         self.bin = self.base / "bin"
         self.bin.mkdir()
@@ -112,7 +114,7 @@ class SnapBootstrapProcessAcceptance(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def run_bootstrap(self, *, real_root_uid=False):
+    def run_bootstrap(self, *, real_root_uid=False, account="root"):
         source = (REPO / "scripts/manual-mvp-server-bootstrap.sh").read_text()
         for path in ("/var/snap/docker/common", "/opt/capital-tracker", "/etc/nginx", "/etc/letsencrypt", "/etc/capital-tracker"):
             source = source.replace(path, str(self.server) + path)
@@ -125,7 +127,7 @@ class SnapBootstrapProcessAcceptance(unittest.TestCase):
         script = self.checkout / "scripts/bootstrap-fixture.sh"
         script.write_text(source)
         result = subprocess.run([
-            BASH, str(script), "capital-release",
+            BASH, str(script), account,
             "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
             "redis@sha256:" + "e" * 64, str(self.base / "reviewed-receipt.json"),
         ], env={**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"],
@@ -170,6 +172,9 @@ class SnapBootstrapProcessAcceptance(unittest.TestCase):
         self.ancestor.rename(moved)
         self.ancestor.symlink_to(moved, target_is_directory=True)
         self.assert_before_mutation_refusal(self.run_bootstrap())
+
+    def test_deployment_account_refuses_before_install_or_nginx(self):
+        self.assert_before_mutation_refusal(self.run_bootstrap(account="capital-release"))
 
     def test_group_writable_snap_ancestor_refuses_before_install_or_nginx(self):
         self.ancestor.chmod(0o775)
