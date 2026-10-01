@@ -1,7 +1,7 @@
 ## 1. Specify and characterize
 
 - [x] 1.1 Record actual hosted audit RED, all severities, official Axios/npm metadata and exact fix floor (AXS-001-A).
-- [x] 1.2 Preserve passing pre-upgrade provider/frontend characterization; record real local backend HTTP adapter checks separately (AXS-001-B).
+- [x] 1.2 Preserve passing pre-upgrade provider/frontend characterization; record real local backend HTTP adapter checks separately with durable fixture `tests/transport/axios-http-characterization.cjs` (AXS-001-B).
 
 ## 2. Remediate and verify source
 

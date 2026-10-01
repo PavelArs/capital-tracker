@@ -24,6 +24,9 @@ Use the actual hosted audit failure as security RED. Run existing unit/provider
 characterization before and after; functional behavior is retained and must not
 be deliberately broken. A local Node HTTP fixture additionally exercises the
 real Axios HTTP adapter rather than claiming mocked Axios calls test transport.
+Keep this durable regression fixture at `tests/transport/axios-http-characterization.cjs`,
+outside the archivable change directory. Run it from the repository root with
+`node tests/transport/axios-http-characterization.cjs 1.20.0`.
 The existing image probe must assert the new release version. Separate runtime
 verification covers real HTTPS/provider TLS and password/MFA/CSRF navigation.
 

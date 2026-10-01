@@ -44,7 +44,10 @@ The real synthetic loopback HTTP fixture passed **5/5 backend adapter checks**:
 text response, redirect refusal, 429 Retry-After, response-size refusal and timeout
 without automatic retry. Frontend package VERSION is asserted; this fixture does
 not exercise the browser adapter. Pre-upgrade HTTP fixture was unrun after sandbox
-`listen EPERM`; post-upgrade authorized loopback execution passed.
+`listen EPERM`; post-upgrade authorized loopback execution passed. The durable
+fixture now lives at `tests/transport/axios-http-characterization.cjs`; run
+`node tests/transport/axios-http-characterization.cjs 1.20.0` from the repository
+root. Its byte-identical move and historical executed path are recorded in verification.
 
 Independent review, rebuilt-image/provider TLS, selected real HTTPS/password/MFA/
 CSRF/browser/PostgreSQL acceptance and hosted current-source CI remain **pending**.

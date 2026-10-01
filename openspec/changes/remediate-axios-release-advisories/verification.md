@@ -48,7 +48,15 @@ provider request options: maxRedirects0 makes zero destination requests, preserv
 and retains textual success values. Frontend package VERSION asserted separately;
 browser adapter is not tested by this fixture. Pre-upgrade HTTP fixture was UNRUN
 because listen was denied (EPERM); no pre-upgrade transport PASS is claimed.
-Post-upgrade authorized loopback execution passed.
+Post-upgrade authorized loopback execution passed at the historical command path
+shown in the table. The script was subsequently moved byte-for-byte to
+`tests/transport/axios-http-characterization.cjs` so archiving the change retains
+the regression fixture. Current repository-root command:
+`node tests/transport/axios-http-characterization.cjs 1.20.0`.
+Before/after script SHA256 is identical:
+`e641d24052068e835d58746cbaecb073990aafaa689509ed5f1155cde81653cb`.
+`node --check tests/transport/axios-http-characterization.cjs` passed on Node22.23.2.
+No HTTP or scoped-suite rerun was needed for this content-identical move.
 
 An initial sandbox frozen attempt hit ENOTFOUND and was stopped (exit130);
 prior offline attempt lacked a TTY and did not count as a pass. Authorized registry/
