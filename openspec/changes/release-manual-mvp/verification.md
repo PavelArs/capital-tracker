@@ -389,9 +389,8 @@ PRICE-UI/PRICE-RECOVERY, CVIS-UI and one password-restart neighbor. Results: 5/1
 passed (SWAP-UI; password-restart neighbor; both original LIMIT failures; CARRY-001-A),
 CSV-006-A found one product failure, and five cases were unrun after the first failure:
 SES-002-A, OPEN-001-A/OPEN-002-A, CSV-001-A, PRICE-UI/PRICE-RECOVERY and CVIS-UI.
-This is not an 11/11 pass. Cleanup left zero owned containers/networks, restored the
-global Docker context remained `desktop-linux`, and preserved the owner Nginx
-checksum.
+This is not an 11/11 pass. Cleanup left zero owned containers/networks. The global
+Docker context remained `desktop-linux`, and the owner Nginx checksum was preserved.
 Receipt: `/private/tmp/capital-mvp-ci4-selected-evidence.json`.
 
 CSV-006-A fails in `inspectAndMap`, before preview, restart or financial oracles. The
