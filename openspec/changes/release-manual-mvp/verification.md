@@ -331,9 +331,41 @@ gates 165/165 (`/private/tmp/capital-ci-release-budget-engineering.log`). Strict
 all-E2E TypeScript also passed above. These local checks do not constitute hosted
 Compose/Firefox or image-scan acceptance.
 
-The earlier combined-run attempt was blocked by Docker access approval and then
-interrupted. Approval has since succeeded; the combined real Compose/Firefox run for
-source `55aec09` is now underway. Migrations and seed passed, Compose startup is in
-progress, and Firefox is at 0/4. This is pending evidence, not an acceptance result.
-Hosted image scans and deployment remain open; no release-task closure depends on this
-documentation checkpoint.
+## Hosted CI follow-up — run 36706275247 (source `0c62f04`)
+
+GitHub Actions PR #26 [run 36706275247](https://github.com/PavelArs/capital-tracker/actions/runs/36706275247)
+tested source `0c62f04`. Eight jobs passed. Release job `109857531845` was cancelled
+at its configured 120-minute cap, 11:05:37–13:06:06 UTC; status job `109899752845`
+failed because the Docker build job was cancelled. The release job planned 174 E2E
+tests; 153 completed with results (144 passed, 9 failed). Test 154 was interrupted
+and has no complete result. Do not claim a full-suite result or infer results for the
+remaining tests. The 120-minute cap may have contributed to failures, but it is not
+established as their sole cause; diagnosis remains underway.
+
+The nine actual failed cases, from the uploaded Playwright artifact, were:
+
+- `SES-002-A` missing CSRF/foreign-Origin currency privacy assertion: received three currencies instead of `[]`.
+- `LIMIT-001-B/LIMIT-001-D` CSRF path variants across restarts: received HTTP 502 instead of 429.
+- `LIMIT-001-B` factor admission across restarts: received HTTP 502 instead of 429.
+- `CARRY-001-A` exact lot provenance after restart: expected a string, got `undefined`.
+- `CSV-001-A` private original retention across repetition/restart: HTTP 502 instead of 200.
+- `OPEN-001-A/OPEN-002-A` opening values/restart/history: timed out waiting for the “Начальные данные” button.
+- `PRICE-UI/PRICE-RECOVERY` committed price retry/late read: timed out waiting for the price editor response/control.
+- `CSV-006-A` sale-first import/restart/rollback: timed out waiting for the “Вид операций” combobox.
+- `SWAP-UI` committed exchange retry across SPA remount: the case exceeded 120 seconds; cleanup then observed the closed page.
+
+Log: `/private/tmp/capital-mvp-fourth-ci-release.log`. The real uploaded failure
+artifact is locally extracted at `/private/tmp/capital-mvp-ci4-artifact`; Actions
+artifact ID `11097437276`. Image scans, candidate export, promotion, bootstrap and
+deployment did not run. These release tasks remain open.
+
+Separate local Compose/Firefox evidence for source `55aec09` completed 4/4 in 2.7m,
+one worker, zero retries: three genuine Firefox page cases (MFA pending/private
+denial; TOTP form rotation/session durability across restarts; logout and copied
+credential revocation) plus one engine-independent source-client API case
+(client A exhausted quota while client B completed password/MFA admission). Compose
+health readiness and cleanup passed. Exact identities and receipt:
+`/private/tmp/capital-mvp-firefox-critical-evidence.json`. This does not substitute
+for the incomplete hosted run. Strict all-E2E TypeScript passed at
+`/private/tmp/capital-mvp-final-e2e-types.log`. The owner's Snap common-bind probe
+`capital_snap_common_bind=PASS` is separately recorded under MVP-008 above.

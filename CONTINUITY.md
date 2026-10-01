@@ -2,76 +2,44 @@
 
 ## Current handoff — manual + CSV MVP release in progress
 
-Checkpoint: 2026-09-30. The authorized manual-accounting + CSV MVP is **IN
-PROGRESS**, not deployed or whole-product complete; network sync and AI remain
-deferred. Integration is `/Users/pavelars/Projects/temp/capital-tracker-mvp`,
-branch `release/manual-mvp`; this documentation checkpoint follows integrated
-`0ebd7a5` (individual evidence labels identify the exact tested source). The
-primary checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at
-`0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
+Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
+PROGRESS**; the whole product is incomplete, not deployed or release-complete.
+Network sync and AI remain deferred. Integration is
+`/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`,
+source `0c62f04`. The primary checkout `/Users/pavelars/Projects/temp/capital-tracker`
+remains at `0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
 
-The exact local PG18 four-image runtime at `7274076` passed 19/19 retained
-HTTPS/MFA/accounting journeys, current migrations, 27 startup refusals, CLI and
-artifact checks, encrypted disconnected restore/fingerprint and source
-preservation; four image scans reported zero critical/high/secrets and one backend
-MEDIUM. See the detailed receipt in
+Latest hosted evidence is PR #26 Actions run
+[36706275247](https://github.com/PavelArs/capital-tracker/actions/runs/36706275247)
+for source `0c62f04`. Release job `109857531845` was cancelled at the 120-minute
+job cap (11:05:37–13:06:06 UTC); status job `109899752845` failed because the
+Docker build job was cancelled. The other eight jobs passed. The release job had
+174 planned E2E tests; 153 completed with results (144 passed, 9 failed), and test
+154 was interrupted/not complete. Do not infer results for the rest of the suite.
+The nine failures are summarized in
 [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
+Log: `/private/tmp/capital-mvp-fourth-ci-release.log`; uploaded real failure
+artifact: `/private/tmp/capital-mvp-ci4-artifact` (Actions artifact ID
+`11097437276`). The timeout is a possible contributor, not an established sole
+cause; diagnosis remains underway. Scans, export, promotion, bootstrap and deploy
+did not run. No task is closed by this checkpoint.
 
-Previous hosted run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787)
-on published source `670b8c1` passed eight basic CI jobs but failed database
-opening acceptance before browser execution. Safe PostgreSQL diagnostics confirm
-a stale `RESTRICT` delete expectation (expected `23503`, actual `23001` for the
-opening snapshot FK); the visible `costStatus` NOT NULL stage label is stale and
-that preceding null-status case passed. This does not establish an accounting
-regression. Independent scoped manual
-opening acceptance passes 6/6 against real PostgreSQL (`/private/tmp/capital-mvp-manual-opening-green2.log`). The initial 24-scenario actual-DB batch had 19 original PASS and five `RESTRICT` expectation failures. Reviewed source `9ec4e40` corrected all five, and all 24 real DB scripts now pass across the initial run plus targeted reruns; this is not one uninterrupted 24/24 run. Receipt `/private/tmp/capital-mvp-db-compat-evidence.json` records the exact same four image IDs, linux/amd64 and zero remaining containers; no image rebuild or browser rerun. Hosted CI remains pending.
+Separate evidence remains: the exact local PG18 four-image runtime at `7274076`
+passed 19/19 retained HTTPS/MFA/accounting journeys, current migrations, 27 startup
+refusals, CLI and artifact checks, encrypted disconnected restore/fingerprint and
+source preservation. Four image scans reported zero critical/high/secrets and one
+backend MEDIUM. See the detailed receipt in
+[`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
+This local result is not hosted-run or deployment evidence. Local Compose/Firefox
+source `55aec09` separately passed 4/4: three actual Firefox browser cases plus one
+engine-independent API case; exact evidence is
+`/private/tmp/capital-mvp-firefox-critical-evidence.json`. Strict all-E2E TypeScript
+passed (`/private/tmp/capital-mvp-final-e2e-types.log`). The owner Snap common-bind
+probe is already recorded as PASS below; it does not close bootstrap/deployment.
 
-Latest hosted PR #26 run [36701142974](https://github.com/PavelArs/capital-tracker/actions/runs/36701142974)
-tested source `26b7b91` and passed all eight basic CI jobs. Its release job failed at
-`docker compose up --wait` before browser execution: `capital-tracker-e2e-client-b-1`
-had no healthcheck configured (10:26:35Z). Backend, replica, frontend, proxy,
-PostgreSQL, Redis and provider containers were healthy; both browser clients remained
-waiting. This is an E2E harness readiness failure, not browser acceptance evidence.
-The authorized cancellation raced with natural completion and did not cancel the run.
-Current migration/MFA/session and 27 startup-refusal real-DB evidence remains green.
-The separately fixed opening lock observer at `bd15e40` follows the actual
-advisory-follower → writer → captured-psql-blocker chain; its two retained browser
-cases pass in 53.6s and 38.5s (`/private/tmp/capital-mvp-opening-browser-red.log`
-records predecessor RED; `/private/tmp/capital-mvp-opening-browser-green.log` and
-`/private/tmp/capital-mvp-opening-browser-evidence.json` record GREEN; `/private/tmp/capital-mvp-final-e2e-types.log` records
-strict all-E2E TypeScript). Readiness fix `d10e633` and Compose v5.5.1 configuration
-passed scoped real-predicate tests 2/2. CI ceiling-only change `732567c` raises the
-Docker build timeout from 35 to 120 minutes for headroom; this is not a measured
-174-test runtime, and per-test limits, workers, retries, selection and gates are
-unchanged. Formatting follow-up `55aec09` passes scoped Biome, final readiness Jest
-2/2 and engineering gates 165/165. These focused checks did not rebuild images or
-rerun hosted CI. Docker approval blocked the earlier attempt, but has since succeeded.
-The combined real Compose/Firefox acceptance for source `55aec09` is now underway:
-migrations and seed passed, Compose startup is running, and Firefox is at 0/4.
-Hosted image scans and deployment remain pending. Full failed hosted log from the
-previous run: `/private/tmp/capital-mvp-third-ci-failed.log`.
-
-Snap compatibility verified native Docker CLI 29.8, Compose 5.5.1 and daemon API.
-Native CLI/Compose via isolated `cliPluginsExtraDirs` passed on the server; the
-temporary nonsecret config was cleaned. A public bind under `/opt` failed; the
-owner probe `98482852…` checksum-verifies `capital_snap_common_bind=PASS` under
-`/var/snap/docker/common`. The reviewed fixed managed runtime is integrated at
-`/var/snap/docker/common/capital-tracker` with Capital-only native PATH and
-registry extraDirs; no global Docker CLI override. Preserve both legacy `/opt`
-`.env` and `.gitignore`. The public deploy key is staged at
-`agm:~/.capital-mvp-setup/capital-tracker-actions.pub` with fingerprint
-`SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`; it is not installed. The
-owner selected an encrypted recovery archive on the Mac plus password manager and
-authorized deletion of the unused deploy account and key after the new
-`capital-release` path is installed and verified; preserve other home-directory
-files (in particular, do not use `userdel -r`). They will enter their classic
-`read:packages` PAT directly; no token value was received. GitHub dispatcher
-credentials are configured, but the public key is not installed. Do not read the
-private key. Bootstrap and deployment remain pending until the current-main
-candidate and required operator/release gates are verified. First-install history is resolved by
-zero inventory and owner confirmation that `.env` was an unused template; bootstrap
-remains pending. Current public HTTPS had valid TLS but `/health` returned 404.
-Preserve owner data, preview and Nginx edit.
+Earlier hosted runs and their fixture/readiness diagnoses remain in the dated
+history below and in the verification receipt. Bootstrap and deployment remain
+pending. Preserve owner data, preview and Nginx edit.
 
 ### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
 
