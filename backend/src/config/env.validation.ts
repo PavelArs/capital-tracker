@@ -1,7 +1,7 @@
 import { Transform, plainToInstance } from 'class-transformer';
 import {
-  IsBoolean,
   IsEnum,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -10,6 +10,8 @@ import {
   validateSync,
 } from 'class-validator';
 
+import { parseTrustedProxyIps } from '../auth/client-source';
+
 export enum Environment {
   Development = 'development',
   Production = 'production',
@@ -17,6 +19,14 @@ export enum Environment {
 }
 
 export class EnvironmentVariables {
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  DISPLAY_FX_ENABLED = 'false';
+
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  DISPLAY_FX_TRUST_PROXY = 'false';
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;
@@ -50,50 +60,18 @@ export class EnvironmentVariables {
   @IsOptional()
   DB_NAME = 'capital_tracker';
 
-  // JWT
   @IsString()
-  JWT_SECRET!: string;
-
-  @IsNumber()
-  @IsOptional()
-  JWT_EXPIRES_IN: number = 60 * 60 * 24 * 7;
+  TRUSTED_PROXY_IPS!: string;
 
   // Frontend URL for CORS
   @IsString()
-  @IsOptional()
-  FRONTEND_URL = 'http://localhost:3001';
-
-  // Email Configuration (optional)
-  @IsString()
-  @IsOptional()
-  SMTP_HOST?: string;
-
-  @IsNumber()
-  @Transform(({ value }) => (value ? Number.parseInt(value, 10) : undefined))
-  @IsOptional()
-  SMTP_PORT?: number;
+  FRONTEND_URL!: string;
 
   @IsString()
-  @IsOptional()
-  SMTP_USER?: string;
+  MFA_KEY_FILE!: string;
 
   @IsString()
-  @IsOptional()
-  SMTP_PASSWORD?: string;
-
-  @IsString()
-  @IsOptional()
-  SMTP_FROM?: string;
-
-  // Development flags
-  @IsBoolean()
-  @Transform(({ value }) => value === 'true' || value === true)
-  @IsOptional()
-  SKIP_EMAIL_VERIFICATION = false;
-
-  @IsString()
-  @IsOptional()
-  DEV_INVITATION_CODE = 'DEV2024';
+  MFA_KEY_ID!: string;
 
   // Redis
   @IsString()
@@ -112,6 +90,7 @@ export class EnvironmentVariables {
 }
 
 export function validateEnvironment(config: Record<string, unknown>): EnvironmentVariables {
+  parseTrustedProxyIps(config.TRUSTED_PROXY_IPS);
   const validatedConfig = plainToInstance(EnvironmentVariables, config, {
     enableImplicitConversion: false,
   });

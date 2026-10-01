@@ -12,17 +12,6 @@ export class MessageResponseDto {
 }
 
 /**
- * Token response for authentication
- */
-export class TokenResponseDto {
-  @ApiProperty({
-    description: 'JWT access token',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-  })
-  accessToken: string;
-}
-
-/**
  * User profile response (without sensitive data)
  */
 export class UserProfileResponseDto {
@@ -51,23 +40,13 @@ export class UserProfileResponseDto {
   lastName?: string | null;
 
   @ApiProperty({
-    description: 'User subscription type',
-    example: 'free',
-    enum: ['free', 'pro', 'enterprise'],
-  })
-  subscriptionType: string;
-
-  @ApiProperty({
-    description: 'Whether user email is verified',
-    example: true,
-  })
-  emailVerified: boolean;
-
-  @ApiProperty({
     description: 'Account creation timestamp',
     example: '2024-01-15T10:30:00.000Z',
   })
   createdAt: Date;
+
+  @ApiProperty({ description: 'Account update timestamp' })
+  updatedAt: Date;
 }
 
 /**

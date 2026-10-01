@@ -1,0 +1,25 @@
+.account-operations,
+.account-operations__panel {
+  min-width: 0;
+}
+
+.account-operations__choice {
+  max-width: 28rem;
+  margin-bottom: 1.25rem;
+}
+
+.account-operations__choice select {
+  min-height: 44px;
+  font: inherit;
+}
+
+.account-operations__panel[hidden] {
+  display: none;
+}
+
+.account-operations__panel > .manual-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+}

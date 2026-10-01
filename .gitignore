@@ -5,6 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Build outputs
+__pycache__/
 dist/
 build/
 *.tsbuildinfo
@@ -44,3 +45,9 @@ temp/
 Thumbs.db
 .DS_Store
 
+
+# Synthetic verification outputs
+coverage/
+playwright-report/
+test-results/
+tests/e2e/.runtime/

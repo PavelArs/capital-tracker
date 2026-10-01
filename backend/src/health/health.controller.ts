@@ -6,6 +6,7 @@ import {
   MemoryHealthIndicator,
   TypeOrmHealthIndicator,
 } from '@nestjs/terminus';
+import { Public } from '../auth/public.decorator';
 import { RedisHealthIndicator } from './redis-health.indicator';
 
 @ApiTags('health')
@@ -18,7 +19,13 @@ export class HealthController {
     private redis: RedisHealthIndicator,
   ) {}
 
+  @Public()
   @Get()
+  liveness() {
+    return { status: 'ok' };
+  }
+
+  @Get('details')
   @HealthCheck()
   @ApiOperation({
     summary: 'Health check',

@@ -8,20 +8,17 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { ApiCookieAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
 import { CreateLiabilityDto } from './dto/create-liability.dto';
 import { UpdateLiabilityDto } from './dto/update-liability.dto';
 import { LiabilitiesService } from './liabilities.service';
 
 @ApiTags('liabilities')
-@ApiBearerAuth('JWT-auth')
+@ApiCookieAuth('__Host-ct-session')
 @Controller('liabilities')
-@UseGuards(JwtAuthGuard)
 export class LiabilitiesController {
   constructor(private readonly liabilitiesService: LiabilitiesService) {}
 
@@ -45,7 +42,7 @@ export class LiabilitiesController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  create(@CurrentUser() user: JwtPayload, @Body() createLiabilityDto: CreateLiabilityDto) {
+  create(@CurrentUser() user: OwnerIdentity, @Body() createLiabilityDto: CreateLiabilityDto) {
     return this.liabilitiesService.create(user.userId, createLiabilityDto);
   }
 
@@ -63,7 +60,7 @@ export class LiabilitiesController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  findAll(@CurrentUser() user: JwtPayload) {
+  findAll(@CurrentUser() user: OwnerIdentity) {
     return this.liabilitiesService.findAll(user.userId);
   }
 
@@ -82,7 +79,7 @@ export class LiabilitiesController {
     description: 'Liability not found',
     type: ErrorResponseDto,
   })
-  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  findOne(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.liabilitiesService.findOne(id, user.userId);
   }
 
@@ -107,7 +104,7 @@ export class LiabilitiesController {
     type: ErrorResponseDto,
   })
   update(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: OwnerIdentity,
     @Param('id') id: string,
     @Body() updateLiabilityDto: UpdateLiabilityDto,
   ) {
@@ -130,7 +127,7 @@ export class LiabilitiesController {
     description: 'Liability not found',
     type: ErrorResponseDto,
   })
-  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  remove(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.liabilitiesService.remove(id, user.userId);
   }
 }

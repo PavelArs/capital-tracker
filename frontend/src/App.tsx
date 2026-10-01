@@ -5,18 +5,19 @@ import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import Assets from '@pages/Assets';
+import CapitalFlows from '@pages/CapitalFlows';
 import Crypto from '@pages/Crypto';
 import Dashboard from '@pages/Dashboard';
-import ForgotPassword from '@pages/ForgotPassword';
-import Liabilities from '@pages/Liabilities';
 import Login from '@pages/Login';
-import Register from '@pages/Register';
-import ResendVerification from '@pages/ResendVerification';
-import ResetPassword from '@pages/ResetPassword';
+import ManualAccountDetail from '@pages/ManualAccountDetail';
+import ManualAccounts from '@pages/ManualAccounts';
+import ManualPrices from '@pages/ManualPrices';
+import PeriodProfit from '@pages/PeriodProfit';
+import RetiredLiabilities from '@pages/RetiredLiabilities';
 import Settings from '@pages/Settings';
-import VerifyEmail from '@pages/VerifyEmail';
 import React, { useEffect } from 'react';
-import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { Link, Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import OwnedTransfers from './features/accounting/OwnedTransfers';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -26,7 +27,11 @@ function PrivateRoute({ children }: PrivateRouteProps) {
   const { user, loading } = useAuth();
 
   if (loading) {
-    return <div className="loading-container">Loading...</div>;
+    return (
+      <div className="loading-container" role="status">
+        Загрузка…
+      </div>
+    );
   }
 
   return user ? <>{children}</> : <Navigate to="/login" />;
@@ -37,11 +42,6 @@ function AppRoutes() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/resend-verification" element={<ResendVerification />} />
 
       {/* Protected routes */}
       <Route
@@ -52,12 +52,31 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/manual-accounts" replace />} />
+        <Route
+          path="legacy-overview"
+          element={
+            <>
+              <aside className="legacy-scope-note" role="note" aria-label="Область прежнего обзора">
+                Этот обзор показывает прежние активы и кошельки и не включает ручные счета. Для
+                учета операций и оценки перейдите в <Link to="/manual-accounts">ручные счета</Link>.
+              </aside>
+              <Dashboard />
+            </>
+          }
+        />
         <Route path="assets/*" element={<Assets />} />
-        <Route path="liabilities" element={<Liabilities />} />
+        <Route path="liabilities/*" element={<RetiredLiabilities />} />
         <Route path="crypto" element={<Crypto />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="manual-accounts" element={<ManualAccounts />} />
+        <Route path="owned-transfers" element={<OwnedTransfers />} />
+        <Route path="manual-prices" element={<ManualPrices />} />
+        <Route path="capital-flows" element={<CapitalFlows />} />
+        <Route path="period-profit" element={<PeriodProfit />} />
+        <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
       </Route>
+      <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
 }

@@ -4,7 +4,6 @@ export interface User {
   email: string;
   firstName?: string;
   lastName?: string;
-  emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -14,16 +13,19 @@ export interface LoginCredentials {
   password: string;
 }
 
-export interface RegisterData {
-  email: string;
-  password: string;
-  firstName?: string;
-  lastName?: string;
+export interface LoginResponse {
+  mfaRequired: true;
+  csrfToken: string;
 }
 
-export interface AuthResponse {
-  access_token: string;
+export interface FactorCredentials {
+  kind: 'totp' | 'recovery';
+  code: string;
+}
+
+export interface FullAuthResponse {
   user: User;
+  csrfToken: string;
 }
 
 // Asset types
@@ -72,44 +74,6 @@ export interface CreateAssetDto {
 }
 
 export interface UpdateAssetDto extends Partial<CreateAssetDto> {}
-
-// Liability types
-export type LiabilityCategory =
-  | 'subscriptions'
-  | 'regular_expenses'
-  | 'loans'
-  | 'mortgage'
-  | 'credit_card'
-  | 'other';
-
-export type LiabilityType = 'recurring' | 'one_time';
-
-export interface Liability {
-  id: string;
-  userId: string;
-  name: string;
-  category: LiabilityCategory;
-  liabilityType: LiabilityType;
-  amount: number;
-  currencyId: string;
-  currency?: Currency;
-  date: string;
-  description?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateLiabilityDto {
-  name: string;
-  category: LiabilityCategory;
-  liabilityType: LiabilityType;
-  amount: number;
-  currencyId: string;
-  date: string;
-  description?: string;
-}
-
-export interface UpdateLiabilityDto extends Partial<CreateLiabilityDto> {}
 
 // Crypto types
 export type CryptoType = 'bitcoin' | 'ethereum';

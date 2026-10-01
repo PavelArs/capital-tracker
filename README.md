@@ -1,6 +1,64 @@
 # Capital Tracker
 
-Personal finance application for tracking assets, liabilities, crypto wallets (BTC + ETH with ERC-20 tokens), and generating financial metrics.
+> Brownfield refactor in progress. Read [the audit](docs/brownfield-audit.md) before
+> starting against existing data. Explicit migration preflight refuses unsafe legacy upgrades.
+> Production deployment is disabled by default and is not release-ready.
+> The target contract is [the refactor brief](capital-tracker-openspec-prompt.md).
+
+## Verification during the refactor
+
+Use Node 22.21.1 (`nvm use`) and pinned pnpm 10.33.0:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm verify:baseline
+pnpm audit:production
+```
+
+This runs specification validation, lint, builds and Jest/Vitest checks. It covers source-level checks. Run `pnpm test:e2e` for isolated real images, PostgreSQL
+and HTTPS Chromium verification; security scans and recovery are still pending. See
+[provider feasibility](docs/provider-feasibility.md) and the active OpenSpec change
+for limits and actual evidence. See [testing and migrations](docs/testing-and-migrations.md)
+for exact isolated commands and migration requirements. See [owner provisioning](docs/owner-authentication.md)
+for existing-user adoption, recovery and the current cookie/CSRF/MFA contract.
+The required production dependency audit fails on high/critical findings or registry
+errors. See [dependency security](docs/dependency-security.md) for the dated results
+and remaining lower-severity findings.
+The verified [manual accounting](docs/manual-accounting.md) slice passed real
+PostgreSQL checks and all 85 HTTPS Chromium cases, including 74 retained cases.
+The [USD trade journal](docs/usd-trade-journal.md) passed all 101 HTTPS Chromium
+cases (85 retained and 16 new), plus real PostgreSQL and migration checks.
+The [reviewed CSV import](docs/csv-imports.md) slice adds explicit mapping, whole-batch
+preview/confirmation, retained source provenance and conditional rollback to the USD
+journal. All 124 HTTPS Chromium cases passed (101 retained and 23 new), together
+with real PostgreSQL and migration checks. Full release hardening and the remaining
+accounting scope are still pending.
+The verified [known-cost opening lots](docs/known-cost-carry-in.md) slice passed all
+133 HTTPS Chromium cases (124 retained and nine new), real PostgreSQL/migration
+checks and independent review. Remaining accounting/history/provider work and full
+release hardening are still pending.
+The [historical accounting view](docs/historical-accounting.md) reconstructs exact
+positions and FIFO cost at a selected instant from the current corrected journal.
+Its targeted verification passed seven new and two retained critical HTTPS cases,
+plus real PostgreSQL checks; the complete 140-case browser suite was not rerun under
+the owner's updated testing policy. Remaining product and release work is pending.
+The [external USD flow journal](docs/external-usd-flows.md) records explicit
+contributions/withdrawals with exact period totals, immutable correction history
+and safe original-command recovery. Four new and two retained critical HTTPS
+scenarios, real PostgreSQL and populated-schema migration checks passed. It does
+not yet calculate portfolio profit, XIRR or TWR.
+The bounded [TWR preview](docs/endpoint-twr.md) adds period returns for reviewed
+manual endpoints when no intermediate net external flow needs another valuation.
+Missing intermediate valuations produce an explicit unavailable result. General
+linked TWR and automatic portfolio performance remain pending.
+Original project folders/data remain untouched.
+
+Capital tracking application with manual-account workflows and retained legacy asset, crypto-wallet and financial-metrics screens during the incremental refactor.
+
+The first [navigation redesign](docs/application-shell.md) opens manual accounts after
+login and groups legacy views separately. It passes scoped runtime checks and awaits
+independent review; the [complete frontend redesign](docs/frontend-redesign-plan.md)
+is still in progress. The saved local preview has not yet been updated.
 
 ## Tech Stack
 
@@ -11,11 +69,12 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 
 ## Features
 
-- **Assets & Liabilities** - CRUD with Stock (balance sheet) and Flow (income) asset types, multi-currency support
+- **Legacy Assets** - CRUD with Stock (balance sheet) and Flow (income) asset types, multi-currency support
+- **Saved Liabilities** - Records and the private API are retained; the retired editor is replaced by a notice linking old bookmarks to manual accounts
 - **Crypto Wallets** - Bitcoin and Ethereum address tracking with live balance updates, ERC-20 token support
 - **Financial Metrics** - Net worth, runway, FL-ratio (passive income coverage), category distributions
 - **Dashboard** - Charts, history (30 days), dynamic currency selector
-- **Auth** - Registration, login, email verification, password reset (JWT + bcrypt)
+- **Auth** - CLI-only owner bootstrap/recovery and MFA enrollment, Argon2id, mandatory TOTP or single-use recovery codes, revocable PostgreSQL cookie sessions and CSRF protection
 - **Exchange Rates** - Auto-updated fiat and crypto rates, Redis-cached
 
 ## Quick Start
@@ -29,34 +88,32 @@ Personal finance application for tracking assets, liabilities, crypto wallets (B
 
 ### Development
 
-```bash
-# Start database and cache
-docker compose up postgres redis -d
+Use the disposable HTTPS acceptance stack below for complete authenticated checks.
+For source development, configure a separate disposable PostgreSQL/Redis instance,
+run explicit migrations and provision its owner as described in
+[owner authentication](docs/owner-authentication.md). The CLI requires all current migrations, a protected server MFA key and confirmed CLI
+enrollment; the additive accounting migrations preserve existing data.
 
-# Install dependencies
-pnpm install
+`FRONTEND_URL` must be the exact HTTPS browser origin, without a trailing slash or
+path. Use `VITE_API_URL=/api` through an HTTPS proxy forwarding to the backend.
+`pnpm --dir backend dev` and `pnpm --dir frontend dev` provide source watch servers,
+but their HTTP ports alone cannot support Secure-cookie login. The acceptance
+origin is `https://127.0.0.1:8443`; `localhost` is a different origin.
 
-# Backend (port 3000)
-cd backend
-cp .env.example .env    # edit with your settings
-pnpm dev
-
-# Frontend (port 3001)
-cd frontend
-cp .env.example .env
-pnpm dev
-```
-
-### Docker (full stack)
+### Docker acceptance stack
 
 ```bash
-# Development (with source mounts, uses docker-compose.override.yml)
-cp docker-compose.override.example.yml docker-compose.override.yml
-docker compose up -d
+# Build and verify the disposable stack with release images, HTTPS and PostgreSQL
+pnpm test:e2e
 
-# Production (image-based, no overrides on server)
-docker compose up -d
+# Production rollout remains disabled pending release hardening.
+# Check the active change's verification record for actual results.
 ```
+
+The legacy `docker-compose.override.example.yml` is not compatible with the current
+HTTPS authentication path and is not the supported acceptance setup. Its services
+still require a separately configured TLS proxy and disposable database. Prefer
+the isolated acceptance stack; never use legacy production Compose for tests.
 
 ## Common Commands
 
@@ -70,7 +127,7 @@ docker compose up -d
 | `pnpm lint` | Biome lint + format check |
 | `pnpm check` | Auto-fix lint + format issues |
 | `pnpm migration:generate` | Generate TypeORM migration |
-| `pnpm migration:run` | Run pending migrations |
+| `pnpm migration:run` | Explicit preflight and migration; requires DB_* environment |
 
 ### Frontend (`cd frontend`)
 
@@ -86,7 +143,7 @@ docker compose up -d
 
 ```
 backend/src/
-  auth/           JWT auth, registration, email verification, password reset
+  auth/           Owner provisioning, Argon2id, cookie sessions, CSRF/default-deny
   assets/         Asset CRUD (Stock/Flow types)
   liabilities/    Liability CRUD
   crypto/         Wallet tracking, balance updates, price fetching
@@ -94,12 +151,11 @@ backend/src/
   metrics/        Net worth, runway, FL-ratio calculations
   cache/          Redis cache module
   health/         Health check endpoint
-  email/          Nodemailer email service
   entities/       TypeORM entities
   migrations/     Database migrations
 
 frontend/src/
-  pages/          Route pages (Dashboard, Assets, Liabilities, Crypto, Settings)
+  pages/          Manual accounting, retained legacy screens and retired-liability notice
   components/     Reusable UI components
   features/       Feature-specific components (asset cards, wallet forms, etc.)
   contexts/       Auth, Error, Theme contexts
@@ -135,12 +191,7 @@ The app is designed to run on a personal server with:
    DB_USERNAME=postgres
    DB_PASSWORD=<strong-password>
    DB_NAME=capital_tracker
-   JWT_SECRET=<random-secret>
    FRONTEND_URL=https://<your-domain>
-   SMTP_HOST=<smtp-host>
-   SMTP_PORT=465
-   SMTP_USER=<smtp-user>
-   SMTP_PASSWORD=<smtp-password>
    EOF
    ```
 
@@ -152,26 +203,46 @@ The app is designed to run on a personal server with:
    nginx -t && systemctl reload nginx
    ```
 
-4. Push to `main` - CI/CD will automatically build, push images to ghcr.io, and deploy.
+4. Production rollout is disabled by default. Do not enable `PRODUCTION_ROLLOUT_ENABLED`
+   until the release-hardening change and isolated recovery tests are complete and
+   the owner explicitly authorizes rollout. The retained manual workflow is legacy
+   containment, not an approved release procedure.
 
 ### CI/CD Pipeline
 
-- **CI** (on PR to main): lint, test, build for both backend and frontend, Docker build verification
-- **CD** (on push to main): semantic versioning, build + push images to ghcr.io, SSH deploy with health check, automatic rollback on failure, database backup before deploy
+- **CI** (PRs and pushes to main): lint, test, build, Docker builds and pinned OpenSpec checks; aggregate requires every job to succeed.
+- **CD**: legacy manual workflow gated by main branch and explicit rollout variable; disabled by default pending release hardening. It still has known backup, artifact and deployment limitations documented in the audit.
 
 ## API Endpoints
 
-Interactive API docs available at `/api/docs` (development only).
+These are backend paths; the HTTPS proxy exposes them under `/api/`. No HTTP
+Swagger/documentation endpoint is mounted, including in development.
 
 | Group | Endpoints |
 |-------|-----------|
-| Auth | `POST /auth/register`, `POST /auth/login`, `GET /auth/me`, `POST /auth/forgot-password`, `POST /auth/reset-password`, `POST /auth/verify-email` |
+| Auth | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout` |
 | Assets | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id` |
 | Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id` |
 | Crypto | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
 | Currencies | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show` |
 | Metrics | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD` |
-| Health | `GET /health` |
+| Health | Public `GET /health` (minimal liveness); private `GET /health/details` |
+
+Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
+All writes, including login/MFA/logout, require the exact configured Origin and
+`X-CSRF-Token`; the browser client obtains it lazily and retains it only in memory.
+Password verification creates only pending MFA state; a valid factor grants full
+access. Each stage rotates the session, server logout revokes it, and CLI recovery revokes all
+owner sessions. Legacy bearer credentials are not accepted. Sessions have thirty
+minutes idle/twelve hours absolute expiry; the combined anonymous/pending five-minute
+pool is capped at 512 and authenticated sessions at 10. HTTP startup requires exact
+`TRUSTED_PROXY_IPS` configuration. CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
+30/60s, 5/60s and 5/60s per verified source, plus 10/600s per normalized
+claimed email for login. See
+[owner authentication](docs/owner-authentication.md) for configuration, caps and
+remaining protection requirements. Source IP and claimed-email subjects are
+stored as bounded SHA-256 digests. These unsalted digests do not anonymize
+guessable identifiers.
 
 ## External APIs
 

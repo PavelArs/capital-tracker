@@ -1,60 +1,166 @@
-name: Read-only Deployment Inventory
-# Legacy automatic production deployment is contained. This workflow cannot deploy.
+name: Deploy Manual MVP
 on:
   workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: Successful main CI run for this exact commit (ignored for inventory)
+        required: true
+        type: string
+      mode:
+        description: inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
+        required: true
+        default: inventory
+        type: choice
+        options: [inventory, promote, preflight, deploy]
+      installation:
+        description: Recorded in the promoted receipt; existing upgrade or first install after verified absence of application data
+        required: true
+        default: existing
+        type: choice
+        options: [existing, fresh]
 permissions:
   contents: read
 concurrency:
-  group: deployment-inventory
+  group: deploy-production
   cancel-in-progress: false
 jobs:
-  inventory:
-    if: github.ref == 'refs/heads/main'
+  deploy:
+    if: github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 30
+    # Holds DEPLOY_DISPATCH_SSH_KEY; the owner can add required reviewers and a main-only branch rule.
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      packages: write
     steps:
-      - name: Inspect existing deployment identity with pinned SSH
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22.21.1'
+      - name: Validate trusted successful candidate provenance
+        if: inputs.mode != 'inventory'
         env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
-          DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
-          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_USER" =~ ^[A-Za-z0-9_-]+$ ]]
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID" > run.json
+          jq -e --arg sha "$GITHUB_SHA" --arg repo "$GITHUB_REPOSITORY" \
+            '.conclusion=="success" and .status=="completed" and .event=="push" and .head_branch=="main" and .head_sha==$sha and .path==".github/workflows/ci.yml" and .head_repository.full_name==$repo' run.json >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
+          node - <<'NODE'
+          const jobs = JSON.parse(require('node:fs').readFileSync('jobs.json')).jobs;
+          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Release Images and Security', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
+            if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error('Required candidate gate missing or unsuccessful');
+          }
+          const release = jobs.find(job => job.name === 'Release Images and Security' && job.conclusion === 'success');
+          for (const name of ['Run critical real release acceptance', 'Verify critical acceptance receipt']) {
+            if (!release.steps?.some(step => step.name === name && step.conclusion === 'success')) throw new Error('Critical real acceptance missing or unsuccessful');
+          }
+          NODE
+          # Reject obsolete queued commits, even when their older CI succeeded.
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n critical-release-acceptance -D acceptance
+          node scripts/critical-release-profile.cjs verify acceptance/critical-release-acceptance.json "$GITHUB_SHA" "$RUN_ID"
+      - name: Download and verify the tested candidate
+        if: inputs.mode == 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
+          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
+          sha256sum -c candidate/images.tar.gz.sha256
+      - name: Promote the identical tested images
+        if: inputs.mode == 'promote'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gzip -dc candidate/images.tar.gz | docker load
+          node - <<'NODE'
+          const manifest = require('./candidate/manifest.json');
+          const { execFileSync } = require('node:child_process');
+          const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
+          validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
+          NODE
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          owner=${GITHUB_REPOSITORY_OWNER,,}
+          for name in backend frontend postgres; do
+            if [[ $name == postgres ]]; then
+              tested=$(jq -r '.infrastructure.postgres.imageId' candidate/manifest.json)
+              tag=$(jq -r '.infrastructure.postgres.tag' candidate/manifest.json)
+            else
+              tested=$(jq -r ".$name.imageId" candidate/manifest.json)
+              tag=$(jq -r ".$name.tag" candidate/manifest.json)
+            fi
+            test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$tested"
+            destination="ghcr.io/$owner/capital-tracker-$name:$GITHUB_SHA"
+            docker tag "$tested" "$destination"
+            docker push "$destination"
+            digest=$(docker image inspect "$destination" --format '{{index .RepoDigests 0}}')
+            [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend|postgres)@sha256:[a-f0-9]{64}$ ]]
+            echo "RELEASE_${name^^}=$digest" >> "$GITHUB_ENV"
+          done
+          docker logout ghcr.io
+      - name: Write the release receipt for owner approval
+        if: inputs.mode == 'promote'
+        env:
+          RUN_ID: ${{ inputs.ci_run_id }}
+          RELEASE_INSTALLATION: ${{ inputs.installation }}
+        run: |
+          set -euo pipefail
+          mkdir receipt
+          python3 scripts/manual-mvp-receipt.py "$GITHUB_SHA" "$RUN_ID" "$RELEASE_INSTALLATION" "$RELEASE_BACKEND" "$RELEASE_FRONTEND" "$RELEASE_POSTGRES" "receipt/$GITHUB_SHA-$RUN_ID.json"
+          # The receipt holds only public commit/run/digest/hash identities for owner review.
+          { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload the release receipt
+        if: inputs.mode == 'promote'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: manual-mvp-release-receipt
+          path: receipt/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Configure restricted release SSH with pinned identity
+        if: inputs.mode != 'promote'
+        env:
+          DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$DEPLOY_KNOWN_HOSTS"
+          test -n "$DEPLOY_DISPATCH_SSH_KEY"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
+          chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
+      - name: Send a data-only request to the root-owned release dispatcher
+        if: inputs.mode != 'promote'
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}
+          DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
+          RELEASE_MODE: ${{ inputs.mode }}
+          RUN_ID: ${{ inputs.ci_run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_DISPATCH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$RELEASE_MODE" == inventory || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
+          # Inventory is not bound to a candidate; it only names this workflow run.
+          if [[ "$RELEASE_MODE" == inventory ]]; then RUN_ID=$GITHUB_RUN_ID; fi
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
           port=${DEPLOY_SSH_PORT:-22}
           [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
-          test -n "$DEPLOY_SSH_KEY"
-          test -n "$DEPLOY_KNOWN_HOSTS"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/inventory-key
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/inventory-key ~/.ssh/known_hosts
-          ssh -p "$port" -i ~/.ssh/inventory-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
-            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'INVENTORY'
-          set -Eeuo pipefail
-          printf 'deployment_user=%s\n' "$(id -un)"
-          printf 'project_directory_writable=%s\n' "$(test -w /opt/capital-tracker && echo yes || echo no)"
-          printf 'existing_env_readable=%s\n' "$(test -r /opt/capital-tracker/.env && echo yes || echo no)"
-          printf 'noninteractive_sudo=%s\n' "$(sudo -n true >/dev/null 2>&1 && echo yes || echo no)"
-          if [[ -r /opt/capital-tracker/.env ]]; then
-            echo 'existing_setting_names:'
-            sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' /opt/capital-tracker/.env | sort -u
-          fi
-          if docker info >/dev/null 2>&1; then
-            echo 'docker_access=yes'
-            containers=$(docker ps -a --format '{{.Names}} {{.Status}}')
-            volumes=$(docker volume ls --format '{{.Name}}')
-            echo 'application_container_metadata:'
-            grep -E '^capital_tracker_' <<<"$containers" || true
-            echo 'application_volume_names:'
-            grep -Ei 'capital|tracker' <<<"$volumes" || true
-          else
-            echo 'docker_access=no'
-          fi
-          printf 'capital_vhost_enabled=%s\n' "$(test -L /etc/nginx/sites-enabled/capital.pavelars.ru && echo yes || echo no)"
-          INVENTORY
-      - name: Remove ephemeral runner SSH credential
+          # The forced command ignores any remote command; the request is data on stdin.
+          jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+            '{version: 1, operation: $operation, commit: $commit, runId: $runId}' \
+            | ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+              "$DEPLOY_DISPATCH_USER@$DEPLOY_HOST"
+      - name: Remove runner credentials
         if: always()
-        run: rm -f ~/.ssh/inventory-key
+        run: rm -f ~/.ssh/release-key

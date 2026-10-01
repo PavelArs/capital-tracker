@@ -8,27 +8,24 @@ import {
   Param,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import {
-  ApiBearerAuth,
   ApiBody,
+  ApiCookieAuth,
   ApiOperation,
   ApiParam,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
 import { CryptoPrices, CryptoPricesService } from './crypto-prices.service';
 import { CryptoService } from './crypto.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 @ApiTags('crypto')
-@ApiBearerAuth('JWT-auth')
+@ApiCookieAuth('__Host-ct-session')
 @Controller('crypto')
-@UseGuards(JwtAuthGuard)
 export class CryptoController {
   constructor(
     private readonly cryptoService: CryptoService,
@@ -50,7 +47,7 @@ export class CryptoController {
     description: 'Validation error',
     type: ValidationErrorResponseDto,
   })
-  async create(@CurrentUser() user: JwtPayload, @Body() createDto: CreateCryptoWalletDto) {
+  async create(@CurrentUser() user: OwnerIdentity, @Body() createDto: CreateCryptoWalletDto) {
     return this.cryptoService.create(user.userId, createDto);
   }
 
@@ -63,7 +60,7 @@ export class CryptoController {
     status: 200,
     description: 'Wallets retrieved successfully',
   })
-  findAll(@CurrentUser() user: JwtPayload) {
+  findAll(@CurrentUser() user: OwnerIdentity) {
     return this.cryptoService.findAll(user.userId);
   }
 
@@ -126,7 +123,7 @@ export class CryptoController {
     description: 'Wallet not found',
     type: ErrorResponseDto,
   })
-  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  findOne(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.cryptoService.findOne(id, user.userId);
   }
 
@@ -146,7 +143,7 @@ export class CryptoController {
     description: 'Wallet not found',
     type: ErrorResponseDto,
   })
-  updateBalance(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  updateBalance(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.cryptoService.updateBalance(id, user.userId);
   }
 
@@ -166,7 +163,7 @@ export class CryptoController {
     description: 'Wallet not found',
     type: ErrorResponseDto,
   })
-  remove(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  remove(@CurrentUser() user: OwnerIdentity, @Param('id') id: string) {
     return this.cryptoService.remove(id, user.userId);
   }
 }

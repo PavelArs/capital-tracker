@@ -79,6 +79,35 @@ describe('CryptoService', () => {
     jest.clearAllMocks();
   });
 
+  describe('CHAR-WALLET-001: retained owner-scoped access', () => {
+    it.each(['findOne', 'remove', 'updateBalance'] as const)(
+      'rejects %s for a foreign wallet before any write or provider refresh',
+      async (operation) => {
+        // The repository fixture honors ownership predicates; it would expose the
+        // foreign wallet if the service accidentally queried by wallet ID alone.
+        repository.findOne.mockImplementation(async (options) => {
+          const where = options.where as { id?: string; userId?: string };
+          return where.id === mockWalletId &&
+            (where.userId === undefined || where.userId === mockUserId)
+            ? mockWallet
+            : null;
+        });
+
+        await expect(service[operation](mockWalletId, 'different-owner')).rejects.toThrow(
+          CryptoWalletNotFoundException,
+        );
+
+        expect(repository.findOne).toHaveBeenCalledTimes(1);
+        expect(repository.findOne).toHaveBeenCalledWith({
+          where: { id: mockWalletId, userId: 'different-owner' },
+        });
+        expect(repository.save).not.toHaveBeenCalled();
+        expect(repository.remove).not.toHaveBeenCalled();
+        expect(cryptoUpdateService.updateWalletBalance).not.toHaveBeenCalled();
+      },
+    );
+  });
+
   describe('create', () => {
     it('should create a new ethereum wallet successfully', async () => {
       const createDto: CreateCryptoWalletDto = {

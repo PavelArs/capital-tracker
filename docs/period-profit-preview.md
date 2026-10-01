@@ -1,0 +1,91 @@
+# Manual period profit preview
+
+Implemented and locally verified under `preview-period-profit`. Exact scenarios,
+commands and limitations are in the [archived verification](../openspec/changes/archive/2026-09-23-preview-period-profit/verification.md).
+This is not a production rollout or completion of the whole performance roadmap.
+
+The Russian **Прибыль за период** page (`/period-profit`) calculates:
+
+`profit = closing value - opening value - contributions + withdrawals`
+
+Supply the total portfolio value in USD at both boundaries and review the external
+flow journal. Opening value is **immediately before** any flow exactly at the start.
+Closing value is **immediately before** any flow exactly at the end. The interval
+includes its start and excludes its end, `[from,to)`. Times have explicit zones and
+are returned/displayed in UTC. For example, opening 1000 + contribution 1000 with
+closing 2000 produces profit 0. A withdrawal increases the formula's result because
+that value has left the portfolio without itself being an investment loss.
+
+This is a temporary calculation using **manual total valuations** and
+**owner-declared, unreconciled flows**. It does not discover missing flows, fetch
+prices or derive values from cost or current holdings. The owner is responsible
+for including all owned positions and cash once. The journal must already have a
+reviewed coverage boundary at or before the selected start. Missing coverage is
+an error, not an assumed empty period. Use **Вводы и выводы** to review/setup flows.
+
+The result identifies the journal revision it read. Later corrections and voids
+restate subsequent calculations; the displayed revision is not a saved historical
+report. Changing any input clears the result and its review assertion. Submission
+is explicit, old delayed replies are ignored, and failures hide earlier results.
+Values/results are not persisted in the database or browser storage. Navigation,
+reload and authentication loss can clear the form. No valuation or return rate is
+silently recovered or posted after login.
+
+The page groups period boundaries and valuations, keeps manual/unreconciled/temporary
+scope visible and exposes full methods under **Как считаются показатели**. Exact profit
+and the selected period lead the result; **Основание расчёта** reveals original input
+values, flow totals, coverage and journal revision. XIRR remains explicitly annualized;
+TWR remains period-only. Unavailable rates retain their reason without a numeric value.
+
+The **TWR с промежуточными оценками** disclosure opens the separate linked workflow.
+Folding it preserves its current plan, entered boundary values, review and result;
+changing dates or valuations still invalidates them under the existing rules. Opening
+or closing detail does not request a calculation. The
+[period workbench verification](../openspec/changes/archive/2026-09-27-redesign-period-review-workbench/verification.md)
+records scoped browser/database and responsive evidence.
+
+## API
+
+Authenticated `POST /accounting/portfolio/profit-preview`, status 200. Existing
+password/MFA, CSRF, Origin and private no-store rules apply. Body:
+
+```json
+{
+  "from": "2025-01-01T00:00:00.000Z",
+  "to": "2026-01-01T00:00:00.000Z",
+  "openingValueUsd": "1000",
+  "closingValueUsd": "2000",
+  "assertReviewed": true
+}
+```
+
+Amounts are nonnegative decimal strings, including zero, with at most 48 integer
+and 30 fractional digits. Negative manual valuations are unsupported and rejected,
+never converted to zero. Positive duration and explicit-zone valid timestamps
+are required (1970–9999, at most millisecond precision). Unknown fields, missing
+review, JSON numeric amounts, signs and exponents are 400. An absent journal or
+start before coverage is 409.
+
+Response contains `from`, `to`, `coverageFrom`, `journalRevision`, canonical
+`openingValueUsd`/`closingValueUsd`, `profitUsd`, and `flows` with
+`contributionsUsd`, `withdrawalsUsd`, `netContributionsUsd`, `flowCount`. It also
+contains `basis: manual-usd-valuations`, `flowBasis: owner-declared-usd-flows`,
+`completeness: unreconciled`. Profit can be negative; computed totals can exceed
+input precision without rounding. All monetary fields remain exact strings.
+
+One read-only repeatable-read snapshot reads the complete eligible current flow
+set; the preview is unpaginated. Household income, asset trades and unrelated
+owners do not contribute.
+No schema migration, provider call or stored valuation is introduced. Profit here is
+an absolute USD amount, not a percentage or tax report. The separately implemented
+[XIRR](xirr-preview.md), [endpoint TWR](endpoint-twr.md) and [linked TWR](linked-twr.md)
+previews have their own contracts and limitations.
+
+## Verification
+
+The change's verification document maps pure arithmetic/input cases, actual
+PostgreSQL snapshot/read-only/isolation checks, and two critical HTTPS Playwright
+journeys. The full acceptance runner includes `period-profit-db.cjs`; it refuses
+any environment except the exact synthetic settings and a fresh fixture database.
+Its database is temporary with the isolated PostgreSQL container. Current-slice
+verification is targeted; a full E2E run is not a requirement for this increment.

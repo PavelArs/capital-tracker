@@ -1,109 +1,138 @@
 import { useAuth } from '@contexts/AuthContext';
+import { useError } from '@contexts/ErrorContext';
+import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import './Layout.css';
+
+const accountingLinks = [
+  ['/manual-accounts', 'Ручные счета'],
+  ['/owned-transfers', 'Переводы между счетами'],
+  ['/capital-flows', 'Вводы и выводы'],
+  ['/manual-prices', 'Ручные цены'],
+  ['/period-profit', 'Прибыль за период'],
+  ['/settings', 'Настройки'],
+] as const;
+
+const legacyLinks = [
+  ['/legacy-overview', 'Прежний обзор'],
+  ['/assets', 'Активы'],
+  ['/crypto', 'Криптокошельки'],
+] as const;
+
+function isLegacyPath(pathname: string) {
+  return legacyLinks.some(([path]) => pathname === path || pathname.startsWith(`${path}/`));
+}
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const { showError } = useError();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const navLinksRef = useRef<HTMLDivElement>(null);
-  const navUserRef = useRef<HTMLDivElement>(null);
-
-  const handleLogout = useCallback(() => {
-    logout();
-    navigate('/login');
-  }, [logout, navigate]);
-
-  const toggleMobileMenu = useCallback(() => {
-    setMobileMenuOpen((prev) => !prev);
-  }, []);
-
-  const closeMobileMenu = useCallback(() => {
-    setMobileMenuOpen(false);
-  }, []);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [legacyOpen, setLegacyOpen] = useState(() => isLegacyPath(pathname));
+  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    if (mobileMenuOpen && navLinksRef.current && navUserRef.current) {
-      const updateNavUserPosition = () => {
-        requestAnimationFrame(() => {
-          const navLinksHeight = navLinksRef.current?.offsetHeight || 0;
-          if (navUserRef.current && navLinksHeight > 0) {
-            navUserRef.current.style.top = `calc(100% + ${navLinksHeight}px)`;
-          }
-        });
-      };
+    setMobileMenuOpen(false);
+    if (isLegacyPath(pathname)) setLegacyOpen(true);
+  }, [pathname]);
 
-      // Update position after a short delay to ensure nav-links is fully rendered
-      const timeoutId = setTimeout(updateNavUserPosition, 50);
-
-      // Update after transition completes
-      const handleTransitionEnd = () => {
-        updateNavUserPosition();
-      };
-
-      const navLinksElement = navLinksRef.current;
-      navLinksElement.addEventListener('transitionend', handleTransitionEnd);
-
-      // Also update on window resize
-      window.addEventListener('resize', updateNavUserPosition);
-
-      return () => {
-        clearTimeout(timeoutId);
-        window.removeEventListener('resize', updateNavUserPosition);
-        navLinksElement?.removeEventListener('transitionend', handleTransitionEnd);
-      };
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      showError(
+        isAxiosError(error) && error.response?.status === 403
+          ? t('auth.sessionExpired')
+          : t('auth.logoutFailed'),
+      );
+    } finally {
+      setIsLoggingOut(false);
     }
-    if (navUserRef.current) {
-      navUserRef.current.style.top = '';
-    }
-  }, [mobileMenuOpen]);
+  }, [logout, navigate, showError, t]);
+
+  function followLink() {
+    setMobileMenuOpen(false);
+    mainRef.current?.focus();
+  }
 
   return (
     <div className="layout">
-      <nav className="navbar">
-        <div className="nav-brand">Capital Tracker</div>
-
-        <button
-          className="mobile-menu-toggle"
-          onClick={toggleMobileMenu}
-          aria-label="Toggle menu"
-          aria-expanded={mobileMenuOpen}
-        >
-          <span />
-          <span />
-          <span />
-        </button>
-
-        <div ref={navLinksRef} className={`nav-links ${mobileMenuOpen ? 'open' : ''}`}>
-          <Link to="/" onClick={closeMobileMenu}>
-            {t('navigation.dashboard')}
-          </Link>
-          <Link to="/assets" onClick={closeMobileMenu}>
-            {t('navigation.assets')}
-          </Link>
-          <Link to="/liabilities" onClick={closeMobileMenu}>
-            {t('navigation.liabilities')}
-          </Link>
-          <Link to="/crypto" onClick={closeMobileMenu}>
-            {t('navigation.crypto')}
-          </Link>
-          <Link to="/settings" onClick={closeMobileMenu}>
-            {t('navigation.settings')}
-          </Link>
-        </div>
-
-        <div ref={navUserRef} className={`nav-user ${mobileMenuOpen ? 'open' : ''}`}>
-          <div className="nav-user-info">
-            <span className="nav-user-email">{user?.email}</span>
+      <a className="skip-link" href="#main-content">
+        К содержимому
+      </a>
+      <nav
+        className="app-navigation"
+        aria-label="Основная навигация"
+        onKeyDown={(event) => {
+          if (event.key === 'Escape' && mobileMenuOpen) {
+            event.preventDefault();
+            setMobileMenuOpen(false);
+            menuToggleRef.current?.focus();
+          }
+        }}
+      >
+        <div className="app-navigation__header">
+          <div className="app-navigation__identity">
+            <div className="app-navigation__brand">Capital Tracker</div>
+            <div className="app-navigation__email">{user?.email}</div>
           </div>
-          <button onClick={handleLogout}>{t('auth.logout')}</button>
+          <button
+            ref={menuToggleRef}
+            type="button"
+            className="app-navigation__toggle"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-expanded={mobileMenuOpen}
+            aria-controls="application-menu"
+          >
+            Меню
+          </button>
+        </div>
+        <div
+          id="application-menu"
+          className={`app-navigation__menu${mobileMenuOpen ? ' is-open' : ''}`}
+        >
+          <p className="app-navigation__label">Учет капитала</p>
+          <ul className="app-navigation__links">
+            {accountingLinks.map(([path, label]) => (
+              <li key={path}>
+                <NavLink to={path} onClick={followLink}>
+                  {label}
+                </NavLink>
+              </li>
+            ))}
+          </ul>
+          <details
+            className="app-navigation__legacy"
+            open={legacyOpen}
+            onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
+          >
+            <summary>Прежние данные</summary>
+            <ul className="app-navigation__links">
+              {legacyLinks.map(([path, label]) => (
+                <li key={path}>
+                  <NavLink to={path} onClick={followLink}>
+                    {label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </details>
+          <div className="app-navigation__session">
+            <button type="button" onClick={handleLogout} disabled={isLoggingOut}>
+              {isLoggingOut ? t('common.loading') : t('auth.logout')}
+            </button>
+          </div>
         </div>
       </nav>
-
-      <main className="main-content">
+      <main id="main-content" ref={mainRef} className="main-content" tabIndex={-1}>
         <Outlet />
       </main>
     </div>

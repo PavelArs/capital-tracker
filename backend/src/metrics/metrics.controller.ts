@@ -1,14 +1,12 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { CurrentUser, JwtPayload } from '../shared/decorators';
+import { Controller, Get, Query } from '@nestjs/common';
+import { ApiCookieAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto } from '../shared/dto';
 import { MetricsService } from './metrics.service';
 
 @ApiTags('metrics')
-@ApiBearerAuth('JWT-auth')
+@ApiCookieAuth('__Host-ct-session')
 @Controller('metrics')
-@UseGuards(JwtAuthGuard)
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
@@ -43,7 +41,7 @@ export class MetricsController {
     description: 'Unauthorized',
     type: ErrorResponseDto,
   })
-  getMetrics(@CurrentUser() user: JwtPayload, @Query('currency') currency?: string) {
+  getMetrics(@CurrentUser() user: OwnerIdentity, @Query('currency') currency?: string) {
     return this.metricsService.getMetrics(user.userId, currency || 'USD');
   }
 
@@ -85,7 +83,7 @@ export class MetricsController {
     type: ErrorResponseDto,
   })
   getCapitalHistory(
-    @CurrentUser() user: JwtPayload,
+    @CurrentUser() user: OwnerIdentity,
     @Query('days') days?: string,
     @Query('currency') currency?: string,
   ) {

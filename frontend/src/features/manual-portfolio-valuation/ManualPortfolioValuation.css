@@ -1,0 +1,115 @@
+.manual-portfolio p {
+  line-height: 1.5;
+}
+
+.manual-portfolio__selected ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0.35rem 0 1rem;
+  padding-left: 1.25rem;
+}
+
+.manual-portfolio__selected li {
+  overflow-wrap: anywhere;
+}
+
+.manual-portfolio__choices fieldset {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  padding: 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.manual-portfolio__choices label {
+  display: flex;
+  gap: 0.65rem;
+  align-items: start;
+  overflow-wrap: anywhere;
+}
+
+.manual-portfolio__form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.manual-portfolio__form label {
+  display: grid;
+  flex: 1 1 20rem;
+  gap: 0.4rem;
+}
+
+.manual-portfolio__form input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.manual-portfolio__summary {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(8rem, 1fr);
+  gap: 0.5rem 1rem;
+}
+
+.manual-portfolio__summary dt {
+  font-weight: 600;
+}
+
+.manual-portfolio__summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.manual-portfolio__table-wrap {
+  overflow-x: auto;
+}
+
+.manual-portfolio table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.manual-portfolio th,
+.manual-portfolio td {
+  padding: 0.65rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.manual-portfolio td small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 600px) {
+  .manual-portfolio__summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .manual-portfolio__summary dd {
+    margin-bottom: 0.6rem;
+  }
+}
+
+.manual-portfolio__choices input[type="checkbox"] {
+  flex: 0 0 1.125rem;
+  width: 1.125rem;
+  height: 1.125rem;
+  min-height: 1.125rem;
+  margin-top: 0.2rem;
+  padding: 0;
+  accent-color: var(--primary-color);
+}

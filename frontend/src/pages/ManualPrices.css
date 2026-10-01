@@ -1,0 +1,300 @@
+.prices-page {
+  width: 100%;
+  max-width: 1100px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  color: var(--text-color);
+}
+
+.prices-page > header {
+  margin-bottom: 1.25rem;
+}
+
+.prices-page h1,
+.prices-page h2,
+.prices-page h3 {
+  color: var(--text-color);
+  scroll-margin-block-start: 1rem;
+}
+
+.prices-page h1 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.prices-page h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.15rem;
+}
+
+.prices-page h1:focus,
+.prices-page h2:focus,
+.prices-page h3:focus {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 4px;
+}
+
+.prices-page > header p,
+.prices-card > p {
+  max-width: 80ch;
+  line-height: 1.55;
+}
+
+.prices-card {
+  min-width: 0;
+  margin: 1rem 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+.prices-page select,
+.prices-fields input,
+.prices-card select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.prices-card > label,
+.prices-field label {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.prices-instrument-help,
+.prices-field small {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.prices-fields {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.prices-field {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.35rem;
+}
+
+.prices-field label {
+  margin: 0;
+}
+
+.prices-field input {
+  font-variant-numeric: tabular-nums;
+}
+
+.prices-rules {
+  min-width: 0;
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+}
+
+.prices-rules summary {
+  min-height: 44px;
+  padding: 0.55rem 0;
+  color: var(--primary-color-dark);
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.prices-rules > summary {
+  display: list-item;
+}
+
+.prices-rules summary:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.prices-rules[open] > summary {
+  margin-bottom: 0.6rem;
+}
+
+.prices-rules p + p {
+  margin-top: 0.6rem;
+}
+
+.prices-card .prices-review {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.prices-review input[type="checkbox"] {
+  flex: 0 0 1.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  min-height: 1.15rem;
+  margin: 0;
+  accent-color: var(--primary-color-dark);
+}
+
+.prices-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.prices-card button {
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  background: var(--primary-color);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.prices-card button.prices-secondary {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-color);
+}
+
+.prices-card button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.prices-notice {
+  min-width: 0;
+  margin: 0.75rem 0;
+  padding: 0.7rem 0.85rem;
+  border-inline-start: 4px solid var(--primary-color-dark);
+  background: var(--bg-color);
+  color: var(--text-color);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.prices-page [role="alert"],
+.prices-page [role="status"] {
+  min-width: 0;
+  color: var(--text-color);
+  overflow-wrap: anywhere;
+}
+
+.prices-table-wrap {
+  width: 100%;
+  min-width: 0;
+  margin: 0.75rem 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  -webkit-overflow-scrolling: touch;
+}
+
+.prices-table-wrap:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.prices-page table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.prices-page table caption {
+  padding: 0.75rem;
+  color: var(--text-color);
+  font-weight: 600;
+  text-align: left;
+}
+
+.prices-page th,
+.prices-page td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-color);
+  vertical-align: top;
+}
+
+.prices-page th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.prices-page td:not(:last-child) {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.prices-row-actions {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.prices-history {
+  margin: 0;
+  padding-inline-start: 1.4rem;
+  color: var(--text-color);
+}
+
+.prices-history li {
+  padding: 0.2rem 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.prices-history span,
+.prices-history time,
+.prices-page code {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .prices-page {
+    padding: 0.75rem;
+  }
+
+  .prices-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prices-card button {
+    max-width: 100%;
+  }
+}

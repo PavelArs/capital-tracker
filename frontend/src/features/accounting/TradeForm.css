@@ -1,0 +1,39 @@
+.trade-workbench {
+  min-width: 0;
+  scroll-margin-top: 1rem;
+  border-radius: 4px;
+}
+
+.trade-workbench:focus {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 4px;
+}
+
+.trade-form > button {
+  margin-top: 0.75rem;
+}
+
+.trade-workbench__identity {
+  margin-bottom: 0.75rem;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.trade-workbench__void {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+.trade-workbench__void p {
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.trade-workbench__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}

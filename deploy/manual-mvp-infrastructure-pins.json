@@ -1,0 +1,12 @@
+{
+  "postgres": {
+    "tag": "capital-tracker-postgres:acceptance",
+    "dockerfile": "deploy/postgres.Dockerfile",
+    "dockerfileSha256": "76b06e0a59cb0ca7a47497ebbd8c0b6de803752bf99850ef5c7dda409832b5b4",
+    "baseRegistryDigest": "postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66"
+  },
+  "redis": {
+    "tag": "redis:8.10.2-alpine3.23",
+    "registryDigest": "redis@sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23"
+  }
+}

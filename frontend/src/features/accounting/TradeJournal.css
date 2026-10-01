@@ -1,0 +1,85 @@
+.trade-journal {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.trade-journal fieldset {
+  min-width: 0;
+}
+.trade-journal .manual-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1rem;
+}
+.trade-journal .manual-form-grid label {
+  display: grid;
+  gap: .35rem;
+}
+.trade-journal input:not([type="checkbox"]),
+.trade-journal select {
+  width: 100%;
+  min-width: 0;
+  padding: .6rem;
+  border: 1px solid #ccd2db;
+  border-radius: 5px;
+  background: white;
+  color: #202938;
+}
+.trade-results {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.trade-results td {
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.trade-summary {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(100px, 1fr);
+  gap: .5rem 1rem;
+}
+.trade-summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.trade-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+@media (max-width: 540px) {
+  .trade-summary {
+    grid-template-columns: 1fr;
+  }
+  .trade-summary dd {
+    margin-bottom: .5rem;
+  }
+}
+
+.trade-journal__context > p {
+  margin: 0 0 0.5rem;
+}
+
+.trade-journal__context summary {
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--primary-color);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.trade-journal__context summary:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.trade-journal__context-body {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border-color);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}

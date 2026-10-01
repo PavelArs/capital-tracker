@@ -21,6 +21,7 @@ export class CurrencyUpdateService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    if (process.env.BACKGROUND_JOBS_ENABLED === 'false') return;
     // Initialize on startup - try to load from cache first, then fetch if needed
     await this.initializeRates();
   }
@@ -59,7 +60,9 @@ export class CurrencyUpdateService implements OnModuleInit {
       this.logger.info('Fetching exchange rates from API');
 
       // Using ExchangeRate-API (free tier, no key required for basic usage)
-      const response = await axios.get('https://api.exchangerate-api.com/v4/latest/USD');
+      const response = await axios.get('https://api.exchangerate-api.com/v4/latest/USD', {
+        timeout: 10000,
+      });
       this.exchangeRates = response.data.rates;
       this.lastUpdate = new Date();
 

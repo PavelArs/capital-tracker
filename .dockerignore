@@ -41,3 +41,34 @@ coverage
 .editorconfig
 .eslintcache
 
+# Root-context builds exclude local artifacts and all acceptance fixtures.
+**/node_modules
+**/dist
+**/build
+**/coverage
+**/.nyc_output
+**/*.tsbuildinfo
+**/.vite
+**/playwright-report
+**/test-results
+**/*.log
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/.runtime
+tests
+engineering
+**/test
+**/tests
+**/__tests__
+**/*.spec.*
+**/*.test.*
+frontend/nginx.conf
+.agents
+.codex
+.github
+.openai
+docs
+openspec

@@ -1,0 +1,79 @@
+import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
+
+const normalizer =
+  process.env.MVP_SNAPSHOT_NORMALIZER_UNDER_TEST ??
+  resolve(__dirname, '../../../scripts/normalize-release-snapshot.awk');
+const pairs = [
+  [
+    '    CONSTRAINT account_csv_imports_check CHECK (((("byteLength" >= 1) AND ("byteLength" <= 262144)) AND (octet_length("originalBytes") = "byteLength"))),',
+    '    CONSTRAINT account_csv_imports_check CHECK ((("byteLength" >= 1) AND ("byteLength" <= 262144) AND (octet_length("originalBytes") = "byteLength"))),',
+  ],
+  [
+    "    CONSTRAINT account_csv_imports_filename_check CHECK ((((length(filename) >= 1) AND (length(filename) <= 120)) AND (POSITION(('/'::text) IN (filename)) = 0) AND (POSITION((chr(92)) IN (filename)) = 0) AND (filename !~ ((((((('['::text || chr(1)) || '-'::text) || chr(31)) || chr(127)) || '-'::text) || chr(159)) || ']'::text)))),",
+    "    CONSTRAINT account_csv_imports_filename_check CHECK (((length(filename) >= 1) AND (length(filename) <= 120) AND (POSITION(('/'::text) IN (filename)) = 0) AND (POSITION((chr(92)) IN (filename)) = 0) AND (filename !~ ((((((('['::text || chr(1)) || '-'::text) || chr(31)) || chr(127)) || '-'::text) || chr(159)) || ']'::text)))),",
+  ],
+  [
+    "    CONSTRAINT auth_sessions_state_check CHECK (((state)::text = ANY ((ARRAY['anonymous'::character varying, 'pending_mfa'::character varying, 'authenticated'::character varying])::text[]))),",
+    "    CONSTRAINT auth_sessions_state_check CHECK (((state)::text = ANY (ARRAY[('anonymous'::character varying)::text, ('pending_mfa'::character varying)::text, ('authenticated'::character varying)::text]))),",
+  ],
+];
+function normalize(input: string) {
+  const result = spawnSync('awk', ['-f', normalizer], { input, encoding: 'utf8', timeout: 5000 });
+  expect(result.error).toBeUndefined();
+  expect(result.signal).toBeNull();
+  expect(result.status).toBe(0);
+  return result.stdout;
+}
+describe('exact PostgreSQL16.10 snapshot normalization', () => {
+  it.each(pairs)('normalizes only the reviewed equivalent line %s', (source, restored) => {
+    expect(normalize(`${source}\n`)).toBe(`${restored}\n`);
+    expect(normalize(`${source}\n`)).toBe(normalize(`${restored}\n`));
+  });
+  it.each([
+    [0, '262144', '262143'],
+    [1, '<= 120', '<= 119'],
+    [2, 'authenticated', 'different_state'],
+  ] as const)('retains different bound/state operand in pair %i', (index, before, after) => {
+    const changed = pairs[index][0].replace(before, after);
+    expect(normalize(`${changed}\n`)).toBe(`${changed}\n`);
+    expect(normalize(`${changed}\n`)).not.toBe(normalize(`${pairs[index][1]}\n`));
+  });
+  it('preserves every COPY data byte including comments, empty/restrict-looking rows and mapped-looking lines', () => {
+    const data = [
+      '-- literal row',
+      '',
+      '\\restrict data-not-directive',
+      pairs[0][0],
+      '1\t123.4500\t\\x00ff\tfilename.csv',
+    ];
+    const dump = ['COPY public.synthetic FROM stdin;', ...data, '\\.', 'SELECT 1;', ''].join('\n');
+    expect(normalize(dump)).toBe(dump);
+    for (const altered of ['123.4501', '\\x00fe', 'different.csv']) {
+      const changed = dump.replace(
+        altered.startsWith('123')
+          ? '123.4500'
+          : altered.startsWith('\\')
+            ? '\\x00ff'
+            : 'filename.csv',
+        altered,
+      );
+      expect(normalize(changed)).not.toBe(normalize(dump));
+    }
+  });
+  it('preserves dollar-quoted SQL bodies and unrelated DDL exactly', () => {
+    const dump = [
+      'CREATE FUNCTION synthetic() RETURNS text AS $body$',
+      '-- literal body comment',
+      pairs[0][0],
+      '\\restrict body-data',
+      '$body$ LANGUAGE sql;',
+      'ALTER TABLE public.synthetic ADD CHECK ((amount >= 0));',
+      '',
+    ].join('\n');
+    expect(normalize(dump)).toBe(dump);
+    const changed = dump.replace('amount >= 0', 'amount >= 1');
+    expect(normalize(changed)).toBe(changed);
+    expect(normalize(changed)).not.toBe(normalize(dump));
+  });
+});

@@ -1,0 +1,125 @@
+.trade-results {
+  gap: 1.25rem;
+}
+
+.trade-results > section {
+  min-width: 0;
+}
+
+.trade-results > section h3 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.trade-results .trade-summary {
+  grid-template-columns: minmax(0, 1.5fr) minmax(7rem, 1fr);
+  align-items: baseline;
+  gap: 0.65rem 1rem;
+  margin: 0;
+}
+
+.trade-results .trade-summary > div {
+  display: contents;
+}
+
+.trade-results .trade-summary dt {
+  min-width: 0;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.trade-results .trade-summary dd {
+  min-width: 0;
+  color: var(--text-color);
+  line-height: 1.4;
+}
+
+.trade-results .trade-summary small,
+.trade-results td small {
+  display: block;
+  margin-top: 0.3rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.trade-results > p {
+  margin: 0;
+}
+
+.trade-results .manual-feedback {
+  line-height: 1.5;
+}
+
+.trade-results .manual-table-wrap {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overscroll-behavior-x: contain;
+  scrollbar-color: var(--border-color) var(--bg-secondary);
+}
+
+.trade-results .manual-table {
+  border-color: var(--border-color);
+}
+
+.trade-results .manual-table caption {
+  padding: 0.65rem 0.7rem;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  text-align: left;
+}
+
+.trade-results .manual-table th {
+  background: var(--bg-tertiary);
+  color: var(--text-color);
+}
+
+.trade-results .manual-table th,
+.trade-results .manual-table td {
+  border-color: var(--border-color);
+  overflow-wrap: break-word;
+}
+
+.trade-results .manual-table tbody tr:hover {
+  background: var(--bg-secondary);
+}
+
+.trade-results button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.trade-results button:not(.manual-button):not(.manual-link-button) {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+  cursor: pointer;
+}
+
+.trade-results button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.trade-results button:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.trade-results .trade-actions {
+  gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .trade-results .trade-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+  }
+
+  .trade-results .trade-summary dd {
+    margin-bottom: 0.65rem;
+  }
+}

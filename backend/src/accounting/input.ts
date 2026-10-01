@@ -1,0 +1,172 @@
+import { BadRequestException } from '@nestjs/common';
+
+export interface AccountInput {
+  requestId: string;
+  name: string;
+}
+export interface InstrumentInput extends AccountInput {
+  symbol: string | null;
+}
+export interface PositionInput {
+  instrumentId: string;
+  quantity: string;
+  costStatus: 'known' | 'unknown';
+  totalCostUsd: string | null;
+}
+export interface OpeningInput {
+  requestId: string;
+  expectedRevision: number;
+  asOf: string;
+  positions: PositionInput[];
+}
+export interface ListQuery {
+  cursor?: string;
+  limit: number;
+}
+export interface HistoryQuery {
+  beforeRevision?: number;
+  limit: number;
+}
+const bad = (): never => {
+  throw new BadRequestException('Invalid accounting input');
+};
+function object(input: unknown, keys: string[]): Record<string, unknown> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return bad();
+  if (Object.keys(input).some((key) => !keys.includes(key))) return bad();
+  return input as Record<string, unknown>;
+}
+function label(value: unknown, maximum: number): string {
+  if (
+    typeof value !== 'string' ||
+    Array.from(value).some((character) => {
+      const code = character.codePointAt(0)!;
+      return code < 32 || (code >= 127 && code <= 159);
+    })
+  )
+    return bad();
+  const text = value.trim();
+  if (!text || Array.from(text).length > maximum || Buffer.from(text).toString('utf8') !== text)
+    return bad();
+  return text;
+}
+export function parseUuid(value: unknown): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  )
+    return bad();
+  return value.toLowerCase();
+}
+export function parseDecimal(value: unknown, positive: boolean): string {
+  if (typeof value !== 'string' || value.length > 256 || !/^[0-9]+(?:\.[0-9]+)?$/.test(value))
+    return bad();
+  const [whole, fraction = ''] = value.split('.');
+  const integer = whole.replace(/^0+/, '') || '0';
+  if (integer.length > 48 || fraction.length > 30) return bad();
+  const tail = fraction.replace(/0+$/, '');
+  const result = tail ? `${integer}.${tail}` : integer;
+  if (positive && result === '0') return bad();
+  return result;
+}
+export function parseAsOf(value: unknown): string {
+  if (typeof value !== 'string') return bad();
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(Z|([+-])(\d{2}):(\d{2}))$/.exec(
+      value,
+    );
+  if (!match) return bad();
+  const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    year < 1970 ||
+    year > 9999 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > days[month - 1] ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59
+  )
+    return bad();
+  const offsetHour = Number(match[10] ?? 0);
+  const offsetMinute = Number(match[11] ?? 0);
+  if (offsetHour > 14 || offsetMinute > 59 || (offsetHour === 14 && offsetMinute !== 0))
+    return bad();
+  const date = new Date(value);
+  if (
+    !Number.isFinite(date.getTime()) ||
+    date.getUTCFullYear() < 1970 ||
+    date.getUTCFullYear() > 9999
+  )
+    return bad();
+  return date.toISOString();
+}
+export function parseAccount(input: unknown): AccountInput {
+  const row = object(input, ['requestId', 'name']);
+  return { requestId: parseUuid(row.requestId), name: label(row.name, 120) };
+}
+export function parseInstrument(input: unknown): InstrumentInput {
+  const row = object(input, ['requestId', 'name', 'symbol']);
+  return {
+    requestId: parseUuid(row.requestId),
+    name: label(row.name, 120),
+    symbol: Object.prototype.hasOwnProperty.call(row, 'symbol') ? label(row.symbol, 32) : null,
+  };
+}
+export function parseOpening(input: unknown): OpeningInput {
+  const row = object(input, ['requestId', 'expectedRevision', 'asOf', 'positions']);
+  if (
+    typeof row.expectedRevision !== 'number' ||
+    !Number.isInteger(row.expectedRevision) ||
+    row.expectedRevision < 0 ||
+    row.expectedRevision > 2147483646
+  )
+    return bad();
+  if (!Array.isArray(row.positions) || row.positions.length < 1 || row.positions.length > 100)
+    return bad();
+  const positions = row.positions
+    .map((value) => {
+      const position = object(value, ['instrumentId', 'quantity', 'costStatus', 'totalCostUsd']);
+      if (position.costStatus !== 'known' && position.costStatus !== 'unknown') return bad();
+      if (position.costStatus === 'unknown' && position.totalCostUsd !== null) return bad();
+      return {
+        instrumentId: parseUuid(position.instrumentId),
+        quantity: parseDecimal(position.quantity, true),
+        costStatus: position.costStatus,
+        totalCostUsd:
+          position.costStatus === 'known' ? parseDecimal(position.totalCostUsd, false) : null,
+      } as PositionInput;
+    })
+    .sort((a, b) => a.instrumentId.localeCompare(b.instrumentId));
+  if (new Set(positions.map((p) => p.instrumentId)).size !== positions.length) return bad();
+  return {
+    requestId: parseUuid(row.requestId),
+    expectedRevision: row.expectedRevision,
+    asOf: parseAsOf(row.asOf),
+    positions,
+  };
+}
+function queryInteger(value: unknown, max: number): number {
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,9}$/.test(value)) return bad();
+  const number = Number(value);
+  if (number > max) return bad();
+  return number;
+}
+export function parseListQuery(input: unknown): ListQuery {
+  const row = object(input, ['cursor', 'limit']);
+  return {
+    ...(row.cursor === undefined ? {} : { cursor: parseUuid(row.cursor) }),
+    limit: row.limit === undefined ? 50 : queryInteger(row.limit, 100),
+  };
+}
+export function parseHistoryQuery(input: unknown): HistoryQuery {
+  const row = object(input, ['beforeRevision', 'limit']);
+  return {
+    ...(row.beforeRevision === undefined
+      ? {}
+      : { beforeRevision: queryInteger(row.beforeRevision, 2147483647) }),
+    limit: row.limit === undefined ? 10 : queryInteger(row.limit, 20),
+  };
+}

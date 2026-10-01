@@ -1,17 +1,23 @@
 name: CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches:
       - main
     types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "22.21.1"
+  OPENSPEC_TELEMETRY: "0"
 
 jobs:
   # ============================================
@@ -26,15 +32,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -51,15 +57,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -70,7 +76,7 @@ jobs:
           CI: true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: backend-coverage
@@ -87,15 +93,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -118,15 +124,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -143,15 +149,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -162,7 +168,7 @@ jobs:
           CI: true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: frontend-coverage
@@ -179,15 +185,15 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -204,38 +210,186 @@ jobs:
   # Docker Build Verification
   # ============================================
   docker-build:
-    name: Docker Build Check
+    name: Release Images and Security
     runs-on: ubuntu-latest
-    needs: [backend-build, frontend-build, backend-test, frontend-test]
-    if: github.event_name == 'pull_request'
-
-    strategy:
-      matrix:
-        include:
-          - service: backend
-            context: ./backend
-          - service: frontend
-            context: ./frontend
-
+    timeout-minutes: 180
+    needs: [backend-build, frontend-build, backend-test, frontend-test, dependency-audit, spec-check]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          context: ${{ matrix.context }}
-          push: false
-          tags: capital-tracker-${{ matrix.service }}:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Verify reviewed PostgreSQL source and pull Redis digest
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const pins = require('./deploy/manual-mvp-infrastructure-pins.json');
+          const { validateInfrastructurePins } = require('./scripts/validate-manual-mvp-release.cjs');
+          validateInfrastructurePins(pins);
+          const { createHash } = require('node:crypto');
+          const { readFileSync } = require('node:fs');
+          if (createHash('sha256').update(readFileSync(pins.postgres.dockerfile)).digest('hex') !== pins.postgres.dockerfileSha256) throw new Error('PostgreSQL Dockerfile differs from reviewed source');
+          NODE
+          for name in redis; do
+            digest=$(jq -er --arg name "$name" '.[$name].registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+            tag=$(jq -er --arg name "$name" '.[$name].tag' deploy/manual-mvp-infrastructure-pins.json)
+            docker pull "$digest"
+            docker tag "$digest" "$tag"
+            test "$(docker image inspect "$tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
+            test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$(docker image inspect "$digest" --format '{{.Id}}')"
+          done
+      - name: Run critical real release acceptance
+        id: critical-release-acceptance
+        run: pnpm test:e2e:critical
+      - name: Verify critical acceptance receipt
+        id: verify-critical-receipt
+        run: node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && steps.verify-critical-receipt.conclusion == 'success'
+        with:
+          name: critical-release-acceptance
+          path: test-results/critical-release-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Scan the backend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: capital-tracker-backend:acceptance
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: backend-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Scan the frontend image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          skip-setup-trivy: true
+          scan-type: image
+          image-ref: capital-tracker-frontend:acceptance
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: frontend-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Scan the PostgreSQL image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          skip-setup-trivy: true
+          scan-type: image
+          image-ref: capital-tracker-postgres:acceptance
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: postgres-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Scan the Redis image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          skip-setup-trivy: true
+          scan-type: image
+          image-ref: redis:8.10.2-alpine3.23
+          scanners: vuln,secret
+          ignore-unfixed: false
+          format: json
+          output: redis-image-security.json
+          exit-code: '0'
+          timeout: 10m
+      - name: Redact potentially sensitive scanner details
+        id: redact-image-security
+        if: always()
+        run: node scripts/check-release-image-security.cjs --redact-only
+      - name: Enforce exact-image high and critical security gate
+        run: node scripts/check-release-image-security.cjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always() && steps.redact-image-security.conclusion == 'success'
+        with:
+          name: release-image-security
+          path: '*-image-security.json'
+          retention-days: 7
+      - name: Export the actual tested candidate images
+        if: success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'
+        env:
+          CANDIDATE_COMMIT: ${{ github.sha }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+        run: |
+          node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID"
+          mkdir -p candidate
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const pins = require('./deploy/manual-mvp-infrastructure-pins.json');
+          const manifest = { schemaVersion: 3, commit: process.env.CANDIDATE_COMMIT, runId: process.env.CANDIDATE_RUN_ID };
+          for (const name of ['backend', 'frontend']) {
+            const tag = `capital-tracker-${name}:acceptance`;
+            manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
+          }
+          manifest.infrastructure = {};
+          for (const [name, pin] of Object.entries(pins)) {
+            manifest.infrastructure[name] = { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
+          }
+          const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
+          validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
+          fs.writeFileSync('candidate/manifest.json', JSON.stringify(manifest));
+          NODE
+          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
+          sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'
+        with:
+          name: manual-mvp-candidate
+          path: candidate/
+          retention-days: 7
+          compression-level: 0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: synthetic-acceptance-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
-  # ============================================
-  # CI Status Check (required for merge)
-  # ============================================
+  spec-check:
+    name: Specification and Engineering Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm specs:validate
+      - run: pnpm test:engineering
+      - run: pnpm test:security
+      - name: Verify application ownership delegation as root in disposable fixtures
+        run: sudo python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths
+
+  dependency-audit:
+    name: Production Dependency Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm audit:production
+
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
@@ -246,25 +400,20 @@ jobs:
       - frontend-check
       - frontend-test
       - frontend-build
+      - docker-build
+      - spec-check
+      - dependency-audit
     if: always()
-
     steps:
-      - name: Check CI Status
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Check every required result
         env:
-          BACKEND_CHECK: ${{ needs.backend-check.result }}
-          BACKEND_TEST: ${{ needs.backend-test.result }}
-          BACKEND_BUILD: ${{ needs.backend-build.result }}
-          FRONTEND_CHECK: ${{ needs.frontend-check.result }}
-          FRONTEND_TEST: ${{ needs.frontend-test.result }}
-          FRONTEND_BUILD: ${{ needs.frontend-build.result }}
-        run: |
-          if [[ "$BACKEND_CHECK" != "success" ]] || \
-             [[ "$BACKEND_TEST" != "success" ]] || \
-             [[ "$BACKEND_BUILD" != "success" ]] || \
-             [[ "$FRONTEND_CHECK" != "success" ]] || \
-             [[ "$FRONTEND_TEST" != "success" ]] || \
-             [[ "$FRONTEND_BUILD" != "success" ]]; then
-            echo "CI failed"
-            exit 1
-          fi
-          echo "All CI checks passed"
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: >-
+          node scripts/check-ci-results.cjs "$NEEDS_JSON"
+          backend-check backend-test backend-build
+          frontend-check frontend-test frontend-build
+          docker-build spec-check dependency-audit

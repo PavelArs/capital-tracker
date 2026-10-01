@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PinoLogger } from 'nestjs-pino';
+import { AuthRequestLimitException } from '../../auth/request-limits.service';
 
 interface ErrorResponse {
   statusCode: number;
@@ -29,6 +30,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
+    if (exception instanceof AuthRequestLimitException) {
+      response.setHeader('Retry-After', String(exception.retryAfter));
+      response.setHeader('Cache-Control', 'no-store');
+    }
+
     const { status, message, error } = this.getErrorDetails(exception);
 
     const errorResponse: ErrorResponse = {
@@ -36,7 +42,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
       error,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: request.url.split('?')[0],
     };
 
     // Log error with context
@@ -71,7 +77,24 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         error = exception.name;
       }
 
-      return { status, message, error };
+      // Nest's default unmatched-route message includes the complete request URL.
+      return { status, message: status === 404 ? 'Not Found' : message, error };
+    }
+
+    // Express's body parser reports this before Nest can create an HttpException.
+    // Recognize only its size refusal; never reflect submitted content or parser details.
+    if (
+      exception instanceof Error &&
+      'type' in exception &&
+      exception.type === 'entity.too.large' &&
+      'status' in exception &&
+      exception.status === HttpStatus.PAYLOAD_TOO_LARGE
+    ) {
+      return {
+        status: HttpStatus.PAYLOAD_TOO_LARGE,
+        message: 'Payload too large',
+        error: 'PayloadTooLargeError',
+      };
     }
 
     // Handle non-HTTP exceptions
@@ -86,8 +109,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const logContext = {
       statusCode: status,
       method: request.method,
-      url: request.url,
-      userAgent: request.get('User-Agent'),
+      url: request.url.split('?')[0],
       ip: request.ip,
     };
 
@@ -95,7 +117,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.error(
         {
           ...logContext,
-          error: exception instanceof Error ? exception.stack : String(exception),
+          errorType: exception instanceof Error ? exception.name : 'UnknownError',
         },
         'Server error occurred',
       );
@@ -103,7 +125,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       this.logger.warn(
         {
           ...logContext,
-          message: exception instanceof Error ? exception.message : String(exception),
+          errorType: exception instanceof Error ? exception.name : 'UnknownError',
         },
         'Client error occurred',
       );

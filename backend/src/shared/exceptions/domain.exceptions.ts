@@ -1,43 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
-
-// User-related exceptions
-export class UserNotFoundException extends NotFoundException {
-  constructor(identifier: string) {
-    super(`User with identifier "${identifier}" not found`);
-  }
-}
-
-export class InvalidCredentialsException extends UnauthorizedException {
-  constructor() {
-    super('Invalid email or password');
-  }
-}
-
-export class EmailNotVerifiedException extends UnauthorizedException {
-  constructor() {
-    super(
-      'Please verify your email before logging in. Check your inbox for the verification link.',
-    );
-  }
-}
-
-export class DuplicateEmailException extends ConflictException {
-  constructor(email: string) {
-    super(`User with email "${email}" already exists`);
-  }
-}
-
-// Token-related exceptions
-export class InvalidTokenException extends BadRequestException {
-  constructor(tokenType: 'verification' | 'reset') {
-    super(`Invalid or expired ${tokenType} token`);
-  }
-}
+import { NotFoundException } from '@nestjs/common';
 
 // Asset-related exceptions
 export class AssetNotFoundException extends NotFoundException {

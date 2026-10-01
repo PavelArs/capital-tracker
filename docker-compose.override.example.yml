@@ -1,37 +1,37 @@
+# Deprecated local-service override; not the isolated acceptance setup.
+# No TLS proxy is provided here. Secure-cookie login requires an independently
+# configured HTTPS origin/proxy and explicit migrations/owner provisioning.
+# Prefer pnpm test:e2e; never run this against owner data for verification.
 services:
   postgres:
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     restart: "no"
 
   redis:
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     restart: "no"
 
   backend:
     image: capital-tracker-backend:local
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     restart: "no"
     environment:
       NODE_ENV: development
-      JWT_SECRET: dev-secret-change-in-production
-      FRONTEND_URL: http://localhost:3001
+      FRONTEND_URL: https://127.0.0.1:8443
     ports:
-      - "3000:3000"
-    volumes:
-      - ./backend:/app
-      - /app/node_modules
+      - "127.0.0.1:3000:3000"
 
   frontend:
     image: capital-tracker-frontend:local
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
-        VITE_API_URL: http://localhost:3000
+        VITE_API_URL: /api
     restart: "no"
     ports:
-      - "3001:80"
+      - "127.0.0.1:3001:80"

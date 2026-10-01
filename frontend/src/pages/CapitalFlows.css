@@ -1,0 +1,358 @@
+.flow-page {
+  width: 100%;
+  max-width: 1150px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  color: var(--text-color);
+}
+
+.flow-header {
+  margin-bottom: 1.25rem;
+}
+
+.flow-page-heading {
+  margin-bottom: 0.5rem;
+  color: var(--text-color);
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.flow-header p,
+.flow-card > p {
+  max-width: 78ch;
+  line-height: 1.55;
+}
+
+.flow-note,
+.flow-hint {
+  color: var(--text-secondary);
+}
+
+.flow-hint {
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.45;
+}
+
+.flow-page output {
+  display: block;
+}
+
+.flow-card {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+  margin: 1rem 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+}
+
+.flow-card h2,
+.flow-panel-heading {
+  margin: 0;
+  color: var(--text-color);
+  font-size: 1.2rem;
+}
+
+.flow-section-heading {
+  margin: 0 0 0.25rem;
+  color: var(--text-color);
+  font-size: 1rem;
+}
+
+.flow-panel-heading,
+.flow-page-heading {
+  scroll-margin-top: 1rem;
+}
+
+.flow-panel-heading:focus,
+.flow-page-heading:focus,
+.flow-page :focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 4px;
+}
+
+.flow-form,
+.flow-fields {
+  display: grid;
+  min-width: 0;
+  gap: 1rem;
+}
+
+.flow-form {
+  max-width: 720px;
+}
+
+.flow-form--period {
+  max-width: none;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+}
+
+.flow-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.flow-field-with-hint {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 0.35rem;
+}
+
+.flow-field-with-hint--wide {
+  grid-column: 1 / -1;
+}
+
+.flow-field {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.flow-field input,
+.flow-field select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  font: inherit;
+}
+
+.flow-check,
+.flow-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.flow-check {
+  align-items: flex-start;
+  flex-wrap: nowrap;
+  min-height: 44px;
+  padding: 0.5rem 0;
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.flow-check input[type="checkbox"] {
+  flex: 0 0 1.15rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  min-height: 1.15rem;
+  margin: 0;
+  accent-color: var(--primary-color-dark);
+}
+
+.flow-row--between {
+  justify-content: space-between;
+}
+
+.flow-row--between h2 {
+  margin: 0;
+}
+
+.flow-button {
+  justify-self: start;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  background: var(--primary-color);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.flow-button--secondary {
+  border-color: var(--border-color);
+  background: var(--bg-tertiary);
+  color: var(--text-color);
+}
+
+.flow-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.flow-alert {
+  border-inline-start: 4px solid var(--error-color);
+}
+
+.flow-error,
+.flow-success {
+  color: var(--text-color);
+}
+
+.flow-error {
+  border-inline-start: 4px solid var(--error-color);
+}
+
+.flow-success {
+  border-inline-start: 4px solid var(--success-color);
+}
+
+.flow-rules,
+.flow-identity {
+  min-width: 0;
+  color: var(--text-color);
+}
+
+.flow-rules {
+  margin-top: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+
+.flow-rules summary,
+.flow-identity summary {
+  min-height: 44px;
+  display: list-item;
+  padding: 0.65rem 0;
+  line-height: 1.5;
+  color: var(--primary-color-dark);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.flow-rules p + p {
+  margin-top: 0.6rem;
+}
+
+.flow-totals {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.flow-totals > p {
+  min-width: 0;
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-color);
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.flow-table-wrap {
+  width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.flow-table-wrap:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.flow-table {
+  width: 100%;
+  min-width: 44rem;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.flow-table caption {
+  padding: 0.75rem;
+  color: var(--text-color);
+  font-weight: 600;
+  text-align: left;
+}
+
+.flow-table th,
+.flow-table td {
+  padding: 0.65rem 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: top;
+}
+
+.flow-table th {
+  color: var(--text-color);
+  white-space: nowrap;
+}
+
+.flow-table td {
+  color: var(--text-color);
+}
+
+.flow-table td:nth-child(-n + 4) {
+  white-space: nowrap;
+}
+
+.flow-identity {
+  max-width: 18rem;
+  white-space: normal;
+}
+
+.flow-identity code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.flow-actions {
+  display: flex;
+  min-width: 0;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.flow-actions .flow-button {
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .flow-form--period {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .flow-form--period > .flow-button {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 520px) {
+  .flow-page {
+    padding: 0.75rem;
+  }
+
+  .flow-fields,
+  .flow-form--period {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .flow-field-with-hint--wide,
+  .flow-form--period > .flow-button {
+    grid-column: auto;
+  }
+
+  .flow-row--between {
+    align-items: flex-start;
+  }
+}
