@@ -25,8 +25,10 @@ promotion or deployment. The audit job log is
 `/private/tmp/capital-mvp-ci5-audit-job.log`. Axios remediation source is reviewed
 and passes the required production audit gate (0 HIGH/critical, 1 MODERATE Multer
 advisory); full audit still exits 1 for that tracked advisory, due for maintainer
-triage 2026-10-08. Frozen install passed 3 suites/39 tests, backend lint/types/build
-and five localhost HTTP adapter tests. Do not claim release/runtime verification:
+triage 2026-10-08. Frozen install before/after passed 64 backend tests in 3 suites
+and 39 frontend tests in 3 files. Backend/frontend lint, strict types and builds
+passed; five backend HTTP adapter cases passed, while frontend only asserts Axios
+version. Do not claim release/runtime verification:
 the new image/scans and real PG/HTTPS remain unrun because Docker is unavailable
 locally; hosted CI against combined source is pending. The
 temporary E2E pause is implemented and reviewed at `ba2db8b`; local policy checks

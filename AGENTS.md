@@ -51,6 +51,8 @@ and real-DB browser/runtime bundle until PM-TEST coverage cleanup; keep the manu
 command and restore the source flag in a reviewed commit after cleanup, then rerun
 full release acceptance before candidate export/promotion. All non-E2E CI gates
 remain intact, and a green run with this bundle paused is not tested-release evidence.
+This cleanup is a temporary prerequisite to restoring release E2E, not a deferral of
+that release gate.
 Review the E2E pyramid separately: move suitable coverage down before removing
 redundant cases, preserving critical financial/authentication paths.
 See docs/testing-and-migrations.md for the isolated environment and commands.

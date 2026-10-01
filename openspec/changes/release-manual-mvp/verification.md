@@ -9,8 +9,11 @@ was cancelled, image scans and candidate export were skipped. No promotion or
 deployment occurred. Actual audit log: `/private/tmp/capital-mvp-ci5-audit-job.log`.
 Axios update source `ed8c299` was independently approved and integrated as
 `1920d90`; byte-identical HTTP test placement followed in `64384c4`. Frozen install
-on Node 22.23.2/pnpm 10.33.0 passed 3 suites/39 tests, backend lint, types/build and
-five localhost HTTP adapter tests. The required production audit gate exits 0 with
+on Node 22.23.2/pnpm 10.33.0 passed the same checks before and after the byte-identical
+test move: 64 backend tests in 3 suites and 39 frontend tests in 3 files.
+Backend/frontend lint, strict types and builds
+passed; five backend HTTP adapter cases passed, while frontend only asserts the
+expected Axios version. The required production audit gate exits 0 with
 zero HIGH/critical and one MODERATE Multer advisory (GHSA-3pph-fpjx-jg34); the full
 audit exits 1 because that advisory remains. Project-maintainer triage is due
 2026-10-08. Default memory storage lowers the described disk-path risk; the finding
@@ -23,7 +26,9 @@ Owner decision (2026-10-01): pause hosted E2E temporarily until test cleanup is
 complete. Keep the manual test command and test files, while non-E2E checks, image
 builds/scans, audit and engineering security checks continue. The E2E plus real-DB
 bundle is currently unrun. A paused run cannot produce a tested-candidate export or
-promotion. Restore E2E after PM-TEST coverage cleanup. Workflow source and local
+promotion. PM-TEST cleanup is a temporary prerequisite to restoring this required
+release gate before promotion, not a post-MVP deferral. Restore E2E after cleanup.
+Workflow source and local
 check results are recorded below; hosted execution remains pending.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; earlier runtime evidence remains historical.
