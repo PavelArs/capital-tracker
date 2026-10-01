@@ -39,7 +39,8 @@ if (command === 'down') {
       { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } }));
     criticalProfile.assertRouted(selection, routed);
   }
-  await withPreservedFile(join(root, 'frontend/nginx.conf'), async () => {
+  const runAcceptance = () => withPreservedFile(join(root, 'frontend/nginx.conf'), async () => {
+    let completedReceipt;
     assertSyntheticNetworks();
     const tls = join(root, 'tests/e2e/.runtime/tls');
     mkdirSync(tls, { recursive: true });
@@ -167,16 +168,22 @@ if (command === 'down') {
           env: { ...process.env, CI: 'true', PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath },
         });
         const result = JSON.parse(readFileSync(reportPath, 'utf8'));
-        const receipt = criticalProfile.receipt(selection, result, releaseCommit, process.env.GITHUB_RUN_ID ?? 'local');
-        mkdirSync(join(root, 'test-results'), { recursive: true });
-        writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
-        console.log(`PASS critical release profile: ${receipt.cases.length} exact browser cases`);
+        completedReceipt = criticalProfile.receipt(selection, result, releaseCommit, process.env.GITHUB_RUN_ID ?? 'local');
       } else {
         run('pnpm', ['exec', 'playwright', 'test']);
       }
     } finally {
       compose('down', '--remove-orphans');
     }
+    return completedReceipt;
   });
-  console.log('PASS ISO-005-C checkout Nginx file preserved through acceptance and cleanup');
+  if (command === 'critical') {
+    // The returned value is available only after Compose cleanup and Nginx preservation.
+    const receipt = await criticalProfile.publishAfterGates(runAcceptance, receiptPath);
+    console.log('PASS ISO-005-C checkout Nginx file preserved through acceptance and cleanup');
+    console.log(`PASS critical release profile: ${receipt.cases.length} exact browser cases`);
+  } else {
+    await runAcceptance();
+    console.log('PASS ISO-005-C checkout Nginx file preserved through acceptance and cleanup');
+  }
 }

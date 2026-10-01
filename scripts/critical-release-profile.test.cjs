@@ -1,10 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { readFileSync } = require('node:fs');
+const { readFileSync, writeFileSync, existsSync, mkdtempSync, rmSync } = require('node:fs');
 const { resolve } = require('node:path');
+const { tmpdir } = require('node:os');
 const { execFileSync } = require('node:child_process');
 
 const profile = require('./critical-release-profile.cjs');
+const { withPreservedFile } = require('./preserve-file.cjs');
 const manifest = JSON.parse(readFileSync(resolve(__dirname, '../tests/e2e/manual-mvp-manifest.json'), 'utf8'));
 const listing = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', '--list', '--reporter=json'], {
   cwd: resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, CI: 'true' },
@@ -57,4 +59,33 @@ test('critical receipt requires all selected cases actually passed and exact ide
   assert.throws(() => profile.receipt(selection, result, commit, '123'));
   result.suites.pop();
   assert.throws(() => profile.receipt(selection, result, commit, '123'));
+});
+
+test('a failed cleanup or preservation clears stale evidence and never publishes a passing receipt', async () => {
+  const directory = mkdtempSync(resolve(tmpdir(), 'capital-critical-receipt-'));
+  const path = resolve(directory, 'receipt.json');
+  const config = resolve(directory, 'nginx.conf');
+  const accepted = { profile: 'critical', cases: [] };
+  try {
+    writeFileSync(config, 'original');
+    writeFileSync(path, '{"stale":true}');
+    await assert.rejects(profile.publishAfterGates(() => withPreservedFile(config, async () => {
+      try { return accepted; }
+      finally { throw new Error('Compose cleanup failed'); }
+    }), path), /Compose cleanup failed/);
+    assert.equal(existsSync(path), false);
+    writeFileSync(path, '{"stale":true}');
+    await assert.rejects(profile.publishAfterGates(() => withPreservedFile(config, async () => {
+      writeFileSync(config, 'changed');
+      return accepted;
+    }), path), /Configuration preservation failed/);
+    assert.equal(existsSync(path), false);
+    await assert.rejects(profile.publishAfterGates(async () => undefined, path), /without a receipt/);
+    assert.equal(existsSync(path), false);
+    writeFileSync(config, 'original');
+    assert.deepEqual(await profile.publishAfterGates(async () => accepted, path), accepted);
+    assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), accepted);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

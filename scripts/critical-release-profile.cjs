@@ -2,8 +2,8 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
-const { readFileSync } = require('node:fs');
-const { resolve } = require('node:path');
+const { readFileSync, existsSync, unlinkSync, mkdirSync, writeFileSync } = require('node:fs');
+const { resolve, dirname } = require('node:path');
 
 const PROFILE = 'critical';
 const sha = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
@@ -106,7 +106,16 @@ function verify(value, manifest, commit, runId) {
   return value;
 }
 
-module.exports = { select, assertRouted, receipt, verify };
+async function publishAfterGates(runGates, path) {
+  if (existsSync(path)) unlinkSync(path);
+  const value = await runGates();
+  if (!value) throw new Error('Critical acceptance completed without a receipt');
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
+  return value;
+}
+
+module.exports = { select, assertRouted, receipt, verify, publishAfterGates };
 if (require.main === module) {
   try {
     const [, , command, path, commit, runId] = process.argv;
