@@ -3,12 +3,14 @@
 ## Latest hosted checkpoint — run 36857990125 (integration source `a661fc46453b2244ca78d26f3411b97b922d8790`)
 
 Seven basic CI jobs passed. Production dependency audit failed with 7 HIGH and 6
-MODERATE findings; backend Axios `1.18` is below the required `1.20` floor. The
-owner requested cancellation and Actions reached terminal `cancelled`: release E2E
+MODERATE findings; backend Axios `1.18` is below the required `1.20` floor. Root
+requested cancellation after the audit failure and Actions reached terminal `cancelled`: release E2E
 was cancelled, image scans and candidate export were skipped. No promotion or
 deployment occurred. Actual audit log: `/private/tmp/capital-mvp-ci5-audit-job.log`.
-Axios remediation and the CI cost gate are underway; no pass is claimed for either
-until Root records final results. This checkpoint does not close any release gate.
+Axios remediation remains active pending runtime evidence. The pause workflow is now
+implemented, independently reviewed and integrated at `ba2db8b`; its local policy
+checks passed, but hosted scheduler/build/scan execution is pending. This checkpoint
+does not close any release gate.
 
 Owner decision (2026-10-01): pause hosted E2E temporarily until test cleanup is
 complete. Keep the manual test command and test files, while non-E2E checks, image
@@ -19,8 +21,9 @@ actual check results remain pending implementation evidence.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; earlier runtime evidence remains historical.
 
-Frozen workflow source is `f46d72ecefddd20bf47b68259c657cc4e628d529` in
-`capital-tracker-ci-audit-gate`. `CI_E2E_ENABLED` defaults false; the release job
+Frozen workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` was independently
+reviewed and integrated as `ba2db8b` in `capital-tracker-mvp`. `CI_E2E_ENABLED`
+defaults false; the release job
 builds images and runs all four scans without invoking acceptance. CD requires the
 exact run's real-acceptance step to have succeeded before candidate export/upload;
 non-inventory preflight/deploy also require that result. Paused mode can inventory,
@@ -28,8 +31,9 @@ but cannot promote, preflight or deploy. Scan labels reflect the paused gates.
 Policy acceptance passed 195/195 across two affected suites in 7.932 seconds. The
 original pause-gate RED was 2 failures; the expanded pause/provenance RED was 7
 semantic failures. Style, diff and strict OpenSpec validation passed (46/46). These
-are local source checks only. Independent review is pending; hosted CI, actual image
-builds/scans and real DB/HTTPS acceptance have not run, and nothing has been pushed.
+are local source checks only. Independent review approved the source; hosted CI,
+actual image builds/scans and real DB/HTTPS acceptance have not run, and nothing has
+been pushed.
 After PM-TEST coverage cleanup, restore `CI_E2E_ENABLED=true` in a reviewed source
 commit and rerun the full release acceptance before candidate export/promotion.
 
@@ -455,8 +459,9 @@ frontend to a new image ID, rerun the two CSV cases, then run the remaining five
 selected cases including CVIS-UI. The 180-minute CI budget change `f4fab92` remains
 unrun. The prior hosted failures are now classified as six post-restart 502s, two
 first-page observers and one currency-preference-state mismatch, but actual GREEN
-acceptance remains incomplete. No new hosted CI, image scans, candidate export,
-promotion, bootstrap or deployment has run.
+acceptance remained incomplete. At that recorded checkpoint, before run 36857990125,
+no later hosted CI, image scans, candidate export, promotion, bootstrap or deployment
+had run.
 
 ## Final CSV pagination runtime follow-up (2026-10-01)
 
@@ -511,8 +516,9 @@ product RED and 5 unrun cases. The new-image CSV 2 and remaining 7 passed in sep
 runs. All three runtime batches used one worker and zero retries; cleanup left zero
 owned containers/networks, the global Docker context remained `desktop-linux`, and
 the owner Nginx checksum/mode remained unchanged. The 180-minute hosted job budget
-has not yet run. No new hosted CI, image scan, candidate export/promotion, bootstrap
-or deployment is evidenced. Remaining manual-MVP gates are trusted current-main
+had not run as of this local runtime record. This record did not evidence newer
+hosted CI, image scans, candidate export/promotion, bootstrap or deployment.
+Remaining manual-MVP gates are trusted current-main
 hosted CI, fresh promotion receipt, owner bootstrap and direct PAT entry, encrypted
 Mac recovery archive/password-manager custody, restricted dispatcher install and
 inventory/preflight, deployment, post-deployment backup verification, old key/account

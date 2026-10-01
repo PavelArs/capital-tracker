@@ -4,9 +4,11 @@
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
-Network sync and AI remain deferred. Integration is
-`/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`,
-current integrated checkpoint `71e1ebd`. The primary checkout
+Network sync and AI remain deferred. Published integration baseline is
+`a661fc46453b2244ca78d26f3411b97b922d8790` on
+`/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`;
+reviewed CI pause source `f46d72e` is integrated as `ba2db8b`. This documentation
+branch is pending integration. The primary checkout
 `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with the owner's
 dirty `frontend/nginx.conf` edit; preserve it.
 
@@ -15,11 +17,14 @@ Latest hosted run is PR #26 Actions
 for integration source `a661fc46453b2244ca78d26f3411b97b922d8790`. Seven basic CI
 jobs passed. The production dependency audit failed: Axios `1.18` is below the
 required `1.20` floor and the report contains 7 HIGH and 6 MODERATE findings. The
-owner requested cancellation and the run reached terminal cancelled status; release
+Root requested cancellation after the audit failure and the run reached terminal
+cancelled status; release
 E2E was cancelled, scans and candidate export were skipped, and there was no
 promotion or deployment. The audit job log is
-`/private/tmp/capital-mvp-ci5-audit-job.log`. The Axios fix and CI cost gate are
-underway; do not claim either passed until Root records final results.
+`/private/tmp/capital-mvp-ci5-audit-job.log`. Axios remediation remains underway;
+do not claim it complete until runtime evidence. The
+temporary E2E pause is implemented and reviewed at `ba2db8b`; local policy checks
+passed, but hosted scheduler/build/scans have not yet exercised it.
 
 Owner decision (2026-10-01): temporarily pause E2E in CI until test cleanup is
 complete. Keep the manual test command and test files; continue non-E2E checks,
@@ -30,7 +35,7 @@ and its actual gate results only after implementation and verification.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
-Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review, hosted CI, actual Docker build/scans and real DB/HTTPS acceptance remain pending. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
+Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; hosted CI, actual Docker build/scans and real DB/HTTPS acceptance remain pending. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
 
 Run 36706275247 and its 174-test partial result below are historical evidence, not
 the latest CI checkpoint. Its nine reported failures retain their scoped local PASS
