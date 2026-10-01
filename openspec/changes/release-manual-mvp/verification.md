@@ -371,7 +371,7 @@ for the incomplete hosted run. Strict all-E2E TypeScript passed at
 `/private/tmp/capital-mvp-final-e2e-types.log`. The owner's Snap common-bind probe
 `capital_snap_common_bind=PASS` is separately recorded under MVP-008 above.
 
-## Targeted local runtime follow-up — source `61ce070`
+## Initial targeted local runtime run — source `61ce070` (historical; superseded below)
 
 Approved harness-security source `a28fd73` and financial acceptance source
 `ee33d68` are integrated as `a730f4f` and `c9c03fa`. At test source
@@ -408,3 +408,64 @@ unrun. The prior hosted failures are now classified as six post-restart 502s, tw
 first-page observers and one currency-preference-state mismatch, but actual GREEN
 acceptance remains incomplete. No new hosted CI, image scans, candidate export,
 promotion, bootstrap or deployment has run.
+
+## Final CSV pagination runtime follow-up (2026-10-01)
+
+The CSV-006-A failure at source `61ce07072e09b095e73ce693f0ad8a6738031661` was
+a real product RED: the first CSV load-more repeated the visible instrument page
+because its child-owned cursor was unset. The unchanged HTTPS helper correctly stopped
+on zero visible option growth. The fix delegates CSV instrument discovery to the
+account page's authoritative choices and cursor. OpenSpec change
+`fix-csv-instrument-pagination` was archived into
+`openspec/changes/archive/2026-10-01-fix-csv-instrument-pagination/`; its two
+requirements were synced into canonical `openspec/specs/csv-workbench/spec.md` and
+strict validation passed 45/45 (`/private/tmp/capital-mvp-ci4-archived-openspec.log`).
+This closes the pagination change only.
+
+The source-approved frontend change is `efb7e60d6c223ecadeff037eee9d0729cbc0d899`.
+Its new `linux/amd64` image has ID
+`sha256:fb1c86b402438de3e153d39f9ff39f8562b6f76177b94760e2531c03ddf3d1a6`; cached
+backend, PostgreSQL 18 and Redis images from `7274076` were retained. Build receipt:
+`/private/tmp/capital-mvp-ci4-frontend-build-evidence.json`. Exact real HTTPS/MFA/
+backend/PostgreSQL CSV-006-A/B passed 2/2 in 102.650 seconds, one worker and zero retries.
+The complete affected frontend unit set passed 12/12 across five files after six
+expected predecessor RED failures. Strict frontend types, production build and scoped
+Biome checks passed. Logs:
+`/private/tmp/capital-csv-pagination-unit-red.log`,
+`/private/tmp/capital-csv-pagination-affected-unit-complete.log`,
+`/private/tmp/capital-csv-pagination-types.log`,
+`/private/tmp/capital-csv-pagination-build.log` and
+`/private/tmp/capital-csv-pagination-style.log`.
+
+The separate remaining selection passed 7/7 in one uninterrupted real runtime run
+(315.024 seconds, 5.3 minutes; one worker, zero retries), including CVIS-UI and the original hosted
+session/privacy, opening, CSV upload and USD-price failures. The session case
+preserved the same three currency-preference rows as its pre-test state. Receipt
+`/private/tmp/capital-mvp-ci4-remaining-evidence.json`; log
+`/private/tmp/capital-mvp-ci4-remaining.log`. Combined with the earlier old-frontend
+5 passes and new-frontend CSV 2 plus remaining 7, this gives 14 unique selected passes
+across separate runs, not one unified 14/14 run or the hosted 174-test suite. The
+original runtime RED remains historical; final independent review approved the
+receipts summarized in `/private/tmp/capital-mvp-ci4-staged-summary.json`.
+
+All nine cases that failed in hosted run 36706275247 now have selected local GREEN
+evidence. Six restart-associated HTTP 502s traced to missing HTTPS edge routing
+verification after backend restarts; the harness now probes the selected backend
+pool through HTTPS before assertions and retries harmless health checks only. Two
+tests assumed the target account/instrument was on page one; the selectors now load
+pages until the exact UUID is present. The currency privacy test assumed empty seeded
+`user_currency_preferences`; it now snapshots pre-test state and asserts denied
+writes preserve those rows. These are scoped local results, not a repeat of hosted CI.
+
+The initial predecessor batch on the old frontend had 5 passes, one CSV pagination
+product RED and 5 unrun cases. The new-image CSV 2 and remaining 7 passed in separate
+runs. All three runtime batches used one worker and zero retries; cleanup left zero
+owned containers/networks, the global Docker context remained `desktop-linux`, and
+the owner Nginx checksum/mode remained unchanged. The 180-minute hosted job budget
+has not yet run. No new hosted CI, image scan, candidate export/promotion, bootstrap
+or deployment is evidenced. Remaining manual-MVP gates are trusted current-main
+hosted CI, fresh promotion receipt, owner bootstrap and direct PAT entry, encrypted
+Mac recovery archive/password-manager custody, restricted dispatcher install and
+inventory/preflight, deployment, post-deployment backup verification, old key/account
+retirement after verified cutover, and final manual-MVP archive. The whole product
+remains incomplete.

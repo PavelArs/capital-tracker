@@ -6,78 +6,65 @@ Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
 Network sync and AI remain deferred. Integration is
 `/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`,
-current integrated checkpoint `48e466a`. The primary checkout
-`/Users/pavelars/Projects/temp/capital-tracker`
-remains at `0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
+current integrated checkpoint `71e1ebd`. The primary checkout
+`/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with the owner's
+dirty `frontend/nginx.conf` edit; preserve it.
 
-Latest hosted evidence is PR #26 Actions run
+Latest hosted run is PR #26 Actions
 [36706275247](https://github.com/PavelArs/capital-tracker/actions/runs/36706275247)
-for source `0c62f04`. Release job `109857531845` was cancelled at the 120-minute
-job cap (11:05:37–13:06:06 UTC); status job `109899752845` failed because the
-Docker build job was cancelled. The other eight jobs passed. The release job had
-174 planned E2E tests; 153 completed with results (144 passed, 9 failed), and test
-154 was interrupted/not complete. Do not infer results for the rest of the suite.
-The nine failures are summarized in
-[`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
-Log: `/private/tmp/capital-mvp-fourth-ci-release.log`; uploaded real failure
-artifact: `/private/tmp/capital-mvp-ci4-artifact` (Actions artifact ID
-`11097437276`). The cap stopped the unfinished suite; the nine reported failures
-occurred before cancellation and require independent diagnosis. Scans, export,
-promotion, bootstrap and deploy did not run. No task is closed by this checkpoint.
+for source `0c62f04`: eight basic jobs passed, but the release job was cancelled at
+the 120-minute cap. Of 174 planned browser tests, 153 reported results (144 pass,
+9 failed); test 154 was interrupted. The later 180-minute job budget has not yet been
+exercised in hosted CI. All nine reported failures now have actual scoped PASS
+evidence across separate local runs. Follow-up diagnosis traced six post-restart 502s
+to readiness observations that did not verify routing through the selected HTTPS
+backend pool, two failures to assumptions that target selector rows were on the first
+catalog page, and one failure to expecting empty currency preferences instead of
+preserving seeded rows. The test harness now waits for the selected HTTPS routing,
+paginates selector data, and compares privacy state before and after. The hosted run
+still did not complete its suite, image scans, candidate export or promotion.
 
-Since then, an approved targeted local run against source
-`61ce07072e09b095e73ce693f0ad8a6738031661` used the unchanged cached frontend image
-`sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c`:
-5/11 selected cases passed, CSV-006-A exposed a new pagination product RED, and
-five selected cases remain unrun (SES-002-A, OPEN-001-A/OPEN-002-A, CSV-001-A,
-PRICE-UI/PRICE-RECOVERY and CVIS-UI). No retries. The five passes were SWAP-UI,
-the password-restart neighbor, both originally failing LIMIT cases and CARRY-001-A.
-The existing CSV helper stayed unchanged. Its first “load more” repeats the first
-50 instruments because the child loses the parent cursor; deduplication keeps the
-option count unchanged. The trace has not reached preview or financial assertions.
-Receipt `/private/tmp/capital-mvp-ci4-selected-evidence.json`; page proof
-`/private/tmp/capital-mvp-ci4-csv-pagination-red.json`. OpenSpec change
-`fix-csv-instrument-pagination` is in ATDD implementation in worktree
-`capital-tracker-csv-pagination`; it is not complete or archived. Reviewed
-harness-security/financial work (`a28fd73`/`ee33d68`, integrated as
-`a730f4f`/`c9c03fa`) are recorded. Strict OpenSpec validation passed 45/45 at
-integrated `48e466a`, before the pagination change was created; current all-change
-validation remains pending.
-the 180-minute CI budget change `f4fab92` has not run yet. Rebuild the frontend
-with a new image ID, then rerun the two CSV cases and remaining five selected cases,
-including CVIS-UI. Do not claim a unified 11/11 result. No new hosted CI, promotion,
-bootstrap or deployment has run. The nine hosted failures are classified as six
-post-restart 502s, two first-page observers and one currency-preference-state
-mismatch; actual GREEN evidence remains incomplete.
+Pagination is fixed in frontend source `efb7e60d6c223ecadeff037eee9d0729cbc0d899`
+and the OpenSpec change is archived; the canonical CSV workbench includes both new
+requirements and strict validation passed 45/45. A new frontend image
+`sha256:fb1c86b402438de3e153d39f9ff39f8562b6f76177b94760e2531c03ddf3d1a6`
+passed CSV-006-A/B 2/2 and the separate remaining selected batch 7/7 in
+315.024 seconds.
+The earlier run on the old frontend had 5 passes, the CSV-006-A pagination failure
+and 5 unrun tests. Across separate old/new-image scopes, 14 unique selected cases
+passed, including all nine failures from the hosted run; this is not one continuous
+14/14 run or evidence that the complete 174-case suite passed. Independent review
+approved the final staged evidence. Receipts and the detailed case/results ledger are
+in [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
+The failed CSV RED, 6-unit-test predecessor RED and subsequent 12/12 affected unit
+GREEN, strict types, frontend build and style checks remain recorded there.
 
-Separate evidence remains: the exact local PG18 four-image runtime at `7274076`
-passed 19/19 retained HTTPS/MFA/accounting journeys, current migrations, 27 startup
-refusals, CLI and artifact checks, encrypted disconnected restore/fingerprint and
-source preservation. Four image scans reported zero critical/high/secrets and one
-backend MEDIUM. See the detailed receipt in
-[`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
-This local result is not hosted-run or deployment evidence. Local Compose/Firefox
-source `55aec09` separately passed 4/4: three actual Firefox browser cases plus one
-engine-independent API case; exact evidence is
-`/private/tmp/capital-mvp-firefox-critical-evidence.json`. Strict all-E2E TypeScript
-passed (`/private/tmp/capital-mvp-final-e2e-types.log`). The owner Snap common-bind
-probe is already recorded as PASS below; it does not close bootstrap/deployment.
+The final pagination fix adds no backend, database or deployment changes. No new
+hosted CI, candidate promotion, bootstrap or deployment has occurred; image scans and
+export/promotion gates remain open. Next gates are trusted current-main hosted CI,
+fresh promotion receipt, owner bootstrap and PAT/key custody, encrypted Mac recovery
+archive, restricted dispatcher setup and inventory/preflight, controlled deployment,
+post-deployment backup verification, then retirement of the old key/account and
+manual-MVP archive. Preserve owner data, preview, legacy `/opt/.env` and
+`/opt/.gitignore`, and the Nginx edit.
 
-Earlier hosted runs and their fixture/readiness diagnoses remain in the dated
-history below and in the verification receipt.
+Separate earlier local evidence remains: the exact PG18 four-image runtime at `7274076`
+passed 19/19 retained HTTPS/MFA/accounting journeys, migrations, 27 startup refusals,
+CLI/artifact checks, encrypted disconnected restore/fingerprint and source
+preservation; four image scans had no critical/high findings or secrets and one
+backend MEDIUM. Source `55aec09` separately passed local Compose/Firefox 4/4 (three
+Firefox cases plus one engine-independent API case); strict all-E2E TypeScript passed.
+These checks are not hosted CI or production-release evidence.
 
-Next release and owner constraints: target `agm:/var/snap/docker/common/capital-tracker`
-for `capital.pavelars.ru`; preserve legacy `/opt/.env` and `/opt/.gitignore`.
-First-install history is resolved by zero related resources plus the owner's
-attestation that the old `.env` was an unused template. GitHub `production`
-credentials are configured, but the public key is not installed and the restricted
-`capital-release` account is not created. The owner will run `sudo` steps and enter
-their classic `read:packages` PAT directly. Before deployment, the owner requires an
+Owner constraints: target `agm:/var/snap/docker/common/capital-tracker` for
+`capital.pavelars.ru`; first-install history is resolved by zero related resources
+and owner attestation that the legacy `.env` was an unused template. GitHub
+`production` credentials are configured, but the public key is not installed and
+the restricted `capital-release` account is not created. The owner will run `sudo`
+steps and enter the classic `read:packages` PAT directly. Before deployment, require
 encrypted recovery archive on the Mac and password-manager custody. Retire the unused
-deploy account and old key only after the `capital-release` cutover is installed and
-verified; preserve other home files and never use `userdel -r`. Remaining sequence:
-current-main CI → fresh-promotion receipt → owner bootstrap, PAT and key custody →
-inventory/preflight/deploy. Preserve owner data, preview and Nginx edit.
+deploy account and old key only after verified `capital-release` cutover; preserve
+other home files and never use `userdel -r`.
 
 ### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
 
