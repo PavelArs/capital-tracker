@@ -24,6 +24,26 @@ The `node` in these commands was explicitly `/Users/pavelars/.nvm/versions/node/
 
 The coordinator reported independent source/test review approval for acceptance/spec commit `075cffcc5b6b172a2121a8d4f7e7f0d9c13ba776` through product commit `e2c03bb439ebb10bad987d22c7ddafdb1952c1a8`. This clears task3.1. Actual runtime source revision `efb7e60d6c223ecadeff037eee9d0729cbc0d899` contains identical contents for all four affected product files: ManualAccountDetail.tsx, TradeJournal.tsx, CsvImports.tsx and CsvMapping.tsx (verified by scoped git diff). Documentation-only predecessor correction `6f66a141617970c9104c5e9a903e22f10f93b209` changes no application/test source.
 
-## Remaining gates
+## Actual rebuilt-frontend runtime GREEN
 
-A newly rebuilt exact linux/amd64 frontend running the retained HTTPS/PostgreSQL CSV journey/recovery cases with a catalog exceeding50 remains required; exact frontend image identity/build receipt and actual runtime results are pending from the central runtime. Runtime and archive tasks3.2/3.3 remain open. No Docker, network, deployment or broad E2E run is performed by this worktree. The release change, SQL/backend/financial logic and existing `csv-import-fixtures.ts` progress assertion are untouched; do not archive yet.
+The central runtime supplied the frontend-only build receipt `/private/tmp/capital-mvp-ci4-frontend-build-evidence.json`. It identifies source/revision label `efb7e60d6c223ecadeff037eee9d0729cbc0d899`, platform `linux/amd64` and newly built image `sha256:fb1c86b402438de3e153d39f9ff39f8562b6f76177b94760e2531c03ddf3d1a6`. The old cached frontend `sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c` and cached backend/PostgreSQL/Redis images were preserved. Both following runs used that same actual source and new frontend image, real HTTPS/MFA/backend/PostgreSQL, one worker and zero retries. Original retained financial/recovery assertions and the strict CSV inspectAndMap progress helper were unchanged.
+
+- **CSV2/2 passed**, uninterrupted, 102.650s (1.7min). Receipt `/private/tmp/capital-mvp-ci4-csv-red-green-evidence.json`; log `/private/tmp/capital-mvp-ci4-csv-red-green.log`. Original CSV-006-B unuploaded-file neighbor passed in37.816s; original CSV-006-A full Russian sale-first import, exact250/100/0.5, source provenance, replay across restart and complete rollback passed in64.237s.
+- **Remaining7/7 passed**, separately uninterrupted, 315.024s (5.3min). Receipt `/private/tmp/capital-mvp-ci4-remaining-evidence.json`; log `/private/tmp/capital-mvp-ci4-remaining.log`. Original lost-committed-confirm and lost-committed-rollback cases passed in37.808s/39.460s, each retaining the original command through real403 and SPA remount and replaying exactly once. Original CSV owner upload (BOM/CRLF/Cyrillic filename/repetition/restart), currency-visibility recovery, exact opening/history, USD-price recovery and session/CSRF/Origin cases also passed. The session case retained the same three currency-preference rows created by the preceding currency-visibility case.
+
+Each run started with60 low-UUID owner accounts and60 low-UUID instruments. SQL receipts prove each new owner target had60 earlier UUID rows, requiring real pagination. Final catalog counts were62accounts/62instruments for CSV2 and65accounts/67instruments for remaining7. Both receipts show zero owned containers/networks after cleanup, unchanged global context `desktop-linux` and unchanged owner nginx.conf SHA256 `115b56ac8b3e19bd0f09db1b0b0217e7344d93c39ddeff7c6c3bd95f7b94b432`/mode0644.
+
+The broader coordinator evidence comprises14 unique target passes across earlier old-frontend5, new-frontendCSV2 and new-frontendremaining7. These are separate scoped runs, not a unified full-suite result. The original new CSV runtime RED at `61ce07072e09b095e73ce693f0ad8a6738031661` remains recorded above. This work does not claim the hosted174-test release suite passed and performs no deployment.
+
+Compact staged summary: `/private/tmp/capital-mvp-ci4-staged-summary.json`. The following receipt SHA256 values were checked against the actual local files:
+
+| Receipt | SHA256 |
+| --- | --- |
+| Predecessor selected-evidence.json | `f95f6cfd376e8c3c68641f1fa75a984bee44729cc30456f4dd08d890299d047e` |
+| Frontend-build-evidence.json | `f5697e546ef5572bc51f6a1b2a1a180e5fe30acfba2b8812b7f55e9371b64773` |
+| CSV-red-green-evidence.json | `b8e30996ec538942a0020b01b6476e648edeeade984cdce2396e438997d76a9e` |
+| Remaining-evidence.json | `28f4772d0587c5f40cc5912934948ea4916901c2188b466d01db0e6c70fefbc0` |
+
+## Gate approval and next archive operation
+
+The coordinator reported final independent runtime approval from ci4_review for the actual build, CSV2 and remaining7 receipts. This completes task3.2 and fulfills the independent-review/runtime condition in task3.3. The change is ready to archive; the actual archive operation remains the coordinator's next step on integration after this evidence commit. This worktree has not archived the change and performs no Docker/network/deployment actions or broad E2E runs. The release change, SQL/backend/financial logic and existing `csv-import-fixtures.ts` progress assertion remain untouched.

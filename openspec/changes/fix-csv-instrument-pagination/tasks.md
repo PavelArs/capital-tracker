@@ -11,5 +11,7 @@
 ## 3. Required completion gates
 
 - [x] 3.1 Independent review of source, tests and preserved exact financial/recovery/progress oracles.
-- [ ] 3.2 Rebuild the exact linux/amd64 frontend and pass retained real HTTPS/PostgreSQL CSV journey and relevant CSV recovery cases with more than 50 instruments; record image identity and results.
-- [ ] 3.3 Archive only after the independent review and required real runtime gates pass.
+- [x] 3.2 Rebuild the exact linux/amd64 frontend and pass retained real HTTPS/PostgreSQL CSV journey and relevant CSV recovery cases with more than 50 instruments; record image identity and results.
+- [x] 3.3 Archive only after the independent review and required real runtime gates pass (condition fulfilled; actual archive operation is the coordinator's next step).
+
+Actual rebuilt-frontend CSV2/2 and remaining7/7 runs passed and final independent runtime review approved the evidence (verification.md). All required gates are verified; the coordinator will execute the actual archive CLI on integration after the evidence commit. This task record does not claim the archive has already run.
