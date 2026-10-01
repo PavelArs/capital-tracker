@@ -1,5 +1,57 @@
 # Production dependency security record
 
+## Axios release remediation — 2026-10-01
+
+Backend and frontend now pin exact **Axios 1.20.0**. The targeted lock diff changes
+only the two Axios importer entries, Axios package/snapshot and its retained-range
+`follow-redirects` resolution from 1.16.0 to **1.16.1**. The synthetic release-image
+provider probe asserts 1.20.0. No advisory suppression or override changes were added.
+Official [Axios metadata](https://registry.npmjs.org/axios/1.20.0) and
+[follow-redirects metadata](https://registry.npmjs.org/follow-redirects/1.16.1)
+match the committed integrity values; Axios retains `follow-redirects: ^1.16.0`.
+
+Actual hosted [audit run 36857990125](https://github.com/PavelArs/capital-tracker/actions/runs/36857990125)
+failed with **7 high and 6 moderate production findings**; all displayed high
+advisories were Axios and reported `>=1.20.0` as the patched range. This is the
+security RED, not an artificially failing functional characterization.
+
+Root's actual post-update `pnpm audit --prod --json` exited **1** with **0 high,
+0 critical, 1 moderate, 0 low, 0 info** across **332 production dependencies**.
+Required `pnpm audit:production` exited **0**, still displaying the moderate finding.
+Evidence: `/private/tmp/capital-axios-audit-after-root.json`,
+`/private/tmp/capital-axios-audit-gate-root.log`,
+`/private/tmp/capital-mvp-ci5-audit-job.log`.
+Lock SHA-256: `37276bfd9014162a5c77824cf125c99d3ac7550a733fde2fc99d2b49a3da679b`.
+
+The remaining package finding is [Multer GHSA-3pph-fpjx-jg34](https://github.com/expressjs/multer/security/advisories/GHSA-3pph-fpjx-jg34),
+moderate, `>=2.2.0 <2.4.0`, fixed in 2.4.0. The existing parent-scoped 2.3.0
+override remains visible and unchanged. Bounded application review found one
+`FileInterceptor('file', { limits, preservePath: false })` in
+`backend/src/accounting/csv-upload.interceptor.ts`; no `dest`, custom storage,
+`diskStorage` or global Multer configuration is supplied. Multer therefore uses
+its default memory storage, and the handler consumes the uploaded buffer. The
+advisory describes orphaned **diskStorage** writes; that path was not found in this
+review. This is application triage, not removal of the package vulnerability.
+Follow-up owner: release dependency maintainer. Re-review/upgrade deadline:
+**2026-10-08**, and before adopting any disk-backed upload configuration; recheck
+all production paths and the CSV bounds/abort behavior when upgrading.
+
+Frozen installation on Node **22.23.2** / pnpm **10.33.0** exited 0. Scoped retained
+characterization passed before and after: **64 backend tests / 3 suites**, and
+**39 frontend tests / 3 files**. Both lint, strict TypeScript and build checks
+passed (existing 77 backend / 27 frontend lint warnings and Vite chunk-size warning).
+The real synthetic loopback HTTP fixture passed **5/5 backend adapter checks**:
+text response, redirect refusal, 429 Retry-After, response-size refusal and timeout
+without automatic retry. Frontend package VERSION is asserted; this fixture does
+not exercise the browser adapter. Pre-upgrade HTTP fixture was unrun after sandbox
+`listen EPERM`; post-upgrade authorized loopback execution passed.
+
+Independent review, rebuilt-image/provider TLS, selected real HTTPS/password/MFA/
+CSRF/browser/PostgreSQL acceptance and hosted current-source CI remain **pending**.
+Docker is unavailable under the current owner constraint and was not invoked.
+This source/dependency checkpoint is not release completion or security readiness.
+See [change verification](../openspec/changes/remediate-axios-release-advisories/verification.md).
+
 ## Manual MVP Router resolution — 2026-09-27
 
 Exact `react-router-dom@7.18.4` and its pinned `react-router@7.18.4` resolve

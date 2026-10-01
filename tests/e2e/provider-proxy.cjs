@@ -138,7 +138,7 @@ async function withoutCa() {
 }
 
 async function main() {
-  assert.equal(axios.VERSION, '1.18.0', 'Exercise the actual release Axios version');
+  assert.equal(axios.VERSION, '1.20.0', 'Exercise the actual release Axios version');
   for (const name of ['HTTP_PROXY', 'HTTPS_PROXY']) {
     assert.equal(process.env[name], proxy.origin, `Use the real configured ${name}`);
   }
