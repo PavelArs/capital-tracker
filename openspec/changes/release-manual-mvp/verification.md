@@ -19,6 +19,20 @@ actual check results remain pending implementation evidence.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; earlier runtime evidence remains historical.
 
+Frozen workflow source is `f46d72ecefddd20bf47b68259c657cc4e628d529` in
+`capital-tracker-ci-audit-gate`. `CI_E2E_ENABLED` defaults false; the release job
+builds images and runs all four scans without invoking acceptance. CD requires the
+exact run's real-acceptance step to have succeeded before candidate export/upload;
+non-inventory preflight/deploy also require that result. Paused mode can inventory,
+but cannot promote, preflight or deploy. Scan labels reflect the paused gates.
+Policy acceptance passed 195/195 across two affected suites in 7.932 seconds. The
+original pause-gate RED was 2 failures; the expanded pause/provenance RED was 7
+semantic failures. Style, diff and strict OpenSpec validation passed (46/46). These
+are local source checks only. Independent review is pending; hosted CI, actual image
+builds/scans and real DB/HTTPS acceptance have not run, and nothing has been pushed.
+After PM-TEST coverage cleanup, restore `CI_E2E_ENABLED=true` in a reviewed source
+commit and rerun the full release acceptance before candidate export/promotion.
+
 Axios runtime preparation is preserved in the separate ignored directory
 `/Users/pavelars/Projects/temp/capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`:
 the public runtime script, plan, catalog script and catalog text. Script SHA256 is

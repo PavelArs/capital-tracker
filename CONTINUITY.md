@@ -30,6 +30,7 @@ and its actual gate results only after implementation and verification.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
+Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review, hosted CI, actual Docker build/scans and real DB/HTTPS acceptance remain pending. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
 
 Run 36706275247 and its 174-test partial result below are historical evidence, not
 the latest CI checkpoint. Its nine reported failures retain their scoped local PASS

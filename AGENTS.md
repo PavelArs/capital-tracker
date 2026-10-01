@@ -48,10 +48,11 @@ run is not required for every incremental change (owner instruction2026-09-23).
 Keep `pnpm test:e2e` and its test files for broad regression/release verification
 when justified. Owner instruction 2026-10-01 temporarily pauses only the hosted E2E
 and real-DB browser/runtime bundle until PM-TEST coverage cleanup; keep the manual
-command and restore the source flag after cleanup. All non-E2E CI gates remain intact,
-and a green run with this bundle paused is not tested-release evidence. Review the E2E
-pyramid separately: move suitable coverage down before removing redundant cases,
-preserving critical financial/authentication paths.
+command and restore the source flag in a reviewed commit after cleanup, then rerun
+full release acceptance before candidate export/promotion. All non-E2E CI gates
+remain intact, and a green run with this bundle paused is not tested-release evidence.
+Review the E2E pyramid separately: move suitable coverage down before removing
+redundant cases, preserving critical financial/authentication paths.
 See docs/testing-and-migrations.md for the isolated environment and commands.
 Never use the production Compose file for tests or alter the owner Nginx edit.
 
