@@ -20,6 +20,10 @@ With Node22.21.1 and the installed local dependencies (Vitest4.1.2, Vite7.3.1), 
 
 The `node` in these commands was explicitly `/Users/pavelars/.nvm/versions/node/v22.21.1/bin/node`. Local dependency directories were reused via temporary worktree symlinks; no dependency files were changed or packages installed.
 
+## Independent source review
+
+The coordinator reported independent source/test review approval for acceptance/spec commit `075cffcc5b6b172a2121a8d4f7e7f0d9c13ba776` through product commit `e2c03bb439ebb10bad987d22c7ddafdb1952c1a8`. This clears task3.1. Actual runtime source revision `efb7e60d6c223ecadeff037eee9d0729cbc0d899` contains identical contents for all four affected product files: ManualAccountDetail.tsx, TradeJournal.tsx, CsvImports.tsx and CsvMapping.tsx (verified by scoped git diff). Documentation-only predecessor correction `6f66a141617970c9104c5e9a903e22f10f93b209` changes no application/test source.
+
 ## Remaining gates
 
-Independent review and a newly rebuilt exact linux/amd64 frontend running the retained HTTPS/PostgreSQL CSV journey/recovery cases with a catalog exceeding50 remain required and unrun by this worktree. No Docker, network, deployment or broad E2E run is performed by this worktree. The release change, SQL/backend/financial logic and existing `csv-import-fixtures.ts` progress assertion are untouched; do not archive yet.
+A newly rebuilt exact linux/amd64 frontend running the retained HTTPS/PostgreSQL CSV journey/recovery cases with a catalog exceeding50 remains required; exact frontend image identity/build receipt and actual runtime results are pending from the central runtime. Runtime and archive tasks3.2/3.3 remain open. No Docker, network, deployment or broad E2E run is performed by this worktree. The release change, SQL/backend/financial logic and existing `csv-import-fixtures.ts` progress assertion are untouched; do not archive yet.

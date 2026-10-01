@@ -10,6 +10,6 @@
 
 ## 3. Required completion gates
 
-- [ ] 3.1 Independent review of source, tests and preserved exact financial/recovery/progress oracles.
+- [x] 3.1 Independent review of source, tests and preserved exact financial/recovery/progress oracles.
 - [ ] 3.2 Rebuild the exact linux/amd64 frontend and pass retained real HTTPS/PostgreSQL CSV journey and relevant CSV recovery cases with more than 50 instruments; record image identity and results.
 - [ ] 3.3 Archive only after the independent review and required real runtime gates pass.
