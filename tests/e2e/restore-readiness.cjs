@@ -101,6 +101,10 @@ try {
 
   fs.writeFileSync(path.join(handshake, 'release'), '', { flag: 'wx' });
   waitFor('final loopback TCP', () => probe(source, true), 60, 1_000);
+  // Exercise the release gate against an actual pristine PG18 cluster, including
+  // its built-in roles/extensions, before the fixture deliberately adds data.
+  command('python3', ['-I', path.join(root, 'scripts/manual-mvp-resume.py'),
+    'cluster', source, 'postgres', 'postgres']);
   sql(source, "CREATE SCHEMA fixture; CREATE TABLE fixture.entries (id integer PRIMARY KEY, amount numeric(18,6) NOT NULL, note text NOT NULL); INSERT INTO fixture.entries VALUES (1, 12.500000, 'socket vs tcp'), (2, -0.125000, 'unicode π');");
   const query = 'SELECT id || E\'|\' || amount || E\'|\' || note FROM fixture.entries ORDER BY id';
   const expected = '1|12.500000|socket vs tcp\n2|-0.125000|unicode π';
