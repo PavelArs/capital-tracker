@@ -1,6 +1,6 @@
 # Manual MVP acceptance manifest and evidence
 
-## Latest hosted checkpoint — run 36857990125 (integration source `a661fc46453b2244ca78d26f3411b97b922d8790`)
+## Last completed hosted checkpoint recorded here — run 36857990125 (integration source `a661fc46453b2244ca78d26f3411b97b922d8790`)
 
 Seven basic CI jobs passed. Production dependency audit failed with 7 HIGH and 6
 MODERATE findings; backend Axios `1.18` is below the required `1.20` floor. Root

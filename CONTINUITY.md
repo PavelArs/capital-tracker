@@ -4,16 +4,16 @@
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
-Network sync and AI remain deferred. Published integration baseline is
+Network sync and AI remain deferred. Last recorded published baseline is
 `a661fc46453b2244ca78d26f3411b97b922d8790` on
 `/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`.
 Reviewed E2E pause source `f46d72e` is integrated as `ba2db8b`; reviewed Axios source
-`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`. Those changes
-are not yet pushed. This documentation branch is pending integration. The primary checkout
+`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`. Consult PR #26
+for the latest published head and CI status. The primary checkout
 `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with the owner's
 dirty `frontend/nginx.conf` edit; preserve it.
 
-Latest hosted run is PR #26 Actions
+Last completed hosted run recorded here is PR #26 Actions
 [36857990125](https://github.com/PavelArs/capital-tracker/actions/runs/36857990125)
 for integration source `a661fc46453b2244ca78d26f3411b97b922d8790`. Seven basic CI
 jobs passed. The production dependency audit failed: Axios `1.18` is below the
