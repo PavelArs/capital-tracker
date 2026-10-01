@@ -40,6 +40,10 @@
     "title": "CSV-006-A: full Russian sale-first import retains250/100/0.5, source provenance and exact replay across restart, then rolls back the complete batch"
   },
   {
+    "file": "tests/e2e/csv-import-journey.spec.ts",
+    "title": "CSV-006-B regression: a committed confirm with a lost response survives actual session expiry,401, real MFA and SPA return"
+  },
+  {
     "file": "tests/e2e/external-usd-flows.spec.ts",
     "title": "FLOW-004-A: real Russian owner explicitly initializes, records, corrects and reviews a contribution"
   },

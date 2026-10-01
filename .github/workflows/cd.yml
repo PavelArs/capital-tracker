@@ -57,10 +57,14 @@ jobs:
             if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error('Required candidate gate missing or unsuccessful');
           }
           const release = jobs.find(job => job.name === 'Release Images and Security' && job.conclusion === 'success');
-          if (!release.steps?.some(step => step.name === 'Run full real acceptance' && step.conclusion === 'success')) throw new Error('Full real acceptance missing or unsuccessful; paused CI is not a release candidate');
+          for (const name of ['Run critical real release acceptance', 'Verify critical acceptance receipt']) {
+            if (!release.steps?.some(step => step.name === name && step.conclusion === 'success')) throw new Error('Critical real acceptance missing or unsuccessful');
+          }
           NODE
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n critical-release-acceptance -D acceptance
+          node scripts/critical-release-profile.cjs verify acceptance/critical-release-acceptance.json "$GITHUB_SHA" "$RUN_ID"
       - name: Download and verify the tested candidate
         if: inputs.mode == 'promote'
         env:

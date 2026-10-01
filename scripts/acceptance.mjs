@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, lstatSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdirSync, lstatSync, writeFileSync, unlinkSync, readFileSync, existsSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { withPreservedFile } from './preserve-file.cjs';
 import { assertSyntheticNetworks } from './acceptance-networks.cjs';
 import { renderAcceptanceProxy } from './render-acceptance-proxy.cjs';
+import criticalProfile from './critical-release-profile.cjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const releaseCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
@@ -20,11 +21,24 @@ const composeArgs = ['compose', '-p', project, '-f', join(root, 'tests/e2e/compo
 const run = (command, args) => execFileSync(command, args, { cwd: root, stdio: 'inherit' });
 const compose = (...args) => run('docker', [...composeArgs, ...args]);
 const command = process.argv[2] ?? 'run';
-if (!['run', 'down'].includes(command)) throw new Error('Use acceptance.mjs [run|down]');
+if (!['run', 'critical', 'down'].includes(command)) throw new Error('Use acceptance.mjs [run|critical|down]');
 // This file/project exclusively owns disposable synthetic databases; never use production Compose.
 if (command === 'down') {
   compose('down', '--remove-orphans');
 } else {
+  const receiptPath = join(root, 'test-results/critical-release-acceptance.json');
+  if (existsSync(receiptPath)) unlinkSync(receiptPath);
+  let selection;
+  if (command === 'critical') {
+    const manifest = JSON.parse(readFileSync(join(root, 'tests/e2e/manual-mvp-manifest.json'), 'utf8'));
+    const inventory = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', '--list', '--reporter=json'],
+      { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } }));
+    selection = criticalProfile.select(manifest, inventory);
+    const routed = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', ...selection.files,
+      '--grep', selection.grep, '--list', '--reporter=json'],
+      { cwd: root, encoding: 'utf8', env: { ...process.env, CI: 'true' } }));
+    criticalProfile.assertRouted(selection, routed);
+  }
   await withPreservedFile(join(root, 'frontend/nginx.conf'), async () => {
     assertSyntheticNetworks();
     const tls = join(root, 'tests/e2e/.runtime/tls');
@@ -144,7 +158,22 @@ if (command === 'down') {
       }
       if (!ready) throw new Error('Synthetic HTTPS proxy is not reachable from the browser host');
       run('node', ['tests/e2e/artifacts.cjs']);
-      run('pnpm', ['exec', 'playwright', 'test']);
+      if (command === 'critical') {
+        const reportPath = join(root, 'tests/e2e/.runtime/critical-playwright.json');
+        if (existsSync(reportPath)) unlinkSync(reportPath);
+        execFileSync('pnpm', ['exec', 'playwright', 'test', ...selection.files,
+          '--grep', selection.grep, '--workers=1', '--retries=0', '--reporter=json'], {
+          cwd: root, stdio: 'inherit',
+          env: { ...process.env, CI: 'true', PLAYWRIGHT_JSON_OUTPUT_FILE: reportPath },
+        });
+        const result = JSON.parse(readFileSync(reportPath, 'utf8'));
+        const receipt = criticalProfile.receipt(selection, result, releaseCommit, process.env.GITHUB_RUN_ID ?? 'local');
+        mkdirSync(join(root, 'test-results'), { recursive: true });
+        writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+        console.log(`PASS critical release profile: ${receipt.cases.length} exact browser cases`);
+      } else {
+        run('pnpm', ['exec', 'playwright', 'test']);
+      }
     } finally {
       compose('down', '--remove-orphans');
     }

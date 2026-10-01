@@ -308,35 +308,34 @@ describe('ENG-004: release work waits for successful early gates', () => {
   });
 });
 
-describe('ENG-005: temporary CI E2E pause preserves security and blocks promotion', () => {
-  const enabled = "env.CI_E2E_ENABLED == 'true'";
-  const accepted = `success() && ${enabled} && steps.real-acceptance.conclusion == 'success'`;
+describe('ENG-005: critical real release acceptance preserves security and blocks incomplete promotion', () => {
+  const accepted =
+    "success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'";
 
-  it('ENG-005-A/ENG-005-C pauses browser work by default and preserves explicit restoration', () => {
+  it('ENG-005-A runs the reviewed critical profile and keeps full manual E2E available', () => {
     const ci = workflow('ci');
-    expect(ci.env?.CI_E2E_ENABLED).toBe('false');
+    expect(ci.env?.CI_E2E_ENABLED).toBeUndefined();
     expect(ci.jobs['docker-build'].name).toBe('Release Images and Security');
     const steps = ci.jobs['docker-build'].steps ?? [];
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
-    expect(expression(browser[0].if)).toBe(enabled);
-    const acceptance = steps.filter((step) => step.run?.trim() === 'pnpm test:e2e');
+    expect(browser[0].if).toBeUndefined();
+    const acceptance = steps.filter((step) => step.run?.trim() === 'pnpm test:e2e:critical');
     expect(acceptance).toHaveLength(1);
-    expect(acceptance[0].id).toBe('real-acceptance');
-    expect(acceptance[0].name).toBe('Run full real acceptance');
-    expect(expression(acceptance[0].if)).toBe(enabled);
+    expect(acceptance[0].id).toBe('critical-release-acceptance');
+    expect(acceptance[0].name).toBe('Run critical real release acceptance');
+    expect(acceptance[0].if).toBeUndefined();
     expect(acceptance[0]['continue-on-error'] ?? false).toBe(false);
-    const build = steps.find(
-      (step) => step.name === 'Build images while real acceptance is paused',
+    expect(steps.find((step) => step.name === 'Verify critical acceptance receipt')?.run).toContain(
+      'critical-release-profile.cjs verify',
     );
-    expect(build?.run?.trim()).toBe(
-      'docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml build backend frontend postgres',
-    );
-    expect(expression(build?.if)).toBe("env.CI_E2E_ENABLED != 'true'");
-    expect(build?.env?.CAPITAL_RELEASE_COMMIT).toBe('${{ github.sha }}');
-    expect(build?.['continue-on-error'] ?? false).toBe(false);
+    const scripts = JSON.parse(
+      readFileSync(resolve(repositoryRoot, 'package.json'), 'utf8'),
+    ).scripts;
+    expect(scripts['test:e2e']).toBe('node scripts/acceptance.mjs');
+    expect(scripts['test:e2e:critical']).toBe('node scripts/acceptance.mjs critical');
     const report = steps.find((step) => step.with?.name === 'synthetic-acceptance-report');
-    expect(expression(report?.if)).toBe(`always() && ${enabled}`);
+    expect(expression(report?.if)).toBe('always()');
   });
 
   it('ENG-005-A retains all four image scans and security enforcement without pause conditions', () => {
@@ -363,7 +362,7 @@ describe('ENG-005: temporary CI E2E pause preserves security and blocks promotio
     }
   });
 
-  it('ENG-005-A/ENG-005-C exports a candidate only after enabled successful full acceptance', () => {
+  it('ENG-005-C exports a candidate only after successful critical acceptance and receipt validation', () => {
     const steps = workflow('ci').jobs['docker-build'].steps ?? [];
     const exports = steps.filter(
       (step) =>
@@ -375,10 +374,16 @@ describe('ENG-005: temporary CI E2E pause preserves security and blocks promotio
       expect(expression(step.if)).toBe(accepted);
       expect(step['continue-on-error'] ?? false).toBe(false);
     }
+    const exportStep = steps.find(
+      (step) => step.name === 'Export the actual tested candidate images',
+    );
+    expect(exportStep?.run).toContain('critical-release-profile.cjs verify');
+    const receipt = steps.find((step) => step.with?.name === 'critical-release-acceptance');
+    expect(receipt?.with?.['if-no-files-found']).toBe('error');
   });
 
   it.each([undefined, 'skipped', 'failure', 'cancelled', 'unknown', 'success'])(
-    'ENG-005-B actual CD provenance accepts only successful full acceptance, result %p',
+    'ENG-005-B actual CD provenance accepts only successful critical acceptance, result %p',
     (conclusion) => {
       const validation = workflow('cd').jobs.deploy.steps?.find(
         (step) => step.name === 'Validate trusted successful candidate provenance',
@@ -405,7 +410,10 @@ describe('ENG-005: temporary CI E2E pause preserves security and blocks promotio
         conclusion: 'success',
         steps:
           name === 'Release Images and Security' && conclusion !== undefined
-            ? [{ name: 'Run full real acceptance', conclusion }]
+            ? [
+                { name: 'Run critical real release acceptance', conclusion },
+                { name: 'Verify critical acceptance receipt', conclusion: 'success' },
+              ]
             : [],
       }));
       const directory = mkdtempSync(resolve(tmpdir(), 'capital-ci-provenance-'));
@@ -420,13 +428,57 @@ describe('ENG-005: temporary CI E2E pause preserves security and blocks promotio
         expect(result.signal).toBeNull();
         expect(result.status).toBe(conclusion === 'success' ? 0 : 1);
         if (conclusion !== 'success') {
-          expect(result.stderr).toContain('Full real acceptance missing or unsuccessful');
+          expect(result.stderr).toContain('Critical real acceptance missing or unsuccessful');
         }
+        expect(validation?.run).toContain('gh run download "$RUN_ID"');
+        expect(validation?.run).toContain(
+          'critical-release-profile.cjs verify acceptance/critical-release-acceptance.json',
+        );
       } finally {
         rmSync(directory, { recursive: true });
       }
     },
   );
+
+  it('ENG-005-B refuses a successful browser step without successful receipt verification', () => {
+    const validation = workflow('cd').jobs.deploy.steps?.find(
+      (step) => step.name === 'Validate trusted successful candidate provenance',
+    );
+    const script = validation?.run?.match(/node - <<'NODE'\n([\s\S]*?)\nNODE/);
+    expect(script).not.toBeNull();
+    const jobs = [
+      'Backend Lint & Format',
+      'Backend Tests',
+      'Backend Build',
+      'Frontend Lint & Format',
+      'Frontend Tests',
+      'Frontend Build',
+      'Release Images and Security',
+      'Specification and Engineering Gates',
+      'Production Dependency Audit',
+      'CI Status',
+    ].map((name) => ({
+      name,
+      conclusion: 'success',
+      steps:
+        name === 'Release Images and Security'
+          ? [{ name: 'Run critical real release acceptance', conclusion: 'success' }]
+          : [],
+    }));
+    const directory = mkdtempSync(resolve(tmpdir(), 'capital-ci-provenance-'));
+    try {
+      writeFileSync(resolve(directory, 'jobs.json'), JSON.stringify({ jobs }));
+      const result = spawnSync(process.execPath, ['-e', script?.[1] ?? ''], {
+        cwd: directory,
+        encoding: 'utf8',
+        timeout: 5_000,
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Critical real acceptance missing or unsuccessful');
+    } finally {
+      rmSync(directory, { recursive: true });
+    }
+  });
 });
 
 describe('ENG-002: controlled manual MVP deployment entry', () => {
