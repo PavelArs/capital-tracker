@@ -379,8 +379,9 @@ Approved harness-security source `a28fd73` and financial acceptance source
 backend/PostgreSQL run used the exact cached four-image application set from source
 `7274076`, including unchanged frontend image
 `sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c`. OpenSpec
-strict validation is current at 45/45. This is local acceptance, not hosted CI or
-release evidence.
+strict validation passed 45/45 at integrated `48e466a`, before the pagination
+change was created; current all-change validation remains pending. This is local
+acceptance, not hosted CI or release evidence.
 
 The no-retry, one-worker selection included the two previously failing LIMIT cases,
 SES-002-A, OPEN-001-A/OPEN-002-A, CARRY-001-A, CSV-001-A, CSV-006-A, SWAP-UI,
@@ -389,7 +390,8 @@ passed (SWAP-UI; password-restart neighbor; both original LIMIT failures; CARRY-
 CSV-006-A found one product failure, and five cases were unrun after the first failure:
 SES-002-A, OPEN-001-A/OPEN-002-A, CSV-001-A, PRICE-UI/PRICE-RECOVERY and CVIS-UI.
 This is not an 11/11 pass. Cleanup left zero owned containers/networks, restored the
-global Docker context to `desktop-linux`, and preserved the owner Nginx checksum.
+global Docker context remained `desktop-linux`, and preserved the owner Nginx
+checksum.
 Receipt: `/private/tmp/capital-mvp-ci4-selected-evidence.json`.
 
 CSV-006-A fails in `inspectAndMap`, before preview, restart or financial oracles. The

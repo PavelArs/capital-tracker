@@ -40,7 +40,9 @@ Receipt `/private/tmp/capital-mvp-ci4-selected-evidence.json`; page proof
 `fix-csv-instrument-pagination` is in ATDD implementation in worktree
 `capital-tracker-csv-pagination`; it is not complete or archived. Reviewed
 harness-security/financial work (`a28fd73`/`ee33d68`, integrated as
-`a730f4f`/`c9c03fa`) and current strict OpenSpec validation (45/45) are recorded;
+`a730f4f`/`c9c03fa`) are recorded. Strict OpenSpec validation passed 45/45 at
+integrated `48e466a`, before the pagination change was created; current all-change
+validation remains pending.
 the 180-minute CI budget change `f4fab92` has not run yet. Rebuild the frontend
 with a new image ID, then rerun the two CSV cases and remaining five selected cases,
 including CVIS-UI. Do not claim a unified 11/11 result. No new hosted CI, promotion,
