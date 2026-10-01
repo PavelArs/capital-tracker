@@ -11,18 +11,23 @@ current integrated checkpoint `71e1ebd`. The primary checkout
 dirty `frontend/nginx.conf` edit; preserve it.
 
 Latest hosted run is PR #26 Actions
-[36706275247](https://github.com/PavelArs/capital-tracker/actions/runs/36706275247)
-for source `0c62f04`: eight basic jobs passed, but the release job was cancelled at
-the 120-minute cap. Of 174 planned browser tests, 153 reported results (144 pass,
-9 failed); test 154 was interrupted. The later 180-minute job budget has not yet been
-exercised in hosted CI. All nine reported failures now have actual scoped PASS
-evidence across separate local runs. Follow-up diagnosis traced six post-restart 502s
-to readiness observations that did not verify routing through the selected HTTPS
-backend pool, two failures to assumptions that target selector rows were on the first
-catalog page, and one failure to expecting empty currency preferences instead of
-preserving seeded rows. The test harness now waits for the selected HTTPS routing,
-paginates selector data, and compares privacy state before and after. The hosted run
-still did not complete its suite, image scans, candidate export or promotion.
+[36857990125](https://github.com/PavelArs/capital-tracker/actions/runs/36857990125)
+for integration source `a661fc46453b2244ca78d26f3411b97b922d8790`. Seven basic CI
+jobs passed. The production dependency audit failed: Axios `1.18` is below the
+required `1.20` floor and the report contains 7 HIGH and 6 MODERATE findings. The
+owner requested cancellation and the run reached terminal cancelled status; release
+E2E was cancelled, scans and candidate export were skipped, and there was no
+promotion or deployment. The audit job log is
+`/private/tmp/capital-mvp-ci5-audit-job.log`. The Axios fix and CI cost gate are
+underway; do not claim either passed until Root records final results.
+
+Run 36706275247 and its 174-test partial result below are historical evidence, not
+the latest CI checkpoint. Its nine reported failures retain their scoped local PASS
+evidence across separate runs; this does not complete the hosted suite. Earlier local
+runtime and image evidence remains historical as recorded below and in the release
+verification. Older temporary receipts/scripts that are absent on this host are
+historical evidence unavailable locally; do not replace or reinterpret their recorded
+results. Whole-target product work and all remaining release/server gates stay open.
 
 Pagination is fixed in frontend source `efb7e60d6c223ecadeff037eee9d0729cbc0d899`
 and the OpenSpec change is archived; the canonical CSV workbench includes both new

@@ -1,5 +1,20 @@
 # Manual MVP acceptance manifest and evidence
 
+## Latest hosted checkpoint — run 36857990125 (integration source `a661fc46453b2244ca78d26f3411b97b922d8790`)
+
+Seven basic CI jobs passed. Production dependency audit failed with 7 HIGH and 6
+MODERATE findings; backend Axios `1.18` is below the required `1.20` floor. The
+owner requested cancellation and Actions reached terminal `cancelled`: release E2E
+was cancelled, image scans and candidate export were skipped. No promotion or
+deployment occurred. Actual audit log: `/private/tmp/capital-mvp-ci5-audit-job.log`.
+Axios remediation and the CI cost gate are underway; no pass is claimed for either
+until Root records final results. This checkpoint does not close any release gate.
+
+The earlier run 36706275247 remains historical evidence below. Its recorded results
+and local follow-up receipts are retained as written. Some older temporary receipts
+and scripts are absent on this host, so that historical evidence is unavailable
+locally; this does not invalidate or replace the prior recorded results.
+
 Preparation at a03371b only; no product changes, Docker, provider/server access, publish/push or deployment by acceptance author. Actual OpenSpec1.2 new/status/instructions(proposal/design/specs/tasks) generated this change. The18 retained real journeys below are selected gates, not newly authored cases or a full-suite claim.
 
 ## Genuine predecessor RED
