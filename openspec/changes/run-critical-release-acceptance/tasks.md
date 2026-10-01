@@ -7,7 +7,7 @@
 
 - [x] 2.1 ENG-004-C/ENG-005-A/C: retain all fixed real acceptance probes and cleanup, expose `test:e2e:critical`, keep `test:e2e` full, and enforce one worker/zero retries.
 - [x] 2.2 ENG-005-B: require successful named critical acceptance and verified candidate-bound receipt in CI and CD before image export, publication or server access; preserve all non-E2E gates and schema-v3 image validation.
-- [ ] 2.3 ENG-004/ENG-005: pass scoped policy/profile/validator checks, strict OpenSpec validation and independent source/security review without weakening existing assertions.
+- [x] 2.3 ENG-004/ENG-005: pass scoped policy/profile/validator checks, strict OpenSpec validation and independent source/security review without weakening existing assertions.
 
 ## 3. Runtime and release evidence
 
