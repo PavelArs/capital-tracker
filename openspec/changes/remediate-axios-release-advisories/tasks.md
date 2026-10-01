@@ -11,6 +11,6 @@
 
 ## 3. Independent release verification
 
-- [ ] 3.1 Resolve independent review findings on the frozen source and dependency graph.
+- [x] 3.1 Resolve independent review findings on the frozen source and dependency graph.
 - [ ] 3.2 Root verifies rebuilt release-image provider TLS/transport and selected real HTTPS/MFA/CSRF/browser/PostgreSQL acceptance; record separate evidence (AXS-001-B).
 - [ ] 3.3 Integrate final evidence, validate strict OpenSpec, and archive only after all required gates pass.

@@ -65,7 +65,12 @@ retained; no `approve-builds` policy change was made.
 
 ## Mandatory checks remaining
 
-Independent review pending. Rebuilt release-image exact-version/provider TLS and
+Independent source review **PASS**, no blocking findings, on frozen source
+`79f874a` atop `ed8c299`. The separate reviewer approved the final diff and
+independently checked the byte-identical fixture SHA256, Node syntax and diff.
+This closes task 3.1 only; it does not establish runtime or release acceptance.
+
+Rebuilt release-image exact-version/provider TLS and
 selected real HTTPS/password/MFA/CSRF/stored-provider/browser/PostgreSQL acceptance
 UNRUN: Docker unavailable and explicitly prohibited for this task. Broad E2E and
 new hosted CI UNRUN. These are separate runtime/release evidence and must not be
@@ -74,4 +79,5 @@ inferred from unit, HTTP or source build checks. Change stays active, unarchived
 Strict `OPENSPEC_TELEMETRY=0 pnpm exec openspec validate --all --strict --no-interactive`
 using installed OpenSpec 1.2.0 passed **46/46**, exit0. Receipt:
 `/private/tmp/capital-axios-openspec-final.log`. `git diff --check` passed.
-Source tasks 1.1–2.3 complete; independent review, runtime and archive tasks remain open.
+Source tasks 1.1–2.3 and independent source review task 3.1 complete.
+Runtime task 3.2 and final integration/archive task 3.3 remain open.
