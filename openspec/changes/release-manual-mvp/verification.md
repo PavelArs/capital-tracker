@@ -7,22 +7,30 @@ MODERATE findings; backend Axios `1.18` is below the required `1.20` floor. Root
 requested cancellation after the audit failure and Actions reached terminal `cancelled`: release E2E
 was cancelled, image scans and candidate export were skipped. No promotion or
 deployment occurred. Actual audit log: `/private/tmp/capital-mvp-ci5-audit-job.log`.
-Axios remediation remains active pending runtime evidence. The pause workflow is now
-implemented, independently reviewed and integrated at `ba2db8b`; its local policy
-checks passed, but hosted scheduler/build/scan execution is pending. This checkpoint
-does not close any release gate.
+Axios update source `ed8c299` was independently approved and integrated as
+`1920d90`; byte-identical HTTP test placement followed in `64384c4`. Frozen install
+on Node 22.23.2/pnpm 10.33.0 passed 3 suites/39 tests, backend lint, types/build and
+five localhost HTTP adapter tests. The required production audit gate exits 0 with
+zero HIGH/critical and one MODERATE Multer advisory (GHSA-3pph-fpjx-jg34); the full
+audit exits 1 because that advisory remains. Project-maintainer triage is due
+2026-10-08. Default memory storage lowers the described disk-path risk; the finding
+is still tracked. The E2E pause workflow was approved at `f46d72e` and integrated as
+`ba2db8b`, then combined with Axios at `64384c4`. Hosted scheduler/build/scan
+execution, new Docker images/scans and real PostgreSQL/HTTPS runtime remain unrun.
+No current Axios image candidate or release gate is claimed complete.
 
 Owner decision (2026-10-01): pause hosted E2E temporarily until test cleanup is
 complete. Keep the manual test command and test files, while non-E2E checks, image
 builds/scans, audit and engineering security checks continue. The E2E plus real-DB
 bundle is currently unrun. A paused run cannot produce a tested-candidate export or
-promotion. Restore E2E after PM-TEST coverage cleanup. The workflow change and its
-actual check results remain pending implementation evidence.
+promotion. Restore E2E after PM-TEST coverage cleanup. Workflow source and local
+check results are recorded below; hosted execution remains pending.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; earlier runtime evidence remains historical.
 
 Frozen workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` was independently
-reviewed and integrated as `ba2db8b` in `capital-tracker-mvp`. `CI_E2E_ENABLED`
+reviewed and integrated as `ba2db8b` in `capital-tracker-mvp`; Axios and its
+characterization test are integrated at `1920d90` and `64384c4`. `CI_E2E_ENABLED`
 defaults false; the release job
 builds images and runs all four scans without invoking acceptance. CD requires the
 exact run's real-acceptance step to have succeeded before candidate export/upload;
@@ -32,8 +40,8 @@ Policy acceptance passed 195/195 across two affected suites in 7.932 seconds. Th
 original pause-gate RED was 2 failures; the expanded pause/provenance RED was 7
 semantic failures. Style, diff and strict OpenSpec validation passed (46/46). These
 are local source checks only. Independent review approved the source; hosted CI,
-actual image builds/scans and real DB/HTTPS acceptance have not run, and nothing has
-been pushed.
+actual image builds/scans and real DB/HTTPS acceptance have not run. The integration
+has not been pushed.
 After PM-TEST coverage cleanup, restore `CI_E2E_ENABLED=true` in a reviewed source
 commit and rerun the full release acceptance before candidate export/promotion.
 
@@ -44,8 +52,9 @@ the public runtime script, plan, catalog script and catalog text. Script SHA256 
 plan review passed; script syntax and catalog checks passed 4/4. No Docker build or
 runtime check ran. These scripts use a plan under `/private/tmp`; if that file is
 missing before a later authorized run, restore it from the preserved public plan.
-Keep the ignored preparation directory. Its runtime target is still old source
-`efb7e60`; integrate the upgraded, reviewed Axios source before any GO decision.
+Keep the ignored preparation directory. Its original runtime target was source
+`efb7e60`; the upgraded, reviewed Axios source is now integrated, but runtime evidence
+is still required before any GO decision.
 
 The earlier run 36706275247 remains historical evidence below. Its recorded results
 and local follow-up receipts are retained as written. Some older temporary receipts

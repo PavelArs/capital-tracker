@@ -6,9 +6,10 @@ Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
 Network sync and AI remain deferred. Published integration baseline is
 `a661fc46453b2244ca78d26f3411b97b922d8790` on
-`/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`;
-reviewed CI pause source `f46d72e` is integrated as `ba2db8b`. This documentation
-branch is pending integration. The primary checkout
+`/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`.
+Reviewed E2E pause source `f46d72e` is integrated as `ba2db8b`; reviewed Axios source
+`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`. Those changes
+are not yet pushed. This documentation branch is pending integration. The primary checkout
 `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with the owner's
 dirty `frontend/nginx.conf` edit; preserve it.
 
@@ -21,8 +22,13 @@ Root requested cancellation after the audit failure and the run reached terminal
 cancelled status; release
 E2E was cancelled, scans and candidate export were skipped, and there was no
 promotion or deployment. The audit job log is
-`/private/tmp/capital-mvp-ci5-audit-job.log`. Axios remediation remains underway;
-do not claim it complete until runtime evidence. The
+`/private/tmp/capital-mvp-ci5-audit-job.log`. Axios remediation source is reviewed
+and passes the required production audit gate (0 HIGH/critical, 1 MODERATE Multer
+advisory); full audit still exits 1 for that tracked advisory, due for maintainer
+triage 2026-10-08. Frozen install passed 3 suites/39 tests, backend lint/types/build
+and five localhost HTTP adapter tests. Do not claim release/runtime verification:
+the new image/scans and real PG/HTTPS remain unrun because Docker is unavailable
+locally; hosted CI against combined source is pending. The
 temporary E2E pause is implemented and reviewed at `ba2db8b`; local policy checks
 passed, but hosted scheduler/build/scans have not yet exercised it.
 
