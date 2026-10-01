@@ -321,10 +321,11 @@ open.
 
 Approved readiness source `618a532` is integrated as `d10e633`; scoped tests against
 the real readiness predicate pass 2/2, and the Compose configuration checks against
-Compose v5.5.1. CI ceiling-only source `e99fd54`, integrated as `732567c`, raises the
-Docker build timeout from 35 to 120 minutes for headroom. This is not a measured
-174-test runtime; per-test limits, worker count, retries, test selection and gates
-remain unchanged. Formatting-only source `10aa507`, integrated as `55aec09`, passes
+Compose v5.5.1. CI budget source `e99fd54`, integrated as `732567c`, raised the Docker
+build timeout from 35 to 120 minutes. Follow-up `f4fab92` raises it to 180 minutes
+based on the hosted run’s observed duration; it has not run yet. Workers, retries,
+per-test limits, selection and gates remain unchanged. Formatting-only source
+`10aa507`, integrated as `55aec09`, passes
 scoped Biome (`/private/tmp/capital-e2e-client-readiness-biome.log`), final readiness
 Jest 2/2 (`/private/tmp/capital-e2e-client-readiness-unit-final.log`) and engineering
 gates 165/165 (`/private/tmp/capital-ci-release-budget-engineering.log`). Strict
@@ -369,3 +370,40 @@ health readiness and cleanup passed. Exact identities and receipt:
 for the incomplete hosted run. Strict all-E2E TypeScript passed at
 `/private/tmp/capital-mvp-final-e2e-types.log`. The owner's Snap common-bind probe
 `capital_snap_common_bind=PASS` is separately recorded under MVP-008 above.
+
+## Targeted local runtime follow-up — source `61ce070`
+
+Approved harness-security source `a28fd73` and financial acceptance source
+`ee33d68` are integrated as `a730f4f` and `c9c03fa`. At test source
+`61ce07072e09b095e73ce693f0ad8a6738031661`, a targeted real HTTPS/password/MFA/
+backend/PostgreSQL run used the exact cached four-image application set from source
+`7274076`, including unchanged frontend image
+`sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c`. OpenSpec
+strict validation is current at 45/45. This is local acceptance, not hosted CI or
+release evidence.
+
+The no-retry, one-worker selection included the two previously failing LIMIT cases,
+SES-002-A, OPEN-001-A/OPEN-002-A, CARRY-001-A, CSV-001-A, CSV-006-A, SWAP-UI,
+PRICE-UI/PRICE-RECOVERY, CVIS-UI and one password-restart neighbor. Results: 5/11
+passed (SWAP-UI; password-restart neighbor; both original LIMIT failures; CARRY-001-A),
+CSV-006-A found one product failure, and five cases were unrun after the first failure:
+SES-002-A, OPEN-001-A/OPEN-002-A, CSV-001-A, PRICE-UI/PRICE-RECOVERY and CVIS-UI.
+This is not an 11/11 pass. Cleanup left zero owned containers/networks, restored the
+global Docker context to `desktop-linux`, and preserved the owner Nginx checksum.
+Receipt: `/private/tmp/capital-mvp-ci4-selected-evidence.json`.
+
+CSV-006-A fails in `inspectAndMap`, before preview, restart or financial oracles. The
+first `CsvMapping` load-more request repeats the already displayed first page of 50
+instruments because the child component loses the parent cursor. Deduplication then
+leaves the dropdown count unchanged while the cursor primes the next page; the existing
+strict per-click-growth helper times out. Request proof is
+`/private/tmp/capital-mvp-ci4-csv-pagination-red.json`; trace is recorded in the
+receipt. The fixture/helper was not weakened or changed. OpenSpec change
+`fix-csv-instrument-pagination` is undergoing ATDD implementation in worktree
+`capital-tracker-csv-pagination`; it is not complete or archived. Next: rebuild the
+frontend to a new image ID, rerun the two CSV cases, then run the remaining five
+selected cases including CVIS-UI. The 180-minute CI budget change `f4fab92` remains
+unrun. The prior hosted failures are now classified as six post-restart 502s, two
+first-page observers and one currency-preference-state mismatch, but actual GREEN
+acceptance remains incomplete. No new hosted CI, image scans, candidate export,
+promotion, bootstrap or deployment has run.

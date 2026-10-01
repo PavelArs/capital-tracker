@@ -6,7 +6,8 @@ Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
 Network sync and AI remain deferred. Integration is
 `/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`,
-source `0c62f04`. The primary checkout `/Users/pavelars/Projects/temp/capital-tracker`
+current integrated checkpoint `48e466a`. The primary checkout
+`/Users/pavelars/Projects/temp/capital-tracker`
 remains at `0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
 
 Latest hosted evidence is PR #26 Actions run
@@ -23,6 +24,29 @@ artifact: `/private/tmp/capital-mvp-ci4-artifact` (Actions artifact ID
 `11097437276`). The cap stopped the unfinished suite; the nine reported failures
 occurred before cancellation and require independent diagnosis. Scans, export,
 promotion, bootstrap and deploy did not run. No task is closed by this checkpoint.
+
+Since then, an approved targeted local run against source
+`61ce07072e09b095e73ce693f0ad8a6738031661` used the unchanged cached frontend image
+`sha256:cf0e723570cdbc5e85a43135084b0c44a4e018ae15f7a118786a0df8953d560c`:
+5/11 selected cases passed, CSV-006-A exposed a new pagination product RED, and
+five selected cases remain unrun (SES-002-A, OPEN-001-A/OPEN-002-A, CSV-001-A,
+PRICE-UI/PRICE-RECOVERY and CVIS-UI). No retries. The five passes were SWAP-UI,
+the password-restart neighbor, both originally failing LIMIT cases and CARRY-001-A.
+The existing CSV helper stayed unchanged. Its first “load more” repeats the first
+50 instruments because the child loses the parent cursor; deduplication keeps the
+option count unchanged. The trace has not reached preview or financial assertions.
+Receipt `/private/tmp/capital-mvp-ci4-selected-evidence.json`; page proof
+`/private/tmp/capital-mvp-ci4-csv-pagination-red.json`. OpenSpec change
+`fix-csv-instrument-pagination` is in ATDD implementation in worktree
+`capital-tracker-csv-pagination`; it is not complete or archived. Reviewed
+harness-security/financial work (`a28fd73`/`ee33d68`, integrated as
+`a730f4f`/`c9c03fa`) and current strict OpenSpec validation (45/45) are recorded;
+the 180-minute CI budget change `f4fab92` has not run yet. Rebuild the frontend
+with a new image ID, then rerun the two CSV cases and remaining five selected cases,
+including CVIS-UI. Do not claim a unified 11/11 result. No new hosted CI, promotion,
+bootstrap or deployment has run. The nine hosted failures are classified as six
+post-restart 502s, two first-page observers and one currency-preference-state
+mismatch; actual GREEN evidence remains incomplete.
 
 Separate evidence remains: the exact local PG18 four-image runtime at `7274076`
 passed 19/19 retained HTTPS/MFA/accounting journeys, current migrations, 27 startup
