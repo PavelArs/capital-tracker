@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 const { parse } = require('yaml') as { parse: (source: string) => unknown };
@@ -20,6 +21,9 @@ const requiredJobs = [
 
 type Needs = Record<string, unknown>;
 type WorkflowStep = {
+  name?: string;
+  id?: string;
+  with?: Record<string, unknown>;
   uses?: string;
   run?: string;
   if?: string;
@@ -28,6 +32,7 @@ type WorkflowStep = {
   'working-directory'?: string;
 };
 type WorkflowJob = {
+  name?: string;
   needs?: string | string[];
   if?: string;
   steps?: WorkflowStep[];
@@ -35,6 +40,7 @@ type WorkflowJob = {
   defaults?: { run?: { 'working-directory'?: string } };
 };
 type Workflow = {
+  env?: Record<string, string>;
   on: Record<string, { branches?: string[] } | null>;
   jobs: Record<string, WorkflowJob>;
 };
@@ -258,6 +264,169 @@ describe('DEP-001: required production dependency audit', () => {
       expect(step['working-directory'] ?? '.').toBe('.');
     }
   });
+});
+
+describe('ENG-004: release work waits for successful early gates', () => {
+  const releasePrerequisites = [
+    'backend-build',
+    'frontend-build',
+    'backend-test',
+    'frontend-test',
+    'dependency-audit',
+    'spec-check',
+  ];
+
+  it('ENG-004-A/ENG-004-B requires both early gates before any release step starts', () => {
+    const ci = workflow('ci');
+    expect(dependencies(ci.jobs['docker-build']).sort()).toEqual([...releasePrerequisites].sort());
+  });
+
+  it('ENG-004-A/ENG-004-B has no job-level failure or scheduling bypass', () => {
+    const ci = workflow('ci');
+    for (const name of ['docker-build', ...releasePrerequisites]) {
+      const job = ci.jobs[name];
+      expect(job).toBeDefined();
+      // Default success scheduling is required: always() or OR expressions could bypass failures.
+      expect(job.if).toBeUndefined();
+      expect(job['continue-on-error'] ?? false).toBe(false);
+    }
+  });
+
+  it('ENG-004-A/ENG-004-B rejects failed early gates and skipped release in the real aggregate', () => {
+    const ci = workflow('ci');
+    for (const job of ['dependency-audit', 'spec-check']) {
+      for (const status of ['failure', 'cancelled', 'skipped']) {
+        const needs = successfulNeeds();
+        needs[job] = { result: status };
+        needs['docker-build'] = { result: 'skipped' };
+        const result = invokeWorkflowGate(gateStep(ci), needs);
+        expect(result.status).not.toBe(0);
+        expect(result.output).toContain(job);
+        expect(result.output).toContain('docker-build');
+      }
+    }
+  });
+});
+
+describe('ENG-005: temporary CI E2E pause preserves security and blocks promotion', () => {
+  const enabled = "env.CI_E2E_ENABLED == 'true'";
+  const accepted = `success() && ${enabled} && steps.real-acceptance.conclusion == 'success'`;
+
+  it('ENG-005-A/ENG-005-C pauses browser work by default and preserves explicit restoration', () => {
+    const ci = workflow('ci');
+    expect(ci.env?.CI_E2E_ENABLED).toBe('false');
+    expect(ci.jobs['docker-build'].name).toBe('Release Images and Security');
+    const steps = ci.jobs['docker-build'].steps ?? [];
+    const browser = steps.filter((step) => step.run?.includes('playwright install'));
+    expect(browser).toHaveLength(1);
+    expect(expression(browser[0].if)).toBe(enabled);
+    const acceptance = steps.filter((step) => step.run?.trim() === 'pnpm test:e2e');
+    expect(acceptance).toHaveLength(1);
+    expect(acceptance[0].id).toBe('real-acceptance');
+    expect(acceptance[0].name).toBe('Run full real acceptance');
+    expect(expression(acceptance[0].if)).toBe(enabled);
+    expect(acceptance[0]['continue-on-error'] ?? false).toBe(false);
+    const build = steps.find(
+      (step) => step.name === 'Build images while real acceptance is paused',
+    );
+    expect(build?.run?.trim()).toBe(
+      'docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml build backend frontend postgres',
+    );
+    expect(expression(build?.if)).toBe("env.CI_E2E_ENABLED != 'true'");
+    expect(build?.env?.CAPITAL_RELEASE_COMMIT).toBe('${{ github.sha }}');
+    expect(build?.['continue-on-error'] ?? false).toBe(false);
+    const report = steps.find((step) => step.with?.name === 'synthetic-acceptance-report');
+    expect(expression(report?.if)).toBe(`always() && ${enabled}`);
+  });
+
+  it('ENG-005-A retains all four image scans and security enforcement without pause conditions', () => {
+    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
+    const scans = steps.filter((step) => step.uses?.startsWith('aquasecurity/trivy-action@'));
+    expect(scans.map((step) => step.with?.['image-ref'])).toEqual([
+      'capital-tracker-backend:acceptance',
+      'capital-tracker-frontend:acceptance',
+      'capital-tracker-postgres:acceptance',
+      'redis:8.10.2-alpine3.23',
+    ]);
+    for (const step of scans) {
+      expect(step.if).toBeUndefined();
+      expect(step['continue-on-error'] ?? false).toBe(false);
+    }
+    for (const name of [
+      'Verify reviewed PostgreSQL source and pull Redis digest',
+      'Enforce exact-image high and critical security gate',
+    ]) {
+      const step = steps.find((item) => item.name === name);
+      expect(step).toBeDefined();
+      expect(step?.if).toBeUndefined();
+      expect(step?.['continue-on-error'] ?? false).toBe(false);
+    }
+  });
+
+  it('ENG-005-A/ENG-005-C exports a candidate only after enabled successful full acceptance', () => {
+    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
+    const exports = steps.filter(
+      (step) =>
+        step.name === 'Export the actual tested candidate images' ||
+        step.with?.name === 'manual-mvp-candidate',
+    );
+    expect(exports).toHaveLength(2);
+    for (const step of exports) {
+      expect(expression(step.if)).toBe(accepted);
+      expect(step['continue-on-error'] ?? false).toBe(false);
+    }
+  });
+
+  it.each([undefined, 'skipped', 'failure', 'cancelled', 'unknown', 'success'])(
+    'ENG-005-B actual CD provenance accepts only successful full acceptance, result %p',
+    (conclusion) => {
+      const validation = workflow('cd').jobs.deploy.steps?.find(
+        (step) => step.name === 'Validate trusted successful candidate provenance',
+      );
+      expect(validation?.if).toBe("inputs.mode != 'inventory'");
+      const script = validation?.run?.match(/node - <<'NODE'\n([\s\S]*?)\nNODE/);
+      expect(script).not.toBeNull();
+      const names = [
+        'Backend Lint & Format',
+        'Backend Tests',
+        'Backend Build',
+        'Frontend Lint & Format',
+        'Frontend Tests',
+        'Frontend Build',
+        'Release Images and Security',
+        'Specification and Engineering Gates',
+        // Even an obsolete successful job name must not substitute for actual step evidence.
+        'Release Images and Real Acceptance',
+        'Production Dependency Audit',
+        'CI Status',
+      ];
+      const jobs = names.map((name) => ({
+        name,
+        conclusion: 'success',
+        steps:
+          name === 'Release Images and Security' && conclusion !== undefined
+            ? [{ name: 'Run full real acceptance', conclusion }]
+            : [],
+      }));
+      const directory = mkdtempSync(resolve(tmpdir(), 'capital-ci-provenance-'));
+      try {
+        writeFileSync(resolve(directory, 'jobs.json'), JSON.stringify({ jobs }));
+        const result = spawnSync(process.execPath, ['-e', script?.[1] ?? ''], {
+          cwd: directory,
+          encoding: 'utf8',
+          timeout: 5_000,
+        });
+        expect(result.error).toBeUndefined();
+        expect(result.signal).toBeNull();
+        expect(result.status).toBe(conclusion === 'success' ? 0 : 1);
+        if (conclusion !== 'success') {
+          expect(result.stderr).toContain('Full real acceptance missing or unsuccessful');
+        }
+      } finally {
+        rmSync(directory, { recursive: true });
+      }
+    },
+  );
 });
 
 describe('ENG-002: controlled manual MVP deployment entry', () => {

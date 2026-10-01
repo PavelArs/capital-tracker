@@ -53,9 +53,11 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
           node - <<'NODE'
           const jobs = JSON.parse(require('node:fs').readFileSync('jobs.json')).jobs;
-          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Release Images and Real Acceptance', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
+          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Release Images and Security', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
             if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error('Required candidate gate missing or unsuccessful');
           }
+          const release = jobs.find(job => job.name === 'Release Images and Security' && job.conclusion === 'success');
+          if (!release.steps?.some(step => step.name === 'Run full real acceptance' && step.conclusion === 'success')) throw new Error('Full real acceptance missing or unsuccessful; paused CI is not a release candidate');
           NODE
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
