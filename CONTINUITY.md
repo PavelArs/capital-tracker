@@ -29,6 +29,7 @@ or promotion; restore E2E after PM-TEST coverage cleanup. Record the workflow ch
 and its actual gate results only after implementation and verification.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
+Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
 
 Run 36706275247 and its 174-test partial result below are historical evidence, not
 the latest CI checkpoint. Its nine reported failures retain their scoped local PASS

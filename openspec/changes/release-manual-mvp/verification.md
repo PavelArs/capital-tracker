@@ -19,6 +19,16 @@ actual check results remain pending implementation evidence.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; earlier runtime evidence remains historical.
 
+Axios runtime preparation is preserved in the separate ignored directory
+`/Users/pavelars/Projects/temp/capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`:
+the public runtime script, plan, catalog script and catalog text. Script SHA256 is
+`5c4e77833ededb9a193e81075726c55655303b87b640ecf626e216ba6f78ddb9`. Independent
+plan review passed; script syntax and catalog checks passed 4/4. No Docker build or
+runtime check ran. These scripts use a plan under `/private/tmp`; if that file is
+missing before a later authorized run, restore it from the preserved public plan.
+Keep the ignored preparation directory. Its runtime target is still old source
+`efb7e60`; integrate the upgraded, reviewed Axios source before any GO decision.
+
 The earlier run 36706275247 remains historical evidence below. Its recorded results
 and local follow-up receipts are retained as written. Some older temporary receipts
 and scripts are absent on this host, so that historical evidence is unavailable
