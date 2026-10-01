@@ -37,12 +37,16 @@ adapter cases and 195 pause policy checks passed; frontend only asserts Axios
 version. These checks and hosted builds/scans do not establish runtime acceptance.
 Local Docker-dependent real PG/HTTPS checks remain unrun because Docker is unavailable.
 
-Owner decision (2026-10-01): temporarily pause E2E in CI until test cleanup is
-complete. Keep the manual test command and test files; continue non-E2E checks,
-image builds/scans, audit and engineering security checks. The E2E plus real-DB
-bundle is currently unrun. A paused CI run cannot produce a tested-candidate export
-or promotion; restore E2E after PM-TEST coverage cleanup. Record the workflow change
-and its actual gate results only after implementation and verification.
+Owner decision (2026-10-01): authorize a shortened critical-release acceptance
+profile after initially pausing hosted E2E for PM-TEST cleanup. Keep the manual full
+suite and all test files. The shortened profile retains real PostgreSQL/domain/
+migration, provider transport/TLS, CLI/MFA, startup/artifact checks and selected
+critical HTTPS journeys; its candidate-bound receipt must bind source and exact
+manifest. Full 174-case regression, PM-TEST cleanup, encrypted backup/restore,
+off-host recovery and server/deployment gates remain distinct. The implementation and
+receipt contract are pending source review. This documentation change records no new
+acceptance, CI pass, candidate, promotion or deployment. The earlier green hosted CI
+run remains archive-only evidence as described above.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.

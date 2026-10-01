@@ -15,6 +15,18 @@ probes and the affected critical Playwright journeys. Record the exact selection
 what was not run. Keep the existing full runner and CI gates for broader regression
 and release checks; a targeted result must not be described as a full release pass.
 
+For the owner-authorized manual + CSV release exception, `pnpm test:e2e:critical`
+selects the reviewed critical browser profile while retaining the acceptance runner's
+real PostgreSQL/domain/migration, provider transport/TLS, CLI/MFA, startup-refusal
+and artifact checks. Its browser subset does not establish that the full 174-case
+suite passed. The full `pnpm test:e2e` command and every test file remain available
+for broad regression. See [`critical-release-coverage.md`](critical-release-coverage.md)
+for selected risks and excluded browser-layer coverage. Encrypted backup/restore,
+off-host recovery and server deployment checks remain separate mandatory release
+gates; the browser runner does not perform them. CI must bind the successful critical
+gate receipt to the candidate source and exact manifest before candidate export or
+promotion. A paused, skipped or partial critical gate cannot produce release evidence.
+
 Within an initialized isolated acceptance stack, Playwright accepts concrete files
 or file:line selectors, for example:
 

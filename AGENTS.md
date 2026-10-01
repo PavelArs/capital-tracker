@@ -44,15 +44,14 @@ before database upgrades: explicit migration preflight refuses unsafe legacy his
 Default to verification scoped to the changed code and its critical risks: relevant
 unit/integration checks, real PostgreSQL and selected critical HTTPS Playwright cases.
 Record the selected scenarios, rationale, actual results and unrun checks. A full E2E
-run is not required for every incremental change (owner instruction2026-09-23).
-Keep `pnpm test:e2e` and its test files for broad regression/release verification
-when justified. Owner instruction 2026-10-01 temporarily pauses only the hosted E2E
-and real-DB browser/runtime bundle until PM-TEST coverage cleanup; keep the manual
-command and restore the source flag in a reviewed commit after cleanup, then rerun
-full release acceptance before candidate export/promotion. All non-E2E CI gates
-remain intact, and a green run with this bundle paused is not tested-release evidence.
-This cleanup is a temporary prerequisite to restoring release E2E, not a deferral of
-that release gate.
+run is not required for every incremental change (owner instruction 2026-09-23).
+Keep `pnpm test:e2e` and its test files for broad regression/release verification.
+The owner authorized a shortened critical-release acceptance profile on 2026-10-01;
+it retains the real PostgreSQL/provider/CLI/artifact gates and selected real HTTPS
+journeys. It does not replace the full 174-case suite or separate encrypted backup/
+restore and server gates. A green ordinary CI run without this acceptance is not
+tested-release evidence. See `docs/critical-release-coverage.md` and
+`docs/testing-and-migrations.md` for boundaries and commands.
 Review the E2E pyramid separately: move suitable coverage down before removing
 redundant cases, preserving critical financial/authentication paths.
 See docs/testing-and-migrations.md for the isolated environment and commands.
