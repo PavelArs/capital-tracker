@@ -20,9 +20,9 @@ The nine failures are summarized in
 [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/release-manual-mvp/verification.md).
 Log: `/private/tmp/capital-mvp-fourth-ci-release.log`; uploaded real failure
 artifact: `/private/tmp/capital-mvp-ci4-artifact` (Actions artifact ID
-`11097437276`). The timeout is a possible contributor, not an established sole
-cause; diagnosis remains underway. Scans, export, promotion, bootstrap and deploy
-did not run. No task is closed by this checkpoint.
+`11097437276`). The cap stopped the unfinished suite; the nine reported failures
+occurred before cancellation and require independent diagnosis. Scans, export,
+promotion, bootstrap and deploy did not run. No task is closed by this checkpoint.
 
 Separate evidence remains: the exact local PG18 four-image runtime at `7274076`
 passed 19/19 retained HTTPS/MFA/accounting journeys, current migrations, 27 startup
@@ -38,8 +38,20 @@ passed (`/private/tmp/capital-mvp-final-e2e-types.log`). The owner Snap common-b
 probe is already recorded as PASS below; it does not close bootstrap/deployment.
 
 Earlier hosted runs and their fixture/readiness diagnoses remain in the dated
-history below and in the verification receipt. Bootstrap and deployment remain
-pending. Preserve owner data, preview and Nginx edit.
+history below and in the verification receipt.
+
+Next release and owner constraints: target `agm:/var/snap/docker/common/capital-tracker`
+for `capital.pavelars.ru`; preserve legacy `/opt/.env` and `/opt/.gitignore`.
+First-install history is resolved by zero related resources plus the owner's
+attestation that the old `.env` was an unused template. GitHub `production`
+credentials are configured, but the public key is not installed and the restricted
+`capital-release` account is not created. The owner will run `sudo` steps and enter
+their classic `read:packages` PAT directly. Before deployment, the owner requires an
+encrypted recovery archive on the Mac and password-manager custody. Retire the unused
+deploy account and old key only after the `capital-release` cutover is installed and
+verified; preserve other home files and never use `userdel -r`. Remaining sequence:
+current-main CI → fresh-promotion receipt → owner bootstrap, PAT and key custody →
+inventory/preflight/deploy. Preserve owner data, preview and Nginx edit.
 
 ### 2026-09-30 later: MVP-007 restricted dispatcher (Claude continuation)
 

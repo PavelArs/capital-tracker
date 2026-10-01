@@ -339,8 +339,8 @@ at its configured 120-minute cap, 11:05:37–13:06:06 UTC; status job `109899752
 failed because the Docker build job was cancelled. The release job planned 174 E2E
 tests; 153 completed with results (144 passed, 9 failed). Test 154 was interrupted
 and has no complete result. Do not claim a full-suite result or infer results for the
-remaining tests. The 120-minute cap may have contributed to failures, but it is not
-established as their sole cause; diagnosis remains underway.
+remaining tests. The cap stopped the unfinished suite; the nine reported failures
+occurred before cancellation and require independent diagnosis.
 
 The nine actual failed cases, from the uploaded Playwright artifact, were:
 
