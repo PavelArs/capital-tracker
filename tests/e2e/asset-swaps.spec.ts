@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Locator, type Request, type Route, expect } from '@playwright/test';
+import { type Locator, type Page, type Request, type Route, expect } from '@playwright/test';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { browserPost, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -7,6 +7,27 @@ import { browserPost, tradeApi, tradeInput } from './usd-trades-fixtures';
 const at = '2025-01-03T00:00:00.000Z';
 const swapsPath = (id: string) => `/accounts/${id}/swaps`;
 const businessRows = () => fingerprint(['auth_sessions', 'auth_request_limits']);
+
+async function openAccountFromDirectory(page: Page, accountId: string): Promise<void> {
+  const directory = page.getByRole('region', { name: 'Счета', exact: true });
+  const link = directory.locator(`a[href="/manual-accounts/${accountId}"]`);
+  const more = directory.getByRole('button', { name: 'Показать еще счета', exact: true });
+  for (let loaded = 0; ; loaded++) {
+    await expect
+      .poll(
+        async () =>
+          (await link.count()) === 1 || ((await more.isVisible()) && (await more.isEnabled())),
+      )
+      .toBe(true);
+    if (await link.count()) break;
+    expect(loaded, 'Exact synthetic account discovery is bounded').toBeLessThan(10);
+    const previous = await directory.getByRole('link').count();
+    await more.click();
+    await expect.poll(() => directory.getByRole('link').count()).toBeGreaterThan(previous);
+  }
+  await expect(link).toBeVisible();
+  await link.click();
+}
 
 function swapCommand(revision: number, outgoing: string, incoming: string) {
   return {
@@ -444,7 +465,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     }
     await mountedEditor?.dispose();
     await page.getByRole('link', { name: '← Ручные счета', exact: true }).click();
-    await page.locator(`a[href="/manual-accounts/${account.id}"]`).click();
+    await openAccountFromDirectory(page, account.id);
     await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('swaps');
     await expect(form.getByLabel('Получаемое количество до комиссии', { exact: true })).toHaveValue(
       '3',

@@ -59,6 +59,28 @@ function setCommand(expectedRevision: number, observedAt = pointAt, priceUsd = p
   };
 }
 
+async function loadInstrumentOptions(page: Page, instrumentIds: string[]): Promise<void> {
+  const catalog = page.getByRole('region', { name: 'Выбор инструмента', exact: true });
+  const picker = catalog.getByLabel('Инструмент', { exact: true });
+  const options = instrumentIds.map((id) => picker.locator(`option[value="${id}"]`));
+  const more = catalog.getByRole('button', { name: 'Загрузить ещё инструменты', exact: true });
+  const allPresent = async () =>
+    (await Promise.all(options.map((option) => option.count()))).every((count) => count === 1);
+  for (let loaded = 0; ; loaded++) {
+    await expect
+      .poll(
+        async () => (await allPresent()) || ((await more.isVisible()) && (await more.isEnabled())),
+      )
+      .toBe(true);
+    if (await allPresent()) break;
+    expect(loaded, 'Exact synthetic instrument discovery is bounded').toBeLessThan(10);
+    const previous = await picker.locator('option').count();
+    await more.click();
+    await expect.poll(() => picker.locator('option').count()).toBeGreaterThan(previous);
+  }
+  for (const option of options) await expect(option).toHaveCount(1);
+}
+
 async function browserGet(page: Page, instrumentId: string, action: () => Promise<void>) {
   const pending = page.waitForResponse(
     (response) =>
@@ -433,7 +455,9 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
     expect(providerRequests()).toEqual(callsBefore);
   };
 
+  await loadInstrumentOptions(page, [firstInstrument.id, secondInstrument.id]);
   await instrumentPicker.selectOption(firstInstrument.id);
+  await expect(instrumentPicker).toHaveValue(firstInstrument.id);
   const initialRead = await browserGet(page, firstInstrument.id, () => load.click());
   expect(initialRead.status()).toBe(200);
   await expect(save).toBeDisabled();
@@ -638,6 +662,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   const oldSelectionLoad = load.click();
   await lateReadStarted;
   await instrumentPicker.selectOption(secondInstrument.id);
+  await expect(instrumentPicker).toHaveValue(secondInstrument.id);
   const secondRead = await browserGet(page, secondInstrument.id, () => load.click());
   expect(secondRead.status()).toBe(200);
   await expect(page.getByRole('region', { name: 'Сохранённые цены', exact: true })).toContainText(
@@ -680,7 +705,9 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   }, true);
   expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(closeRows);
   await page.reload();
+  await loadInstrumentOptions(page, [firstInstrument.id]);
   await instrumentPicker.selectOption(firstInstrument.id);
+  await expect(instrumentPicker).toHaveValue(firstInstrument.id);
   const afterReload = await browserGet(page, firstInstrument.id, () => load.click());
   expect(afterReload.status()).toBe(200);
   await expect(page.getByText('Сохранённых цен нет.', { exact: true })).toBeVisible();
