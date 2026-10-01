@@ -344,7 +344,7 @@ occurred before cancellation and require independent diagnosis.
 
 The nine actual failed cases, from the uploaded Playwright artifact, were:
 
-- `SES-002-A` missing CSRF/foreign-Origin currency privacy assertion: received three currencies instead of `[]`.
+- `SES-002-A` missing CSRF/foreign-Origin currency privacy assertion: received three preexisting `user_currency_preferences` rows instead of `[]`.
 - `LIMIT-001-B/LIMIT-001-D` CSRF path variants across restarts: received HTTP 502 instead of 429.
 - `LIMIT-001-B` factor admission across restarts: received HTTP 502 instead of 429.
 - `CARRY-001-A` exact lot provenance after restart: expected a string, got `undefined`.
