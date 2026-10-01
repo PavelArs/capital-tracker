@@ -5,8 +5,8 @@
 
 ## 2. Product correction and scoped verification
 
-- [ ] 2.1 Keep ManualAccountDetail as sole catalog owner, forward controls through TradeJournal/CsvImports, remove child catalog state/requests and preserve mounted CSV intent.
-- [ ] 2.2 Pass focused component acceptance, compatible frontend lint/build/types and strict OpenSpec validation; record commands/results and unrun checks.
+- [x] 2.1 Keep ManualAccountDetail as sole catalog owner, forward controls through TradeJournal/CsvImports, remove child catalog state/requests and preserve mounted CSV intent.
+- [x] 2.2 Pass focused component acceptance, compatible frontend lint/build/types and strict OpenSpec validation; record commands/results and unrun checks.
 
 ## 3. Required completion gates
 

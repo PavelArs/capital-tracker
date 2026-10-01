@@ -14,7 +14,13 @@ import {
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CsvBatchDetail, CsvReceiptView, csvStateLabel } from './CsvBatchDetail';
-import { CsvMapping, type CsvMappingDraft, csvSettings, emptyCsvMapping } from './CsvMapping';
+import {
+  CsvMapping,
+  type CsvMappingDraft,
+  type InstrumentCatalogControls,
+  csvSettings,
+  emptyCsvMapping,
+} from './CsvMapping';
 import { CsvPreview, CsvSource } from './CsvPreview';
 import { accountingError, newRequestId } from './feedback';
 import './CsvImports.css';
@@ -50,6 +56,7 @@ export function CsvImports({
   accountId,
   journalRevision,
   instruments,
+  instrumentCatalog,
   parentBusy,
   parentBlocked,
   onBlocked,
@@ -58,6 +65,7 @@ export function CsvImports({
   accountId: string;
   journalRevision: number;
   instruments: Instrument[];
+  instrumentCatalog: InstrumentCatalogControls;
   parentBusy: boolean;
   parentBlocked: boolean;
   onBlocked: (blocked: boolean) => void;
@@ -585,6 +593,7 @@ export function CsvImports({
             draft={mapping}
             onChange={editMapping}
             instruments={instruments}
+            instrumentCatalog={instrumentCatalog}
             disabled={locked}
           />
           <button

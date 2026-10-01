@@ -17,6 +17,7 @@ import { AssetRewards } from './AssetRewards';
 import { AssetSwaps } from './AssetSwaps';
 import { CarryIn } from './CarryIn';
 import { CsvImports } from './CsvImports';
+import type { InstrumentCatalogControls } from './CsvMapping';
 import { HistoricalAccounting } from './HistoricalAccounting';
 import { HistoricalValuation } from './HistoricalValuation';
 import { type TradeDraft, TradeForm, emptyTradeDraft } from './TradeForm';
@@ -44,6 +45,7 @@ function errorMessage(error: unknown) {
 export function TradeJournal({
   accountId,
   instruments,
+  instrumentCatalog,
   openingBusy,
   onEligibility,
   section,
@@ -52,6 +54,7 @@ export function TradeJournal({
 }: {
   accountId: string;
   instruments: Instrument[];
+  instrumentCatalog: InstrumentCatalogControls;
   openingBusy: boolean;
   onEligibility: (hasJournal: boolean | null) => void;
   section: AccountSection;
@@ -657,6 +660,7 @@ export function TradeJournal({
                       accountId={accountId}
                       journalRevision={journal.journalRevision}
                       instruments={instruments}
+                      instrumentCatalog={instrumentCatalog}
                       parentBusy={writing || openingBusy || ambiguous || carryInBlocked}
                       parentBlocked={manualDisabled || ambiguous || carryInBlocked}
                       onBlocked={blockForCsv}

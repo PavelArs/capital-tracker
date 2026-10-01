@@ -487,6 +487,15 @@ export default function ManualAccountDetail() {
             key={`${id}:${account.currentRevision}`}
             accountId={id}
             instruments={instruments}
+            instrumentCatalog={{
+              hasMore: instrumentCursor !== null,
+              loading: instrumentsLoading,
+              error: instrumentError,
+              onLoadMore: () => {
+                if (instrumentsLoading || (!instrumentCursor && !instrumentError)) return;
+                void loadInstruments(instrumentCursor ?? undefined, true);
+              },
+            }}
             openingBusy={saving}
             onEligibility={handleJournalEligibility}
             section={section}

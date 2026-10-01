@@ -1,9 +1,15 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import type { Instrument } from '@api/accounting.api';
 import type { CsvDocument, CsvField, CsvSettings } from '@api/csv-imports.api';
-import { useEffect, useId, useRef, useState } from 'react';
+import { useId } from 'react';
 import './OperationForm.css';
 import { csvFields } from './CsvPreview';
-import { accountingError } from './feedback';
+
+export interface InstrumentCatalogControls {
+  hasMore: boolean;
+  loading: boolean;
+  error: string | null;
+  onLoadMore: () => void;
+}
 
 export interface CsvMappingDraft {
   columns: Record<CsvField, string>;
@@ -92,12 +98,14 @@ export function CsvMapping({
   draft,
   onChange,
   instruments,
+  instrumentCatalog,
   disabled,
 }: {
   document: CsvDocument;
   draft: CsvMappingDraft;
   onChange: (draft: CsvMappingDraft) => void;
   instruments: Instrument[];
+  instrumentCatalog: InstrumentCatalogControls;
   disabled: boolean;
 }) {
   const descriptionId = useId();
@@ -109,39 +117,6 @@ export function CsvMapping({
     occurredAt: `${descriptionId}-time`,
     order: `${descriptionId}-time`,
   };
-  const [choices, setChoices] = useState(instruments);
-  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const live = useRef(false);
-  useEffect(() => {
-    live.current = true;
-    return () => {
-      live.current = false;
-    };
-  }, []);
-  useEffect(() => {
-    setChoices((current) =>
-      Array.from(new Map([...current, ...instruments].map((item) => [item.id, item])).values()),
-    );
-  }, [instruments]);
-  async function more() {
-    if (loading || disabled || cursor === null) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const page = await accountingApi.listInstruments(cursor);
-      if (!live.current) return;
-      setChoices((current) =>
-        Array.from(new Map([...current, ...page.items].map((item) => [item.id, item])).values()),
-      );
-      setCursor(page.nextCursor);
-    } catch (error) {
-      if (live.current) setError(accountingError(error, 'загрузить инструменты'));
-    } finally {
-      if (live.current) setLoading(false);
-    }
-  }
   return (
     <fieldset disabled={disabled} className="csv-mapping operation-form">
       <legend>Сопоставление колонок и значений</legend>
@@ -208,7 +183,7 @@ export function CsvMapping({
                 }
               >
                 <option value="">Выберите принадлежащий вам инструмент</option>
-                {choices.map((instrument) => (
+                {instruments.map((instrument) => (
                   <option key={instrument.id} value={instrument.id}>
                     {instrument.name}
                     {instrument.symbol ? ` (${instrument.symbol})` : ''} · {instrument.id}
@@ -218,17 +193,21 @@ export function CsvMapping({
             </label>
           ))}
         </div>
-        {cursor !== null && (
+        {(instrumentCatalog.hasMore || instrumentCatalog.loading || instrumentCatalog.error) && (
           <button
             type="button"
             className="manual-button manual-button--secondary"
-            disabled={loading || disabled}
-            onClick={() => void more()}
+            disabled={instrumentCatalog.loading || disabled}
+            onClick={instrumentCatalog.onLoadMore}
           >
-            {loading ? 'Загрузка инструментов…' : 'Загрузить ещё инструменты для CSV'}
+            {instrumentCatalog.loading
+              ? 'Загрузка инструментов…'
+              : instrumentCatalog.hasMore
+                ? 'Загрузить ещё инструменты для CSV'
+                : 'Повторить загрузку инструментов для CSV'}
           </button>
         )}
-        {error && <p role="alert">{error}</p>}
+        {instrumentCatalog.error && <p role="alert">{instrumentCatalog.error}</p>}
       </section>
       <section className="operation-form__section">
         <h3>Точные исходные значения типа сделки</h3>
