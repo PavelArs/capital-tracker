@@ -45,8 +45,8 @@ export/promotion gates remain open. Next gates are trusted current-main hosted C
 fresh promotion receipt, owner bootstrap and PAT/key custody, encrypted Mac recovery
 archive, restricted dispatcher setup and inventory/preflight, controlled deployment,
 post-deployment backup verification, then retirement of the old key/account and
-manual-MVP archive. Preserve owner data, preview, legacy `/opt/.env` and
-`/opt/.gitignore`, and the Nginx edit.
+manual-MVP archive. Preserve owner data, preview, legacy `/opt/capital-tracker/.env` and
+`/opt/capital-tracker/.gitignore`, and the Nginx edit.
 
 Separate earlier local evidence remains: the exact PG18 four-image runtime at `7274076`
 passed 19/19 retained HTTPS/MFA/accounting journeys, migrations, 27 startup refusals,
