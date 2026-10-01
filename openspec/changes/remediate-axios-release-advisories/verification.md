@@ -1,7 +1,8 @@
 # Axios remediation verification
 
 Date: 2026-10-01. Base: `a661fc4` integration checkpoint, isolated
-`fix/manual-mvp-axios` worktree. No Docker, deployment, archive or remote push.
+`fix/manual-mvp-axios` worktree. Initial local source verification used no Docker,
+deployment, archive or remote push.
 
 ## AXS-001-A/C — actual dependency RED/GREEN
 
@@ -72,8 +73,9 @@ This closes task 3.1 only; it does not establish runtime or release acceptance.
 
 Rebuilt release-image exact-version/provider TLS and
 selected real HTTPS/password/MFA/CSRF/stored-provider/browser/PostgreSQL acceptance
-UNRUN: Docker unavailable and explicitly prohibited for this task. Broad E2E and
-new hosted CI UNRUN. These are separate runtime/release evidence and must not be
+UNRUN: Docker unavailable and explicitly prohibited for this task. Broad E2E
+UNRUN. Hosted build/scan evidence is recorded below. These are separate runtime/
+release evidence and must not be
 inferred from unit, HTTP or source build checks. Change stays active, unarchived.
 
 Strict `OPENSPEC_TELEMETRY=0 pnpm exec openspec validate --all --strict --no-interactive`
@@ -81,3 +83,20 @@ using installed OpenSpec 1.2.0 passed **46/46**, exit0. Receipt:
 `/private/tmp/capital-axios-openspec-final.log`. `git diff --check` passed.
 Source tasks 1.1–2.3 and independent source review task 3.1 complete.
 Runtime task 3.2 and final integration/archive task 3.3 remain open.
+
+## Hosted build/security follow-up (2026-10-01)
+
+Fresh API receipt `/private/tmp/capital-mvp-ci6-run.json`, independently verified
+by Root, records [Actions 36886571152](https://github.com/PavelArs/capital-tracker/actions/runs/36886571152)
+at exact combined source `f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c`: SUCCESS,
+10/10 jobs including the production audit, application builds/tests, engineering/
+security gates and paused release-image job. Backend/frontend/PostgreSQL image
+build, all four image scans and exact-image high/critical enforcement passed.
+This is image-gate success, not a claim of zero overall scanner findings.
+
+Browser installation/full acceptance and tested-candidate export/upload were
+skipped. Actual new-image provider TLS/transport and HTTPS/password/MFA/CSRF/
+stored-provider/browser/PostgreSQL acceptance remain UNRUN; Docker is unavailable
+locally. No tested runtime candidate, promotion or deployment exists from this run.
+Task 3.2 and final integration/archive task 3.3 remain open, and this change stays
+ACTIVE. The tracked MODERATE Multer finding remains due for triage 2026-10-08.

@@ -4,35 +4,40 @@
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
-Network sync and AI remain deferred. Last recorded published baseline is
-`a661fc46453b2244ca78d26f3411b97b922d8790` on
+Network sync and AI remain deferred. Latest completed published source is
+`f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c` on
 `/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`.
 Reviewed E2E pause source `f46d72e` is integrated as `ba2db8b`; reviewed Axios source
-`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`. Consult PR #26
-for the latest published head and CI status. The primary checkout
-`/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with the owner's
-dirty `frontend/nginx.conf` edit; preserve it.
+`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`.
+The primary checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at
+`0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
 
-Last completed hosted run recorded here is PR #26 Actions
-[36857990125](https://github.com/PavelArs/capital-tracker/actions/runs/36857990125)
-for integration source `a661fc46453b2244ca78d26f3411b97b922d8790`. Seven basic CI
-jobs passed. The production dependency audit failed: Axios `1.18` is below the
-required `1.20` floor and the report contains 7 HIGH and 6 MODERATE findings. The
-Root requested cancellation after the audit failure and the run reached terminal
-cancelled status; release
-E2E was cancelled, scans and candidate export were skipped, and there was no
-promotion or deployment. The audit job log is
-`/private/tmp/capital-mvp-ci5-audit-job.log`. Axios remediation source is reviewed
-and passes the required production audit gate (0 HIGH/critical, 1 MODERATE Multer
-advisory); full audit still exits 1 for that tracked advisory, due for maintainer
-triage 2026-10-08. Frozen install before/after passed 64 backend tests in 3 suites
-and 39 frontend tests in 3 files. Backend/frontend lint, strict types and builds
-passed; five backend HTTP adapter cases passed, while frontend only asserts Axios
-version. Do not claim release/runtime verification:
-the new image/scans and real PG/HTTPS remain unrun because Docker is unavailable
-locally; hosted CI against combined source is pending. The
-temporary E2E pause is implemented and reviewed at `ba2db8b`; local policy checks
-passed, but hosted scheduler/build/scans have not yet exercised it.
+Latest completed hosted PR #26 Actions
+[36886571152](https://github.com/PavelArs/capital-tracker/actions/runs/36886571152)
+at exact source `f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c` is **SUCCESS**, all
+10/10 jobs, including production audit and final aggregate. Fresh API receipt:
+`/private/tmp/capital-mvp-ci6-run.json`, independently verified by Root.
+Paused backend/frontend/PostgreSQL image builds, all four Trivy scans and
+exact-image high/critical enforcement passed. This records image-gate success,
+not zero overall findings. Browser installation/full real acceptance and tested
+candidate export/upload were skipped. **This is paused CI, not a release candidate**;
+no real PG/HTTPS/MFA runtime acceptance, promotion or deployment is evidenced.
+The bounded `gate-release-work-on-audit` change is complete and archived with
+ENG-004/005 synced to canonical engineering gates. Axios remediation and manual-MVP
+remain ACTIVE: new-image transport/TLS and selected real acceptance are unrun.
+Any archive-only follow-up SHA requires new CI on publication; this green receipt
+belongs to `f85a638`, not that later commit.
+
+Historical predecessor run 36857990125 at `a661fc4` failed the production audit
+(7 HIGH, 6 MODERATE) and was cancelled; its audit log remains
+`/private/tmp/capital-mvp-ci5-audit-job.log`. Reviewed Axios remediation passed the
+required production gate (0 HIGH/critical, 1 MODERATE Multer); the full local audit
+still exits 1 for the tracked advisory due for maintainer triage 2026-10-08.
+Frozen install before/after passed 64 backend tests in 3 suites and 39 frontend
+tests in 3 files. Backend/frontend lint, strict types and builds, five backend HTTP
+adapter cases and 195 pause policy checks passed; frontend only asserts Axios
+version. These checks and hosted builds/scans do not establish runtime acceptance.
+Local Docker-dependent real PG/HTTPS checks remain unrun because Docker is unavailable.
 
 Owner decision (2026-10-01): temporarily pause E2E in CI until test cleanup is
 complete. Keep the manual test command and test files; continue non-E2E checks,
@@ -43,7 +48,7 @@ and its actual gate results only after implementation and verification.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
-Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; hosted CI, actual Docker build/scans and real DB/HTTPS acceptance remain pending. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
+Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; actual hosted build/scans passed in run 36886571152, while real DB/HTTPS acceptance remains unrun. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
 
 Run 36706275247 and its 174-test partial result below are historical evidence, not
 the latest CI checkpoint. Its nine reported failures retain their scoped local PASS
@@ -68,9 +73,11 @@ in [`openspec/changes/release-manual-mvp/verification.md`](openspec/changes/rele
 The failed CSV RED, 6-unit-test predecessor RED and subsequent 12/12 affected unit
 GREEN, strict types, frontend build and style checks remain recorded there.
 
-The final pagination fix adds no backend, database or deployment changes. No new
-hosted CI, candidate promotion, bootstrap or deployment has occurred; image scans and
-export/promotion gates remain open. Next gates are trusted current-main hosted CI,
+The final pagination fix adds no backend, database or deployment changes. At that
+pagination runtime checkpoint no new
+hosted CI, candidate promotion, bootstrap or deployment had occurred. The current
+paused hosted build/scan success is recorded above; tested-candidate export/promotion
+gates remain open. Next gates are trusted current-main hosted CI,
 fresh promotion receipt, owner bootstrap and PAT/key custody, encrypted Mac recovery
 archive, restricted dispatcher setup and inventory/preflight, controlled deployment,
 post-deployment backup verification, then retirement of the old key/account and

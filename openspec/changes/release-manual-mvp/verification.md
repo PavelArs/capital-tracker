@@ -538,3 +538,29 @@ Mac recovery archive/password-manager custody, restricted dispatcher install and
 inventory/preflight, deployment, post-deployment backup verification, old key/account
 retirement after verified cutover, and final manual-MVP archive. The whole product
 remains incomplete.
+
+## Latest hosted checkpoint: paused CI success (2026-10-01)
+
+PR #26 [Actions 36886571152](https://github.com/PavelArs/capital-tracker/actions/runs/36886571152)
+completed SUCCESS at exact source `f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c`.
+Fresh API receipt `/private/tmp/capital-mvp-ci6-run.json` was independently verified
+by Root: all 10/10 jobs succeeded, including production audit, specification/
+engineering/security gates, application checks and final aggregate. Strict
+OpenSpec at published source covered 47 items. Paused backend/frontend/PostgreSQL
+builds, four Trivy image scans and exact-image high/critical enforcement passed;
+this does not claim zero overall findings.
+
+Browser installation and full real acceptance were skipped. Tested-candidate
+export/upload were skipped; no tested runtime candidate, promotion or deployment
+is evidenced. New-image transport/TLS and real PG/HTTPS/password/MFA/CSRF/browser
+acceptance remain unrun. Local Docker is unavailable. The tracked MODERATE Multer
+advisory remains due for maintainer triage 2026-10-08. Historical runtime receipts
+above remain scoped to their recorded sources/images; they do not verify this
+combined source. Manual-MVP and Axios remediation remain ACTIVE.
+
+Only the bounded engineering-gate change is archived after its actual hosted
+task 2.4 passed; canonical ENG-004/005 retain the temporary pause and provenance
+refusal. An archive-only follow-up commit creates a new SHA requiring new CI on
+publication; this receipt belongs only to `f85a638`. Restore E2E after PM-TEST
+cleanup and run complete trusted real acceptance before candidate export/promotion.
+All server/operator/recovery/deployment and whole-target gates remain incomplete.

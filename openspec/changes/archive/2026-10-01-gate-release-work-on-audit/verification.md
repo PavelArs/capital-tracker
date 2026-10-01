@@ -2,7 +2,8 @@
 
 Base: `a661fc46453b2244ca78d26f3411b97b922d8790`. Worktree:
 `/Users/pavelars/Projects/temp/capital-tracker-ci-audit-gate`, branch `fix/ci-audit-gate`.
-Date: 2026-10-01. No archive or release-completion claim.
+Date: 2026-10-01. Initial source evidence below is historical; final hosted gate
+and archive evidence follow. No release-completion claim.
 
 ## Acceptance scope and actual RED
 
@@ -81,14 +82,16 @@ is empty. Lockfile SHA256 remains
 `7db95986acc2a8c4fbef9bf9be34c7296b51fe2aa821bcc215db5d8e36f289ba`.
 
 Policy checks prove the workflow graph/conditions and actual CD validation command,
-not hosted scheduler execution or runtime security. No local Docker, actual image
+not hosted scheduler execution or runtime security. At the local source-verification
+checkpoint, no Docker, actual image
 build/scan, hosted CI, production audit, database migration/accounting probe,
 HTTPS/TLS/authentication/browser run, promotion, server access, deployment or remote
 push was performed. During paused CI the bundled real PostgreSQL and HTTPS/browser
 acceptance checks do not run; green paused CI is not release candidate evidence.
-Full product/MVP release remains incomplete. Archive is intentionally unperformed.
+Full product/MVP release remains incomplete. Archive was withheld at that
+checkpoint until task 2.4 passed.
 
-## Independent source review and remaining hosted gate
+## Independent source review and historical pending hosted gate
 
 Root reported independent review **APPROVED** for frozen source commit
 `f46d72ecefddd20bf47b68259c657cc4e628d529`. The independent reviewer reran the two
@@ -96,9 +99,59 @@ affected engineering gate suites on Node `v22.23.2`: **195/195 PASS**, 6.797 sec
 Local source review tasks 2.3 and 3.4 are complete. This follow-up changes only
 OpenSpec tasks/evidence; the approved workflow and test source remain unchanged.
 
-Task 2.4 remains open for actual hosted CI scheduler behavior, the explicit paused
+At that source-review checkpoint, task 2.4 remained open for actual hosted CI
+scheduler behavior, the explicit paused
 backend/frontend/PostgreSQL image build, all four image scans/security enforcement,
-skipped browser/candidate steps and a successful final aggregate. The change stays
-**ACTIVE** until this required hosted CI gate passes; do not archive it on local
+skipped browser/candidate steps and a successful final aggregate. The change stayed
+**ACTIVE** until this required hosted CI gate passed; do not archive it on local
 policy evidence alone. Even a green paused CI run remains distinct from full
 acceptance and cannot produce/promote a tested release candidate.
+
+## Actual hosted CI gate completed (2026-10-01)
+
+Fresh GitHub API receipt: `/private/tmp/capital-mvp-ci6-run.json`, independently
+verified by Root. PR #26 Actions [36886571152](https://github.com/PavelArs/capital-tracker/actions/runs/36886571152)
+completed **SUCCESS** at exact source
+`f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c`. All **10/10 jobs succeeded**,
+including the aggregate that checks the nine required jobs. Backend/frontend
+lint, tests and builds, production dependency audit, specification/engineering/
+security checks and Release Images and Security all succeeded. The published
+source's strict OpenSpec scope was 47 items before this archive.
+
+The image/security job began after successful prerequisites. Its reviewed
+PostgreSQL source/Redis digest verification and explicit paused backend/frontend/
+PostgreSQL build succeeded. All four Trivy image scan steps (backend, frontend,
+PostgreSQL and Redis), redaction, and exact-image high/critical enforcement
+succeeded. This proves the image security gate passed, not zero overall findings.
+
+Browser installation and `Run full real acceptance` were **SKIPPED**. Tested
+candidate image export and both candidate/report uploads gated by acceptance
+were **SKIPPED**; scanner evidence upload succeeded. No real PostgreSQL accounting/
+migration probe, HTTPS/password/MFA/browser acceptance, tested runtime candidate,
+promotion or deployment is evidenced by this run. Local Docker remains unavailable.
+The Axios real-image transport/TLS and selected runtime gate and manual-MVP
+release gates remain active. The local audit's tracked MODERATE Multer finding
+still requires maintainer triage by 2026-10-08.
+
+This completes only hosted task 2.4 and the bounded engineering gate change.
+The green paused run is not release-candidate evidence. Restoring E2E through a
+reviewed source change and running complete trusted acceptance remains required
+before candidate export/promotion. Any archive-only follow-up commit has a new
+SHA and needs its own CI on publication; this receipt belongs only to `f85a638`.
+
+## Archive assessment
+
+OpenSpec 1.2.0 `status --change gate-release-work-on-audit --json` reports all four
+artifacts done. After task 2.4 closure, `instructions apply` reports all 10 tasks
+complete. Delta assessment adds only ENG-004 and ENG-005 to canonical
+`engineering-gates`; ENG-001/002/003 stay unchanged, with no removals, renames or
+changes to other canonical specifications. The owner-authorized supported CLI
+`OPENSPEC_TELEMETRY=0 openspec archive gate-release-work-on-audit --yes` validates
+and synchronizes the delta before archive; neither skip-specs nor no-validate is used.
+
+Actual CLI archive result: task status Complete; +2 requirements, ~0 modified,
+-0 removed, 0 renamed; specs updated and change archived successfully to
+`openspec/changes/archive/2026-10-01-gate-release-work-on-audit/`. The CLI-added
+extra EOF blank line was removed without changing any requirement text.
+Post-archive strict all validation passed **46/46** (44 canonical specs, two
+ACTIVE changes: Axios remediation and manual-MVP); `git diff --check` passed.
