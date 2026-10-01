@@ -4,6 +4,32 @@ This backlog preserves the complete target in [`capital-tracker-openspec-prompt.
 
 ## Current release: manual + CSV MVP — IN PROGRESS
 
+The whole target remains incomplete and the release is not deployed or complete.
+Trusted main CI run 36900868365 passed 20/20 critical cases on exact main
+0f479b3955aba1cf351a29e897c7ffbdc9909638. Promotion 36905502848 completed with
+immutable backend sha256:52d464e118000b07dde22c44f879e07dcf6755c8b73767d89b6bf1ec89301aaf,
+frontend sha256:19a8074a2e0dc6fd67e41615e62e10815b497994e23d56cbbdf54b01af510cc6,
+PostgreSQL sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f,
+and Redis sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23.
+Exact-main receipt, run metadata and promoted manifest are in the ignored
+capital-tracker-ci4-runtime/tests/e2e/.runtime/release-planning/evidence/ directory.
+
+Owner setup is complete: dispatcher installation/approval, dedicated Docker login,
+targeted Nginx fix/reload, predeploy encrypted-key custody and SSH retry preparation.
+Production deploy 36914835760 failed at pg_restore after creating PostgreSQL 18/Redis
+containers, named volumes and project network. Restore, migrations, owner CLI and app
+activation did not pass. Deployment remains false; preserve all initialized resources.
+No fresh bootstrap, prune, reset, remove, recreate or retry before verified recovery.
+Postdeploy MFA custody remains pending.
+
+OpenSpec fix-interrupted-mvp-release was strictly validated and committed as docs
+commit cd1df01; implementation is underway separately. It requires bounded final
+PostgreSQL TCP readiness and a guarded resume-fresh path pinned to original images.
+New source has no CI acceptance yet. Local Docker is unavailable. The historical
+release notes below predate the current-main CI, promotion and failed deployment.
+
+### Historical release checkpoint — before current-main CI and deployment
+
 The owner explicitly resumed the manual-accounting and CSV MVP release on 2026-09-30 after a pause. Network synchronization and AI remain deferred. This release is **IN PROGRESS**, not deployed and not post-MVP scope. The latest local PG18 four-image runtime at source `7274076` passed 19/19 retained real journeys, migration/startup/CLI/artifact checks and encrypted disconnected restore with matching fingerprints and source preservation; scans found zero critical/high/secrets, with one backend MEDIUM. Exact runtime identities and evidence are recorded in [`openspec/changes/release-manual-mvp/verification.md`](../openspec/changes/release-manual-mvp/verification.md).
 
 Historical predecessor hosted PR #26 run [36857990125](https://github.com/PavelArs/capital-tracker/actions/runs/36857990125), source `a661fc46453b2244ca78d26f3411b97b922d8790`, passed seven basic CI jobs and failed the production dependency audit (7 HIGH, 6 MODERATE); backend Axios `1.18` was below the required `1.20` floor. Root requested cancellation after the audit failure and the run terminated cancelled: E2E was cancelled, scans and candidate export were skipped, and no promotion or deployment occurred. The audit log is `/private/tmp/capital-mvp-ci5-audit-job.log`. Reviewed Axios source `ed8c299` is integrated as `1920d90`; frozen install passed the same checks before/after the byte-identical test move: 64 backend tests in 3 suites and 39 frontend tests in 3 files, both frontend/backend lint, strict types and builds, and five localhost backend HTTP adapter cases. Frontend tests assert the expected Axios version. The required production audit gate now exits 0 with zero HIGH/critical and one MODERATE Multer advisory (GHSA-3pph-fpjx-jg34); full audit remains exit 1 with maintainer triage due 2026-10-08. Hosted builds/scans against combined source now passed as recorded below; real PG/HTTPS acceptance remains unrun. Run [36692852787](https://github.com/PavelArs/capital-tracker/actions/runs/36692852787) remains historical: its stale PostgreSQL `RESTRICT` expectation stopped acceptance before browser execution. The independent scoped opening acceptance passed 6/6 against real PostgreSQL; the initial 24-scenario actual-DB batch had 19 original PASS and five expectation failures. Reviewed source `9ec4e40` corrected all five, and all 24 scripts passed across the initial run plus targeted reruns, not one uninterrupted run. Receipt `/private/tmp/capital-mvp-db-compat-evidence.json` records the exact same four image IDs, linux/amd64 and zero remaining containers; no image rebuild or browser rerun. Production bootstrap/deploy remain separate gates. Preserve both legacy `/opt` `.env` and `.gitignore`.
@@ -17,6 +43,22 @@ The owner confirmed the old `.env` is an unused template and no owner database e
 Before promotion, complete the existing release workflow and verify its evidence against [`docs/deployment-security-verification.md`](deployment-security-verification.md), [`docs/testing-and-migrations.md`](testing-and-migrations.md), [`docs/dependency-security.md`](dependency-security.md), and `.github/workflows/`. Current release/security gates are not optional backlog items: required CI and image checks, a verified encrypted off-host pre-migration backup and restore path, production configuration/secrets, least-privilege deployment identity, migration safety, HTTPS/readiness and anonymous private-route denial must pass. The two moderate React Router advisories were resolved by the audited 7.18.4 migration; retain the registry audit evidence in the dependency record. Do not use paid fallbacks, rebuild different artifacts after acceptance, or infer database rollback from application-image rollback. Preserve the owner’s `frontend/nginx.conf`, local preview, credentials and data. A missing gate or unavailable server credential blocks deployment; it does not become a post-MVP deferral.
 
 ## Deferred product and engineering work
+
+**PM-CI-01 — Measure release pipeline phases and cases before optimizing.** The
+read-only audit of PR 26 source run 36895519489 measured 37m53s workflow wall clock
+and 36m12s for the critical release job. Chromium plus OS-package installation took
+6m38s; critical acceptance took 27m44s, including a 17.1m one-worker Playwright block.
+The four image scans totaled about 38s and tested-image export took 35s. BuildKit
+showed cached image layers and the run's initial cold/warm cache state is unknown.
+The runner log lacks per-case timings and leaves roughly nine minutes before browser
+start unattributed, so no finer split can be claimed. First retain timestamped
+per-phase and per-case artifacts; then measure exact-version browser-cache reuse and
+profile single-worker UI cases before any isolated sharding trial. These are future
+recommendations, not implemented or benchmarked gains. Preserve real PostgreSQL,
+authentication/MFA, exact financial assertions and all critical cases. Defer until
+the interrupted production recovery resolves; do not start another CI run only to
+measure timing. Audit: ignored
+capital-tracker-ci4-runtime/tests/e2e/.runtime/release-planning/evidence/capital-pipeline-timing-audit.md.
 
 **PM-TEST-01 — Review the end-to-end test pyramid.** Implemented: critical finance and authentication journeys, real-backend PostgreSQL checks, and CI gates are part of the verification boundary; this change adds a source-based map for the shortened critical-release browser profile. Missing: a full assertion-by-assertion map of duplicated coverage and cases that can move to unit, service, repository or API levels. Next: map the remaining E2E assertions to lower-level equivalents and identify gaps; move eligible coverage down before considering redundant-case removal. Preserve meaningful assertions and all existing test files until reviewed equivalent coverage exists. The owner-authorized critical profile is available as the shortened acceptance exception; PM-TEST cleanup is not a prerequisite to that profile. Keep broad `pnpm test:e2e` for full regression and release verification. A complete E2E rerun is not required for every small change; select checks by changed code and critical risk. Close the broader cleanup with reviewed coverage and evidence that critical financial, authentication and real PostgreSQL paths remain covered.
 
