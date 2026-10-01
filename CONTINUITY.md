@@ -4,29 +4,27 @@
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.
-Network sync and AI remain deferred. Latest completed published source is
-`f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c` on
+Network sync and AI remain deferred. Latest completed published source recorded here is
+`5362a65193f696cede6f3eb0ea80c60145baca60` on
 `/Users/pavelars/Projects/temp/capital-tracker-mvp`, branch `release/manual-mvp`.
 Reviewed E2E pause source `f46d72e` is integrated as `ba2db8b`; reviewed Axios source
-`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`.
-The primary checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at
-`0f96749` with the owner's dirty `frontend/nginx.conf` edit; preserve it.
+`ed8c299` and its HTTP test are integrated as `1920d90` and `64384c4`. The primary
+checkout `/Users/pavelars/Projects/temp/capital-tracker` remains at `0f96749` with
+the owner's dirty `frontend/nginx.conf` edit; preserve it.
 
-Latest completed hosted PR #26 Actions
+The latest completed hosted PR #26 run recorded here is
+[36888831515](https://github.com/PavelArs/capital-tracker/actions/runs/36888831515),
+**SUCCESS** on exact source `5362a65193f696cede6f3eb0ea80c60145baca60`, all 10/10
+jobs (`/private/tmp/capital-mvp-ci7-run.json`). The run is archive-only CI evidence:
+real acceptance/E2E and candidate export/upload were skipped. It establishes no runtime
+acceptance, tested candidate, promotion or deployment. The earlier green run
 [36886571152](https://github.com/PavelArs/capital-tracker/actions/runs/36886571152)
-at exact source `f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c` is **SUCCESS**, all
-10/10 jobs, including production audit and final aggregate. Fresh API receipt:
-`/private/tmp/capital-mvp-ci6-run.json`, independently verified by Root.
-Paused backend/frontend/PostgreSQL image builds, all four Trivy scans and
-exact-image high/critical enforcement passed. This records image-gate success,
-not zero overall findings. Browser installation/full real acceptance and tested
-candidate export/upload were skipped. **This is paused CI, not a release candidate**;
-no real PG/HTTPS/MFA runtime acceptance, promotion or deployment is evidenced.
-The bounded `gate-release-work-on-audit` change is complete and archived with
-ENG-004/005 synced to canonical engineering gates. Axios remediation and manual-MVP
-remain ACTIVE: new-image transport/TLS and selected real acceptance are unrun.
-Any archive-only follow-up SHA requires new CI on publication; this green receipt
-belongs to `f85a638`, not that later commit.
+on exact source `f85a638da84b3f9f5df2e146aaaa8f9cc11d9c0c` remains historical evidence;
+its E2E and candidate export were also skipped. The bounded `gate-release-work-on-audit`
+change is complete and archived with ENG-004/005 synced to canonical engineering gates.
+Axios remediation and manual-MVP remain ACTIVE; new-image transport/TLS and selected real
+acceptance are unrun. This paused CI is not a release candidate, and no real PG/HTTPS/MFA
+runtime acceptance, promotion or deployment is evidenced.
 
 Historical predecessor run 36857990125 at `a661fc4` failed the production audit
 (7 HIGH, 6 MODERATE) and was cancelled; its audit log remains
@@ -48,10 +46,10 @@ and its actual gate results only after implementation and verification.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
-Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; actual hosted build/scans passed in run 36886571152, while real DB/HTTPS acceptance remains unrun. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
+Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; hosted build/scans passed in historical run 36886571152 and archive-only run 36888831515, while real DB/HTTPS acceptance remains unrun. After PM-TEST cleanup, restore `CI_E2E_ENABLED=true` in a reviewed commit and rerun full acceptance before candidate export/promotion.
 
-Run 36706275247 and its 174-test partial result below are historical evidence, not
-the latest CI checkpoint. Its nine reported failures retain their scoped local PASS
+Run 36706275247 and its 174-test partial result below are historical evidence from an
+earlier checkpoint, not the latest hosted CI recorded above. Its nine reported failures retain their scoped local PASS
 evidence across separate runs; this does not complete the hosted suite. Earlier local
 runtime and image evidence remains historical as recorded below and in the release
 verification. Older temporary receipts/scripts that are absent on this host are
