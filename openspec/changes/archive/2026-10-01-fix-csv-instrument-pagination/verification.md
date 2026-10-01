@@ -44,6 +44,6 @@ Compact staged summary: `/private/tmp/capital-mvp-ci4-staged-summary.json`. The 
 | CSV-red-green-evidence.json | `b8e30996ec538942a0020b01b6476e648edeeade984cdce2396e438997d76a9e` |
 | Remaining-evidence.json | `28f4772d0587c5f40cc5912934948ea4916901c2188b466d01db0e6c70fefbc0` |
 
-## Gate approval and next archive operation
+## Archived change and canonical sync (2026-10-01)
 
-The coordinator reported final independent runtime approval from ci4_review for the actual build, CSV2 and remaining7 receipts. This completes task3.2 and fulfills the independent-review/runtime condition in task3.3. The change is ready to archive; the actual archive operation remains the coordinator's next step on integration after this evidence commit. This worktree has not archived the change and performs no Docker/network/deployment actions or broad E2E runs. The release change, SQL/backend/financial logic and existing `csv-import-fixtures.ts` progress assertion remain untouched.
+The coordinator completed `openspec archive fix-csv-instrument-pagination --yes` on integration. The archived change is in this `2026-10-01` directory; its two requirements, CSV-PAGE-001 and CSV-PAGE-002, are synced into the canonical `openspec/specs/csv-workbench/spec.md`. Strict all-spec OpenSpec validation passed 45/45 (`/private/tmp/capital-mvp-ci4-archived-openspec.log`). This records completion of the pagination change only; the manual MVP release and whole product remain incomplete, and no production promotion or deployment is claimed.
