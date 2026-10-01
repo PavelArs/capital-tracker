@@ -86,5 +86,19 @@ build/scan, hosted CI, production audit, database migration/accounting probe,
 HTTPS/TLS/authentication/browser run, promotion, server access, deployment or remote
 push was performed. During paused CI the bundled real PostgreSQL and HTTPS/browser
 acceptance checks do not run; green paused CI is not release candidate evidence.
-Full product/MVP release remains incomplete. Final independent source review is
-pending; tasks stay open for that review and archive is intentionally unperformed.
+Full product/MVP release remains incomplete. Archive is intentionally unperformed.
+
+## Independent source review and remaining hosted gate
+
+Root reported independent review **APPROVED** for frozen source commit
+`f46d72ecefddd20bf47b68259c657cc4e628d529`. The independent reviewer reran the two
+affected engineering gate suites on Node `v22.23.2`: **195/195 PASS**, 6.797 seconds.
+Local source review tasks 2.3 and 3.4 are complete. This follow-up changes only
+OpenSpec tasks/evidence; the approved workflow and test source remain unchanged.
+
+Task 2.4 remains open for actual hosted CI scheduler behavior, the explicit paused
+backend/frontend/PostgreSQL image build, all four image scans/security enforcement,
+skipped browser/candidate steps and a successful final aggregate. The change stays
+**ACTIVE** until this required hosted CI gate passes; do not archive it on local
+policy evidence alone. Even a green paused CI run remains distinct from full
+acceptance and cannot produce/promote a tested release candidate.
