@@ -260,50 +260,48 @@ test('SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies', 
   ) c`),
   ) as { id: string; code: string }[];
   expect(currencies).toHaveLength(2);
-  expect(preferences()).toBe('[]');
+  const preferencesBefore = preferences();
   const before = fingerprint(true);
-  try {
-    const cases: { name: string; headers: Record<string, string> }[] = [
-      { name: 'missing CSRF', headers: { Origin: origin } },
-      { name: 'wrong CSRF', headers: { Origin: origin, 'X-CSRF-Token': 'A'.repeat(43) } },
-      { name: 'cross-session CSRF', headers: { Origin: origin, 'X-CSRF-Token': foreignCsrf } },
-      { name: 'missing Origin', headers: { 'X-CSRF-Token': csrfToken } },
-      ...[
-        'null',
-        'https://foreign.example.invalid',
-        'http://127.0.0.1:8443',
-        'https://127.0.0.1:8444',
-        `${origin}.foreign.example.invalid`,
-        `${origin} https://foreign.example.invalid`,
-      ].map((value) => ({
-        name: `Origin ${value}`,
-        headers: { Origin: value, 'X-CSRF-Token': csrfToken },
-      })),
-      {
-        name: 'forged forwarding headers',
-        headers: {
-          Origin: 'https://foreign.example.invalid',
-          'X-CSRF-Token': csrfToken,
-          Host: 'foreign.example.invalid',
-          'X-Forwarded-Host': 'foreign.example.invalid',
-          'X-Forwarded-Proto': 'https',
-        },
+  const cases: { name: string; headers: Record<string, string> }[] = [
+    { name: 'missing CSRF', headers: { Origin: origin } },
+    { name: 'wrong CSRF', headers: { Origin: origin, 'X-CSRF-Token': 'A'.repeat(43) } },
+    { name: 'cross-session CSRF', headers: { Origin: origin, 'X-CSRF-Token': foreignCsrf } },
+    { name: 'missing Origin', headers: { 'X-CSRF-Token': csrfToken } },
+    ...[
+      'null',
+      'https://foreign.example.invalid',
+      'http://127.0.0.1:8443',
+      'https://127.0.0.1:8444',
+      `${origin}.foreign.example.invalid`,
+      `${origin} https://foreign.example.invalid`,
+    ].map((value) => ({
+      name: `Origin ${value}`,
+      headers: { Origin: value, 'X-CSRF-Token': csrfToken },
+    })),
+    {
+      name: 'forged forwarding headers',
+      headers: {
+        Origin: 'https://foreign.example.invalid',
+        'X-CSRF-Token': csrfToken,
+        Host: 'foreign.example.invalid',
+        'X-Forwarded-Host': 'foreign.example.invalid',
+        'X-Forwarded-Proto': 'https',
       },
-    ];
-    for (const example of cases) {
-      const response = await page.context().request.post('/api/currencies/hide', {
-        headers: example.headers,
-        data: { currencyId: currencies[0].id, isHidden: true },
-      });
-      expect(response.status(), example.name).toBe(403);
-      noStore(response);
-      expect(fingerprint(true), `${example.name}: denied write leaves all state unchanged`).toBe(
-        before,
-      );
-    }
-  } finally {
-    // This test begins with no preferences and owns only this synthetic owner's rejected writes.
-    query(`DELETE FROM user_currency_preferences WHERE "userId" = '${ownerId}'::uuid`);
+    },
+  ];
+  for (const example of cases) {
+    const response = await page.context().request.post('/api/currencies/hide', {
+      headers: example.headers,
+      data: { currencyId: currencies[0].id, isHidden: true },
+    });
+    expect(response.status(), example.name).toBe(403);
+    noStore(response);
+    expect(preferences(), `${example.name}: denied write preserves existing preferences`).toBe(
+      preferencesBefore,
+    );
+    expect(fingerprint(true), `${example.name}: denied write leaves all state unchanged`).toBe(
+      before,
+    );
   }
 });
 
