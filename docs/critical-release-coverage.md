@@ -4,9 +4,11 @@ The shortened profile is an owner-authorized real acceptance path for the manual
 CSV release. It is intended to preserve the highest-risk finance and authentication
 journeys while keeping the existing full regression suite available. The reviewed
 source inventory at `/private/tmp/capital-critical-profile-inventory.md` maps the
-browser candidates and real PostgreSQL probes; it is planning evidence only. Profile
-implementation, CI wiring, final manifest and receipt contract are being completed
-separately. This document does not report a profile run or release pass.
+browser candidates and real PostgreSQL probes; it is planning evidence only. The
+implementation, CI wiring, 20-case manifest and receipt contract are source-complete
+at `0823122ec202f7fd69e3bb89711200a6214b1949` and independently approved; 196 Jest
+checks and four Node acceptance checks passed. The hosted/runtime profile remains
+unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 

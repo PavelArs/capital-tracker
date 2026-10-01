@@ -43,15 +43,16 @@ suite and all test files. The shortened profile retains real PostgreSQL/domain/
 migration, provider transport/TLS, CLI/MFA, startup/artifact checks and selected
 critical HTTPS journeys; its candidate-bound receipt must bind source and exact
 manifest. Full 174-case regression, PM-TEST cleanup, encrypted backup/restore,
-off-host recovery and server/deployment gates remain distinct. Source `41e979b`
-implements the profile and receipt contract; source checks are complete, while hosted
-runtime acceptance remains unrun. This documentation change records no new
+off-host recovery and server/deployment gates remain distinct. Final profile source
+`0823122ec202f7fd69e3bb89711200a6214b1949` has independent approval; 196 Jest checks
+and four Node checks passed. Hosted runtime acceptance remains unrun. This
+documentation change records no new
 acceptance, CI pass, candidate, promotion or deployment. The earlier green hosted CI
 run remains archive-only evidence as described above.
 Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
 unavailable; the earlier runtime record remains historical.
 Axios runtime preparation is preserved in the ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`; syntax and catalog checks passed, but runtime/build is unrun. Restore the public plan from that directory if `/private/tmp` loses it, and integrate the upgraded reviewed source before GO.
-Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; hosted build/scans passed in historical run 36886571152 and archive-only run 36888831515, while real DB/HTTPS acceptance remained unrun at that checkpoint. The then-proposed restoration of `CI_E2E_ENABLED=true` after PM-TEST cleanup was superseded by the owner's shortened-profile decision above. Source `41e979b` now implements that 20-case profile and receipt; hosted/runtime acceptance remains pending before candidate export/promotion.
+Frozen pause-workflow source `f46d72ecefddd20bf47b68259c657cc4e628d529` passed local policy checks 195/195 and strict OpenSpec 46/46; style/diff passed. Independent review approved; hosted build/scans passed in historical run 36886571152 and archive-only run 36888831515, while real DB/HTTPS acceptance remained unrun at that checkpoint. The then-proposed restoration of `CI_E2E_ENABLED=true` after PM-TEST cleanup was superseded by the owner's shortened-profile decision above. Final profile source `0823122ec202f7fd69e3bb89711200a6214b1949` has independent approval; 196 Jest checks and four Node checks passed. Hosted/runtime acceptance remains pending before candidate export/promotion.
 
 Run 36706275247 and its 174-test partial result below are historical evidence from an
 earlier checkpoint, not the latest hosted CI recorded above. Its nine reported failures retain their scoped local PASS

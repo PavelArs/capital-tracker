@@ -47,8 +47,14 @@ semantic failures. Style, diff and strict OpenSpec validation passed (46/46). Th
 are local source checks only. Independent review approved the source; hosted CI,
 actual image builds/scans and real DB/HTTPS acceptance have not run. The integration
 has not been pushed.
-After PM-TEST coverage cleanup, restore `CI_E2E_ENABLED=true` in a reviewed source
-commit and rerun the full release acceptance before candidate export/promotion.
+The restoration instruction above records the earlier pause-only policy and is
+superseded by the owner's later authorization of the shortened critical-release
+profile: 20 selected HTTPS cases plus the retained real PostgreSQL, provider/TLS,
+CLI/MFA, startup and artifact gates. The full `pnpm test:e2e` suite and test files
+remain available for broader regression; PM-TEST cleanup is not a prerequisite to
+this profile. Final profile source `0823122ec202f7fd69e3bb89711200a6214b1949` has
+independent approval; 196 Jest checks and four Node checks passed. Hosted/runtime
+acceptance remains unrun, so this profile has not yet produced candidate evidence.
 
 Axios runtime preparation is preserved in the separate ignored directory
 `/Users/pavelars/Projects/temp/capital-tracker-ci4-runtime/tests/e2e/.runtime/axios-preparation/`:
