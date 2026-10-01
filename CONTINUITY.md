@@ -21,6 +21,15 @@ promotion or deployment. The audit job log is
 `/private/tmp/capital-mvp-ci5-audit-job.log`. The Axios fix and CI cost gate are
 underway; do not claim either passed until Root records final results.
 
+Owner decision (2026-10-01): temporarily pause E2E in CI until test cleanup is
+complete. Keep the manual test command and test files; continue non-E2E checks,
+image builds/scans, audit and engineering security checks. The E2E plus real-DB
+bundle is currently unrun. A paused CI run cannot produce a tested-candidate export
+or promotion; restore E2E after PM-TEST coverage cleanup. Record the workflow change
+and its actual gate results only after implementation and verification.
+Local Docker-dependent image/PG/HTTPS runtime checks are unrun because Docker is
+unavailable; the earlier runtime record remains historical.
+
 Run 36706275247 and its 174-test partial result below are historical evidence, not
 the latest CI checkpoint. Its nine reported failures retain their scoped local PASS
 evidence across separate runs; this does not complete the hosted suite. Earlier local
