@@ -248,8 +248,9 @@ failed. The owner-run public probe `98482852…` checksum-verifies
 `capital_snap_common_bind=PASS` under `/var/snap/docker/common`. Fixed managed runtime is integrated at `/var/snap/docker/common/capital-tracker`,
 using Capital-only native PATH and registry extraDirs without a global Docker CLI
 override. Task 5.3 evidence covers the actual public bind and isolated native Compose
-lookup only; it does not close bootstrap/deployment tasks. The owner reconfirmed old
-`/opt` `.env` mode 0600 and `.gitignore` mode 0644; contents were not read. Public
+lookup only; it does not close bootstrap/deployment tasks. The owner reconfirmed
+`/opt/capital-tracker/.env` mode 0600 and
+`/opt/capital-tracker/.gitignore` mode 0644; contents were not read. Public
 deploy key is staged
 at `agm:~/.capital-mvp-setup/capital-tracker-actions.pub`, fingerprint
 `SHA256:RiQUzRfzDnexla/4l/H//qAnzI3kAzTM70gWXWKvAOM`, not installed. The owner selected
