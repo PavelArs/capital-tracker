@@ -530,9 +530,10 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   });
   await expect(allocationTable).toBeVisible();
   const sharedAllocationRow = allocationTable.getByRole('row').filter({ hasText: data.first.name });
-  await expect(sharedAllocationRow.getByRole('cell').nth(1)).toHaveText('2.5');
-  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('308.64');
-  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('100.00');
+  await expect(sharedAllocationRow.getByRole('rowheader')).toHaveText(`${data.first.name} SAME`);
+  await expect(sharedAllocationRow.getByRole('cell').nth(0)).toHaveText('2.5');
+  await expect(sharedAllocationRow.getByRole('cell').nth(1)).toHaveText('308.64');
+  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
 
   // DIRECTORY / MPV-UI-DISCLOSURE: hiding the panel must not replace its intent.
   const mountedValuation = await region.elementHandle();
@@ -544,7 +545,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(doubleChoice).toBeChecked();
   await expect(at).toHaveValue(valuationAt);
   await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
-  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('100.00');
+  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
   expect(writes).toHaveLength(1);
   await mountedValuation?.dispose();
 
@@ -563,13 +564,16 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(
     table.getByRole('row').filter({ hasText: data.accounts.missingPrice.name }),
   ).toBeVisible();
-  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('Не определена');
+  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('Не определена');
   const unpricedAllocationRow = allocationTable
     .getByRole('row')
     .filter({ hasText: data.sameSymbol.name });
-  await expect(unpricedAllocationRow.getByRole('cell').nth(1)).toHaveText('1');
+  await expect(unpricedAllocationRow.getByRole('rowheader')).toHaveText(
+    `${data.sameSymbol.name} SAME`,
+  );
+  await expect(unpricedAllocationRow.getByRole('cell').nth(0)).toHaveText('1');
+  await expect(unpricedAllocationRow.getByRole('cell').nth(1)).toHaveText('Не определена');
   await expect(unpricedAllocationRow.getByRole('cell').nth(2)).toHaveText('Не определена');
-  await expect(unpricedAllocationRow.getByRole('cell').nth(3)).toHaveText('Не определена');
 
   const matchesPreview = (url: URL) => url.pathname === previewPath;
   let release = () => {};
