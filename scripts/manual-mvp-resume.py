@@ -14,6 +14,7 @@ PROJECT = 'capital-tracker'
 CONTAINERS = {'capital_tracker_db': 'postgres', 'capital_tracker_redis': 'redis'}
 VOLUMES = {'capital-tracker_postgres_data': 'postgres_data', 'capital-tracker_redis_data': 'redis_data'}
 NETWORK = 'capital-tracker_capital-tracker-network'
+APP_CONTAINERS = {'capital_tracker_backend': 'backend', 'capital_tracker_frontend': 'frontend'}
 RECEIPT_FIELDS = {'version', 'commit', 'runId', 'installation', 'backend', 'frontend',
                   'postgres', 'redis', 'files'}
 OLD_FILES = {'runner', 'inventory', 'normalizer', 'compose', 'pins'}
@@ -187,11 +188,12 @@ def docker_json(*args):
     return value[0]
 
 
-def resources(postgres_ref, redis_ref, root):
+def resources(postgres_ref, redis_ref, root, allow_apps=False):
+    expected_containers = set(CONTAINERS) | (set(APP_CONTAINERS) if allow_apps else set())
     if ({name for name in docker('ps', '-a', '--format', '{{.Names}}').splitlines()
-         if name.startswith('capital_tracker_')} != set(CONTAINERS)
+         if name.startswith('capital_tracker_')} != expected_containers
             or set(docker('ps', '-a', '--filter', 'label=com.docker.compose.project=' + PROJECT,
-                          '--format', '{{.Names}}').splitlines()) != set(CONTAINERS)
+                          '--format', '{{.Names}}').splitlines()) != expected_containers
             or {name for name in docker('volume', 'ls', '--format', '{{.Name}}').splitlines()
                 if 'capital' in name.lower() or 'tracker' in name.lower()} != set(VOLUMES)
             or set(docker('volume', 'ls', '--filter', 'label=com.docker.compose.project=' + PROJECT,
@@ -250,7 +252,19 @@ def resources(postgres_ref, redis_ref, root):
             raise Refusal('infrastructure volume identity differs')
         identities[name] = [container.get('Id'), container.get('Image'), volume.get('CreatedAt'),
                             volume.get('Mountpoint')]
-    if set(network.get('Containers', {})) != {identities[name][0] for name in CONTAINERS}:
+    connected = {identities[name][0] for name in CONTAINERS}
+    if allow_apps:
+        for name, service in APP_CONTAINERS.items():
+            app = docker_json('inspect', name)
+            if (app.get('Name') != '/' + name
+                    or app.get('Config', {}).get('Labels', {}).get('com.docker.compose.project') != PROJECT
+                    or app.get('Config', {}).get('Labels', {}).get('com.docker.compose.service') != service
+                    or app.get('State', {}).get('Running') is not True
+                    or set(app.get('NetworkSettings', {}).get('Networks', {})) != {NETWORK}
+                    or app['NetworkSettings']['Networks'][NETWORK].get('NetworkID') != network.get('Id')):
+                raise Refusal('activated application inventory differs')
+            connected.add(app.get('Id'))
+    if set(network.get('Containers', {})) != connected:
         raise Refusal('network membership differs')
     snapshot['containers'] = identities
     if docker('exec', 'capital_tracker_db', 'sh', '-c', 'cat "$PGDATA/PG_VERSION"') != '18':
@@ -308,8 +322,8 @@ def main(argv):
         if len(argv) == 5 and argv[1] == 'cluster':
             clean_cluster(*argv[2:])
             return 0
-        if len(argv) not in (7, 8) or argv[1] not in ('preflight', 'compare'):
-            raise Refusal('use preflight|compare ROOT PINS USED_DIR POSTGRES REDIS [SNAPSHOT]')
+        if len(argv) not in (7, 8) or argv[1] not in ('preflight', 'compare', 'compare-active'):
+            raise Refusal('use preflight|compare|compare-active ROOT PINS USED_DIR POSTGRES REDIS [SNAPSHOT]')
         _, operation, root, pins_path, used_dir, postgres_ref, redis_ref = argv[:7]
         if operation == 'preflight':
             if len(argv) != 7:
@@ -321,7 +335,8 @@ def main(argv):
             snapshot = json.loads(argv[7])
             if not isinstance(snapshot, dict) or set(snapshot) != {'network', 'containers', 'proxyPeer'}:
                 raise Refusal('invalid infrastructure snapshot')
-            if resources(postgres_ref, redis_ref, root) != {key: snapshot[key] for key in ('network', 'containers')}:
+            if resources(postgres_ref, redis_ref, root, allow_apps=operation == 'compare-active') != \
+                    {key: snapshot[key] for key in ('network', 'containers')}:
                 raise Refusal('infrastructure changed during continuation')
         return 0
     except (Refusal, OSError, KeyError, TypeError, ValueError) as error:

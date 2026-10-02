@@ -87,7 +87,9 @@ if [[ $installation == resume-fresh ]]; then
   resume_snapshot=$(/usr/bin/python3 -I "${RELEASE_RESUME_HELPER:?}" preflight "$root" "${RELEASE_PINS_FILE:?}" "${RELEASE_USED_RECEIPTS_DIR:?}" "$postgres_ref" "$redis_ref")
 fi
 compare_resume() {
-  [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" compare "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$redis_ref" "$resume_snapshot"
+  local operation=compare
+  [[ ${1:-} != active ]] || operation=compare-active
+  [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" "$operation" "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$redis_ref" "$resume_snapshot"
 }
 [[ $(jq -er '.services.backend.environment.BACKGROUND_JOBS_ENABLED' <<<"$config") == false ]] || exit 1
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
@@ -115,7 +117,11 @@ else
   curl --silent --show-error --max-time 10 --output /dev/null "$origin/"
 fi
 if [[ $mode == preflight ]]; then
-  echo 'Read-only preflight passed: existing project/volume, configuration, key and HTTPS privacy boundaries verified'
+  if [[ $installation == resume-fresh ]]; then
+    echo 'Read-only resume preflight passed: interrupted infrastructure and TLS identity verified; application not activated'
+  else
+    echo 'Read-only preflight passed: existing project/volume, configuration, key and HTTPS privacy boundaries verified'
+  fi
   exit 0
 fi
 [[ $backend =~ ^ghcr.io/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$ && $frontend =~ ^ghcr.io/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$ ]] || exit 2
@@ -273,6 +279,7 @@ if [[ $installation == fresh || $installation == resume-fresh ]]; then
 fi
 BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc up -d --no-deps --wait --wait-timeout 120 backend frontend
 smoke || { echo 'Candidate HTTPS readiness/privacy verification failed'; exit 1; }
+compare_resume active
 # Stage all selection/receipt/configuration files before activation. Recovery restores
 # the previous metadata pair as well as containers if publication fails.
 printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$backend" "$frontend" >"$root/.env.images.next"

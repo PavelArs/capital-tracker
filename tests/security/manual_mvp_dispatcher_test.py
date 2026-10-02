@@ -30,7 +30,7 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
             "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
             "redis": "redis@sha256:" + "e" * 64,
-            "files": {name: "f" * 64 for name in ("runner", "inventory", "normalizer", "compose", "pins")},
+            "files": {name: "f" * 64 for name in dispatcher.FILES},
         }
 
     def test_accepts_only_data_request(self):
@@ -140,7 +140,8 @@ class DispatcherRequestAcceptance(unittest.TestCase):
                 path.write_bytes(b"reviewed")
                 files[name] = path
                 receipt["files"][name] = __import__("hashlib").sha256(b"reviewed").hexdigest()
-            pins = {"postgres": json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())["postgres"], "redis": {"registryDigest": receipt["redis"]}}
+            pins = json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())
+            pins["redis"]["registryDigest"] = receipt["redis"]
             files["pins"].write_text(json.dumps(pins))
             receipt["files"]["pins"] = __import__("hashlib").sha256(files["pins"].read_bytes()).hexdigest()
             config = dispatcher.Config(release_dir=directory, owner_uid=os.getuid(), stop_at=directory)

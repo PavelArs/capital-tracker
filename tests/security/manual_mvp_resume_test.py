@@ -188,6 +188,30 @@ class InfrastructureProof(unittest.TestCase):
         with self.assertRaises(resume.Refusal):
             resume.runtime_residue(self.root, pins, os.getuid())
 
+    def test_activated_comparison_keeps_original_infrastructure_identity(self):
+        original = self.check()
+        app_ids = {'capital_tracker_backend': 'c' * 64, 'capital_tracker_frontend': 'd' * 64}
+        for name, app_id in app_ids.items():
+            service = name.removeprefix('capital_tracker_')
+            self.metadata[('inspect', name)] = {'Name': '/' + name, 'Id': app_id,
+                'Config': {'Labels': {'com.docker.compose.project': resume.PROJECT,
+                                      'com.docker.compose.service': service}},
+                'State': {'Running': True},
+                'NetworkSettings': {'Networks': {NETWORK: {'NetworkID': self.net_id}}}}
+            self.metadata[('network', 'inspect', NETWORK)]['Containers'][app_id] = {}
+        def with_apps(*args):
+            if args[0:2] == ('ps', '-a'):
+                return PG + '\n' + RD + '\n' + '\n'.join(app_ids)
+            return self.docker(*args)
+        with patch.object(resume, 'docker', side_effect=with_apps), \
+                patch.object(resume, 'docker_json', side_effect=self.inspected):
+            self.assertEqual(resume.resources(POSTGRES, REDIS, self.root, allow_apps=True), original)
+            snapshot = json.dumps({**original, 'proxyPeer': '172.1.2.3'})
+            argv = ['resume', 'compare-active', str(self.root), 'pins', 'used', POSTGRES, REDIS, snapshot]
+            self.assertEqual(resume.main(argv), 0)
+            self.metadata[('inspect', PG)]['Id'] = 'replacement'
+            self.assertEqual(resume.main(argv), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

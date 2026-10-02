@@ -144,6 +144,8 @@ def validate_receipt(request, receipt):
         raise Refusal('receipt belongs to another commit or run')
     if receipt['installation'] not in INSTALLATIONS:
         raise Refusal('unapproved installation mode')
+    if resume and (receipt['commit'] == RESUME_ORIGIN['commit'] or receipt['runId'] == RESUME_ORIGIN['ciRunId']):
+        raise Refusal('resume requires a distinct candidate approval')
     if resume and (receipt['resumeOrigin'] != RESUME_ORIGIN or receipt['postgres'] != RESUME_POSTGRES):
         raise Refusal('resume receipt differs from the interrupted installation')
     for field, pattern in APPLICATION_IMAGE.items():

@@ -47,6 +47,7 @@ if(tool==='jq'){
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
  else if(q.includes('volumes[]'))v=path.join(root,'mfa-key');
  else if(q.includes('BACKGROUND_JOBS_ENABLED'))v='false';
+ else if(q.includes('.proxyPeer'))v='172.18.0.3';
  process.stdout.write(v);
 }
 if(tool==='docker'){
@@ -79,6 +80,7 @@ if(tool==='docker'){
    if(mode==='migration')process.exit(1);
    if(mode==='health-changed')fs.writeFileSync(changed,'yes');
   }
+  if(a.includes('run')&&a.some(item=>item.includes('candidateId')))process.stdout.write('11111111-1111-1111-1111-111111111111');
   if(a.includes('stop')&&mode==='partial-stop'&&!fs.existsSync(path.join(root,'stop-refused'))){fs.writeFileSync(path.join(root,'stop-refused'),'yes');process.exit(1);}
   if(a.includes('up')){
    if((process.env.BACKEND_IMAGE||'').startsWith('ghcr.io/'))fs.writeFileSync(candidate,'yes');
@@ -101,6 +103,7 @@ if(tool==='docker'){
    process.exit(0);
   }
   if(s.includes('PG_VERSION'))process.stdout.write(process.env.RELEASE_INSTALLATION==='resume-fresh'?'18':'16');
+  else if(s.includes('owner_auth WHERE id=1'))process.stdout.write('11111111-1111-1111-1111-111111111111');
   else if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore'||(mode==='restore-temp-window'&&!fs.existsSync(path.join(root,'final-restore-ready'))))process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
@@ -120,7 +123,8 @@ if(tool==='sha256sum'){
 }
 if(tool==='curl'){
  const url=a[a.length-1];
- if(url.endsWith('/health')){
+ if(url.startsWith('http://127.0.0.1:3102/'))process.stdout.write('172.18.0.3');
+ else if(url.endsWith('/health')){
   const unhealthy=fs.existsSync(candidate)&&['health-same','health-changed','rollback-start'].includes(mode)&&!fs.existsSync(rollback);
   process.stdout.write(unhealthy?'{}':'{"status":"ok"}');
  }else process.stdout.write(url.endsWith('/api/health/detailed')?'404':'401');
@@ -142,6 +146,8 @@ beforeEach(() => {
   writeFileSync(join(directory, 'mfa-key'), Buffer.alloc(32, 1), { mode: 0o600 });
   writeFileSync(join(directory, '.backup-key'), Buffer.alloc(32, 2), { mode: 0o600 });
   writeFileSync(join(directory, 'resume-helper.py'), 'raise SystemExit(2)\n');
+  writeFileSync(join(directory, '.owner-password.json'), '{"password":"synthetic","confirmation":"synthetic"}');
+  mkdirSync(join(directory, 'operator'));
 });
 afterEach(() => {
   if (directory) rmSync(directory, { recursive: true, force: true });
@@ -184,6 +190,28 @@ const appUp = (call: Command) =>
   call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('up');
 
 describe('MVP-003/004: failure-safe server process orchestration', () => {
+  it('continues only apps after positive resume proof and backup restore, retaining infrastructure', () => {
+    writeFileSync(join(directory, 'resume-helper.py'), `import json, os, sys
+with open(os.environ['FIXTURE_LOG'], 'a') as out:
+    out.write(json.dumps({'tool':'resume-proof','args':sys.argv[1:]})+'\\n')
+if sys.argv[1] == 'preflight':
+    print(json.dumps({'proxyPeer':'172.18.0.3','network':['old-network'],'containers':{}}))
+`);
+    writeFileSync(join(directory, '.env.release'), 'OWNER_EMAIL=owner@capital.pavelars.ru\n');
+    const { result, calls } = release('resume-success', 'resume-fresh');
+    expect(result.status).toBe(0);
+    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'preflight')).toBe(true);
+    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'compare-active')).toBe(true);
+    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pull') &&
+      (call.args.includes('postgres') || call.args.includes('redis')))).toBe(false);
+    expect(calls.some((call) => appUp(call) &&
+      (call.args.includes('postgres') || call.args.includes('redis')))).toBe(false);
+    const restore = calls.findIndex((call) => call.tool === 'docker' && call.args.includes('pg_restore'));
+    const migrate = calls.findIndex(migration);
+    expect(restore).toBeGreaterThan(0);
+    expect(migrate).toBeGreaterThan(restore);
+    expect(existsSync(join(directory, '.env.images'))).toBe(true);
+  }, 20000);
   it('refuses a resumed installation when historical and host proof fails before pull or writes', () => {
     const { result, calls } = release('resume-helper-refusal', 'resume-fresh');
     expect(result.status).not.toBe(0);

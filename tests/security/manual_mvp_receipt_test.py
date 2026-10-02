@@ -50,6 +50,11 @@ class ReceiptAcceptance(unittest.TestCase):
             with self.subTest(changed=changed):
                 self.assertRaises(dispatcher.Refusal, dispatcher.validate_receipt,
                                   {"version": 1, "operation": "deploy", "commit": COMMIT, "runId": "77"}, changed)
+        for old_identity in ({"commit": expected_origin["commit"]}, {"runId": expected_origin["ciRunId"]}):
+            changed = {**receipt, **old_identity}
+            request = {"version": 1, "operation": "deploy", "commit": changed["commit"], "runId": changed["runId"]}
+            with self.assertRaises(dispatcher.Refusal):
+                dispatcher.validate_receipt(request, changed)
 
     def test_repository_receipt_is_accepted_by_an_identical_installation(self):
         with tempfile.TemporaryDirectory() as directory:
