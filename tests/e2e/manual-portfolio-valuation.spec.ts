@@ -593,6 +593,18 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
         await expect(sharedAllocationRow.getByRole('cell').nth(0)).toHaveText('2.5');
         await expect(sharedAllocationRow.getByRole('cell').nth(1)).toHaveText('308.64');
         await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
+        for (const accountRow of [halfRow, doubleRow]) {
+          for (const index of [3, 4]) {
+            const valueCell = accountRow.getByRole('cell').nth(index);
+            await expect(valueCell).toHaveCSS('white-space', 'nowrap');
+            await expect(valueCell).toHaveCSS('text-align', 'right');
+          }
+        }
+        for (const index of [0, 1, 2]) {
+          const valueCell = sharedAllocationRow.getByRole('cell').nth(index);
+          await expect(valueCell).toHaveCSS('white-space', 'nowrap');
+          await expect(valueCell).toHaveCSS('text-align', 'right');
+        }
         await expect
           .poll(() =>
             page.evaluate(
@@ -620,6 +632,9 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
           const hasHorizontalScroll = await scroll.evaluate(
             (node) => node.scrollWidth > node.clientWidth,
           );
+          if (width <= 768) {
+            expect(hasHorizontalScroll, 'The table scrolls inside its named region').toBe(true);
+          }
           await page.keyboard.press('ArrowRight');
           if (hasHorizontalScroll) {
             await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
@@ -650,6 +665,59 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessBefore);
   expect(providerRequests()).toEqual(providersBefore);
 
+  const captureIncompleteFrames = async (state: 'missing-price' | 'unknown-history') => {
+    const requestsBefore = writes.length;
+    try {
+      for (const theme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: theme });
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        for (const width of [360, 1440]) {
+          await page.setViewportSize({ width, height: 900 });
+          await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText(
+            'Не определена',
+          );
+          if (state === 'missing-price') {
+            const unpriced = allocationTable.getByRole('row').filter({
+              hasText: data.sameSymbol.name,
+            });
+            await expect(unpriced.getByRole('cell').nth(1)).toHaveText('Не определена');
+            await expect(unpriced.getByRole('cell').nth(2)).toHaveText('Не определена');
+          } else {
+            await expect(summaryValue(region, 'Счетов без истории')).toHaveText('3');
+            await expect(
+              region.getByText('Момент раньше начала истории', { exact: true }),
+            ).toHaveCount(3);
+          }
+          await expect
+            .poll(() =>
+              page.evaluate(
+                () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+              ),
+            )
+            .toBeLessThanOrEqual(1);
+          for (const cell of await table
+            .locator('tbody td:nth-child(4), tbody td:nth-child(5)')
+            .all()) {
+            await expect(cell).toHaveCSS('white-space', 'nowrap');
+            await expect(cell).toHaveCSS('text-align', 'right');
+          }
+          for (const cell of await allocationTable.locator('tbody td').all()) {
+            await expect(cell).toHaveCSS('white-space', 'nowrap');
+            await expect(cell).toHaveCSS('text-align', 'right');
+          }
+          await region.screenshot({
+            path: testInfo.outputPath(`valuation-${state}-${theme}-${width}.png`),
+            animations: 'disabled',
+          });
+        }
+      }
+    } finally {
+      await page.emulateMedia({ colorScheme: originalScheme });
+      if (originalViewport) await page.setViewportSize(originalViewport);
+    }
+    expect(writes).toHaveLength(requestsBefore);
+  };
+
   await gapChoice.check();
   await expect(region.getByText('Полная оценка выбранных счетов', { exact: true })).toBeHidden();
   const incomplete = page.waitForResponse(
@@ -675,6 +743,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(unpricedAllocationRow.getByRole('cell').nth(0)).toHaveText('1');
   await expect(unpricedAllocationRow.getByRole('cell').nth(1)).toHaveText('Не определена');
   await expect(unpricedAllocationRow.getByRole('cell').nth(2)).toHaveText('Не определена');
+  await captureIncompleteFrames('missing-price');
 
   const matchesPreview = (url: URL) => url.pathname === previewPath;
   let release = () => {};
@@ -725,6 +794,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
     await expect(summaryValue(region, 'Счетов без истории')).toHaveText('3');
     await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('Не определена');
     await expect(region.getByText('Момент раньше начала истории', { exact: true })).toHaveCount(3);
+    await captureIncompleteFrames('unknown-history');
     expect(writes).toHaveLength(4);
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessBefore);
     expect(providerRequests()).toEqual(providersBefore);
