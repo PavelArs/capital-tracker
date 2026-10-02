@@ -22,7 +22,7 @@ Environment: Node 22.23.2, pnpm 10.33.0.
 
 The selected text and focus outline use the existing `--primary-color-dark` token. Measured contrast against the theme backgrounds is 8.39:1 in light (`#2d5072` on `#ffffff`) and 9.27:1 in dark (`#acd1f4` on `#202930`).
 
-Independent diff review and actual PostgreSQL/HTTPS browser acceptance remain pending. Local Docker is unavailable, so no browser/runtime evidence is claimed here. Keep this change unarchived until required review and runtime gates are recorded.
+Independent diff review approved commit `805ae8b` for integration. Actual PostgreSQL/HTTPS browser acceptance remains pending; local Docker is unavailable, so no browser/runtime evidence is claimed here. Keep this change unarchived until the runtime gate is recorded.
 
 ## Limits
 

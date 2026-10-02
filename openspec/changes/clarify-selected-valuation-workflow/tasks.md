@@ -10,4 +10,5 @@
 ## 3. Verification and handoff
 
 - [x] 3.1 Run targeted component and view characterization tests, affected-file Biome, frontend build/type checks, and strict OpenSpec validation.
-- [ ] 3.2 Record reviewer and actual-browser evidence separately; keep real PostgreSQL/HTTPS acceptance pending until performed, and do not archive.
+- [x] 3.2 Obtain independent review of the final scoped diff.
+- [ ] 3.3 Record actual-browser evidence separately; keep real PostgreSQL/HTTPS acceptance pending until performed, and do not archive.
