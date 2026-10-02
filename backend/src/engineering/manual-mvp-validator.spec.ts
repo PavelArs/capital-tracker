@@ -8,6 +8,13 @@ const validatorPath =
   resolve(__dirname, '../../../scripts/validate-manual-mvp-release.cjs');
 const commit = 'a'.repeat(40);
 const runId = '123456789';
+const originRevision = '0f479b3955aba1cf351a29e897c7ffbdc9909638';
+const originalPostgres = 'ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f';
+const resumeOrigin = {
+  commit: originRevision,
+  ciRunId: '36900868365',
+  usedReceiptSha256: '56db9c19cfc8f5c5d08359e5f53f9c2122f369857123172f1e29168f4d61ebc3',
+};
 const manifest = () => ({
   schemaVersion: 3,
   commit,
@@ -22,6 +29,8 @@ const manifest = () => ({
       dockerfileSha256: 'f'.repeat(64),
       baseRegistryDigest:
         'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66',
+      registryDigest: originalPostgres,
+      originRevision,
     },
     redis: {
       imageId: `sha256:${'e'.repeat(64)}`,
@@ -37,8 +46,11 @@ const pins = () => ({
     dockerfileSha256: 'f'.repeat(64),
     baseRegistryDigest:
       'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66',
+    registryDigest: originalPostgres,
+    originRevision,
   },
   redis: { tag: 'redis:8.10.2-alpine3.23', registryDigest: `redis@sha256:${'e'.repeat(64)}` },
+  resumeOrigin,
 });
 let validateRelease: (
   value: unknown,
@@ -172,10 +184,7 @@ describe('MVP-002: exact tested candidate manifest', () => {
         { ...original, registryDigest: `foreign@sha256:${'a'.repeat(64)}` },
         {
           ...original,
-          registryDigest: ('registryDigest' in original
-            ? original.registryDigest
-            : original.baseRegistryDigest
-          ).slice(0, -1),
+          registryDigest: original.registryDigest.slice(0, -1),
         },
       ]) {
         expect(() =>
@@ -226,6 +235,7 @@ describe('MVP-002: exact tested candidate manifest', () => {
       ]),
     );
     const inspect = (tag: string) => actual[tag];
+    actual[candidate.infrastructure.postgres.tag].Config.Labels['org.opencontainers.image.revision'] = originRevision;
     expect(() => validateLoadedImages(candidate, inspect)).not.toThrow();
     for (const image of images) {
       const original = actual[image.tag];

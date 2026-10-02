@@ -3,10 +3,17 @@
     "tag": "capital-tracker-postgres:acceptance",
     "dockerfile": "deploy/postgres.Dockerfile",
     "dockerfileSha256": "76b06e0a59cb0ca7a47497ebbd8c0b6de803752bf99850ef5c7dda409832b5b4",
-    "baseRegistryDigest": "postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66"
+    "baseRegistryDigest": "postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66",
+    "registryDigest": "ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f",
+    "originRevision": "0f479b3955aba1cf351a29e897c7ffbdc9909638"
   },
   "redis": {
     "tag": "redis:8.10.2-alpine3.23",
     "registryDigest": "redis@sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23"
+  },
+  "resumeOrigin": {
+    "commit": "0f479b3955aba1cf351a29e897c7ffbdc9909638",
+    "ciRunId": "36900868365",
+    "usedReceiptSha256": "56db9c19cfc8f5c5d08359e5f53f9c2122f369857123172f1e29168f4d61ebc3"
   }
 }

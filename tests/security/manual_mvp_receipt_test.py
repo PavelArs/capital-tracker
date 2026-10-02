@@ -29,6 +29,28 @@ FRONTEND = "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64
 
 
 class ReceiptAcceptance(unittest.TestCase):
+    def test_resume_receipt_requires_original_infrastructure_and_consumed_origin(self):
+        pins = json.loads((ROOT / receipts.SOURCES["pins"]).read_text())
+        original_postgres = "ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f"
+        expected_origin = {
+            "commit": "0f479b3955aba1cf351a29e897c7ffbdc9909638",
+            "ciRunId": "36900868365",
+            "usedReceiptSha256": "56db9c19cfc8f5c5d08359e5f53f9c2122f369857123172f1e29168f4d61ebc3",
+        }
+        self.assertEqual(pins["resumeOrigin"], expected_origin)
+        receipt = receipts.build_receipt(COMMIT, "77", "resume-fresh", BACKEND, FRONTEND, original_postgres)
+        self.assertEqual(receipt["installation"], "resume-fresh")
+        self.assertEqual(receipt["resumeOrigin"], expected_origin)
+        self.assertEqual(receipt["postgres"], pins["postgres"]["registryDigest"])
+        for changed in (
+            {**receipt, "resumeOrigin": {**expected_origin, "ciRunId": "36914835760"}},
+            {**receipt, "postgres": POSTGRES},
+            {**receipt, "resumeOrigin": None},
+        ):
+            with self.subTest(changed=changed):
+                self.assertRaises(dispatcher.Refusal, dispatcher.validate_receipt,
+                                  {"version": 1, "operation": "deploy", "commit": COMMIT, "runId": "77"}, changed)
+
     def test_repository_receipt_is_accepted_by_an_identical_installation(self):
         with tempfile.TemporaryDirectory() as directory:
             base = pathlib.Path(directory)

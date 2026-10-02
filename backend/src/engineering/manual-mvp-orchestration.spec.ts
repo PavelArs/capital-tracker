@@ -39,10 +39,10 @@ if(tool==='jq'){
  // Every fixture jq call uses stdin (a pipe or here-string); consume it before returning output.
  fs.readFileSync(0);
  const q=a[a.length-1];let v='true';
- if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
- else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
- else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major')?'18':'16';
- else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION==='fresh'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
+ if(q==='.services.postgres.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-postgres'?'ghcr.io/pavelars/capital-tracker-postgres@sha256:'+('d'.repeat(64)):'postgres:16.10-alpine';
+ else if(q==='.services.redis.image')v=process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-mutable-redis'?'redis@sha256:'+('e'.repeat(64)):'redis:7.4.2-alpine';
+ else if(q.includes('services.postgres.environment.CAPITAL_EXPECTED_MAJOR'))v=mode==='existing-major'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major')?'18':'16';
+ else if(q.includes('services.postgres.volumes'))v=mode==='existing-layout'||(process.env.RELEASE_INSTALLATION!=='existing'&&mode!=='fresh-old-major'&&mode!=='fresh-old-layout')?'/var/lib/postgresql':'/var/lib/postgresql/data';
  else if(q.includes('Mounts')||q.includes('volumes.postgres_data.name'))v='capital_tracker_postgres_data';
  else if(q.includes('FRONTEND_URL'))v='https://mvp.example.invalid';
  else if(q.includes('volumes[]'))v=path.join(root,'mfa-key');
@@ -87,9 +87,22 @@ if(tool==='docker'){
  }
  if(a[0]==='exec'){
   const s=a.join(' ');
-  if(s.includes('PG_VERSION'))process.stdout.write('16');
+  if(s.includes('pg_isready')){
+   if(s.includes('127.0.0.1')){
+    if(mode==='restore-never-tcp')process.exit(1);
+    if(mode==='restore-temp-window'){
+     const countFile=path.join(root,'tcp-ready-attempts');
+     const count=Number(fs.existsSync(countFile)?fs.readFileSync(countFile,'utf8'):0)+1;
+     fs.writeFileSync(countFile,String(count));
+     if(count<3)process.exit(1);
+     fs.writeFileSync(path.join(root,'final-restore-ready'),'yes');
+    }
+   }
+   process.exit(0);
+  }
+  if(s.includes('PG_VERSION'))process.stdout.write(process.env.RELEASE_INSTALLATION==='resume-fresh'?'18':'16');
   else if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
-  else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore')process.exit(1);}
+  else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore'||(mode==='restore-temp-window'&&!fs.existsSync(path.join(root,'final-restore-ready'))))process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
   else if(s.includes('pg_dump'))process.stdout.write(mode==='fingerprint'&&a[1]!=='db'?'DIFFERENT_RESTORED_ROWS\\n':'SYNTHETIC_LOGICAL_ROWS_AND_SCHEMA\\n');
  }
@@ -112,6 +125,7 @@ if(tool==='curl'){
   process.stdout.write(unhealthy?'{}':'{"status":"ok"}');
  }else process.stdout.write(url.endsWith('/api/health/detailed')?'404':'401');
 }
+if(tool==='sleep')process.exit(0);
 `;
 
 beforeAll(() => {
@@ -120,13 +134,14 @@ beforeAll(() => {
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'capital-mvp-process-'));
   mkdirSync(join(directory, 'bin'));
-  for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat', 'mv'])
+  for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat', 'mv', 'sleep'])
     writeFileSync(join(directory, 'bin', tool), stub, { mode: 0o700 });
   writeFileSync(join(directory, 'docker-compose.yml'), '# Synthetic previous configuration\n');
   for (const file of ['.env', '.env.release', 'candidate.yml'])
     writeFileSync(join(directory, file), '# Synthetic release fixture\n');
   writeFileSync(join(directory, 'mfa-key'), Buffer.alloc(32, 1), { mode: 0o600 });
   writeFileSync(join(directory, '.backup-key'), Buffer.alloc(32, 2), { mode: 0o600 });
+  writeFileSync(join(directory, 'resume-helper.py'), 'raise SystemExit(2)\n');
 });
 afterEach(() => {
   if (directory) rmSync(directory, { recursive: true, force: true });
@@ -144,6 +159,9 @@ function release(failure: string, installation = 'existing', action = 'deploy') 
       RELEASE_COMPOSE_FILE: join(directory, 'candidate.yml'),
       RELEASE_RUNTIME_FILE: join(directory, '.env.release'),
       RELEASE_BACKUP_KEY_FILE: join(directory, '.backup-key'),
+      RELEASE_RESUME_HELPER: join(directory, 'resume-helper.py'),
+      RELEASE_PINS_FILE: join(directory, 'pins.json'),
+      RELEASE_USED_RECEIPTS_DIR: join(directory, 'used'),
       FIXTURE_FAILURE: failure,
       FIXTURE_LOG: log,
     },
@@ -166,6 +184,14 @@ const appUp = (call: Command) =>
   call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('up');
 
 describe('MVP-003/004: failure-safe server process orchestration', () => {
+  it('refuses a resumed installation when historical and host proof fails before pull or writes', () => {
+    const { result, calls } = release('resume-helper-refusal', 'resume-fresh');
+    expect(result.status).not.toBe(0);
+    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pull'))).toBe(false);
+    expect(calls.some(migration)).toBe(false);
+    expect(calls.some(appUp)).toBe(false);
+    expect(existsSync(join(directory, '.env.images'))).toBe(false);
+  });
   it.each(['lock', 'missing-db', 'dump', 'encrypt', 'restore', 'fingerprint', 'unsafe-schema'])(
     'refuses %s before migration or candidate application update',
     (failure) => {
@@ -304,6 +330,34 @@ describe('MVP-003/004: failure-safe server process orchestration', () => {
       calls.some((call) => appUp(call) && call.backend === backend && call.frontend === frontend),
     ).toBe(true);
     expect(calls.some((call) => call.tool === 'docker' && call.args.includes('down'))).toBe(false);
+  }, 20000);
+});
+
+describe('MRR-001: isolated restore waits for final PostgreSQL', () => {
+  it('MRR-001-A ignores socket-only temporary readiness and restores over final TCP', () => {
+    const { result, calls } = release('restore-temp-window');
+    expect(result.status).toBe(0);
+    const tcpProbes = calls.filter(
+      (call) => call.tool === 'docker' && call.args.includes('pg_isready') && call.args.includes('127.0.0.1'),
+    );
+    expect(tcpProbes).toHaveLength(3);
+    const restoreIndex = calls.findIndex((call) => call.tool === 'docker' && call.args.includes('pg_restore'));
+    expect(restoreIndex).toBeGreaterThan(calls.lastIndexOf(tcpProbes[2]));
+    expect(calls[restoreIndex].args).toContain('127.0.0.1');
+    expect(calls.some((call) => call.tool === 'docker' && call.args.join(' ').includes('pg_dump -h 127.0.0.1'))).toBe(true);
+    expect(calls.findIndex(migration)).toBeGreaterThan(restoreIndex);
+  }, 20000);
+
+  it('MRR-001-B refuses exhausted TCP readiness before decrypt, restore, or migration', () => {
+    const { result, calls } = release('restore-never-tcp');
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toMatch(/isolated.*PostgreSQL.*readiness.*failed/i);
+    expect(calls.filter((call) => call.tool === 'docker' && call.args.includes('pg_isready') && call.args.includes('127.0.0.1'))).toHaveLength(60);
+    expect(calls.some((call) => call.tool === 'openssl' && call.args.includes('-d'))).toBe(false);
+    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pg_restore'))).toBe(false);
+    expect(calls.filter(migration)).toEqual([]);
+    expect(calls.filter(appUp).filter((call) => call.backend === backend)).toEqual([]);
+    expect(existsSync(join(directory, '.env.images'))).toBe(false);
   }, 20000);
 });
 

@@ -5,7 +5,7 @@ Production deploy run 36914835760 on frozen main failed when `pg_restore` could 
 ## What Changes
 
 - Require bounded readiness of the final PostgreSQL server over loopback TCP before decrypting or restoring the encrypted backup; timeout must fail before restore, migrations, owner creation, or application activation.
-- Add a narrowly guarded `resume-fresh` release mode for this exact interrupted first-install state. It proves the original initialized infrastructure and empty application state, preserves and reuses the original PG18/Redis resources and immutable image identities, and refuses any mismatch.
+- Add a narrowly guarded `resume-fresh` release mode for this exact interrupted first-install state. It proves the exact historical receipt and immutable image digests, checks the currently observed fixed project resources and empty application state, then preserves those observed resource IDs throughout continuation. The old receipt does not record Docker IDs, so it cannot prove historical container UUIDs.
 - Make the next candidate acceptance, scan, export, and receipt use the exact original derived PostgreSQL digest and revision, alongside new application images. Resume may pull application images only; it may not rebuild, pull, recreate, or replace PostgreSQL or Redis.
 - Preserve created data and stop for manual recovery after any failure once the resume process begins.
 

@@ -23,6 +23,7 @@ files=(
   scripts/normalize-release-snapshot.awk:normalize-release-snapshot.awk
   docker-compose.yml:docker-compose.yml
   deploy/manual-mvp-infrastructure-pins.json:manual-mvp-infrastructure-pins.json
+  scripts/manual-mvp-resume.py:manual-mvp-resume.py
 )
 
 # Check every existing component before changing accounts or publishing authorization.

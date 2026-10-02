@@ -84,7 +84,7 @@ class InstallerProcessAcceptance(unittest.TestCase):
             command.chmod(0o755)
         self.checkout = self.root / "checkout"
         self.checkout.mkdir()
-        for relative in ("scripts/manual-mvp-dispatcher.py", "scripts/manual-mvp-release.sh", "scripts/manual-mvp-inventory.sh", "scripts/normalize-release-snapshot.awk", "docker-compose.yml", "deploy/manual-mvp-infrastructure-pins.json"):
+        for relative in ("scripts/manual-mvp-dispatcher.py", "scripts/manual-mvp-release.sh", "scripts/manual-mvp-inventory.sh", "scripts/normalize-release-snapshot.awk", "scripts/manual-mvp-resume.py", "docker-compose.yml", "deploy/manual-mvp-infrastructure-pins.json"):
             target = self.checkout / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(REPO / relative, target)
@@ -246,7 +246,7 @@ class InstallerProcessAcceptance(unittest.TestCase):
     def write_receipt(self):
         mapping = {"runner": "manual-mvp-release.sh", "inventory": "manual-mvp-inventory.sh",
                    "normalizer": "normalize-release-snapshot.awk", "compose": "docker-compose.yml",
-                   "pins": "manual-mvp-infrastructure-pins.json"}
+                   "pins": "manual-mvp-infrastructure-pins.json", "resume": "manual-mvp-resume.py"}
         pins = json.loads((REPO / "deploy/manual-mvp-infrastructure-pins.json").read_text())
         receipt = {"version": 1, "commit": COMMIT, "runId": "123", "installation": "fresh",
                    "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,

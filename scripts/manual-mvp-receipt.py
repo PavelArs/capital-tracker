@@ -22,6 +22,7 @@ SOURCES = {
     'normalizer': 'scripts/normalize-release-snapshot.awk',
     'compose': 'docker-compose.yml',
     'pins': 'deploy/manual-mvp-infrastructure-pins.json',
+    'resume': 'scripts/manual-mvp-resume.py',
 }
 
 _spec = importlib.util.spec_from_file_location('manual_mvp_dispatcher', ROOT / 'scripts/manual-mvp-dispatcher.py')
@@ -43,6 +44,8 @@ def build_receipt(commit, run_id, installation, backend, frontend, postgres, roo
         'redis': pins['redis']['registryDigest'],
         'files': {name: hashlib.sha256((root / path).read_bytes()).hexdigest() for name, path in SOURCES.items()},
     }
+    if installation == 'resume-fresh':
+        receipt['resumeOrigin'] = pins['resumeOrigin']
     request = {'version': 1, 'operation': 'deploy', 'commit': commit, 'runId': run_id}
     for field, pattern in (('commit', dispatcher.COMMIT), ('runId', dispatcher.RUN_ID)):
         if not dispatcher._full(pattern, request[field]):

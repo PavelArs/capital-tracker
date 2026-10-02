@@ -213,6 +213,9 @@ jobs:
     name: Release Images and Security
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
     needs: [backend-build, frontend-build, backend-test, frontend-test, dependency-audit, spec-check]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -222,7 +225,9 @@ jobs:
       - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Verify reviewed PostgreSQL source and pull Redis digest
+      - name: Pull exact reviewed PostgreSQL and Redis images
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node - <<'NODE'
@@ -233,6 +238,16 @@ jobs:
           const { readFileSync } = require('node:fs');
           if (createHash('sha256').update(readFileSync(pins.postgres.dockerfile)).digest('hex') !== pins.postgres.dockerfileSha256) throw new Error('PostgreSQL Dockerfile differs from reviewed source');
           NODE
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+          postgres_tag=$(jq -er '.postgres.tag' deploy/manual-mvp-infrastructure-pins.json)
+          postgres_origin=$(jq -er '.postgres.originRevision' deploy/manual-mvp-infrastructure-pins.json)
+          docker pull "$postgres"
+          docker tag "$postgres" "$postgres_tag"
+          test "$(docker image inspect "$postgres_tag" --format '{{.Id}}')" = "$(docker image inspect "$postgres" --format '{{.Id}}')"
+          test "$(docker image inspect "$postgres_tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
+          test "$(docker image inspect "$postgres_tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$postgres_origin"
+          docker logout ghcr.io
           for name in redis; do
             digest=$(jq -er --arg name "$name" '.[$name].registryDigest' deploy/manual-mvp-infrastructure-pins.json)
             tag=$(jq -er --arg name "$name" '.[$name].tag' deploy/manual-mvp-infrastructure-pins.json)
@@ -335,7 +350,8 @@ jobs:
             manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
           }
           manifest.infrastructure = {};
-          for (const [name, pin] of Object.entries(pins)) {
+          for (const name of ['postgres', 'redis']) {
+            const pin = pins[name];
             manifest.infrastructure[name] = { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
           }
           const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
