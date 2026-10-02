@@ -5,7 +5,18 @@ This backlog preserves the complete target in [`capital-tracker-openspec-prompt.
 ## Current release: manual + CSV MVP — IN PROGRESS
 
 The whole target remains incomplete and the release is not deployed or complete.
-Trusted main CI run 36900868365 passed 20/20 critical cases on exact main
+PR #27 merged as main `1826a8014694ad5894bd60ea95800253ff569adf`. PR CI run
+36977222334 passed 10/10 jobs and 20/20 critical cases on synthetic source
+`33c80104fb19623827ec8ef9067445e1f4f281e0`, including MRR-001-A/B. This PR-source
+result is distinct from merged-main CI run 36980010964: eight prerequisite jobs
+succeeded, then critical acceptance failed at CSV-006-A (`live=false` in the admission
+fixture), with 19/20 cases passing in 17.4 minutes. MRR-001-A/B passed there too.
+This bounded fixture failure is under diagnosis; it does not establish a CSV contract
+defect. No valid receipt, candidate export, image scan, promotion, or new deployment
+resulted. See [the active change verification](../openspec/changes/fix-interrupted-mvp-release/verification.md)
+and `/private/tmp/capital-tracker-main-ci-36980010964-release-110752574666.log`.
+
+The historical trusted main CI run 36900868365 passed 20/20 critical cases on exact main
 0f479b3955aba1cf351a29e897c7ffbdc9909638. Promotion 36905502848 completed with
 immutable backend sha256:52d464e118000b07dde22c44f879e07dcf6755c8b73767d89b6bf1ec89301aaf,
 frontend sha256:19a8074a2e0dc6fd67e41615e62e10815b497994e23d56cbbdf54b01af510cc6,
@@ -51,8 +62,12 @@ and 36m12s for the critical release job. Chromium plus OS-package installation t
 The four image scans totaled about 38s and tested-image export took 35s. BuildKit
 showed cached image layers and the run's initial cold/warm cache state is unknown.
 The runner log lacks per-case timings and leaves roughly nine minutes before browser
-start unattributed, so no finer split can be claimed. First retain timestamped
-per-phase and per-case artifacts; then measure exact-version browser-cache reuse and
+start unattributed, so no finer split can be claimed. The merged-main run 36980010964
+later recorded 17.4m for the 20-case Playwright
+acceptance (19 pass, CSV-006-A admission-fixture failure); this single phase duration
+does not provide a comparable full-workflow measurement. Preserve its failure details
+in the active change verification. First retain timestamped per-phase and per-case
+artifacts; then measure exact-version browser-cache reuse and
 profile single-worker UI cases before any isolated sharding trial. These are future
 recommendations, not implemented or benchmarked gains. Preserve real PostgreSQL,
 authentication/MFA, exact financial assertions and all critical cases. Defer until

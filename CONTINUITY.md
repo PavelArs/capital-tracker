@@ -2,9 +2,21 @@
 
 ## Current handoff — interrupted manual + CSV MVP release
 
-Checkpoint: 2026-10-01. The whole product remains incomplete; the manual + CSV MVP
-is not deployed or release-complete. Frozen main is
-0f479b3955aba1cf351a29e897c7ffbdc9909638. Trusted main CI run 36900868365 passed
+Checkpoint: 2026-10-02. The whole product remains incomplete; the manual + CSV MVP
+is not deployed or release-complete. PR #27 merged as main
+1826a8014694ad5894bd60ea95800253ff569adf. Its PR CI run 36977222334 passed all
+10/10 jobs, including 20/20 critical cases against synthetic source
+33c80104fb19623827ec8ef9067445e1f4f281e0; MRR-001-A/B passed. The subsequent
+merged-main CI run 36980010964 failed: eight prerequisite jobs succeeded, but its
+critical acceptance finished 19/20 after CSV-006-A observed `live=false` while
+`admission-fixtures.ts` required a live admission delta. The run took 17.4 minutes
+for the selected cases. MRR-001-A/B passed in that run. This is the only observed
+acceptance failure and is under bounded fixture diagnosis; it does not establish a
+CSV product-contract defect or a passing release. No valid receipt, candidate export,
+image scan, promotion, or new deployment resulted. The failure log is
+`/private/tmp/capital-tracker-main-ci-36980010964-release-110752574666.log`.
+Frozen pre-PR main was
+0f479b3955aba1cf351a29e897c7ffbdc9909638. Its trusted main CI run 36900868365 passed
 20/20 critical cases on that exact source. Promotion run 36905502848 completed with
 four immutable image pins: backend sha256:52d464e118000b07dde22c44f879e07dcf6755c8b73767d89b6bf1ec89301aaf,
 frontend sha256:19a8074a2e0dc6fd67e41615e62e10815b497994e23d56cbbdf54b01af510cc6,
@@ -23,10 +35,14 @@ reset, remove, recreate or retry until the reviewed recovery path is implemented
 runtime state is verified.
 
 OpenSpec change fix-interrupted-mvp-release was strictly validated and committed as
-docs commit cd1df01; implementation is underway in its separate code worktree. It
+docs commit cd1df01; implementation is underway in its separate code worktree. PR #27
+supplies positive hosted evidence for the recovery tests, but the new merged-main
+release acceptance is still failed as recorded above. Task 3.3 remains unchecked; no
+production retry or recovery action has run. It
 requires bounded final PostgreSQL TCP readiness and a guarded resume-fresh path pinned
-to original infrastructure images. New source has no CI acceptance or deployment.
-Local Docker is unavailable. Historical notes follow; preserve the owner's dirty
+to original infrastructure images. The merged-main run is failed acceptance, with
+no successful release acceptance or deployment. Local Docker is unavailable.
+Historical notes follow; preserve the owner's dirty
 Nginx edit, local preview, original project/data and full deferred target.
 
 ## Historical handoff — pre-current-main release checkpoint
