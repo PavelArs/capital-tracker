@@ -40,7 +40,8 @@ class Installation:
             "inventory": b"#!/usr/bin/env bash\necho inventory\n",
             "normalizer": b"{ print }\n",
             "compose": b"services: {}\n",
-            "pins": json.dumps({"postgres": json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text())["postgres"], "redis": {"registryDigest": REDIS}}).encode(),
+            "pins": json.dumps({**json.loads((SOURCE.parents[1] / "deploy/manual-mvp-infrastructure-pins.json").read_text()), "redis": {"registryDigest": REDIS}}).encode(),
+            "resume": b"#!/usr/bin/python3 -I\n",
         }
         self.hashes = {}
         for name, content in contents.items():

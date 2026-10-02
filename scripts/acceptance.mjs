@@ -74,7 +74,19 @@ if (command === 'down') {
       '-addext', 'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com']);
     compose('down', '--remove-orphans');
     try {
-      compose('build', 'backend', 'frontend', 'postgres');
+      let postgresPin;
+      let pinnedPostgresId;
+      if (command === 'critical') {
+        postgresPin = JSON.parse(readFileSync(join(root, 'deploy/manual-mvp-infrastructure-pins.json'), 'utf8')).postgres;
+        pinnedPostgresId = execFileSync('docker', ['image', 'inspect', postgresPin.registryDigest, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim();
+        if (execFileSync('docker', ['image', 'inspect', postgresPin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() !== pinnedPostgresId) {
+          throw new Error('Acceptance PostgreSQL differs from the reviewed original digest');
+        }
+        compose('build', 'backend', 'frontend');
+        run('node', ['tests/e2e/restore-readiness.cjs', postgresPin.tag]);
+      } else {
+        compose('build', 'backend', 'frontend', 'postgres');
+      }
       if (process.platform === 'linux') run('docker', ['run', '--rm', '--network', 'none', '--user', '0',
         '--mount', `type=bind,src=${key},dst=/synthetic-key`, '--entrypoint', 'node',
         'capital-tracker-backend:acceptance', '-e',
@@ -83,7 +95,7 @@ if (command === 'down') {
         '--mount', `type=bind,src=${join(providerTls, 'privkey.pem')},dst=/synthetic-provider-key`, '--entrypoint', 'node',
         'capital-tracker-backend:acceptance', '-e',
         "const fs=require('node:fs');fs.chownSync('/synthetic-provider-key',1000,1000);fs.chmodSync('/synthetic-provider-key',0o400)"]);
-      compose('up', '-d', '--wait', '--wait-timeout', '120', 'postgres', 'redis', 'providers');
+      compose('up', '-d', '--no-build', '--wait', '--wait-timeout', '120', 'postgres', 'redis', 'providers');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e/provider-proxy.cjs')}:/tests/provider-proxy.cjs:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/provider-proxy.cjs');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
@@ -144,7 +156,10 @@ if (command === 'down') {
       compose('run', '--rm', '--no-deps', 'seed');
       compose('run', '--rm', '--no-deps', '-v', `${join(root, 'tests/e2e')}:/tests:ro`,
         '-e', 'NODE_PATH=/app/backend/node_modules', 'migrate', 'node', '/tests/client-source-startup.cjs');
-      compose('up', '-d', '--wait', '--wait-timeout', '120', 'backend', 'backend-replica', 'frontend', 'proxy', 'client-a', 'client-b');
+      compose('up', '-d', '--no-build', '--wait', '--wait-timeout', '120', 'backend', 'backend-replica', 'frontend', 'proxy', 'client-a', 'client-b');
+      if (postgresPin && execFileSync('docker', ['image', 'inspect', postgresPin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() !== pinnedPostgresId) {
+        throw new Error('Acceptance changed the reviewed PostgreSQL image identity');
+      }
       // Container health is insufficient: verify the browser's actual host ingress too.
       let ready = false;
       const deadline = Date.now() + 30_000;

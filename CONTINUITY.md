@@ -1,6 +1,35 @@
 # Capital Tracker refactor continuity
 
-## Current handoff — manual + CSV MVP release in progress
+## Current handoff — interrupted manual + CSV MVP release
+
+Checkpoint: 2026-10-01. The whole product remains incomplete; the manual + CSV MVP
+is not deployed or release-complete. Frozen main is
+0f479b3955aba1cf351a29e897c7ffbdc9909638. Trusted main CI run 36900868365 passed
+20/20 critical cases on that exact source. Promotion run 36905502848 completed with
+four immutable image pins: backend sha256:52d464e118000b07dde22c44f879e07dcf6755c8b73767d89b6bf1ec89301aaf,
+frontend sha256:19a8074a2e0dc6fd67e41615e62e10815b497994e23d56cbbdf54b01af510cc6,
+PostgreSQL sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f,
+and Redis sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23.
+Receipt, run metadata and promoted manifest are preserved in the ignored
+capital-tracker-ci4-runtime/tests/e2e/.runtime/release-planning/evidence/ directory.
+
+Owner setup completed: dispatcher installation/approval, dedicated Docker login,
+targeted Nginx fix/reload, predeploy encrypted-key custody, and SSH retry preparation.
+Production deploy 36914835760 failed at pg_restore after creating PostgreSQL 18 and
+Redis containers, named volumes and the project network. Restore, migrations, owner
+CLI and app activation did not pass; deployment remains false and postdeploy MFA
+custody is pending. Preserve initialized resources. Do not fresh-bootstrap, prune,
+reset, remove, recreate or retry until the reviewed recovery path is implemented and
+runtime state is verified.
+
+OpenSpec change fix-interrupted-mvp-release was strictly validated and committed as
+docs commit cd1df01; implementation is underway in its separate code worktree. It
+requires bounded final PostgreSQL TCP readiness and a guarded resume-fresh path pinned
+to original infrastructure images. New source has no CI acceptance or deployment.
+Local Docker is unavailable. Historical notes follow; preserve the owner's dirty
+Nginx edit, local preview, original project/data and full deferred target.
+
+## Historical handoff — pre-current-main release checkpoint
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN
 PROGRESS**; the whole product is incomplete, not deployed or release-complete.

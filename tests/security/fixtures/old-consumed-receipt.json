@@ -1,0 +1,17 @@
+{
+  "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:52d464e118000b07dde22c44f879e07dcf6755c8b73767d89b6bf1ec89301aaf",
+  "commit": "0f479b3955aba1cf351a29e897c7ffbdc9909638",
+  "files": {
+    "compose": "8b46675cdfb9212f641bedcab3faee4d31eff899184a8dbbdb37d7ebca546e78",
+    "inventory": "34e73b294f1d00a95c57bc6a38d42f6de71ee80440955efceda410fff1d11f70",
+    "normalizer": "7b088f1a3fbef36cb0d5caf12987d4c3570cd47a88261072a4bb778f0afb23bc",
+    "pins": "7e40e625acdd2d86995aefe648be4cfa5400ff8b49902a71fe7e275e9af30032",
+    "runner": "45b52a8e12ad9f0b60ae9342c62c9d70000b4b4934e0eced00cf8f084ce47c50"
+  },
+  "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:19a8074a2e0dc6fd67e41615e62e10815b497994e23d56cbbdf54b01af510cc6",
+  "installation": "fresh",
+  "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f",
+  "redis": "redis@sha256:2d3814be5e9b06a30a0be54770b7e12052e7e79ec85271aefd34875c1f393b23",
+  "runId": "36900868365",
+  "version": 1
+}

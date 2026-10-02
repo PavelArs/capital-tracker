@@ -17,7 +17,7 @@ on:
         required: true
         default: existing
         type: choice
-        options: [existing, fresh]
+        options: [existing, fresh, resume-fresh]
 permissions:
   contents: read
 concurrency:
@@ -79,6 +79,7 @@ jobs:
         if: inputs.mode == 'promote'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_INSTALLATION: ${{ inputs.installation }}
         run: |
           set -euo pipefail
           gzip -dc candidate/images.tar.gz | docker load
@@ -90,7 +91,9 @@ jobs:
           NODE
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           owner=${GITHUB_REPOSITORY_OWNER,,}
-          for name in backend frontend postgres; do
+          promote=(backend frontend)
+          if [[ $RELEASE_INSTALLATION != resume-fresh ]]; then promote+=(postgres); fi
+          for name in "${promote[@]}"; do
             if [[ $name == postgres ]]; then
               tested=$(jq -r '.infrastructure.postgres.imageId' candidate/manifest.json)
               tag=$(jq -r '.infrastructure.postgres.tag' candidate/manifest.json)
@@ -106,6 +109,13 @@ jobs:
             [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend|postgres)@sha256:[a-f0-9]{64}$ ]]
             echo "RELEASE_${name^^}=$digest" >> "$GITHUB_ENV"
           done
+          if [[ $RELEASE_INSTALLATION == resume-fresh ]]; then
+            old_postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
+            tested_postgres=$(jq -er '.infrastructure.postgres.imageId' candidate/manifest.json)
+            old_tag=$(jq -er '.infrastructure.postgres.tag' candidate/manifest.json)
+            test "$(docker image inspect "$old_tag" --format '{{.Id}}')" = "$tested_postgres"
+            echo "RELEASE_POSTGRES=$old_postgres" >> "$GITHUB_ENV"
+          fi
           docker logout ghcr.io
       - name: Write the release receipt for owner approval
         if: inputs.mode == 'promote'

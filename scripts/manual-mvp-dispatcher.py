@@ -41,9 +41,10 @@ FILES = {
     'normalizer': 'normalize-release-snapshot.awk',
     'compose': 'docker-compose.yml',
     'pins': 'manual-mvp-infrastructure-pins.json',
+    'resume': 'manual-mvp-resume.py',
 }
 OPERATIONS = ('inventory', 'preflight', 'deploy')
-INSTALLATIONS = ('existing', 'fresh')
+INSTALLATIONS = ('existing', 'fresh', 'resume-fresh')
 SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin'
 SNAP_PLUGINS_DIR = pathlib.Path('/snap/docker/current/usr/libexec/docker/cli-plugins')
 
@@ -64,6 +65,12 @@ RECEIPT_KEYS = {
     'version', 'commit', 'runId', 'installation',
     'backend', 'frontend', 'postgres', 'redis', 'files',
 }
+RESUME_ORIGIN = {
+    'commit': '0f479b3955aba1cf351a29e897c7ffbdc9909638',
+    'ciRunId': '36900868365',
+    'usedReceiptSha256': '56db9c19cfc8f5c5d08359e5f53f9c2122f369857123172f1e29168f4d61ebc3',
+}
+RESUME_POSTGRES = 'ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f'
 
 
 class Refusal(Exception):
@@ -128,7 +135,8 @@ def read_request(stream):
 def validate_receipt(request, receipt):
     if not isinstance(receipt, dict):
         raise Refusal('independent release receipt required')
-    if set(receipt) != RECEIPT_KEYS:
+    resume = receipt.get('installation') == 'resume-fresh'
+    if set(receipt) != (RECEIPT_KEYS | {'resumeOrigin'} if resume else RECEIPT_KEYS):
         raise Refusal('unexpected receipt fields')
     if not _is_int(receipt['version'], 1):
         raise Refusal('unsupported receipt version')
@@ -136,6 +144,10 @@ def validate_receipt(request, receipt):
         raise Refusal('receipt belongs to another commit or run')
     if receipt['installation'] not in INSTALLATIONS:
         raise Refusal('unapproved installation mode')
+    if resume and (receipt['commit'] == RESUME_ORIGIN['commit'] or receipt['runId'] == RESUME_ORIGIN['ciRunId']):
+        raise Refusal('resume requires a distinct candidate approval')
+    if resume and (receipt['resumeOrigin'] != RESUME_ORIGIN or receipt['postgres'] != RESUME_POSTGRES):
+        raise Refusal('resume receipt differs from the interrupted installation')
     for field, pattern in APPLICATION_IMAGE.items():
         if not _full(pattern, receipt[field]):
             raise Refusal('unpinned application image')
@@ -306,12 +318,17 @@ def verify_installation(receipt, config):
             pins = parse_json(content)
             source = pins.get('postgres')
             if (not isinstance(source, dict)
-                    or set(source) != {'tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest'}
+                    or set(source) != {'tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest', 'registryDigest', 'originRevision'}
                     or source['tag'] != 'capital-tracker-postgres:acceptance'
                     or source['dockerfile'] != 'deploy/postgres.Dockerfile'
                     or not _full(SHA256, source['dockerfileSha256'])
-                    or source['baseRegistryDigest'] != 'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'):
+                    or source['baseRegistryDigest'] != 'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'
+                    or source['registryDigest'] != RESUME_POSTGRES
+                    or source['originRevision'] != RESUME_ORIGIN['commit']
+                    or pins.get('resumeOrigin') != RESUME_ORIGIN):
                 raise Refusal('invalid reviewed PostgreSQL source pins')
+            if receipt['installation'] == 'resume-fresh' and receipt['postgres'] != source['registryDigest']:
+                raise Refusal('resume PostgreSQL differs from reviewed original')
             # The derived PostgreSQL digest comes from owner approval, never its base pin.
             # The hash above binds the separately reviewed source inputs.
             for service in ('redis',):
@@ -397,6 +414,9 @@ def build_command(request, config, receipt=None):
         'RELEASE_POSTGRES_IMAGE': receipt['postgres'],
         'RELEASE_REDIS_IMAGE': receipt['redis'],
         'RELEASE_COMPOSE_FILE': str(_installed(config, 'compose')),
+        'RELEASE_RESUME_HELPER': str(_installed(config, 'resume')),
+        'RELEASE_PINS_FILE': str(_installed(config, 'pins')),
+        'RELEASE_USED_RECEIPTS_DIR': str(config.receipts_dir / 'used'),
     })
     argv = ['/bin/bash', str(_installed(config, 'runner')), request['operation'], request['commit']]
     if request['operation'] == 'deploy':

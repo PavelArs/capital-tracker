@@ -1,21 +1,33 @@
 const { readFileSync } = require('node:fs');
+const ORIGINAL_COMMIT = '0f479b3955aba1cf351a29e897c7ffbdc9909638';
+const ORIGINAL_CI_RUN = '36900868365';
+const ORIGINAL_RECEIPT_SHA256 = '56db9c19cfc8f5c5d08359e5f53f9c2122f369857123172f1e29168f4d61ebc3';
+const ORIGINAL_POSTGRES = 'ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f';
 function exactKeys(value, keys) {
   return value && typeof value === 'object' && !Array.isArray(value)
     && Object.keys(value).sort().join(',') === [...keys].sort().join(',');
 }
 function validateInfrastructurePins(pins) {
-  if (!exactKeys(pins, ['postgres', 'redis'])) throw new Error('Invalid infrastructure pins');
+  if (!exactKeys(pins, ['postgres', 'redis', 'resumeOrigin'])) throw new Error('Invalid infrastructure pins');
   const postgres = pins.postgres;
-  if (!exactKeys(postgres, ['tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest'])
+  if (!exactKeys(postgres, ['tag', 'dockerfile', 'dockerfileSha256', 'baseRegistryDigest', 'registryDigest', 'originRevision'])
     || postgres.tag !== 'capital-tracker-postgres:acceptance'
     || postgres.dockerfile !== 'deploy/postgres.Dockerfile'
     || !/^[a-f0-9]{64}$/.test(postgres.dockerfileSha256)
-    || postgres.baseRegistryDigest !== 'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66') {
+    || postgres.baseRegistryDigest !== 'postgres@sha256:d8703cd7fba306b9fec9268ecedfa8a966846c053036a60e3635791957eb2f66'
+    || postgres.registryDigest !== ORIGINAL_POSTGRES
+    || postgres.originRevision !== ORIGINAL_COMMIT) {
     throw new Error('Invalid derived PostgreSQL source pin');
   }
   const redis = pins.redis;
   if (!exactKeys(redis, ['tag', 'registryDigest']) || redis.tag !== 'redis:8.10.2-alpine3.23'
     || !/^redis@sha256:[a-f0-9]{64}$/.test(redis.registryDigest)) throw new Error('Invalid Redis pin');
+  if (!exactKeys(pins.resumeOrigin, ['commit', 'ciRunId', 'usedReceiptSha256'])
+    || pins.resumeOrigin.commit !== ORIGINAL_COMMIT
+    || pins.resumeOrigin.ciRunId !== ORIGINAL_CI_RUN
+    || pins.resumeOrigin.usedReceiptSha256 !== ORIGINAL_RECEIPT_SHA256) {
+    throw new Error('Invalid interrupted release origin');
+  }
   return pins;
 }
 function validateRelease(value, expectedCommit, expectedRunId, infrastructurePins) {
@@ -48,7 +60,7 @@ function validateLoadedImages(manifest, inspect) {
       throw new Error('Candidate image identity or architecture mismatch');
     }
     if (image.tag === manifest.infrastructure.postgres.tag
-      && actual.Config?.Labels?.['org.opencontainers.image.revision'] !== manifest.commit) {
+      && actual.Config?.Labels?.['org.opencontainers.image.revision'] !== manifest.infrastructure.postgres.originRevision) {
       throw new Error('PostgreSQL build revision mismatch');
     }
   }

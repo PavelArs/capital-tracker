@@ -352,7 +352,7 @@ describe('ENG-005: critical real release acceptance preserves security and block
       expect(step['continue-on-error'] ?? false).toBe(false);
     }
     for (const name of [
-      'Verify reviewed PostgreSQL source and pull Redis digest',
+      'Pull exact reviewed PostgreSQL and Redis images',
       'Enforce exact-image high and critical security gate',
     ]) {
       const step = steps.find((item) => item.name === name);

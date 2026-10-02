@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 mode=${1:?Use preflight or deploy}
 installation=${RELEASE_INSTALLATION:-existing}
-[[ $installation == existing || $installation == fresh ]] || exit 2
+[[ $installation == existing || $installation == fresh || $installation == resume-fresh ]] || exit 2
 commit=${2:?Required commit}
 backend=${3:-}
 frontend=${4:-}
@@ -25,8 +25,8 @@ fi
 # This lock serializes server operations independently of Actions concurrency.
 exec 9>"$root/.release.lock"
 flock -n 9 || { echo 'Another release holds the server lock'; exit 1; }
-if [[ $installation == existing ]]; then
-  [[ -f "$root/docker-compose.yml" ]] || exit 1
+if [[ $installation == existing || $installation == resume-fresh ]]; then
+  if [[ $installation == existing ]]; then [[ -f "$root/docker-compose.yml" ]] || exit 1; fi
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
   project=$(docker inspect "$db" --format '{{index .Config.Labels "com.docker.compose.project"}}')
   actual_major=$(docker exec "$db" sh -c 'cat "$PGDATA/PG_VERSION"')
@@ -55,7 +55,7 @@ candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume"
 [[ $expected_major == 16 || $expected_major == 18 ]] || { echo 'Unsupported PostgreSQL major'; exit 1; }
 if [[ $expected_major == 18 ]]; then expected_target=/var/lib/postgresql; else expected_target=/var/lib/postgresql/data; fi
 [[ $candidate_target == "$expected_target" ]] || { echo 'PostgreSQL volume layout mismatch'; exit 1; }
-if [[ $installation == existing ]]; then
+if [[ $installation == existing || $installation == resume-fresh ]]; then
   [[ $actual_major == "$expected_major" ]] || { echo 'PostgreSQL major change refused; preserve existing data'; exit 1; }
   volume=$(docker inspect "$db" | jq -er --arg target "$candidate_target" '.[0].Mounts[] | select(.Destination==$target and .Type=="volume") | .Name')
   # Resolve locally. Never pull or restart infrastructure during an application release.
@@ -81,6 +81,16 @@ backup_key=${RELEASE_BACKUP_KEY_FILE:-$root/.backup-key}
 [[ $backup_key != "$root/backups/"* ]] || exit 1
 # Verify target project maps precisely to the existing durable volume.
 [[ $installation == fresh || $(jq -er '.volumes.postgres_data.name' <<<"$config") == "$volume" ]] || { echo 'Database volume identity mismatch'; exit 1; }
+resume_snapshot=''
+if [[ $installation == resume-fresh ]]; then
+  [[ $expected_major == 18 && $postgres_ref == "${RELEASE_POSTGRES_IMAGE:-}" && $redis_ref == "${RELEASE_REDIS_IMAGE:-}" ]] || { echo 'Resume infrastructure differs from approved receipt'; exit 1; }
+  resume_snapshot=$(/usr/bin/python3 -I "${RELEASE_RESUME_HELPER:?}" preflight "$root" "${RELEASE_PINS_FILE:?}" "${RELEASE_USED_RECEIPTS_DIR:?}" "$postgres_ref" "$redis_ref")
+fi
+compare_resume() {
+  local operation=compare
+  [[ ${1:-} != active ]] || operation=compare-active
+  [[ $installation != resume-fresh ]] || /usr/bin/python3 -I "$RELEASE_RESUME_HELPER" "$operation" "$root" "$RELEASE_PINS_FILE" "$RELEASE_USED_RECEIPTS_DIR" "$postgres_ref" "$redis_ref" "$resume_snapshot"
+}
 [[ $(jq -er '.services.backend.environment.BACKGROUND_JOBS_ENABLED' <<<"$config") == false ]] || exit 1
 jq -e --arg installation "$installation" '.services.backend.environment.TRUSTED_PROXY_IPS | fromjson | type=="array" and (length>0 or $installation=="fresh")' <<<"$config" >/dev/null
 jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/null
@@ -107,7 +117,11 @@ else
   curl --silent --show-error --max-time 10 --output /dev/null "$origin/"
 fi
 if [[ $mode == preflight ]]; then
-  echo 'Read-only preflight passed: existing project/volume, configuration, key and HTTPS privacy boundaries verified'
+  if [[ $installation == resume-fresh ]]; then
+    echo 'Read-only resume preflight passed: interrupted infrastructure and TLS identity verified; application not activated'
+  else
+    echo 'Read-only preflight passed: existing project/volume, configuration, key and HTTPS privacy boundaries verified'
+  fi
   exit 0
 fi
 [[ $backend =~ ^ghcr.io/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$ && $frontend =~ ^ghcr.io/[a-z0-9/_-]+@sha256:[a-f0-9]{64}$ ]] || exit 2
@@ -171,9 +185,12 @@ BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc pull backend frontend
 if [[ $installation == fresh ]]; then dc pull postgres redis; fi
 # Maintenance window makes dump, restored fingerprint and migration one write-free boundary.
 apps_stopped=true
+if [[ $installation == existing || $installation == resume-fresh ]]; then
+  compare_resume
+fi
 if [[ $installation == existing ]]; then
   dc stop backend frontend
-else
+elif [[ $installation == fresh ]]; then
   # Fresh data creation follows explicit absence proof; never overwrite an existing project.
   dc up -d --wait --wait-timeout 120 postgres redis
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
@@ -192,6 +209,20 @@ else
   [[ $(grep -c '^TRUSTED_PROXY_IPS=' "$runtime") == 1 ]] || exit 1
   sed -i "s|^TRUSTED_PROXY_IPS=.*|TRUSTED_PROXY_IPS=[\"$peer\"]|" "$runtime"
 fi
+if [[ $installation == resume-fresh ]]; then
+  network=$(docker inspect "$db" | jq -er '.[0].NetworkSettings.Networks | keys | select(length==1) | .[0]')
+  docker run -d --name "$probe_container" --network "$network" -p 127.0.0.1:3102:3000 --entrypoint node "$backend" \
+    -e 'require("http").createServer((req,res)=>res.end(req.socket.remoteAddress)).listen(3000,"0.0.0.0")' >/dev/null
+  peer=''
+  for attempt in {1..30}; do
+    if peer=$(curl --fail --silent --max-time 2 http://127.0.0.1:3102/); then break; fi
+    sleep 1
+  done
+  docker container rm -f "$probe_container" >/dev/null
+  [[ $peer =~ ^(::ffff:)?[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Proxy socket observation failed'; exit 1; }
+  [[ $peer == "$(jq -er '.proxyPeer' <<<"$resume_snapshot")" ]] || { echo 'Proxy peer changed since interrupted attempt'; exit 1; }
+  compare_resume
+fi
 pg_image=$(docker inspect "$db" --format '{{.Image}}')
 docker exec "$db" sh -c 'pg_dump -Fc -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
   | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass "file:$backup_key" -out "$backup"
@@ -200,23 +231,33 @@ sha256sum -c "$backup.sha256" >/dev/null
 # Dedicated disconnected, tmpfs-only rehearsal; never restore into owner's PostgreSQL.
 docker run -d --name "$restore_container" --network none --tmpfs "$candidate_target" \
   -e POSTGRES_HOST_AUTH_METHOD=trust "$pg_image" >/dev/null
+restore_ready=false
 for attempt in {1..60}; do
-  if docker exec "$restore_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+  # The official image's temporary init server accepts sockets, but not TCP.
+  if docker exec "$restore_container" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
+    restore_ready=true
+    break
+  fi
   sleep 1
 done
+[[ $restore_ready == true ]] || { echo 'Isolated PostgreSQL TCP readiness failed after 60 attempts' >&2; exit 1; }
 openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:$backup_key" -in "$backup" \
-  | docker exec -i "$restore_container" pg_restore --exit-on-error --clean --if-exists --no-owner --no-privileges -U postgres -d postgres
+  | docker exec -i "$restore_container" pg_restore -h 127.0.0.1 --exit-on-error --clean --if-exists --no-owner --no-privileges -U postgres -d postgres
 # Compare normalized logical SQL output, including actual rows and schema, not merely exit codes.
 fingerprint() {
-  docker exec "$1" sh -c 'pg_dump --no-owner --no-privileges -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"' \
-    | awk -f "$normalizer" | sha256sum | cut -d' ' -f1
+  if [[ $1 == "$restore_container" ]]; then
+    docker exec "$1" sh -c 'pg_dump -h 127.0.0.1 --no-owner --no-privileges -U postgres -d postgres'
+  else
+    docker exec "$1" sh -c 'pg_dump --no-owner --no-privileges -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}"'
+  fi | awk -f "$normalizer" | sha256sum | cut -d' ' -f1
 }
 [[ $(fingerprint "$db") == $(fingerprint "$restore_container") ]] || { echo 'Isolated backup restore fingerprint mismatch'; exit 1; }
+compare_resume
 printf '%s\n' "$before" >"$state/migrations-before"
 printf '%s\n%s\n' "$previous_backend" "$previous_frontend" >"$state/previous-images"
 BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc run --rm --no-deps backend node backend/dist/migrate.js
 ledger >"$state/migrations-after"
-if [[ $installation == fresh ]]; then
+if [[ $installation == fresh || $installation == resume-fresh ]]; then
   # Real production CLIs provision the owner and confirm a separately generated factor.
   # Password/factor/recovery material stays in private operator files, never Actions output.
   [[ -f "$root/.owner-password.json" && ! -L "$root/.owner-password.json" ]] || exit 1
@@ -238,16 +279,17 @@ if [[ $installation == fresh ]]; then
 fi
 BACKEND_IMAGE="$backend" FRONTEND_IMAGE="$frontend" dc up -d --no-deps --wait --wait-timeout 120 backend frontend
 smoke || { echo 'Candidate HTTPS readiness/privacy verification failed'; exit 1; }
+compare_resume active
 # Stage all selection/receipt/configuration files before activation. Recovery restores
 # the previous metadata pair as well as containers if publication fails.
 printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$backend" "$frontend" >"$root/.env.images.next"
 printf 'commit=%s\nbackend=%s\nfrontend=%s\nbackup=%s\nhealth=passed\n' "$commit" "$backend" "$frontend" "$backup" >"$state/receipt.next"
 cp "$candidate" "$root/docker-compose.yml.next"
-if [[ $installation == fresh ]]; then printf 'generated-runtime-only\n' >"$root/.release-managed-env.next"; fi
+if [[ $installation == fresh || $installation == resume-fresh ]]; then printf 'generated-runtime-only\n' >"$root/.release-managed-env.next"; fi
 activation_started=true
 mv "$root/.env.images.next" "$root/.env.images"
 mv "$root/docker-compose.yml.next" "$root/docker-compose.yml"
-if [[ $installation == fresh ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
+if [[ $installation == fresh || $installation == resume-fresh ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
 mv "$state/receipt.next" "$state/receipt"
 success=true
 echo 'Release verified; private server receipt records images, schema and encrypted backup'
