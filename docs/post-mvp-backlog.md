@@ -28,7 +28,8 @@ draft PR #29. Initial CI 37008110156 passed real PostgreSQL/20 HTTPS cases but
 failed frontend pcre2 HIGH security; fixed combined source `8e4b292` passed CI
 37013305851 (10/10 jobs, PostgreSQL probes, 20/20 cases, four image gates, candidate
 export). Actual 360/768 frames nevertheless revealed fragmented numeric columns;
-a bounded readability correction needs its own runtime/visual verification. Allocation and image-patch OpenSpecs are archived; the
+reviewed readability source `dc91b10` and QA `729df28` are integrated and need
+fresh runtime/visual verification (six complete and eight incomplete frames). Allocation and image-patch OpenSpecs are archived; the
 UI change remains active and all new changes are unreleased. Keep the 1–10 selected-account scope honest;
 a separate all-account manual overview is next, as described in the source-backed
 handoff below. Network/AI and whole-frontend redesign remain incomplete.

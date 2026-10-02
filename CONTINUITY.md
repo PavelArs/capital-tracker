@@ -29,8 +29,10 @@ patch `cd28c11` fixes it. Combined branch `8e4b292` / identical synthetic merge
 `13c98d5` then passed CI 37013305851: 10/10 jobs, real PostgreSQL probes, 20/20
 critical HTTPS cases, all four exact-image vulnerability/secret gates and candidate
 export. However, actual frame review found numeric columns unreadable at 360/768px.
-A bounded table readability correction and stronger same-case browser assertions
-are underway in separate worktrees; they need fresh real acceptance/visual review.
+Reviewed table readability source `dc91b10` and same-case QA `729df28` are
+integrated as `9d5d550` / `d7e12cc`; their fresh real acceptance and fourteen-frame
+visual review are pending. Root reran four characterizations, frontend build and
+strict OpenSpec (49/49) successfully; browser discovery is still two MPV cases.
 Allocation and image-patch OpenSpecs are archived with verified source evidence;
 the UI OpenSpec remains active until readability and visual checks pass;
 no new production release occurred. Preserve honest 1–10 selected-account scope.
