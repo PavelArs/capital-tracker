@@ -192,21 +192,27 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
               <thead>
                 <tr>
                   <th scope="col">Инструмент</th>
-                  <th scope="col">Количество</th>
-                  <th scope="col">Стоимость, USD</th>
-                  <th scope="col">Доля, %</th>
+                  <th className="manual-portfolio__number" scope="col">
+                    Количество
+                  </th>
+                  <th className="manual-portfolio__number" scope="col">
+                    Стоимость, USD
+                  </th>
+                  <th className="manual-portfolio__number" scope="col">
+                    Доля, %
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {view.allocation.map((row) => (
                   <tr key={row.instrumentId}>
-                    <th scope="row">
+                    <th className="manual-portfolio__identity" scope="row">
                       {row.instrumentName}
                       {row.instrumentSymbol && ` ${row.instrumentSymbol}`}
                     </th>
-                    <td>{row.quantity}</td>
-                    <td>{row.valueText}</td>
-                    <td>{row.percentText}</td>
+                    <td className="manual-portfolio__number">{row.quantity}</td>
+                    <td className="manual-portfolio__number">{row.valueText}</td>
+                    <td className="manual-portfolio__number">{row.percentText}</td>
                   </tr>
                 ))}
               </tbody>
@@ -225,14 +231,18 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
                   <th scope="col">Счет</th>
                   <th scope="col">История и ревизия</th>
                   <th scope="col">Полнота</th>
-                  <th scope="col">Оценённая часть, USD</th>
-                  <th scope="col">Оценка, USD</th>
+                  <th className="manual-portfolio__number" scope="col">
+                    Оценённая часть, USD
+                  </th>
+                  <th className="manual-portfolio__number" scope="col">
+                    Оценка, USD
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {view.rows.map((row) => (
                   <tr key={row.accountId}>
-                    <td>
+                    <td className="manual-portfolio__identity">
                       <Link to={`/manual-accounts/${row.accountId}`}>{row.name}</Link>
                     </td>
                     <td>
@@ -246,8 +256,8 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
                       {row.completenessText}
                       <small>Позиций без цены: {row.missingPriceText}</small>
                     </td>
-                    <td>{row.subtotalText}</td>
-                    <td>{row.totalText}</td>
+                    <td className="manual-portfolio__number">{row.subtotalText}</td>
+                    <td className="manual-portfolio__number">{row.totalText}</td>
                   </tr>
                 ))}
               </tbody>
