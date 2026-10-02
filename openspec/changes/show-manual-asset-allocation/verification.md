@@ -4,7 +4,7 @@
 
 MPV-ALLOC-001..004 map to `backend/src/accounting/manual-portfolio-valuation.spec.ts`: shared UUID aggregation and order, same-symbol isolation, scale-60 values, half-up tie and independent rounding, missing prices/history, known zero, empty positions and priced unknown-cost reward. MPV-ALLOC-005 maps to `frontend/src/features/manual-portfolio-valuation/ManualPortfolioValuation.test.tsx`: the labelled table, exact/unknown cells and clearing after a UTC edit. The prior account/selection tests remain intact.
 
-Separate real PostgreSQL and HTTPS assertions extend the existing manual-portfolio acceptance journeys in QA commit `804dc24`; root coordinates their integration and execution. They retain the existing privacy, snapshot, provider and no-write oracles. They have not run in this worktree; local Docker is unavailable.
+Separate real PostgreSQL and HTTPS assertions extend the existing manual-portfolio acceptance journeys in QA commits `804dc24` and `3538775`, integrated as `d4be9ef` and `18e3616`. The follow-up preserves expected values while matching the instrument row header and three data cells. They retain the existing privacy, snapshot, provider and no-write oracles. Runtime execution remains pending; local Docker is unavailable.
 
 ## Actual local results
 
@@ -22,6 +22,8 @@ After implementation:
 | Frontend TypeScript and Vite build | Passed; existing large-chunk warning |
 | Strict OpenSpec `validate --all` | 49 passed, 0 failed |
 | Backend/frontend affected-file Biome | Passed after formatting |
-| Production dependency audit | Unavailable: registry.npmjs.org DNS `ENOTFOUND` after retries; no advisory result inferred |
+| Production dependency audit | Initial agent attempt unavailable (registry DNS `ENOTFOUND`); root network-enabled rerun passed, exit 0, zero HIGH/critical and one MODERATE finding |
 
-The test results are unit/component and compile evidence, not PostgreSQL or HTTPS runtime acceptance. Independent review found no behavioral blocker in the projection and requested the final typed-test simplification and unknown-cost assertion; both were applied. Final review of the committed diff and hosted critical acceptance remain root-coordinated. Full 174-case E2E and production/Docker startup were not run; the selected critical profile is planned for the integrated source. Do not archive until audit and required runtime acceptance pass.
+Root verified the integrated source at `1c878f1`: backend MPV and historical valuation 68/68 passed (2.112 s), frontend allocation/view 4/4 passed (1.14 s), production audit passed as above, PostgreSQL probe syntax and diff checks passed. Playwright discovery lists the two retained MPV journeys; discovery is not execution.
+
+Independent agent review approved `4a52f9f..1c878f1` for a draft PR with no behavioral blocker. It reviewed exact arithmetic, half-up ties, UUID separation, unknown cost independence, incomplete/zero shares, private snapshot reuse, stale intent and semantic browser assertions. These results are unit/component and compile evidence, not PostgreSQL or HTTPS runtime acceptance. Full 174-case E2E and production/Docker startup were not run; the selected critical profile is planned for the integrated source. Do not archive until required runtime acceptance passes.
