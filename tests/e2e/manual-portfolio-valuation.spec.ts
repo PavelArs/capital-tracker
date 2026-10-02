@@ -455,7 +455,7 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
 
 test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late stale request', async ({
   page,
-}) => {
+}, testInfo) => {
   const api = await tradeApi(page);
   const data = await createPortfolio(api, 'MPV UI');
   const providersBefore = providerRequests();
@@ -548,6 +548,98 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
   expect(writes).toHaveLength(1);
   await mountedValuation?.dispose();
+
+  // VAL-UI-METHOD: native method details leave the selected intent and exact result intact.
+  const method = region.locator('details').filter({ hasText: 'Что входит в оценку' });
+  const methodSummary = method.getByText('Что входит в оценку', { exact: true });
+  await expect(method).not.toHaveAttribute('open', '');
+  await methodSummary.click();
+  await expect(method).toHaveAttribute('open', '');
+  await expect(method).toContainText('сохранённые ручные цены USD');
+  await methodSummary.click();
+  await expect(method).not.toHaveAttribute('open', '');
+  await expect(halfChoice).toBeChecked();
+  await expect(doubleChoice).toBeChecked();
+  await expect(at).toHaveValue(valuationAt);
+  await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
+  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
+  expect(writes).toHaveLength(1);
+
+  // VAL-UI-REGIONS: retain exact evidence across real app viewport/theme frames.
+  const accountScroll = region.getByRole('region', {
+    name: 'Оценка по счетам — прокручиваемая таблица',
+    exact: true,
+  });
+  const allocationScroll = region.getByRole('region', {
+    name: 'Распределение по инструментам выбранных счетов — прокручиваемая таблица',
+    exact: true,
+  });
+  const originalViewport = page.viewportSize();
+  const originalScheme = await page.evaluate(() =>
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+  );
+  try {
+    for (const theme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: theme });
+      await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+      for (const width of [360, 768, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
+        await expect(halfRow.getByRole('cell').nth(3)).toHaveText('61.728');
+        await expect(doubleRow.getByRole('cell').nth(4)).toHaveText('246.912');
+        await expect(sharedAllocationRow.getByRole('rowheader')).toHaveText(
+          `${data.first.name} SAME`,
+        );
+        await expect(sharedAllocationRow.getByRole('cell').nth(0)).toHaveText('2.5');
+        await expect(sharedAllocationRow.getByRole('cell').nth(1)).toHaveText('308.64');
+        await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('100.00');
+        await expect
+          .poll(() =>
+            page.evaluate(
+              () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            ),
+          )
+          .toBeLessThanOrEqual(1);
+        for (const scroll of [accountScroll, allocationScroll]) {
+          await expect(scroll).toBeVisible();
+          await expect(scroll).toHaveAttribute('tabindex', '0');
+          await expect(scroll).toHaveCSS('overflow-x', 'auto');
+          await page.keyboard.press('Tab');
+          await scroll.focus();
+          await expect(scroll).toBeFocused();
+          await expect(scroll).toHaveCSS('outline-width', '3px');
+          if (
+            width === 360 &&
+            (await scroll.evaluate((node) => node.scrollWidth > node.clientWidth))
+          ) {
+            await page.keyboard.press('ArrowRight');
+            await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
+            await scroll.evaluate((node) => {
+              node.scrollLeft = 0;
+            });
+          }
+        }
+        await expect(table).toBeVisible();
+        await expect(allocationTable).toBeVisible();
+        expect(await halfRow.getByRole('cell').first().evaluate(
+          (node) => getComputedStyle(node).overflowWrap,
+        )).toBe('anywhere');
+        expect(await sharedAllocationRow.getByRole('rowheader').evaluate(
+          (node) => getComputedStyle(node).overflowWrap,
+        )).toBe('anywhere');
+        await region.screenshot({
+          path: testInfo.outputPath(`valuation-${theme}-${width}.png`),
+          animations: 'disabled',
+        });
+      }
+    }
+  } finally {
+    await page.emulateMedia({ colorScheme: originalScheme });
+    if (originalViewport) await page.setViewportSize(originalViewport);
+  }
+  expect(writes).toHaveLength(1);
+  expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessBefore);
+  expect(providerRequests()).toEqual(providersBefore);
 
   await gapChoice.check();
   await expect(region.getByText('Полная оценка выбранных счетов', { exact: true })).toBeHidden();
