@@ -71,7 +71,7 @@ async function exactGapsAndPrivacy(db, s, f) {
   const providers = await providerRequests();
   const value = await read(s, owner, [b, a]);
   assert.deepEqual(Object.keys(value).sort(), ['at','accountIds','scope','basis','priceSource','quoteCurrency',
-    'pricePolicy','completeness','unavailableAccountCount','missingPriceCount','pricedSubtotalUsd','totalValueUsd','accounts'].sort());
+    'pricePolicy','completeness','unavailableAccountCount','missingPriceCount','pricedSubtotalUsd','totalValueUsd','accounts','allocation'].sort());
   assert.deepEqual(value.accountIds, [a, b].sort());
   assert.deepEqual(value.accounts.map((entry) => entry.accountId), [a, b].sort());
   assert.equal(value.scope, 'selected-manual-accounts');
@@ -91,12 +91,18 @@ async function exactGapsAndPrivacy(db, s, f) {
   assert.equal(row(value, a).coverageFrom, coverageFrom);
   assert.equal(row(value, a).name, '<script>literal first</script>');
   assert.deepEqual(row(value, a).items[0].price, { priceUsd: '123.456', observedAt: at, revision: 1 });
+  assert.deepEqual(value.allocation, [{ instrumentId: first, instrumentName: 'First', instrumentSymbol: 'SAME',
+    quantity: '2.5', valueUsd: '308.64', allocationPercent: '100.00' }],
+  'MPV-ALLOC-001 shared UUID aggregates exact quantity and value');
   assert.deepEqual(await read(s, owner, [a, b]), value, 'Selection ordering does not change output');
   const gaps = await read(s, owner, [a, b, unknown, future, empty]);
   assert.equal(gaps.totalValueUsd, null);
   assert.equal(gaps.pricedSubtotalUsd, '308.64');
   assert.equal(gaps.unavailableAccountCount, 2);
   assert.equal(gaps.missingPriceCount, 0);
+  assert.deepEqual(gaps.allocation, [{ instrumentId: first, instrumentName: 'First', instrumentSymbol: 'SAME',
+    quantity: '2.5', valueUsd: '308.64', allocationPercent: null }],
+  'MPV-ALLOC-003 unavailable history adds no invented instrument and hides every share');
   for (const id of [unknown, future]) {
     assert.equal(row(gaps, id).completeness, 'incomplete');
     assert.equal(row(gaps, id).totalValueUsd, null);
@@ -111,7 +117,9 @@ async function exactGapsAndPrivacy(db, s, f) {
   assert.equal(row(gaps, future).coverageFrom, '2026-01-01T00:00:00.000Z');
   assert.equal(row(gaps, future).journalRevision, 0);
   assert.equal(row(gaps, empty).totalValueUsd, '0');
-  assert.equal((await read(s, owner, [empty])).totalValueUsd, '0');
+  const emptyValue = await read(s, owner, [empty]);
+  assert.equal(emptyValue.totalValueUsd, '0');
+  assert.deepEqual(emptyValue.allocation, [], 'MPV-ALLOC-004 covered empty account has no allocation');
   await rejected(() => read(s, owner, [a, foreign]), 404);
   await rejected(() => read(s, owner, [a, randomUUID()]), 404);
   await rejected(() => read(s, other, [a, b]), 404);
@@ -127,10 +135,23 @@ async function exactGapsAndPrivacy(db, s, f) {
   assert.equal(missing.totalValueUsd, null);
   assert.equal(missing.pricedSubtotalUsd, '308.64');
   assert.equal(missing.missingPriceCount, 1);
+  assert.deepEqual(missing.allocation.map((entry) => entry.instrumentId), [first, second].sort(),
+    'MPV-ALLOC-002 distinct UUIDs stay separate and rows sort by UUID');
+  assert.deepEqual(missing.allocation.find((entry) => entry.instrumentId === first),
+    { instrumentId: first, instrumentName: 'First', instrumentSymbol: 'SAME',
+      quantity: '2.5', valueUsd: '308.64', allocationPercent: null });
+  assert.deepEqual(missing.allocation.find((entry) => entry.instrumentId === second),
+    { instrumentId: second, instrumentName: 'Second', instrumentSymbol: 'SAME',
+      quantity: '1', valueUsd: null, allocationPercent: null });
   assert.equal(row(missing, b).items.find((position) => position.instrumentId === second).price, null,
     'Same symbol or adjacent timestamp never substitutes for the exact UUID point');
   await s.prices.set(owner, second, quote(1, '0'));
-  assert.equal((await read(s, owner, [a, b])).totalValueUsd, '308.64');
+  const knownZero = await read(s, owner, [a, b]);
+  assert.equal(knownZero.totalValueUsd, '308.64');
+  assert.equal(knownZero.allocation.find((entry) => entry.instrumentId === first).allocationPercent, '100.00');
+  assert.deepEqual(knownZero.allocation.find((entry) => entry.instrumentId === second),
+    { instrumentId: second, instrumentName: 'Second', instrumentSymbol: 'SAME',
+      quantity: '1', valueUsd: '0', allocationPercent: '0.00' });
   await s.prices.void(owner, first, { requestId: randomUUID(), expectedRevision: 1, observedAt: at, assertReviewed: true });
   const voided = await read(s, owner, [a, b]);
   assert.equal(voided.totalValueUsd, null);
@@ -214,6 +235,9 @@ async function precisionBoundAndInvalidHistory(db, s, f) {
   const elapsed = Date.now() - start;
   assert.equal(result.accounts.length, 10);
   assert.equal(result.totalValueUsd, `0.${'0'.repeat(59)}2`);
+  assert.deepEqual(result.allocation, [{ instrumentId: tiny, instrumentName: 'Tiny', instrumentSymbol: null,
+    quantity: `0.${'0'.repeat(29)}2`, valueUsd: `0.${'0'.repeat(59)}2`, allocationPercent: '100.00' }],
+  'MPV-ALLOC-002 retains scale-30 quantities and scale-60 aggregate value');
   await rejected(() => read(s, owner, ids), 400);
   assert.equal(await fingerprint(db), before);
   await db.query(`UPDATE account_trade_versions SET side='sell' WHERE "ownerId"=$1 AND "accountId"=$2`, [owner, ids[0]]);

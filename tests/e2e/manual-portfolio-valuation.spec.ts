@@ -128,6 +128,7 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
     'pricedSubtotalUsd',
     'totalValueUsd',
     'accounts',
+    'allocation',
   ]);
   const sortedExactIds = [data.accounts.half.id, data.accounts.double.id].sort();
   expect(exactBody).toMatchObject({
@@ -146,6 +147,25 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
   });
   const exactAccounts = exactBody.accounts as Record<string, unknown>[];
   expect(exactAccounts.map((account) => account.accountId)).toEqual(sortedExactIds);
+  // MPV-ALLOC-001: both accounts contribute to one exact, UUID-keyed allocation.
+  const exactAllocation = exactBody.allocation as Record<string, unknown>[];
+  expect(exactAllocation).toHaveLength(1);
+  expectKeys(exactAllocation[0], [
+    'instrumentId',
+    'instrumentName',
+    'instrumentSymbol',
+    'quantity',
+    'valueUsd',
+    'allocationPercent',
+  ]);
+  expect(exactAllocation[0]).toEqual({
+    instrumentId: data.first.id,
+    instrumentName: data.first.name,
+    instrumentSymbol: 'SAME',
+    quantity: '2.5',
+    valueUsd: '308.64',
+    allocationPercent: '100.00',
+  });
   for (const account of exactAccounts) {
     expectKeys(account, [
       'accountId',
@@ -263,6 +283,23 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       pricedSubtotalUsd: '308.64',
       totalValueUsd: null,
     });
+    // MPV-ALLOC-003: known positions remain visible; a missing journal adds no invented row.
+    const gapAllocation = gapsBody.allocation as Record<string, unknown>[];
+    expect(gapAllocation.map((row) => row.instrumentId)).toEqual(
+      [data.first.id, data.sameSymbol.id].sort(),
+    );
+    expect(gapAllocation.find((row) => row.instrumentId === data.first.id)).toMatchObject({
+      quantity: '2.5',
+      valueUsd: '308.64',
+      allocationPercent: null,
+    });
+    expect(gapAllocation.find((row) => row.instrumentId === data.sameSymbol.id)).toMatchObject({
+      instrumentName: data.sameSymbol.name,
+      instrumentSymbol: 'SAME',
+      quantity: '1',
+      valueUsd: null,
+      allocationPercent: null,
+    });
     const accountRows = gapsBody.accounts as Record<string, unknown>[];
     const missingAccount = accountRows.find(
       (account) => account.accountId === data.accounts.noJournal.id,
@@ -325,6 +362,21 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       pricedSubtotalUsd: '308.64',
       totalValueUsd: '308.64',
     });
+    // MPV-ALLOC-002/004: equal symbols stay separate; an explicit zero is known.
+    const zeroAllocation = zeroBody.allocation as Record<string, unknown>[];
+    expect(zeroAllocation.map((row) => row.instrumentId)).toEqual(
+      [data.first.id, data.sameSymbol.id].sort(),
+    );
+    expect(zeroAllocation.find((row) => row.instrumentId === data.first.id)).toMatchObject({
+      quantity: '2.5',
+      valueUsd: '308.64',
+      allocationPercent: '100.00',
+    });
+    expect(zeroAllocation.find((row) => row.instrumentId === data.sameSymbol.id)).toMatchObject({
+      quantity: '1',
+      valueUsd: '0',
+      allocationPercent: '0.00',
+    });
     const zeroAccount = (zeroBody.accounts as Record<string, unknown>[]).find(
       (account) => account.accountId === data.accounts.missingPrice.id,
     );
@@ -343,6 +395,29 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
         },
       ],
     });
+    const allZero = await preview(api, valuationAt, [data.accounts.missingPrice.id]);
+    expect(allZero.status()).toBe(200);
+    noStore(allZero);
+    expect(await allZero.json()).toMatchObject({
+      completeness: 'complete',
+      totalValueUsd: '0',
+      allocation: [
+        {
+          instrumentId: data.sameSymbol.id,
+          quantity: '1',
+          valueUsd: '0',
+          allocationPercent: null,
+        },
+      ],
+    });
+    const empty = await preview(api, valuationAt, [data.accounts.beforeCoverage.id]);
+    expect(empty.status()).toBe(200);
+    noStore(empty);
+    expect(await empty.json()).toMatchObject({
+      completeness: 'complete',
+      totalValueUsd: '0',
+      allocation: [],
+    });
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessAfterZero);
     expect(ledgerState()).toBe(admissionsAfterZero);
 
@@ -355,6 +430,7 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       missingPriceCount: 0,
       pricedSubtotalUsd: '0',
       totalValueUsd: null,
+      allocation: [],
       accounts: [
         {
           accountId: data.accounts.beforeCoverage.id,
@@ -447,6 +523,16 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   const doubleRow = table.getByRole('row').filter({ hasText: data.accounts.double.name });
   await expect(doubleRow.getByRole('cell').nth(3)).toHaveText('246.912');
   await expect(doubleRow.getByRole('cell').nth(4)).toHaveText('246.912');
+  // MPV-ALLOC-005: the supplementary table names the selected subset and exact share.
+  const allocationTable = region.getByRole('table', {
+    name: 'Распределение по инструментам выбранных счетов',
+    exact: true,
+  });
+  await expect(allocationTable).toBeVisible();
+  const sharedAllocationRow = allocationTable.getByRole('row').filter({ hasText: data.first.name });
+  await expect(sharedAllocationRow.getByRole('cell').nth(1)).toHaveText('2.5');
+  await expect(sharedAllocationRow.getByRole('cell').nth(2)).toHaveText('308.64');
+  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('100.00');
 
   // DIRECTORY / MPV-UI-DISCLOSURE: hiding the panel must not replace its intent.
   const mountedValuation = await region.elementHandle();
@@ -458,6 +544,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(doubleChoice).toBeChecked();
   await expect(at).toHaveValue(valuationAt);
   await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
+  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('100.00');
   expect(writes).toHaveLength(1);
   await mountedValuation?.dispose();
 
@@ -476,6 +563,13 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(
     table.getByRole('row').filter({ hasText: data.accounts.missingPrice.name }),
   ).toBeVisible();
+  await expect(sharedAllocationRow.getByRole('cell').nth(3)).toHaveText('Не определена');
+  const unpricedAllocationRow = allocationTable
+    .getByRole('row')
+    .filter({ hasText: data.sameSymbol.name });
+  await expect(unpricedAllocationRow.getByRole('cell').nth(1)).toHaveText('1');
+  await expect(unpricedAllocationRow.getByRole('cell').nth(2)).toHaveText('Не определена');
+  await expect(unpricedAllocationRow.getByRole('cell').nth(3)).toHaveText('Не определена');
 
   const matchesPreview = (url: URL) => url.pathname === previewPath;
   let release = () => {};
@@ -505,12 +599,14 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
     await expect(
       region.getByText('Неполная оценка выбранных счетов', { exact: true }),
     ).toBeHidden();
+    await expect(allocationTable).toBeHidden();
     release();
     const late = await delayed;
     expect(late.status()).toBe(200);
     await expect(
       region.getByText('Неполная оценка выбранных счетов', { exact: true }),
     ).toBeHidden();
+    await expect(allocationTable).toBeHidden();
 
     const current = page.waitForResponse(
       (response) =>
