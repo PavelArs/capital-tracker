@@ -604,20 +604,29 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
           await expect(scroll).toBeVisible();
           await expect(scroll).toHaveAttribute('tabindex', '0');
           await expect(scroll).toHaveCSS('overflow-x', 'auto');
-          await page.keyboard.press('Tab');
-          await scroll.focus();
+          await at.focus();
+          await expect(at).toBeFocused();
+          let reachedByTab = false;
+          for (let step = 0; step < 10; step++) {
+            await page.keyboard.press('Tab');
+            if (await scroll.evaluate((node) => document.activeElement === node)) {
+              reachedByTab = true;
+              break;
+            }
+          }
+          expect(reachedByTab, 'Table region is reachable by Tab from the UTC input').toBe(true);
           await expect(scroll).toBeFocused();
           await expect(scroll).toHaveCSS('outline-width', '3px');
-          if (
-            width === 360 &&
-            (await scroll.evaluate((node) => node.scrollWidth > node.clientWidth))
-          ) {
-            await page.keyboard.press('ArrowRight');
+          const hasHorizontalScroll = await scroll.evaluate(
+            (node) => node.scrollWidth > node.clientWidth,
+          );
+          await page.keyboard.press('ArrowRight');
+          if (hasHorizontalScroll) {
             await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(0);
-            await scroll.evaluate((node) => {
-              node.scrollLeft = 0;
-            });
           }
+          await scroll.evaluate((node) => {
+            node.scrollLeft = 0;
+          });
         }
         await expect(table).toBeVisible();
         await expect(allocationTable).toBeVisible();
