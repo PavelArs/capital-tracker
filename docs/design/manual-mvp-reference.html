@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capital Tracker — design reference</title>
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; font-size: 16px; line-height: 1.45; font-variant-numeric: tabular-nums; --canvas:#f5f4f0; --surface:#fff; --ink:#24303a; --muted:#52616a; --edge:#cbd3d6; --blue:#315c78; --wash:#eaf1f5; --warn:#80561b; --warn-bg:#fff8e9; --ok:#2d654d; }
+      [data-theme="dark"] { color-scheme:dark; --canvas:#182329; --surface:#23313a; --ink:#edf2f3; --muted:#bfccd1; --edge:#50616b; --blue:#a6d4ee; --wash:#304758; --warn:#f0c981; --warn-bg:#3b3529; --ok:#a5dfb9; }
+      [data-theme="dark"] .button:not(.alt):not(.ghost) { background:#9ac7e0; border-color:#9ac7e0; color:#182a35; }
+      [data-theme="dark"] .button:not(.alt):not(.ghost):hover { background:#b9dcef; }
+      [data-theme="dark"] .button.alt, [data-theme="dark"] .field input, [data-theme="dark"] .field select { background:#23313a; color:#edf2f3; }
+      [data-theme="dark"] .scope { background:#263f4c; }
+      [data-theme="dark"] thead { background:#30414b; }
+      [data-theme="dark"] th, [data-theme="dark"] td, [data-theme="dark"] .account-list li + li { border-color:#40515a; }
+      [data-theme="dark"] .nav a[aria-current="page"], [data-theme="dark"] .task-nav button[aria-pressed="true"] { color:#d8ecf8; border-color:#6689a0; }
+      * { box-sizing: border-box; }
+      body { margin:0; background:var(--canvas); color:var(--ink); }
+      button, input, select { font:inherit; }
+      button { cursor:pointer; }
+      button:disabled { cursor:not-allowed; opacity:.55; }
+      a { color:var(--blue); }
+      :focus-visible { outline:3px solid var(--blue); outline-offset:3px; }
+      .skip { position:absolute; left:12px; top:-60px; padding:8px 12px; background:var(--surface); z-index:10; }
+      .skip:focus { top:10px; }
+      .banner { background:#253c4c; color:#fff; padding:8px max(16px, calc((100vw - 1440px)/2 + 16px)); font-size:13px; letter-spacing:.015em; }
+      .shell { display:grid; grid-template-columns:238px minmax(0,1fr); min-height:calc(100dvh - 37px); }
+      .rail { background:var(--surface); border-right:1px solid var(--edge); padding:18px 12px; min-width:0; }
+      .brand { padding:7px 10px 17px; border-bottom:1px solid var(--edge); font-size:20px; font-weight:700; letter-spacing:-.03em; }
+      .brand small { display:block; margin-top:2px; font-size:12px; font-weight:500; letter-spacing:0; color:var(--muted); }
+      .nav-label { margin:19px 10px 5px; font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+      .nav { display:grid; gap:3px; }
+      .nav a { display:block; padding:9px 11px; border:1px solid transparent; border-radius:4px; color:var(--ink); text-decoration:none; font-size:14px; }
+      .nav a:hover { background:var(--canvas); }
+      .nav a[aria-current="page"] { background:var(--wash); border-color:#bdd0dc; color:#254c64; font-weight:700; }
+      .legacy { margin:16px 0 0; padding:12px 8px; border-top:1px solid var(--edge); font-size:14px; }
+      .legacy summary { cursor:pointer; color:var(--muted); }
+      .legacy p { color:var(--muted); font-size:13px; }
+      .rail-foot { margin:16px 9px; padding-top:16px; border-top:1px solid var(--edge); color:var(--muted); font-size:13px; }
+      .mobile-head { display:none; }
+      .mobile-actions { display:flex; gap:7px; }
+      main { min-width:0; width:100%; max-width:1440px; padding:25px 31px 60px; margin:auto; align-self:start; }
+      .page { display:none; }
+      .page.is-active { display:block; }
+      .topline { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; }
+      .eyebrow { margin:0 0 3px; color:var(--muted); font-size:13px; font-weight:600; }
+      h1 { font-size:28px; line-height:1.2; letter-spacing:-.025em; margin:0; }
+      h2 { font-size:20px; line-height:1.25; letter-spacing:-.015em; margin:0; }
+      h3 { font-size:16px; line-height:1.3; margin:0; }
+      p { margin:0; }
+      .intro { color:var(--muted); margin-top:7px; max-width:72ch; font-size:15px; }
+      .scope { margin:17px 0 20px; padding:9px 12px; border-left:3px solid var(--blue); background:#eef2f4; font-size:14px; }
+      .button { min-height:42px; padding:8px 14px; border:1px solid var(--blue); border-radius:4px; background:var(--blue); color:#fff; font-weight:650; text-align:center; }
+      .button:hover { background:#244d68; }
+      .button.alt { background:var(--surface); color:var(--blue); }
+      .button.alt:hover { background:var(--wash); }
+      .button.ghost { background:transparent; border-color:var(--edge); color:var(--ink); }
+      .button.tiny { min-height:34px; padding:4px 9px; font-size:13px; }
+      .link-button { border:0; background:transparent; color:var(--blue); text-decoration:underline; padding:5px; }
+      .surface { background:var(--surface); border:1px solid var(--edge); border-radius:5px; min-width:0; }
+      .pad { padding:18px; }
+      .section-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:12px; }
+      .minor { color:var(--muted); font-size:13px; }
+      .work-grid { display:grid; grid-template-columns:minmax(260px,.78fr) minmax(0,1.22fr); gap:16px; align-items:start; }
+      .account-list { list-style:none; margin:0; padding:0; }
+      .account-list li + li { border-top:1px solid #e0e4e5; }
+      .account-list a { display:flex; justify-content:space-between; align-items:center; gap:10px; min-height:55px; padding:8px 2px; text-decoration:none; color:var(--ink); }
+      .account-list a:hover strong { color:var(--blue); text-decoration:underline; }
+      .account-list strong { font-size:15px; }
+      .account-list small { display:block; color:var(--muted); font-size:13px; }
+      .account-list .arrow { color:var(--blue); font-size:20px; }
+      .work-title { margin-bottom:3px; }
+      .work-note { margin-bottom:16px; font-size:13px; color:var(--muted); }
+      fieldset { margin:0; padding:0; border:0; }
+      legend { font-weight:650; margin-bottom:9px; }
+      .checks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:5px 10px; }
+      .check { display:flex; align-items:flex-start; gap:8px; min-height:37px; padding:5px; border:1px solid transparent; border-radius:3px; font-size:14px; }
+      .check:hover { background:var(--canvas); }
+      .check input { width:19px; height:19px; margin:2px 0 0; flex:none; accent-color:var(--blue); }
+      .controls { display:flex; flex-wrap:wrap; align-items:end; gap:10px; margin-top:16px; }
+      .field { display:grid; gap:5px; min-width:0; font-size:14px; font-weight:650; }
+      .field input, .field select { height:42px; width:100%; min-width:0; border:1px solid #9cabb1; border-radius:4px; background:#fff; color:var(--ink); padding:7px 10px; font-weight:400; }
+      .controls .field { flex:1 1 220px; }
+      .field-help { display:block; color:var(--muted); font-size:13px; font-weight:400; }
+      .result { margin-top:16px; }
+      .result-top { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+      .status { display:inline-flex; align-items:center; gap:5px; font-size:13px; font-weight:700; color:var(--warn); }
+      .status:before { content:"!"; display:inline-grid; place-items:center; border:1px solid currentColor; width:18px; height:18px; border-radius:50%; }
+      .status.complete { color:var(--ok); }
+      .status.complete:before { content:"✓"; }
+      .metric-line { display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px; margin:13px 0 4px; }
+      .metric-label { display:block; color:var(--muted); font-size:14px; }
+      .metric { font-size:28px; font-weight:730; letter-spacing:-.03em; }
+      .metric.unknown { font-size:25px; }
+      .result-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin:15px 0; }
+      .stat { border-top:1px solid var(--edge); padding-top:8px; min-width:0; }
+      .stat b { display:block; font-size:17px; overflow-wrap:anywhere; }
+      .stat span { font-size:12px; color:var(--muted); }
+      .result-warning { padding:10px 12px; background:var(--warn-bg); border-left:3px solid #a77832; font-size:13px; }
+      details { font-size:14px; }
+      details summary { cursor:pointer; color:var(--blue); font-weight:600; }
+      details p { margin-top:8px; color:var(--muted); }
+      .result details { margin-top:13px; }
+      .tables { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px; margin-top:16px; }
+      .table-wrap { width:100%; overflow-x:auto; margin-top:10px; border:1px solid var(--edge); border-radius:3px; }
+      table { width:100%; border-collapse:collapse; min-width:420px; font-size:14px; }
+      caption { text-align:left; padding:0; }
+      th, td { padding:10px 11px; border-bottom:1px solid #e0e4e5; text-align:left; vertical-align:top; }
+      thead { background:#f0f3f4; }
+      tbody tr:last-child > * { border-bottom:0; }
+      .num { text-align:right; white-space:nowrap; }
+      .unknown-cell { color:var(--warn); font-weight:650; }
+      .table-wrap small { display:block; color:var(--muted); white-space:normal; font-size:12px; }
+      .back { margin-bottom:9px; display:inline-block; font-size:14px; }
+      .task-nav { display:flex; flex-wrap:wrap; gap:5px; padding:4px; margin:19px 0 16px; width:max-content; max-width:100%; border:1px solid var(--edge); border-radius:5px; background:var(--surface); }
+      .task-nav button { min-height:39px; padding:7px 14px; border:1px solid transparent; background:none; color:var(--ink); border-radius:3px; }
+      .task-nav button[aria-pressed="true"] { border-color:#bdd0dc; background:var(--wash); color:#254c64; font-weight:700; }
+      .account-layout { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(290px,.85fr); gap:16px; align-items:start; }
+      .fake-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:13px; }
+      .fake-form .wide { grid-column:1/-1; }
+      .form-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; grid-column:1/-1; }
+      .notice { margin-top:13px; padding:10px 12px; border-left:3px solid var(--blue); background:var(--wash); font-size:13px; }
+      .evidence { margin-top:16px; }
+      .item { padding:12px 0; border-top:1px solid var(--edge); display:flex; align-items:start; justify-content:space-between; gap:12px; }
+      .item strong { display:block; }
+      .item small { color:var(--muted); }
+      .item-actions { display:flex; gap:4px; flex-wrap:wrap; justify-content:flex-end; }
+      [hidden] { display:none!important; }
+      @media (max-width:1100px) { .tables { grid-template-columns:1fr; } .account-layout { grid-template-columns:1fr; } }
+      @media (max-width:960px) { .shell { display:block; } .rail { display:none; border:0; border-bottom:1px solid var(--edge); padding:0 15px 15px; } .rail.is-open { display:block; } .rail .brand { display:none; } .mobile-head { display:flex; justify-content:space-between; align-items:center; background:var(--surface); border-bottom:1px solid var(--edge); padding:10px 16px; } .mobile-head strong { font-size:18px; } main { padding:20px 18px 50px; } }
+      @media (max-width:760px) { .work-grid { grid-template-columns:1fr; } .checks { grid-template-columns:1fr 1fr; } .topline { align-items:start; } }
+      @media (max-width:520px) { .banner { padding:7px 12px; } .mobile-head .theme-toggle { display:none; } main { padding:16px 10px 40px; } h1 { font-size:25px; } h2 { font-size:19px; } .topline { display:block; } .topline .button { margin-top:12px; width:100%; } .pad { padding:14px; } .checks { grid-template-columns:1fr; } .controls .button { width:100%; } .result-top { display:block; } .result-top .minor { margin-top:4px; } .result-stats { grid-template-columns:1fr 1fr; } .task-nav { width:100%; display:grid; grid-template-columns:1fr 1fr; } .task-nav button { padding:7px 5px; } .fake-form { grid-template-columns:1fr; } .item { display:block; } .item-actions { margin-top:7px; justify-content:flex-start; } }
+      @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation:none!important; transition:none!important; } }
+    </style>
+  </head>
+  <body>
+    <a class="skip" href="#content">К содержимому</a>
+    <div class="banner">Design reference / synthetic illustrative data · Статический макет, не работающее приложение и не результат расчёта</div>
+    <div class="mobile-head"><strong>Capital Tracker</strong><div class="mobile-actions"><button class="button alt theme-toggle" type="button">Тёмная тема</button><button class="button alt" id="menu-toggle" aria-expanded="false" aria-controls="rail">Меню</button></div></div>
+    <div class="shell">
+      <nav class="rail" id="rail" aria-label="Основная навигация">
+        <div class="brand">Capital Tracker<small>Ручной учёт · макет</small></div>
+        <p class="nav-label">Учёт капитала</p>
+        <div class="nav">
+          <a href="#directory" data-view="directory" aria-current="page">Ручные счета</a>
+          <a href="#" data-inert>Переводы между счетами</a>
+          <a href="#" data-inert>Вводы и выводы</a>
+          <a href="#" data-inert>Ручные цены</a>
+          <a href="#" data-inert>Прибыль за период</a>
+          <a href="#" data-inert>Настройки</a>
+        </div>
+        <details class="legacy"><summary>Прежние данные</summary><p>Обзор, активы и кошельки находятся вне ручной оценки. В этом макете разделы не открываются.</p></details>
+        <p class="rail-foot">Макет для обсуждения визуальной системы. Действия записи и вход отсутствуют.</p><button class="button alt theme-toggle" type="button" style="margin:0 9px">Тёмная тема</button>
+      </nav>
+      <main id="content" tabindex="-1">
+        <div class="page is-active" id="directory">
+          <div class="topline"><div><p class="eyebrow">Учёт капитала / Ручные счета</p><h1>Ручные счета</h1><p class="intro">Счета, начальные позиции и операции, которые вы записали вручную.</p></div><button class="button" type="button" data-demo-action>Новый счёт</button></div>
+          <p class="scope">Оценка ниже относится только к выбранным ручным счетам и сохранённым ценам. Денежные остатки и кошельки не включены.</p>
+          <div class="work-grid">
+            <section class="surface pad" aria-labelledby="accounts-heading"><div class="section-head"><h2 id="accounts-heading">Счета</h2><span class="minor">Показано: 3</span></div><ul class="account-list"><li><a href="#account" data-view="account"><span><strong>Основной</strong><small>Начальные данные и журнал операций</small></span><span class="arrow" aria-hidden="true">›</span></a></li><li><a href="#account" data-view="account"><span><strong>Резервный</strong><small>Есть операции, цена для одной позиции отсутствует</small></span><span class="arrow" aria-hidden="true">›</span></a></li><li><a href="#account" data-view="account"><span><strong>Архивный</strong><small>История не инициализирована</small></span><span class="arrow" aria-hidden="true">›</span></a></li></ul><button class="button alt" type="button" data-demo-action style="margin-top:11px">Показать ещё счета</button><p class="minor" style="margin-top:8px">Выбор справа охватывает только загруженные счета.</p></section>
+            <section class="surface pad" aria-labelledby="valuation-heading"><h2 class="work-title" id="valuation-heading">Оценить выбранные счета</h2><p class="work-note">Предпросмотр на указанный момент UTC · максимум 10 счетов</p><fieldset><legend>Счета из загруженного каталога <span class="minor" id="selected-count">(2 выбрано)</span></legend><div class="checks"><label class="check"><input type="checkbox" class="account-check" checked value="Основной" />Основной</label><label class="check"><input type="checkbox" class="account-check" checked value="Резервный" />Резервный</label><label class="check"><input type="checkbox" class="account-check" value="Архивный" />Архивный</label></div></fieldset><div class="controls"><label class="field">Момент оценки (UTC)<input id="valuation-at" value="2025-01-04T00:00:00.000Z" aria-describedby="time-help" /><span class="field-help" id="time-help">Точное время с Z, например 2025-01-04T00:00:00.000Z</span></label><button class="button" id="calculate" type="button">Показать пример результата</button></div><p class="minor" id="demo-feedback" role="status" style="margin-top:9px">Пример ниже иллюстрирует неполную оценку.</p></section>
+          </div>
+          <section class="surface pad result" aria-labelledby="result-heading" id="result"><div class="result-top"><div><h2 id="result-heading">Оценка выбранных счетов</h2><span class="status" id="result-status">Неполная оценка</span></div><span class="minor" id="result-time">2025-01-04 00:00 UTC · 2 счёта</span></div><div class="metric-line"><div><span class="metric-label">Общая стоимость, USD</span><strong class="metric unknown" id="total">Не определена</strong></div></div><div class="result-stats"><div class="stat"><b>10 250.00 USD</b><span>Оценённая часть, не полный итог</span></div><div class="stat"><b id="missing-price">1</b><span>Позиция без цены</span></div><div class="stat"><b id="missing-history">0</b><span>Счетов без истории</span></div></div><p class="result-warning" id="result-warning">Доля инструментов не определена, пока хотя бы у одной позиции нет цены. Это не стоимость всего портфеля.</p><details><summary>Что входит в оценку и как проверить основание</summary><p>Выбранные ручные счета, текущая исправленная история и сохранённые цены USD за единицу с точным совпадением момента. Денежные остатки, подключённые кошельки и сверка пересекающихся владений отсутствуют. В рабочем приложении здесь доступны история, ревизии и точные исходные записи.</p></details></section>
+          <div class="tables"><section class="surface pad" aria-labelledby="allocation-heading"><div class="section-head"><h2 id="allocation-heading">По инструментам</h2><span class="minor">Выбранные счета</span></div><div class="table-wrap" role="region" aria-label="Таблица распределения по инструментам" tabindex="0"><table><thead><tr><th scope="col">Инструмент</th><th class="num" scope="col">Количество</th><th class="num" scope="col">Стоимость, USD</th><th class="num" scope="col">Доля</th></tr></thead><tbody><tr><th scope="row">Bitcoin <small>BTC</small></th><td class="num">0.10000000</td><td class="num">10 250.00</td><td class="num unknown-cell">Не определена</td></tr><tr><th scope="row">Ether <small>ETH</small></th><td class="num">2.50000000</td><td class="num unknown-cell">Не определена</td><td class="num unknown-cell">Не определена</td></tr></tbody></table></div><p class="minor" style="margin-top:8px">Точные суммы и неизвестные значения сохраняются; таблицу можно прокрутить горизонтально.</p></section><section class="surface pad" aria-labelledby="account-values-heading"><div class="section-head"><h2 id="account-values-heading">По счетам</h2><span class="minor">История и полнота</span></div><div class="table-wrap" role="region" aria-label="Таблица оценки по счетам" tabindex="0"><table><thead><tr><th scope="col">Счёт</th><th scope="col">Полнота</th><th class="num" scope="col">Оценённая часть</th><th class="num" scope="col">Оценка, USD</th></tr></thead><tbody><tr><th scope="row">Основной <small>История доступна · ревизия 12</small></th><td>Полная</td><td class="num">10 250.00</td><td class="num">10 250.00</td></tr><tr><th scope="row">Резервный <small>История доступна · ревизия 4</small></th><td>Неполная <small>1 позиция без цены</small></td><td class="num">0.00</td><td class="num unknown-cell">Не определена</td></tr></tbody></table></div></section></div>
+        </div>
+        <div class="page" id="account"><a href="#directory" data-view="directory" class="back">← Ручные счета</a><div class="topline"><div><p class="eyebrow">Ручные счета / Основной</p><h1>Основной</h1><p class="intro">Запись и проверка ручных операций этого счёта.</p></div></div><p class="scope">Начальные позиции — сохранённый снимок на границе учёта. Они не обозначают текущие остатки.</p><div class="task-nav" role="group" aria-label="Разделы счёта"><button type="button" aria-pressed="true" data-task="operations">Операции</button><button type="button" aria-pressed="false" data-task="analytics">Аналитика</button><button type="button" aria-pressed="false" data-task="setup">Начальные данные</button></div><div class="account-layout"><section class="surface pad" aria-labelledby="task-heading"><div class="section-head"><h2 id="task-heading">Операции</h2><span class="minor">Счёт: Основной</span></div><label class="field">Вид операций<select id="workflow"><option>Сделки в USD</option><option>Обмены активов</option><option>Вознаграждения</option><option>Импорт CSV</option></select></label><p class="notice" id="task-scope">Записывайте покупку или продажу за USD. История и исправления сохраняются отдельно от черновика.</p><div class="fake-form"><label class="field">Действие<select><option>Покупка</option><option>Продажа</option></select></label><label class="field">Инструмент<select><option>Bitcoin (BTC)</option><option>Ether (ETH)</option></select></label><label class="field">Количество<input value="0.10000000" inputmode="decimal" /></label><label class="field">Сумма, USD<input value="10250.00" inputmode="decimal" /></label><label class="field wide">Момент операции (UTC)<input value="2025-01-04T00:00:00.000Z" /></label><div class="form-actions"><button class="button" type="button" data-demo-action>Проверить запись</button><span class="minor">Демо-поля; команда не отправляется.</span></div></div></section><section class="surface pad" aria-labelledby="recent-heading"><div class="section-head"><h2 id="recent-heading">Последние записи</h2><span class="minor">Точные исходные данные</span></div><div class="item"><div><strong>Покупка BTC</strong><small>0.10000000 BTC · 10 250.00 USD<br />04.01.2025, 00:00 UTC</small></div><div class="item-actions"><button class="button tiny alt" data-demo-action>Исправить</button><button class="button tiny ghost" data-demo-action>Версии</button></div></div><div class="item"><div><strong>Вознаграждение ETH</strong><small>0.00500000 ETH · стоимость неизвестна<br />02.01.2025, 12:00 UTC</small></div><div class="item-actions"><button class="button tiny alt" data-demo-action>История</button></div></div><details class="evidence"><summary>Показывать ревизии и идентификаторы</summary><p>В рабочем приложении здесь остаются копируемые ID, версии и квитанции. Этот макет не содержит настоящих записей.</p></details></section></div></div>
+      </main>
+    </div>
+    <script>
+      const rail = document.getElementById('rail');
+      const menu = document.getElementById('menu-toggle');
+      document.querySelectorAll('.theme-toggle').forEach(button => button.addEventListener('click', () => { const dark=document.documentElement.getAttribute('data-theme')!=='dark'; document.documentElement.setAttribute('data-theme',dark?'dark':'light'); document.querySelectorAll('.theme-toggle').forEach(b=>b.textContent=dark?'Светлая тема':'Тёмная тема'); }));
+      menu.addEventListener('click', () => { const open = !rail.classList.contains('is-open'); rail.classList.toggle('is-open', open); menu.setAttribute('aria-expanded', String(open)); });
+      rail.addEventListener('keydown', event => { if (event.key === 'Escape') { rail.classList.remove('is-open'); menu.setAttribute('aria-expanded','false'); menu.focus(); } });
+      function showView(id) { document.querySelectorAll('.page').forEach(p => p.classList.toggle('is-active', p.id === id)); document.querySelectorAll('[data-view]').forEach(a => { if (a.closest('.rail')) { if (a.dataset.view === id) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); } }); rail.classList.remove('is-open'); menu.setAttribute('aria-expanded','false'); document.getElementById('content').focus(); window.scrollTo(0,0); }
+      document.querySelectorAll('[data-view]').forEach(a => a.addEventListener('click', event => { event.preventDefault(); showView(a.dataset.view); }));
+      document.querySelectorAll('[data-inert],[data-demo-action]').forEach(el => el.addEventListener('click', event => { event.preventDefault(); document.getElementById('demo-feedback').textContent = 'Это статический дизайн-макет: запись, другие разделы и API здесь не работают.'; }));
+      const checks = [...document.querySelectorAll('.account-check')];
+      checks.forEach(input => input.addEventListener('change', () => { const n=checks.filter(x=>x.checked).length; document.getElementById('selected-count').textContent = `(${n} выбрано)`; document.getElementById('demo-feedback').textContent = 'Выбор изменён. Нажмите «Показать пример результата» для иллюстрации состояния.'; }));
+      document.getElementById('calculate').addEventListener('click', () => { const names=checks.filter(x=>x.checked).map(x=>x.value); if (!names.length) { document.getElementById('demo-feedback').textContent='Выберите хотя бы один счёт.'; return; } const complete=names.length===1 && names[0]==='Основной'; document.getElementById('result-status').textContent=complete?'Полная оценка':'Неполная оценка'; document.getElementById('result-status').classList.toggle('complete',complete); document.getElementById('total').textContent=complete?'10 250.00 USD':'Не определена'; document.getElementById('total').classList.toggle('unknown',!complete); document.getElementById('missing-price').textContent=names.includes('Резервный')?'1':'0'; document.getElementById('missing-history').textContent=names.includes('Архивный')?'1':'0'; document.getElementById('result-time').textContent=`${document.getElementById('valuation-at').value || 'Момент не указан'} · ${names.length} счёт(ов)`; document.getElementById('result-warning').textContent=complete?'Полная оценка только выбранного счёта. Это не стоимость всего портфеля.':'Доля инструментов не определена при пропущенной цене или истории. Это не стоимость всего портфеля.'; document.getElementById('demo-feedback').textContent='Показан синтетический пример. Таблицы ниже иллюстрируют исходное неполное состояние и не пересчитываются.'; document.getElementById('result').scrollIntoView({block:'start'}); });
+      document.getElementById('calculate').addEventListener('click', () => {
+        const names=checks.filter(x=>x.checked).map(x=>x.value);
+        if (!names.length) return;
+        const full=names.length===1 && names[0]==='Основной';
+        document.querySelector('.result-stats .stat b').textContent=names.includes('Основной')?'10 250.00 USD':'0.00 USD';
+        const instrumentRows=[];
+        if (names.includes('Основной')) instrumentRows.push(`<tr><th scope="row">Bitcoin <small>BTC</small></th><td class="num">0.10000000</td><td class="num">10 250.00</td><td class="num ${full?'':'unknown-cell'}">${full?'100.00%':'Не определена'}</td></tr>`);
+        if (names.includes('Резервный')) instrumentRows.push('<tr><th scope="row">Ether <small>ETH</small></th><td class="num">2.50000000</td><td class="num unknown-cell">Не определена</td><td class="num unknown-cell">Не определена</td></tr>');
+        document.querySelectorAll('.tables tbody')[0].innerHTML=instrumentRows.join('') || '<tr><td colspan="4">Для выбранных счетов позиции недоступны.</td></tr>';
+        const accountRows=[];
+        if (names.includes('Основной')) accountRows.push('<tr><th scope="row">Основной <small>История доступна · ревизия 12</small></th><td>Полная</td><td class="num">10 250.00</td><td class="num">10 250.00</td></tr>');
+        if (names.includes('Резервный')) accountRows.push('<tr><th scope="row">Резервный <small>История доступна · ревизия 4</small></th><td>Неполная <small>1 позиция без цены</small></td><td class="num">0.00</td><td class="num unknown-cell">Не определена</td></tr>');
+        if (names.includes('Архивный')) accountRows.push('<tr><th scope="row">Архивный <small>История не инициализирована</small></th><td>Неполная</td><td class="num unknown-cell">Не определена</td><td class="num unknown-cell">Не определена</td></tr>');
+        document.querySelectorAll('.tables tbody')[1].innerHTML=accountRows.join('');
+        document.getElementById('demo-feedback').textContent='Показан согласованный синтетический пример; API и настоящий расчёт не вызываются.';
+      });
+      document.querySelectorAll('[data-task]').forEach(button => button.addEventListener('click', () => { document.querySelectorAll('[data-task]').forEach(b => b.setAttribute('aria-pressed',String(b===button))); const title=button.textContent; document.getElementById('task-heading').textContent=title; document.getElementById('task-scope').textContent=title==='Операции'?'Записывайте покупку или продажу за USD. История и исправления сохраняются отдельно от черновика.':title==='Аналитика'?'В рабочем приложении доступны оценка на дату, история стоимости и учётные позиции этого счёта.':'Начальные данные обозначают сохранённый снимок на границе учёта, а не текущие остатки.'; }));
+      document.getElementById('workflow').addEventListener('change', event => { document.getElementById('task-scope').textContent=`${event.target.value}: здесь показана только схема расположения. Рабочие поля и подтверждение остаются отдельной задачей реализации.`; });
+    </script>
+  </body>
+</html>
