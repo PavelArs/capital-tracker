@@ -10,10 +10,11 @@ is not deployed or release-complete. PR #27 merged as main
 merged-main CI run 36980010964 failed: eight prerequisite jobs succeeded, but its
 critical acceptance finished 19/20 after CSV-006-A observed `live=false` while
 `admission-fixtures.ts` required a live admission delta. The run took 17.4 minutes
-for the selected cases. MRR-001-A/B passed in that run. This is the only observed
-acceptance failure and is under bounded fixture diagnosis; it does not establish a
-CSV product-contract defect or a passing release. No valid receipt, candidate export,
-image scan, promotion, or new deployment resulted. The failure log is
+for the selected cases. MRR-001-A/B passed in that run. CSV-006-A was a genuine
+acceptance RED and is addressed by review-approved patch
+`84d32e2e4459badbd04f24c86b8ad69b65fe4be0`, integrated as `a61f4f1`; new merged-main
+hosted acceptance is pending. No valid receipt, candidate export, image scan,
+promotion, or new deployment resulted. The failure log is
 `/private/tmp/capital-tracker-main-ci-36980010964-release-110752574666.log`.
 Frozen pre-PR main was
 0f479b3955aba1cf351a29e897c7ffbdc9909638. Its trusted main CI run 36900868365 passed
@@ -40,8 +41,11 @@ supplies positive hosted evidence for the recovery tests, but the new merged-mai
 release acceptance is still failed as recorded above. Task 3.3 remains unchecked; no
 production retry or recovery action has run. It
 requires bounded final PostgreSQL TCP readiness and a guarded resume-fresh path pinned
-to original infrastructure images. The merged-main run is failed acceptance, with
-no successful release acceptance or deployment. Local Docker is unavailable.
+to original infrastructure images. The patch scopes fixture pruning to events at or
+before `preDBeventStart` and adds its regression to CI; production/authentication and
+the shared admission helper are unchanged. Reviewer and local verification are
+recorded in the active change. No successful release acceptance or deployment is
+evidenced. Local Docker is unavailable.
 Historical notes follow; preserve the owner's dirty
 Nginx edit, local preview, original project/data and full deferred target.
 
