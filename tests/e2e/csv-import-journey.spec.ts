@@ -5,8 +5,11 @@ import {
   expectAdmissionDelta,
   hostSubject,
   ledger,
+  ledgerState,
   ownerCount,
+  subjectHash,
 } from './admission-fixtures';
+import { assertCsvReloadAdmission } from './csv-import-admission-oracle';
 import {
   type CsvConfirm,
   type CsvReceipt,
@@ -426,6 +429,14 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
   await expect(guide.getByRole('listitem')).toHaveText(['Файл', 'Сопоставление', 'Проверка']);
   await expect(guide.locator('[aria-current="step"]')).toHaveText('Файл');
   const batch = await uploadInBrowser(page, account.id, example);
+  // Check every original 60/600-second window while it is live, before the
+  // long presentation and backend-restart phases can naturally expire it.
+  expectAdmissionDelta(admissions, [
+    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
+  ]);
+  const admissionCheckpoint = ledger();
+  const persistedCheckpoint = ledgerState();
+  const csrfCheckpoint = browserCsrfAdmissions();
   const beforePreview = fingerprint(['auth_sessions', 'auth_request_limits']);
   await inspectAndMap(page, account.id, batch, instrument.id, example);
   await expect(guide.locator('[aria-current="step"]')).toHaveText('Сопоставление');
@@ -701,11 +712,30 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
     mimeType: 'text/csv',
     buffer: csvSource(example),
   });
+  expect(ledgerState()).toBe(persistedCheckpoint);
+  expect(browserCsrfAdmissions()).toBe(csrfCheckpoint);
+  const reuploadStartMs = Number(
+    query('SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint'),
+  );
   const repeated = await browserPost(page, `/accounts/${account.id}/csv-imports`, () =>
     page.getByRole('button', { name: 'Загрузить CSV', exact: true }).click(),
   );
   expect(repeated.status()).toBe(200);
   expect((await repeated.json()).batchId).toBe(batch);
+  const afterReupload = ledger();
+  const reuploadEndMs = Number(
+    query('SELECT floor(extract(epoch FROM clock_timestamp()) * 1000)::bigint'),
+  );
+  expect(browserCsrfAdmissions() - csrfCheckpoint).toBe(1);
+  assertCsvReloadAdmission(
+    admissionCheckpoint,
+    afterReupload,
+    subjectHash('csrf-ip', await hostSubject()),
+    reuploadStartMs,
+    reuploadEndMs,
+  );
+  const persistedAfterReupload = ledgerState();
+  const csrfAfterReupload = browserCsrfAdmissions();
   await expect(page.getByRole('region', { name: 'Партия CSV', exact: true })).toContainText(
     'Сделки 📒.csv',
   );
@@ -751,9 +781,8 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
   ]);
   expect(retainedState()).toBe(prior);
   expect(providerRequests()).toEqual(providers);
-  expectAdmissionDelta(admissions, [
-    { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
-  ]);
+  expect(ledgerState()).toBe(persistedAfterReupload);
+  expect(browserCsrfAdmissions()).toBe(csrfAfterReupload);
   assertQuota();
 });
 
