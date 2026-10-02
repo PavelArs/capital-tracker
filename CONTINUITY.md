@@ -1,9 +1,37 @@
 # Capital Tracker refactor continuity
 
-## Current handoff — interrupted manual + CSV MVP release
+## Current handoff — production manual + CSV MVP, post-release product work
 
-Checkpoint: 2026-10-02. The whole product remains incomplete; the manual + CSV MVP
-is not deployed or release-complete. PR #27 merged as main
+Checkpoint: 2026-10-02. Owner reports the manual + CSV MVP is deployed and
+operational at `https://capital.pavelars.ru/`; this does not complete the whole
+target. Exact source `4a52f9f4f74543b4f199b88b3cf7d3784db4ec22` passed main CI run
+36997853420 (10/10 jobs, critical acceptance 20/20), and promotion run 37000875619
+succeeded. Preflight 37001727416 succeeded. Automated deploy 37001810387 failed
+after 22 migrations and owner/MFA setup because `localhost` resolved to IPv6 while
+the health check expected IPv4; PostgreSQL and Redis were preserved. The reviewed
+manual recovery helper (SHA-256
+`2a3e93ba3e3bca0a1cc3f593975f86f5a7a99b9ace73c105d230107a28cd16ba`) completed
+against the exact promoted images. Root then verified live HTTPS root HTTP 200,
+`/health` `{"status":"ok"}`, and anonymous `/api/auth/me` HTTP 401. This is manual
+recovery evidence, not a successful GitHub deploy workflow or completion of the full
+target. Public evidence is in ignored
+`capital-tracker-ci4-runtime/tests/e2e/.runtime/release-planning/evidence/production-manual-recovery-20261002-public.txt`.
+
+Still unverified: owner private first login, post-MFA encrypted off-host archive,
+retirement of the old deploy account, and durable production Compose health URL fix.
+Preserve the running PostgreSQL/Redis resources and deployed images while resolving
+those follow-ups. Do not repeat deployment or recovery from this documentation task.
+
+Current product work: a selected-manual-account asset-allocation feature is underway
+and not yet verified or released. It must retain the honest 1–10 selected-account
+scope and must not imply a whole-portfolio/current-value view. A separate all-account
+snapshot/overview is the next product slice; network synchronization and AI remain
+deferred. Complete the bounded functional slice before handing interface direction
+to the designer.
+
+## Historical handoff — interrupted manual + CSV MVP release (superseded)
+
+The following records the checkpoint before recovery. PR #27 merged as main
 1826a8014694ad5894bd60ea95800253ff569adf. Its PR CI run 36977222334 passed all
 10/10 jobs, including 20/20 critical cases against synthetic source
 33c80104fb19623827ec8ef9067445e1f4f281e0; MRR-001-A/B passed. The subsequent

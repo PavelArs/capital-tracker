@@ -2,11 +2,37 @@
 
 This backlog preserves the complete target in [`capital-tracker-openspec-prompt.md`](../capital-tracker-openspec-prompt.md); it does not redefine it as a manual-only product. The 44 directories in `openspec/specs/` are the current implemented contracts, not future promises. Archived changes and linked owner guides contain evidence for completed slices. Start with `AGENTS.md`, `CONTINUITY.md`, this page, current Git status, active OpenSpec status, and latest release evidence.
 
-## Current release: manual + CSV MVP — IN PROGRESS
+## Current checkpoint: deployed manual + CSV MVP; product work continues
 
-The whole target remains incomplete and the release is not deployed or complete.
-PR #27 merged as main `1826a8014694ad5894bd60ea95800253ff569adf`. PR CI run
-36977222334 passed 10/10 jobs and 20/20 critical cases on synthetic source
+The owner reports the manual + CSV MVP is deployed and operational at
+`https://capital.pavelars.ru/`. The whole target remains incomplete. Exact source
+`4a52f9f4f74543b4f199b88b3cf7d3784db4ec22` passed main CI run 36997853420 (10/10
+jobs, critical acceptance 20/20); promotion run 37000875619 and preflight 37001727416
+succeeded. Automated deploy 37001810387 failed after 22 migrations and owner/MFA
+setup: IPv4 loopback health worked, but `localhost` resolved to IPv6. PostgreSQL and
+Redis were preserved. The reviewed manual recovery helper, SHA-256
+`2a3e93ba3e3bca0a1cc3f593975f86f5a7a99b9ace73c105d230107a28cd16ba`, completed
+against the exact promoted images. Root verified live HTTPS root HTTP 200, `/health`
+`{"status":"ok"}`, and anonymous `/api/auth/me` HTTP 401. This establishes reported
+deployment and live checks through manual recovery, not a successful GitHub deploy
+workflow or completion of the full target. Public recovery evidence is recorded in
+ignored `capital-tracker-ci4-runtime/tests/e2e/.runtime/release-planning/evidence/production-manual-recovery-20261002-public.txt`.
+
+Unverified follow-ups: owner private first login, post-MFA encrypted off-host archive,
+retirement of the old deploy account, and a durable production Compose health URL
+fix. Keep the running database/cache resources and deployed images intact while
+resolving them.
+
+Selected-manual-account asset allocation is underway and is not yet verified or
+released. Keep its 1–10 selected-account scope explicit; do not present it as a
+whole-portfolio or current-value view. A separate all-account snapshot/overview is
+the next product slice. Network synchronization and AI remain deferred. Hand the
+bounded functional slice to the designer after its behavior is implemented and
+verified.
+
+### Historical release checkpoint — before 2026-10-02 manual recovery
+
+The whole target remains incomplete. PR #27 merged as main `1826a8014694ad5894bd60ea95800253ff569adf`. PR CI run 36977222334 passed 10/10 jobs and 20/20 critical cases on synthetic source
 `33c80104fb19623827ec8ef9067445e1f4f281e0`, including MRR-001-A/B. This PR-source
 result is distinct from merged-main CI run 36980010964: eight prerequisite jobs
 succeeded, then critical acceptance failed at CSV-006-A (`live=false` in the admission
