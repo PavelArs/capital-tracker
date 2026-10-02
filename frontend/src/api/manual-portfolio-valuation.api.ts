@@ -14,6 +14,15 @@ export interface ManualPortfolioValuationAccount {
   items: ValuationPosition[];
 }
 
+export interface ManualPortfolioAllocationRow {
+  instrumentId: string;
+  instrumentName: string;
+  instrumentSymbol: string | null;
+  quantity: string;
+  valueUsd: string | null;
+  allocationPercent: string | null;
+}
+
 export interface ManualPortfolioValuationResponse {
   at: string;
   accountIds: string[];
@@ -28,6 +37,7 @@ export interface ManualPortfolioValuationResponse {
   pricedSubtotalUsd: string;
   totalValueUsd: string | null;
   accounts: ManualPortfolioValuationAccount[];
+  allocation: ManualPortfolioAllocationRow[];
 }
 
 export const manualPortfolioValuationApi = {

@@ -17,6 +17,7 @@ const covered = (
   accountId = first,
   quantity = '0.5',
   instrumentId = instrument,
+  costUsd: string | null = '1',
 ): PortfolioAccount => ({
   accountId,
   name: '<script>literal account</script>',
@@ -29,7 +30,7 @@ const covered = (
       instrumentName: 'Tracked token',
       instrumentSymbol: 'SAME',
       quantity,
-      costUsd: '1',
+      costUsd,
     },
   ],
 });
@@ -161,6 +162,102 @@ describe('MPV-EXACT/GAPS bounded exact subset projection', () => {
     expect(result.accounts.map((row) => row.totalValueUsd)).toEqual(
       Array(2).fill(`0.${'0'.repeat(59)}1`),
     );
+  });
+});
+
+describe('MPV-ALLOC-001..004 exact instrument allocation', () => {
+  it('combines shared UUIDs independently of account order and sorts by UUID', () => {
+    const result = projectManualPortfolioValue(
+      [
+        covered(second, '2'),
+        covered(first, '0.5'),
+        covered('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', '1', other),
+      ],
+      [price(), price(other, '0')],
+    );
+    expect(result.allocation).toEqual([
+      {
+        instrumentId: instrument,
+        instrumentName: 'Tracked token',
+        instrumentSymbol: 'SAME',
+        quantity: '2.5',
+        valueUsd: '308.64',
+        allocationPercent: '100.00',
+      },
+      {
+        instrumentId: other,
+        instrumentName: 'Tracked token',
+        instrumentSymbol: 'SAME',
+        quantity: '1',
+        valueUsd: '0',
+        allocationPercent: '0.00',
+      },
+    ]);
+  });
+
+  it('preserves scale-60 products and half-up ties without balancing rounded shares', () => {
+    const atom = '0.000000000000000000000000000001';
+    const third = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+    const result = projectManualPortfolioValue(
+      [covered(first, atom, instrument), covered(second, atom, other), covered(third, atom, third)],
+      [price(instrument, atom), price(other, atom), price(third, atom)],
+    );
+    const { allocation } = result;
+    expect(allocation.map((row) => row.quantity)).toEqual([atom, atom, atom]);
+    expect(allocation.map((row) => row.valueUsd)).toEqual(Array(3).fill(`0.${'0'.repeat(59)}1`));
+    expect(allocation.map((row) => row.allocationPercent)).toEqual(Array(3).fill('33.33'));
+    const tie = projectManualPortfolioValue(
+      [covered(first, '1', instrument), covered(second, '799', other)],
+      [price(instrument, '1'), price(other, '1')],
+    );
+    expect(tie.allocation.map((row) => row.allocationPercent)).toEqual(['0.13', '99.88']);
+  });
+
+  it('keeps unpriced quantity and suppresses all shares for price or coverage gaps', () => {
+    const missingPrice = projectManualPortfolioValue(
+      [covered(), covered(second, '2', other)],
+      [price()],
+    );
+    expect(missingPrice.allocation).toMatchObject([
+      { instrumentId: instrument, valueUsd: '61.728', allocationPercent: null },
+      { instrumentId: other, quantity: '2', valueUsd: null, allocationPercent: null },
+    ]);
+    const missingHistory = projectManualPortfolioValue(
+      [
+        covered(),
+        {
+          accountId: second,
+          name: 'Unavailable',
+          coverage: 'missing-journal',
+          coverageFrom: null,
+          journalRevision: null,
+        },
+      ],
+      [price()],
+    );
+    expect(missingHistory.allocation).toMatchObject([
+      { instrumentId: instrument, valueUsd: '61.728', allocationPercent: null },
+    ]);
+  });
+
+  it('retains known zero values and no row for covered empty history', () => {
+    expect(
+      projectManualPortfolioValue([covered()], [price(instrument, '0')]).allocation,
+    ).toMatchObject([{ valueUsd: '0', allocationPercent: null }]);
+    expect(
+      projectManualPortfolioValue([{ ...covered(), positions: [] } as PortfolioAccount], []),
+    ).toHaveProperty('allocation', []);
+  });
+
+  it('values a priced reward with unknown cost independently of its basis', () => {
+    const result = projectManualPortfolioValue(
+      [covered(first, '0.5', instrument, null)],
+      [price()],
+    );
+    expect(result.allocation).toMatchObject([
+      { quantity: '0.5', valueUsd: '61.728', allocationPercent: '100.00' },
+    ]);
+    expect(result.accounts[0].items[0]).toMatchObject({ costUsd: null, valueUsd: '61.728' });
   });
 });
 

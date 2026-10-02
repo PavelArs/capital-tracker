@@ -28,6 +28,16 @@ unknown, “Оценка выбранных счетов, USD” is “Не оп
 account and an explicitly zero-priced holding are known zero values. Monetary
 results retain exact decimal values rather than rounding to cents.
 
+The “Распределение по инструментам выбранных счетов” table groups covered
+holdings by instrument UUID across the selected accounts. It adds exact quantities
+and USD values, keeping different UUIDs separate even if their symbols match.
+An instrument without an exact price keeps its quantity but has an unknown value.
+When any selected history or price is missing, or the complete selected total is
+zero, every share is “Не определена”. Otherwise each share uses the complete
+selected total and is rounded independently to two decimal places, half-up;
+displayed shares can therefore sum to 99.99 or 100.01. This table has the same
+selected-manual-account scope as the summary, not a whole-portfolio allocation.
+
 The private `POST /api/accounting/manual-valuation-preview` accepts an ISO
 instant and one to ten distinct account UUIDs. It requires the normal full
 session/MFA, Origin and CSRF protections, rejects extra input, and returns one

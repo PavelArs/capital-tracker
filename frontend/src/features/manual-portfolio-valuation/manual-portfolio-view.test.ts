@@ -20,6 +20,7 @@ const complete: ManualPortfolioValuationResponse = {
   missingPriceCount: 0,
   pricedSubtotalUsd: '308.64',
   totalValueUsd: '308.64',
+  allocation: [],
   accounts: [
     {
       accountId: first,

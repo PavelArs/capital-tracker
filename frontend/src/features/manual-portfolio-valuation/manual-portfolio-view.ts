@@ -11,6 +11,11 @@ export function toManualPortfolioView(report: ManualPortfolioValuationResponse) 
         : 'Неполная оценка выбранных счетов',
     totalText: report.totalValueUsd ?? unknownTotal,
     subtotalText: report.pricedSubtotalUsd,
+    allocation: report.allocation.map((row) => ({
+      ...row,
+      valueText: row.valueUsd ?? unknownTotal,
+      percentText: row.allocationPercent ?? unknownTotal,
+    })),
     rows: report.accounts.map((account) => ({
       accountId: account.accountId,
       name: account.name,

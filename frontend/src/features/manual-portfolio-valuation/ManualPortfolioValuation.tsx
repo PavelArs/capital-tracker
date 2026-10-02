@@ -205,6 +205,32 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
               </tbody>
             </table>
           </div>
+          <div className="manual-portfolio__table-wrap">
+            <table aria-label="Распределение по инструментам выбранных счетов">
+              <caption>Распределение по инструментам выбранных счетов</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Инструмент</th>
+                  <th scope="col">Количество</th>
+                  <th scope="col">Стоимость, USD</th>
+                  <th scope="col">Доля, %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.allocation.map((row) => (
+                  <tr key={row.instrumentId}>
+                    <th scope="row">
+                      {row.instrumentName}
+                      {row.instrumentSymbol && ` ${row.instrumentSymbol}`}
+                    </th>
+                    <td>{row.quantity}</td>
+                    <td>{row.valueText}</td>
+                    <td>{row.percentText}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </section>
