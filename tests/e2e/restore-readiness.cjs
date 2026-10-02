@@ -19,8 +19,8 @@ const fixture = fs.mkdtempSync(path.join(os.tmpdir(), 'capital-pg-restore-'));
 const handshake = path.join(fixture, 'handshake');
 const hook = path.join(fixture, '00-hold.sh');
 const key = path.join(fixture, 'synthetic-backup-key');
-const sourceName = `capital-pg-source-${randomUUID()}`;
-const targetName = `capital-pg-target-${randomUUID()}`;
+const sourceName = `capital_pg_source_${randomUUID().replaceAll('-', '')}`;
+const targetName = `capital_pg_target_${randomUUID().replaceAll('-', '')}`;
 const containers = [];
 
 function command(file, args, options = {}) {
@@ -104,7 +104,7 @@ try {
   // Exercise the release gate against an actual pristine PG18 cluster, including
   // its built-in roles/extensions, before the fixture deliberately adds data.
   command('python3', ['-I', path.join(root, 'scripts/manual-mvp-resume.py'),
-    'cluster', source, 'postgres', 'postgres']);
+    'cluster', sourceName, 'postgres', 'postgres']);
   sql(source, "CREATE SCHEMA fixture; CREATE TABLE fixture.entries (id integer PRIMARY KEY, amount numeric(18,6) NOT NULL, note text NOT NULL); INSERT INTO fixture.entries VALUES (1, 12.500000, 'socket vs tcp'), (2, -0.125000, 'unicode π');");
   const query = 'SELECT id || E\'|\' || amount || E\'|\' || note FROM fixture.entries ORDER BY id';
   const expected = '1|12.500000|socket vs tcp\n2|-0.125000|unicode π';
