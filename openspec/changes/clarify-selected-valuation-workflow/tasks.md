@@ -14,5 +14,5 @@
 ## 3. Verification and handoff
 
 - [x] 3.1 Run the four existing component/view tests, affected-file Biome, frontend build/type checks, and strict OpenSpec validation.
-- [ ] 3.2 Obtain independent review of the readable table CSS and result spacing.
+- [x] 3.2 Obtain independent review of the readable table CSS and result spacing.
 - [ ] 3.3 Record fresh actual-browser evidence separately; retain the prior visual rejection as historical evidence and do not archive before the new runtime result.
