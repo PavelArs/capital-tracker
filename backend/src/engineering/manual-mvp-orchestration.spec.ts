@@ -138,7 +138,17 @@ beforeAll(() => {
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'capital-mvp-process-'));
   mkdirSync(join(directory, 'bin'));
-  for (const tool of ['docker', 'jq', 'flock', 'curl', 'openssl', 'sha256sum', 'stat', 'mv', 'sleep'])
+  for (const tool of [
+    'docker',
+    'jq',
+    'flock',
+    'curl',
+    'openssl',
+    'sha256sum',
+    'stat',
+    'mv',
+    'sleep',
+  ])
     writeFileSync(join(directory, 'bin', tool), stub, { mode: 0o700 });
   writeFileSync(join(directory, 'docker-compose.yml'), '# Synthetic previous configuration\n');
   for (const file of ['.env', '.env.release', 'candidate.yml'])
@@ -146,7 +156,10 @@ beforeEach(() => {
   writeFileSync(join(directory, 'mfa-key'), Buffer.alloc(32, 1), { mode: 0o600 });
   writeFileSync(join(directory, '.backup-key'), Buffer.alloc(32, 2), { mode: 0o600 });
   writeFileSync(join(directory, 'resume-helper.py'), 'raise SystemExit(2)\n');
-  writeFileSync(join(directory, '.owner-password.json'), '{"password":"synthetic","confirmation":"synthetic"}');
+  writeFileSync(
+    join(directory, '.owner-password.json'),
+    '{"password":"synthetic","confirmation":"synthetic"}',
+  );
   mkdirSync(join(directory, 'operator'));
 });
 afterEach(() => {
@@ -191,22 +204,40 @@ const appUp = (call: Command) =>
 
 describe('MVP-003/004: failure-safe server process orchestration', () => {
   it('continues only apps after positive resume proof and backup restore, retaining infrastructure', () => {
-    writeFileSync(join(directory, 'resume-helper.py'), `import json, os, sys
+    writeFileSync(
+      join(directory, 'resume-helper.py'),
+      `import json, os, sys
 with open(os.environ['FIXTURE_LOG'], 'a') as out:
     out.write(json.dumps({'tool':'resume-proof','args':sys.argv[1:]})+'\\n')
 if sys.argv[1] == 'preflight':
     print(json.dumps({'proxyPeer':'172.18.0.3','network':['old-network'],'containers':{}}))
-`);
+`,
+    );
     writeFileSync(join(directory, '.env.release'), 'OWNER_EMAIL=owner@capital.pavelars.ru\n');
     const { result, calls } = release('resume-success', 'resume-fresh');
     expect(result.status).toBe(0);
-    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'preflight')).toBe(true);
-    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'compare-active')).toBe(true);
-    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pull') &&
-      (call.args.includes('postgres') || call.args.includes('redis')))).toBe(false);
-    expect(calls.some((call) => appUp(call) &&
-      (call.args.includes('postgres') || call.args.includes('redis')))).toBe(false);
-    const restore = calls.findIndex((call) => call.tool === 'docker' && call.args.includes('pg_restore'));
+    expect(calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'preflight')).toBe(
+      true,
+    );
+    expect(
+      calls.some((call) => call.tool === 'resume-proof' && call.args[0] === 'compare-active'),
+    ).toBe(true);
+    expect(
+      calls.some(
+        (call) =>
+          call.tool === 'docker' &&
+          call.args.includes('pull') &&
+          (call.args.includes('postgres') || call.args.includes('redis')),
+      ),
+    ).toBe(false);
+    expect(
+      calls.some(
+        (call) => appUp(call) && (call.args.includes('postgres') || call.args.includes('redis')),
+      ),
+    ).toBe(false);
+    const restore = calls.findIndex(
+      (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
+    );
     const migrate = calls.findIndex(migration);
     expect(restore).toBeGreaterThan(0);
     expect(migrate).toBeGreaterThan(restore);
@@ -366,13 +397,22 @@ describe('MRR-001: isolated restore waits for final PostgreSQL', () => {
     const { result, calls } = release('restore-temp-window');
     expect(result.status).toBe(0);
     const tcpProbes = calls.filter(
-      (call) => call.tool === 'docker' && call.args.includes('pg_isready') && call.args.includes('127.0.0.1'),
+      (call) =>
+        call.tool === 'docker' &&
+        call.args.includes('pg_isready') &&
+        call.args.includes('127.0.0.1'),
     );
     expect(tcpProbes).toHaveLength(3);
-    const restoreIndex = calls.findIndex((call) => call.tool === 'docker' && call.args.includes('pg_restore'));
+    const restoreIndex = calls.findIndex(
+      (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
+    );
     expect(restoreIndex).toBeGreaterThan(calls.lastIndexOf(tcpProbes[2]));
     expect(calls[restoreIndex].args).toContain('127.0.0.1');
-    expect(calls.some((call) => call.tool === 'docker' && call.args.join(' ').includes('pg_dump -h 127.0.0.1'))).toBe(true);
+    expect(
+      calls.some(
+        (call) => call.tool === 'docker' && call.args.join(' ').includes('pg_dump -h 127.0.0.1'),
+      ),
+    ).toBe(true);
     expect(calls.findIndex(migration)).toBeGreaterThan(restoreIndex);
   }, 20000);
 
@@ -380,9 +420,18 @@ describe('MRR-001: isolated restore waits for final PostgreSQL', () => {
     const { result, calls } = release('restore-never-tcp');
     expect(result.status).not.toBe(0);
     expect(result.stderr).toMatch(/isolated.*PostgreSQL.*readiness.*failed/i);
-    expect(calls.filter((call) => call.tool === 'docker' && call.args.includes('pg_isready') && call.args.includes('127.0.0.1'))).toHaveLength(60);
+    expect(
+      calls.filter(
+        (call) =>
+          call.tool === 'docker' &&
+          call.args.includes('pg_isready') &&
+          call.args.includes('127.0.0.1'),
+      ),
+    ).toHaveLength(60);
     expect(calls.some((call) => call.tool === 'openssl' && call.args.includes('-d'))).toBe(false);
-    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pg_restore'))).toBe(false);
+    expect(calls.some((call) => call.tool === 'docker' && call.args.includes('pg_restore'))).toBe(
+      false,
+    );
     expect(calls.filter(migration)).toEqual([]);
     expect(calls.filter(appUp).filter((call) => call.backend === backend)).toEqual([]);
     expect(existsSync(join(directory, '.env.images'))).toBe(false);

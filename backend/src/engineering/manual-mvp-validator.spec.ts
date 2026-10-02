@@ -9,7 +9,8 @@ const validatorPath =
 const commit = 'a'.repeat(40);
 const runId = '123456789';
 const originRevision = '0f479b3955aba1cf351a29e897c7ffbdc9909638';
-const originalPostgres = 'ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f';
+const originalPostgres =
+  'ghcr.io/pavelars/capital-tracker-postgres@sha256:c6a966be9561266a345c4c705a01a20fb82a061c3827e95b39e7127f7527f58f';
 const resumeOrigin = {
   commit: originRevision,
   ciRunId: '36900868365',
@@ -235,7 +236,9 @@ describe('MVP-002: exact tested candidate manifest', () => {
       ]),
     );
     const inspect = (tag: string) => actual[tag];
-    actual[candidate.infrastructure.postgres.tag].Config.Labels['org.opencontainers.image.revision'] = originRevision;
+    actual[candidate.infrastructure.postgres.tag].Config.Labels[
+      'org.opencontainers.image.revision'
+    ] = originRevision;
     expect(() => validateLoadedImages(candidate, inspect)).not.toThrow();
     for (const image of images) {
       const original = actual[image.tag];
