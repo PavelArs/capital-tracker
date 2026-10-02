@@ -27,3 +27,9 @@ Independent diff review approved commit `805ae8b` for integration. Actual Postgr
 ## Limits
 
 No runtime, release, production, or whole-redesign acceptance is claimed by component tests or build checks. No Docker or production actions are part of this change.
+
+## Integrated source checks and pending browser evidence
+
+Root integrated design commits `c7b0872` / `e9a3a88`, UI `805ae8b` / `f138f71`, and browser QA `2d2e293` / `29148e3` into the PR #29 worktree. The QA follow-up uses bounded actual Tab presses from the UTC input to reach each named region; independent review approved it without new browser test cases or weakened financial/security assertions. The existing MPV-UI journey now checks disclosure request preservation, both regions, containment and exact values at 360/768/1440 in light/dark, and saves six synthetic-portfolio screenshots. Discovery still lists exactly two MPV cases; these added checks are not yet executed.
+
+Root reran focused frontend tests (4/4, 1.22 s), TypeScript/Vite build, frontend lint (exit 0, 27 existing warnings), backend MPV/historical regressions (68/68, 2.056 s), and strict OpenSpec validation (50/50) after integration. The earlier hosted allocation run 37008110156 does not include this UI source and must not be cited as its browser acceptance.

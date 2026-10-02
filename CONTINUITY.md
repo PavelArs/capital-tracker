@@ -22,12 +22,21 @@ retirement of the old deploy account, and durable production Compose health URL 
 Preserve the running PostgreSQL/Redis resources and deployed images while resolving
 those follow-ups. Do not repeat deployment or recovery from this documentation task.
 
-Current product work: a selected-manual-account asset-allocation feature is underway
-and not yet verified or released. It must retain the honest 1–10 selected-account
-scope and must not imply a whole-portfolio/current-value view. A separate all-account
-snapshot/overview is the next product slice; network synchronization and AI remain
-deferred. Complete the bounded functional slice before handing interface direction
-to the designer.
+Current product work: PR #29 adds selected-manual-account asset allocation and the
+first designer-led valuation workflow slice. Allocation source `8e9ee38` passed
+real PostgreSQL probes and 20/20 critical HTTPS cases on synthetic merge `c4da047`
+in CI 37008110156, but the final image gate FAILED on frontend pcre2 HIGH
+CVE-2026-103111; candidate export was skipped. A same-Alpine-branch pinned patch is
+being prepared independently. The reviewed UI and real Tab/360/768/1440 light/dark
+assertions are integrated locally but await their own hosted acceptance. Both
+OpenSpec changes remain active; no new production release occurred. Preserve honest
+1–10 selected-account scope. A separate all-account manual overview is next;
+network synchronization and AI remain deferred. The design direction and synthetic
+reference are in docs/frontend-redesign-direction.md and docs/design/.
+
+Owner request (2026-10-02): upgrade to Node 26 later, after the current feature/UI
+slice. Track PM-RUNTIME-26 in docs/post-mvp-backlog.md; do not silently change the
+current Node 22 build/CI/runtime pins or call an unverified upgrade complete.
 
 ## Historical handoff — interrupted manual + CSV MVP release (superseded)
 

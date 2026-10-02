@@ -23,12 +23,15 @@ retirement of the old deploy account, and a durable production Compose health UR
 fix. Keep the running database/cache resources and deployed images intact while
 resolving them.
 
-Selected-manual-account asset allocation is underway and is not yet verified or
-released. Keep its 1–10 selected-account scope explicit; do not present it as a
-whole-portfolio or current-value view. A separate all-account snapshot/overview is
-the next product slice. Network synchronization and AI remain deferred. Hand the
-bounded functional slice to the designer after its behavior is implemented and
-verified.
+Selected-manual-account allocation is implemented in draft PR #29. Its original
+source passed real PostgreSQL probes and 20/20 critical HTTPS cases in CI
+37008110156 (synthetic merge c4da047), then FAILED the image gate on frontend pcre2
+HIGH CVE-2026-103111; no candidate was exported. A pinned same-branch image patch
+and reviewed designer-led valuation UI are being integrated for a new run. The
+allocation/UI changes remain active and unreleased. Keep the 1–10 selected-account
+scope explicit. A separate all-account manual snapshot/overview is next. Network
+synchronization and AI remain deferred. The designer has delivered a scoped direction
+and synthetic reference; whole-frontend redesign and owner acceptance remain open.
 
 ### Historical release checkpoint — before 2026-10-02 manual recovery
 
@@ -80,6 +83,8 @@ The owner confirmed the old `.env` is an unused template and no owner database e
 Before promotion, complete the existing release workflow and verify its evidence against [`docs/deployment-security-verification.md`](deployment-security-verification.md), [`docs/testing-and-migrations.md`](testing-and-migrations.md), [`docs/dependency-security.md`](dependency-security.md), and `.github/workflows/`. Current release/security gates are not optional backlog items: required CI and image checks, a verified encrypted off-host pre-migration backup and restore path, production configuration/secrets, least-privilege deployment identity, migration safety, HTTPS/readiness and anonymous private-route denial must pass. The two moderate React Router advisories were resolved by the audited 7.18.4 migration; retain the registry audit evidence in the dependency record. Do not use paid fallbacks, rebuild different artifacts after acceptance, or infer database rollback from application-image rollback. Preserve the owner’s `frontend/nginx.conf`, local preview, credentials and data. A missing gate or unavailable server credential blocks deployment; it does not become a post-MVP deferral.
 
 ## Deferred product and engineering work
+
+**PM-RUNTIME-26 — Upgrade the supported runtime to Node 26 after the current feature/UI slice (owner request 2026-10-02).** Coordinate `.nvmrc`, package engine declarations, pinned Docker builder/runtime images, CI versions and active tooling documentation in one bounded OpenSpec change. Verify the official release/support status and compatible dependencies at implementation time, use exact versions and image digests, preserve pnpm 10.33.0 unless compatibility requires a separately justified change, and prove frozen install, relevant accounting/authentication checks, builds, real PostgreSQL/HTTPS critical acceptance and image security gates. Keep current Node 22 pins until verified; no production runtime switch or deployment is implied by this backlog entry. Read-only inventory: `.nvmrc` and CI/CD use 22.21.1; root engines declare `>=22.21.1 <23`; backend runtime and both builders pin 22.23.3 Alpine images; the external-provider E2E fixture also uses Node 22. Verify native `argon2`/`esbuild`, align `@types/node`, and retest provider fetch/TLS/timeout behavior. As of 2026-10-02, official [Node release status](https://nodejs.org/en/about/previous-releases) lists 26.10.0 as Current, with [LTS scheduled for October 2026](https://nodejs.org/en/blog/announcements/evolving-the-nodejs-release-schedule); recheck status when implementing. This is an audit and plan, not Node 26 compatibility evidence.
 
 **PM-CI-01 — Measure release pipeline phases and cases before optimizing.** The
 read-only audit of PR 26 source run 36895519489 measured 37m53s workflow wall clock
