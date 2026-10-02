@@ -12,4 +12,4 @@
 ## 3. Verify and hand off
 
 - [x] 3.1 Run targeted backend/frontend tests, lint/build, production audit gate and strict OpenSpec validation; record actual results and unrun checks.
-- [ ] 3.2 Obtain independent review and selected real PostgreSQL/HTTPS acceptance before archiving; record evidence in verification.md.
+- [x] 3.2 Obtain independent review and selected real PostgreSQL/HTTPS acceptance before archiving; record evidence in verification.md.

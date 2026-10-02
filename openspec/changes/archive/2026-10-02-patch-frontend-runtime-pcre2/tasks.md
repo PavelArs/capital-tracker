@@ -9,4 +9,4 @@
 ## 3. Verify and hand off
 
 - [x] 3.1 Run source diff checks and strict OpenSpec validation; document actual results and unrun local Docker checks.
-- [ ] 3.2 Obtain independent review and rebuild/scan the exact frontend image in CI; require high/critical scan GREEN and candidate-bound acceptance before considering this change complete.
+- [x] 3.2 Obtain independent review and rebuild/scan the exact frontend image in CI; require high/critical scan GREEN and candidate-bound acceptance before considering this change complete.

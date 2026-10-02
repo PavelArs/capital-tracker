@@ -22,17 +22,21 @@ retirement of the old deploy account, and durable production Compose health URL 
 Preserve the running PostgreSQL/Redis resources and deployed images while resolving
 those follow-ups. Do not repeat deployment or recovery from this documentation task.
 
-Current product work: PR #29 adds selected-manual-account asset allocation and the
-first designer-led valuation workflow slice. Allocation source `8e9ee38` passed
-real PostgreSQL probes and 20/20 critical HTTPS cases on synthetic merge `c4da047`
-in CI 37008110156, but the final image gate FAILED on frontend pcre2 HIGH
-CVE-2026-103111; candidate export was skipped. A same-Alpine-branch pinned patch is
-being prepared independently. The reviewed UI and real Tab/360/768/1440 light/dark
-assertions are integrated locally but await their own hosted acceptance. Both
-OpenSpec changes remain active; no new production release occurred. Preserve honest
-1–10 selected-account scope. A separate all-account manual overview is next;
-network synchronization and AI remain deferred. The design direction and synthetic
-reference are in docs/frontend-redesign-direction.md and docs/design/.
+Current product work: draft PR #29 adds selected-manual-account asset allocation
+and the first designer-led valuation workflow slice. Initial CI 37008110156 passed
+real PostgreSQL/20 critical cases but failed frontend pcre2 HIGH security. Reviewed
+patch `cd28c11` fixes it. Combined branch `8e4b292` / identical synthetic merge
+`13c98d5` then passed CI 37013305851: 10/10 jobs, real PostgreSQL probes, 20/20
+critical HTTPS cases, all four exact-image vulnerability/secret gates and candidate
+export. However, actual frame review found numeric columns unreadable at 360/768px.
+A bounded table readability correction and stronger same-case browser assertions
+are underway in separate worktrees; they need fresh real acceptance/visual review.
+Allocation and image-patch OpenSpecs are archived with verified source evidence;
+the UI OpenSpec remains active until readability and visual checks pass;
+no new production release occurred. Preserve honest 1–10 selected-account scope.
+Next separate product slice: all-account manual overview; source-backed acceptance
+handoff is docs/manual-overview-next-slice.md. Network synchronization and AI remain
+deferred. Whole-frontend redesign and owner visual acceptance are still open.
 
 Owner request (2026-10-02): upgrade to Node 26 later, after the current feature/UI
 slice. Track PM-RUNTIME-26 in docs/post-mvp-backlog.md; do not silently change the
