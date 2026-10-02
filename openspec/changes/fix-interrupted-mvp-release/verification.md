@@ -18,3 +18,5 @@ The actual failed production CD run `36914835760` created PG18/Redis containers,
 ## Required external gates
 
 Hosted CI must still run the exact pinned private PG18 fixture, the 20-case real critical acceptance, all four image scans, and manifest/receipt gates for the new main commit. Then an owner must review and approve a distinct single-use receipt, run read-only host preflight, and supervise the resume deploy. Until those actual gates pass, production is not recovered and this change must not be described as deployed.
+
+The first PR CI run `36976380731` stopped at Backend Lint & Format: Biome reported two errors and 77 warnings over 243 files. The run's other completed audit, specification/engineering, and application test jobs passed; image build and the real PG/critical acceptance never ran. Locally, Biome identified formatting in two changed engineering test files. Commit `722553d` formatted only those files; their TypeScript ASTs are identical before and after, the three changed-file Biome check passes, and `pnpm --dir backend lint` exits zero with the 77 existing warnings. A new hosted CI run is required for the updated commit.
