@@ -82,12 +82,17 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
     <section className="manual-card manual-portfolio" aria-label="Оценка выбранных счетов">
       <h2>Оценка выбранных счетов</h2>
       <p className="manual-muted">
-        Выбирайте ручные счета, которые не описывают одни и те же реальные активы. Позиции
-        восстановлены по текущей исправленной истории; используются лишь сохранённые ручные цены USD
-        за единицу для конкретного инструмента с точным совпадением момента. Денежные остатки и
-        подключённые кошельки не добавляются. Это не оценка всего состояния: пересекающиеся владения
-        между счетами пока не сверяются.
+        Только выбранные ручные счета: денежные остатки и подключённые кошельки не включены;
+        пересекающиеся владения между счетами не сверяются.
       </p>
+      <details className="manual-portfolio__method">
+        <summary>Что входит в оценку</summary>
+        <p>
+          Позиции восстановлены по текущей исправленной истории. Учитываются только сохранённые
+          ручные цены USD для инструмента на точный момент оценки. Если история или цена недоступна,
+          общий итог не определяется; оценённая часть включает только позиции с известной ценой.
+        </p>
+      </details>
       <p>
         Выбрано счетов: {selected.length} из {selectionLimit}
       </p>
@@ -169,7 +174,50 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
             <dt>Позиций без цены</dt>
             <dd>{report.missingPriceCount}</dd>
           </dl>
-          <div className="manual-portfolio__table-wrap">
+          <p className="manual-portfolio__scope">
+            Только выбранные ручные счета: денежные остатки и подключённые кошельки не включены;
+            пересекающиеся владения между счетами не сверяются.
+          </p>
+          <p className="manual-portfolio__scroll-cue">
+            На узком экране таблицы можно прокручивать по горизонтали.
+          </p>
+          <div
+            className="manual-portfolio__table-wrap"
+            role="region"
+            aria-label="Распределение по инструментам выбранных счетов — прокручиваемая таблица"
+            tabIndex={0}
+          >
+            <table aria-label="Распределение по инструментам выбранных счетов">
+              <caption>Распределение по инструментам выбранных счетов</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Инструмент</th>
+                  <th scope="col">Количество</th>
+                  <th scope="col">Стоимость, USD</th>
+                  <th scope="col">Доля, %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {view.allocation.map((row) => (
+                  <tr key={row.instrumentId}>
+                    <th scope="row">
+                      {row.instrumentName}
+                      {row.instrumentSymbol && ` ${row.instrumentSymbol}`}
+                    </th>
+                    <td>{row.quantity}</td>
+                    <td>{row.valueText}</td>
+                    <td>{row.percentText}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div
+            className="manual-portfolio__table-wrap"
+            role="region"
+            aria-label="Оценка по счетам — прокручиваемая таблица"
+            tabIndex={0}
+          >
             <table aria-label="Оценка по счетам">
               <caption>Оценка по счетам</caption>
               <thead>
@@ -200,32 +248,6 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
                     </td>
                     <td>{row.subtotalText}</td>
                     <td>{row.totalText}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="manual-portfolio__table-wrap">
-            <table aria-label="Распределение по инструментам выбранных счетов">
-              <caption>Распределение по инструментам выбранных счетов</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Инструмент</th>
-                  <th scope="col">Количество</th>
-                  <th scope="col">Стоимость, USD</th>
-                  <th scope="col">Доля, %</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.allocation.map((row) => (
-                  <tr key={row.instrumentId}>
-                    <th scope="row">
-                      {row.instrumentName}
-                      {row.instrumentSymbol && ` ${row.instrumentSymbol}`}
-                    </th>
-                    <td>{row.quantity}</td>
-                    <td>{row.valueText}</td>
-                    <td>{row.percentText}</td>
                   </tr>
                 ))}
               </tbody>

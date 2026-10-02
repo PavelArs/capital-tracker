@@ -38,6 +38,11 @@ selected total and is rounded independently to two decimal places, half-up;
 displayed shares can therefore sum to 99.99 or 100.01. This table has the same
 selected-manual-account scope as the summary, not a whole-portfolio allocation.
 
+The result keeps this scope beside its totals. `Что входит в оценку` discloses the
+saved-price and unknown-total explanation on demand. Both evidence tables retain
+their existing accessible table names inside separate keyboard-focusable horizontal
+scroll regions; the disclosure does not recalculate or clear a result.
+
 The private `POST /api/accounting/manual-valuation-preview` accepts an ISO
 instant and one to ten distinct account UUIDs. It requires the normal full
 session/MFA, Origin and CSRF protections, rejects extra input, and returns one
