@@ -1,8 +1,9 @@
 # Unrealized profit/loss verification
 
 Status: local RED/GREEN, real PostgreSQL probes and independent review done in a cloud
-sandbox; hosted CI (critical browser acceptance) pending. Keep the change active until
-hosted acceptance is green, then archive.
+sandbox; hosted critical browser acceptance passed 20/20 (VAL-UI and MPV-UI included).
+The release image gate is pending a frontend base-image fix. Keep the change active until
+the whole hosted run is green, then archive.
 
 Base: `main` at `4a52f9f4f74543b4f199b88b3cf7d3784db4ec22`. Node 22.22.0 (engine range
 `>=22.21.1 <23`), pnpm 10.33.0, OpenSpec 1.2.0, local PostgreSQL 16.14. No migration,
@@ -70,3 +71,16 @@ Resolved findings: the UPNL-UI scenario named the wrong null-cell text ("Нет 
 "Нужна точная цена"/"Неизвестна себестоимость" and dash rules; the browser evidence was
 split into its own UPNL-UI-BROWSER scenario with the values the critical cases assert;
 MPV-UI now also asserts the second row's return cell. No assertion was weakened.
+
+## Hosted CI (PR #30)
+
+- Run 37141674685 attempt 1 on `e1c7d6f`: nine jobs green; critical acceptance 19/20,
+  SWAP-UI failed at `asset-swaps.spec.ts:591` (trade draft quantity empty after swap
+  navigation). The same assertion failed on PR #29; this diff touches no swap/trade code.
+- Attempt 2 (one re-run of failed jobs): critical acceptance 20/20 with verified receipt,
+  including the extended VAL-UI and MPV-UI cases. The image gate then failed.
+- Local Trivy 0.74.0 scan of the pinned bases found the only surviving HIGH finding in
+  the frontend nginx base: CVE-2026-103111, `pcre2` 10.48-r0, fixed in 10.49-r0. Redis
+  is clean; postgres and node findings are in `gosu` and bundled npm, which the
+  Dockerfiles remove; `pnpm-lock.yaml` has no HIGH/CRITICAL findings. The frontend
+  `release` stage now requires `pcre2>=10.49-r0`; only hosted CI can build it.
