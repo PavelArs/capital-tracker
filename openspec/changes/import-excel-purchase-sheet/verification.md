@@ -59,6 +59,12 @@ and the latest-price query. Resolved findings:
 Not added: a PostgreSQL case for a row later corrected into a sale (covered by the
 service branch only).
 
+## Hosted CI
+
+| Run | Result |
+| --- | --- |
+| Run 37146733892 on `3b067fe` | All unit, lint, build and gate jobs green. Critical acceptance: 20 of 21 passed, including SHEET-UI. CSV-006-A failed: the fee column description no longer said that a zero fee must be entered explicitly (`/нул\|ноль\|\b0\b/` expected). Fixed by restoring that sentence next to the new "fee included" statement; the assertion is unchanged. Image scans did not run because acceptance failed first. |
+
 ## Not run here
 
 - SHEET-UI Playwright journey and the probe inside the acceptance Compose stack: hosted

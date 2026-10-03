@@ -216,7 +216,8 @@ export function CsvMapping({
           Количество и валовая сумма — общий итог сделки, а не цена за единицу.
         </p>
         <p id={`${descriptionId}-fee`} className="operation-form__hint">
-          Если колонки комиссии нет, явно отметьте, что комиссия уже включена в сумму USD.
+          Если колонка комиссии выбрана, ноль указывайте явно. Если колонки нет, явно отметьте, что
+          комиссия уже включена в сумму USD.
         </p>
         {draft.columns.side === '' && (
           <label className="manual-review-check">
