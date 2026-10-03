@@ -184,8 +184,8 @@ async function main() {
       (SELECT count(*) FROM migrations) AS migrations,
       (SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1) AS latest_migration,
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
-    assert.equal(Number(state.migrations), 22, 'Run after the actual preserved twenty-two migrations');
-    assert.equal(state.latest_migration, 'AddAssetSwaps1790300000000',
+    assert.equal(Number(state.migrations), 23, 'Run after the actual preserved twenty-three migrations');
+    assert.equal(state.latest_migration, 'AddWalletAddressImport1790400000000',
       'Latest current migration follows the preceding exact-ledger migration probe');
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
     const before = await fingerprint(client);
