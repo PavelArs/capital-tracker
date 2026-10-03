@@ -6,8 +6,12 @@ import { compose, loginWithMfa, origin, query, test } from './mfa-fixtures';
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const foreignAddressId = '44444444-4444-4444-8444-444444444444';
 const txid = (i: number) => createHash('sha256').update(`ct-e2e-tx:${address}:${i}`).digest('hex');
+// The shared stub keeps requests from earlier acceptance steps, so count only this test's requests.
+let requestBaseline = 0;
 const chainRequests = () =>
-  providerRequests().filter(({ url }) => url.startsWith('https://blockstream.info/api/address/'));
+  providerRequests()
+    .slice(requestBaseline)
+    .filter(({ url }) => url.startsWith('https://blockstream.info/api/address/'));
 
 function bitcoinHistory(body: Record<string, unknown>): void {
   compose([
@@ -34,6 +38,7 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
         INSERT INTO wallet_addresses(id, "ownerId", network, address)
           VALUES ('${foreignAddressId}', '22222222-2222-4222-8222-222222222222', 'bitcoin', '${address}');
       END $$`);
+      requestBaseline = providerRequests().length;
       await use(undefined);
     },
     { auto: true },
