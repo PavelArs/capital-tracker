@@ -19,14 +19,15 @@ legacy module a data migration. A new `wallet-addresses` module with its own two
 is smaller than adapting it. The legacy module and its table are not changed.
 
 **Network-neutral table names, Bitcoin-only rows.** `wallet_addresses.network` has a
-CHECK for `'bitcoin'` only; amounts are integer base units (`numeric(40,0)`), so a later
+CHECK for `'bitcoin'` only; amounts are integer base units (`numeric(78,0)`, wide enough for wei), so a later
 network adds a CHECK value instead of new tables. There is no adapter interface or
 registry: one `EsploraClient` class, one service.
 
 **Provider.** `https://blockstream.info/api`, free, keyless, Esplora API. Endpoints:
 `/address/{a}/txs/chain` and `/address/{a}/txs/chain/{last_txid}`, 25 confirmed
 transactions per page, newest first. Requests are sequential with a 250 ms pause
-between pages, an 8 s timeout, a 5 MB body cap, no redirects. 429 stops the sync
+between pages, an 8 s total deadline per response (abort signal, not only an idle
+timeout), a 32 MB body cap for pages of large consolidation transactions, no redirects. 429 stops the sync
 (`rate_limited`); nothing is retried automatically. Mempool transactions are not
 requested, so stored rows never change after insert.
 
@@ -40,7 +41,17 @@ address instead keeps:
 
 A walk starts at the top page, commits each page with the new cursor in one
 transaction, and finishes when a page contains `completedTopTxid` or is shorter than
-25. Then `completedTopTxid := walkTopTxid` and the walk fields are cleared. An
+25. Then `completedTopTxid := walkTopTxid` and the walk fields are cleared.
+
+Esplora (electrs) answers `200 []` both at the true end of history and when the backend
+behind the load balancer is behind and does not know the cursor txid (independent
+review finding). An empty page after a cursor therefore ends the walk only if
+`chain_stats.tx_count` from `GET /address/{a}` equals the stored count, or the stored
+count plus the transactions above `walkTopTxid` on the current top page; otherwise the
+sync returns `unavailable` and keeps the cursor. An empty top page after a completed
+walk is also treated as `unavailable`. A transaction orphaned by a reorg after being
+stored would keep the count higher than the provider's and block completion; reorg
+repair stays a non-goal and would be a separate change. An
 interrupted walk resumes from its cursor; new transactions that arrive during a walk
 are picked up by the next walk. If `completedTopTxid` disappears (reorg), the walk
 simply runs to the end of history again; inserts stay idempotent.

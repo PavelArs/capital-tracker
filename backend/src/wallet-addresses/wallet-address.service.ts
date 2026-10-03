@@ -126,6 +126,10 @@ export class WalletAddressService {
       }
       const page = await this.esplora.page(state.address, state.walkCursorTxid);
       if (!page.ok) return finish('provider_error', page.reason);
+      if (page.transactions.length === 0) {
+        const failure = await this.confirmEnd(state);
+        if (failure) return finish('provider_error', failure);
+      }
       const committed = await this.commit(state, page.transactions);
       imported += committed.inserted;
       if (committed.finished) return finish('complete', null);
@@ -156,6 +160,27 @@ export class WalletAddressService {
         items: rows.map(transaction),
       };
     });
+  }
+
+  // Esplora answers [] both at the end of history and when a lagging backend does not
+  // know the cursor or the address yet. Accept [] as the end only when the address's
+  // confirmed transaction count matches what is stored plus what arrived above the walk.
+  private async confirmEnd(state: AddressRow): Promise<ProviderFailure | null> {
+    if (state.walkCursorTxid === null) {
+      return state.completedTopTxid === null ? null : 'unavailable';
+    }
+    const total = await this.esplora.transactionCount(state.address);
+    if (!total.ok) return total.reason;
+    const [{ stored }]: { stored: number }[] = await this.source.query(
+      'SELECT count(*)::int AS stored FROM wallet_address_transactions WHERE "addressId" = $1',
+      [state.id],
+    );
+    if (stored === total.count) return null;
+    if (stored > total.count) return 'unavailable';
+    const top = await this.esplora.page(state.address, null);
+    if (!top.ok) return top.reason;
+    const newer = top.transactions.findIndex(({ txid }) => txid === state.walkTopTxid);
+    return newer >= 0 && stored + newer === total.count ? null : 'unavailable';
   }
 
   // Stores one page and advances the walk atomically. A walk starts at the newest

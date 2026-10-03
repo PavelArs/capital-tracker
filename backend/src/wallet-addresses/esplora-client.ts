@@ -3,7 +3,8 @@ import axios from 'axios';
 // Esplora returns confirmed address history newest first, 25 transactions per page.
 export const PAGE_SIZE = 25;
 const DEFAULT_BASE_URL = 'https://blockstream.info/api';
-const MAX_BODY_BYTES = 5 * 1024 * 1024;
+// Pages of large consolidation transactions can be several megabytes.
+const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_UNIX_SECONDS = 253402300799;
 
 export type ProviderFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
@@ -22,6 +23,7 @@ export interface ChainObservation {
 export type PageResult =
   | { ok: true; transactions: ChainObservation[] }
   | { ok: false; reason: ProviderFailure };
+export type CountResult = { ok: true; count: number } | { ok: false; reason: ProviderFailure };
 
 class InvalidResponse extends Error {}
 
@@ -83,7 +85,7 @@ function observe(address: string, value: unknown): ChainObservation {
   }
   if (!related) invalid();
   const direction: Direction =
-    sent > 0n && everyOutputReturns ? 'self' : received > sent ? 'in' : 'out';
+    sent > 0n && everyOutputReturns && received <= sent ? 'self' : received > sent ? 'in' : 'out';
   return {
     txid,
     blockHeight,
@@ -124,14 +126,31 @@ export class EsploraClient {
   }
 
   async page(address: string, afterTxid: string | null): Promise<PageResult> {
+    const path = `/address/${encodeURIComponent(address)}/txs/chain${afterTxid ? `/${afterTxid}` : ''}`;
+    return this.get(path, (body) => ({ ok: true, transactions: parsePage(address, body) }));
+  }
+
+  // Confirmed transaction count, used to tell the end of history from a lagging backend.
+  async transactionCount(address: string): Promise<CountResult> {
+    return this.get(`/address/${encodeURIComponent(address)}`, (body) => ({
+      ok: true,
+      count: amount(record(record(body).chain_stats).tx_count),
+    }));
+  }
+
+  private async get<T>(
+    path: string,
+    parse: (body: unknown) => T,
+  ): Promise<T | { ok: false; reason: ProviderFailure }> {
     // Public instances are shared; keep consecutive requests apart.
     const wait = this.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
-    const path = `/address/${encodeURIComponent(address)}/txs/chain${afterTxid ? `/${afterTxid}` : ''}`;
     let response: { status: number; data: string };
     try {
       response = await axios.get<string>(`${this.baseUrl}${path}`, {
+        // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
+        signal: AbortSignal.timeout(this.timeoutMs),
         maxRedirects: 0,
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'text',
@@ -147,7 +166,7 @@ export class EsploraClient {
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
     if (response.status !== 200) return { ok: false, reason: 'unavailable' };
     try {
-      return { ok: true, transactions: parsePage(address, JSON.parse(response.data)) };
+      return parse(JSON.parse(response.data));
     } catch {
       return { ok: false, reason: 'invalid_response' };
     }

@@ -23,7 +23,8 @@ const initialFx = () => {
 let fx = initialFx();
 // Synthetic Esplora address histories: address -> { count, fault, requests }.
 let bitcoinHistories = new Map();
-const historyCounterparty = '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy';
+// Never one of the addresses whose history the acceptance tests import.
+const historyCounterparty = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 
 // Deterministic transaction i (0 is oldest). Acceptance oracles restate these formulas.
@@ -56,13 +57,16 @@ function bitcoinHistory(response, address, afterTxid) {
     const fault = history.fault;
     history.fault = null;
     if (fault.invalid) return respond(response, 200, [{ ...historyTx(address, history.count - 1), fee: 1.5 }]);
+    // A lagging Esplora backend answers 200 [] for a cursor it does not know yet.
+    if (fault.empty) return respond(response, 200, []);
     return respond(response, fault.status, { error: 'Synthetic provider fault' });
   }
   const newestFirst = Array.from({ length: history.count }, (_value, index) => history.count - 1 - index);
   let start = 0;
   if (afterTxid !== null) {
     start = newestFirst.findIndex((i) => historyTx(address, i).txid === afterTxid) + 1;
-    if (start === 0) return respond(response, 422, { error: 'Unknown txid' });
+    // Real electrs skips to the cursor and returns 200 [] when it is unknown.
+    if (start === 0) return respond(response, 200, []);
   }
   return respond(response, 200, newestFirst.slice(start, start + 25).map((i) => historyTx(address, i)));
 }
@@ -115,9 +119,11 @@ function provider(request, response, url) {
     return bitcoinHistory(response, decodeURIComponent(chain[1]), chain[2] ?? null);
   }
   if (url.hostname === 'blockstream.info' && /^\/api\/address\/[^/]+$/.test(url.pathname)) {
+    const address = decodeURIComponent(url.pathname.split('/').at(-1));
     return respond(response, 200, {
-      address: decodeURIComponent(url.pathname.split('/').at(-1)),
-      chain_stats: { funded_txo_sum: bitcoin.funded, spent_txo_sum: bitcoin.spent, tx_count: 2 },
+      address,
+      chain_stats: { funded_txo_sum: bitcoin.funded, spent_txo_sum: bitcoin.spent,
+        tx_count: bitcoinHistories.get(address)?.count ?? 2 },
       mempool_stats: { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 },
     });
   }
@@ -154,13 +160,14 @@ const server = http.createServer(async (request, response) => {
         || (data.count !== undefined && (!Number.isSafeInteger(data.count) || data.count < 0 || data.count > 500))
         || (data.append !== undefined && (!Number.isSafeInteger(data.append) || data.append < 1 || data.append > 100))
         || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
-          || (fault.invalid !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+          || (fault.invalid !== true && fault.empty !== true
+            && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
         return respond(response, 400, { error: 'Invalid synthetic Bitcoin history fixture' });
       }
       const current = bitcoinHistories.get(data.address) ?? { count: 0, fault: null, requests: 0 };
       const count = data.count ?? current.count + (data.append ?? 0);
       if (count > 500) return respond(response, 400, { error: 'Synthetic history is bounded' });
-      const next = { count, fault: fault ? { onRequest: fault.onRequest, status: fault.status, invalid: fault.invalid === true } : null, requests: 0 };
+      const next = { count, fault: fault ? { onRequest: fault.onRequest, status: fault.status, invalid: fault.invalid === true, empty: fault.empty === true } : null, requests: 0 };
       bitcoinHistories.set(data.address, next);
       return respond(response, 200, { address: data.address, count, newestTxid: count ? historyTx(data.address, count - 1).txid : null });
     }

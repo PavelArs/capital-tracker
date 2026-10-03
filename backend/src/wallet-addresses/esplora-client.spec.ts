@@ -82,7 +82,13 @@ const unrelatedOutputOnly = tx(
   840_000,
 );
 
-type Reply = { status: number; body: string; delayMs?: number; headers?: Record<string, string> };
+type Reply = {
+  status: number;
+  body: string;
+  delayMs?: number;
+  trickleMs?: number;
+  headers?: Record<string, string>;
+};
 
 describe('Esplora adapter at the outbound HTTP boundary', () => {
   let server: Server;
@@ -98,7 +104,17 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
       const reply = replies.shift() ?? { status: 599, body: '{}' };
       const send = () => {
         response.writeHead(reply.status, { 'content-type': 'application/json', ...reply.headers });
-        response.end(reply.body);
+        if (!reply.trickleMs) return response.end(reply.body);
+        // Keeps the socket busy one byte at a time, so only a total deadline stops it.
+        let index = 0;
+        const timer = setInterval(() => {
+          if (response.destroyed || index >= reply.body.length) {
+            clearInterval(timer);
+            if (!response.destroyed) response.end();
+            return;
+          }
+          response.write(reply.body[index++]);
+        }, reply.trickleMs);
       };
       if (reply.delayMs) setTimeout(send, reply.delayMs);
       else send();
@@ -212,6 +228,44 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
     });
     await expect(client().page(owned, null)).resolves.toEqual({ ok: false, reason });
     expect(requests).toHaveLength(1);
+  });
+
+  it('ADDR-SYNC-RESUME bounds a slowly trickling body by a total deadline', async () => {
+    replies.push({ status: 200, body: JSON.stringify([receive]), trickleMs: 20 });
+    const started = Date.now();
+    await expect(client().page(owned, null)).resolves.toEqual({ ok: false, reason: 'unavailable' });
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
+  it('ADDR-SYNC-END reads the confirmed transaction count of the address', async () => {
+    replies.push(
+      json({ address: owned, chain_stats: { tx_count: 50 }, mempool_stats: { tx_count: 1 } }),
+      json({ address: owned, chain_stats: { tx_count: -1 } }),
+      json({}, 429),
+    );
+    await expect(client().transactionCount(owned)).resolves.toEqual({ ok: true, count: 50 });
+    await expect(client().transactionCount(owned)).resolves.toEqual({
+      ok: false,
+      reason: 'invalid_response',
+    });
+    await expect(client().transactionCount(owned)).resolves.toEqual({
+      ok: false,
+      reason: 'rate_limited',
+    });
+    expect(requests).toEqual(Array(3).fill(`GET /api/address/${owned}`));
+  });
+
+  it('ADDR-AMOUNTS treats a transaction that pays the address more than it spent as incoming', async () => {
+    const joined = tx(
+      hex('6'),
+      [input(owned, 1_000), input(other, 9_000)],
+      [output(owned, 9_500)],
+      500,
+      1,
+    );
+    replies.push(json([joined]));
+    const result = await client().page(owned, null);
+    expect(result.ok && result.transactions[0].direction).toBe('in');
   });
 
   it('ADDR-SYNC-RESUME maps a timeout to unavailable', async () => {

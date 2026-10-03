@@ -24,6 +24,8 @@ const addresses = {
   invalid: '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy',
   race: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
   foreign: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
+  gap: 'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0',
+  limit: 'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q6vkm53',
 };
 const txid = (address, i) => sha256(`ct-e2e-tx:${address}:${i}`);
 
@@ -213,6 +215,55 @@ async function main() {
     assert.deepEqual(state[0], { walkTopTxid: null, walkCursorTxid: null, completedTopTxid: null });
     console.log('PASS ADDR-SYNC-INVALID malformed page stores nothing and keeps the cursor');
 
+    // ADDR-SYNC-END: an empty page after a cursor ends history only when the address
+    // transaction count agrees; a lagging backend's [] must not leave a gap.
+    await post('bitcoin-history', { address: addresses.invalid, count: 50 });
+    const exact = await newRequests(() => service.sync(owner, invalid));
+    assert.deepEqual(exact.urls, [
+      `${esplora}/${addresses.invalid}/txs/chain`,
+      `${esplora}/${addresses.invalid}/txs/chain/${txid(addresses.invalid, 25)}`,
+      `${esplora}/${addresses.invalid}/txs/chain/${txid(addresses.invalid, 0)}`,
+      `${esplora}/${addresses.invalid}`,
+    ]);
+    assert.deepEqual([exact.result.outcome, exact.result.imported, exact.result.address.sync.state], ['complete', 50, 'complete']);
+    assertStored(await rows(db, invalid), addresses.invalid, 50);
+    const gap = (await service.register(owner, { address: addresses.gap })).value.id;
+    await post('bitcoin-history', { address: addresses.gap, count: 60, fault: { onRequest: 2, empty: true } });
+    const lagging = await service.sync(owner, gap);
+    assert.deepEqual([lagging.outcome, lagging.reason, lagging.imported, lagging.address.sync.state],
+      ['provider_error', 'unavailable', 25, 'partial']);
+    assertStored(await rows(db, gap), addresses.gap, 60, 25);
+    await post('bitcoin-history', { address: addresses.gap, append: 3 });
+    const caughtUp = await newRequests(() => service.sync(owner, gap));
+    assert.deepEqual(caughtUp.urls, [
+      `${esplora}/${addresses.gap}/txs/chain/${txid(addresses.gap, 35)}`,
+      `${esplora}/${addresses.gap}/txs/chain/${txid(addresses.gap, 10)}`,
+    ], 'The walk resumes below its cursor although newer transactions arrived');
+    assert.deepEqual([caughtUp.result.outcome, caughtUp.result.imported], ['complete', 35]);
+    assert.deepEqual((await rows(db, gap)).map((row) => row.txid),
+      Array.from({ length: 60 }, (_value, index) => txid(addresses.gap, 59 - index)), 'No gap below the first page');
+    const newer = await service.sync(owner, gap);
+    assert.deepEqual([newer.outcome, newer.imported], ['complete', 3]);
+    assertStored(await rows(db, gap), addresses.gap, 63);
+    const anchor = await db.query('SELECT "completedTopTxid" FROM wallet_addresses WHERE id=$1', [gap]);
+    await post('bitcoin-history', { address: addresses.gap, count: 63, fault: { onRequest: 1, empty: true } });
+    const emptyTop = await service.sync(owner, gap);
+    assert.deepEqual([emptyTop.outcome, emptyTop.reason, emptyTop.address.sync.state], ['provider_error', 'unavailable', 'complete']);
+    assert.deepEqual(await db.query('SELECT "completedTopTxid" FROM wallet_addresses WHERE id=$1', [gap]), anchor);
+    console.log('PASS ADDR-SYNC-END exact multiple of 25 completes via tx_count; lagging [] keeps the cursor; arrivals mid-walk leave no gap; empty top keeps the anchor');
+
+    // ADDR-SYNC-LIMIT: one call reads at most 10 pages.
+    const limited = (await service.register(owner, { address: addresses.limit })).value.id;
+    await post('bitcoin-history', { address: addresses.limit, count: 300 });
+    const firstCall = await newRequests(() => service.sync(owner, limited));
+    assert.equal(firstCall.urls.length, 10);
+    assert.deepEqual([firstCall.result.outcome, firstCall.result.reason, firstCall.result.imported, firstCall.result.address.sync.state],
+      ['partial', null, 250, 'partial']);
+    const secondCall = await service.sync(owner, limited);
+    assert.deepEqual([secondCall.outcome, secondCall.imported, secondCall.address.transactionCount], ['complete', 50, 300]);
+    assertStored(await rows(db, limited), addresses.limit, 300);
+    console.log('PASS ADDR-SYNC-LIMIT 10 pages per call, then partial; the next call completes 300');
+
     // ADDR-DB
     const [stored] = await rows(db, pages);
     await assert.rejects(() => db.query(`INSERT INTO wallet_address_transactions
@@ -245,7 +296,7 @@ async function main() {
     });
     assert.deepEqual(denied.urls, []);
     assert.deepEqual((await service.list(owner)).map((item) => item.address).sort(),
-      [addresses.pages, addresses.resume, addresses.invalid, addresses.race].sort());
+      [addresses.pages, addresses.resume, addresses.invalid, addresses.race, addresses.gap, addresses.limit].sort());
     assert.deepEqual((await service.list(stranger)).map((item) => item.address), [addresses.foreign]);
     const page = await service.transactions(owner, pages, { limit: '2', offset: '1' });
     assert.deepEqual(page, {

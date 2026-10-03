@@ -22,9 +22,15 @@ hash, block time, the exact satoshis this address received (sum of outputs payin
 sent (sum of spent outputs it owned) and the transaction fee. Each sync walks from the
 newest transaction down until it reaches the newest transaction of the previous
 completed walk or the end of history, committing each page together with its cursor
-in one database transaction. Rows SHALL be unique per address and txid in the
-database, so replaying a page never duplicates or changes a stored row. One sync call
-SHALL fetch at most 10 pages and return `partial` when more remain.
+in one database transaction. Because Esplora also answers an empty page when a lagging
+backend does not know the cursor, an empty page after a cursor SHALL end the walk only
+when the address's confirmed transaction count (`GET /address/{address}`) equals the
+stored count plus the transactions newer than the walk's top; otherwise the sync stops
+with `provider_error`/`unavailable` and keeps the cursor. An empty top page for an
+address that already completed a walk SHALL likewise stop without changing state.
+Rows SHALL be unique per address and txid in the database, so replaying a page never
+duplicates or changes a stored row. One sync call SHALL fetch at most 10 pages and
+return `partial` when more remain.
 
 #### Scenario: ADDR-SYNC-PAGES First sync across pages
 - **GIVEN** a registered address whose provider history holds 60 confirmed transactions
@@ -44,7 +50,17 @@ SHALL fetch at most 10 pages and return `partial` when more remain.
 #### Scenario: ADDR-AMOUNTS Exact per-address amounts
 - **GIVEN** provider transactions where the address receives, spends with change, sends to itself, appears among several inputs, and receives a coinbase output
 - **WHEN** they are synced
-- **THEN** received, sent and fee are stored as exact integer satoshis summed only over inputs and outputs of this address, displayed as exact 8-decimal BTC strings, with direction `in`, `out` or `self` derived from received minus sent.
+- **THEN** received, sent and fee are stored as exact integer satoshis summed only over inputs and outputs of this address, displayed as exact 8-decimal BTC strings; direction is `self` when the address funded the transaction, every non-zero output pays it back and it did not gain, otherwise `in` when received exceeds sent and `out` when it does not.
+
+#### Scenario: ADDR-SYNC-END End of history versus a lagging backend
+- **GIVEN** an address with exactly 50 transactions, and another with 60 whose provider answers `[]` for the second page and then gains 3 new transactions
+- **WHEN** each is synced until complete
+- **THEN** the first completes after an empty third page because the provider count is 50; the second stops with `provider_error`/`unavailable` and 25 rows, then resumes below its cursor to all 60 rows without a gap, and the next sync adds exactly the 3 new rows; an empty top page later leaves the completed state unchanged.
+
+#### Scenario: ADDR-SYNC-LIMIT Page budget per call
+- **GIVEN** an address with 300 transactions
+- **WHEN** the owner syncs twice
+- **THEN** the first call makes 10 page requests and returns `partial` with 250 imported; the second completes with the remaining 50.
 
 #### Scenario: ADDR-DB Database uniqueness and concurrent syncs
 - **GIVEN** a stored transaction and two sync calls racing on the same address

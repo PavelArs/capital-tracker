@@ -102,19 +102,19 @@ function AddressCard({
     }
   }, []);
 
+  // The parent passes the latest summary after each sync; reload when the count changes.
   useEffect(() => {
+    setAddress(initial);
     if (initial.transactionCount > 0) void loadFirstPage(initial.id);
-  }, [initial.id, initial.transactionCount, loadFirstPage]);
+  }, [initial, loadFirstPage]);
 
   async function sync() {
     setSyncing(true);
     setMessage('');
     try {
       const result = await walletAddressesApi.sync(address.id);
-      setAddress(result.address);
       onChange(result.address);
       setMessage(syncMessage(result));
-      if (result.address.transactionCount > 0) await loadFirstPage(result.address.id);
     } catch (error) {
       setMessage(
         isAxiosError(error) && error.response?.status === 409
@@ -132,8 +132,16 @@ function AddressCard({
     setLoadingMore(true);
     try {
       const next = await walletAddressesApi.transactions(address.id, page.nextOffset);
-      if (sequence === readSequence.current)
-        setPage({ ...next, offset: 0, items: [...page.items, ...next.items] });
+      if (sequence === readSequence.current) {
+        // Offsets shift if another tab synced meanwhile; never show a transaction twice.
+        const seen = new Set(page.items.map(({ txid }) => txid));
+        setPage({
+          ...next,
+          offset: 0,
+          items: [...page.items, ...next.items.filter(({ txid }) => !seen.has(txid))],
+        });
+        setReadError('');
+      }
     } catch (error) {
       if (sequence === readSequence.current)
         setReadError(accountingError(error, 'загрузить транзакции'));
@@ -198,10 +206,11 @@ export default function WalletAddresses() {
     setAddError('');
     try {
       const created = await walletAddressesApi.register(draft.trim());
-      setAddresses((current) => [
-        ...(current ?? []).filter((item) => item.id !== created.id),
-        created,
-      ]);
+      setAddresses((current) =>
+        current?.some((item) => item.id === created.id)
+          ? current.map((item) => (item.id === created.id ? created : item))
+          : [...(current ?? []), created],
+      );
       setDraft('');
     } catch (error) {
       setAddError(
