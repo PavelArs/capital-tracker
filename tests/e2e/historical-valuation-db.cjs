@@ -63,7 +63,8 @@ async function exactAndGaps(db, s, f) {
   const before = await fingerprint(db);
   const snapshot = await read(s, owner, id);
   assert.deepEqual(Object.keys(snapshot).sort(), ['accountId','at','coverageFrom','journalRevision','basis','originKind',
-    'openingRevision','priceSource','quoteCurrency','pricePolicy','completeness','missingPriceCount','pricedSubtotalUsd','totalValueUsd','items'].sort());
+    'openingRevision','priceSource','quoteCurrency','pricePolicy','completeness','missingPriceCount','pricedSubtotalUsd','totalValueUsd','unknownCostCount','unrealizedPnlUsd',
+    'unrealizedReturnPercent','items'].sort());
   assert.equal(snapshot.accountId, id);
   assert.equal(snapshot.at, at);
   assert.equal(snapshot.coverageFrom, coverageFrom);
@@ -78,12 +79,17 @@ async function exactAndGaps(db, s, f) {
   assert.equal(snapshot.missingPriceCount, 1);
   assert.equal(snapshot.pricedSubtotalUsd, '150');
   assert.equal(snapshot.totalValueUsd, null);
+  assert.equal(snapshot.unknownCostCount, 0);
+  assert.equal(snapshot.unrealizedPnlUsd, null);
+  assert.equal(snapshot.unrealizedReturnPercent, null);
   assert.deepEqual(snapshot.items.map((r) => r.instrumentId), [first, second].sort());
   assert.deepEqual(snapshot.items.find((r) => r.instrumentId === first), { instrumentId: first,
     instrumentName: 'Valuation first', instrumentSymbol: 'SAME', quantity: '0.5', costUsd: '100',
-    price: { priceUsd: '300', observedAt: at, revision: 1 }, valueUsd: '150' });
+    price: { priceUsd: '300', observedAt: at, revision: 1 }, valueUsd: '150', unrealizedPnlUsd: '50',
+    unrealizedReturnPercent: '50.00' });
   assert.deepEqual(snapshot.items.find((r) => r.instrumentId === second), { instrumentId: second,
-    instrumentName: 'Valuation second', instrumentSymbol: 'SAME', quantity: '2', costUsd: '400', price: null, valueUsd: null });
+    instrumentName: 'Valuation second', instrumentSymbol: 'SAME', quantity: '2', costUsd: '400', price: null, valueUsd: null,
+    unrealizedPnlUsd: null, unrealizedReturnPercent: null });
   await rejected(() => read(s, other, id), 404);
   await rejected(() => read(s, owner, randomUUID()), 404);
   await rejected(() => read(s, owner, 'invalid'), 400);

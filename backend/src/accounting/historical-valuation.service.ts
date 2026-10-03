@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { readHistoricalState } from './historical-accounting.store';
-import { projectValuation } from './historical-valuation';
+import { projectUnrealized, projectValuation } from './historical-valuation';
 import { parseValuationQuery } from './historical-valuation-input';
 import { parseUuid } from './input';
 import { readValuationPrices } from './valuation-price.store';
@@ -33,7 +33,7 @@ export class HistoricalValuationService {
         priceSource: 'manual' as const,
         quoteCurrency: 'USD' as const,
         pricePolicy: 'exact-instant' as const,
-        ...projectValuation(positions, prices),
+        ...projectUnrealized(projectValuation(positions, prices)),
       };
     });
   }

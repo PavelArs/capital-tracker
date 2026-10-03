@@ -2,6 +2,8 @@ import type { ManualPortfolioValuationResponse } from '@api/manual-portfolio-val
 
 const unknownTotal = 'Не определена';
 const unknownCount = 'Не определено';
+const unknownReturn = 'Не определён';
+const percentText = (value: string | null) => (value === null ? unknownReturn : `${value} %`);
 
 export function toManualPortfolioView(report: ManualPortfolioValuationResponse) {
   return {
@@ -11,6 +13,8 @@ export function toManualPortfolioView(report: ManualPortfolioValuationResponse) 
         : 'Неполная оценка выбранных счетов',
     totalText: report.totalValueUsd ?? unknownTotal,
     subtotalText: report.pricedSubtotalUsd,
+    unrealizedText: report.unrealizedPnlUsd ?? unknownTotal,
+    returnText: percentText(report.unrealizedReturnPercent),
     rows: report.accounts.map((account) => ({
       accountId: account.accountId,
       name: account.name,
@@ -27,6 +31,8 @@ export function toManualPortfolioView(report: ManualPortfolioValuationResponse) 
         account.missingPriceCount === null ? unknownCount : String(account.missingPriceCount),
       subtotalText: account.pricedSubtotalUsd ?? unknownTotal,
       totalText: account.totalValueUsd ?? unknownTotal,
+      unrealizedText: account.unrealizedPnlUsd ?? unknownTotal,
+      returnText: percentText(account.unrealizedReturnPercent),
     })),
   };
 }

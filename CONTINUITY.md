@@ -1,5 +1,15 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — unrealized profit/loss (2026-10-03)
+
+Owner goal restated 2026-10-03: track crypto per wallet from purchase, realized and
+unrealized P&L, address-based import (BTC, ETH, SOL, ZEC only), then migrate his
+spreadsheet. The broad brief is context, not a build list. Production stays off;
+PR #29 is deferred. Active change `show-unrealized-pnl` adds additive unrealized
+result fields to account and selected-account valuation plus Russian UI columns;
+no schema change. Evidence and unrun checks are in its `verification.md`.
+Next: per-network address import with mocked providers, then spreadsheet import.
+
 ## Current handoff — interrupted manual + CSV MVP release
 
 Checkpoint: 2026-10-02. The whole product remains incomplete; the manual + CSV MVP

@@ -127,6 +127,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
     'missingPriceCount',
     'pricedSubtotalUsd',
     'totalValueUsd',
+    'unknownCostCount',
+    'unrealizedPnlUsd',
+    'unrealizedReturnPercent',
     'accounts',
   ]);
   const sortedExactIds = [data.accounts.half.id, data.accounts.double.id].sort();
@@ -143,6 +146,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
     missingPriceCount: 0,
     pricedSubtotalUsd: '308.64',
     totalValueUsd: '308.64',
+    unknownCostCount: 0,
+    unrealizedPnlUsd: '58.64',
+    unrealizedReturnPercent: '23.46',
   });
   const exactAccounts = exactBody.accounts as Record<string, unknown>[];
   expect(exactAccounts.map((account) => account.accountId)).toEqual(sortedExactIds);
@@ -157,6 +163,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       'missingPriceCount',
       'pricedSubtotalUsd',
       'totalValueUsd',
+      'unknownCostCount',
+      'unrealizedPnlUsd',
+      'unrealizedReturnPercent',
       'items',
     ]);
     expect(account).toMatchObject({
@@ -165,6 +174,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       journalRevision: 1,
       completeness: 'complete',
       missingPriceCount: 0,
+      unknownCostCount: 0,
+      unrealizedPnlUsd: account.accountId === data.accounts.half.id ? '11.728' : '46.912',
+      unrealizedReturnPercent: '23.46',
     });
     const items = account.items as Record<string, unknown>[];
     expect(items).toHaveLength(1);
@@ -176,6 +188,8 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       'costUsd',
       'price',
       'valueUsd',
+      'unrealizedPnlUsd',
+      'unrealizedReturnPercent',
     ]);
     expectKeys(items[0].price as Record<string, unknown>, ['priceUsd', 'observedAt', 'revision']);
     const isHalf = account.accountId === data.accounts.half.id;
@@ -187,6 +201,8 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       costUsd: isHalf ? '50' : '200',
       price: { priceUsd: '123.456', observedAt: valuationAt, revision: 1 },
       valueUsd: isHalf ? '61.728' : '246.912',
+      unrealizedPnlUsd: isHalf ? '11.728' : '46.912',
+      unrealizedReturnPercent: '23.46',
     });
   }
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessBeforeExact);
@@ -262,6 +278,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       missingPriceCount: 1,
       pricedSubtotalUsd: '308.64',
       totalValueUsd: null,
+      unknownCostCount: 0,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
     });
     const accountRows = gapsBody.accounts as Record<string, unknown>[];
     const missingAccount = accountRows.find(
@@ -276,6 +295,9 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       missingPriceCount: null,
       pricedSubtotalUsd: null,
       totalValueUsd: null,
+      unknownCostCount: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       items: [],
     });
     const distinctSameSymbol = accountRows.find(
@@ -286,6 +308,8 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
       missingPriceCount: 1,
       pricedSubtotalUsd: '0',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       items: [
         {
           instrumentId: data.sameSymbol.id,
@@ -293,6 +317,8 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
           quantity: '1',
           price: null,
           valueUsd: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
         },
       ],
     });
@@ -447,6 +473,12 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   const doubleRow = table.getByRole('row').filter({ hasText: data.accounts.double.name });
   await expect(doubleRow.getByRole('cell').nth(3)).toHaveText('246.912');
   await expect(doubleRow.getByRole('cell').nth(4)).toHaveText('246.912');
+  await expect(summaryValue(region, 'Нереализованная прибыль, USD')).toHaveText('58.64');
+  await expect(summaryValue(region, 'Доход, %')).toHaveText('23.46 %');
+  await expect(halfRow.getByRole('cell').nth(5)).toHaveText('11.728');
+  await expect(halfRow.getByRole('cell').nth(6)).toHaveText('23.46 %');
+  await expect(doubleRow.getByRole('cell').nth(5)).toHaveText('46.912');
+  await expect(doubleRow.getByRole('cell').nth(6)).toHaveText('23.46 %');
 
   // DIRECTORY / MPV-UI-DISCLOSURE: hiding the panel must not replace its intent.
   const mountedValuation = await region.elementHandle();
@@ -473,6 +505,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('Не определена');
   await expect(summaryValue(region, 'Оценённая часть, USD')).toHaveText('308.64');
   await expect(summaryValue(region, 'Позиций без цены')).toHaveText('1');
+  await expect(summaryValue(region, 'Нереализованная прибыль, USD')).toHaveText('Не определена');
   await expect(
     table.getByRole('row').filter({ hasText: data.accounts.missingPrice.name }),
   ).toBeVisible();
