@@ -49,14 +49,17 @@ The system SHALL inspect a stored source before requiring economic mapping, retu
 all bounded headers/rows with ordinal and physical start line or one structural error
 without a partial prefix. Inspection SHALL work in every batch state without writes.
 The parser SHALL require one header plus1..100 records,1..32 equal-width columns and
-at most4096 UTF-8 bytes per decoded cell, explicit comma/semicolon delimiter, strict
-quotes and LF/CRLF endings. Headers SHALL reject trim-empty/exact duplicates; blank
+at most4096 UTF-8 bytes per decoded cell, explicit comma, semicolon or tab delimiter,
+strict quotes and LF/CRLF endings. Headers SHALL reject trim-empty/exact duplicates; blank
 all-empty records SHALL fail. No record skipping, truncation, coercion or repair.
 
 Draft-only economic preview SHALL require explicit distinct column indexes, exact
 source-key maps to owned instrument UUIDs and buy/sell, decimal separator, time mode,
-same-instant order, actual gross/fee columns and literal USD attestation. Unknown cost,
-fee, time, order or instrument identity MUST NOT be invented. Canonical exact amounts,
+same-instant order, actual gross/fee columns and literal USD attestation, except that
+side, fee and order columns MAY be omitted only with the explicit companions and date
+mode defined by SHEET-1 of `spreadsheet-purchase-import`. Unknown cost, fee, time, order
+or instrument identity MUST NOT be invented; an explicit SHEET-1 companion is the
+owner's statement, not an invented value. Canonical exact amounts,
 calendar/offset validation and buy-basis overflow SHALL retain the journal contract.
 Optional currency cells SHALL contain literal USD. Settings SHALL reject unsupported
 keys/types, duplicate maps, unused keys and undeclared numeric separators.
@@ -322,3 +325,4 @@ No source/filename/amount/parser exception SHALL enter public failures or logs.
 - **WHEN** a1048577-byte multipart body is submitted using either transfer form
 - **THEN** the real proxy returns413, every persisted application/authentication row remains unchanged, and neither private source text nor filename is echoed
 - **AND** auth-admission state and provider requests remain unchanged
+

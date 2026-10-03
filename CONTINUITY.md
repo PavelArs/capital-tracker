@@ -51,7 +51,8 @@ Nginx edit, local preview, original project/data and full deferred target.
 
 ## Current product slice — Excel purchase-sheet import (2026-10-03)
 
-Active change `import-excel-purchase-sheet` (branch `claude/excel-import-5tzlj5`): the
+Archived change `2026-10-03-import-excel-purchase-sheet` (branch `claude/excel-import-5tzlj5`,
+PR #32, hosted CI green including SHEET-UI): the
 existing CSV importer accepts the owner's purchase sheet as saved from Excel (tab
 delimiter, `DD.MM.YYYY` as midnight UTC, no side/fee/order columns via explicit
 companions, `в USD` as cost basis for USDT purchases), blocks date-only rows identical to

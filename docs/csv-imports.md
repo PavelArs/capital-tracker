@@ -94,7 +94,7 @@ complete chronological history never has negative holdings.
 
 The owner's purchase sheet (`Дата`, `Купил`, `Количество`, `Купил за`, `За количество`,
 `в USD`, then the derived `Курс`, `Текущий курс`, `Текущая стоимость`, `Разница`, `Доход`)
-imports as is; see the [active change](../openspec/changes/import-excel-purchase-sheet/)
+imports as is; see the [spreadsheet purchase import spec](../openspec/specs/spreadsheet-purchase-import/spec.md)
 for the exact contract.
 
 1. Save it from Excel as **CSV UTF-8** (semicolons in a Russian locale) or paste the rows

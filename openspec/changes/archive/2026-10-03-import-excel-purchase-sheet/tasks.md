@@ -16,4 +16,4 @@
 
 - [x] 3.1 Independently review the diff against the spec; resolve findings without weakening assertions.
 - [x] 3.2 Run lint, build and unit tests for both packages, engineering gates, strict OpenSpec and the PostgreSQL probes locally; rely on hosted CI for the browser path; record what ran where in verification.md.
-- [ ] 3.3 Archive with the installed CLI only after hosted acceptance is green, and confirm canonical spec sync.
+- [x] 3.3 Archive with the installed CLI only after hosted acceptance is green, and confirm canonical spec sync.
