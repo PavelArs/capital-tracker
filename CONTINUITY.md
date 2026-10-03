@@ -51,14 +51,15 @@ Nginx edit, local preview, original project/data and full deferred target.
 
 ## Current product slice — Bitcoin address import (2026-10-03)
 
-Active change `import-bitcoin-address-history` (branch `claude/address-import-b32kzd`):
+Archived change `2026-10-03-import-bitcoin-address-history`, spec `wallet-address-import`
+(branch `claude/address-import-b32kzd`, PR #31):
 register a Bitcoin mainnet address, sync confirmed history from keyless
 blockstream.info Esplora with a resumable walk cursor, store raw observations once
 (`wallet_addresses`, `wallet_address_transactions`, migration 23), show them on
 `/wallet-addresses` with USD value missing. Legacy `crypto` module untouched. ETH, SOL
 and transparent ZEC follow the same tables; ZEC shielded history is not readable from an
-address. Next slice: owner fills missing values (purchase price). Evidence and unrun
-checks: the change's `verification.md`.
+address. Next slice: owner fills missing values (purchase price). Evidence, including
+hosted acceptance run 37146422170, is in the archived change's `verification.md`.
 
 ## Historical handoff — pre-current-main release checkpoint
 

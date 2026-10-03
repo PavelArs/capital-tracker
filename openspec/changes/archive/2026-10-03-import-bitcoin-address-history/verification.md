@@ -81,4 +81,14 @@ A separate reviewer context read the full diff. Findings and outcome:
 
 ## Hosted CI
 
-Pending.
+- Run 37146422170 on head `8fad5e6`, job "Release Images and Security": the migrate-container
+  PostgreSQL probes (including `wallet-addresses-db.cjs`, `auth-limits-db.cjs` and
+  `migrations.cjs` with 23 migrations) passed, critical real release acceptance passed
+  21 of 21 cases including `ADDR-UI / ADDR-PRIVATE`, and the critical acceptance receipt
+  verified for that SHA and run.
+- The same job then failed at the exact-image security gate on the nginx base image's
+  pcre2 package. That failure is not this change's: it fails on `main` too, and the
+  one-line `frontend/Dockerfile` fix lives in the `show-unrealized-pnl` branch (PR #30).
+- Earlier runs on this branch failed first on two probes still pinned to 22 migrations,
+  then on `ADDR-UI` counting provider requests left by the earlier database probes; both
+  were test fixes, recorded in commits `95b25da` and `8fad5e6`.
