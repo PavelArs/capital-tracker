@@ -69,7 +69,7 @@ async function checkedRead(source, statements, action) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 22/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 23/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -91,9 +91,9 @@ async function main() {
     const account = (await accounts.createAccount(owners[0], { requestId: randomUUID(), name: 'Preserved' })).value;
     const opening = await accounts.saveOpening(owners[0], account.id, { requestId: randomUUID(), expectedRevision: 0, asOf: at, positions: [{ instrumentId: instruments[0].id, quantity: atom, costStatus: 'known', totalCostUsd: maximum }] });
     const beforeUpgrade = await fingerprint(source, ['migrations']);
-    assert.match(migrate(database), /Migrations applied: 5/);
-    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']), beforeUpgrade);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 22);
+    assert.match(migrate(database), /Migrations applied: 6/);
+    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions']), beforeUpgrade);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 23);
     assert.equal((await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n, 0);
     for (const table of ['account_swaps', 'account_swap_versions']) assert.equal((await source.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     assert.match(migrate(database), /Migrations applied: 0/);

@@ -132,8 +132,8 @@ async function migrationPreservation() {
       VALUES($1,$2,$3,$4,$5,$6,'prior.csv','draft')`,
       [randomUUID(), owner, accountId, createHash('sha256').update(csvBytes).digest('hex'), csvBytes, csvBytes.length]);
     const before = await fingerprint(db, ['migrations']);
-    assert.match(migrate(predecessor), /Migrations applied: 2/);
-    assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'migrations']), before);
+    assert.match(migrate(predecessor), /Migrations applied: 3/);
+    assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'migrations']), before);
     for (const table of [...rewardTables, 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
     const s = services(db);
     const { kind: _kind, ...body } = execution;
@@ -462,7 +462,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 22/);
+  assert.match(migrate(database), /Migrations applied: 23/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

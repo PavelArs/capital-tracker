@@ -205,7 +205,7 @@ async function main() {
     assert.equal(shown.status, 0, 'Migration CLI must work without the HTTP-only setting');
     const shownNames = [...shown.stdout.matchAll(/^\[X\] (\S+)$/gm)].map((match) => match[1]).sort();
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map((row) => row.name);
-    assert.equal(shownNames.length, 22);
+    assert.equal(shownNames.length, 23);
     assert.deepEqual(shownNames, appliedNames, 'CLI displays every exact applied migration from the preserved ledger');
     assert.ok(!(shown.stdout + shown.stderr).includes('TRUSTED_PROXY_IPS'));
     assert.equal(await fingerprint(client), before, 'Read-only CLI inspection preserves all database state');
