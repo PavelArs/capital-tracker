@@ -2,6 +2,7 @@ import type { Instrument, UuidPage } from '@api/accounting.api';
 import {
   type CsvBatch,
   type CsvConfirm,
+  type CsvDelimiter,
   type CsvDetail,
   type CsvInspection,
   type CsvPreviewResult,
@@ -22,6 +23,7 @@ import {
   emptyCsvMapping,
 } from './CsvMapping';
 import { CsvPreview, CsvSource } from './CsvPreview';
+import { CsvReconciliationPanel } from './CsvReconciliation';
 import { accountingError, newRequestId } from './feedback';
 import './CsvImports.css';
 
@@ -82,7 +84,7 @@ export function CsvImports({
   );
   const [batches, setBatches] = useState<UuidPage<CsvBatch> | null>(null);
   const [detail, setDetail] = useState<CsvDetail | null>(null);
-  const [delimiter, setDelimiter] = useState<',' | ';'>(',');
+  const [delimiter, setDelimiter] = useState<CsvDelimiter>(',');
   const [inspection, setInspection] = useState<CsvInspection | null>(null);
   const [mapping, setMapping] = useState<CsvMappingDraft>(emptyCsvMapping);
   const [preview, setPreview] = useState<{
@@ -176,7 +178,12 @@ export function CsvImports({
     ]);
     if (!live.current || request !== generation.current || selection.current !== batchId) return;
     setReading(false);
-    if (batchResult.status === 'fulfilled') setDetail(batchResult.value);
+    if (batchResult.status === 'fulfilled') {
+      setDetail(batchResult.value);
+      // Reconciliation reads the source with the delimiter the batch was accepted with.
+      const accepted = batchResult.value.acceptedSettings?.format.delimiter;
+      if (accepted && !recoveries.has(accountId)) setDelimiter(accepted);
+    }
     const complete =
       batchResult.status === 'fulfilled' &&
       journalResult.status === 'fulfilled' &&
@@ -203,7 +210,7 @@ export function CsvImports({
     setReceipt(null);
     void loadDetail(batchId);
   }
-  function changeDelimiter(next: ',' | ';') {
+  function changeDelimiter(next: CsvDelimiter) {
     if (recoveries.has(accountId) || callbacks.current.parentBlocked) return;
     invalidate();
     setDelimiter(next);
@@ -407,9 +414,11 @@ export function CsvImports({
         ))}
       </ol>
       <p>
-        UTF-8, запятая или точка с запятой; файл до 256 КиБ, до 100 записей, 32 колонок и 4096 байт
-        в ячейке. Сначала просмотрите исходные строки и явно укажите смысл колонок. Поддерживаются
-        покупки и продажи в USD с известной комиссией.
+        UTF-8, запятая, точка с запятой или табуляция; файл до 256 КиБ, до 100 записей, 32 колонок и
+        4096 байт в ячейке. Сначала просмотрите исходные строки и явно укажите смысл колонок.
+        Поддерживаются покупки и продажи в USD; таблицу покупок из Excel (дата без времени, без
+        колонок типа и комиссии) можно загрузить как есть, сохранив её как «CSV UTF-8» или
+        скопировав в текстовый файл с табуляцией.
       </p>
       <p>
         Повтор того же файла не создаёт новых сделок. Изменённые и пересекающиеся выгрузки считаются
@@ -460,7 +469,7 @@ export function CsvImports({
           Файл CSV
           <input
             type="file"
-            accept=".csv,text/csv"
+            accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
             disabled={locked}
             onChange={(event) => {
               if (recoveries.has(accountId) || callbacks.current.parentBlocked) return;
@@ -569,10 +578,11 @@ export function CsvImports({
             <select
               value={delimiter}
               disabled={locked}
-              onChange={(event) => changeDelimiter(event.target.value as ',' | ';')}
+              onChange={(event) => changeDelimiter(event.target.value as CsvDelimiter)}
             >
               <option value=",">Запятая (,)</option>
               <option value=";">Точка с запятой (;)</option>
+              <option value={'\t'}>Табуляция</option>
             </select>
           </label>
           <button
@@ -586,6 +596,20 @@ export function CsvImports({
         </section>
       )}
       {inspection && <CsvSource inspection={inspection} />}
+      {detail?.batch.state === 'committed' && selected && !inspection?.valid && (
+        <p className="manual-muted">
+          Чтобы сверить партию с таблицей, просмотрите исходные строки файла.
+        </p>
+      )}
+      {detail?.batch.state === 'committed' && selected && inspection?.valid && (
+        <CsvReconciliationPanel
+          accountId={accountId}
+          batchId={selected}
+          document={inspection}
+          instruments={instruments}
+          disabled={locked || reading}
+        />
+      )}
       {inspection?.valid && detail?.batch.state === 'draft' && (
         <div className="csv-imports__section">
           <CsvMapping

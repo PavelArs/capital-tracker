@@ -12,21 +12,27 @@ export type CsvColumnField =
   | 'grossUsd'
   | 'feeUsd'
   | 'currency';
+export type CsvDelimiter = ',' | ';' | '\t';
 export interface CsvFormat {
-  delimiter: ',' | ';';
+  delimiter: CsvDelimiter;
   decimalSeparator: '.' | ',';
-  timestampMode: 'offset' | 'fixed-offset';
+  timestampMode: 'offset' | 'fixed-offset' | 'day-month-year-utc';
   fixedOffset?: string;
 }
+// Side, order and fee may be omitted only with the explicit SHEET-1 companions.
+export type CsvColumns = Record<'instrument' | 'occurredAt' | 'quantity' | 'grossUsd', number> &
+  Partial<Record<'side' | 'order' | 'feeUsd' | 'currency', number>>;
 export interface CsvMapping {
-  columns: Record<Exclude<CsvColumnField, 'currency'>, number> & { currency?: number };
+  columns: CsvColumns;
   instruments: { source: string; instrumentId: string }[];
   sides: { source: string; side: 'buy' | 'sell' }[];
+  allRowsSide?: 'buy';
 }
 export interface CsvSettings {
   format: CsvFormat;
   mapping: CsvMapping;
   assertUsd: true;
+  feeIncludedInGross?: true;
 }
 export interface CsvConfirmInput extends CsvSettings {
   requestId: string;
@@ -130,15 +136,20 @@ export function validateCsvSource(raw: unknown): Buffer {
   }
   return raw;
 }
-function delimiter(raw: unknown): ',' | ';' {
-  return raw === ',' || raw === ';' ? raw : bad();
+function delimiter(raw: unknown): CsvDelimiter {
+  return raw === ',' || raw === ';' || raw === '\t' ? raw : bad();
 }
 function format(raw: unknown): CsvFormat {
   const row = object(raw, ['delimiter', 'decimalSeparator', 'timestampMode', 'fixedOffset']);
   if (row.decimalSeparator !== '.' && row.decimalSeparator !== ',') return bad();
-  if (row.timestampMode !== 'offset' && row.timestampMode !== 'fixed-offset') return bad();
+  if (
+    row.timestampMode !== 'offset' &&
+    row.timestampMode !== 'fixed-offset' &&
+    row.timestampMode !== 'day-month-year-utc'
+  )
+    return bad();
   let fixedOffset: string | undefined;
-  if (row.timestampMode === 'offset') {
+  if (row.timestampMode !== 'fixed-offset') {
     if (has(row, 'fixedOffset')) return bad();
   } else {
     const value = row.fixedOffset;
@@ -167,25 +178,35 @@ function entries<T extends { source: string }>(
   return values.sort((a, b) => (a.source < b.source ? -1 : a.source > b.source ? 1 : 0));
 }
 function mapping(raw: unknown): CsvMapping {
-  const row = object(raw, ['columns', 'instruments', 'sides']);
+  const row = object(raw, ['columns', 'instruments', 'sides', 'allRowsSide']);
   const columns = object(row.columns, columnFields);
+  const optional = (field: 'side' | 'order' | 'feeUsd' | 'currency') =>
+    has(columns, field) ? { [field]: integer(columns[field], 31) } : {};
   const normalized: CsvMapping['columns'] = {
     instrument: integer(columns.instrument, 31),
-    side: integer(columns.side, 31),
+    ...optional('side'),
     occurredAt: integer(columns.occurredAt, 31),
-    order: integer(columns.order, 31),
+    ...optional('order'),
     quantity: integer(columns.quantity, 31),
     grossUsd: integer(columns.grossUsd, 31),
-    feeUsd: integer(columns.feeUsd, 31),
-    ...(has(columns, 'currency') ? { currency: integer(columns.currency, 31) } : {}),
+    ...optional('feeUsd'),
+    ...optional('currency'),
   };
   if (new Set(Object.values(normalized)).size !== Object.keys(normalized).length) return bad();
+  const instruments = entries(row.instruments, 100, (rawEntry) => {
+    const entry = object(rawEntry, ['source', 'instrumentId']);
+    return { source: sourceKey(entry.source), instrumentId: uuid(entry.instrumentId) };
+  });
+  if (normalized.side === undefined) {
+    // Purchases only: a sheet without a side column cannot imply a sale.
+    if (row.allRowsSide !== 'buy' || !Array.isArray(row.sides) || row.sides.length !== 0)
+      return bad();
+    return { columns: normalized, instruments, sides: [], allRowsSide: 'buy' };
+  }
+  if (has(row, 'allRowsSide')) return bad();
   return {
     columns: normalized,
-    instruments: entries(row.instruments, 100, (rawEntry) => {
-      const entry = object(rawEntry, ['source', 'instrumentId']);
-      return { source: sourceKey(entry.source), instrumentId: uuid(entry.instrumentId) };
-    }),
+    instruments,
     sides: entries(row.sides, 2, (rawEntry) => {
       const entry = object(rawEntry, ['source', 'side']);
       if (entry.side !== 'buy' && entry.side !== 'sell') return bad();
@@ -195,13 +216,26 @@ function mapping(raw: unknown): CsvMapping {
 }
 function settings(row: Record<string, unknown>): CsvSettings {
   if (row.assertUsd !== true) return bad();
-  return { format: format(row.format), mapping: mapping(row.mapping), assertUsd: true };
+  const parsed: CsvSettings = {
+    format: format(row.format),
+    mapping: mapping(row.mapping),
+    assertUsd: true,
+  };
+  const { columns } = parsed.mapping;
+  if (columns.order === undefined && parsed.format.timestampMode !== 'day-month-year-utc')
+    return bad();
+  if (columns.feeUsd === undefined) {
+    if (row.feeIncludedInGross !== true) return bad();
+    return { ...parsed, feeIncludedInGross: true };
+  }
+  if (has(row, 'feeIncludedInGross')) return bad();
+  return parsed;
 }
-export function parseCsvInspect(raw: unknown): { delimiter: ',' | ';' } {
+export function parseCsvInspect(raw: unknown): { delimiter: CsvDelimiter } {
   return { delimiter: delimiter(object(raw, ['delimiter']).delimiter) };
 }
 export function parseCsvPreview(raw: unknown): CsvSettings {
-  return settings(object(raw, ['format', 'mapping', 'assertUsd']));
+  return settings(object(raw, ['format', 'mapping', 'assertUsd', 'feeIncludedInGross']));
 }
 export function parseCsvConfirm(raw: unknown): CsvConfirmInput {
   const row = object(raw, [
@@ -211,6 +245,7 @@ export function parseCsvConfirm(raw: unknown): CsvConfirmInput {
     'format',
     'mapping',
     'assertUsd',
+    'feeIncludedInGross',
     'previewHash',
   ]);
   if (

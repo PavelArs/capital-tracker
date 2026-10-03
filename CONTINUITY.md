@@ -49,6 +49,17 @@ evidenced. Local Docker is unavailable.
 Historical notes follow; preserve the owner's dirty
 Nginx edit, local preview, original project/data and full deferred target.
 
+## Current product slice — Excel purchase-sheet import (2026-10-03)
+
+Active change `import-excel-purchase-sheet` (branch `claude/excel-import-5tzlj5`): the
+existing CSV importer accepts the owner's purchase sheet as saved from Excel (tab
+delimiter, `DD.MM.YYYY` as midnight UTC, no side/fee/order columns via explicit
+companions, `в USD` as cost basis for USDT purchases), blocks date-only rows identical to
+active trades, and adds read-only `GET .../csv-imports/:batchId/reconciliation` comparing
+the sheet's derived columns with exact app values and the latest manual price. No
+migration; the 100-row per-file limit stays pending the owner's decision. Evidence and
+unrun checks: the change's `verification.md`.
+
 ## Historical handoff — pre-current-main release checkpoint
 
 Checkpoint: 2026-10-01. The authorized manual-accounting + CSV MVP remains **IN

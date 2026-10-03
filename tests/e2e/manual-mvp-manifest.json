@@ -78,5 +78,9 @@
   {
     "file": "tests/e2e/application-shell.spec.ts",
     "title": "SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout"
+  },
+  {
+    "file": "tests/e2e/excel-purchase-import.spec.ts",
+    "title": "SHEET-UI: owner imports the Excel purchase sheet as tab-separated text and reconciles it in Russian"
   }
 ]

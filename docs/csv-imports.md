@@ -19,7 +19,7 @@ The importer makes no provider calls and calculates recorded costs and realized
 journal results, not market value, investment returns or taxes.
 
 Export a UTF-8 CSV from Excel; an XLSX workbook and UTF-16 CSV are unsupported.
-Choose comma or semicolon as the delimiter. Standard quoted delimiters/newlines and
+Choose comma, semicolon or tab as the delimiter. Standard quoted delimiters/newlines and
 doubled quotes work. LF and CRLF may coexist, including within quoted cells; a bare
 CR, invalid UTF-8 or NUL is rejected. An optional leading BOM is retained in the
 original and ignored for parsing. Headers must be nonempty after whitespace checking
@@ -89,6 +89,38 @@ Execution order comes from timestamp plus the explicit integer order within that
 instant, not source-row order. Distinct legitimate similar trades are retained when
 these keys differ. A sale may appear before its purchases in the file provided the
 complete chronological history never has negative holdings.
+
+## Excel purchase sheet
+
+The owner's purchase sheet (`Дата`, `Купил`, `Количество`, `Купил за`, `За количество`,
+`в USD`, then the derived `Курс`, `Текущий курс`, `Текущая стоимость`, `Разница`, `Доход`)
+imports as is; see the [active change](../openspec/changes/import-excel-purchase-sheet/)
+for the exact contract.
+
+1. Save it from Excel as **CSV UTF-8** (semicolons in a Russian locale) or paste the rows
+   into a UTF-8 text file (tabs). Choose the matching **Разделитель**, including
+   **Табуляция**, and inspect the rows.
+2. Select **Заполнить по таблице покупок**. It picks the four columns by header, decimal
+   comma and **Только дата ДД.ММ.ГГГГ (начало дня по UTC)**, and ticks **Все строки —
+   покупки** and **Комиссия уже включена в сумму в USD**. Map each asset symbol to an owned
+   instrument and confirm the USD attestation yourself.
+3. `13.06.2025` becomes `2025-06-13T00:00:00.000Z`. `в USD` becomes the gross total and the
+   cost basis, with fee `0`, even when the purchase was paid in USDT; the payment columns
+   and every derived column stay ignored. Without an order column, rows of one date follow
+   the account's existing trades of that date in file order.
+4. A date-only row identical to an active trade (asset, side, date, quantity, sum, fee) is
+   refused as `matches-existing-trade`, so a re-saved copy of an imported sheet cannot be
+   imported twice. Identical rows inside one file stay separate purchases. Roll back the
+   earlier batch first to re-import a corrected sheet.
+5. After confirmation, inspect the source again and open **Сверка с таблицей**. For each
+   row it shows the app's quantity and cost and compares `в USD`, `Курс`, `Текущая
+   стоимость`, `Разница` and `Доход` with values recomputed from the sheet's own
+   `Текущий курс`. A cell matches when the exact app value rounds to it at the cell's
+   decimal places. The latest manual USD price, if any, gives the app's own unrealized
+   result. Reconciliation is read-only.
+
+Sales, XLSX files and other layouts are not covered. The 100-record file limit still
+applies; split a longer sheet into several files.
 
 ## Identity, privacy and rollback
 

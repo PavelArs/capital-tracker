@@ -53,6 +53,15 @@ export class CsvImportController {
   ) {
     return this.imports.rows(owner.userId, id, batchId, query);
   }
+  @Get(':batchId/reconciliation')
+  reconciliation(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('id') id: string,
+    @Param('batchId') batchId: string,
+    @Query() query: unknown,
+  ) {
+    return this.imports.reconciliation(owner.userId, id, batchId, query);
+  }
   @Post(':batchId/inspect')
   @HttpCode(200)
   inspect(

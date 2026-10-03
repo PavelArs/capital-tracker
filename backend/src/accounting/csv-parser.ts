@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { CsvError, parse } from 'csv-parse/sync';
-import { type CsvColumnField, type CsvSettings, validateCsvSource } from './csv-input';
+import {
+  type CsvColumnField,
+  type CsvDelimiter,
+  type CsvSettings,
+  validateCsvSource,
+} from './csv-input';
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal } from './input';
 import { MAX_INPUT_ATOMS, canonicalDecimalToAtoms } from './money';
@@ -52,7 +57,8 @@ export interface CsvRowError {
     | 'invalid-gross'
     | 'invalid-fee'
     | 'buy-cost-overflow'
-    | 'currency-not-usd';
+    | 'currency-not-usd'
+    | 'matches-existing-trade';
 }
 export interface CsvNormalization {
   rows: { ordinal: number; startLine: number; execution: Execution | null }[];
@@ -70,7 +76,7 @@ class StructuralError extends Error {
   }
 }
 
-export function parseCsvSource(bytes: Buffer, delimiter: ',' | ';'): CsvInspection {
+export function parseCsvSource(bytes: Buffer, delimiter: CsvDelimiter): CsvInspection {
   validateCsvSource(bytes);
   const source = bytes.subarray(
     bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) ? 3 : 0,
@@ -162,6 +168,12 @@ function amount(raw: string, separator: '.' | ',', positive: boolean): string | 
 }
 function timestamp(raw: string, format: CsvSettings['format']): string | null {
   if (/\s/.test(raw)) return null;
+  if (format.timestampMode === 'day-month-year-utc') {
+    // SHEET-1: a sheet date without time is the start of that calendar date in UTC.
+    const date = /^([0-9]{2})\.([0-9]{2})\.([0-9]{4})$/.exec(raw);
+    if (!date) return null;
+    return validValue(() => parseAsOf(`${date[3]}-${date[2]}-${date[1]}T00:00:00Z`));
+  }
   return validValue(() =>
     parseAsOf(format.timestampMode === 'fixed-offset' ? `${raw}${format.fixedOffset}` : raw),
   );
@@ -172,11 +184,33 @@ function order(raw: string): number | null {
   return value <= 2147483647 ? value : null;
 }
 
+const sameExecution = (a: Execution, b: Execution) =>
+  a.instrumentId === b.instrumentId &&
+  a.side === b.side &&
+  a.occurredAt === b.occurredAt &&
+  a.quantity === b.quantity &&
+  a.grossUsd === b.grossUsd &&
+  a.feeUsd === b.feeUsd;
+
+/**
+ * `active` holds the account's current trades. Without an order column (date mode only),
+ * rows of one instant follow its largest active order in file order; date-mode rows that
+ * repeat an active trade are SHEET-2 duplicates.
+ */
 export function normalizeCsvRows(
   document: Extract<CsvInspection, { valid: true }>,
   settings: CsvSettings,
+  context: { active: readonly Execution[] } = { active: [] },
 ): CsvNormalization {
   const { columns } = settings.mapping;
+  const dateOnly = settings.format.timestampMode === 'day-month-year-utc';
+  const nextOrder = new Map<string, number>();
+  if (columns.order === undefined)
+    for (const trade of context.active)
+      nextOrder.set(
+        trade.occurredAt,
+        Math.max(nextOrder.get(trade.occurredAt) ?? 1, trade.orderWithinTimestamp + 1),
+      );
   const mappedIndexes = new Set(Object.values(columns));
   const ignoredColumns = document.headers.flatMap((header, index) =>
     mappedIndexes.has(index) ? [] : [{ index, header }],
@@ -202,18 +236,30 @@ export function normalizeCsvRows(
     const issue = (field: CsvColumnField, code: CsvRowError['code']) =>
       result.rowErrors.push({ ordinal, field, code });
     observedInstruments.add(cells[columns.instrument]);
-    observedSides.add(cells[columns.side]);
+    if (columns.side !== undefined) observedSides.add(cells[columns.side]);
     const instrumentId = instruments.get(cells[columns.instrument]);
-    const side = sides.get(cells[columns.side]);
+    const side =
+      columns.side === undefined ? settings.mapping.allRowsSide : sides.get(cells[columns.side]);
     const occurredAt = timestamp(cells[columns.occurredAt], settings.format);
-    const orderWithinTimestamp = order(cells[columns.order]);
+    let orderWithinTimestamp: number | null = null;
+    if (columns.order !== undefined) orderWithinTimestamp = order(cells[columns.order]);
+    else if (occurredAt !== null) {
+      orderWithinTimestamp = nextOrder.get(occurredAt) ?? 1;
+      nextOrder.set(occurredAt, orderWithinTimestamp + 1);
+    }
     const quantity = amount(cells[columns.quantity], settings.format.decimalSeparator, true);
     const grossUsd = amount(cells[columns.grossUsd], settings.format.decimalSeparator, true);
-    const feeUsd = amount(cells[columns.feeUsd], settings.format.decimalSeparator, false);
+    const feeUsd =
+      columns.feeUsd === undefined
+        ? '0'
+        : amount(cells[columns.feeUsd], settings.format.decimalSeparator, false);
     if (instrumentId === undefined) issue('instrument', 'instrument-key-unmapped');
     if (side === undefined) issue('side', 'side-key-unmapped');
     if (occurredAt === null) issue('occurredAt', 'invalid-time');
-    if (orderWithinTimestamp === null) issue('order', 'invalid-order');
+    if (orderWithinTimestamp !== null && orderWithinTimestamp > 2147483647)
+      orderWithinTimestamp = null;
+    if (orderWithinTimestamp === null && (columns.order !== undefined || occurredAt !== null))
+      issue('order', 'invalid-order');
     if (quantity === null) issue('quantity', 'invalid-quantity');
     if (grossUsd === null) issue('grossUsd', 'invalid-gross');
     else if (
@@ -225,7 +271,7 @@ export function normalizeCsvRows(
     if (feeUsd === null) issue('feeUsd', 'invalid-fee');
     if (columns.currency !== undefined && cells[columns.currency] !== 'USD')
       issue('currency', 'currency-not-usd');
-    const execution =
+    const candidate =
       result.rowErrors.length === beforeErrors &&
       instrumentId !== undefined &&
       side !== undefined &&
@@ -236,7 +282,10 @@ export function normalizeCsvRows(
       feeUsd !== null
         ? { instrumentId, side, occurredAt, orderWithinTimestamp, quantity, grossUsd, feeUsd }
         : null;
-    result.rows.push({ ordinal, startLine, execution });
+    const duplicate =
+      dateOnly && candidate !== null && context.active.some((t) => sameExecution(t, candidate));
+    if (duplicate) issue('occurredAt', 'matches-existing-trade');
+    result.rows.push({ ordinal, startLine, execution: duplicate ? null : candidate });
   }
   if (settings.mapping.instruments.some((entry) => !observedInstruments.has(entry.source)))
     result.batchErrors.push({ code: 'unused-instrument-key', line: null, column: null });

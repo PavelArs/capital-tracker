@@ -234,7 +234,15 @@ describe('CSV-002-C strict nested settings before economic mapping', () => {
     ])
       rejects(() => parseCsvPreview({ ...settings(), format }));
     for (const field of ['delimiter', 'decimalSeparator', 'timestampMode']) {
-      for (const raw of [...wrongTypes, '', '\t', '|', 'auto', 'local'])
+      // SHEET-1 accepts a tab delimiter; it remains invalid for the other format fields.
+      for (const raw of [
+        ...wrongTypes,
+        '',
+        ...(field === 'delimiter' ? [] : ['\t']),
+        '|',
+        'auto',
+        'local',
+      ])
         rejects(() =>
           parseCsvPreview({ ...settings(), format: { ...settings().format, [field]: raw } }),
         );
@@ -530,10 +538,11 @@ describe('CSV-002-A / CSV-005-B inspection and pinned provenance query envelopes
   it('requires only an explicit supported inspection delimiter', () => {
     expect(parseCsvInspect({ delimiter: ',' })).toEqual({ delimiter: ',' });
     expect(parseCsvInspect({ delimiter: ';' })).toEqual({ delimiter: ';' });
+    expect(parseCsvInspect({ delimiter: '\t' })).toEqual({ delimiter: '\t' });
     for (const raw of [
       ...wrongTypes,
       {},
-      { delimiter: '\t' },
+      { delimiter: '|' },
       { delimiter: [','] },
       { delimiter: ',', rows: [] },
       { delimiter: ',', parserVersion: 'usd-csv-v1' },

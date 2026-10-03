@@ -12,19 +12,25 @@ export type CsvField =
   | 'grossUsd'
   | 'feeUsd'
   | 'currency';
+export type CsvDelimiter = ',' | ';' | '\t';
+export type CsvTimestampMode = 'offset' | 'fixed-offset' | 'day-month-year-utc';
 export interface CsvSettings {
   format: {
-    delimiter: ',' | ';';
+    delimiter: CsvDelimiter;
     decimalSeparator: '.' | ',';
-    timestampMode: 'offset' | 'fixed-offset';
+    timestampMode: CsvTimestampMode;
     fixedOffset?: string;
   };
   mapping: {
-    columns: Record<Exclude<CsvField, 'currency'>, number> & { currency?: number };
+    // Side, order and fee may be omitted only with the explicit sheet statements below.
+    columns: Record<'instrument' | 'occurredAt' | 'quantity' | 'grossUsd', number> &
+      Partial<Record<'side' | 'order' | 'feeUsd' | 'currency', number>>;
     instruments: Array<{ source: string; instrumentId: string }>;
     sides: Array<{ source: string; side: 'buy' | 'sell' }>;
+    allRowsSide?: 'buy';
   };
   assertUsd: true;
+  feeIncludedInGross?: true;
 }
 export interface CsvIdentity {
   batchId: string;
@@ -113,6 +119,46 @@ export interface CsvDetail {
     summaryAfter: TradeSummary | null;
   };
 }
+export type CsvReconciliationField =
+  | 'usdAmount'
+  | 'rate'
+  | 'currentValue'
+  | 'difference'
+  | 'returnPercent';
+export type CsvReferenceColumns = Partial<Record<CsvReconciliationField | 'currentRate', number>>;
+export interface CsvReconciliation {
+  batchId: string;
+  batchState: 'committed';
+  columns: CsvReferenceColumns;
+  rows: Array<{
+    ordinal: number;
+    startLine: number;
+    tradeId: string;
+    status: 'imported' | 'modified' | 'voided';
+    instrumentId: string | null;
+    occurredAt: string | null;
+    quantity: string | null;
+    costUsd: string | null;
+    checks: Array<{
+      field: CsvReconciliationField;
+      sheet: string;
+      app: string | null;
+      result: 'match' | 'mismatch' | 'unreadable' | 'unavailable';
+    }>;
+    latestPrice: { priceUsd: string; observedAt: string } | null;
+    valueUsd: string | null;
+    unrealizedPnlUsd: string | null;
+    unrealizedReturnPercent: string | null;
+  }>;
+  totals: {
+    matchCount: number;
+    mismatchCount: number;
+    unreadableCount: number;
+    unavailableCount: number;
+    costUsd: string;
+    unrealizedPnlUsd: string | null;
+  };
+}
 export interface CsvRows {
   batchId: string;
   batchState: CsvState;
@@ -154,7 +200,11 @@ export const csvImportsApi = {
     ).data,
   detail: async (account: string, batch: string): Promise<CsvDetail> =>
     (await apiClient.get<CsvDetail>(batchPath(account, batch))).data,
-  inspect: async (account: string, batch: string, delimiter: ',' | ';'): Promise<CsvInspection> =>
+  inspect: async (
+    account: string,
+    batch: string,
+    delimiter: CsvDelimiter,
+  ): Promise<CsvInspection> =>
     (await apiClient.post<CsvInspection>(`${batchPath(account, batch)}/inspect`, { delimiter }))
       .data,
   preview: async (
@@ -167,6 +217,18 @@ export const csvImportsApi = {
     (await apiClient.post<CsvReceipt>(`${batchPath(account, batch)}/confirm`, input)).data,
   rollback: async (account: string, batch: string, input: CsvRollback): Promise<CsvReceipt> =>
     (await apiClient.post<CsvReceipt>(`${batchPath(account, batch)}/rollback`, input)).data,
+  reconciliation: async (
+    account: string,
+    batch: string,
+    columns: CsvReferenceColumns,
+  ): Promise<CsvReconciliation> =>
+    (
+      await apiClient.get<CsvReconciliation>(`${batchPath(account, batch)}/reconciliation`, {
+        params: Object.fromEntries(
+          Object.entries(columns).map(([key, index]) => [key, String(index)]),
+        ),
+      })
+    ).data,
   rows: async (
     account: string,
     batch: string,

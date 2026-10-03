@@ -26,8 +26,15 @@ import {
   validateDisplayName,
 } from './csv-input';
 import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
+import {
+  type SheetCheck,
+  parseReconciliationQuery,
+  reconcileCells,
+  sumDecimals,
+  unrealizedAtPrice,
+} from './csv-reconciliation';
 import { type Execution, FifoHistoryError, type FifoTrade } from './fifo';
-import { parseUuid } from './input';
+import { parseDecimal, parseUuid } from './input';
 import { type AccountFifoResult, OwnedTransferCapacityError } from './owned-transfer-fifo';
 import {
   type JournalRow,
@@ -141,6 +148,11 @@ function executionTuple(value: Execution) {
 function tuples(settings: Settings) {
   const { format, mapping } = settings;
   const c = mapping.columns;
+  // Settings without SHEET-1 companions keep the exact v1 encoding of earlier receipts.
+  const sheet =
+    mapping.allRowsSide !== undefined || settings.feeIncludedInGross !== undefined
+      ? [['sheet-v1', mapping.allRowsSide ?? null, settings.feeIncludedInGross === true]]
+      : [];
   return {
     format: [
       format.delimiter,
@@ -151,16 +163,17 @@ function tuples(settings: Settings) {
     mapping: [
       [
         c.instrument,
-        c.side,
+        c.side ?? null,
         c.occurredAt,
-        c.order,
+        c.order ?? null,
         c.quantity,
         c.grossUsd,
-        c.feeUsd,
+        c.feeUsd ?? null,
         c.currency ?? null,
       ],
       mapping.instruments.map((v) => [v.source, v.instrumentId]),
       mapping.sides.map((v) => [v.source, v.side]),
+      ...sheet,
     ],
   };
 }
@@ -340,6 +353,7 @@ export class CsvImportService {
           format: input.format,
           mapping: input.mapping,
           assertUsd: true,
+          ...(input.feeIncludedInGross ? { feeIncludedInGross: true as const } : {}),
         };
         await manager.query(
           'UPDATE account_csv_imports SET state=\'committed\',"acceptedSettings"=$4::jsonb WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
@@ -522,6 +536,120 @@ export class CsvImportService {
     });
   }
 
+  async reconciliation(ownerId: string, accountId: string, batchId: string, raw: unknown = {}) {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const target = parseUuid(batchId);
+    const columns = parseReconciliationQuery(raw);
+    const report = await this.read(async (manager) => {
+      await readOwnedAccount(manager, owner, id);
+      const batch = await this.batch(manager, owner, id, target, true);
+      if (batch.state !== 'committed' || !batch.acceptedSettings) throw conflict();
+      const { format } = batch.acceptedSettings;
+      const document = parseCsvSource(sourceBytes(batch), format.delimiter);
+      if (!document.valid) throw new Error('Committed CSV source no longer parses');
+      // Returned, not thrown: read() maps 400s inside the snapshot to history conflicts.
+      if (Object.values(columns).some((index) => index >= document.headers.length)) return null;
+      const links = await this.links(manager, owner, id, target);
+      const heads = new Map(
+        (await readTradeHeads(manager, owner, id)).map((head) => [head.tradeId, head]),
+      );
+      const current = links.map((link) => {
+        const head = heads.get(link.tradeId);
+        const source = document.rows[link.ordinal - 1];
+        if (!head || source?.ordinal !== link.ordinal) throw new Error('Incomplete CSV provenance');
+        return { link, head, cells: source.cells };
+      });
+      const prices = await this.latestPrices(manager, owner, [
+        ...new Set(current.filter((r) => r.head.kind !== 'void').map((r) => r.head.instrumentId)),
+      ]);
+      const rows = current.map(({ link, head, cells }) => {
+        const base = { ordinal: link.ordinal, startLine: link.startLine, tradeId: link.tradeId };
+        if (head.kind === 'void')
+          return {
+            ...base,
+            status: 'voided' as const,
+            instrumentId: null,
+            occurredAt: null,
+            quantity: null,
+            costUsd: null,
+            checks: [] as SheetCheck[],
+            latestPrice: null,
+            valueUsd: null,
+            unrealizedPnlUsd: null,
+            unrealizedReturnPercent: null,
+          };
+        const costUsd = sumDecimals([head.grossUsd, head.feeUsd]);
+        const price = prices.get(head.instrumentId) ?? null;
+        return {
+          ...base,
+          status:
+            head.version === link.createVersion ? ('imported' as const) : ('modified' as const),
+          instrumentId: head.instrumentId,
+          occurredAt: head.occurredAt,
+          quantity: head.quantity,
+          costUsd,
+          checks: reconcileCells({
+            quantity: head.quantity,
+            costUsd,
+            cells,
+            columns,
+            decimalSeparator: format.decimalSeparator,
+          }),
+          latestPrice: price,
+          ...(price
+            ? unrealizedAtPrice(head.quantity, costUsd, price.priceUsd)
+            : { valueUsd: null, unrealizedPnlUsd: null, unrealizedReturnPercent: null }),
+        };
+      });
+      const held = rows.filter((row) => row.status !== 'voided');
+      const count = (result: SheetCheck['result']) =>
+        rows.reduce(
+          (total, row) => total + row.checks.filter((c) => c.result === result).length,
+          0,
+        );
+      return {
+        batchId: target,
+        batchState: batch.state,
+        columns,
+        rows,
+        totals: {
+          matchCount: count('match'),
+          mismatchCount: count('mismatch'),
+          unreadableCount: count('unreadable'),
+          unavailableCount: count('unavailable'),
+          costUsd: sumDecimals(held.map((row) => row.costUsd as string)),
+          unrealizedPnlUsd: held.every((row) => row.unrealizedPnlUsd !== null)
+            ? sumDecimals(held.map((row) => row.unrealizedPnlUsd as string))
+            : null,
+        },
+      };
+    });
+    if (!report) throw invalid();
+    return report;
+  }
+
+  /** Newest observation per instrument whose latest revision is a set (SHEET-3). */
+  private async latestPrices(manager: EntityManager, owner: string, ids: string[]) {
+    if (ids.length === 0) return new Map<string, { priceUsd: string; observedAt: string }>();
+    const rows: { instrumentId: string; observedAt: Date; priceUsd: string }[] =
+      await manager.query(
+        `SELECT DISTINCT ON (p."instrumentId") p."instrumentId", p."observedAt", p."priceUsd"
+        FROM (SELECT DISTINCT ON (v."instrumentId", v."observedAt") v."instrumentId",
+            v."observedAt", v."priceUsd"::text AS "priceUsd", v.kind
+          FROM manual_usd_price_versions v WHERE v."ownerId"=$1 AND v."instrumentId"=ANY($2::uuid[])
+          ORDER BY v."instrumentId", v."observedAt", v.revision DESC) p
+        WHERE p.kind='set' ORDER BY p."instrumentId", p."observedAt" DESC`,
+        [owner, ids],
+      );
+    return new Map(
+      rows.map((row) => [
+        row.instrumentId,
+        { priceUsd: parseDecimal(row.priceUsd, false), observedAt: row.observedAt.toISOString() },
+      ]),
+    );
+  }
+
   private async evaluate(
     manager: EntityManager,
     owner: string,
@@ -543,7 +671,7 @@ export class CsvImportService {
     const summaryBefore = projectConnectedLedger(ledger).accounts.get(id)!.summary;
     const document = parseCsvSource(sourceBytes(batch), settings.format.delimiter);
     const normalized = document.valid
-      ? normalizeCsvRows(document, settings)
+      ? normalizeCsvRows(document, settings, { active: active(heads).map(execution) })
       : { rows: [], rowErrors: [], ignoredColumns: [], batchErrors: [document.error] };
     const batchErrors: CsvIssue[] = [...normalized.batchErrors];
     let candidateSummary: AccountFifoResult['summary'] | null = null;

@@ -1,5 +1,11 @@
 import type { Instrument } from '@api/accounting.api';
-import type { CsvDocument, CsvField, CsvSettings } from '@api/csv-imports.api';
+import type {
+  CsvDelimiter,
+  CsvDocument,
+  CsvField,
+  CsvSettings,
+  CsvTimestampMode,
+} from '@api/csv-imports.api';
 import { useId } from 'react';
 import './OperationForm.css';
 import { csvFields } from './CsvPreview';
@@ -16,10 +22,22 @@ export interface CsvMappingDraft {
   instruments: Array<{ source: string; instrumentId: string }>;
   sides: Array<{ source: string; side: 'buy' | 'sell' }>;
   decimalSeparator: '.' | ',';
-  timestampMode: 'offset' | 'fixed-offset';
+  timestampMode: CsvTimestampMode;
   fixedOffset: string;
+  allRowsBuy: boolean;
+  feeIncluded: boolean;
   assertUsd: boolean;
 }
+// Columns that may stay unmapped; side, fee and order need an explicit statement instead.
+const optionalFields: CsvField[] = ['side', 'order', 'feeUsd', 'currency'];
+const requiredFields: CsvField[] = ['instrument', 'occurredAt', 'quantity', 'grossUsd'];
+// The owner's purchase sheet: Дата, Купил, Количество, Купил за, За количество, в USD, …
+const sheetHeaders: Partial<Record<CsvField, string>> = {
+  occurredAt: 'Дата',
+  instrument: 'Купил',
+  quantity: 'Количество',
+  grossUsd: 'в USD',
+};
 export function emptyCsvMapping(): CsvMappingDraft {
   return {
     columns: {
@@ -37,7 +55,26 @@ export function emptyCsvMapping(): CsvMappingDraft {
     decimalSeparator: '.',
     timestampMode: 'offset',
     fixedOffset: '+00:00',
+    allRowsBuy: false,
+    feeIncluded: false,
     assertUsd: false,
+  };
+}
+/** Fills only layout choices; instruments and the USD attestation stay explicit. */
+export function purchaseSheetMapping(document: CsvDocument): CsvMappingDraft {
+  const empty = emptyCsvMapping();
+  const columns = { ...empty.columns };
+  for (const [field, header] of Object.entries(sheetHeaders) as [CsvField, string][]) {
+    const index = document.headers.indexOf(header);
+    if (index !== -1) columns[field] = String(index);
+  }
+  return {
+    ...empty,
+    columns,
+    decimalSeparator: ',',
+    timestampMode: 'day-month-year-utc',
+    allRowsBuy: true,
+    feeIncluded: true,
   };
 }
 function sourceKeys(document: CsvDocument, index: string): string[] {
@@ -48,12 +85,19 @@ function sourceKeys(document: CsvDocument, index: string): string[] {
 export function csvSettings(
   draft: CsvMappingDraft,
   document: CsvDocument,
-  delimiter: ',' | ';',
+  delimiter: CsvDelimiter,
 ): CsvSettings {
-  const fields = (Object.keys(csvFields) as CsvField[]).filter((field) => field !== 'currency');
   if (!draft.assertUsd) throw new Error('Подтвердите, что валовые суммы и комиссии указаны в USD.');
-  if (fields.some((field) => draft.columns[field] === ''))
-    throw new Error('Выберите каждую обязательную колонку, включая комиссию и порядок.');
+  if (requiredFields.some((field) => draft.columns[field] === ''))
+    throw new Error('Выберите колонки инструмента, даты, количества и суммы USD.');
+  const noSide = draft.columns.side === '';
+  const noFee = draft.columns.feeUsd === '';
+  if (noSide && !draft.allRowsBuy)
+    throw new Error('Выберите колонку типа сделки или отметьте, что все строки — покупки.');
+  if (noFee && !draft.feeIncluded)
+    throw new Error('Выберите колонку комиссии или отметьте, что комиссия включена в сумму.');
+  if (draft.columns.order === '' && draft.timestampMode !== 'day-month-year-utc')
+    throw new Error('Колонку порядка можно не выбирать только для дат без времени.');
   const selected = Object.values(draft.columns).filter((value) => value !== '');
   if (new Set(selected).size !== selected.length)
     throw new Error('Для каждого поля нужна отдельная колонка.');
@@ -68,6 +112,8 @@ export function csvSettings(
     if (!entry) throw new Error('Выберите покупку или продажу для каждого исходного значения.');
     return { ...entry };
   });
+  const optional = (field: CsvField) =>
+    draft.columns[field] === '' ? {} : { [field]: Number(draft.columns[field]) };
   return {
     format: {
       delimiter,
@@ -78,18 +124,20 @@ export function csvSettings(
     mapping: {
       columns: {
         instrument: Number(draft.columns.instrument),
-        side: Number(draft.columns.side),
+        ...optional('side'),
         occurredAt: Number(draft.columns.occurredAt),
-        order: Number(draft.columns.order),
+        ...optional('order'),
         quantity: Number(draft.columns.quantity),
         grossUsd: Number(draft.columns.grossUsd),
-        feeUsd: Number(draft.columns.feeUsd),
-        ...(draft.columns.currency === '' ? {} : { currency: Number(draft.columns.currency) }),
+        ...optional('feeUsd'),
+        ...optional('currency'),
       },
       instruments,
       sides,
+      ...(noSide ? { allRowsSide: 'buy' as const } : {}),
     },
     assertUsd: true,
+    ...(noFee ? { feeIncludedInGross: true as const } : {}),
   };
 }
 
@@ -122,6 +170,20 @@ export function CsvMapping({
       <legend>Сопоставление колонок и значений</legend>
       <section className="operation-form__section">
         <h3>Колонки источника</h3>
+        <button
+          type="button"
+          className="manual-button manual-button--secondary"
+          aria-describedby={`${descriptionId}-sheet`}
+          onClick={() => onChange(purchaseSheetMapping(document))}
+        >
+          Заполнить по таблице покупок
+        </button>
+        <p id={`${descriptionId}-sheet`} className="operation-form__hint">
+          Для таблицы с колонками Дата, Купил, Количество, Купил за, За количество, в USD: выбирает
+          эти колонки, десятичную запятую и даты без времени, отмечает «все строки — покупки» и
+          «комиссия включена». Инструменты и подтверждение USD выберите сами. Колонка «в USD»
+          становится себестоимостью, даже если платили в USDT.
+        </p>
         <div className="operation-form__fields">
           {(Object.keys(csvFields) as CsvField[]).map((field) => (
             <label key={field}>
@@ -139,7 +201,7 @@ export function CsvMapping({
                 }
               >
                 <option value="">
-                  {field === 'currency' ? 'Не сопоставлена' : 'Выберите колонку'}
+                  {optionalFields.includes(field) ? 'Не сопоставлена' : 'Выберите колонку'}
                 </option>
                 {document.headers.map((header, index) => (
                   <option key={`${index}:${header}`} value={index}>
@@ -154,8 +216,28 @@ export function CsvMapping({
           Количество и валовая сумма — общий итог сделки, а не цена за единицу.
         </p>
         <p id={`${descriptionId}-fee`} className="operation-form__hint">
-          Комиссия обязательна; ноль указывайте явно.
+          Если колонки комиссии нет, явно отметьте, что комиссия уже включена в сумму USD.
         </p>
+        {draft.columns.side === '' && (
+          <label className="manual-review-check">
+            <input
+              type="checkbox"
+              checked={draft.allRowsBuy}
+              onChange={(event) => onChange({ ...draft, allRowsBuy: event.target.checked })}
+            />
+            Все строки — покупки
+          </label>
+        )}
+        {draft.columns.feeUsd === '' && (
+          <label className="manual-review-check">
+            <input
+              type="checkbox"
+              checked={draft.feeIncluded}
+              onChange={(event) => onChange({ ...draft, feeIncluded: event.target.checked })}
+            />
+            Комиссия уже включена в сумму в USD
+          </label>
+        )}
         <p id={`${descriptionId}-currency`} className="operation-form__hint">
           Колонку валюты можно не сопоставлять. Если она сопоставлена, каждое значение должно быть
           USD.
@@ -264,12 +346,13 @@ export function CsvMapping({
               onChange={(event) =>
                 onChange({
                   ...draft,
-                  timestampMode: event.target.value as 'offset' | 'fixed-offset',
+                  timestampMode: event.target.value as CsvTimestampMode,
                 })
               }
             >
               <option value="offset">В каждой дате указано смещение или Z</option>
               <option value="fixed-offset">Местное время с общим фиксированным смещением</option>
+              <option value="day-month-year-utc">Только дата ДД.ММ.ГГГГ (начало дня по UTC)</option>
             </select>
           </label>
           {draft.timestampMode === 'fixed-offset' && (
@@ -287,7 +370,10 @@ export function CsvMapping({
         <p id={`${descriptionId}-time`} className="operation-form__hint">
           Поддерживается дата ISO с секундами и до трёх десятичных знаков. Используйте явное
           смещение или Z в каждой дате либо задайте общее фиксированное смещение. Летнее время не
-          угадывается; порядок совпадающих моментов задаётся отдельной колонкой.
+          угадывается; порядок совпадающих моментов задаётся отдельной колонкой. Дата без времени
+          (13.06.2025) записывается как 00:00 UTC этого дня; без колонки порядка строки одной даты
+          идут в порядке файла после уже записанных сделок этой даты. Строка, полностью совпадающая
+          с уже записанной сделкой, отклоняется как повтор.
         </p>
       </section>
       <label className="manual-review-check">
