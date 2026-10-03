@@ -7,9 +7,10 @@ describe('ADDR-ADD: Bitcoin mainnet address validation', () => {
     ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2'],
     ['3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy'],
     ['BC1QW508D6QEJXTDG4Y5R3ZARVARY0C5XW7KV8F3T4', 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'],
+    // 32-byte v0 program; checksum computed with the BIP-173 algorithm verified above.
     [
-      'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
-      'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3',
+      'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q6vkm53',
+      'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q6vkm53',
     ],
     [
       'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0',
@@ -30,6 +31,7 @@ describe('ADDR-ADD: Bitcoin mainnet address validation', () => {
       'taproot with bech32 instead of bech32m checksum',
       'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqh2y7hd',
     ],
+    ['truncated v0 program', 'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0g6vkm53'],
     ['surrounding whitespace', ' 1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2'],
     ['free text', 'not-an-address'],
     ['empty', ''],

@@ -11,6 +11,7 @@ const accountingLinks = [
   ['/owned-transfers', 'Переводы между счетами'],
   ['/capital-flows', 'Вводы и выводы'],
   ['/manual-prices', 'Ручные цены'],
+  ['/wallet-addresses', 'Адреса кошельков'],
   ['/period-profit', 'Прибыль за период'],
   ['/settings', 'Настройки'],
 ] as const;

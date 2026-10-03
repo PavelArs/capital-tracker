@@ -42,7 +42,13 @@ const tx = (txid: string, vin: unknown[], vout: unknown[], fee: number, height: 
 });
 
 // Newest first, as Esplora returns them.
-const receive = tx(hex('1'), [input(other, 1_000_000)], [output(owned, 150_000), output(other, 849_000)], 1_000, 840_004);
+const receive = tx(
+  hex('1'),
+  [input(other, 1_000_000)],
+  [output(owned, 150_000), output(other, 849_000)],
+  1_000,
+  840_004,
+);
 const spendWithChange = tx(
   hex('2'),
   [input(owned, 50_000), input(owned, 7_000, hex('8')), input(other, 9_000)],
@@ -53,12 +59,28 @@ const spendWithChange = tx(
 const selfTransfer = tx(hex('3'), [input(owned, 20_000)], [output(owned, 19_800)], 200, 840_002);
 const coinbase = tx(
   hex('4'),
-  [{ txid: hex('0'), vout: 4294967295, prevout: null, scriptsig: '03', scriptsig_asm: '', is_coinbase: true, sequence: 4294967295 }],
+  [
+    {
+      txid: hex('0'),
+      vout: 4294967295,
+      prevout: null,
+      scriptsig: '03',
+      scriptsig_asm: '',
+      is_coinbase: true,
+      sequence: 4294967295,
+    },
+  ],
   [output(owned, 312_500_000), output(null, 0)],
   0,
   840_001,
 );
-const unrelatedOutputOnly = tx(hex('5'), [input(other, 3_000)], [output(other, 2_000)], 1_000, 840_000);
+const unrelatedOutputOnly = tx(
+  hex('5'),
+  [input(other, 3_000)],
+  [output(other, 2_000)],
+  1_000,
+  840_000,
+);
 
 type Reply = { status: number; body: string; delayMs?: number; headers?: Record<string, string> };
 
@@ -183,7 +205,11 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
     [400, 'unavailable'],
     [302, 'unavailable'],
   ] as const)('ADDR-SYNC-RESUME maps HTTP %d to %s', async (code, reason) => {
-    replies.push({ status: code, body: '{}', headers: code === 302 ? { location: '/api/elsewhere' } : {} });
+    replies.push({
+      status: code,
+      body: '{}',
+      headers: code === 302 ? { location: '/api/elsewhere' } : {},
+    });
     await expect(client().page(owned, null)).resolves.toEqual({ ok: false, reason });
     expect(requests).toHaveLength(1);
   });
@@ -196,7 +222,15 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
   const invalidBodies: [string, string][] = [
     ['non-JSON body', 'not json'],
     ['object instead of list', JSON.stringify({ txs: [] })],
-    ['more than one page', JSON.stringify(Array.from({ length: PAGE_SIZE + 1 }, (_, i) => ({ ...receive, txid: i.toString(16).padStart(64, '0') })))],
+    [
+      'more than one page',
+      JSON.stringify(
+        Array.from({ length: PAGE_SIZE + 1 }, (_, i) => ({
+          ...receive,
+          txid: i.toString(16).padStart(64, '0'),
+        })),
+      ),
+    ],
     ['non-hex txid', JSON.stringify([{ ...receive, txid: 'z'.repeat(64) }])],
     ['upper-case txid', JSON.stringify([{ ...receive, txid: 'A'.repeat(64) }])],
     ['fractional value', JSON.stringify([{ ...receive, vout: [output(owned, 1.5)] }])],
@@ -205,7 +239,10 @@ describe('Esplora adapter at the outbound HTTP boundary', () => {
     ['missing fee', JSON.stringify([{ ...receive, fee: undefined }])],
     ['unconfirmed transaction', JSON.stringify([{ ...receive, status: { confirmed: false } }])],
     ['bad block hash', JSON.stringify([{ ...receive, status: { ...status(1), block_hash: 'x' } }])],
-    ['negative height', JSON.stringify([{ ...receive, status: { ...status(1), block_height: -1 } }])],
+    [
+      'negative height',
+      JSON.stringify([{ ...receive, status: { ...status(1), block_height: -1 } }]),
+    ],
     ['duplicate txid in page', JSON.stringify([receive, receive])],
     ['transaction unrelated to the address', JSON.stringify([unrelatedOutputOnly])],
   ];

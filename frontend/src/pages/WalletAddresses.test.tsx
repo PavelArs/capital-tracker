@@ -80,7 +80,9 @@ describe('ADDR-UI wallet address page', () => {
     const sync = vi.spyOn(walletAddressesApi, 'sync');
     renderPage();
     expect(await screen.findByText('Адресов пока нет.')).toBeTruthy();
-    fireEvent.change(screen.getByLabelText('Адрес Bitcoin'), { target: { value: `  ${address} ` } });
+    fireEvent.change(screen.getByLabelText('Адрес Bitcoin'), {
+      target: { value: `  ${address} ` },
+    });
     fireEvent.click(screen.getByRole('button', { name: 'Добавить адрес' }));
     const card = await screen.findByRole('region', { name: `Адрес ${address}` });
     expect(register).toHaveBeenCalledWith(address);

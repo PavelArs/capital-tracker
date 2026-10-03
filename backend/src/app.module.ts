@@ -22,8 +22,8 @@ import { DisplayFxModule } from './display-fx/display-fx.module';
 import { HealthModule } from './health/health.module';
 import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { MetricsModule } from './metrics/metrics.module';
-import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.module';
 import { GlobalExceptionFilter } from './shared/filters';
+import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.module';
 
 @Module({
   imports: [

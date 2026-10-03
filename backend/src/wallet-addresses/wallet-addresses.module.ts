@@ -5,6 +5,9 @@ import { WalletAddressService } from './wallet-address.service';
 
 @Module({
   controllers: [WalletAddressController],
-  providers: [WalletAddressService, { provide: EsploraClient, useFactory: () => new EsploraClient() }],
+  providers: [
+    WalletAddressService,
+    { provide: EsploraClient, useFactory: () => new EsploraClient() },
+  ],
 })
 export class WalletAddressesModule {}
