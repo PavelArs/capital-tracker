@@ -64,6 +64,7 @@ service branch only).
 | Run | Result |
 | --- | --- |
 | Run 37146733892 on `3b067fe` | All unit, lint, build and gate jobs green. Critical acceptance: 20 of 21 passed, including SHEET-UI. CSV-006-A failed: the fee column description no longer said that a zero fee must be entered explicitly (`/нул\|ноль\|\b0\b/` expected). Fixed by restoring that sentence next to the new "fee included" statement; the assertion is unchanged. Image scans did not run because acceptance failed first. |
+| Run 37148705404 on `c6c2a17` | Critical acceptance passed, all 21 cases, including SHEET-UI and CSV-006-A. The exact-image security gate failed. The diff does not touch any image and the sanitized report was not readable from here; the failure is taken to be the pinned nginx base's pcre2 10.48-r0 finding fixed on PR #30 by requiring `pcre2>=10.49-r0` in `frontend/Dockerfile`, and PR #30 is green with it. The same two lines are ported here; they no-op once #30 merges. |
 
 ## Not run here
 
