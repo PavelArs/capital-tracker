@@ -181,8 +181,8 @@ export function CsvImports({
     if (batchResult.status === 'fulfilled') {
       setDetail(batchResult.value);
       // Reconciliation reads the source with the delimiter the batch was accepted with.
-      const accepted = batchResult.value.acceptedSettings?.format.delimiter;
-      if (accepted && !recoveries.has(accountId)) setDelimiter(accepted);
+      const acceptedDelimiter = batchResult.value.acceptedSettings?.format.delimiter;
+      if (acceptedDelimiter && !recoveries.has(accountId)) setDelimiter(acceptedDelimiter);
     }
     const complete =
       batchResult.status === 'fulfilled' &&
@@ -596,20 +596,28 @@ export function CsvImports({
         </section>
       )}
       {inspection && <CsvSource inspection={inspection} />}
-      {detail?.batch.state === 'committed' && selected && !inspection?.valid && (
-        <p className="manual-muted">
-          Чтобы сверить партию с таблицей, просмотрите исходные строки файла.
-        </p>
-      )}
-      {detail?.batch.state === 'committed' && selected && inspection?.valid && (
-        <CsvReconciliationPanel
-          accountId={accountId}
-          batchId={selected}
-          document={inspection}
-          instruments={instruments}
-          disabled={locked || reading}
-        />
-      )}
+      {detail?.batch.state === 'committed' &&
+        selected &&
+        (!inspection?.valid || delimiter !== detail.acceptedSettings?.format.delimiter) && (
+          <p className="manual-muted">
+            Чтобы сверить партию с таблицей, просмотрите исходные строки файла с тем же
+            разделителем, с которым партия была импортирована.
+          </p>
+        )}
+      {detail?.batch.state === 'committed' &&
+        selected &&
+        inspection?.valid &&
+        // Column numbers must match the server's parse with the accepted delimiter.
+        delimiter === detail.acceptedSettings?.format.delimiter && (
+          <CsvReconciliationPanel
+            accountId={accountId}
+            batchId={selected}
+            document={inspection}
+            instruments={instruments}
+            journalRevision={journalRevision}
+            disabled={locked || reading}
+          />
+        )}
       {inspection?.valid && detail?.batch.state === 'draft' && (
         <div className="csv-imports__section">
           <CsvMapping

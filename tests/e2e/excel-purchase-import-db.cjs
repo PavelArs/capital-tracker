@@ -185,7 +185,13 @@ async function explicitAndInvalid(source, svc, fx) {
   const { feeIncludedInGross: _fee, ...noFee } = input;
   for (const refused of [noFee, { ...input, mapping: { ...input.mapping, allRowsSide: 'sell' } },
     { ...input, mapping: { ...input.mapping, allRowsSide: undefined } },
-    { ...input, format: { ...input.format, timestampMode: 'offset' } }])
+    { ...input, mapping: { ...input.mapping, columns: { ...input.mapping.columns, side: 3 },
+      sides: [{ source: 'USDT', side: 'buy' }] } },
+    { ...input, format: { ...input.format, fixedOffset: '+03:00' } },
+    // Every column except order, outside date mode: only the order rule refuses it.
+    { format: { delimiter: '\t', decimalSeparator: ',', timestampMode: 'fixed-offset',
+      fixedOffset: '+00:00' }, assertUsd: true, mapping: { instruments: input.mapping.instruments,
+      columns: { ...input.mapping.columns, side: 3, feeUsd: 4 }, sides: [{ source: 'USDT', side: 'buy' }] } }])
     await unchanged(source, () => svc.csv.preview(fx.owner, account, batch.batchId, refused), 400);
   assert.equal(await fingerprint(source), before);
   console.log('PASS SHEET-INVALID / SHEET-EXPLICIT bad dates/amounts and missing companions refuse the whole batch without writes');

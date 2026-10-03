@@ -192,24 +192,27 @@ const sameExecution = (a: Execution, b: Execution) =>
   a.grossUsd === b.grossUsd &&
   a.feeUsd === b.feeUsd;
 
+type Slot = Pick<Execution, 'occurredAt' | 'orderWithinTimestamp'>;
 /**
- * `active` holds the account's current trades. Without an order column (date mode only),
- * rows of one instant follow its largest active order in file order; date-mode rows that
- * repeat an active trade are SHEET-2 duplicates.
+ * `active` holds the account's current trades; `occupied` every chronology slot of the
+ * account (trades, rewards, swaps and both sides of transfers), defaulting to `active`.
+ * Without an order column (date mode only), rows of one instant follow its largest
+ * occupied order in file order; date-mode rows that repeat an active trade are SHEET-2
+ * duplicates.
  */
 export function normalizeCsvRows(
   document: Extract<CsvInspection, { valid: true }>,
   settings: CsvSettings,
-  context: { active: readonly Execution[] } = { active: [] },
+  context: { active: readonly Execution[]; occupied?: readonly Slot[] } = { active: [] },
 ): CsvNormalization {
   const { columns } = settings.mapping;
   const dateOnly = settings.format.timestampMode === 'day-month-year-utc';
   const nextOrder = new Map<string, number>();
   if (columns.order === undefined)
-    for (const trade of context.active)
+    for (const slot of context.occupied ?? context.active)
       nextOrder.set(
-        trade.occurredAt,
-        Math.max(nextOrder.get(trade.occurredAt) ?? 1, trade.orderWithinTimestamp + 1),
+        slot.occurredAt,
+        Math.max(nextOrder.get(slot.occurredAt) ?? 1, slot.orderWithinTimestamp + 1),
       );
   const mappedIndexes = new Set(Object.values(columns));
   const ignoredColumns = document.headers.flatMap((header, index) =>

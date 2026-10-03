@@ -27,9 +27,10 @@ recorded instant may be up to a day earlier than the real purchase time. Journal
 coverage must start at or before the first sheet date.
 
 ### Order assignment
-Without an order column, a row's order is computed from the account's active trades
-at that instant (largest order + 1, or 1) plus its rank among the file's rows of the
-same date. The result is deterministic for a given journal revision; the preview hash
+Without an order column, a row's order is computed from every chronology slot the
+account occupies at that instant (trades, rewards, swaps and transfers on either side,
+as the connected ledger validates them; largest order + 1, or 1) plus its rank among
+the file's rows of the same date. The result is deterministic for a given journal revision; the preview hash
 already binds the journal revision and every normalized execution, so confirm
 recomputes and rejects a stale preview. This avoids `duplicate-chronology` when a
 day already has trades (for example an earlier file of the same sheet).

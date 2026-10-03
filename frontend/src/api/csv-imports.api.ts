@@ -135,6 +135,7 @@ export interface CsvReconciliation {
     startLine: number;
     tradeId: string;
     status: 'imported' | 'modified' | 'voided';
+    side: 'buy' | 'sell' | null;
     instrumentId: string | null;
     occurredAt: string | null;
     quantity: string | null;

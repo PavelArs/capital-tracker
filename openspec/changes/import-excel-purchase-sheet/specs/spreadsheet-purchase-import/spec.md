@@ -18,7 +18,8 @@ upload, inspect, preview, confirm and rollback routes, using only explicit setti
   mapped gross USD total. `feeIncludedInGross` SHALL be rejected when a fee column is mapped.
 - `mapping.columns.order` MAY be omitted only in `day-month-year-utc` mode. Rows of one
   date SHALL then take consecutive orders, in file order, starting one above the largest
-  `orderWithinTimestamp` of the account's active trades at that instant, or at 1 when none.
+  `orderWithinTimestamp` the account occupies at that instant (active trades, rewards,
+  swaps and transfers on either side), or at 1 when none.
 - Settings that omit a column without its explicit companion, or carry a companion with
   the column mapped, SHALL fail with 400 and write nothing.
 
@@ -76,9 +77,11 @@ batch SHALL return 409; an inaccessible account or batch generic 404.
 
 For every imported row the response SHALL include the ordinal, start line, trade id,
 status (`imported`, `modified` when the trade's current head is a later correction, or
-`voided`), and for non-voided rows the current instrument, instant, quantity and
-`costUsd` = gross + fee. For each requested column it SHALL return the sheet cell, the
-app value and a result:
+`voided`), the current side, and for non-voided rows the current instrument, instant and
+quantity. For purchases it SHALL return `costUsd` = gross + fee and, for each requested
+column, the sheet cell, the app value and a result; a sale (for example a row later
+corrected into a sale) SHALL have null cost, no checks and no price fields and SHALL be
+left out of the totals:
 
 - `usdAmount` compares cost; `rate` compares cost / quantity;
 - with a readable `currentRate` R: `currentValue` compares quantity × R, `difference`
@@ -93,12 +96,13 @@ app value and a result:
 - the displayed app value SHALL be rounded half away from zero to the cell's decimal
   places, or to two places when the cell is unreadable.
 
-Each non-voided row SHALL also report the latest manual USD price of its instrument
+Each purchase row SHALL also report the latest manual USD price of its instrument
 (the most recent observation whose latest revision is not void, with its instant) and,
 at that price, exact `valueUsd`, exact `unrealizedPnlUsd` and `unrealizedReturnPercent`
 rounded to two places, or nulls when no such price exists. Totals SHALL count matches,
-mismatches, unreadable and unavailable checks, sum `costUsd`, and sum `unrealizedPnlUsd`
-only when every non-voided row has a price. The route SHALL write nothing and SHALL NOT
+mismatches, unreadable and unavailable checks, sum `costUsd` of purchases, and sum
+`unrealizedPnlUsd` only when every purchase row has a price. These per-purchase results
+value each purchase's full quantity and do not account for later sales; the UI SHALL say so. The route SHALL write nothing and SHALL NOT
 call a provider.
 
 #### Scenario: SHEET-RECON-SAMPLE The owner's numbers match the app

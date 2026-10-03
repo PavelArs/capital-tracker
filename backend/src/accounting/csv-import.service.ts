@@ -561,33 +561,47 @@ export class CsvImportService {
         return { link, head, cells: source.cells };
       });
       const prices = await this.latestPrices(manager, owner, [
-        ...new Set(current.filter((r) => r.head.kind !== 'void').map((r) => r.head.instrumentId)),
+        ...new Set(
+          current
+            .filter((r) => r.head.kind !== 'void' && r.head.side === 'buy')
+            .map((r) => r.head.instrumentId),
+        ),
       ]);
+      const empty = {
+        costUsd: null,
+        checks: [] as SheetCheck[],
+        latestPrice: null,
+        valueUsd: null,
+        unrealizedPnlUsd: null,
+        unrealizedReturnPercent: null,
+      };
       const rows = current.map(({ link, head, cells }) => {
         const base = { ordinal: link.ordinal, startLine: link.startLine, tradeId: link.tradeId };
         if (head.kind === 'void')
           return {
             ...base,
             status: 'voided' as const,
+            side: null,
             instrumentId: null,
             occurredAt: null,
             quantity: null,
-            costUsd: null,
-            checks: [] as SheetCheck[],
-            latestPrice: null,
-            valueUsd: null,
-            unrealizedPnlUsd: null,
-            unrealizedReturnPercent: null,
+            ...empty,
           };
-        const costUsd = sumDecimals([head.grossUsd, head.feeUsd]);
-        const price = prices.get(head.instrumentId) ?? null;
-        return {
+        const live = {
           ...base,
           status:
             head.version === link.createVersion ? ('imported' as const) : ('modified' as const),
+          side: head.side,
           instrumentId: head.instrumentId,
           occurredAt: head.occurredAt,
           quantity: head.quantity,
+        };
+        // A sale has no purchase cost basis to compare with a purchase sheet.
+        if (head.side !== 'buy') return { ...live, ...empty };
+        const costUsd = sumDecimals([head.grossUsd, head.feeUsd]);
+        const price = prices.get(head.instrumentId) ?? null;
+        return {
+          ...live,
           costUsd,
           checks: reconcileCells({
             quantity: head.quantity,
@@ -602,7 +616,7 @@ export class CsvImportService {
             : { valueUsd: null, unrealizedPnlUsd: null, unrealizedReturnPercent: null }),
         };
       });
-      const held = rows.filter((row) => row.status !== 'voided');
+      const held = rows.filter((row) => row.costUsd !== null);
       const count = (result: SheetCheck['result']) =>
         rows.reduce(
           (total, row) => total + row.checks.filter((c) => c.result === result).length,
@@ -670,8 +684,19 @@ export class CsvImportService {
     const ledger = loadedLedger ?? (await readConnectedLedger(manager, owner, [id]));
     const summaryBefore = projectConnectedLedger(ledger).accounts.get(id)!.summary;
     const document = parseCsvSource(sourceBytes(batch), settings.format.delimiter);
+    const account = ledger.accounts.get(id)!;
+    // Every chronology slot of the account, as the connected ledger validates them.
+    const occupied = [
+      ...account.trades,
+      ...(account.rewards ?? []),
+      ...(account.swaps ?? []),
+      ...ledger.transfers.filter((t) => t.fromAccountId === id || t.toAccountId === id),
+    ].map((slot) => ({
+      occurredAt: slot.occurredAt,
+      orderWithinTimestamp: slot.orderWithinTimestamp,
+    }));
     const normalized = document.valid
-      ? normalizeCsvRows(document, settings, { active: active(heads).map(execution) })
+      ? normalizeCsvRows(document, settings, { active: active(heads).map(execution), occupied })
       : { rows: [], rowErrors: [], ignoredColumns: [], batchErrors: [document.error] };
     const batchErrors: CsvIssue[] = [...normalized.batchErrors];
     let candidateSummary: AccountFifoResult['summary'] | null = null;

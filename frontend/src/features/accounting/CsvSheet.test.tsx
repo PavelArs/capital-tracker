@@ -171,6 +171,7 @@ describe('SHEET-4 reconciliation view', () => {
           startLine: 2,
           tradeId: '22222222-2222-4222-8222-222222222222',
           status: 'imported',
+          side: 'buy',
           instrumentId: btc.id,
           occurredAt: '2025-06-13T00:00:00.000Z',
           quantity: '0.00918359',
@@ -206,6 +207,6 @@ describe('SHEET-4 reconciliation view', () => {
     expect(row).toHaveTextContent('84945 на 01.10.2025');
     expect(row).toHaveTextContent('-219.89994745');
     expect(screen.getByText(/Совпадает: 2 · расходится: 0 · не читается: 1/)).toBeInTheDocument();
-    expect(screen.getByText(/Себестоимость всего: 1000 USD/)).toBeInTheDocument();
+    expect(screen.getByText(/Себестоимость покупок всего: 1000 USD/)).toBeInTheDocument();
   });
 });

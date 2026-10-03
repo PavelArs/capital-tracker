@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
+import { emptySummary, expectJournalSummary } from './csv-import-fixtures';
 import { rows, uuid } from './manual-opening-fixtures';
 import { test } from './mfa-fixtures';
 import { browserPost, tradeApi } from './usd-trades-fixtures';
@@ -146,8 +147,13 @@ test('SHEET-UI: owner imports the Excel purchase sheet as tab-separated text and
     { at: '2025-06-13 00:00', order: 1, quantity: '0.00918359', gross: '1000', fee: '0' },
   ]);
 
+  await expectJournalSummary(page, {
+    ...emptySummary,
+    grossBuysUsd: '1000',
+    remainingCostUsd: '1000',
+  });
   await expect(
-    page.getByText('Чтобы сверить партию с таблицей, просмотрите исходные строки файла.'),
+    page.getByText(/Чтобы сверить партию с таблицей, просмотрите исходные строки файла/),
   ).toBeVisible();
   await expect(page.getByRole('combobox', { name: 'Разделитель', exact: true })).toHaveValue('\t');
   await page.getByRole('button', { name: 'Просмотреть исходные строки', exact: true }).click();

@@ -77,11 +77,12 @@ export function CsvReconciliationView({
         Совпадает: {totals.matchCount} · расходится: {totals.mismatchCount} · не читается:{' '}
         {totals.unreadableCount} · нет текущего курса: {totals.unavailableCount}
       </p>
-      <p>Себестоимость всего: {totals.costUsd} USD</p>
+      <p>Себестоимость покупок всего: {totals.costUsd} USD</p>
       <p>
         {totals.unrealizedPnlUsd === null
-          ? 'Нереализованная прибыль всего: нет ручной цены хотя бы для одной строки.'
-          : `Нереализованная прибыль всего по последним ручным ценам: ${totals.unrealizedPnlUsd} USD`}
+          ? 'Нереализованная прибыль покупок: нет ручной цены хотя бы для одной строки.'
+          : `Нереализованная прибыль покупок по последним ручным ценам: ${totals.unrealizedPnlUsd} USD`}{' '}
+        Считается по каждой покупке целиком, без учёта последующих продаж.
       </p>
       <div className="manual-table-wrap">
         <table className="manual-table" aria-label="Сверка строк с таблицей">
@@ -108,7 +109,11 @@ export function CsvReconciliationView({
                 <td>{row.occurredAt ? utcDate(row.occurredAt) : '—'}</td>
                 <td>{row.status === 'voided' ? '—' : instrumentLabel(row.instrumentId)}</td>
                 <td>{row.quantity ?? '—'}</td>
-                <td>{row.costUsd ?? '—'}</td>
+                <td>
+                  {row.side === 'sell'
+                    ? 'продажа — не сверяется с таблицей покупок'
+                    : (row.costUsd ?? '—')}
+                </td>
                 <td>
                   <ul>
                     {row.checks.map((check) => (
@@ -141,12 +146,14 @@ export function CsvReconciliationPanel({
   batchId,
   document,
   instruments,
+  journalRevision,
   disabled,
 }: {
   accountId: string;
   batchId: string;
   document: CsvDocument;
   instruments: Instrument[];
+  journalRevision: number;
   disabled: boolean;
 }) {
   const [columns, setColumns] = useState(() => sheetReferenceColumns(document.headers));
@@ -157,10 +164,15 @@ export function CsvReconciliationPanel({
   useEffect(() => {
     request.current++;
     setColumns(sheetReferenceColumns(document.headers));
+  }, [document]);
+  // A new source or a journal change (correction, void) makes any shown result stale.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset is keyed on these inputs
+  useEffect(() => {
+    request.current++;
     setValue(null);
     setError(null);
     setLoading(false);
-  }, [document]);
+  }, [document, journalRevision]);
   useEffect(
     () => () => {
       request.current++;

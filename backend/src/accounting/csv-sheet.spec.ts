@@ -151,6 +151,18 @@ describe('SHEET-1 / SHEET-2 sheet normalization', () => {
     ]);
   });
 
+  it('SHEET-SAME-DAY continues after rewards, swaps and transfers occupying the same instant', () => {
+    const july = sample.replace('13.06.2025', '01.07.2025');
+    const result = normalizeCsvRows(sheet([july]), parseCsvPreview(sheetSettings()), {
+      active: [],
+      occupied: [
+        { occurredAt: '2025-07-01T00:00:00.000Z', orderWithinTimestamp: 1 },
+        { occurredAt: '2025-07-01T00:00:00.000Z', orderWithinTimestamp: 3 },
+      ],
+    });
+    expect(result.rows[0].execution?.orderWithinTimestamp).toBe(4);
+  });
+
   it('SHEET-INVALID rejects non-calendar or timed dates and malformed amounts per row', () => {
     const cases: [string, string, string][] = [
       ['31.02.2025', 'occurredAt', 'invalid-time'],
