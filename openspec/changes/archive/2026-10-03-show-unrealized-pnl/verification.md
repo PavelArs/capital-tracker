@@ -1,13 +1,13 @@
 # Unrealized profit/loss verification
 
-Status: local RED/GREEN, real PostgreSQL probes and independent review done in a cloud
-sandbox; hosted critical browser acceptance passed 20/20 (VAL-UI and MPV-UI included).
-The release image gate is pending a frontend base-image fix. Keep the change active until
-the whole hosted run is green, then archive.
+Status: complete. Local RED/GREEN, real PostgreSQL probes and independent review ran in a
+cloud sandbox; hosted CI run 37145398280 on `2b4e2d1` passed every job, including critical
+browser acceptance 20/20 (VAL-UI and MPV-UI) and the release image gate.
 
 Base: `main` at `4a52f9f4f74543b4f199b88b3cf7d3784db4ec22`. Node 22.22.0 (engine range
 `>=22.21.1 <23`), pnpm 10.33.0, OpenSpec 1.2.0, local PostgreSQL 16.14. No migration,
-schema, dependency, lockfile, deployment or `frontend/nginx.conf` change.
+schema, dependency, lockfile or `frontend/nginx.conf` change. The only image change is the
+frontend release-stage `pcre2>=10.49-r0` requirement described under Hosted CI.
 
 ## Check manifest
 
@@ -84,3 +84,6 @@ MPV-UI now also asserts the second row's return cell. No assertion was weakened.
   is clean; postgres and node findings are in `gosu` and bundled npm, which the
   Dockerfiles remove; `pnpm-lock.yaml` has no HIGH/CRITICAL findings. The frontend
   `release` stage now requires `pcre2>=10.49-r0`; only hosted CI can build it.
+- Run 37145398280 on `2b4e2d1` (with the pcre2 requirement): all jobs green, including
+  critical acceptance 20/20 with verified receipt and the four-image HIGH/CRITICAL gate.
+  The full 174-case suite (VAL-API, MPV-API, REWARD-API extensions) remains unrun.
