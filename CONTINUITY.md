@@ -14,21 +14,14 @@ Archived as `2026-10-04-add-app-shell` after hosted CI 37214714966 passed all jo
 
 ## Current release slice — deploy on approval (2026-10-04)
 
-Active OpenSpec change `deploy-on-approval` (RAP-001..005, ENG-002 modified): green
-main CI starts an approval-gated `release` (environment `production`), the dispatcher
-accepts version 2 requests carrying the promoted receipt, the runner gains
-`resume-activation` for the interrupted 2026-10-02 activation, Compose frontend
-health uses 127.0.0.1 and the installer gains `update`. Not yet deployed. After merge
-the owner must: set a required reviewer on `production`, run the installer `update`
-as root from the merged checkout, then dispatch `release` with
-`installation=resume-activation` once. Archive only after that release is verified.
-Change `tag-release-versions` (RVR-001/002, owner request 2026-10-04): images also get
-the readable tag `v<YYYY.MM.DD>-<short SHA>` at promotion, and a separate
-`contents: write` job tags the commit after a successful deploy. No server file
-change; archive after the first approved release shows both tags.
-Change `e2e-on-main-only` (ENG-006, owner decision 2026-10-04 after Actions minutes ran
-out and the repo went public): the release/acceptance job runs only on pushes to main;
-pull requests carry no browser evidence. Archive after the first main run with it.
+Released 2026-10-04 as `v2026.10.04-3bdceea` (main through #45): green main CI starts
+an approval-gated `release` in the `production` environment; the owner approves; the
+`tag` job tags the deployed commit. Server files (dispatcher, runner, Compose, pins,
+resume helper) are refreshed only by root with `manual-mvp-dispatcher-install.sh
+update` from a clean checkout when a release changes them. The first activation was
+already complete, so releases use `existing`. Release acceptance runs only on pushes to
+main. Archived: `deploy-on-approval`, `tag-release-versions`,
+`fix-analytics-journal-race`, `e2e-on-main-only`.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 

@@ -99,6 +99,10 @@ stopped without activation metadata. Complete it once with manual `release` and
 a provisioned owner and no `docker-compose.yml`, `.env.images` or
 `.release-managed-env`; it backs up, rehearses restore, migrates, starts the pair and
 activates without provisioning the owner again. Later releases use `existing`.
+On 2026-10-04 preflight refused `resume-activation` because the activation metadata was
+already present on the server; the first approved release ran as `existing`
+(`v2026.10.04-3bdceea`). Releases use `existing`; the resume mode remains only for a
+server in that interrupted state.
 
 Release versions (`tag-release-versions`): every candidate-bound run names the version
 `v<YYYY.MM.DD>-<short SHA>` from the commit date in UTC (for example
