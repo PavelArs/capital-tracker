@@ -3,23 +3,11 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DataSource, type EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
 import {
-  type RewardCorrectionInput,
-  type RewardCreateInput,
-  type RewardVoidInput,
-  parseRewardCorrection,
-  parseRewardCreate,
-  parseRewardHistoryQuery,
-  parseRewardListQuery,
-  parseRewardVoid,
-  rewardPayload,
-} from './asset-reward-input';
-import type { FifoReward } from './asset-reward-types';
-import {
+  appendRewardVersion,
+  projectRewardVersion,
   REWARD_LIMITS,
   type RewardKind,
   type RewardVersionRow,
-  appendRewardVersion,
-  projectRewardVersion,
   readRewardCounts,
   readRewardHead,
   readRewardReplay,
@@ -27,6 +15,18 @@ import {
   rewardReceipt,
   rewardVersionSelect,
 } from './asset-reward.store';
+import {
+  parseRewardCorrection,
+  parseRewardCreate,
+  parseRewardHistoryQuery,
+  parseRewardListQuery,
+  parseRewardVoid,
+  type RewardCorrectionInput,
+  type RewardCreateInput,
+  type RewardVoidInput,
+  rewardPayload,
+} from './asset-reward-input';
+import type { FifoReward } from './asset-reward-types';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,

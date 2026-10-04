@@ -22,9 +22,9 @@ import { AuthRequestLimitsService } from './request-limits.service';
 import {
   COOKIE_OPTIONS,
   FULL_SESSION_MS,
+  readSessionCookie,
   SESSION_COOKIE,
   SessionService,
-  readSessionCookie,
 } from './session.service';
 
 @ApiTags('auth')

@@ -1,5 +1,5 @@
-import LoadingButton from '@components/LoadingButton';
 import { Modal } from '@components/common';
+import LoadingButton from '@components/LoadingButton';
 import { useTranslation } from 'react-i18next';
 import {
   ACTIVE_INCOME_CATEGORIES,

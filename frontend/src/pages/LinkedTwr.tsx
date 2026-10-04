@@ -1,8 +1,8 @@
 import {
   type LinkedTwrPreview,
   type LinkedTwrResult,
-  type TwrBoundaryPlan,
   linkedTwrApi,
+  type TwrBoundaryPlan,
 } from '@api/linked-twr.api';
 import { isAxiosError } from 'axios';
 import { useEffect, useRef, useState } from 'react';

@@ -1,9 +1,9 @@
 import {
+  calculateFifo,
+  deriveCarryInAmounts,
   type FifoCarryInInput,
   FifoHistoryError,
   type FifoTrade,
-  calculateFifo,
-  deriveCarryInAmounts,
 } from './fifo';
 
 const instrumentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

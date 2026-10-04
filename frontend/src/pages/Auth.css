@@ -2,6 +2,7 @@
   display: grid;
   place-items: center;
   min-height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
   min-height: 100dvh;
   padding: 1.25rem;
   background: var(--bg-secondary);

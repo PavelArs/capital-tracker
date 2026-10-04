@@ -5,7 +5,7 @@ and Git diff before continuing. The target brief supersedes old MVP exclusions
 and stale architecture descriptions in CLAUDE.md. Retain compatible code style
 and English Conventional Commit conventions. Do not commit directly to main.
 
-Use pnpm 10.33.0 from packageManager. Install: `pnpm install --frozen-lockfile`.
+Use Node 26.10.0 (.nvmrc) and pnpm 12.9.1 from packageManager. Install: `pnpm install --frozen-lockfile`.
 Backend: `pnpm --dir backend lint`, `pnpm --dir backend build`,
 `pnpm --dir backend test --runInBand`. Frontend: `pnpm --dir frontend lint`,
 `pnpm --dir frontend build`, `pnpm --dir frontend test`.

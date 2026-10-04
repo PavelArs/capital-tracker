@@ -1,11 +1,11 @@
 schema: spec-driven
 context: |
   Brownfield Capital Tracker; target: capital-tracker-openspec-prompt.md.
-  NestJS 11, TypeORM, PostgreSQL 16, React/Vite, Chart.js, pnpm 10.33.0.
+  Node 26, NestJS 12, TypeORM 1, PostgreSQL 16, React 19/Vite 8, Chart.js, pnpm 12.9.1.
   Incremental refactor into a Russian single-owner crypto portfolio app.
   Preserve data and unrelated edits. No production rollout without owner authorization.
   Exact decimal accounting, database-first history, read-only blockchains, verified free providers.
-  OpenSpec CLI 1.2.0 core profile; document equivalent verification (no verify command installed).
+  OpenSpec CLI 1.14.0 core profile; document equivalent verification (no verify command installed).
 rules:
   proposal:
     - Include non-goals, data impact and change dependencies.

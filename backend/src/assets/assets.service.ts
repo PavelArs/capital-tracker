@@ -34,7 +34,7 @@ export class AssetsService {
   async findAll(userId: string): Promise<Asset[]> {
     return this.assetRepository.find({
       where: { userId },
-      relations: ['currency'],
+      relations: { currency: true },
       order: { date: 'DESC' },
     });
   }
@@ -42,7 +42,7 @@ export class AssetsService {
   async findOne(id: string, userId: string): Promise<Asset> {
     const asset = await this.assetRepository.findOne({
       where: { id, userId },
-      relations: ['currency'],
+      relations: { currency: true },
     });
 
     if (!asset) {

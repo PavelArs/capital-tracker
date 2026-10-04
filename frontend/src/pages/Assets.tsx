@@ -1,7 +1,15 @@
 import { assetsApi, currenciesApi } from '@api';
 import AssetsSkeleton from '@components/AssetsSkeleton';
-import ErrorMessage from '@components/ErrorMessage';
 import { PageHeader, SubNav } from '@components/common';
+import ErrorMessage from '@components/ErrorMessage';
+import type {
+  AssetChartData,
+  AssetFormData,
+  AssetTab,
+  GroupBy,
+  TotalAmount,
+  ViewMode,
+} from '@features/assets';
 import {
   AssetChart,
   AssetForm,
@@ -11,14 +19,6 @@ import {
   CHART_COLORS,
   getInitialFormData,
   useCurrencyConversion,
-} from '@features/assets';
-import type {
-  AssetChartData,
-  AssetFormData,
-  AssetTab,
-  GroupBy,
-  TotalAmount,
-  ViewMode,
 } from '@features/assets';
 import { DEFAULT_CURRENCIES } from '@shared/constants/currencies';
 import type { Asset, Currency } from '@shared/types';

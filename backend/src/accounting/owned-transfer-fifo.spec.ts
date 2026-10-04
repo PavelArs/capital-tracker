@@ -1,4 +1,4 @@
-import { type FifoCarryInInput, FifoHistoryError, type FifoTrade, calculateFifo } from './fifo';
+import { calculateFifo, type FifoCarryInInput, FifoHistoryError, type FifoTrade } from './fifo';
 import { calculateOwnedTransfers } from './owned-transfer-fifo';
 
 const accountA = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';

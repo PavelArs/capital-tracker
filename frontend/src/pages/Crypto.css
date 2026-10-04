@@ -80,7 +80,9 @@
   align-items: center;
   justify-content: center;
   border-radius: 4px;
-  transition: background-color 0.2s, color 0.2s;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
 
 .modal-close:hover {
@@ -112,7 +114,9 @@
   font-size: 1rem;
   background-color: var(--bg-color);
   color: var(--text-color);
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
 }
 
 .form-group input:focus,
@@ -165,7 +169,9 @@
   padding: 2rem;
   border-radius: 8px;
   box-shadow: 0 2px 4px var(--shadow);
-  transition: background-color 0.3s ease, box-shadow 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    box-shadow 0.3s ease;
 }
 
 .wallets-list h2 {
@@ -184,7 +190,9 @@
   border-radius: 8px;
   padding: 1.5rem;
   background: var(--bg-secondary);
-  transition: background-color 0.3s ease, border-color 0.3s ease;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 .wallet-header {

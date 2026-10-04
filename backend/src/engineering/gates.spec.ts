@@ -289,7 +289,7 @@ describe('DEP-001: required production dependency audit', () => {
       scripts: Record<string, string>;
       pnpm?: { auditConfig?: { ignoreCves?: unknown[]; ignoreGhsas?: unknown[] } };
     };
-    expect(manifest.packageManager).toBe('pnpm@10.33.0');
+    expect(manifest.packageManager).toBe('pnpm@12.9.1');
     expect(manifest.scripts['audit:production']).toBe('pnpm audit --prod --audit-level high');
     expect(manifest.pnpm?.auditConfig?.ignoreCves ?? []).toEqual([]);
     expect(manifest.pnpm?.auditConfig?.ignoreGhsas ?? []).toEqual([]);

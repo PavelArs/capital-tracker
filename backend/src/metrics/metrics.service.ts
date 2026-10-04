@@ -26,11 +26,11 @@ export class MetricsService {
   async getMetrics(userId: string, targetCurrency = 'USD') {
     const assets = await this.assetRepository.find({
       where: { userId },
-      relations: ['currency'],
+      relations: { currency: true },
     });
     const liabilities = await this.liabilityRepository.find({
       where: { userId },
-      relations: ['currency'],
+      relations: { currency: true },
     });
     const cryptoWallets = await this.cryptoWalletRepository.find({
       where: { userId },

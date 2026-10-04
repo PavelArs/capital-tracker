@@ -24,7 +24,7 @@ challenge retirement. Normal private activity and logout retain their existing b
 - **AND** financial data remains unchanged and the cleared logout cookie uses matching attributes
 - **AND** a password verification completed before recovery cannot issue a new session after recovery, including concurrent rotation
 
-#### Scenario: SES-001-C One-day absolute expiration is authoritative
+#### Scenario: SES-001-C Idle and absolute expiration are authoritative
 - **GIVEN** a full session issued by factor completion
 - **WHEN** access is attempted before its deadline one day after sign-in, including after many hours without activity or a backend restart
 - **THEN** it remains valid without re-login, and activity never extends that deadline

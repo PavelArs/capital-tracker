@@ -1,5 +1,5 @@
-import LoadingButton from '@components/LoadingButton';
 import { Modal } from '@components/common';
+import LoadingButton from '@components/LoadingButton';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ADDRESS_PLACEHOLDERS, WALLET_TYPES } from '../../constants';
