@@ -51,7 +51,7 @@ function tradeSaved(trade: TradeVersion) {
   const fee = Number(trade.feeUsd) === 0 ? '' : `, комиссия ${trade.feeUsd} USD`;
   return `Сделка ${action}: ${trade.side === 'buy' ? 'покупка' : 'продажа'} ${trade.quantity} ${
     trade.instrumentSymbol ?? trade.instrumentName
-  } на ${trade.grossUsd} USD${fee}, ${formatUtcMoment(trade.occurredAt)}.`;
+  } на ${trade.grossUsd} USD${fee}, ${formatUtcMoment(trade.occurredAt)}. Актуальные итоги показаны в журнале ниже.`;
 }
 function errorMessage(error: unknown) {
   if (isAxiosError(error) && error.response?.status === 409)

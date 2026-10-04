@@ -470,6 +470,7 @@ test('TRADE-002-B: real HTTP raw types, overflow and calendar errors are atomic 
     { expectedJournalRevision: '0' },
     { expectedJournalRevision: true },
     { orderWithinTimestamp: '0' },
+    { orderWithinTimestamp: null },
     { orderWithinTimestamp: 2147483648 },
     { ownerId: foreignOwner },
     { currency: 'EUR' },
@@ -953,6 +954,46 @@ test('TRADE-006-A / TRADE-006-B: literal instrument labels and a real409 keep th
   assertQuota();
 });
 
+test('TRADE-002-C: an omitted order follows trades and rewards at the same instant, replays exactly and rejects an explicit duplicate', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await fixture(page);
+  const providers = providerRequests();
+  const first = await api.create(account.id, tradeInput(instrument.id, 0));
+  expect(first.trade.orderWithinTimestamp).toBe(0);
+  await api.result('POST', `/accounts/${account.id}/rewards`, 201, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 1,
+    assertReward: true,
+    instrumentId: instrument.id,
+    category: 'staking',
+    occurredAt: first.trade.occurredAt,
+    orderWithinTimestamp: 1,
+    quantity: '2',
+    acquisitionBasisUsd: '10',
+    incomeValueUsd: '10',
+  });
+  const { orderWithinTimestamp: _explicit, ...automatic } = tradeInput(instrument.id, 2);
+  const saved = await api.create(account.id, automatic as TradeInput);
+  expect(saved.trade).toMatchObject({
+    occurredAt: first.trade.occurredAt,
+    orderWithinTimestamp: 2,
+    requestId: automatic.requestId,
+  });
+  const rowsAfterSave = tradeRows(account.id);
+  expect(await api.create(account.id, automatic as TradeInput, 200)).toEqual(saved);
+  expect(tradeRows(account.id)).toEqual(rowsAfterSave);
+  expect((await api.state(account.id)).journal?.versionCount).toBe(2);
+  await rejectUnchanged(
+    api,
+    `/accounts/${account.id}/trades`,
+    { ...tradeInput(instrument.id, 3), orderWithinTimestamp: 1 },
+    409,
+  );
+  expect((await api.trades(account.id)).items).toEqual([first.trade, saved.trade]);
+  expect(providerRequests()).toEqual(providers);
+});
+
 test('WORKBENCH-001-B / TRADE-002-C: two date-only purchases on one day save with automatic order and plain confirmations', async ({
   page,
 }) => {
@@ -987,7 +1028,7 @@ test('WORKBENCH-001-B / TRADE-002-C: two date-only purchases on one day save wit
     const receipt = readReceipt(await saved.json());
     receipts.push(receipt);
     await expect(page.getByRole('status').filter({ hasText: 'Сделка сохранена' })).toHaveText(
-      `Сделка сохранена: покупка ${quantity} SAME на ${grossUsd} USD, 13.06.2025.`,
+      `Сделка сохранена: покупка ${quantity} SAME на ${grossUsd} USD, 13.06.2025. Актуальные итоги показаны в журнале ниже.`,
     );
   }
   expect(writes).toHaveLength(2);

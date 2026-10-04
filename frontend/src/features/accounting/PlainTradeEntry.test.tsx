@@ -132,7 +132,9 @@ describe('WORKBENCH-001-B plain same-day purchases', () => {
       expectedJournalRevision: 0,
     });
     expect(
-      await screen.findByText(/Сделка сохранена: покупка 0\.01 BTC на 1170 USD, 13\.06\.2025\./),
+      await screen.findByText(
+        'Сделка сохранена: покупка 0.01 BTC на 1170 USD, 13.06.2025. Актуальные итоги показаны в журнале ниже.',
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(new RegExp(tradeId))).toBeNull();
 
@@ -191,6 +193,16 @@ describe('WORKBENCH-001 plain wording and optional fields', () => {
   it('shows an explicit order in the disclosure summary', () => {
     form(draft({ orderWithinTimestamp: '2' }));
     expect(screen.getByText('Порядок в один момент: 2')).toBeInTheDocument();
+    expect(screen.getByText('Порядок в один момент: 2').closest('details')).not.toHaveAttribute(
+      'open',
+    );
+  });
+
+  it('reveals an order the journal would refuse', () => {
+    form(draft({ orderWithinTimestamp: '1.5' }));
+    expect(screen.getByLabelText('Порядок в этот момент').closest('details')).toHaveAttribute(
+      'open',
+    );
   });
 
   it('keeps chosen fields of a prefilled draft read-only', () => {

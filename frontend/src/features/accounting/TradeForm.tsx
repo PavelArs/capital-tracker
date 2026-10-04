@@ -1,7 +1,7 @@
 import type { Instrument } from '@api/accounting.api';
 import type { TradeExecution, TradeVersion } from '@api/trades.api';
 import { DateTimeField, utcDay } from '@components/common/DateTimeField';
-import { useId } from 'react';
+import { useEffect, useId, useRef } from 'react';
 import './OperationForm.css';
 import './TradeForm.css';
 
@@ -53,6 +53,15 @@ export function TradeForm({
   const hintId = useId();
   const update = (value: Partial<TradeDraft>) => onChange({ ...draft, ...value });
   const locked = (field: TradeField) => lockDraft || lockedFields.includes(field);
+  // Never hide an order the journal will refuse: reveal it, without closing it again.
+  const orderDisclosure = useRef<HTMLDetailsElement>(null);
+  const orderInvalid =
+    draft.orderWithinTimestamp !== '' &&
+    (!/^(0|[1-9][0-9]*)$/.test(draft.orderWithinTimestamp) ||
+      Number(draft.orderWithinTimestamp) > 2147483647);
+  useEffect(() => {
+    if (orderInvalid && orderDisclosure.current) orderDisclosure.current.open = true;
+  }, [orderInvalid]);
   return (
     <form className="trade-form operation-form" onSubmit={onSubmit}>
       <fieldset className="manual-position" aria-label="Сделка в USD" disabled={disabled}>
@@ -161,7 +170,7 @@ export function TradeForm({
             </div>
           </div>
         </div>
-        <details className="trade-form__order">
+        <details ref={orderDisclosure} className="trade-form__order">
           <summary>
             Порядок в один момент:{' '}
             {draft.orderWithinTimestamp === '' ? 'авто' : draft.orderWithinTimestamp}
