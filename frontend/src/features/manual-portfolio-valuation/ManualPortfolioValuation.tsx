@@ -164,10 +164,16 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
             <dd>{view.totalText}</dd>
             <dt>Оценённая часть, USD</dt>
             <dd>{view.subtotalText}</dd>
+            <dt>Нереализованная прибыль, USD</dt>
+            <dd>{view.unrealizedText}</dd>
+            <dt>Доход, %</dt>
+            <dd>{view.returnText}</dd>
             <dt>Счетов без истории</dt>
             <dd>{report.unavailableAccountCount}</dd>
             <dt>Позиций без цены</dt>
             <dd>{report.missingPriceCount}</dd>
+            <dt>Позиций с неизвестной себестоимостью</dt>
+            <dd>{report.unknownCostCount}</dd>
           </dl>
           <div className="manual-portfolio__table-wrap">
             <table aria-label="Оценка по счетам">
@@ -179,6 +185,8 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
                   <th scope="col">Полнота</th>
                   <th scope="col">Оценённая часть, USD</th>
                   <th scope="col">Оценка, USD</th>
+                  <th scope="col">Нереализованная прибыль, USD</th>
+                  <th scope="col">Доход, %</th>
                 </tr>
               </thead>
               <tbody>
@@ -200,6 +208,8 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
                     </td>
                     <td>{row.subtotalText}</td>
                     <td>{row.totalText}</td>
+                    <td>{row.unrealizedText}</td>
+                    <td>{row.returnText}</td>
                   </tr>
                 ))}
               </tbody>

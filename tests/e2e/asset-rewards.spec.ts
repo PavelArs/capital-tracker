@@ -212,6 +212,9 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
     completeness: 'complete',
     pricedSubtotalUsd: '17',
     totalValueUsd: '17',
+    unknownCostCount: 1,
+    unrealizedPnlUsd: null,
+    unrealizedReturnPercent: null,
     items: expect.arrayContaining([
       expect.objectContaining({
         instrumentId: unknownAsset.id,
@@ -221,6 +224,8 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
         unknownCostQuantity: '2',
         price: { priceUsd: '5', observedAt: at, revision: 1 },
         valueUsd: '10',
+        unrealizedPnlUsd: null,
+        unrealizedReturnPercent: null,
       }),
       expect.objectContaining({
         instrumentId: zeroAsset.id,
@@ -228,6 +233,8 @@ test('REWARD-API: null basis, zero, income and manual value stay distinct across
         costUsd: '0',
         price: { priceUsd: '7', observedAt: at, revision: 1 },
         valueUsd: '7',
+        unrealizedPnlUsd: '7',
+        unrealizedReturnPercent: null,
       }),
     ]),
   });
