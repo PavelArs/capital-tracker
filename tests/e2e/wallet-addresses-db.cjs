@@ -319,7 +319,7 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new AddWalletAddressImport1790400000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS ADDR-MIGRATION fresh 23 applies once; down refuses');
+    console.log('PASS ADDR-MIGRATION fresh 24 applies once; down refuses');
   } finally {
     await db.destroy();
   }

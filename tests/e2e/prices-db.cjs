@@ -231,7 +231,7 @@ async function rateLimited(db) {
 }
 
 async function schedule(db) {
-  const latest = (await db.query(`SELECT max("lastAttemptAt") AS at FROM sync_sources WHERE key LIKE 'prices:%'`))[0].at.getTime();
+  const latest = (await db.query(`SELECT max("lastAttemptAt") AS at FROM sync_sources WHERE key IN ('prices:kraken', 'prices:coingecko')`))[0].at.getTime();
   const sameHour = new Date(hourStart(latest) + 50 * 60000);
   const { result, urls } = await newRequests(() => service(db).tick(sameHour));
   assert.deepEqual(result, { outcome: 'not_due' });
