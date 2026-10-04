@@ -136,7 +136,8 @@ describe('ADDR-UI wallet address page', () => {
         'Провайдер ограничил частоту запросов. Загружено новых: 25. Повторите позже, загрузка продолжится с того же места.',
       ),
     ).toBeTruthy();
-    expect(within(card).getByText('Загружено частично')).toBeTruthy();
+    // The card adopts the parent's updated summary in an effect after the message renders.
+    expect(await within(card).findByText('Загружено частично')).toBeTruthy();
     await waitFor(() => expect(walletAddressesApi.transactions).toHaveBeenCalled());
   });
 });
