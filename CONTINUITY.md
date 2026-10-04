@@ -20,8 +20,9 @@ an approval-gated `release` in the `production` environment; the owner approves;
 resume helper) are refreshed only by root with `manual-mvp-dispatcher-install.sh
 update` from a clean checkout when a release changes them. The first activation was
 already complete, so releases use `existing`. Release acceptance runs only on pushes to
-main. Archived: `deploy-on-approval`, `tag-release-versions`,
-`fix-analytics-journal-race`, `e2e-on-main-only`.
+main; acceptance restarts backends with `--timeout 0` (Node as PID 1 ignores SIGTERM).
+Archived: `deploy-on-approval`, `tag-release-versions`, `fix-analytics-journal-race`,
+`e2e-on-main-only`, `fast-acceptance-restarts`.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 
