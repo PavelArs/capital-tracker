@@ -7,12 +7,15 @@ on:
     branches:
       - main
     types: [opened, synchronize, reopened]
+  # Runs every gate, including release acceptance, for a chosen branch before merge.
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # The event keeps a manual run from cancelling the deployable push run of the same ref.
+  group: ci-${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
@@ -207,27 +210,26 @@ jobs:
         run: test -d "dist" && echo "Build successful" || (echo "Build failed" && exit 1)
 
   # ============================================
-  # Docker Build Verification
+  # Release Images, Critical Acceptance and Security
   # ============================================
-  docker-build:
-    name: Release Images and Security
+  # Owner decisions 2026-10-04: release work runs for pushes to main and manual dispatch,
+  # never for pull requests; deployment still requires a push run on main. The images are
+  # built once, critical acceptance runs in parallel isolated shards and the final job
+  # merges their receipts before scanning and exporting the same images.
+  release-images:
+    name: Build Release Images
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
     needs: [backend-build, frontend-build, backend-test, frontend-test, dependency-audit, spec-check]
-    # Owner decision 2026-10-04: real acceptance runs on pushes to main only; deployment
-    # still requires it from the main run. Default success scheduling stays implied.
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
       - name: Pull exact reviewed PostgreSQL and Redis images
         env:
           GH_TOKEN: ${{ github.token }}
@@ -259,9 +261,116 @@ jobs:
             test "$(docker image inspect "$tag" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
             test "$(docker image inspect "$tag" --format '{{.Id}}')" = "$(docker image inspect "$digest" --format '{{.Id}}')"
           done
+      - name: Build the backend and frontend acceptance images once
+        run: node scripts/acceptance.mjs images --manifest release-images/manifest.json
+      - name: Save the exact images for the acceptance shards
+        run: |
+          set -euo pipefail
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 -o release-images/images.tar
+          (cd release-images && sha256sum images.tar > images.tar.sha256)
+          ls -l release-images
+      - name: Upload the exact images for the acceptance shards
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-images
+          path: release-images/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  critical-acceptance:
+    name: Critical acceptance (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    needs: [release-images]
+    if: github.event_name != 'pull_request'
+    strategy:
+      # Every shard reports its own result; the final job still requires all of them.
+      fail-fast: false
+      matrix:
+        shard: [probes-1, probes-2, browser-1, browser-2, browser-3]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1 # v4.2.0
+      - run: pnpm install --frozen-lockfile
+      - name: Install the Playwright browser
+        if: startsWith(matrix.shard, 'browser-')
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Download the built release images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-images
+          path: release-images
+      - name: Load and verify the exact built images
+        run: |
+          set -euo pipefail
+          (cd release-images && sha256sum -c images.tar.sha256)
+          docker load -i release-images/images.tar
+          rm release-images/images.tar
+          node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Run critical real release acceptance
         id: critical-release-acceptance
-        run: pnpm test:e2e:critical
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: node scripts/acceptance.mjs critical --shard "$SHARD" --images release-images/manifest.json
+      - name: Upload the critical acceptance shard receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: critical-shard-receipt-${{ matrix.shard }}
+          path: test-results/critical-shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: synthetic-acceptance-report-${{ matrix.shard }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          # Diagnostics only: a re-run of a failed shard may replace its earlier report.
+          overwrite: true
+
+  docker-build:
+    name: Release Images and Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    needs: [release-images, critical-acceptance]
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Download the built release images
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-images
+          path: release-images
+      - name: Download the critical acceptance shard receipts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: critical-shard-receipt-*
+          path: shard-receipts
+          merge-multiple: true
+      - name: Load and verify the exact built images
+        run: |
+          set -euo pipefail
+          (cd release-images && sha256sum -c images.tar.sha256)
+          docker load -i release-images/images.tar
+          rm release-images/images.tar
+          node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
+      - name: Merge verified critical acceptance shards
+        id: critical-release-acceptance
+        run: node scripts/acceptance-shards.cjs merge release-images/manifest.json shard-receipts "$GITHUB_SHA" "$GITHUB_RUN_ID" test-results/critical-release-acceptance.json
       - name: Verify critical acceptance receipt
         id: verify-critical-receipt
         run: node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
@@ -371,14 +480,6 @@ jobs:
           path: candidate/
           retention-days: 7
           compression-level: 0
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always()
-        with:
-          name: synthetic-acceptance-report
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
 
   spec-check:
     name: Specification and Engineering Gates
@@ -419,6 +520,8 @@ jobs:
       - frontend-check
       - frontend-test
       - frontend-build
+      - release-images
+      - critical-acceptance
       - docker-build
       - spec-check
       - dependency-audit
@@ -433,8 +536,8 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           CI_EVENT: ${{ github.event_name }}
         run: |
-          # Only pull requests may omit the release job; any other event requires it.
-          release=docker-build
+          # Only pull requests may omit the release jobs; any other event requires them.
+          release="release-images critical-acceptance docker-build"
           if [[ "$CI_EVENT" == pull_request ]]; then release=; fi
           node scripts/check-ci-results.cjs "$NEEDS_JSON" \
             backend-check backend-test backend-build \

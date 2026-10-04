@@ -89,3 +89,59 @@ test('a failed cleanup or preservation clears stale evidence and never publishes
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('ENG-007-C partition splits the manifest deterministically by index modulo shard count', () => {
+  const parts = [0, 1, 2].map((index) => profile.partition(manifest, index, 3));
+  assert.deepEqual(parts.map((part) => part.length), [7, 7, 7]);
+  parts.forEach((part, index) => {
+    assert.deepEqual(part, manifest.filter((_item, position) => position % 3 === index));
+    // Each subset is itself a valid exact selection against actual Playwright discovery.
+    assert.equal(profile.select(part, listing).cases.length, 7);
+  });
+  assert.deepEqual(profile.partition(manifest, 1, 3), parts[1]);
+  for (const [index, count] of [[3, 3], [-1, 3], [0, 0], [0, 22], [1.5, 3], ['0', 3]]) {
+    assert.throws(() => profile.partition(manifest, index, count));
+  }
+});
+
+test('ENG-007-D merge combines shard results into the unchanged receipt and rejects any gap', () => {
+  const run = (cases) => ({ errors: [], suites: cases.map((item) => ({
+    file: item.file.replace('tests/e2e/', ''),
+    specs: [{ title: item.title, tests: [{ status: 'expected', expectedStatus: 'passed', results: [{ status: 'passed' }] }] }],
+  })) });
+  const parts = () => [0, 1, 2].map((index) => {
+    const cases = profile.partition(manifest, index, 3);
+    return { cases, result: run(cases) };
+  });
+  const merged = profile.merge(manifest, parts(), commit, '123');
+  const whole = profile.receipt(profile.select(manifest, listing), run(manifest), commit, '123');
+  assert.deepEqual(merged, whole);
+  assert.equal(profile.verify(merged, manifest, commit, '123').cases.length, 21);
+  const reject = (value) => assert.throws(() => profile.merge(manifest, value, commit, '123'));
+  reject([]);
+  reject(parts().slice(1));
+  const duplicated = parts();
+  duplicated[1].cases.push(duplicated[0].cases[0]);
+  duplicated[1].result.suites.push(duplicated[0].result.suites[0]);
+  reject(duplicated);
+  const swapped = parts();
+  swapped[0].result = swapped[1].result;
+  reject(swapped);
+  const foreign = parts();
+  foreign[2].cases.push({ file: 'tests/e2e/mfa.spec.ts', title: 'absent title' });
+  reject(foreign);
+  const failed = parts();
+  failed[2].result.suites[0].specs[0].tests[0].results[0].status = 'failed';
+  reject(failed);
+  const skipped = parts();
+  skipped[0].result.suites[3].specs[0].tests[0].status = 'skipped';
+  reject(skipped);
+  const errored = parts();
+  errored[1].result.errors = [{ message: 'worker crashed' }];
+  reject(errored);
+  const empty = parts();
+  empty[0] = { cases: [], result: { errors: [], suites: [] } };
+  reject(empty);
+  assert.throws(() => profile.merge(manifest, parts(), 'b'.repeat(39), '123'));
+  assert.throws(() => profile.merge([], parts(), commit, '123'));
+});
