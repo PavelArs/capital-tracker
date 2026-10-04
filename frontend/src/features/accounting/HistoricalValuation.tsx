@@ -5,6 +5,7 @@ import {
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { accountingError } from './feedback';
+import { errorMatchesShownJournal, journalChanged, matchesShownJournal } from './journal-revision';
 
 type Position = HistoricalValuationSnapshot['items'][number];
 
@@ -48,20 +49,21 @@ export function HistoricalValuation({
 
   current.current = { accountId, journalRevision };
   useEffect(() => {
-    if (
-      previous.current.accountId !== accountId ||
-      previous.current.journalRevision !== journalRevision
-    ) {
-      previous.current = { accountId, journalRevision };
-      generation.current++;
-      setLoaded(null);
-      setLoading(false);
-      setError(null);
-    }
-    return () => {
-      generation.current++;
-    };
+    const next = { accountId, journalRevision };
+    const changed = journalChanged(previous.current, next);
+    previous.current = next;
+    if (!changed) return;
+    generation.current++;
+    setLoaded(null);
+    setLoading(false);
+    setError(null);
   }, [accountId, journalRevision]);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
 
   function edit(value: string) {
     generation.current++;
@@ -84,7 +86,11 @@ export function HistoricalValuation({
       if (
         request !== generation.current ||
         current.current.accountId !== owner ||
-        current.current.journalRevision !== observedRevision
+        !matchesShownJournal(
+          observedRevision,
+          snapshot.journalRevision,
+          current.current.journalRevision,
+        )
       )
         return;
       if (snapshot.accountId !== owner) {
@@ -96,7 +102,7 @@ export function HistoricalValuation({
       if (
         request !== generation.current ||
         current.current.accountId !== owner ||
-        current.current.journalRevision !== observedRevision
+        !errorMatchesShownJournal(observedRevision, current.current.journalRevision)
       )
         return;
       setError(
@@ -115,7 +121,10 @@ export function HistoricalValuation({
   }
 
   const visible =
-    loaded?.accountId === accountId && loaded.observedRevision === journalRevision ? loaded : null;
+    loaded?.accountId === accountId &&
+    matchesShownJournal(loaded.observedRevision, loaded.snapshot.journalRevision, journalRevision)
+      ? loaded
+      : null;
   const snapshot = visible?.snapshot;
 
   return (

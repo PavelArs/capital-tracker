@@ -35,6 +35,10 @@ health uses 127.0.0.1 and the installer gains `update`. Not yet deployed. After 
 the owner must: set a required reviewer on `production`, run the installer `update`
 as root from the merged checkout, then dispatch `release` with
 `installation=resume-activation` once. Archive only after that release is verified.
+Change `tag-release-versions` (RVR-001/002, owner request 2026-10-04): images also get
+the readable tag `v<YYYY.MM.DD>-<short SHA>` at promotion, and a separate
+`contents: write` job tags the commit after a successful deploy. No server file
+change; archive after the first approved release shows both tags.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 

@@ -52,7 +52,7 @@ describe('RAP-001: approved release after green main CI', () => {
       types: ['completed'],
       branches: ['main'],
     });
-    expect(Object.keys(cd.jobs)).toEqual(['deploy']);
+    expect(Object.keys(cd.jobs)).toEqual(['deploy', 'tag']);
     expect(job.environment).toBe('production');
     // Exact expression: an OR/always() escape must not pass string-presence checks.
     expect(expression(job.if)).toBe(

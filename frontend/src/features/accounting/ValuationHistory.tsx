@@ -4,6 +4,7 @@ import { Chart as ChartJS, Legend, LinearScale, PointElement, Title, Tooltip } f
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Scatter } from 'react-chartjs-2';
 import { accountingError } from './feedback';
+import { errorMatchesShownJournal, journalChanged, matchesShownJournal } from './journal-revision';
 import { toValuationChartData, valuationChartOptions } from './valuation-chart';
 
 ChartJS.register(LinearScale, PointElement, Tooltip, Legend, Title);
@@ -33,20 +34,21 @@ export function ValuationHistory({
 
   current.current = { accountId, journalRevision };
   useEffect(() => {
-    if (
-      previous.current.accountId !== accountId ||
-      previous.current.journalRevision !== journalRevision
-    ) {
-      previous.current = { accountId, journalRevision };
-      generation.current++;
-      setLoaded(null);
-      setLoading(false);
-      setError(null);
-    }
-    return () => {
-      generation.current++;
-    };
+    const next = { accountId, journalRevision };
+    const changed = journalChanged(previous.current, next);
+    previous.current = next;
+    if (!changed) return;
+    generation.current++;
+    setLoaded(null);
+    setLoading(false);
+    setError(null);
   }, [accountId, journalRevision]);
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
 
   function edit(field: 'from' | 'to', value: string) {
     generation.current++;
@@ -70,7 +72,11 @@ export function ValuationHistory({
       if (
         request !== generation.current ||
         current.current.accountId !== owner ||
-        current.current.journalRevision !== observedRevision
+        !matchesShownJournal(
+          observedRevision,
+          series.journalRevision,
+          current.current.journalRevision,
+        )
       )
         return;
       if (series.accountId !== owner) {
@@ -82,7 +88,7 @@ export function ValuationHistory({
       if (
         request !== generation.current ||
         current.current.accountId !== owner ||
-        current.current.journalRevision !== observedRevision
+        !errorMatchesShownJournal(observedRevision, current.current.journalRevision)
       )
         return;
       setError(
@@ -101,7 +107,10 @@ export function ValuationHistory({
   }
 
   const visible =
-    loaded?.accountId === accountId && loaded.observedRevision === journalRevision ? loaded : null;
+    loaded?.accountId === accountId &&
+    matchesShownJournal(loaded.observedRevision, loaded.series.journalRevision, journalRevision)
+      ? loaded
+      : null;
   const series = visible?.series;
   const chart = series ? toValuationChartData(series.points) : null;
   const hasCompletePoints = (chart?.datasets[0].data.length ?? 0) > 0;
