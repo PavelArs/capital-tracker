@@ -6,7 +6,7 @@ Change `collect-hourly-prices` (capability `market-prices`, PRC-1..6) adds the `
 module: Kraken and CoinGecko keyless clients alternating by UTC hour with failover,
 one-time Kraken daily backfill from 2025-01-01, append-only `price_observations` keyed
 by market code, `sync_sources`, `GET /prices` with fresh/stale/none, and migration 24
-`AddHourlyPrices1790600000000`. Collection is off unless `PRICE_COLLECTION_ENABLED=true`;
+`AddHourlyPrices1790800000000`. Collection is off unless `PRICE_COLLECTION_ENABLED=true`;
 production Compose and release/resume scripts are unchanged, so enabling it on the
 server is a separate owner-approved step. Evidence: the change's `verification.md`.
 

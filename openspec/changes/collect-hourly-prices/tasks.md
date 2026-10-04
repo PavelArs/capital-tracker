@@ -6,7 +6,7 @@
 
 ## 2. Implementation
 
-- [x] 2.1 Additive migration 24 `AddHourlyPrices1790600000000` (PRC-3, PRC-6).
+- [x] 2.1 Additive migration 24 `AddHourlyPrices1790800000000` (PRC-3, PRC-6).
 - [x] 2.2 Catalog, Kraken and CoinGecko clients (PRC-1).
 - [x] 2.3 Planner, service, backfill, schedule and switch (PRC-2, PRC-4).
 - [x] 2.4 Read model `GET /prices` with freshness and sync status (PRC-5).

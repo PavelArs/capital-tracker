@@ -10,7 +10,7 @@ const { DataSource } = require('typeorm');
 const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
 const { PricesService } = require('/app/backend/dist/prices/prices.service.js');
 const { CoinGeckoClient, KrakenClient } = require('/app/backend/dist/prices/price-providers.js');
-const { AddHourlyPrices1790600000000 } = require('/app/backend/dist/migrations/1790600000000-AddHourlyPrices.js');
+const { AddHourlyPrices1790800000000 } = require('/app/backend/dist/migrations/1790800000000-AddHourlyPrices.js');
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const databases = { main: 'capital_tracker_market_prices_e2e', retry: 'capital_tracker_market_prices_retry_e2e' };
@@ -96,7 +96,7 @@ const priced = (view, code) => view.assets.find(({ asset }) => asset === code);
 async function migration(db) {
   assert.deepEqual(await observations(db), []);
   assert.deepEqual(await db.query('SELECT * FROM sync_sources'), []);
-  await assert.rejects(() => new AddHourlyPrices1790600000000().down(), /recovery plan/);
+  await assert.rejects(() => new AddHourlyPrices1790800000000().down(), /recovery plan/);
   console.log('PASS PRC-MIGRATION fresh 24 applies once, replay applies none, tables empty, down refuses');
 }
 

@@ -101,7 +101,7 @@ readable message without secrets, and next run. A source left `syncing` for more
 - **THEN** `prices:coingecko` is `failed` with `rate_limited`, Kraken delivers and `prices:kraken` is `synced`, and the next run time of both sources is the start of the next UTC hour plus five minutes.
 
 ### Requirement: PRC-6 Additive migration
-Migration `AddHourlyPrices1790600000000` SHALL only create `price_observations`,
+Migration `AddHourlyPrices1790800000000` SHALL only create `price_observations`,
 `sync_sources` and the append-only trigger; it SHALL leave every existing table and
 row unchanged, and its `down` SHALL refuse without an explicit recovery plan.
 

@@ -78,7 +78,7 @@ const migrationNames = [
   'AddAssetRewards1790200000000',
   'AddAssetSwaps1790300000000',
   'AddWalletAddressImport1790400000000',
-  'AddHourlyPrices1790600000000',
+  'AddHourlyPrices1790800000000',
 ];
 
 function connection(database) {
@@ -978,7 +978,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790600000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790800000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],

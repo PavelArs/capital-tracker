@@ -44,7 +44,7 @@ const expectedMigrationNames = [
   'AddAssetRewards1790200000000',
   'AddAssetSwaps1790300000000',
   'AddWalletAddressImport1790400000000',
-  'AddHourlyPrices1790600000000',
+  'AddHourlyPrices1790800000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';

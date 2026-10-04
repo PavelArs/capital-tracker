@@ -53,7 +53,7 @@ None.
 
 - Backend: new `prices` module (catalog, Kraken and CoinGecko clients, collection
   planner, service, controller), one additive migration
-  `1790600000000-AddHourlyPrices`, two optional environment variables.
+  `1790800000000-AddHourlyPrices`, two optional environment variables.
 - Data: two new tables only; no existing row, table or constraint changes.
 - Tests: Jest unit tests for clients and planner, real PostgreSQL probe
   `tests/e2e/prices-db.cjs` through the provider stub, migration probe counts.

@@ -86,5 +86,5 @@ also changed by the frozen PR #33, so that step is separate and owner-approved.
   for the backfill; CoinGecko one request per run.
 - Rollback: the module can be disabled by the switch; `down` refuses because dropping
   observations would lose history that providers may no longer serve.
-- Migration timestamp `1790600000000` is reserved in team memory; M2 uses
+- Migration timestamp `1790800000000` is reserved in team memory; M2 uses
   `1790500000000`. Whichever change merges second updates the probes' migration counts.

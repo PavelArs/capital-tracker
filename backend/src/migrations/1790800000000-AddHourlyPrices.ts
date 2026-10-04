@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddHourlyPrices1790600000000 implements MigrationInterface {
-  name = 'AddHourlyPrices1790600000000';
+export class AddHourlyPrices1790800000000 implements MigrationInterface {
+  name = 'AddHourlyPrices1790800000000';
 
   async up(runner: QueryRunner): Promise<void> {
     await runner.query(`CREATE TABLE price_observations (
