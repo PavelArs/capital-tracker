@@ -1,7 +1,7 @@
 # period-profit-preview Specification
 
 ## Purpose
-TBD - created by archiving change preview-period-profit. Update Purpose after archive.
+Preview the owner's exact USD profit for a chosen period from reviewed manual valuations and external flows, without storing it.
 ## Requirements
 ### Requirement: PROFIT-1 Exact manual valuation profit
 
