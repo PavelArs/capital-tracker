@@ -27,6 +27,13 @@ gates; the browser runner does not perform them. CI must bind the successful cri
 gate receipt to the candidate source and exact manifest before candidate export or
 promotion. A paused, skipped or partial critical gate cannot produce release evidence.
 
+Since 2026-10-04 (owner decision) the `Release Images and Security` job, with the
+critical browser acceptance and image scans, runs only on pushes to main. Pull
+requests run the other eight gates and the aggregate accepts the skipped release
+job only for the `pull_request` event. A pull request therefore carries no browser
+evidence: run the affected journeys locally where possible, and expect a red main
+run after merge to block deployment until it is fixed.
+
 Within an initialized isolated acceptance stack, Playwright accepts concrete files
 or file:line selectors, for example:
 

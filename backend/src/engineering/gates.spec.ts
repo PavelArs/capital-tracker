@@ -88,9 +88,11 @@ function gateStep(ci: Workflow): WorkflowStep {
   return matches[0];
 }
 
-function invokeWorkflowGate(step: WorkflowStep, needs: Needs) {
+function invokeWorkflowGate(step: WorkflowStep, needs: Needs, event = 'push') {
   const needsExpression = /\$\{\{\s*toJSON\(needs\)\s*\}\}/g;
-  const render = (value: string) => value.replace(needsExpression, JSON.stringify(needs));
+  const eventExpression = /\$\{\{\s*github\.event_name\s*\}\}/g;
+  const render = (value: string) =>
+    value.replace(needsExpression, JSON.stringify(needs)).replace(eventExpression, event);
   const env = Object.fromEntries(
     Object.entries(step.env ?? {}).map(([key, value]) => [key, render(value)]),
   );
@@ -163,6 +165,48 @@ describe('ENG-001: fail-closed CI result CLI', () => {
   );
 });
 
+const releaseCondition = "github.event_name == 'push'";
+
+describe('ENG-006: release acceptance runs on pushes to main only', () => {
+  const withoutRelease = () => {
+    const needs = successfulNeeds();
+    needs['docker-build'] = { result: 'skipped' };
+    return needs;
+  };
+
+  it('ENG-006-A skips the release job for pull requests through its only job condition', () => {
+    const ci = workflow('ci');
+    expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push']);
+    expect(ci.on.push?.branches).toEqual(['main']);
+    expect(expression(ci.jobs['docker-build'].if)).toBe(releaseCondition);
+  });
+
+  it('ENG-006-A accepts a pull request whose release job was skipped', () => {
+    const result = invokeWorkflowGate(gateStep(workflow('ci')), withoutRelease(), 'pull_request');
+    expect(result.status).toBe(0);
+  });
+
+  it.each(['failure', 'cancelled', 'unknown'])(
+    'ENG-006-A still rejects a pull request whose other job has result %p',
+    (status) => {
+      const needs = withoutRelease();
+      needs['spec-check'] = { result: status };
+      const result = invokeWorkflowGate(gateStep(workflow('ci')), needs, 'pull_request');
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain('spec-check');
+    },
+  );
+
+  it.each(['push', 'workflow_dispatch', '', 'pull_request_target'])(
+    'ENG-006-B requires release success for event %p',
+    (event) => {
+      const result = invokeWorkflowGate(gateStep(workflow('ci')), withoutRelease(), event);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain('docker-build');
+    },
+  );
+});
+
 describe('ENG-001-D: repository CI workflow wiring', () => {
   let ci: Workflow;
 
@@ -181,7 +225,7 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
       expect(ci.jobs[job]).toBeDefined();
       expect(ci.jobs[job]['continue-on-error']).not.toBe(true);
     }
-    expect(ci.jobs['docker-build'].if).toBeUndefined();
+    expect(expression(ci.jobs['docker-build'].if)).toBe(releaseCondition);
   });
 
   it('always evaluates the aggregate and cannot ignore its failure', () => {
@@ -287,7 +331,7 @@ describe('ENG-004: release work waits for successful early gates', () => {
       const job = ci.jobs[name];
       expect(job).toBeDefined();
       // Default success scheduling is required: always() or OR expressions could bypass failures.
-      expect(job.if).toBeUndefined();
+      expect(expression(job.if)).toBe(name === 'docker-build' ? releaseCondition : '');
       expect(job['continue-on-error'] ?? false).toBe(false);
     }
   });
