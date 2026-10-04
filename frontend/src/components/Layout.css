@@ -35,6 +35,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  /* biome-ignore lint/suspicious/noDuplicateProperties: dvh overrides the vh fallback where supported. */
   height: 100dvh;
   border-right: 1px solid var(--line);
   background: var(--surface);

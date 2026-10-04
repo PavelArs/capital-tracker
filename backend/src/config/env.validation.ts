@@ -1,4 +1,4 @@
-import { Transform, plainToInstance } from 'class-transformer';
+import { plainToInstance, Transform } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
@@ -26,6 +26,14 @@ export class EnvironmentVariables {
   @IsIn(['true', 'false'])
   @IsOptional()
   DISPLAY_FX_TRUST_PROXY = 'false';
+
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  PRICE_COLLECTION_ENABLED = 'false';
+
+  @IsString()
+  @IsOptional()
+  COINGECKO_DEMO_API_KEY?: string;
 
   @IsEnum(Environment)
   @IsOptional()

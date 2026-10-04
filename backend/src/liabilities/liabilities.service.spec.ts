@@ -133,7 +133,7 @@ describe('LiabilitiesService', () => {
 
       expect(repository.find).toHaveBeenCalledWith({
         where: { userId: mockUserId },
-        relations: ['currency'],
+        relations: { currency: true },
         order: { date: 'DESC' },
       });
       expect(result).toEqual(liabilities);
@@ -158,7 +158,7 @@ describe('LiabilitiesService', () => {
 
       expect(repository.findOne).toHaveBeenCalledWith({
         where: { id: mockLiabilityId, userId: mockUserId },
-        relations: ['currency'],
+        relations: { currency: true },
       });
       expect(result).toEqual(mockLiability);
     });

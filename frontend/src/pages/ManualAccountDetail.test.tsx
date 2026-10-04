@@ -1,4 +1,4 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import { accountingApi, type Instrument } from '@api/accounting.api';
 import { CsvMapping, emptyCsvMapping } from '@features/accounting/CsvMapping';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';

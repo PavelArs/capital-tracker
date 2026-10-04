@@ -1,5 +1,19 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — hourly market prices (M3, 2026-10-04)
+
+Change `collect-hourly-prices` (capability `market-prices`, PRC-1..6) adds the `prices`
+module: Kraken and CoinGecko keyless clients alternating by UTC hour with failover,
+one-time Kraken daily backfill from 2025-01-01, append-only `price_observations` keyed
+by market code, `sync_sources`, `GET /prices` with fresh/stale/none, and migration 25
+`AddHourlyPrices1790800000000` (after M2's `ClassifyAssets1790700000000`; probes count 25,
+`prices-db` runs in critical shard probes-1). Collection is off unless `PRICE_COLLECTION_ENABLED=true`;
+production Compose sets it to true (owner decision 2026-10-04); release scripts unchanged.
+Archived as `2026-10-04-collect-hourly-prices` after hosted CI 37219503372 passed all
+jobs (evidence in its `verification.md`). Kraken serves only 720 daily candles, so the
+backfill reaches 2025-01-01 only if deployed before about 2026-12-21. Next: M4
+(value-whole-portfolio) after M2 and M3 land.
+
 ## Current product slice — new application shell, M1 (2026-10-04)
 
 Owner target since 2026-10-04: Personal Capital Tracker business requirements, product

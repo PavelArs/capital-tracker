@@ -1,11 +1,11 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import { accountingApi, type Instrument } from '@api/accounting.api';
 import {
+  manualPricesApi,
   type PriceBook,
   type PriceHistory,
   type PriceReceipt,
   type SetPriceCommand,
   type VoidPriceCommand,
-  manualPricesApi,
 } from '@api/manual-prices.api';
 import { useAuth } from '@contexts/AuthContext';
 import { accountingError, newRequestId } from '@features/accounting/feedback';

@@ -34,7 +34,7 @@ export class LiabilitiesService {
   async findAll(userId: string): Promise<Liability[]> {
     return this.liabilityRepository.find({
       where: { userId },
-      relations: ['currency'],
+      relations: { currency: true },
       order: { date: 'DESC' },
     });
   }
@@ -42,7 +42,7 @@ export class LiabilitiesService {
   async findOne(id: string, userId: string): Promise<Liability> {
     const liability = await this.liabilityRepository.findOne({
       where: { id, userId },
-      relations: ['currency'],
+      relations: { currency: true },
     });
 
     if (!liability) {

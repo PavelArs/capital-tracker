@@ -4,8 +4,8 @@ import { PinoLogger } from 'nestjs-pino';
 import { Repository } from 'typeorm';
 import { CryptoType, CryptoWallet } from '../entities/crypto-wallet.entity';
 import { CryptoWalletNotFoundException } from '../shared/exceptions';
-import { CryptoUpdateService } from './crypto-update.service';
 import { CryptoService } from './crypto.service';
+import { CryptoUpdateService } from './crypto-update.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 describe('CryptoService', () => {

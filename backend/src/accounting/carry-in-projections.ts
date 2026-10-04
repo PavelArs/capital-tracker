@@ -1,4 +1,4 @@
-import { type FifoCarryInInput, deriveCarryInAmounts } from './fifo';
+import { deriveCarryInAmounts, type FifoCarryInInput } from './fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { JournalRow } from './trade-journal.store';
 

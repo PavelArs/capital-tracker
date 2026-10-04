@@ -1,3 +1,15 @@
 packages:
   - 'backend'
   - 'frontend'
+
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  argon2: true
+  # Install scripts these packages ship are not needed (telemetry and funding notices).
+  '@fission-ai/openspec': false
+  '@nestjs/core': false
+  '@scarf/scarf': false
+  # Prebuilt native binaries arrive as optional dependencies; the fallback builds are unused.
+  '@parcel/watcher': false
+  unrs-resolver: false

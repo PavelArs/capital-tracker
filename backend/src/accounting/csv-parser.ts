@@ -3,7 +3,7 @@ import { CsvError, parse } from 'csv-parse/sync';
 import { type CsvColumnField, type CsvSettings, validateCsvSource } from './csv-input';
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal } from './input';
-import { MAX_INPUT_ATOMS, canonicalDecimalToAtoms } from './money';
+import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
 
 export type CsvStructuralCode =
   | 'csv-syntax'

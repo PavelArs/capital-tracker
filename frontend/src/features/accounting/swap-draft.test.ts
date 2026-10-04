@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type SwapDraft, normalizeSwapDraft, swapCommandFor } from './swap-draft';
+import { normalizeSwapDraft, type SwapDraft, swapCommandFor } from './swap-draft';
 
 const draft: SwapDraft = {
   outgoingInstrumentId: '11111111-1111-4111-8111-111111111111',

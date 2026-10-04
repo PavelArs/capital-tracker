@@ -8,9 +8,9 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
 import {
-  type ConnectedLedger,
   advanceConnectedJournals,
   assertRevisionCapacity,
+  type ConnectedLedger,
   projectConnectedLedger,
   readConnectedLedger,
   rethrowAccountingHistory,
@@ -30,14 +30,14 @@ import { type Execution, FifoHistoryError, type FifoTrade } from './fifo';
 import { parseUuid } from './input';
 import { type AccountFifoResult, OwnedTransferCapacityError } from './owned-transfer-fifo';
 import {
-  type JournalRow,
-  type TradeVersion,
-  type VersionRow,
   appendTradeVersion,
+  type JournalRow,
   projectTradeVersion,
   readJournal,
   readOwnedAccount,
   readTradeHeads,
+  type TradeVersion,
+  type VersionRow,
   versionSelect,
 } from './trade-journal.store';
 

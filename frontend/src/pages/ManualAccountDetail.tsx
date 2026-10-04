@@ -1,13 +1,13 @@
 import {
   type AccountDetail as AccountDetailData,
+  accountingApi,
   type Instrument,
   type Opening,
   type Position,
-  accountingApi,
 } from '@api/accounting.api';
 import type { AccountSection } from '@features/accounting/AccountWorkspace';
-import { TradeJournal } from '@features/accounting/TradeJournal';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
+import { TradeJournal } from '@features/accounting/TradeJournal';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import './ManualAccountDetail.css';

@@ -1,11 +1,11 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import { accountingApi, type Instrument } from '@api/accounting.api';
 import {
+  assetRewardsApi,
   type RewardCommand,
   type RewardPage,
   type RewardReceipt,
   type RewardVersion,
   type RewardVersions,
-  assetRewardsApi,
 } from '@api/asset-rewards.api';
 import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
@@ -924,7 +924,11 @@ export function AssetRewards({
   accountId,
   journalRevision,
   onChanged,
-}: { accountId: string; journalRevision: number; onChanged: () => void }) {
+}: {
+  accountId: string;
+  journalRevision: number;
+  onChanged: () => void;
+}) {
   const { user } = useAuth();
   if (!user) return null;
   return (

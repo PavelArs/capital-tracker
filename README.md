@@ -9,7 +9,7 @@
 
 ## Verification during the refactor
 
-Use Node 22.21.1 (`nvm use`) and pinned pnpm 10.33.0:
+Use Node 26.10.0 (`nvm use`) and pinned pnpm 12.9.1:
 
 ```bash
 pnpm install --frozen-lockfile
@@ -236,8 +236,8 @@ All writes, including login/MFA/logout, require the exact configured Origin and
 `X-CSRF-Token`; the browser client obtains it lazily and retains it only in memory.
 Password verification creates only pending MFA state; a valid factor grants full
 access. Each stage rotates the session, server logout revokes it, and CLI recovery revokes all
-owner sessions. Legacy bearer credentials are not accepted. Sessions have thirty
-minutes idle/twelve hours absolute expiry; the combined anonymous/pending five-minute
+owner sessions. Legacy bearer credentials are not accepted. Full sessions expire
+24 hours after sign-in with no idle timeout; the combined anonymous/pending five-minute
 pool is capped at 512 and authenticated sessions at 10. HTTP startup requires exact
 `TRUSTED_PROXY_IPS` configuration. CSRF, password and MFA admissions use shared PostgreSQL fixed windows: exactly
 30/60s, 5/60s and 5/60s per verified source, plus 10/600s per normalized

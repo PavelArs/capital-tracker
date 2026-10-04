@@ -5,8 +5,8 @@ import { CostTally } from './cost-evidence';
 import type { CarryInFifoResult, FifoCarryInInput, FifoTrade } from './fifo';
 import {
   FifoHistoryError,
-  type LotInterval,
   intervalCost,
+  type LotInterval,
   lotInterval,
   takePrefix,
 } from './fifo-lot-interval';

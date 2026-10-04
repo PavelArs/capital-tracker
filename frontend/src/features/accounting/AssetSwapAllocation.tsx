@@ -1,8 +1,8 @@
-import { type SwapAllocation, type SwapVersion, assetSwapsApi } from '@api/asset-swaps.api';
+import { assetSwapsApi, type SwapAllocation, type SwapVersion } from '@api/asset-swaps.api';
 import { useEffect, useRef, useState } from 'react';
 import { AssetSwapTotals } from './AssetSwapTotals';
-import { AllocationOrigin, allocationKey } from './TransferAllocationDetails';
 import { accountingError } from './feedback';
+import { AllocationOrigin, allocationKey } from './TransferAllocationDetails';
 
 /** Parent keys this reader by the complete current revision/version pair. */
 export function AssetSwapAllocation({

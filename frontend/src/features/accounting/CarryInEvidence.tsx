@@ -162,7 +162,11 @@ export function CarryInEvidence({
   lots,
   busy,
   onMore,
-}: { lots: CarryInLots; busy: boolean; onMore: () => void }) {
+}: {
+  lots: CarryInLots;
+  busy: boolean;
+  onMore: () => void;
+}) {
   return (
     <section aria-label="Сохранённые начальные лоты">
       <h3>Сохранённые начальные лоты</h3>

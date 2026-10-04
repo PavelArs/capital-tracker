@@ -17,8 +17,8 @@ export const COOKIE_OPTIONS = {
   path: '/',
 };
 const ANONYMOUS_MS = 5 * 60 * 1000;
-const ABSOLUTE_MS = 12 * 60 * 60 * 1000;
-const IDLE_MS = 30 * 60 * 1000;
+// A full session lasts one day from factor completion; there is no idle timeout.
+export const FULL_SESSION_MS = 24 * 60 * 60 * 1000;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 export const sessionHash = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
@@ -103,10 +103,7 @@ export class SessionService {
     if (!row || row.expiresAt.getTime() <= row.databaseNow.getTime()) return false;
     if (row.state === 'anonymous') return true;
     return (
-      (row.state === 'pending_mfa' ||
-        (row.state === 'authenticated' &&
-          !!row.mfaVerifiedAt &&
-          row.lastSeenAt.getTime() > row.databaseNow.getTime() - IDLE_MS)) &&
+      (row.state === 'pending_mfa' || (row.state === 'authenticated' && !!row.mfaVerifiedAt)) &&
       row.userId === row.boundUserId &&
       row.credentialVersion === row.boundVersion &&
       !!row.ownerEmail
@@ -128,7 +125,6 @@ export class SessionService {
     await manager.query("SET LOCAL lock_timeout = '5s'");
     await manager.query('SELECT pg_advisory_xact_lock(1763669183)');
     await manager.query(`DELETE FROM auth_sessions s WHERE "expiresAt" <= clock_timestamp()
-      OR (state = 'authenticated' AND "lastSeenAt" <= clock_timestamp() - interval '30 minutes')
       OR (state <> 'anonymous' AND (
         NOT EXISTS (SELECT 1 FROM owner_auth o WHERE o.id = 1 AND o."userId" = s."userId"
           AND o."credentialVersion" = s."credentialVersion")))`);
@@ -137,7 +133,7 @@ export class SessionService {
   private async insert(manager: EntityManager, owner?: ValidatedOwner, full = false) {
     const token = randomBytes(32).toString('base64url');
     const csrfToken = randomBytes(32).toString('base64url');
-    const lifetime = full ? ABSOLUTE_MS : ANONYMOUS_MS;
+    const lifetime = full ? FULL_SESSION_MS : ANONYMOUS_MS;
     await manager.query(
       `INSERT INTO auth_sessions ("tokenHash", "csrfToken", state, "userId",
       "credentialVersion", "createdAt", "lastSeenAt", "expiresAt", "mfaVerifiedAt")

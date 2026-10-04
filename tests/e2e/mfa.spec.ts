@@ -173,7 +173,7 @@ test('MFA-002-B: real TOTP form rotates pending cookie and CSRF into a durable f
   ).toBe('0');
   expect(
     query(`SELECT state = 'authenticated' AND "mfaVerifiedAt" IS NOT NULL
-    AND "expiresAt" <= "createdAt" + interval '12 hours'
+    AND "expiresAt" = "createdAt" + interval '24 hours'
     FROM auth_sessions WHERE "tokenHash" = '${hashToken(full.token)}'`),
   ).toBe('t');
   expect(Number(query('SELECT "lastCounter" FROM owner_mfa WHERE id = 1'))).toBeGreaterThan(

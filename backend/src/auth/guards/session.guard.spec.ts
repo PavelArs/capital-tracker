@@ -6,7 +6,7 @@ import { DataSource } from 'typeorm';
 import { AuthClientSourceService } from '../client-source';
 import { PUBLIC_ROUTE } from '../public.decorator';
 import { AuthRequestLimitsService } from '../request-limits.service';
-import { SESSION_COOKIE, SessionService, readSessionCookie } from '../session.service';
+import { readSessionCookie, SESSION_COOKIE, SessionService } from '../session.service';
 import { SessionGuard } from './session.guard';
 
 describe('CHAR-AUTH-001 / SES-001-D real default-deny session boundary', () => {

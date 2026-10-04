@@ -10,9 +10,9 @@ import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
 import { UserWithoutPassword } from './auth.service';
 import {
+  createTotp,
   MfaCipher,
   MfaEnvelope,
-  createTotp,
   newRecoveryCodes,
   recoveryHash,
   recoveryPattern,

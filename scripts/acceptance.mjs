@@ -198,7 +198,7 @@ if (command === 'down') {
         '-subj',
         '/CN=capital-tracker-provider-fixture.invalid',
         '-addext',
-        'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com',
+        'subjectAltName=DNS:blockstream.info,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com,DNS:api.kraken.com',
       ]);
       const chown = (source, target) =>
         run('docker', [
