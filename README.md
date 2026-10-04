@@ -213,7 +213,7 @@ The app is designed to run on a personal server with:
 
 ### CI/CD Pipeline
 
-- **CI** (PRs and pushes to main): lint, test, build, Docker builds and pinned OpenSpec checks; aggregate requires every job to succeed.
+- **CI** (PRs and pushes to main): lint, test, build, Docker builds and engineering/security gates; aggregate requires every job to succeed.
 - **CD**: legacy manual workflow gated by main branch and explicit rollout variable; disabled by default pending release hardening. It still has known backup, artifact and deployment limitations documented in the audit.
 
 ## API Endpoints

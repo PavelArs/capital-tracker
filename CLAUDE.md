@@ -14,6 +14,9 @@ pnpm test:e2e
 OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive
 ```
 
+The `openspec/` folder is local-only and ignored by Git; never commit it. Run
+the validate command only where the folder exists; CI no longer runs it.
+
 Focused checks: `pnpm --dir backend test --runInBand`, `pnpm --dir frontend test`,
 and each package's `lint` and `build` scripts. Coverage limitations and existing
 warnings are recorded in continuity; do not assume a configured threshold passed.

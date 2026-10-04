@@ -15,6 +15,8 @@ gate. Preserve visible lower-severity findings in docs/dependency-security.md;
 registry failures and advisory findings must never be suppressed.
 
 OpenSpec 1.2.0: `OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive`.
+The `openspec/` folder is local-only and ignored by Git (owner decision
+2026-10-04): never commit it; CI does not validate it.
 Core workflow: propose -> apply -> independent review -> verify -> archive.
 Current specs describe verified implemented behavior. Stable scenario IDs connect
 requirements, tests and actual command results. Observe intended acceptance failure
