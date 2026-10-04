@@ -121,31 +121,29 @@ async function verifyExpiry(source, service, verified) {
     'Anonymous lifetime must be five minutes');
   await source.query('UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"=$1', [hash(anonymous.token)]);
   await rejected(service.authorize(anonymous.token, false, 'POST', origin, anonymous.csrfToken), 403, 'Expired anonymous cannot login');
-  for (const expiredField of ['idle', 'absolute']) {
-    const session = await createAuthenticated(service, verified);
-    if (expiredField === 'idle') {
-      await source.query('UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval \'30 minutes\' WHERE "tokenHash"=$1', [hash(session.token)]);
-    } else {
-      await source.query('UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"=$1', [hash(session.token)]);
-    }
-    const before = fingerprint(await rows(source));
-    await rejected(service.authorize(session.token, true, 'GET', undefined, undefined), 401, 'SES-001-C database boundary expiry rejects');
-    assert.equal(fingerprint(await rows(source)), before, 'Expired authorization cannot refresh the session');
-  }
+  const unused = await createAuthenticated(service, verified);
+  await source.query('UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval \'23 hours\' WHERE "tokenHash"=$1', [hash(unused.token)]);
+  const unusedUser = await service.authorize(unused.token, true, 'GET', undefined, undefined);
+  assert.equal(unusedUser.user.userId, verified.user.id, 'SES-001-C a session unused for 23 hours stays valid');
+  const session = await createAuthenticated(service, verified);
+  await source.query('UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"=$1', [hash(session.token)]);
+  const beforeExpired = fingerprint(await rows(source));
+  await rejected(service.authorize(session.token, true, 'GET', undefined, undefined), 401, 'SES-001-C database boundary expiry rejects');
+  assert.equal(fingerprint(await rows(source)), beforeExpired, 'Expired authorization cannot refresh the session');
   const valid = await createAuthenticated(service, verified);
   const [initial] = await source.query('SELECT * FROM auth_sessions WHERE "tokenHash"=$1', [hash(valid.token)]);
-  assert.ok(Math.abs(new Date(initial.expiresAt)-new Date(initial.createdAt)-43200000)<1000,
-    'Authenticated absolute lifetime must be twelve hours');
+  assert.ok(Math.abs(new Date(initial.expiresAt)-new Date(initial.createdAt)-86400000)<1000,
+    'Authenticated absolute lifetime must be one day');
   await source.query('UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval \'5 minutes\' WHERE "tokenHash"=$1', [hash(valid.token)]);
   const [before] = await source.query('SELECT * FROM auth_sessions WHERE "tokenHash"=$1', [hash(valid.token)]);
   const authorized = await service.authorize(valid.token, true, 'GET', undefined, undefined);
   assert.equal(authorized.user.userId, verified.user.id);
   const [after] = await source.query('SELECT * FROM auth_sessions WHERE "tokenHash"=$1', [hash(valid.token)]);
-  assert.ok(new Date(after.lastSeenAt) > new Date(before.lastSeenAt), 'Valid access renews idle activity');
+  assert.ok(new Date(after.lastSeenAt) > new Date(before.lastSeenAt), 'Valid access records activity');
   assert.equal(new Date(after.expiresAt).getTime(), new Date(before.expiresAt).getTime(), 'Absolute expiry never extends');
   assert.ok(!(JSON.stringify(after)).includes(valid.token), 'Raw authentication token is absent from stored row');
   await source.query('DELETE FROM auth_sessions');
-  console.log('PASS SES-001-C PostgreSQL-time anonymous/idle/absolute expiry and bounded idle renewal');
+  console.log('PASS SES-001-C PostgreSQL-time anonymous/absolute expiry, one-day lifetime without idle timeout');
 }
 
 async function verifyAtomicity(source, service, verified) {

@@ -117,9 +117,7 @@ test('CSV-006-B regression: a committed confirm with a lost response survives ac
     const token = await cookie(page);
     const hash = hashToken(token);
     // Explicit isolated expiry fixture changes only the actual session being exercised.
-    query(
-      `UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval '30 minutes' WHERE "tokenHash"='${hash}'`,
-    );
+    query(`UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"='${hash}'`);
     const denied = await browserPost(
       page,
       `/accounts/${account.id}/csv-imports/${batch}/confirm`,

@@ -304,10 +304,10 @@ bypassing authentication or CSRF. Detailed health and the backend root require f
 authentication. Auth/private responses use `Cache-Control: no-store`. There is no
 public HTTP Swagger/documentation route.
 
-Anonymous and pending sessions last five minutes. Full sessions expire after twelve
-hours absolutely or thirty minutes idle, measured with PostgreSQL time after relevant
-lock waits. Activity cannot extend the absolute deadline. Revocation and expiry survive
-restarts. The combined anonymous/pending pool is capped at 512 without evicting live
+Anonymous and pending sessions last five minutes. Full sessions expire 24 hours after
+factor completion, measured with PostgreSQL time after relevant lock waits; there is
+no idle timeout, and the cookie `maxAge` matches. Activity cannot extend the deadline.
+Revocation and expiry survive restarts. The combined anonymous/pending pool is capped at 512 without evicting live
 entries; a full pool returns 429. Full sessions are capped at ten, retiring the oldest
 full sessions when another successful factor completion exceeds that limit.
 
@@ -339,7 +339,7 @@ two-replica path and record the expected ledger deltas.
 | Anonymous account creation/email recovery | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
 | Retained non-owner, expired cookie or legacy bearer | Owner/revision checks, protected opaque cookie, server expiry/revocation; no bearer fallback | Full ASVS mapping and broader negative acceptance |
 | Stolen owner password | Password produces only pending state; mandatory TOTP or single-use recovery code | Phishing-resistant options and distributed abuse controls |
-| Stolen full cookie | Short idle/absolute lifetime, server logout and CLI revocation | Recent-MFA checks for sensitive settings, XSS/CSP hardening |
+| Stolen full cookie | One-day absolute lifetime, server logout and CLI revocation | Recent-MFA checks for sensitive settings, XSS/CSP hardening |
 | Replayed factor or concurrent recovery code | Monotonic TOTP counter and transactional code/session consumption | Continuing concurrency and availability review |
 | Cross-site writes | Exact configured HTTPS Origin and bound CSRF, no implicit proxy trust | Broader browser/proxy review and XSS defenses |
 | Guessing or session exhaustion | Persisted owner/challenge MFA limits and transactional session caps | Shared password/IP limits and operational capacity tests |

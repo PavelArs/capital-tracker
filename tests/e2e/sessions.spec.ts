@@ -233,7 +233,7 @@ test('SES-001-A: successful browser login exposes no bearer or browser-storage c
     query("SELECT COALESCE(json_agg(s)::text, '[]') FROM auth_sessions s").includes(token),
   ).toBe(false);
   expect(new Date(rows[0].expiresAt).getTime() - new Date(rows[0].createdAt).getTime()).toBe(
-    43_200_000,
+    86_400_000,
   );
   const storage = await page.evaluate(() => ({
     local: { ...localStorage },
@@ -463,32 +463,44 @@ test('SES-001-C: activity and backend restart retain a session without extending
   expect(sessionRows(token)[0].expiresAt).toBe(before.expiresAt);
 });
 
-for (const boundary of ['idle', 'absolute'] as const) {
-  test(`SES-001-C: the PostgreSQL ${boundary} expiry boundary denies access without revival`, async ({
-    page,
-    request,
-  }) => {
-    const { token } = await browserLogin(page);
-    const admissions = ledger();
-    const subject = await hostSubject();
-    const before = fingerprint(false, true);
-    const times =
-      boundary === 'idle'
-        ? '"lastSeenAt" = clock_timestamp() - interval \'30 minutes\''
-        : '"createdAt" = clock_timestamp() - interval \'12 hours\', "expiresAt" = clock_timestamp(), "lastSeenAt" = clock_timestamp()';
-    query(`UPDATE auth_sessions SET ${times} WHERE "tokenHash" = '${tokenHash(token)}'`);
-    const expired = sessionRows(token)[0];
-    await deniedReplay(request, token);
-    const after = sessionRows(token);
-    expect(after.length === 0 || after[0].lastSeenAt === expired.lastSeenAt).toBe(true);
-    await csrf(page.context().request);
-    expect((await sessionCookie(page)) === token).toBe(false);
-    expect((await page.context().request.get('/api/auth/me')).status()).toBe(401);
-    await deniedReplay(request, token);
-    expectAdmissionDelta(admissions, [{ scope: 'csrf-ip', subject, hits: 1 }]);
-    expect(fingerprint(false, true)).toBe(before);
-  });
-}
+test('SES-001-C: a session unused for most of a day still works without re-login', async ({
+  page,
+}) => {
+  const { token } = await browserLogin(page);
+  query(`UPDATE auth_sessions SET "createdAt" = clock_timestamp() - interval '23 hours',
+    "mfaVerifiedAt" = clock_timestamp() - interval '23 hours',
+    "lastSeenAt" = clock_timestamp() - interval '23 hours',
+    "expiresAt" = clock_timestamp() + interval '1 hour'
+    WHERE "tokenHash" = '${tokenHash(token)}'`);
+  const before = sessionRows(token)[0];
+  await page.reload();
+  await expect(page.getByRole('navigation').getByText(ownerEmail, { exact: true })).toBeVisible();
+  expect((await sessionCookie(page)) === token).toBe(true);
+  expect(sessionRows(token)[0].expiresAt).toBe(before.expiresAt);
+});
+
+test('SES-001-C: the PostgreSQL absolute expiry boundary denies access without revival', async ({
+  page,
+  request,
+}) => {
+  const { token } = await browserLogin(page);
+  const admissions = ledger();
+  const subject = await hostSubject();
+  const before = fingerprint(false, true);
+  query(`UPDATE auth_sessions SET "createdAt" = clock_timestamp() - interval '24 hours',
+    "expiresAt" = clock_timestamp(), "lastSeenAt" = clock_timestamp()
+    WHERE "tokenHash" = '${tokenHash(token)}'`);
+  const expired = sessionRows(token)[0];
+  await deniedReplay(request, token);
+  const after = sessionRows(token);
+  expect(after.length === 0 || after[0].lastSeenAt === expired.lastSeenAt).toBe(true);
+  await csrf(page.context().request);
+  expect((await sessionCookie(page)) === token).toBe(false);
+  expect((await page.context().request.get('/api/auth/me')).status()).toBe(401);
+  await deniedReplay(request, token);
+  expectAdmissionDelta(admissions, [{ scope: 'csrf-ip', subject, hits: 1 }]);
+  expect(fingerprint(false, true)).toBe(before);
+});
 
 test('SES-001-A: re-login rotates an authenticated cookie and consumes the old CSRF', async ({
   page,
