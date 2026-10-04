@@ -21,8 +21,8 @@ with the product's valuation rule "latest at or before t" and 2 hour freshness.
    M2 sets `priceSource = market` only for a crypto instrument whose upper-case ticker
    is a catalog code. The read `latestMarketPrices(manager, codes, at)` moves from the
    prices service into a shared function used by `GET /prices` and the portfolio, so
-   both apply the same tie-break (latest instant, then daily before hourly, then
-   source name).
+   both apply the same tie-break (latest instant, then kind descending: spot, hourly
+   close, daily close; then source name).
 4. **Manual price: latest effective point at or before now.** For each instrument the
    current version of every manual price point is taken first, void points are
    dropped, then the latest remaining point at or before the instant wins. This is the

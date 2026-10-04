@@ -352,6 +352,10 @@ describe('PV-NONE and PV-FIXED missing prices are not zero', () => {
       totalValueUsd: null,
       pricedSubtotalUsd: '10',
       unavailableAccountCount: 1,
+      costBasisUsd: null,
+      unknownCostCount: 0,
+      // Holdings of the later account are unknown, so the shares are not complete either.
+      allocation: { complete: false },
     });
     expect(result.accounts.map((item) => [item.name, item.coverage, item.pricedValueUsd])).toEqual([
       ['Cash', 'covered', '10'],

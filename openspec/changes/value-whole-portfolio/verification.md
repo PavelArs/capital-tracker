@@ -36,12 +36,12 @@ synthetic data only.
 
 | Command | Result |
 |---|---|
-| `pnpm --dir backend test --runInBand` | 69 suites, 1785 passed |
-| `pnpm --dir frontend test` | 31 files, 162 passed |
+| `pnpm --dir backend test --runInBand` | 69 suites, 1785 passed; `jest src/accounting src/prices` 926 passed after the review fixes |
+| `pnpm --dir frontend test` | 31 files, 164 passed after the review fixes (162 before) |
 | `pnpm --dir backend lint` / `pnpm --dir frontend lint` | exit 0; 77 and 27 warnings, as on main |
 | `pnpm --dir backend build` / `pnpm --dir frontend build` | exit 0 |
 | `pnpm test:engineering` | 245 Jest + 23 Node checks passed (critical selection 22/22 from 176 listed tests, browser split 8/7/7) |
-| `pnpm specs:validate` | 56/56 strict |
+| `pnpm specs:validate` | 57/57 strict (main now carries one more change) |
 | `tsc --noEmit --strict` on `portfolio-valuation.spec.ts` and `application-shell.spec.ts` | clean |
 | Biome format (frontend config) on the changed e2e TypeScript | clean |
 
@@ -52,6 +52,29 @@ after the market-price query moved to `prices/market-price.store.ts`; a later re
 not repeated because its scratch databases already existed locally. Browser cases
 (`PORTFOLIO-UI`, `SHELL-UI`) were not run here (no Docker in the sandbox); they run in
 main CI after merge.
+
+## Independent review
+
+A separate reviewer read the whole diff, reran the unit and component tests and
+recomputed every scenario number; nothing blocking. Fixed, each with a test that failed
+first (1 Jest assertion, 2 component tests):
+
+- `allocation.complete` is now false when an account history starts later, and the
+  allocation note names that cause.
+- The cost-basis note says "an account history starts later" instead of "part has no
+  purchase price" when that is the only gap.
+- Portfolio loads ignore a reply that is not the newest, and a failed refresh after
+  adding an asset keeps the values shown with a "could not refresh" alert.
+- An amount below 0.00000001 shows "<0.00000001", never "0".
+- `design.md` tie-break wording and the PV-5 price labels now match the code.
+
+Left as is: allocation shares are rounded one by one and can sum to 99.99; display
+formatting goes through `Number()` (exact strings stay in the API); each connected
+component re-reads the owner's transfer heads (performance only); swap realized P&L is
+covered in Jest through the projection, not through the probe; the PV-PRIVATE
+MFA-pending 403 relies on the global owner guard every accounting route uses; no new test covers it for this route.
+`PORTFOLIO-UI` and `SHELL-UI` now replay every account of the shared acceptance owner,
+so a case that leaves unreplayable history for that owner would fail them with 409.
 
 ## Screenshots
 

@@ -27,7 +27,12 @@ export function price(value: string | null): string {
   return `$${number(value, 2, Math.abs(Number(value)) < 1 ? 6 : 2)}`;
 }
 
+const SMALLEST_QUANTITY = 0.00000001;
+
+/** Up to 8 decimals; a held amount too small to show is never displayed as 0. */
 export function quantity(value: string): string {
+  const amount = Number(value);
+  if (amount !== 0 && Math.abs(amount) < SMALLEST_QUANTITY) return '<0.00000001';
   return number(value, 0, 8);
 }
 

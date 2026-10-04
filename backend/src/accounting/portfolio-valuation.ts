@@ -304,7 +304,7 @@ export function projectPortfolio(
       };
     }),
     allocation: {
-      complete: missingPriceCount === 0,
+      complete,
       byAsset: slices(byAsset, subtotal),
       byType: slices(byType, subtotal),
       byAccount: slices(byAccount, subtotal),

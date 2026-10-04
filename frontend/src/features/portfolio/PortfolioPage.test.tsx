@@ -289,6 +289,73 @@ describe('PV-UI Portfolio values every asset', () => {
     );
   });
 
+  it('names a later-starting account as the gap and shows a dust amount as non-zero', async () => {
+    const dust = { ...bitcoin, quantity: '0.000000001', holdings: [] };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([dust], {
+        completeness: 'incomplete',
+        totalValueUsd: null,
+        unavailableAccountCount: 1,
+        costBasisUsd: null,
+        knownCostSubtotalUsd: '70000',
+        unrealizedPnlUsd: null,
+        unrealizedReturnPercent: null,
+        allocation: { ...portfolio([]).allocation, complete: false },
+      }),
+    );
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent(
+      'Cost basis—$70,000.00 known, an account history starts later',
+    );
+    expect(summary).not.toHaveTextContent('no purchase price');
+    const allocation = screen.getByRole('region', { name: 'Allocation' });
+    expect(allocation).toHaveTextContent('Accounts whose history starts later are not included.');
+    expect(cells(rowOf('Bitcoin'))[1]).toBe('<0.00000001');
+  });
+
+  it('keeps the loaded portfolio when a later refresh fails and ignores a stale reply', async () => {
+    let resolveSlow: (value: PortfolioValuation) => void = () => {};
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockImplementationOnce(
+        () =>
+          new Promise<PortfolioValuation>((resolve) => {
+            resolveSlow = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(portfolio([bitcoin, cash]))
+      .mockRejectedValueOnce(new AxiosError('offline'));
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    const add = async () => {
+      await user.click(screen.getByRole('button', { name: 'Add asset' }));
+      const dialog = screen.getByRole('dialog', { name: 'Add asset' });
+      await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
+      await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+      await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    };
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    // The first refresh hangs; the second answers first, then the late reply arrives.
+    await add();
+    await add();
+    await screen.findByRole('row', { name: /^US dollar/ });
+    resolveSlow(portfolio([toncoin]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole('row', { name: /^Toncoin/ })).toBeNull();
+    expect(rowOf('US dollar')).toBeInTheDocument();
+
+    await add();
+    expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(4);
+    expect(rowOf('Bitcoin')).toBeInTheDocument();
+    expect(screen.queryByText(/could not load your portfolio/i)).toBeNull();
+  });
+
   it('opens an asset with its numbers, price source and holdings', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
     const user = userEvent.setup();

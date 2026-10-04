@@ -4,7 +4,7 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddAssetDialog from './AddAssetDialog';
 import { DASH, missingLabel, percent, price, priceNote, quantity, tone, usd } from './format';
@@ -74,7 +74,10 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
             {usd(portfolio.costBasisUsd)}
             {portfolio.costBasisUsd === null && (
               <span className="portfolio-sub">
-                {usd(portfolio.knownCostSubtotalUsd)} known, part has no purchase price
+                {usd(portfolio.knownCostSubtotalUsd)} known,{' '}
+                {portfolio.unknownCostCount > 0
+                  ? 'part has no purchase price'
+                  : 'an account history starts later'}
               </span>
             )}
           </dd>
@@ -154,7 +157,12 @@ function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
         </>
       )}
       {!portfolio.allocation.complete && (
-        <p className="shell-note portfolio-note">Assets without a price are not included.</p>
+        <p className="shell-note portfolio-note">
+          {portfolio.missingPriceCount > 0 && 'Assets without a price are not included.'}
+          {portfolio.missingPriceCount > 0 && portfolio.unavailableAccountCount > 0 && ' '}
+          {portfolio.unavailableAccountCount > 0 &&
+            'Accounts whose history starts later are not included.'}
+        </p>
       )}
     </section>
   );
@@ -232,14 +240,22 @@ export default function PortfolioPage() {
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [adding, setAdding] = useState(false);
+  const [refreshFailed, setRefreshFailed] = useState(false);
+  const latest = useRef(0);
 
+  // Only the newest request may change the page; a quiet refresh keeps what is shown.
   const load = useCallback(async (quiet = false) => {
+    const request = ++latest.current;
     setFailed(false);
+    setRefreshFailed(false);
     if (!quiet) setPortfolio(null);
     try {
-      setPortfolio(await portfolioValuationApi.get());
+      const next = await portfolioValuationApi.get();
+      if (request === latest.current) setPortfolio(next);
     } catch {
-      setFailed(true);
+      if (request !== latest.current) return;
+      if (quiet) setRefreshFailed(true);
+      else setFailed(true);
     }
   }, []);
   useEffect(() => {
@@ -290,6 +306,14 @@ export default function PortfolioPage() {
         </section>
       ) : (
         <>
+          {refreshFailed && (
+            <p className="portfolio-warn" role="alert">
+              Could not refresh the values after adding the asset; showing the last loaded ones.{' '}
+              <button type="button" className="shell-button" onClick={() => void load(true)}>
+                Refresh
+              </button>
+            </p>
+          )}
           <Summary portfolio={portfolio} />
           <Allocation portfolio={portfolio} />
           <section className="shell-card" aria-labelledby="portfolio-assets">

@@ -102,10 +102,12 @@ and the allocation marked incomplete.
 The Portfolio section (`/portfolio`) SHALL show a summary with current value, cost
 basis, unrealized and realized P&L in USD; an allocation card that groups by Asset,
 Type or Account; and the assets table defined by AST-3. An incomplete total SHALL read
-"Incomplete" with the priced subtotal and how many assets have no price. Selecting an
+"Incomplete" with the priced subtotal, how many assets have no price and whether an
+account history starts later; a refresh that fails keeps the values already shown, and
+a late reply never replaces a newer one. Selecting an
 asset SHALL open `/portfolio/:assetId` with a link back to Portfolio, the asset's name,
-ticker and type, its price with source and age ("Updated 30 min ago", "Stale", "Manual",
-"Fixed", "No price" or "No rate"), amount, current value, average buy price, cost
+ticker and type, its price with source and age ("Kraken · updated 30 min ago", "stale" when older
+than 2 hours, "Manual price set for <date>", "Fixed", "No price" or "No rate"), amount, current value, average buy price, cost
 basis, unrealized and realized P&L, a note when part of the amount has no purchase
 price, and the holding in each account. Numbers SHALL be rounded only for display:
 USD with two decimals (prices below 1 with up to six), quantities with up to eight.
