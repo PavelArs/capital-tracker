@@ -3,8 +3,11 @@
 Status: local checks complete; hosted PR checks pending; main CI (probe and
 `PORTFOLIO-UI`) runs after merge.
 
-Base: `main` at `beb8cd3` (M3 prices merged). Node 22.22.0 (engine `>=22.21.1 <23`),
-pnpm 10.33.0, OpenSpec 1.2.0. No migration (count stays 25). No dependency, lockfile,
+Base: built on `main` at `beb8cd3` (M3 prices merged) with Node 22.22.0 and pnpm
+10.33.0, then rebased onto `1b389c7` (Node 26 / pnpm 12 upgrade, #50) and rechecked
+with Node 26.10.0 and pnpm 12.9.1: backend 70 suites / 1789 tests, frontend 164 tests,
+`test:engineering` (245 Jest + 23 Node), both lints (exit 0 after Biome's import-order
+fix) and both builds pass. OpenSpec 1.2.0. No migration (count stays 25). No dependency, lockfile,
 Dockerfile, Compose or `frontend/nginx.conf` change. All fixtures and screenshots use
 synthetic data only.
 

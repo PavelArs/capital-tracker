@@ -15,8 +15,8 @@ import type { OwnedProjection } from './owned-transfer-fifo';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
-  type StoredPrice,
   projectPortfolio,
+  type StoredPrice,
 } from './portfolio-valuation';
 
 interface AccountRow {

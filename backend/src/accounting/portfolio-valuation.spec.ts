@@ -1,11 +1,11 @@
-import { type FifoTrade, calculateFifo } from './fifo';
+import { calculateFifo, type FifoTrade } from './fifo';
 import { type HistoricalPosition, projectHistoricalFifo } from './historical-accounting';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
   type PortfolioPrices,
-  type StoredPrice,
   projectPortfolio,
+  type StoredPrice,
 } from './portfolio-valuation';
 
 const now = new Date('2026-10-04T12:00:00.000Z');

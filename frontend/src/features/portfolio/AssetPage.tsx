@@ -5,8 +5,8 @@ import {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Signed, assetCaption } from './PortfolioPage';
 import { age, missingLabel, price, quantity, sourceLabels, sourceName, usd } from './format';
+import { assetCaption, Signed } from './PortfolioPage';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
