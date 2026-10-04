@@ -123,7 +123,7 @@ test('FLOW-004-B: accepted flow survives lost delivery, real 401/MFA and a lost 
     // Expire this real session. The original retry must receive the actual admission 401.
     const tokenHash = hashToken(await cookie(page));
     query(
-      `UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval '30 minutes' WHERE "tokenHash"='${tokenHash}'`,
+      `UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"='${tokenHash}'`,
     );
     const denied = await browserPost(page, flowsPath, () => retry(page).click());
     expect(denied.status()).toBe(401);
