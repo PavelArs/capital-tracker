@@ -51,3 +51,6 @@ coverage/
 playwright-report/
 test-results/
 tests/e2e/.runtime/
+
+# OpenSpec workspace stays local only (owner decision 2026-10-04)
+openspec/

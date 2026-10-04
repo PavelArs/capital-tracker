@@ -20,7 +20,7 @@
     "lint": "pnpm --dir backend lint && pnpm --dir frontend lint",
     "build": "pnpm --dir backend build && pnpm --dir frontend build",
     "test": "pnpm --dir backend test --runInBand && pnpm --dir frontend test",
-    "verify:baseline": "pnpm specs:validate && pnpm lint && pnpm build && pnpm test",
+    "verify:baseline": "pnpm lint && pnpm build && pnpm test",
     "test:e2e": "node scripts/acceptance.mjs",
     "test:e2e:critical": "node scripts/acceptance.mjs critical",
     "test:e2e:down": "node scripts/acceptance.mjs down"
