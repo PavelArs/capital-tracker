@@ -59,7 +59,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
         last: seconds('2026-10-04T13:00:00Z'),
       },
     });
-    const kraken = () => new KrakenClient({ baseUrl, pauseMs: 0 });
+    const kraken = () => new KrakenClient({ baseUrl, pauseMs: 0, retryPauseMs: 0 });
 
     it('takes the close of the latest closed candle at its close instant', async () => {
       handler = () => ({ status: 200, body: hourly('XXBTZUSD', '84945.10000') });
@@ -101,8 +101,61 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       expect(requests.map(({ url }) => url.searchParams.get('pair'))).toEqual([
         'XBTUSD',
         'ETHUSD',
+        'ETHUSD',
+        'SOLUSD',
         'SOLUSD',
       ]);
+    });
+
+    it('PRC-RETRY repeats a pair that failed once and keeps its price', async () => {
+      const seen = new Map<string, number>();
+      handler = (url) => {
+        const pair = url.searchParams.get('pair') ?? '';
+        seen.set(pair, (seen.get(pair) ?? 0) + 1);
+        return pair === 'ETHUSD' && seen.get(pair) === 1
+          ? { status: 200, body: { error: ['EGeneral:Too many requests'] } }
+          : { status: 200, body: hourly('XETHZUSD', '2701.24') };
+      };
+      await expect(kraken().latest([asset('BTC'), asset('ETH')], now)).resolves.toEqual({
+        ok: true,
+        missing: [],
+        quotes: [
+          expect.objectContaining({ asset: 'BTC', price: '2701.24' }),
+          expect.objectContaining({ asset: 'ETH', price: '2701.24' }),
+        ],
+      });
+      expect(requests.map(({ url }) => url.searchParams.get('pair'))).toEqual([
+        'XBTUSD',
+        'ETHUSD',
+        'ETHUSD',
+      ]);
+    });
+
+    it('PRC-RETRY never repeats an unreadable answer', async () => {
+      handler = () => ({ status: 200, body: 'not json' });
+      await expect(kraken().latest([asset('BTC')], now)).resolves.toEqual({
+        ok: false,
+        reason: 'invalid_response',
+      });
+      expect(requests).toHaveLength(1);
+    });
+
+    it('PRC-7 waits between requests and before a retry', async () => {
+      let calls = 0;
+      handler = () => {
+        calls += 1;
+        return calls === 1
+          ? { status: 503, body: {} }
+          : { status: 200, body: hourly('XXBTZUSD', '84945.1') };
+      };
+      const started = Date.now();
+      const result = await new KrakenClient({ baseUrl, pauseMs: 60, retryPauseMs: 150 }).latest(
+        [asset('BTC'), asset('ETH')],
+        now,
+      );
+      expect(result).toEqual(expect.objectContaining({ ok: true, missing: [] }));
+      expect(requests).toHaveLength(3);
+      expect(Date.now() - started).toBeGreaterThanOrEqual(150 + 60);
     });
 
     it.each([
@@ -166,7 +219,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
           },
         },
       });
-      const client = new KrakenClient({ baseUrl, pauseMs: 0 });
+      const client = new KrakenClient({ baseUrl, pauseMs: 0, retryPauseMs: 0 });
       await expect(
         client.daily(
           asset('BTC'),
@@ -201,7 +254,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
 
     it('reports a failed daily request', async () => {
       handler = () => ({ status: 502, body: {} });
-      const client = new KrakenClient({ baseUrl, pauseMs: 0 });
+      const client = new KrakenClient({ baseUrl, pauseMs: 0, retryPauseMs: 0 });
       await expect(
         client.daily(
           asset('BTC'),
@@ -209,6 +262,41 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
           new Date('2025-01-03T10:00:00Z'),
         ),
       ).resolves.toEqual({ ok: false, reason: 'unavailable' });
+      expect(requests).toHaveLength(2);
+    });
+
+    it('PRC-RETRY repeats a daily request that failed once', async () => {
+      let calls = 0;
+      handler = () => {
+        calls += 1;
+        return calls === 1
+          ? { status: 502, body: {} }
+          : {
+              status: 200,
+              body: {
+                error: [],
+                result: {
+                  XXBTZUSD: [
+                    candle('2025-01-01T00:00:00Z', '93000.1'),
+                    candle('2025-01-02T00:00:00Z', '94000.2'),
+                  ],
+                  last: seconds('2025-01-01T00:00:00Z'),
+                },
+              },
+            };
+      };
+      const client = new KrakenClient({ baseUrl, pauseMs: 0, retryPauseMs: 0 });
+      await expect(
+        client.daily(
+          asset('BTC'),
+          new Date('2025-01-01T00:00:00Z'),
+          new Date('2025-01-02T10:00:00Z'),
+        ),
+      ).resolves.toEqual({
+        ok: true,
+        quotes: [expect.objectContaining({ asset: 'BTC', price: '93000.1', kind: 'daily-close' })],
+      });
+      expect(requests).toHaveLength(2);
     });
   });
 
