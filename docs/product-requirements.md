@@ -15,7 +15,7 @@ folded into sections 2, 3 and 5 below.
 
 Contents:
 
-1. [Open questions](#1-open-questions)
+1. [Owner answers and decisions](#1-owner-answers-and-decisions)
 2. [Principles](#2-principles)
 3. [Product requirements](#3-product-requirements)
 4. [Entity model](#4-entity-model)
@@ -26,23 +26,22 @@ Contents:
 9. [What happens to the current screens](#9-what-happens-to-the-current-screens)
 10. [Later versions](#10-later-versions)
 
-## 1. Open questions
+## 1. Owner answers and decisions
 
-Each question has a default that the plan below already assumes. A different answer
-changes only the changes named in brackets.
+Pavel answered the ten open questions on 2026-10-04. The plan below follows them.
 
-| # | Question | Default | Affects |
+| # | Question | Answer | Affects |
 |---|---|---|---|
-| Q1 | Accounting stays in USD; EUR and RUB are display conversions only? | Yes | M5 |
-| Q2 | Realized P&L keeps the current FIFO method (average buy price is shown, not used for realization)? | FIFO | M4 |
-| Q3 | Crypto price source: Kraken public API (free, no key) instead of CoinGecko Demo, whose terms limit keeping history? | Kraken | M3 |
-| Q4 | Backfill the chart once from daily historical prices back to the first purchase (13.06.2025)? | Yes | M6 |
-| Q5 | Which mailbox sends the password-reset email: Yandex, Gmail or another SMTP? | none, M17 waits | M17 |
-| Q6 | Will you create a free Etherscan API key for Ethereum history? | Yes | M14 |
-| Q7 | Tokens in MVP: only USDT and USDC (ERC-20 and SPL), other tokens later? | Yes | M14, M15 |
-| Q8 | Trezor (a new BTC address per purchase, needs xpub scanning) in MVP? | No, right after MVP | M21 |
-| Q9 | A purchase paid with money that is not tracked in the app counts as a deposit (new capital), not market growth? (The accepted prototype already works this way.) | Yes | M7 |
-| Q10 | Hide XIRR, TWR and "period profit" from the new interface (code stays until a separate removal)? | Yes | M20 |
+| Q1 | Accounting currency | **Three currencies, USD, EUR and RUB, with room to add more.** Cost basis and P&L are computed in each, using the FX rate on each operation's date (see "Three accounting currencies" in section 2). | M5 |
+| Q2 | Realized P&L method | **FIFO**, as today; average buy price is shown, not used for realization. | M4 |
+| Q3 | Crypto price source | **Both Kraken (public API, no key) and CoinGecko (free Demo API key), alternating**; when one fails the other is used. Every observation records its source. CoinGecko's Demo terms limit long-term storage and its history reaches back only 365 days ([provider feasibility](provider-feasibility.md)), so the backfill to 01.01.2025 uses Kraken's daily candles (to verify in M3). | M3 |
+| Q4 | Chart backfill | **Once, from 01.01.2025**, from daily historical prices. | M6 |
+| Q5 | Password-reset mailbox | **Yandex** (SMTP `smtp.yandex.ru`, port 465, app password kept as a server secret). | M17 |
+| Q6 | Free Etherscan key for Ethereum history | **Yes.** | M14 |
+| Q7 | Tokens in MVP | **Only USDT and USDC** (ERC-20 and SPL). | M14, M15 |
+| Q8 | Trezor xpub in MVP | **No, right after MVP.** | M21 |
+| Q9 | Purchase paid with outside money is a deposit | **Yes.** | M7 |
+| Q10 | Hide XIRR, TWR and "period profit" in the new interface | **Yes**; code stays until a separate removal. | M20 |
 
 Decisions taken without asking, open to correction:
 
@@ -91,10 +90,32 @@ Decisions taken without asking, open to correction:
    a provider is down, the app shows the last stored data and says how old it is.
 5. **Missing is not zero.** A missing price, unknown cost or incomplete history shows
    as missing; totals that depend on it are marked incomplete, never silently low.
-6. **Exact money.** Decimal strings and PostgreSQL `numeric`, as today. USD is the
-   accounting currency (Q1). Rounding happens only for display.
+6. **Exact money.** Decimal strings and PostgreSQL `numeric`, as today. Every operation
+   keeps its value in the currency it was paid in; USD, EUR and RUB amounts are
+   derived from stored FX rates (Q1). Rounding happens only for display.
 7. **Small additive steps.** Every change is additive on the existing schema and data.
    Destructive schema changes need an export, a migration plan and the owner's approval.
+
+### Three accounting currencies (Q1)
+
+USD, EUR and RUB are all accounting currencies; more can be added later by adding
+their FX series, without schema changes.
+
+- **Rates.** Daily official rates of the Bank of Russia (cbr.ru, free, history back
+  decades) give USD/RUB and EUR/RUB; EUR/USD is derived from them. The owner already
+  uses Bank of Russia rates for RUB purchases. Rates are stored like prices
+  (principle 4); on days without a published rate the latest earlier rate applies.
+- **Cost basis per currency.** Each acquisition's cost is converted into every
+  accounting currency at its own date's rate and kept per lot. A purchase paid in
+  RUB keeps its exact RUB cost; its USD and EUR cost come from that day's rates.
+- **P&L per currency.** Realized P&L = proceeds at the sale date's rate − FIFO cost in
+  that currency. Unrealized P&L = current value at today's rate − remaining cost in
+  that currency. RUB P&L therefore includes the ruble's movement against the dollar,
+  which is the point of keeping it separately.
+- **Flows per currency.** Deposits and withdrawals are valued at their date's rate in
+  each currency, so the market/flow split below holds in every currency.
+- **Display.** Settings picks the main currency; screens show it and can switch to
+  the other two.
 
 ### Capital change: market versus flows (BR 10)
 
@@ -105,7 +126,7 @@ For a period from `t0` to `t1` with portfolio values `V0` and `V1`:
 - `marketReturn %` = `marketEffect / (V0 + deposits)`, empty when the denominator is 0.
   For "all time" (`V0 = 0`) this equals the spreadsheet's "Доход" column.
 
-What counts as a flow (default Q9):
+What counts as a flow (Q9):
 
 | Operation | Flow |
 |---|---|
@@ -148,7 +169,7 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-AUTH-4 | Settings can regenerate recovery codes (after a TOTP check), list active sessions and log out everywhere. | 2.3 | 4 |
 | PR-AST-1 | An asset has type (crypto, fiat, manual), name, ticker, valuation currency and price source; new types can be added without schema rewrites. | 4 | 12 |
 | PR-AST-2 | A manual asset's value can be updated by hand at any time; each update is kept. | 4, 8 | 12 |
-| PR-PRC-1 | Crypto prices are collected at least hourly from a free public source behind a provider interface. | 5.1, 5.2 | 10 |
+| PR-PRC-1 | Crypto prices are collected at least hourly from Kraken and CoinGecko in turn, behind a provider interface; when one fails the other is used (Q3). | 5.1, 5.2 | 10 |
 | PR-PRC-2 | Every observation stores asset, price, quote currency, timestamp, source and fetch time, and is never deleted. | 5.3, 16 | 11 |
 | PR-PRC-3 | A price older than 2 hours is shown as stale; an asset with no price is "no price", not 0. | 5, 16 | 10, 25 |
 | PR-WAL-1 | The owner adds a read-only public address for Bitcoin, Ethereum or Solana, with an optional name, to an account. Keys and seed phrases are never asked for or stored. | 6 | 14–16 |
@@ -165,7 +186,9 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-OPS-7 | Every create, correction, classification and void is kept as an immutable version with its time and source. | 14 | — |
 | PR-OPS-8 | A Sell, Expense or Transfer cannot exceed the available quantity (lowest balance from its date forward); the form shows it and offers "Use all". A Buy that later operations consume cannot be deleted. | 7, 8 | 13 |
 | PR-OPS-9 | Sale proceeds stay in the account as cash; a Buy spends that cash before counting outside money as a deposit. | 10, 11 | 13, 22 |
-| PR-VAL-1 | Portfolio value now, in the selected base currency (USD, EUR, RUB), over all accounts. | 3.1 | 5, 6, 9 |
+| PR-VAL-1 | Portfolio value now, in the selected main currency (USD, EUR, RUB), over all accounts. | 3.1 | 5, 6, 9 |
+| PR-VAL-4 | Cost basis, realized and unrealized P&L are kept in USD, EUR and RUB, each with the FX rate of the operation's date; adding another currency needs only its rate series (Q1). | 3.1, 11 | 9, 21, 22 |
+| PR-FX-1 | Daily Bank of Russia rates for USD and EUR are collected and stored with their date and source, backfilled from 01.01.2025. | 5.3, 16 | 9, 11 |
 | PR-VAL-2 | Per asset: quantity, price, value, allocation, average buy price, cost basis, unrealized and realized P&L. | 11 | 21, 22 |
 | PR-VAL-3 | Allocation by asset, asset type and account. | 3.3 | 8 |
 | PR-HIS-1 | An hourly portfolio snapshot is stored; backdated operation changes rebuild later snapshots. | 3.2, 12 | 7, 24 |
@@ -277,7 +300,8 @@ correction rules are tested, and adds one read model over them:
 | type | PR-OPS-2, derived from the journal kind and classification |
 | occurredAt | date; time optional (PR #35) |
 | accountId, assetId, quantity | |
-| paidAmount, paidCurrency, rate, valueUsd | PR #34 adds paid currency and rate; value is USD |
+| paidAmount, paidCurrency, rate | PR #34 adds paid currency and rate |
+| value and cost in USD, EUR, RUB | derived from Bank of Russia rates of the operation's date (Q1) |
 | fee, feeAsset | fee in USD or in the native asset (network fee) |
 | counterAssetId, counterQuantity | swap and own transfer legs |
 | comment | new column on journal versions |
@@ -297,7 +321,7 @@ Buys and Sells from M9 on (existing trades keep their meaning: paid from outside
 |---|---|---|
 | Manual price | `manual_usd_price_versions` | keep |
 | Price observation | none (legacy `crypto-prices.service` keeps CoinGecko prices in memory only) | new `price_observations`: assetId, price, quoteCurrency, observedAt, source, fetchedAt; unique per asset, source, observedAt |
-| FX rate | `display_fx_observations` (daily USD→EUR, RUB from open.er-api.com, opt-in) | keep; collection on by default |
+| FX rate | `display_fx_observations` (daily USD→EUR, RUB from open.er-api.com, opt-in, current day only, display only) | new `fx_rates`: currency, rate per RUB, date, source (Bank of Russia), fetchedAt; daily job and one backfill from 01.01.2025. The open.er-api.com display panel is retired with the old Settings screen |
 
 Valuation rule: for asset A at instant t, use the latest automatic observation at or
 before t when A's source is a provider, else the latest manual price at or before t.
@@ -307,14 +331,15 @@ Older than 2 hours (provider) is "stale"; none at all is "no price".
 
 | Field | Notes |
 |---|---|
-| takenAt | hourly; backfilled rows are daily (Q4) |
+| takenAt | hourly; backfilled rows are daily from 01.01.2025 (Q4) |
 | valueUsd | sum of priced positions |
 | complete | false when any held asset has no price |
 | netFlowUsd | deposits − withdrawals since the previous snapshot |
 | snapshot positions | assetId, accountId, quantity, priceUsd, valueUsd, costUsd |
 | computedAt, inputsRevision | to detect and rebuild stale rows |
 
-EUR and RUB charts convert each snapshot with the FX rate valid at `takenAt`.
+Snapshot values and flows are stored in USD, EUR and RUB, each converted with the
+rate valid at `takenAt`, so the chart in any currency needs no recomputation.
 
 ### SyncSource (new)
 
@@ -397,6 +422,9 @@ I know where its value comes from.
 - PRC-HOURLY: **Given** BTC with provider source and a stubbed provider returning
   84945 USD **when** the hourly job runs **then** one observation (BTC, 84945, USD,
   provider time, source) is stored **and** the asset shows 84945.
+- PRC-FALLBACK: **Given** Kraken is due this hour and fails **when** the job runs
+  **then** CoinGecko is asked, its price is stored with source "coingecko", **and**
+  the sync status shows Kraken's error without marking prices stale.
 - PRC-IDEMPOTENT: **Given** the same provider answer twice **when** the job runs twice
   **then** one observation exists.
 - PRC-OUTAGE (E2E): **Given** a stored BTC price from 3 hours ago and a failing
@@ -569,13 +597,20 @@ network-specific identity:
   allocation shows BTC 42 %, ETH 20 %, Cash 15 %, Other 23 %, **and** grouping by
   account and by asset type is available.
 
-**US-5.4** As the owner I choose USD, EUR or RUB.
+**US-5.4** As the owner I see my capital and profit in USD, EUR and RUB.
 
 - CUR-SWITCH (E2E): **Given** a total of 1000 USD and a stored rate 0.92 EUR per USD
   **when** EUR is selected in Settings **then** the dashboard shows €920.00, **and**
   the choice persists after logout.
 - CUR-NO-RATE: **Given** no stored RUB rate **when** RUB is selected **then** values
   show "No rate" and USD remains available; nothing is 0.
+- CUR-PNL-RUB: **Given** a buy of 1000 USD on a day when the rate was 80 RUB per USD,
+  now worth 1100 USD at 95 RUB per USD **then** cost basis is 1000 USD and 80000 RUB,
+  value 1100 USD and 104500 RUB, unrealized P&L +100 USD and +24500 RUB.
+- CUR-PAID-RUB: **Given** a buy paid 100000 RUB on a day when the rate was 79 RUB per
+  USD **then** its RUB cost is exactly 100000 and its USD cost 1265.82.
+- CUR-RATE-GAP: **Given** a sale on a Sunday **then** its RUB and EUR values use the
+  latest Bank of Russia rate published before it.
 
 ### E6 Capital history
 
@@ -586,9 +621,10 @@ network-specific identity:
 - SNAP-REBUILD: **Given** snapshots for the last 7 days **when** a buy dated 3 days ago
   is added **then** snapshots from that instant on are rebuilt from stored prices, and
   no provider is called.
-- SNAP-BACKFILL: **Given** buys since 13.06.2025 and daily historical prices from the
-  stubbed provider **when** backfill runs once **then** one daily snapshot exists per
-  day since 13.06.2025 and the chart's ALL period starts there (Q4).
+- SNAP-BACKFILL: **Given** operations since 13.06.2025 and daily historical prices and
+  FX rates from the stubbed providers **when** backfill runs once **then** one daily
+  snapshot exists per day since 01.01.2025, days before the first holding show 0, and
+  the chart's ALL period starts on 01.01.2025 (Q4).
 
 **US-6.2** As the owner I see the capital chart for a period.
 
@@ -679,8 +715,8 @@ to section 8.
 | 6 | Portfolio value | Adapt | `manual-portfolio-valuation` (explicit account selection, manual prices only) | all accounts by default, automatic prices | M4 |
 | 7 | History chart | Build | `account-valuation-history` (one account, computed on demand) | snapshots, periods, rebuild | M6 |
 | 8 | Asset allocation | Build | PR #29 deferred and not touched | allocation by asset, type, account | M4, M16 |
-| 9 | USD/EUR/RUB valuation | Adapt | `daily-display-fx` (stored daily rates, opt-in, Settings calculator only) | apply to all values, base-currency setting, collection on | M5 |
-| 10 | Hourly market prices | Build | legacy `crypto-prices.service` (CoinGecko, memory only) | provider interface, hourly job, Q3 | M3 |
+| 9 | USD/EUR/RUB valuation | Build | `daily-display-fx` (current-day rates only, display calculator) | historical Bank of Russia rates, cost basis and P&L per currency, main-currency setting | M5 |
+| 10 | Hourly market prices | Build | legacy `crypto-prices.service` (CoinGecko, memory only) | provider interface, Kraken + CoinGecko alternating, hourly job | M3 |
 | 11 | Historical price storage | Adapt | `manual-usd-prices` (`manual_usd_price_versions`) | `price_observations` with source | M3 |
 | 12 | Manual assets | Adapt | `accounting_instruments` (name, symbol), `manual-opening-positions` | type, valuation currency, source; legacy `assets` module retired | M2 |
 | 13 | Manual transactions | Adapt | `usd-fifo-trades`, swaps, rewards, transfers, `external-usd-flows`; PR #35 dates, PR #34 currency | one form, no explicit journal start, comment, Income/Expense/Gift/Fee/Other kinds, edit and delete from the list, cash positions, available-balance check | M8, M9 |
@@ -725,10 +761,10 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 |---|---|---|---|---|
 | M1 | `add-app-shell` | sidebar Dashboard, Portfolio, Transactions, Wallets, Settings; current screens under "Legacy"; sync indicator slot | — | — |
 | M2 | `classify-assets` | asset type, ticker, valuation currency, price source; Portfolio list | M1 | — |
-| M3 | `collect-hourly-prices` | price provider interface, hourly job, `price_observations`, `SyncSource` | M2 | Q3 |
+| M3 | `collect-hourly-prices` | price provider interface, Kraken and CoinGecko in turn with fallback, hourly job, `price_observations`, `SyncSource` | M2 | Q3 |
 | M4 | `value-whole-portfolio` | all-account valuation, average buy, cost basis, P&L per asset, allocation; Portfolio and Asset details | M2 (M3 for automatic prices) | Q2 |
-| M5 | `choose-base-currency` | USD/EUR/RUB setting applied everywhere; FX collection on | M4 | Q1 |
-| M6 | `record-portfolio-snapshots` | hourly snapshots, rebuild on backdated edits, backfill; dashboard value and chart | M4, M5 | Q4 |
+| M5 | `account-in-three-currencies` | Bank of Russia rates (daily + backfill), cost basis and P&L per lot in USD, EUR and RUB, main-currency setting | M4 | Q1 |
+| M6 | `record-portfolio-snapshots` | hourly snapshots in three currencies, rebuild on backdated edits, backfill from 01.01.2025; dashboard value and chart | M4, M5 | Q4 |
 | M7 | `split-market-and-flows` | flow rules of section 2; change split on the dashboard | M6 | Q9 |
 | M8 | `list-all-operations` | unified operation read model and Transactions screen with filters | M1, #34, #35 | — |
 | M9 | `simplify-manual-operations` | one add/edit/delete form, type-dependent fields, comment, new kinds, no explicit journal start, cash from sales, available balance and "Use all", delete guard | M8 | — |
@@ -739,7 +775,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M14 | `track-ethereum-wallets` | ETH + USDT/USDC history and balance | M11, M12 | Q6, Q7 |
 | M15 | `track-solana-wallets` | SOL + USDT/USDC history and balance | M11, M12 | Q7 |
 | M16 | `show-dashboard-attention` | attention block, allocation and top assets on the dashboard | M6, M11, M12 | — |
-| M17 | `reset-password-by-email` | reset request, email, link, pages | — | Q5 |
+| M17 | `reset-password-by-email` | reset request, email via Yandex SMTP, link, pages | — | Q5 |
 | M18 | `manage-security-settings` | recovery-code regeneration, sessions, log out everywhere | M1 | — |
 | M19 | `export-owner-data` | CSV archive and JSON backup in Settings | M8 | — |
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
@@ -805,8 +841,8 @@ sidebar, five sections) so it does not wait for mockups.
 
 ## 10. Later versions
 
-From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (unless
-Q8 says yes), Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
+From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (first
+after MVP, Q8), accounting currencies beyond USD, EUR and RUB, Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
 re-enrolment, an audit history screen, stocks, bonds, ETFs, deposits, real estate,
 metals and liabilities as asset types, exchanges other than Bybit, bank integrations, tax reports,
 DeFi and NFT valuation, mobile layouts.
