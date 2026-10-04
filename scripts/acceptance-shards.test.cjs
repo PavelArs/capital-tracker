@@ -52,6 +52,7 @@ const legacyChecks = [
   'asset-swaps-bounds-db',
   'wallet-addresses-db',
   'asset-classification-db',
+  'prices-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

@@ -5,7 +5,7 @@ const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 
-const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com']);
+const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -26,6 +26,44 @@ let bitcoinHistories = new Map();
 // Never one of the addresses whose history the acceptance tests import.
 const historyCounterparty = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
+// Synthetic market prices (collect-hourly-prices). null keeps the legacy CoinGecko fixture.
+// kraken: { hourly: { XBTUSD: '84945.1' }, daily: { XBTUSD: 90000 }, fail: { XBTUSD: 500 }, dailyFail: {...} }
+// coingecko: { status, prices: { bitcoin: 84950.5 }, updatedAt }
+let marketPrices = null;
+const krakenKeys = { XBTUSD: 'XXBTZUSD', ETHUSD: 'XETHZUSD', ZECUSD: 'XZECZUSD', XLMUSD: 'XXLMZUSD', USDTUSD: 'USDTZUSD' };
+const DAY = 86400;
+const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
+
+// Kraken OHLC: hourly candles end with the open candle three hours after `since`; daily
+// candles run from the day containing `since` to today. Oracles restate these formulas.
+function krakenOhlc(response, url) {
+  const pair = url.searchParams.get('pair');
+  const interval = Number(url.searchParams.get('interval'));
+  const since = Number(url.searchParams.get('since'));
+  const kraken = marketPrices?.kraken ?? {};
+  const failure = (interval === 1440 ? kraken.dailyFail : kraken.fail)?.[pair];
+  if (failure) return respond(response, failure, { error: ['EService:Unavailable'] });
+  const configured = interval === 1440 ? kraken.daily?.[pair] : kraken.hourly?.[pair];
+  if (configured === undefined || !Number.isSafeInteger(since)) {
+    return respond(response, 200, { error: ['EQuery:Unknown asset pair'] });
+  }
+  const candle = (time, close) => [time, close, close, close, close, close, '1.00000000', 1];
+  let candles;
+  if (interval === 60) {
+    const open = since + 3 * 3600;
+    candles = [open - 3 * 3600, open - 2 * 3600, open - 3600].map((time) => candle(time, configured));
+    candles.push(candle(open, '1.0'));
+  } else if (interval === 1440) {
+    const today = Math.floor(Date.now() / 1000 / DAY) * DAY;
+    candles = [];
+    for (let time = Math.floor(since / DAY) * DAY; time <= today; time += DAY) {
+      candles.push(candle(time, `${configured + (time - backfillStart) / DAY}.5`));
+    }
+  } else {
+    return respond(response, 200, { error: ['EGeneral:Invalid arguments'] });
+  }
+  return respond(response, 200, { error: [], result: { [krakenKeys[pair] ?? pair]: candles, last: candles.at(-2)?.[0] ?? 0 } });
+}
 
 // Deterministic transaction i (0 is oldest). Acceptance oracles restate these formulas.
 function historyTx(address, i) {
@@ -104,6 +142,16 @@ function provider(request, response, url) {
     else send();
     return;
   }
+  if (url.hostname === 'api.kraken.com' && url.pathname === '/0/public/OHLC') return krakenOhlc(response, url);
+  if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
+    && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
+    const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
+    if (status !== 200) return respond(response, status, { status: { error_code: status } });
+    const ids = (url.searchParams.get('ids') || '').split(',');
+    const at = updatedAt ?? Math.floor(Date.now() / 1000) - 30;
+    return respond(response, 200, Object.fromEntries(ids.filter((id) => prices[id] !== undefined)
+      .map((id) => [id, { usd: prices[id], last_updated_at: at }])));
+  }
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price') {
     return respond(response, 200, { bitcoin: { usd: 60000 }, ethereum: { usd: 3000 } });
   }
@@ -140,6 +188,7 @@ const server = http.createServer(async (request, response) => {
       requests = [];
       fx = initialFx();
       bitcoinHistories = new Map();
+      marketPrices = null;
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/fx') {
@@ -151,6 +200,24 @@ const server = http.createServer(async (request, response) => {
         return respond(response, 400, { error: 'Invalid synthetic FX fixture' });
       }
       fx = data;
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/prices') {
+      const data = await readJson(request);
+      const status = (value) => value === undefined || (Number.isInteger(value) && value >= 200 && value <= 599);
+      const table = (value, check) => value === undefined || (value && typeof value === 'object' && !Array.isArray(value)
+        && Object.entries(value).every(([key, item]) => /^[A-Za-z0-9-]{2,24}$/.test(key) && check(item)));
+      const kraken = data.kraken ?? {};
+      const coingecko = data.coingecko ?? {};
+      if (!table(kraken.hourly, (item) => typeof item === 'string' && /^\d+(\.\d+)?$/.test(item))
+        || !table(kraken.daily, (item) => Number.isSafeInteger(item) && item > 0)
+        || !table(kraken.fail, (item) => Number.isInteger(item) && item >= 400 && item <= 599)
+        || !table(kraken.dailyFail, (item) => Number.isInteger(item) && item >= 400 && item <= 599)
+        || !status(coingecko.status) || !table(coingecko.prices, (item) => typeof item === 'number' && item > 0)
+        || (coingecko.updatedAt !== undefined && !Number.isSafeInteger(coingecko.updatedAt))) {
+        return respond(response, 400, { error: 'Invalid synthetic price fixture' });
+      }
+      marketPrices = { kraken, coingecko: data.coingecko ? coingecko : null };
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
