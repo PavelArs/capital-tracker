@@ -180,4 +180,13 @@ test('SHEET-UI: owner imports the Excel purchase sheet as tab-separated text and
   ])
     await expect(row).toContainText(text);
   await expect(panel.getByText(/Совпадает: 5 · расходится: 0 · не читается: 0/)).toBeVisible();
+  // The wide comparison table scrolls inside its own wrapper, never the page.
+  const viewport = page.viewportSize();
+  for (const width of [360, 768, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+      .toBe(true);
+  }
+  if (viewport) await page.setViewportSize(viewport);
 });

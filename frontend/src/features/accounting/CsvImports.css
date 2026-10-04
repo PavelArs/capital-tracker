@@ -162,6 +162,16 @@
   overflow-wrap: anywhere;
 }
 
+.csv-imports .csv-reconciliation th,
+.csv-imports .csv-reconciliation td {
+  min-width: 6rem;
+  white-space: normal;
+}
+
+.csv-imports .csv-reconciliation .csv-reconciliation__checks {
+  min-width: 22rem;
+}
+
 .csv-summary-line {
   display: contents;
 }

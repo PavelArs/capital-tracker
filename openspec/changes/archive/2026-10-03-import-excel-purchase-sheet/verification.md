@@ -67,6 +67,18 @@ service branch only).
 | Run 37148705404 on `c6c2a17` | Critical acceptance passed, all 21 cases, including SHEET-UI and CSV-006-A. The exact-image security gate failed. The diff does not touch any image and the sanitized report was not readable from here; the failure is taken to be the pinned nginx base's pcre2 10.48-r0 finding fixed on PR #30 by requiring `pcre2>=10.49-r0` in `frontend/Dockerfile`, and PR #30 is green with it. The same two lines are ported here; they no-op once #30 merges. |
 | Run 37150307665 on `8e27413` | All jobs green, including `Release Images and Security` (critical acceptance and image security gate). |
 
+## Post-archive fix (2026-10-04)
+
+Capturing screenshots for the owner on a local run (throwaway PostgreSQL 16 database, built
+backend, Vite over HTTPS, synthetic owner and two synthetic rows) showed that the
+reconciliation panel stretched the page: `document.documentElement.scrollWidth` was 2411 at a
+1280 px viewport, the column selects were unstyled and the table cells did not wrap. SHEET-UI
+now also asserts that the page does not scroll horizontally at 360, 768 and 1440 px after
+reconciliation. Fix: the panel uses the shared form grid, the result section is a shrinkable
+grid item and the reconciliation table wraps its text cells. After the fix the same local run
+measured scrollWidth equal to the viewport at 360, 768, 1280 and 1440 px. Frontend tests (137),
+lint and build pass; the browser assertion runs in hosted CI.
+
 ## Not run here
 
 - SHEET-UI Playwright journey and the probe inside the acceptance Compose stack: hosted

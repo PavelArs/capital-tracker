@@ -72,7 +72,7 @@ export function CsvReconciliationView({
   const label = (field: CsvReconciliationField) => referenceLabels[field];
   const { totals } = value;
   return (
-    <section aria-label="Результат сверки">
+    <section className="csv-imports__preview" aria-label="Результат сверки">
       <p>
         Совпадает: {totals.matchCount} · расходится: {totals.mismatchCount} · не читается:{' '}
         {totals.unreadableCount} · нет текущего курса: {totals.unavailableCount}
@@ -85,7 +85,7 @@ export function CsvReconciliationView({
         Считается по каждой покупке целиком, без учёта последующих продаж.
       </p>
       <div className="manual-table-wrap">
-        <table className="manual-table" aria-label="Сверка строк с таблицей">
+        <table className="manual-table csv-reconciliation" aria-label="Сверка строк с таблицей">
           <thead>
             <tr>
               <th scope="col">Строка</th>
@@ -114,7 +114,7 @@ export function CsvReconciliationView({
                     ? 'продажа — не сверяется с таблицей покупок'
                     : (row.costUsd ?? '—')}
                 </td>
-                <td>
+                <td className="csv-reconciliation__checks">
                   <ul>
                     {row.checks.map((check) => (
                       <li key={check.field}>
@@ -201,7 +201,10 @@ export function CsvReconciliationPanel({
     }
   }
   return (
-    <section className="csv-imports__section" aria-labelledby="csv-reconciliation-heading">
+    <section
+      className="csv-imports__section operation-form"
+      aria-labelledby="csv-reconciliation-heading"
+    >
       <h3 id="csv-reconciliation-heading">Сверка с таблицей</h3>
       <p className="manual-muted">
         Сервис пересчитывает курс покупки, стоимость, разницу и доход по текущему курсу из самой
