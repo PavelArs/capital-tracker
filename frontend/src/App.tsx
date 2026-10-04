@@ -15,6 +15,7 @@ import ManualPrices from '@pages/ManualPrices';
 import PeriodProfit from '@pages/PeriodProfit';
 import RetiredLiabilities from '@pages/RetiredLiabilities';
 import Settings from '@pages/Settings';
+import WalletAddresses from '@pages/WalletAddresses';
 import React, { useEffect } from 'react';
 import { Link, Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import OwnedTransfers from './features/accounting/OwnedTransfers';
@@ -72,6 +73,7 @@ function AppRoutes() {
         <Route path="manual-accounts" element={<ManualAccounts />} />
         <Route path="owned-transfers" element={<OwnedTransfers />} />
         <Route path="manual-prices" element={<ManualPrices />} />
+        <Route path="wallet-addresses" element={<WalletAddresses />} />
         <Route path="capital-flows" element={<CapitalFlows />} />
         <Route path="period-profit" element={<PeriodProfit />} />
         <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />

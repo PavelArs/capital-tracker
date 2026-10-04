@@ -1,0 +1,116 @@
+.wallet-page {
+  width: 100%;
+  max-width: 1100px;
+  min-width: 0;
+  margin: 0 auto;
+  padding: clamp(0.75rem, 2.5vw, 1.5rem);
+  color: var(--text-color);
+}
+
+.wallet-page h1 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.wallet-page header p {
+  max-width: 80ch;
+  line-height: 1.55;
+}
+
+.wallet-card {
+  min-width: 0;
+  margin: 1rem 0;
+  padding: clamp(1rem, 2.5vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-color);
+}
+
+.wallet-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.wallet-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.wallet-form input {
+  min-height: 44px;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-family: monospace;
+}
+
+.wallet-card button {
+  align-self: flex-start;
+  justify-self: start;
+  min-height: 44px;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 4px;
+  background: var(--primary-color);
+  color: #fff;
+  cursor: pointer;
+}
+
+.wallet-card button.wallet-secondary {
+  margin-top: 0.75rem;
+  background: transparent;
+  color: var(--primary-color-dark);
+}
+
+.wallet-card button:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.wallet-card button:focus-visible {
+  outline: 2px solid var(--primary-color-dark);
+  outline-offset: 2px;
+}
+
+.wallet-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+}
+
+.wallet-message:empty {
+  display: none;
+}
+
+.wallet-table-scroll {
+  overflow-x: auto;
+}
+
+.wallet-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.wallet-card th,
+.wallet-card td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: start;
+  white-space: nowrap;
+}
+
+/* Headers may wrap so the USD column stays visible without scrolling on desktop. */
+.wallet-card th {
+  vertical-align: bottom;
+  white-space: normal;
+}
+
+.wallet-card .wallet-number {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+.wallet-missing-value {
+  font-style: italic;
+}
