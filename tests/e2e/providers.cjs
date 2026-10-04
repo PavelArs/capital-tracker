@@ -39,7 +39,12 @@ const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
 let cbr = null;
 
 function cbrDynamic(response, url) {
-  const code = url.searchParams.get('VAL_NM_RQ');
+  const code = url.searchParams.get('VAL_NM_RQ') ?? '';
+  // Only a series code shape is ever echoed back, like the real service.
+  if (!/^R\d{5}$/.test(code)) {
+    response.writeHead(200, { 'content-type': 'text/html', connection: 'close' });
+    return response.end('Error in parameters');
+  }
   const parse = (value) => {
     const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? '');
     return match ? Date.parse(`${match[3]}-${match[2]}-${match[1]}T00:00:00Z`) / 1000 : NaN;
