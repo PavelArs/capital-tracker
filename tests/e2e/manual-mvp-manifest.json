@@ -82,5 +82,9 @@
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
     "title": "ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing"
+  },
+  {
+    "file": "tests/e2e/usd-trades.spec.ts",
+    "title": "WORKBENCH-001-B / TRADE-002-C: two date-only purchases on one day save with automatic order and plain confirmations"
   }
 ]

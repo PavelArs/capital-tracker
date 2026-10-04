@@ -280,7 +280,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     exact: true,
     includeHidden: true,
   });
-  const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
+  const gross = tradeForm.getByLabel('Сумма сделки, USD', { exact: true });
   await gross.fill('110');
   await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 

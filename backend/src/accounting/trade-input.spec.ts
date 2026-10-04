@@ -69,7 +69,8 @@ describe('TRADE-001-A literal empty-origin attestation', () => {
 
 describe('TRADE-002-B command shape and raw identity boundaries', () => {
   it.each(parsers)('%s rejects all absent mandatory fields', (_name, parse, valid) => {
-    for (const field of Object.keys(valid)) {
+    // TRADE-002-C: an absent same-instant order requests automatic placement.
+    for (const field of Object.keys(valid).filter((key) => key !== 'orderWithinTimestamp')) {
       const incomplete: Record<string, unknown> = { ...valid };
       delete incomplete[field];
       rejects(() => parse(incomplete));
@@ -447,5 +448,17 @@ describe('TRADE-005-A bounded revision-pinned page and immutable-history query s
     rejects(() => parseDerivedTradePageQuery({ offset: '99999' }));
     rejects(() => parseDerivedTradePageQuery({ journalRevision: '1', offset: '100000' }));
     rejects(() => parseTradePageQuery({ journalRevision: '1', offset: '10000' }));
+  });
+});
+
+describe('TRADE-002-C optional same-instant order', () => {
+  it.each(executionParsers)('%s marks an absent order as automatic', (_name, parse) => {
+    const { orderWithinTimestamp: _omitted, ...automatic } = execution;
+    expect(parse(automatic)).toEqual({ ...execution, orderWithinTimestamp: null });
+  });
+
+  it.each(executionParsers)('%s still refuses a null or raw-typed order', (_name, parse) => {
+    for (const orderWithinTimestamp of [null, '0', -1, 1.5, 2147483648, undefined])
+      rejects(() => parse({ ...execution, orderWithinTimestamp }));
   });
 });

@@ -9,9 +9,11 @@ export interface JournalInitializationInput {
   assertEmpty: true;
 }
 
-export interface TradeCreateInput extends Execution {
+export interface TradeCreateInput extends Omit<Execution, 'orderWithinTimestamp'> {
   requestId: string;
   expectedJournalRevision: number;
+  /** null: place after every event already at this instant (TRADE-002-C). */
+  orderWithinTimestamp: number | null;
 }
 
 export type TradeCorrectionInput = TradeCreateInput;
@@ -95,7 +97,8 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     instrumentId: parseUuid(row.instrumentId),
     side: row.side,
     occurredAt: parseAsOf(row.occurredAt),
-    orderWithinTimestamp: integer(row.orderWithinTimestamp, 2147483647),
+    orderWithinTimestamp:
+      'orderWithinTimestamp' in row ? integer(row.orderWithinTimestamp, 2147483647) : null,
     quantity,
     grossUsd,
     feeUsd,

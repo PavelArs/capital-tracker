@@ -449,7 +449,7 @@ export function TradeResults({
               <th>Время UTC / порядок</th>
               <th>Тип</th>
               <th>Количество</th>
-              <th>Валовая сумма, USD</th>
+              <th>Сумма сделки, USD</th>
               <th>Комиссия, USD</th>
               <th>Действия</th>
             </tr>
@@ -759,7 +759,7 @@ export function TradeResults({
                   <th>Тип / изменение</th>
                   <th>Время UTC / порядок</th>
                   <th>Количество</th>
-                  <th>Валовая сумма, USD</th>
+                  <th>Сумма сделки, USD</th>
                   <th>Комиссия, USD</th>
                 </tr>
               </thead>

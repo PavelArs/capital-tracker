@@ -69,7 +69,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     const selected = tradeTable.getByRole('row').filter({ hasText: first.trade.tradeId });
     await selected.getByRole('button', { name: 'Исправить', exact: true }).click();
     const tradeForm = page.getByRole('group', { name: 'Сделка в USD', exact: true });
-    const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
+    const gross = tradeForm.getByLabel('Сумма сделки, USD', { exact: true });
     await gross.fill('120');
     await expect(gross).toHaveValue('120');
 

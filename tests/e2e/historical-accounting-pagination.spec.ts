@@ -316,7 +316,7 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
       exact: true,
       includeHidden: true,
     });
-    const gross = form.getByLabel('Валовая сумма, USD', { exact: true });
+    const gross = form.getByLabel('Сумма сделки, USD', { exact: true });
     await gross.fill('12');
     await expect(gross).toHaveValue('12');
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();

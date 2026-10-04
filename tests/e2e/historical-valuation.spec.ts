@@ -363,7 +363,7 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       exact: true,
       includeHidden: true,
     });
-    const gross = tradeForm.getByLabel('Валовая сумма, USD', { exact: true });
+    const gross = tradeForm.getByLabel('Сумма сделки, USD', { exact: true });
     await gross.fill('120');
     await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 

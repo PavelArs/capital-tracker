@@ -82,7 +82,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await form.getByRole('combobox', { name: 'Инструмент', exact: true }).selectOption(instrument.id);
   await form.getByLabel('Дата сделки', { exact: true }).fill('2025-01-03');
   await form.getByLabel('Количество', { exact: true }).fill('0.123456789012345678');
-  await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('12.34');
+  await form.getByLabel('Сумма сделки, USD', { exact: true }).fill('12.34');
   await form.getByLabel('Комиссия, USD', { exact: true }).fill('0.01');
   const originalInput = await quantity.elementHandle();
 

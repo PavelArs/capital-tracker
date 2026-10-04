@@ -1,2 +1,2 @@
 export { DateTimeField } from './DateTimeField';
-export { utcDay } from './date-time';
+export { formatUtcMoment, utcDay } from './date-time';

@@ -8,7 +8,7 @@ import {
   type VoidCommand,
   tradesApi,
 } from '@api/trades.api';
-import { DateTimeField, utcDay } from '@components/common/DateTimeField';
+import { DateTimeField, formatUtcMoment, utcDay } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
 import {
   type ReactNode,
@@ -45,6 +45,14 @@ type Operation =
   | { kind: 'correct'; tradeId: string; input: TradeCommand }
   | { kind: 'void'; tradeId: string; input: VoidCommand };
 type Retry = { signature: string; operation: Operation; ambiguous: boolean };
+function tradeSaved(trade: TradeVersion) {
+  const action =
+    trade.kind === 'void' ? 'аннулирована' : trade.version > 1 ? 'исправлена' : 'сохранена';
+  const fee = Number(trade.feeUsd) === 0 ? '' : `, комиссия ${trade.feeUsd} USD`;
+  return `Сделка ${action}: ${trade.side === 'buy' ? 'покупка' : 'продажа'} ${trade.quantity} ${
+    trade.instrumentSymbol ?? trade.instrumentName
+  } на ${trade.grossUsd} USD${fee}, ${formatUtcMoment(trade.occurredAt)}.`;
+}
 function errorMessage(error: unknown) {
   if (isAxiosError(error) && error.response?.status === 409)
     return 'Операция не согласуется с журналом. Проверьте актуальную ревизию, границу покрытия, порядок сделок, доступное количество на дату продажи и лимиты. Черновик сохранён.';
@@ -362,8 +370,9 @@ export function TradeJournal({
       return;
     }
     if (
-      !/^(0|[1-9][0-9]*)$/.test(draft.orderWithinTimestamp) ||
-      Number(draft.orderWithinTimestamp) > 2147483647
+      draft.orderWithinTimestamp !== '' &&
+      (!/^(0|[1-9][0-9]*)$/.test(draft.orderWithinTimestamp) ||
+        Number(draft.orderWithinTimestamp) > 2147483647)
     ) {
       setError('Порядок должен быть целым числом от 0 до 2147483647.');
       return;
@@ -375,9 +384,13 @@ export function TradeJournal({
         requestId: newRequestId(),
         expectedJournalRevision: state.journal.journalRevision,
       };
+      const { orderWithinTimestamp, ...execution } = draft;
       const input: TradeCommand = {
-        ...draft,
-        orderWithinTimestamp: Number(draft.orderWithinTimestamp),
+        ...execution,
+        ...(orderWithinTimestamp === ''
+          ? {}
+          : { orderWithinTimestamp: Number(orderWithinTimestamp) }),
+        feeUsd: draft.feeUsd === '' ? '0' : draft.feeUsd,
         ...identity,
       };
       retry.current = {
@@ -446,14 +459,10 @@ export function TradeJournal({
       {receipt && (
         <p role="status" className="manual-feedback manual-feedback--success">
           {'trade' in receipt ? (
-            <>
-              Сохранена квитанция: сделка {receipt.trade.tradeId}, версия {receipt.trade.version},
-              ревизия журнала {receipt.journalRevision}.
-            </>
+            tradeSaved(receipt.trade)
           ) : (
-            <>Журнал открыт с {receipt.coverageFrom}.</>
-          )}{' '}
-          Квитанция не заменяет актуальное состояние.
+            <>Журнал открыт с {formatUtcMoment(receipt.coverageFrom)}.</>
+          )}
         </p>
       )}
       {needsReview && (
@@ -474,7 +483,7 @@ export function TradeJournal({
                   : 'продажа'}
               ; инструмент {reviewTarget.instrumentName}
               {reviewTarget.instrumentSymbol ? ` (${reviewTarget.instrumentSymbol})` : ''}, UUID{' '}
-              {reviewTarget.instrumentId}; количество {reviewTarget.quantity}; валовая сумма{' '}
+              {reviewTarget.instrumentId}; количество {reviewTarget.quantity}; сумма{' '}
               {reviewTarget.grossUsd} USD; комиссия {reviewTarget.feeUsd} USD;{' '}
               {reviewTarget.occurredAt}, порядок {reviewTarget.orderWithinTimestamp}.
             </p>

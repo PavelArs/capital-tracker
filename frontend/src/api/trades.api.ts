@@ -267,7 +267,9 @@ export interface TradeVersions {
   items: TradeVersion[];
   nextBeforeVersion: number | null;
 }
-export interface TradeCommand extends TradeExecution {
+export interface TradeCommand extends Omit<TradeExecution, 'orderWithinTimestamp'> {
+  /** Omitted: the backend places the trade after every event already at this instant. */
+  orderWithinTimestamp?: number;
   requestId: string;
   expectedJournalRevision: number;
 }

@@ -29,6 +29,7 @@ import {
   expectBlockedTradeWrites,
   installTradeCommitFailure,
   noStore,
+  openTradeOrder,
   priorState,
   raceTradeReplicas,
   readOrigin,
@@ -80,11 +81,12 @@ async function fillTrade(page: Page, input: TradeInput): Promise<void> {
     .getByRole('combobox', { name: 'Тип сделки', exact: true })
     .selectOption({ label: input.side === 'buy' ? 'Покупка' : 'Продажа' });
   await fillMoment(form, 'Дата сделки', 'Время сделки, UTC', input.occurredAt);
+  await openTradeOrder(form);
   await form
     .getByLabel('Порядок в этот момент', { exact: true })
     .fill(String(input.orderWithinTimestamp));
   await form.getByLabel('Количество', { exact: true }).fill(input.quantity);
-  await form.getByLabel('Валовая сумма, USD', { exact: true }).fill(input.grossUsd);
+  await form.getByLabel('Сумма сделки, USD', { exact: true }).fill(input.grossUsd);
   await form.getByLabel('Комиссия, USD', { exact: true }).fill(input.feeUsd);
 }
 async function summary(page: Page, realized: string, remaining: string): Promise<void> {
@@ -188,7 +190,7 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
                 'Время сделки, UTC',
                 'Порядок в этот момент',
                 'Количество',
-                'Валовая сумма, USD',
+                'Сумма сделки, USD',
                 'Комиссия, USD',
               ]) {
                 await expect(
@@ -245,7 +247,7 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
   await first.getByRole('button', { name: 'Исправить', exact: true }).click();
   await page
     .getByRole('group', { name: 'Сделка в USD', exact: true })
-    .getByLabel('Валовая сумма, USD', { exact: true })
+    .getByLabel('Сумма сделки, USD', { exact: true })
     .fill('120');
   const corrected = await browserPost(
     page,
@@ -915,7 +917,7 @@ test('TRADE-006-A / TRADE-006-B: literal instrument labels and a real409 keep th
   await expect(save).toBeDisabled();
   const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
   await expect(form.getByLabel('Количество', { exact: true })).toHaveValue('3');
-  await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('300');
+  await expect(form.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('300');
   await page.waitForLoadState('networkidle');
   expect(writes).toHaveLength(1);
   expect(writes[0]).toMatchObject({ expectedJournalRevision: 0, quantity: '3', grossUsd: '300' });
@@ -949,6 +951,54 @@ test('TRADE-006-A / TRADE-006-B: literal instrument labels and a real409 keep th
     { scope: 'csrf-ip', subject: await hostSubject(), hits: browserCsrfAdmissions() - csrfBefore },
   ]);
   assertQuota();
+});
+
+test('WORKBENCH-001-B / TRADE-002-C: two date-only purchases on one day save with automatic order and plain confirmations', async ({
+  page,
+}) => {
+  const { api, account, instrument } = await fixture(page);
+  const providers = providerRequests();
+  const writes: Record<string, unknown>[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      new URL(request.url()).pathname === `/api/accounting/accounts/${account.id}/trades`
+    )
+      writes.push(request.postDataJSON());
+  });
+  await page.goto(`/manual-accounts/${account.id}`);
+  const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
+  const save = page.getByRole('button', { name: 'Сохранить сделку', exact: true });
+  const receipts = [];
+  for (const [quantity, grossUsd] of [
+    ['0.01', '1170'],
+    ['0.02', '2300.5'],
+  ]) {
+    await expect(save).toBeEnabled();
+    await form.getByRole('combobox', { name: 'Инструмент', exact: true }).selectOption(instrument.id);
+    await form.getByLabel('Дата сделки', { exact: true }).fill('2025-06-13');
+    await expect(form.getByLabel('Время сделки, UTC', { exact: true })).toHaveValue('');
+    await form.getByLabel('Количество', { exact: true }).fill(quantity);
+    await form.getByLabel('Сумма сделки, USD', { exact: true }).fill(grossUsd);
+    await form.getByLabel('Комиссия, USD', { exact: true }).fill('');
+    await expect(form.getByText('Порядок в один момент: авто', { exact: true })).toBeVisible();
+    const saved = await browserPost(page, `/accounts/${account.id}/trades`, () => save.click());
+    expect(saved.status()).toBe(201);
+    const receipt = readReceipt(await saved.json());
+    receipts.push(receipt);
+    await expect(page.getByRole('status').filter({ hasText: 'Сделка сохранена' })).toHaveText(
+      `Сделка сохранена: покупка ${quantity} SAME на ${grossUsd} USD, 13.06.2025.`,
+    );
+  }
+  expect(writes).toHaveLength(2);
+  for (const body of writes) {
+    expect(body).not.toHaveProperty('orderWithinTimestamp');
+    expect(body).toMatchObject({ occurredAt: '2025-06-13T00:00:00.000Z', feeUsd: '0' });
+  }
+  expect(receipts.map((item) => item.trade.orderWithinTimestamp)).toEqual([0, 1]);
+  expect((await api.trades(account.id)).items).toEqual(receipts.map((item) => item.trade));
+  await summary(page, '0', '3470.5');
+  expect(providerRequests()).toEqual(providers);
 });
 
 test('TRADE-004-B / TRADE-006-A: a real committed response lost in transport retries the identical command and reads current state after its old receipt', async ({
@@ -1073,7 +1123,7 @@ test('TRADE-006-C regression: manual refresh of a selected target requires expli
     if (mode === 'correct') {
       await page
         .getByRole('group', { name: 'Сделка в USD', exact: true })
-        .getByLabel('Валовая сумма, USD', { exact: true })
+        .getByLabel('Сумма сделки, USD', { exact: true })
         .fill('120');
     }
     const latestInput = tradeInput(latestInstrument.id, 1, {
@@ -1119,7 +1169,7 @@ test('TRADE-006-C regression: manual refresh of a selected target requires expli
     if (mode === 'correct') {
       const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
       await expect(form.getByLabel('Количество', { exact: true })).toHaveValue('1');
-      await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('120');
+      await expect(form.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('120');
       await expect(form.getByRole('combobox', { name: 'Инструмент', exact: true })).toHaveValue(
         firstInstrument.id,
       );
@@ -1193,7 +1243,7 @@ test('TRADE-004-B / TRADE-006-D regression: lost correction followed by pinned40
     .click();
   await page
     .getByRole('group', { name: 'Сделка в USD', exact: true })
-    .getByLabel('Валовая сумма, USD', { exact: true })
+    .getByLabel('Сумма сделки, USD', { exact: true })
     .fill('120');
   await page.waitForLoadState('networkidle');
   const path = `/api/accounting/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`;
@@ -1321,7 +1371,7 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
     .getByRole('button', { name: 'Исправить', exact: true })
     .click();
   const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
-  await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('120');
+  await form.getByLabel('Сумма сделки, USD', { exact: true }).fill('120');
   const path = `/api/accounting/accounts/${account.id}/trades/${bought.trade.tradeId}/corrections`;
   const pattern = `**${path}`;
   const commands: TradeInput[] = [];
@@ -1357,7 +1407,7 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
     await expect.poll(() => lost).toBe(true);
     const retry = page.getByRole('button', { name: 'Повторить исходный запрос', exact: true });
     await expect(retry).toBeEnabled();
-    await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toBeDisabled();
+    await expect(form.getByLabel('Сумма сделки, USD', { exact: true })).toBeDisabled();
     expect(commands).toHaveLength(1);
     expect(commands[0].expectedJournalRevision).toBe(2);
     const afterCommit = fingerprint(['auth_sessions', 'auth_request_limits']);
@@ -1395,7 +1445,7 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
       'Время сделки, UTC',
       'Порядок в этот момент',
       'Количество',
-      'Валовая сумма, USD',
+      'Сумма сделки, USD',
       'Комиссия, USD',
     ]) {
       await expect(

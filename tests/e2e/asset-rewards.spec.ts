@@ -354,7 +354,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
     includeHidden: true,
   });
   await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
-  await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
+  await tradeDraft.getByLabel('Сумма сделки, USD', { exact: true }).fill('777');
   await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
   await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
   const form = section.getByRole('form', {
@@ -528,7 +528,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
     // A separate trade draft is local to this visit and survives reward mutations.
     await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('trades');
     await tradeDraft.getByLabel('Количество', { exact: true }).fill('17');
-    await tradeDraft.getByLabel('Валовая сумма, USD', { exact: true }).fill('777');
+    await tradeDraft.getByLabel('Сумма сделки, USD', { exact: true }).fill('777');
     await tradeDraft.getByLabel('Комиссия, USD', { exact: true }).fill('3');
     await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('rewards');
     const retry = await browserPost(page, rewardsPath(account.id), () =>
@@ -632,7 +632,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
       expect(businessRows()).toBe(rowsBefore);
       expect(providerRequests()).toEqual(providersBefore);
       await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
-      await expect(tradeDraft.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('777');
+      await expect(tradeDraft.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('777');
       await expect(tradeDraft.getByLabel('Комиссия, USD', { exact: true })).toHaveValue('3');
     } finally {
       page.off('request', recordPost);
@@ -878,7 +878,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
   await form.getByRole('button', { name: 'Отменить вознаграждение', exact: true }).click();
   await expect(article).toContainText('Отменено');
   await expect(tradeDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
-  await expect(tradeDraft.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('777');
+  await expect(tradeDraft.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('777');
   await expect(tradeDraft.getByLabel('Комиссия, USD', { exact: true })).toHaveValue('3');
 
   const journal = (await api.result('GET', `/accounts/${account.id}/trade-journal`, 200)) as {

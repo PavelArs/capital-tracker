@@ -42,6 +42,7 @@ import {
   readTradeHeads,
   versionSelect,
 } from './trade-journal.store';
+import { automaticOrder } from './trade-order';
 export type { TradeVersion } from './trade-journal.store';
 
 export interface JournalOrigin {
@@ -81,7 +82,9 @@ interface CurrentSnapshot {
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
 
-function execution(value: Execution): Execution {
+type Ordered<O> = Omit<Execution, 'orderWithinTimestamp'> & { orderWithinTimestamp: O };
+/** The canonical execution fields; an automatic order stays null here. */
+function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
   return {
     instrumentId: value.instrumentId,
     side: value.side,
@@ -216,7 +219,11 @@ export class TradeService {
             [owner, fields.instrumentId],
           );
           if (!instrument) throw new NotFoundException();
-          nextExecution = fields;
+          const orderWithinTimestamp =
+            fields.orderWithinTimestamp ??
+            automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
+          if (orderWithinTimestamp === null) throw conflict();
+          nextExecution = { ...fields, orderWithinTimestamp };
           labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
         } else {
           if (!current) throw new NotFoundException();

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
 import { businessState, providerRequests } from './manual-opening-fixtures';
 import { test } from './mfa-fixtures';
-import { coverageFrom, tradeApi, tradeInput } from './usd-trades-fixtures';
+import { coverageFrom, openTradeOrder, tradeApi, tradeInput } from './usd-trades-fixtures';
 
 test('WORKFLOW-UI: choose one operation and retain all independent drafts without implicit commands', async ({
   page,
@@ -222,7 +222,7 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     .toBeLessThanOrEqual(96);
   await expect(choice).toHaveValue('trades');
   await expect(quantity).toHaveValue('1');
-  await expect(trade.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('100');
+  await expect(trade.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('100');
   const cancelCorrection = page.getByRole('button', {
     name: 'Отменить исправление',
     exact: true,
@@ -288,8 +288,7 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     'Количество',
     'Дата сделки',
     'Время сделки, UTC',
-    'Порядок в этот момент',
-    'Валовая сумма, USD',
+    'Сумма сделки, USD',
     'Комиссия, USD',
   ]) {
     const field = ['Инструмент', 'Тип сделки'].includes(label)
@@ -297,7 +296,11 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
       : trade.getByLabel(label, { exact: true });
     await expect(field).toBeVisible();
   }
-  const gross = trade.getByLabel('Валовая сумма, USD', { exact: true });
+  // WORKBENCH-001: the optional same-instant order is collapsed and shows «авто».
+  await expect(trade.getByLabel('Порядок в этот момент', { exact: true })).toBeHidden();
+  await expect(trade.getByText('Порядок в один момент: авто', { exact: true })).toBeVisible();
+  await openTradeOrder(trade);
+  const gross = trade.getByLabel('Сумма сделки, USD', { exact: true });
   const fee = trade.getByLabel('Комиссия, USD', { exact: true });
   await expect(gross).toHaveAccessibleDescription(
     /(?:общ|полн|валов).*сумм.*(?:не.*цен.*единиц|не.*единичн)/i,

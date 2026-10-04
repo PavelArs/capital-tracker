@@ -61,3 +61,12 @@ export function utcDay(offsetDays = 0, now = new Date()): string {
   );
   return day.toISOString();
 }
+
+/** dd.mm.yyyy, plus the UTC time when it is not midnight. */
+export function formatUtcMoment(value: string): string {
+  const date = datePart(value);
+  if (!date) return value;
+  const [year, month, day] = date.split('-');
+  const time = timePart(value);
+  return `${day}.${month}.${year}${time ? ` ${time} UTC` : ''}`;
+}

@@ -1085,8 +1085,7 @@ test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correctio
       .getByRole('button', { name: kind === 'correct' ? 'Исправить' : 'Аннулировать', exact: true })
       .click();
     const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
-    if (kind === 'correct')
-      await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('120');
+    if (kind === 'correct') await form.getByLabel('Сумма сделки, USD', { exact: true }).fill('120');
     const external = await api.correct(
       account.id,
       bought.trade.tradeId,
@@ -1112,7 +1111,7 @@ test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correctio
       `Текущая версия выбранной сделки: ${external.trade.version}`,
       instrument.id,
       `количество ${external.trade.quantity}`,
-      `валовая сумма ${external.trade.grossUsd} USD`,
+      `; сумма ${external.trade.grossUsd} USD`,
       `комиссия ${external.trade.feeUsd} USD`,
       external.trade.occurredAt,
       'порядок 0',
@@ -1124,7 +1123,7 @@ test('CSV-006-B / TRADE-006-C: CSV refresh preserves a selected manual correctio
     });
     await expect(action).toBeDisabled();
     if (kind === 'correct')
-      await expect(form.getByLabel('Валовая сумма, USD', { exact: true })).toHaveValue('120');
+      await expect(form.getByLabel('Сумма сделки, USD', { exact: true })).toHaveValue('120');
     else
       await expect(
         page.getByText(`Аннулировать сделку ${bought.trade.tradeId}, версия 3?`, { exact: false }),

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
-import { type APIResponse, type Page, expect } from '@playwright/test';
+import { type APIResponse, type Locator, type Page, expect } from '@playwright/test';
 import { hostSubject } from './admission-fixtures';
 import {
   ManualApi,
@@ -410,6 +410,15 @@ export class TradeApi extends ManualApi {
 export async function tradeApi(page: Page): Promise<TradeApi> {
   const { csrfToken } = await loginWithMfa(page);
   return new TradeApi(page.context().request, csrfToken);
+}
+/** Expands the trade form's collapsed same-instant order disclosure. */
+export async function openTradeOrder(form: Locator): Promise<void> {
+  const disclosure = form.locator('details', {
+    has: form.page().locator('summary', { hasText: 'Порядок в один момент' }),
+  });
+  if (!(await disclosure.evaluate((node: HTMLDetailsElement) => node.open)))
+    await disclosure.locator('summary').click();
+  await expect(form.getByLabel('Порядок в этот момент', { exact: true })).toBeVisible();
 }
 export function tradeInput(
   instrumentId: string,
