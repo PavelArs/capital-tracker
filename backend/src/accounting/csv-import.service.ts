@@ -29,6 +29,7 @@ import { type CsvIssue, normalizeCsvRows, parseCsvSource } from './csv-parser';
 import { type Execution, FifoHistoryError, type FifoTrade } from './fifo';
 import { parseUuid } from './input';
 import { type AccountFifoResult, OwnedTransferCapacityError } from './owned-transfer-fifo';
+import type { TradePayment } from './paid-currency';
 import {
   type JournalRow,
   type TradeVersion,
@@ -138,10 +139,15 @@ function executionTuple(value: Execution) {
     value.feeUsd,
   ];
 }
+function paymentTuple(value: TradePayment) {
+  return [value.currency, value.gross, value.fee, value.perUsd];
+}
+/** USD-only settings keep their previous tuples; payment data is appended only when used. */
 function tuples(settings: Settings) {
-  const { format, mapping } = settings;
+  const { format, mapping, payment } = settings;
   const c = mapping.columns;
   return {
+    payment: payment ? [['payment', payment.currency, payment.perUsd ?? null]] : [],
     format: [
       format.delimiter,
       format.decimalSeparator,
@@ -158,6 +164,7 @@ function tuples(settings: Settings) {
         c.grossUsd,
         c.feeUsd,
         c.currency ?? null,
+        ...(c.rate === undefined ? [] : [c.rate]),
       ],
       mapping.instruments.map((v) => [v.source, v.instrumentId]),
       mapping.sides.map((v) => [v.source, v.side]),
@@ -182,6 +189,7 @@ function canonical(
     settings.format,
     settings.mapping,
     true,
+    ...settings.payment,
     value.previewHash,
   ]);
 }
@@ -311,6 +319,7 @@ export class CsvImportService {
         for (const row of rows) {
           if (!row.execution) throw new Error('Missing validated CSV execution');
           const fields = execution(row.execution);
+          const payment = row.payment ? { payment: row.payment } : {};
           const instrument = instruments.get(fields.instrumentId);
           if (!instrument) throw new Error('Missing validated CSV instrument');
           const tradeId = randomUUID();
@@ -318,6 +327,7 @@ export class CsvImportService {
           const revision = journal.currentRevision + row.ordinal;
           await appendTradeVersion(manager, owner, id, {
             ...fields,
+            ...payment,
             tradeId,
             requestId,
             version: 1,
@@ -329,6 +339,7 @@ export class CsvImportService {
               kind: 'create',
               expectedJournalRevision: revision - 1,
               ...fields,
+              ...payment,
             }),
           });
           await manager.query(
@@ -340,6 +351,7 @@ export class CsvImportService {
           format: input.format,
           mapping: input.mapping,
           assertUsd: true,
+          ...(input.payment ? { payment: input.payment } : {}),
         };
         await manager.query(
           'UPDATE account_csv_imports SET state=\'committed\',"acceptedSettings"=$4::jsonb WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
@@ -388,6 +400,7 @@ export class CsvImportService {
           const revision = journal.currentRevision + link.ordinal;
           await appendTradeVersion(manager, owner, id, {
             ...execution(original),
+            ...(original.payment ? { payment: original.payment } : {}),
             tradeId: original.tradeId,
             version: 2,
             journalRevision: revision,
@@ -603,10 +616,12 @@ export class CsvImportService {
               tuple.format,
               tuple.mapping,
               true,
+              ...tuple.payment,
               normalized.rows.map((row) => [
                 row.ordinal,
                 row.startLine,
                 row.execution ? executionTuple(row.execution) : null,
+                ...(row.payment ? [paymentTuple(row.payment)] : []),
               ]),
               journal.currentRevision,
             ]),

@@ -20,6 +20,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AssetSwapTotals } from './AssetSwapTotals';
 import { accountingError } from './feedback';
+import { paymentText } from './payment';
 
 function Instrument({
   trade,
@@ -30,6 +31,14 @@ function Instrument({
       {trade.instrumentSymbol ? ` (${trade.instrumentSymbol})` : ''}
     </>
   );
+}
+function Payment({ trade }: { trade: TradeVersion }) {
+  return trade.payment ? (
+    <>
+      <br />
+      <small>{paymentText(trade.payment)}</small>
+    </>
+  ) : null;
 }
 function More({
   next,
@@ -478,7 +487,10 @@ export function TradeResults({
                       : 'Продажа'}
                 </td>
                 <td>{trade.quantity}</td>
-                <td>{trade.grossUsd}</td>
+                <td>
+                  {trade.grossUsd}
+                  <Payment trade={trade} />
+                </td>
                 <td>{trade.feeUsd}</td>
                 <td>
                   <div className="trade-actions">
@@ -789,7 +801,10 @@ export function TradeResults({
                       {trade.orderWithinTimestamp}
                     </td>
                     <td>{trade.quantity}</td>
-                    <td>{trade.grossUsd}</td>
+                    <td>
+                      {trade.grossUsd}
+                      <Payment trade={trade} />
+                    </td>
                     <td>{trade.feeUsd}</td>
                   </tr>
                 ))}

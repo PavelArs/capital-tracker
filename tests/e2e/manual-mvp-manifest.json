@@ -82,5 +82,9 @@
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
     "title": "ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing"
+  },
+  {
+    "file": "tests/e2e/purchase-currency.spec.ts",
+    "title": "PCUR-UI: owner imports a RUB purchase at its rate and sees the paid amount next to USD after reload"
   }
 ]

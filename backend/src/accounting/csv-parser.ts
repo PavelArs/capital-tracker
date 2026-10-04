@@ -4,6 +4,12 @@ import { type CsvColumnField, type CsvSettings, validateCsvSource } from './csv-
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal } from './input';
 import { MAX_INPUT_ATOMS, canonicalDecimalToAtoms } from './money';
+import {
+  type TradePayment,
+  convertPaidToUsd,
+  isPaidCurrencyCode,
+  peggedRate,
+} from './paid-currency';
 
 export type CsvStructuralCode =
   | 'csv-syntax'
@@ -52,10 +58,18 @@ export interface CsvRowError {
     | 'invalid-gross'
     | 'invalid-fee'
     | 'buy-cost-overflow'
-    | 'currency-not-usd';
+    | 'invalid-currency'
+    | 'invalid-rate'
+    | 'missing-rate'
+    | 'converted-gross-zero';
 }
 export interface CsvNormalization {
-  rows: { ordinal: number; startLine: number; execution: Execution | null }[];
+  rows: {
+    ordinal: number;
+    startLine: number;
+    execution: Execution | null;
+    payment?: TradePayment;
+  }[];
   rowErrors: CsvRowError[];
   batchErrors: CsvIssue[];
   ignoredColumns: { index: number; header: string }[];
@@ -207,24 +221,60 @@ export function normalizeCsvRows(
     const side = sides.get(cells[columns.side]);
     const occurredAt = timestamp(cells[columns.occurredAt], settings.format);
     const orderWithinTimestamp = order(cells[columns.order]);
-    const quantity = amount(cells[columns.quantity], settings.format.decimalSeparator, true);
-    const grossUsd = amount(cells[columns.grossUsd], settings.format.decimalSeparator, true);
-    const feeUsd = amount(cells[columns.feeUsd], settings.format.decimalSeparator, false);
+    const separator = settings.format.decimalSeparator;
+    const quantity = amount(cells[columns.quantity], separator, true);
+    const paidGross = amount(cells[columns.grossUsd], separator, true);
+    const paidFee = amount(cells[columns.feeUsd], separator, false);
+    const currency =
+      columns.currency !== undefined
+        ? cells[columns.currency]
+        : (settings.payment?.currency ?? 'USD');
+    const rateCell = columns.rate === undefined ? '' : cells[columns.rate];
+    const cellRate = rateCell === '' ? null : amount(rateCell, separator, true);
     if (instrumentId === undefined) issue('instrument', 'instrument-key-unmapped');
     if (side === undefined) issue('side', 'side-key-unmapped');
     if (occurredAt === null) issue('occurredAt', 'invalid-time');
     if (orderWithinTimestamp === null) issue('order', 'invalid-order');
     if (quantity === null) issue('quantity', 'invalid-quantity');
-    if (grossUsd === null) issue('grossUsd', 'invalid-gross');
+    if (paidGross === null) issue('grossUsd', 'invalid-gross');
     else if (
+      currency === 'USD' &&
       side === 'buy' &&
-      feeUsd !== null &&
-      canonicalDecimalToAtoms(grossUsd) + canonicalDecimalToAtoms(feeUsd) > MAX_INPUT_ATOMS
+      paidFee !== null &&
+      canonicalDecimalToAtoms(paidGross) + canonicalDecimalToAtoms(paidFee) > MAX_INPUT_ATOMS
     )
       issue('grossUsd', 'buy-cost-overflow');
-    if (feeUsd === null) issue('feeUsd', 'invalid-fee');
-    if (columns.currency !== undefined && cells[columns.currency] !== 'USD')
-      issue('currency', 'currency-not-usd');
+    if (paidFee === null) issue('feeUsd', 'invalid-fee');
+    const validCurrency = isPaidCurrencyCode(currency);
+    if (!validCurrency) issue('currency', 'invalid-currency');
+    const perUsd = cellRate ?? settings.payment?.perUsd ?? peggedRate(currency);
+    if (rateCell !== '' && (cellRate === null || (currency === 'USD' && cellRate !== '1')))
+      issue('rate', 'invalid-rate');
+    else if (validCurrency && currency !== 'USD' && perUsd === null) issue('rate', 'missing-rate');
+    let grossUsd = paidGross;
+    let feeUsd = paidFee;
+    let payment: TradePayment | undefined;
+    if (
+      validCurrency &&
+      currency !== 'USD' &&
+      perUsd !== null &&
+      paidGross !== null &&
+      paidFee !== null &&
+      result.rowErrors.length === beforeErrors
+    ) {
+      grossUsd = convertPaidToUsd(paidGross, perUsd);
+      feeUsd = convertPaidToUsd(paidFee, perUsd);
+      payment = { currency, gross: paidGross, fee: paidFee, perUsd };
+      const grossAtoms = canonicalDecimalToAtoms(grossUsd);
+      const feeAtoms = canonicalDecimalToAtoms(feeUsd);
+      if (grossAtoms === 0n) issue('grossUsd', 'converted-gross-zero');
+      else if (
+        grossAtoms > MAX_INPUT_ATOMS ||
+        feeAtoms > MAX_INPUT_ATOMS ||
+        (side === 'buy' && grossAtoms + feeAtoms > MAX_INPUT_ATOMS)
+      )
+        issue('grossUsd', side === 'buy' ? 'buy-cost-overflow' : 'invalid-gross');
+    }
     const execution =
       result.rowErrors.length === beforeErrors &&
       instrumentId !== undefined &&
@@ -236,7 +286,12 @@ export function normalizeCsvRows(
       feeUsd !== null
         ? { instrumentId, side, occurredAt, orderWithinTimestamp, quantity, grossUsd, feeUsd }
         : null;
-    result.rows.push({ ordinal, startLine, execution });
+    result.rows.push({
+      ordinal,
+      startLine,
+      execution,
+      ...(execution && payment ? { payment } : {}),
+    });
   }
   if (settings.mapping.instruments.some((entry) => !observedInstruments.has(entry.source)))
     result.batchErrors.push({ code: 'unused-instrument-key', line: null, column: null });

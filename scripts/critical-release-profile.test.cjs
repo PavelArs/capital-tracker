@@ -15,14 +15,14 @@ const commit = 'a'.repeat(40);
 
 test('critical profile selects every exact declared file and title once', () => {
   const selection = profile.select(manifest, listing);
-  assert.equal(selection.cases.length, 21);
+  assert.equal(selection.cases.length, 22);
   assert.equal(selection.cases.filter((item) => item.title.startsWith('CSV-006-B regression')).length, 1);
-  assert.equal(selection.matches.length, 21);
+  assert.equal(selection.matches.length, 22);
   const routed = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', ...selection.files,
     '--grep', selection.grep, '--list', '--reporter=json'], {
     cwd: resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, CI: 'true' },
   }));
-  assert.equal(profile.assertRouted(selection, routed).length, 21);
+  assert.equal(profile.assertRouted(selection, routed).length, 22);
 });
 
 test('critical profile refuses empty, duplicate, missing, and ambiguous selections', () => {

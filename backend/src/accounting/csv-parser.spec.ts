@@ -431,7 +431,7 @@ describe('CSV-002-B every invalid economic row remains represented without a par
         { ordinal: 2, field: 'quantity', code: 'invalid-quantity' },
         { ordinal: 2, field: 'grossUsd', code: 'invalid-gross' },
         { ordinal: 2, field: 'feeUsd', code: 'invalid-fee' },
-        { ordinal: 2, field: 'currency', code: 'currency-not-usd' },
+        { ordinal: 2, field: 'currency', code: 'invalid-currency' },
       ],
       batchErrors: [],
       ignoredColumns: [{ index: 8, header: 'note' }],
@@ -527,7 +527,7 @@ describe('CSV-002-B every invalid economic row remains represented without a par
     ]);
   });
 
-  it('requires canonical integer cell text and exact USD without missing-value defaults', () => {
+  it('requires canonical integer cell text and an explicit currency without missing-value defaults', () => {
     for (const value of [
       '',
       '00',
@@ -555,13 +555,27 @@ describe('CSV-002-B every invalid economic row remains represented without a par
         normalizeCsvRows(document([cells]), settings()).rows[0].execution?.orderWithinTimestamp,
       ).toBe(value === '0' ? 0 : 2147483647);
     }
-    for (const value of ['', 'usd', ' USD', 'USD ', 'USDT', 'EUR']) {
+    for (const value of ['', 'usd', ' USD', 'USD ', 'US']) {
       const bad = row();
       bad[7] = value;
       expect(normalizeCsvRows(document([bad]), settings()).rowErrors).toEqual([
-        { ordinal: 1, field: 'currency', code: 'currency-not-usd' },
+        { ordinal: 1, field: 'currency', code: 'invalid-currency' },
       ]);
     }
+    // PCUR-2: a non-USD currency needs a rate; only USDT/USDC default to 1.
+    const euro = row();
+    euro[7] = 'EUR';
+    expect(normalizeCsvRows(document([euro]), settings()).rowErrors).toEqual([
+      { ordinal: 1, field: 'rate', code: 'missing-rate' },
+    ]);
+    const tether = row();
+    tether[7] = 'USDT';
+    expect(normalizeCsvRows(document([tether]), settings()).rows[0]).toEqual({
+      ordinal: 1,
+      startLine: 2,
+      execution: execution(),
+      payment: { currency: 'USDT', gross: '100', fee: '0', perUsd: '1' },
+    });
   });
 
   it('normalizes explicit offsets/fractions with independently calculated UTC expectations', () => {

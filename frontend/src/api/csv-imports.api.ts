@@ -1,6 +1,6 @@
 import type { UuidPage } from './accounting.api';
 import apiClient from './client';
-import type { TradeExecution, TradeSummary, TradeVersion } from './trades.api';
+import type { TradeExecution, TradePayment, TradeSummary, TradeVersion } from './trades.api';
 
 export type CsvState = 'draft' | 'committed' | 'rolled-back';
 export type CsvField =
@@ -11,7 +11,8 @@ export type CsvField =
   | 'quantity'
   | 'grossUsd'
   | 'feeUsd'
-  | 'currency';
+  | 'currency'
+  | 'rate';
 export interface CsvSettings {
   format: {
     delimiter: ',' | ';';
@@ -20,11 +21,16 @@ export interface CsvSettings {
     fixedOffset?: string;
   };
   mapping: {
-    columns: Record<Exclude<CsvField, 'currency'>, number> & { currency?: number };
+    columns: Record<Exclude<CsvField, 'currency' | 'rate'>, number> & {
+      currency?: number;
+      rate?: number;
+    };
     instruments: Array<{ source: string; instrumentId: string }>;
     sides: Array<{ source: string; side: 'buy' | 'sell' }>;
   };
   assertUsd: true;
+  /** One non-USD currency for the whole file; perUsd = units of it per 1 USD. */
+  payment?: { currency: string; perUsd?: string };
 }
 export interface CsvIdentity {
   batchId: string;
@@ -63,7 +69,12 @@ export interface CsvPreviewResult {
   parserVersion: string;
   journalRevision: number;
   canConfirm: boolean;
-  rows: Array<{ ordinal: number; startLine: number; execution: TradeExecution | null }>;
+  rows: Array<{
+    ordinal: number;
+    startLine: number;
+    execution: TradeExecution | null;
+    payment?: TradePayment;
+  }>;
   ignoredColumns: Array<{ index: number; header: string }>;
   rowErrors: Array<{ ordinal: number; field: CsvField; code: string }>;
   batchErrors: CsvError[];

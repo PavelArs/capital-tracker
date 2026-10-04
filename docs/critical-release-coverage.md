@@ -12,8 +12,8 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 21 manifest entries: the original 19 browser cases,
-CSV-006-B session-renewal recovery and, since 2026-10-03, ADDR-UI wallet-address import. Each entry may cover more than one scenario ID; these are
+The reviewed selection contains 22 manifest entries: the original 19 browser cases,
+CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and, since 2026-10-04, PCUR-UI purchase currency. Each entry may cover more than one scenario ID; these are
 browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
@@ -39,6 +39,7 @@ using synthetic owner data and provider fixtures.
 | SHELL-UI | Owner MFA login/logout, responsive keyboard access and honest legacy scope. |
 | CSV-006-B | A committed CSV confirm survives session expiry, 401, MFA reauthentication and SPA return without duplicate posting. |
 | ADDR-UI / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every USD value is shown as missing, never zero. |
+| PCUR-UI | A CSV purchase paid in RUB at an entered rate previews and stores exact USD with the paid amount, shown in the journal after reload. |
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout

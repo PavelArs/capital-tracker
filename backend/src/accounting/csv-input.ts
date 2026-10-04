@@ -1,6 +1,7 @@
 import { isUtf8 } from 'node:buffer';
 import { BadRequestException, PayloadTooLargeException } from '@nestjs/common';
-import { parseUuid } from './input';
+import { parseDecimal, parseUuid } from './input';
+import { isPaidCurrencyCode } from './paid-currency';
 
 export type CsvBatchState = 'draft' | 'committed' | 'rolled-back';
 export type CsvColumnField =
@@ -11,7 +12,8 @@ export type CsvColumnField =
   | 'quantity'
   | 'grossUsd'
   | 'feeUsd'
-  | 'currency';
+  | 'currency'
+  | 'rate';
 export interface CsvFormat {
   delimiter: ',' | ';';
   decimalSeparator: '.' | ',';
@@ -19,7 +21,10 @@ export interface CsvFormat {
   fixedOffset?: string;
 }
 export interface CsvMapping {
-  columns: Record<Exclude<CsvColumnField, 'currency'>, number> & { currency?: number };
+  columns: Record<Exclude<CsvColumnField, 'currency' | 'rate'>, number> & {
+    currency?: number;
+    rate?: number;
+  };
   instruments: { source: string; instrumentId: string }[];
   sides: { source: string; side: 'buy' | 'sell' }[];
 }
@@ -27,6 +32,12 @@ export interface CsvSettings {
   format: CsvFormat;
   mapping: CsvMapping;
   assertUsd: true;
+  /** One non-USD currency for the whole file, optionally with one rate (PCUR-2). */
+  payment?: CsvPayment;
+}
+export interface CsvPayment {
+  currency: string;
+  perUsd?: string;
 }
 export interface CsvConfirmInput extends CsvSettings {
   requestId: string;
@@ -57,6 +68,7 @@ const columnFields = [
   'grossUsd',
   'feeUsd',
   'currency',
+  'rate',
 ] as const;
 const has = (row: object, key: string): boolean => Object.prototype.hasOwnProperty.call(row, key);
 function bad(): never {
@@ -178,6 +190,7 @@ function mapping(raw: unknown): CsvMapping {
     grossUsd: integer(columns.grossUsd, 31),
     feeUsd: integer(columns.feeUsd, 31),
     ...(has(columns, 'currency') ? { currency: integer(columns.currency, 31) } : {}),
+    ...(has(columns, 'rate') ? { rate: integer(columns.rate, 31) } : {}),
   };
   if (new Set(Object.values(normalized)).size !== Object.keys(normalized).length) return bad();
   return {
@@ -193,15 +206,34 @@ function mapping(raw: unknown): CsvMapping {
     }),
   };
 }
+function payment(raw: unknown, columns: CsvMapping['columns']): CsvPayment {
+  const row = object(raw, ['currency', 'perUsd']);
+  if (
+    typeof row.currency !== 'string' ||
+    !isPaidCurrencyCode(row.currency) ||
+    row.currency === 'USD' ||
+    columns.currency !== undefined
+  )
+    return bad();
+  if (!has(row, 'perUsd')) return { currency: row.currency };
+  if (columns.rate !== undefined) return bad();
+  return { currency: row.currency, perUsd: parseDecimal(row.perUsd, true) };
+}
 function settings(row: Record<string, unknown>): CsvSettings {
   if (row.assertUsd !== true) return bad();
-  return { format: format(row.format), mapping: mapping(row.mapping), assertUsd: true };
+  const parsed = mapping(row.mapping);
+  return {
+    format: format(row.format),
+    mapping: parsed,
+    assertUsd: true,
+    ...(has(row, 'payment') ? { payment: payment(row.payment, parsed.columns) } : {}),
+  };
 }
 export function parseCsvInspect(raw: unknown): { delimiter: ',' | ';' } {
   return { delimiter: delimiter(object(raw, ['delimiter']).delimiter) };
 }
 export function parseCsvPreview(raw: unknown): CsvSettings {
-  return settings(object(raw, ['format', 'mapping', 'assertUsd']));
+  return settings(object(raw, ['format', 'mapping', 'assertUsd', 'payment']));
 }
 export function parseCsvConfirm(raw: unknown): CsvConfirmInput {
   const row = object(raw, [
@@ -211,6 +243,7 @@ export function parseCsvConfirm(raw: unknown): CsvConfirmInput {
     'format',
     'mapping',
     'assertUsd',
+    'payment',
     'previewHash',
   ]);
   if (

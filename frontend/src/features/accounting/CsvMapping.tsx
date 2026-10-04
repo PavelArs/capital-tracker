@@ -3,6 +3,7 @@ import type { CsvDocument, CsvField, CsvSettings } from '@api/csv-imports.api';
 import { useId } from 'react';
 import './OperationForm.css';
 import { csvFields } from './CsvPreview';
+import { paymentCurrencies } from './payment';
 
 export interface InstrumentCatalogControls {
   hasMore: boolean;
@@ -19,6 +20,15 @@ export interface CsvMappingDraft {
   timestampMode: 'offset' | 'fixed-offset';
   fixedOffset: string;
   assertUsd: boolean;
+  /** File-wide payment currency when no currency column is mapped. */
+  paymentCurrency: string;
+  /** File-wide units of the payment currency per 1 USD. */
+  perUsd: string;
+}
+const optionalFields: CsvField[] = ['currency', 'rate'];
+const pegged = ['USDT', 'USDC'];
+function paidInOtherCurrency(draft: CsvMappingDraft): boolean {
+  return draft.columns.currency !== '' || draft.paymentCurrency !== 'USD';
 }
 export function emptyCsvMapping(): CsvMappingDraft {
   return {
@@ -31,6 +41,7 @@ export function emptyCsvMapping(): CsvMappingDraft {
       grossUsd: '',
       feeUsd: '',
       currency: '',
+      rate: '',
     },
     instruments: [],
     sides: [],
@@ -38,6 +49,8 @@ export function emptyCsvMapping(): CsvMappingDraft {
     timestampMode: 'offset',
     fixedOffset: '+00:00',
     assertUsd: false,
+    paymentCurrency: 'USD',
+    perUsd: '',
   };
 }
 function sourceKeys(document: CsvDocument, index: string): string[] {
@@ -50,8 +63,16 @@ export function csvSettings(
   document: CsvDocument,
   delimiter: ',' | ';',
 ): CsvSettings {
-  const fields = (Object.keys(csvFields) as CsvField[]).filter((field) => field !== 'currency');
-  if (!draft.assertUsd) throw new Error('Подтвердите, что валовые суммы и комиссии указаны в USD.');
+  const fields = (Object.keys(csvFields) as CsvField[]).filter(
+    (field) => !optionalFields.includes(field),
+  );
+  const otherCurrency = paidInOtherCurrency(draft);
+  if (!draft.assertUsd)
+    throw new Error(
+      otherCurrency
+        ? 'Подтвердите, что валовые суммы и комиссии указаны в валюте оплаты.'
+        : 'Подтвердите, что валовые суммы и комиссии указаны в USD.',
+    );
   if (fields.some((field) => draft.columns[field] === ''))
     throw new Error('Выберите каждую обязательную колонку, включая комиссию и порядок.');
   const selected = Object.values(draft.columns).filter((value) => value !== '');
@@ -68,6 +89,17 @@ export function csvSettings(
     if (!entry) throw new Error('Выберите покупку или продажу для каждого исходного значения.');
     return { ...entry };
   });
+  const fileCurrency = draft.columns.currency === '' && draft.paymentCurrency !== 'USD';
+  const perUsd = draft.perUsd.trim().replace(',', '.');
+  if (
+    fileCurrency &&
+    draft.columns.rate === '' &&
+    perUsd === '' &&
+    !pegged.includes(draft.paymentCurrency)
+  )
+    throw new Error(
+      `Укажите курс ${draft.paymentCurrency} за 1 USD или сопоставьте колонку курса.`,
+    );
   return {
     format: {
       delimiter,
@@ -85,11 +117,20 @@ export function csvSettings(
         grossUsd: Number(draft.columns.grossUsd),
         feeUsd: Number(draft.columns.feeUsd),
         ...(draft.columns.currency === '' ? {} : { currency: Number(draft.columns.currency) }),
+        ...(draft.columns.rate === '' ? {} : { rate: Number(draft.columns.rate) }),
       },
       instruments,
       sides,
     },
     assertUsd: true,
+    ...(fileCurrency
+      ? {
+          payment: {
+            currency: draft.paymentCurrency,
+            ...(draft.columns.rate === '' && perUsd !== '' ? { perUsd } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -114,9 +155,18 @@ export function CsvMapping({
     grossUsd: `${descriptionId}-totals`,
     feeUsd: `${descriptionId}-fee`,
     currency: `${descriptionId}-currency`,
+    rate: `${descriptionId}-rate`,
     occurredAt: `${descriptionId}-time`,
     order: `${descriptionId}-time`,
   };
+  const otherCurrency = paidInOtherCurrency(draft);
+  const label = (field: CsvField) =>
+    otherCurrency && field === 'grossUsd'
+      ? 'Валовая сумма в валюте оплаты'
+      : otherCurrency && field === 'feeUsd'
+        ? 'Комиссия в валюте оплаты'
+        : csvFields[field];
+  const fileCurrency = draft.columns.currency === '' && draft.paymentCurrency !== 'USD';
   return (
     <fieldset disabled={disabled} className="csv-mapping operation-form">
       <legend>Сопоставление колонок и значений</legend>
@@ -125,7 +175,7 @@ export function CsvMapping({
         <div className="operation-form__fields">
           {(Object.keys(csvFields) as CsvField[]).map((field) => (
             <label key={field}>
-              {`Колонка: ${csvFields[field]}`}
+              {`Колонка: ${label(field)}`}
               <select
                 value={draft.columns[field]}
                 aria-describedby={columnDescriptions[field]}
@@ -139,7 +189,7 @@ export function CsvMapping({
                 }
               >
                 <option value="">
-                  {field === 'currency' ? 'Не сопоставлена' : 'Выберите колонку'}
+                  {optionalFields.includes(field) ? 'Не сопоставлена' : 'Выберите колонку'}
                 </option>
                 {document.headers.map((header, index) => (
                   <option key={`${index}:${header}`} value={index}>
@@ -157,8 +207,12 @@ export function CsvMapping({
           Комиссия обязательна; ноль указывайте явно.
         </p>
         <p id={`${descriptionId}-currency`} className="operation-form__hint">
-          Колонку валюты можно не сопоставлять. Если она сопоставлена, каждое значение должно быть
-          USD.
+          Колонку валюты можно не сопоставлять: тогда действует валюта оплаты ниже (по умолчанию
+          USD). В колонке указывают коды вроде USD, USDT или RUB.
+        </p>
+        <p id={`${descriptionId}-rate`} className="operation-form__hint">
+          Колонка курса необязательна: сколько единиц валюты оплаты за 1 USD, например 79.0246 для
+          RUB. Пустая ячейка для стейблкоинов USDT/USDC означает курс 1.
         </p>
       </section>
       <section className="operation-form__section">
@@ -290,13 +344,53 @@ export function CsvMapping({
           угадывается; порядок совпадающих моментов задаётся отдельной колонкой.
         </p>
       </section>
+      <section className="operation-form__section">
+        <h3>Валюта оплаты</h3>
+        <div className="operation-form__fields">
+          <label>
+            Валюта оплаты для всего файла
+            <select
+              value={draft.paymentCurrency}
+              disabled={draft.columns.currency !== ''}
+              aria-describedby={`${descriptionId}-payment`}
+              onChange={(event) => onChange({ ...draft, paymentCurrency: event.target.value })}
+            >
+              {paymentCurrencies.map((currency) => (
+                <option key={currency} value={currency}>
+                  {currency}
+                </option>
+              ))}
+            </select>
+          </label>
+          {fileCurrency && draft.columns.rate === '' && (
+            <label>
+              {`Курс: сколько ${draft.paymentCurrency} за 1 USD`}
+              <input
+                value={draft.perUsd}
+                inputMode="decimal"
+                placeholder={pegged.includes(draft.paymentCurrency) ? '1' : 'например, 79.0246'}
+                aria-describedby={`${descriptionId}-payment`}
+                onChange={(event) => onChange({ ...draft, perUsd: event.target.value })}
+              />
+            </label>
+          )}
+        </div>
+        <p id={`${descriptionId}-payment`} className="operation-form__hint">
+          {draft.columns.currency !== ''
+            ? 'Валюта берётся из колонки файла; курс — из колонки курса, для USDT и USDC по умолчанию 1.'
+            : 'USDT и USDC считаются по курсу 1, если курс не указан. Для остальных валют укажите курс на дату покупки (например, курс ЦБ РФ) или сопоставьте колонку курса, если даты в файле разные.'}{' '}
+          Учёт и прибыль считаются в USD: сумма делится на курс и округляется до 8 знаков.
+        </p>
+      </section>
       <label className="manual-review-check">
         <input
           type="checkbox"
           checked={draft.assertUsd}
           onChange={(event) => onChange({ ...draft, assertUsd: event.target.checked })}
         />
-        Валовые суммы и комиссии выражены в USD
+        {otherCurrency
+          ? 'Валовые суммы и комиссии выражены в валюте оплаты'
+          : 'Валовые суммы и комиссии выражены в USD'}
       </label>
     </fieldset>
   );

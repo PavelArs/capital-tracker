@@ -1,5 +1,6 @@
 import type { CsvField, CsvInspection, CsvPreviewResult } from '@api/csv-imports.api';
 import type { TradeSummary } from '@api/trades.api';
+import { paymentText } from './payment';
 
 export const csvFields: Record<CsvField, string> = {
   instrument: 'Инструмент',
@@ -10,6 +11,7 @@ export const csvFields: Record<CsvField, string> = {
   grossUsd: 'Валовая сумма USD',
   feeUsd: 'Комиссия USD',
   currency: 'Валюта',
+  rate: 'Курс к USD',
 };
 const errors: Record<string, string> = {
   'csv-syntax': 'Нарушен формат кавычек или разделителей.',
@@ -30,7 +32,11 @@ const errors: Record<string, string> = {
   'invalid-gross': 'Нужна положительная валовая сумма в выбранном формате.',
   'invalid-fee': 'Укажите точную комиссию, включая явный ноль.',
   'buy-cost-overflow': 'Сумма покупки с комиссией превышает допустимый предел.',
-  'currency-not-usd': 'Валюта должна быть ровно USD.',
+  'invalid-currency': 'Нужен код валюты заглавными буквами, например USD, USDT или RUB.',
+  'invalid-rate':
+    'Нужен положительный курс: сколько единиц валюты за 1 USD. Для USD — пусто или 1.',
+  'missing-rate': 'Укажите курс для этой валюты: только USDT и USDC считаются по 1.',
+  'converted-gross-zero': 'После пересчёта в USD сумма округляется до нуля.',
   'column-out-of-range': 'Выбранной колонки нет в файле.',
   'unused-instrument-key': 'Сопоставление содержит отсутствующее значение инструмента.',
   'unused-side-key': 'Сопоставление содержит отсутствующий тип сделки.',
@@ -198,7 +204,15 @@ export function CsvPreview({ value }: { value: CsvPreviewResult }) {
                       {row.execution.occurredAt} / {row.execution.orderWithinTimestamp}
                     </td>
                     <td>{row.execution.quantity}</td>
-                    <td>{row.execution.grossUsd}</td>
+                    <td>
+                      {row.execution.grossUsd}
+                      {row.payment && (
+                        <>
+                          <br />
+                          <small>{paymentText(row.payment)}</small>
+                        </>
+                      )}
+                    </td>
                     <td>{row.execution.feeUsd}</td>
                   </>
                 ) : (

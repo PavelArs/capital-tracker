@@ -11,6 +11,13 @@ export interface TradeExecution {
   grossUsd: string;
   feeUsd: string;
 }
+/** What a non-USD trade actually paid; perUsd = units of the currency per 1 USD. */
+export interface TradePayment {
+  currency: string;
+  gross: string;
+  fee: string;
+  perUsd: string;
+}
 export interface JournalOrigin {
   accountId: string;
   requestId: string;
@@ -93,6 +100,7 @@ export interface TradeVersion extends TradeExecution {
   createdAt: string;
   instrumentName: string;
   instrumentSymbol: string | null;
+  payment?: TradePayment;
 }
 export interface TradeReceipt {
   accountId: string;

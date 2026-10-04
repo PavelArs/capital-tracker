@@ -1,5 +1,6 @@
 import type { CsvDetail, CsvReceipt, CsvRows, CsvState } from '@api/csv-imports.api';
 import { CsvSummary, csvFields } from './CsvPreview';
+import { paymentText } from './payment';
 
 export const csvStateLabel: Record<CsvState, string> = {
   draft: 'Черновик',
@@ -70,7 +71,16 @@ export function CsvBatchDetail({
             {settings.format.timestampMode === 'offset'
               ? 'смещение в каждой дате'
               : `фиксированное смещение ${settings.format.fixedOffset}`}
-            . Валовые суммы и комиссии — USD.
+            .{' '}
+            {settings.payment
+              ? `Валюта оплаты: ${settings.payment.currency}${
+                  settings.payment.perUsd
+                    ? `, курс ${settings.payment.perUsd} ${settings.payment.currency} за 1 USD`
+                    : ''
+                }.`
+              : settings.mapping.columns.currency !== undefined
+                ? 'Валюта оплаты — из колонки файла.'
+                : 'Валовые суммы и комиссии — USD.'}
           </p>
           <ul>
             {Object.entries(settings.mapping.columns).map(([field, index]) => (
@@ -137,6 +147,12 @@ export function CsvBatchDetail({
                           <br />
                           Количество {row.createVersion.quantity}; валовая сумма{' '}
                           {row.createVersion.grossUsd} USD; комиссия {row.createVersion.feeUsd} USD
+                          {row.createVersion.payment && (
+                            <>
+                              <br />
+                              {paymentText(row.createVersion.payment)}
+                            </>
+                          )}
                         </td>
                         <td>
                           {row.rollbackVersion

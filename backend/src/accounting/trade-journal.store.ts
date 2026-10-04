@@ -9,6 +9,7 @@ import {
   deriveCarryInAmounts,
 } from './fifo';
 import { parseDecimal } from './input';
+import type { TradePayment } from './paid-currency';
 
 export type TradeKind = 'create' | 'correct' | 'void';
 export interface AccountRow {
@@ -45,16 +46,25 @@ export interface VersionRow {
   quantity: string;
   grossUsd: string;
   feeUsd: string;
+  paidCurrency: string | null;
+  paidGross: string | null;
+  paidFee: string | null;
+  paidPerUsd: string | null;
 }
 export interface TradeVersion extends FifoTrade {
+  /** Present only for versions paid in a non-USD currency (PCUR-1). */
+  payment?: TradePayment;
   journalRevision: number;
   requestId: string;
   kind: TradeKind;
   createdAt: string;
 }
-export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol"
+export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol",
+  p.currency AS "paidCurrency", p.gross AS "paidGross", p.fee AS "paidFee", p."perUsd" AS "paidPerUsd"
   FROM account_trade_versions v JOIN accounting_instruments i
-  ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"`;
+  ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
+  LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId" AND p."accountId"=v."accountId"
+  AND p."tradeId"=v."tradeId" AND p.version=v.version`;
 
 export function projectTradeVersion(row: VersionRow): TradeVersion {
   return {
@@ -73,6 +83,16 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     quantity: parseDecimal(row.quantity, true),
     grossUsd: parseDecimal(row.grossUsd, true),
     feeUsd: parseDecimal(row.feeUsd, false),
+    ...(row.paidCurrency === null
+      ? {}
+      : {
+          payment: {
+            currency: row.paidCurrency,
+            gross: parseDecimal(row.paidGross, true),
+            fee: parseDecimal(row.paidFee, false),
+            perUsd: parseDecimal(row.paidPerUsd, true),
+          },
+        }),
   };
 }
 export async function readOwnedAccount(
@@ -161,6 +181,7 @@ export interface PreparedTrade extends Execution {
   kind: TradeKind;
   instrumentName: string;
   instrumentSymbol: string | null;
+  payment?: TradePayment;
 }
 function requireTransaction(manager: EntityManager) {
   if (!manager.queryRunner?.isTransactionActive)
@@ -203,6 +224,23 @@ export async function appendTradeVersion(
       next.feeUsd,
     ],
   );
+  if (next.payment) {
+    await manager.query(
+      `INSERT INTO account_trade_version_payments
+      ("ownerId","accountId","tradeId",version,currency,gross,fee,"perUsd")
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        owner,
+        id,
+        next.tradeId,
+        next.version,
+        next.payment.currency,
+        next.payment.gross,
+        next.payment.fee,
+        next.payment.perUsd,
+      ],
+    );
+  }
   await manager.query(
     'UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
     [owner, id, next.tradeId, next.version],
@@ -211,6 +249,10 @@ export async function appendTradeVersion(
     ...saved,
     instrumentName: next.instrumentName,
     instrumentSymbol: next.instrumentSymbol,
+    paidCurrency: next.payment?.currency ?? null,
+    paidGross: next.payment?.gross ?? null,
+    paidFee: next.payment?.fee ?? null,
+    paidPerUsd: next.payment?.perUsd ?? null,
   });
 }
 export async function advanceJournal(

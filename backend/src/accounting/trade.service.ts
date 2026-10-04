@@ -242,6 +242,8 @@ export class TradeService {
           journalRevision: journal.currentRevision + 1,
           requestId: value.requestId,
           kind,
+          // A void keeps what the voided version paid; corrections are USD-only input.
+          ...(!fields && current?.payment ? { payment: current.payment } : {}),
         };
         assertRevisionCapacity(ledger);
         projectConnectedLedger(ledger);
