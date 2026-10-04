@@ -35,3 +35,9 @@ returned the owner to sign-in. Both values are code constants, not configuration
   cases are not part of the critical release manifest; the `sessions-db` probe
   (probes-2) and the CSV-006-B and MFA-002-B browser cases cover this change in
   main CI.
+
+## Hosted CI (2026-10-04)
+
+- PR run 37231611775 green on every job on the merged head `756fa5c`.
+- Main CI 37232077464 on `af107d8` green on every job, including the `sessions-db`
+  probe and the critical browser acceptance shards.

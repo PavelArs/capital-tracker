@@ -12,4 +12,4 @@
 ## 3. Verification
 
 - [x] 3.1 Backend tests, lint, build and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI green on the PR, and on main including browser acceptance after merge.
+- [x] 3.2 Hosted CI green on the PR, and on main including browser acceptance after merge. (PR run 37231611775 and main run 37232077464, every job green.)

@@ -4,6 +4,8 @@
 Protect owner access with revocable opaque cookies, database expiry, exact-origin CSRF and default-deny routes.
 ## Requirements
 ### Requirement: SES-001 Opaque protected session lifecycle
+A full owner session SHALL last one day (24 hours) from factor completion with no
+idle timeout; logout, recovery, revocation and the session cap may end it earlier.
 Authentication SHALL use independent cryptographically random 256-bit tokens stored
 only as SHA-256 hashes, in Secure/HttpOnly/SameSite=Strict/Path=/ host-only
 `__Host-ct-session` cookies. JWT/header/URL/localStorage credentials MUST NOT authenticate.
@@ -25,11 +27,11 @@ challenge retirement. Normal private activity and logout retain their existing b
 - **AND** financial data remains unchanged and the cleared logout cookie uses matching attributes
 - **AND** a password verification completed before recovery cannot issue a new session after recovery, including concurrent rotation
 
-#### Scenario: SES-001-C Idle and absolute expiration are authoritative
-- **GIVEN** stored sessions at the thirty-minute idle or twelve-hour absolute boundary
-- **WHEN** access is attempted
-- **THEN** expired sessions return 401 and are not revived by access
-- **AND** valid activity renews idle time without extending absolute expiry, including across backend restart
+#### Scenario: SES-001-C One-day absolute expiration is authoritative
+- **GIVEN** a full session issued by factor completion
+- **WHEN** access is attempted before its deadline one day after sign-in, including after many hours without activity or a backend restart
+- **THEN** it remains valid without re-login, and activity never extends that deadline
+- **AND** at or after the deadline it returns 401 and is not revived by access
 - **AND** a session that expires while authorization waits for its PostgreSQL row lock is rejected using database time after acquiring that lock
 
 #### Scenario: SES-001-D Invalid credential transports cannot authenticate
@@ -105,3 +107,4 @@ credentials SHALL be redacted, and forwarded headers SHALL NOT be implicitly tru
 - **WHEN** authentication and private requests succeed or fail
 - **THEN** responses contain Cache-Control no-store and logs contain no cookie, Set-Cookie or CSRF secret values
 - **AND** a rejected credential in URL query parameters is absent from error responses and request/error logs
+
