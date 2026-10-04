@@ -274,6 +274,70 @@ class DispatchFlowAcceptance(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
 
 
+class EnvironmentApprovedFlowAcceptance(unittest.TestCase):
+    """RAP-002: the approved job's receipt replaces the owner-installed file."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.install = Installation(self.directory.name)
+        (self.install.runtime / ".release-managed-env").write_text("generated-runtime-only")
+        self.calls = []
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_dispatch(self, operation, receipt):
+        def runner(argv, environment):
+            self.calls.append((argv, environment))
+            return 0
+        request = {"version": 2, "operation": operation, "commit": COMMIT, "runId": RUN_ID, "receipt": receipt}
+        parsed = dispatcher.read_request(io.BytesIO(json.dumps(request).encode()))
+        return dispatcher.dispatch(parsed, self.install.config, runner)
+
+    def test_release_runs_the_fixed_runner_without_an_installed_receipt(self):
+        receipt = self.install.receipt(installation="existing")
+        self.assertEqual(self.run_dispatch("preflight", receipt), 0)
+        self.assertEqual(self.run_dispatch("deploy", receipt), 0)
+        (_, preflight), (argv, environment) = self.calls
+        self.assertEqual(self.calls[0][0][2:], ["preflight", COMMIT])
+        self.assertEqual(argv, [
+            "/bin/bash", str(self.install.release / "manual-mvp-release.sh"), "deploy", COMMIT,
+            receipt["backend"], receipt["frontend"],
+        ])
+        self.assertEqual(environment["RELEASE_INSTALLATION"], "existing")
+        self.assertEqual(preflight["RELEASE_INSTALLATION"], "existing")
+        self.assertEqual(environment["DOCKER_CONFIG"], str(self.install.docker))
+        # Nothing is read from or written to the owner-installed receipt directory.
+        self.assertEqual(list(self.install.receipts.iterdir()), [])
+
+    def test_release_ignores_an_owner_installed_receipt_for_the_same_run(self):
+        self.install.install_receipt(self.install.receipt(installation="fresh"))
+        self.run_dispatch("deploy", self.install.receipt(installation="existing"))
+        self.assertEqual(self.calls[0][1]["RELEASE_INSTALLATION"], "existing")
+        self.assertTrue((self.install.receipts / "{}-{}.json".format(COMMIT, RUN_ID)).exists())
+        self.assertFalse((self.install.receipts / "used").exists())
+
+    def test_refuses_embedded_receipt_that_differs_from_installed_files(self):
+        for name in dispatcher.FILES:
+            with self.subTest(name=name):
+                receipt = self.install.receipt()
+                receipt["files"] = {**receipt["files"], name: "0" * 64}
+                self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy", receipt)
+        self.assertEqual(self.calls, [])
+
+    def test_refuses_foreign_identity_or_infrastructure(self):
+        for changes in ({"commit": "b" * 40}, {"runId": "124"}, {"redis": "redis@sha256:" + "0" * 64}):
+            with self.subTest(changes=changes):
+                self.assertRaises(dispatcher.Refusal, self.run_dispatch, "deploy", self.install.receipt(**changes))
+        self.assertEqual(self.calls, [])
+
+    def test_resume_activation_passes_its_installation_to_the_runner(self):
+        (self.install.runtime / ".release-managed-env").unlink()
+        (self.install.runtime / ".env").unlink()
+        self.assertEqual(self.run_dispatch("preflight", self.install.receipt(installation="resume-activation")), 0)
+        self.assertEqual(self.calls[0][1]["RELEASE_INSTALLATION"], "resume-activation")
+
+
 class EntryPointAcceptance(unittest.TestCase):
     def test_refuses_arguments_before_reading_input(self):
         stdin = io.BytesIO(json.dumps(request("inventory")).encode())

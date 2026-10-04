@@ -1,5 +1,10 @@
 name: Deploy Manual MVP
 on:
+  # A successful CI run for a push to main starts an approval-gated release.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       ci_run_id:
@@ -7,17 +12,17 @@ on:
         required: true
         type: string
       mode:
-        description: inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
+        description: release (promote, preflight and deploy after environment approval), inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
         required: true
         default: inventory
         type: choice
-        options: [inventory, promote, preflight, deploy]
+        options: [release, inventory, promote, preflight, deploy]
       installation:
-        description: Recorded in the promoted receipt; existing upgrade or first install after verified absence of application data
+        description: Recorded in the promoted receipt; existing upgrade, first install after verified absence of application data, or completion of an interrupted activation
         required: true
         default: existing
         type: choice
-        options: [existing, fresh, resume-fresh]
+        options: [existing, fresh, resume-fresh, resume-activation]
 permissions:
   contents: read
 concurrency:
@@ -25,11 +30,18 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Holds DEPLOY_DISPATCH_SSH_KEY; the owner can add required reviewers and a main-only branch rule.
+    # Holds DEPLOY_DISPATCH_SSH_KEY. Its required reviewer is the release approval button;
+    # without that protection rule an automatic release deploys without a click.
     environment: production
+    env:
+      RELEASE_MODE: ${{ github.event_name == 'workflow_run' && 'release' || inputs.mode }}
+      RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.ci_run_id }}
+      RELEASE_INSTALLATION: ${{ github.event_name == 'workflow_run' && 'existing' || inputs.installation }}
     permissions:
       contents: read
       actions: read
@@ -40,10 +52,9 @@ jobs:
         with:
           node-version: '22.21.1'
       - name: Validate trusted successful candidate provenance
-        if: inputs.mode != 'inventory'
+        if: env.RELEASE_MODE != 'inventory'
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
@@ -66,20 +77,18 @@ jobs:
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n critical-release-acceptance -D acceptance
           node scripts/critical-release-profile.cjs verify acceptance/critical-release-acceptance.json "$GITHUB_SHA" "$RUN_ID"
       - name: Download and verify the tested candidate
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_INSTALLATION: ${{ inputs.installation }}
         run: |
           set -euo pipefail
           gzip -dc candidate/images.tar.gz | docker load
@@ -118,10 +127,7 @@ jobs:
           fi
           docker logout ghcr.io
       - name: Write the release receipt for owner approval
-        if: inputs.mode == 'promote'
-        env:
-          RUN_ID: ${{ inputs.ci_run_id }}
-          RELEASE_INSTALLATION: ${{ inputs.installation }}
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         run: |
           set -euo pipefail
           mkdir receipt
@@ -129,7 +135,7 @@ jobs:
           # The receipt holds only public commit/run/digest/hash identities for owner review.
           { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the release receipt
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: manual-mvp-release-receipt
@@ -137,7 +143,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Configure restricted release SSH with pinned identity
-        if: inputs.mode != 'promote'
+        if: env.RELEASE_MODE != 'promote'
         env:
           DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -150,27 +156,36 @@ jobs:
           printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
           chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
       - name: Send a data-only request to the root-owned release dispatcher
-        if: inputs.mode != 'promote'
+        if: env.RELEASE_MODE != 'promote'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
-          RELEASE_MODE: ${{ inputs.mode }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_DISPATCH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          [[ "$RELEASE_MODE" == inventory || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
+          [[ "$RELEASE_MODE" =~ ^(inventory|preflight|deploy|release)$ ]]
           # Inventory is not bound to a candidate; it only names this workflow run.
           if [[ "$RELEASE_MODE" == inventory ]]; then RUN_ID=$GITHUB_RUN_ID; fi
           [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
           port=${DEPLOY_SSH_PORT:-22}
           [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
           # The forced command ignores any remote command; the request is data on stdin.
-          jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
-            '{version: 1, operation: $operation, commit: $commit, runId: $runId}' \
-            | ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+          dispatch() {
+            ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
               "$DEPLOY_DISPATCH_USER@$DEPLOY_HOST"
+          }
+          if [[ "$RELEASE_MODE" == release ]]; then
+            # The environment approval authorizes the receipt promoted above; deploy follows a passed preflight.
+            receipt="receipt/$GITHUB_SHA-$RUN_ID.json"
+            for operation in preflight deploy; do
+              jq -c --arg operation "$operation" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+                '{version: 2, operation: $operation, commit: $commit, runId: $runId, receipt: .}' "$receipt" | dispatch
+            done
+          else
+            jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+              '{version: 1, operation: $operation, commit: $commit, runId: $runId}' | dispatch
+          fi
       - name: Remove runner credentials
         if: always()
         run: rm -f ~/.ssh/release-key
