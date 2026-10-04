@@ -21,9 +21,9 @@ import { AuthRequestLimit } from './request-limit.decorator';
 import { AuthRequestLimitsService } from './request-limits.service';
 import {
   COOKIE_OPTIONS,
+  readSessionCookie,
   SESSION_COOKIE,
   SessionService,
-  readSessionCookie,
 } from './session.service';
 
 @ApiTags('auth')

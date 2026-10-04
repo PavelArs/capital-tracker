@@ -19,8 +19,8 @@ import {
 } from '@nestjs/swagger';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { ErrorResponseDto, ValidationErrorResponseDto } from '../shared/dto';
-import { CryptoPrices, CryptoPricesService } from './crypto-prices.service';
 import { CryptoService } from './crypto.service';
+import { CryptoPrices, CryptoPricesService } from './crypto-prices.service';
 import { CreateCryptoWalletDto } from './dto/create-crypto-wallet.dto';
 
 @ApiTags('crypto')

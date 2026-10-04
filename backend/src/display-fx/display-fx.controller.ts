@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
-import { assertEmptyInput } from './display-fx-domain';
 import { DisplayFxService } from './display-fx.service';
+import { assertEmptyInput } from './display-fx-domain';
 
 @Controller('reporting/usd-display')
 export class DisplayFxController {

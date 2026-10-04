@@ -1,4 +1,4 @@
-import { Inject, Injectable, OnModuleInit, forwardRef } from '@nestjs/common';
+import { forwardRef, Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import axios from 'axios';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';

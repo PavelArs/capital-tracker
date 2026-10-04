@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const e2e = resolve(__dirname, '../../../tests/e2e');

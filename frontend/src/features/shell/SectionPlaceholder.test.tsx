@@ -1,8 +1,8 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import SectionPlaceholder from './SectionPlaceholder';
 import { type PlaceholderSection, placeholderSections } from './navigation';
+import SectionPlaceholder from './SectionPlaceholder';
 
 afterEach(cleanup);
 

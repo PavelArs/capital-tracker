@@ -1,5 +1,5 @@
 import type { HistoricalPosition } from './historical-accounting';
-import { type ValuationPrice, projectValuation } from './historical-valuation';
+import { projectValuation, type ValuationPrice } from './historical-valuation';
 
 export function projectValuationSeries(
   snapshots: readonly { at: string; positions: readonly HistoricalPosition[] }[],

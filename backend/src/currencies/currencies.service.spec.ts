@@ -2,8 +2,8 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
 import { Currency, CurrencyType } from '../entities/currency.entity';
+import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
 import { CurrenciesService } from './currencies.service';
 import { CurrencyUpdateService } from './currency-update.service';
 

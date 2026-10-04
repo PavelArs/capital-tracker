@@ -15,7 +15,7 @@ import {
   parseOpening,
   parseUuid,
 } from './input';
-import { type SnapshotRow, projectOpening } from './opening.store';
+import { projectOpening, type SnapshotRow } from './opening.store';
 
 interface AccountRow {
   id: string;

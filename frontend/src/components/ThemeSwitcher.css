@@ -12,7 +12,9 @@
   font-size: 14px;
   cursor: pointer;
   outline: none;
-  transition: border-color 0.2s, background-color 0.2s;
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
 }
 
 .theme-select:hover {

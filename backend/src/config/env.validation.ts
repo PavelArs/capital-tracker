@@ -1,4 +1,4 @@
-import { Transform, plainToInstance } from 'class-transformer';
+import { plainToInstance, Transform } from 'class-transformer';
 import {
   IsEnum,
   IsIn,

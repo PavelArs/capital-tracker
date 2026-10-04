@@ -1,4 +1,4 @@
-import {
+import fs, {
   lstatSync,
   mkdtempSync,
   readFileSync,
@@ -9,7 +9,6 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runWithPrivateOutput } from './mfa-cli';
