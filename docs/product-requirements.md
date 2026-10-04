@@ -59,6 +59,9 @@ Decisions taken without asking, open to correction:
   (BR 14). Chain transactions can only be hidden, never deleted (BR 9).
 - **D4 Zcash, TRON and Stellar stay manual assets in MVP** (BR 17 lists only BTC,
   ETH and SOL wallets).
+- **D5 Browser TOTP enrollment stays CLI-only in MVP.** The owner is already enrolled;
+  Settings adds recovery-code regeneration, active sessions and "log out everywhere".
+  Re-enrolment from the browser is a later item.
 - **D6 Interface language is English** (owner, 2026-10-04, design thread). The
   dashboard's default period is one month. The current Russian screens stay as they
   are until they are retired.
@@ -71,9 +74,6 @@ Decisions taken without asking, open to correction:
   covering up to two years. Whether the two RUB purchases (likely P2P) are visible
   is unverified: Bybit's P2P API is documented as a separate API. Anything the API
   cannot return stays manual. Change M22 verifies this against Pavel's own read-only key.
-- **D5 Browser TOTP enrollment stays CLI-only in MVP.** The owner is already enrolled;
-  Settings adds recovery-code regeneration, active sessions and "log out everywhere".
-  Re-enrolment from the browser is a later item.
 
 ## 2. Principles
 
