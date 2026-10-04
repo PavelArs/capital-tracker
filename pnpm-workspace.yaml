@@ -2,10 +2,6 @@ packages:
   - 'backend'
   - 'frontend'
 
-overrides:
-  '@nestjs/platform-express@11.1.18>multer': 2.3.0
-  '@nestjs/swagger@11.2.7>js-yaml': 4.3.2
-
 allowBuilds:
   '@biomejs/biome': true
   esbuild: true
@@ -14,3 +10,6 @@ allowBuilds:
   '@fission-ai/openspec': false
   '@nestjs/core': false
   '@scarf/scarf': false
+  # Prebuilt native binaries arrive as optional dependencies; the fallback builds are unused.
+  '@parcel/watcher': false
+  unrs-resolver: false
