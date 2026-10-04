@@ -15,5 +15,5 @@
 ## 3. Verification
 
 - [x] 3.1 Backend, engineering and security tests, lint, types, Biome, YAML and strict spec validation; record results.
-- [ ] 3.2 A hosted run (manual dispatch or main push) passes all shards and the final job; record its wall times and artifact size.
+- [x] 3.2 A hosted run (manual dispatch or main push) passes all shards and the final job; record its wall times and artifact size. (Dispatch run 37227886949: whole CI 11 min 51 s.)
 - [ ] 3.3 The next approved release validates the new provenance; then archive.

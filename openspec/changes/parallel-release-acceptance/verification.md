@@ -67,9 +67,22 @@ executed for this change.
 - Probe union equals the 31 canonical checks; case union equals the 21 manifest cases.
   The real Playwright CLI (`--list`) routes exactly 7 cases for each browser shard.
 
+## Hosted CI (2026-10-04)
+
+Manual dispatch run 37227886949 on `9d2e20d` (before `fast-acceptance-restarts`
+landed, so browser restarts still waited 10 s each) passed all 16 jobs:
+
+- Whole run 19:20:20–19:32:11, 11 min 51 s (the last main run with the serial job,
+  37225929714, spent about 32 min in `Release Images and Security` alone).
+- `Build Release Images` 1 min 11 s; `release-images` artifact 727 MB (four images,
+  uncompressed), download 7–26 s per job, load and ID check 14–21 s.
+- Acceptance step per shard: probes-1 2 min 08 s, probes-2 3 min 06 s, browser-1
+  4 min 50 s, browser-2 5 min 56 s, browser-3 5 min 31 s.
+- `Release Images and Security` 2 min 15 s: merge and receipt verification, four scans,
+  candidate export (237 MB) unchanged.
+- PR run on the same head skipped the three release jobs, as for any pull request.
+
 ## Not run
 
-- Any Docker, PostgreSQL, provider, HTTPS or browser execution; the image build, save,
-  load and ID equality after `docker load`; the Trivy scans; candidate export.
-- A hosted CI run (manual dispatch or main push), its wall times and the image artifact
-  size; CD provenance against a real sharded run.
+- CD provenance against a real sharded main run: the first approved release after
+  merge (task 3.3).

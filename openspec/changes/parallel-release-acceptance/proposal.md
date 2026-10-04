@@ -50,5 +50,5 @@ on a branch before merge without opening a deployment path for it.
 `partition`, `project`, `merge`; `receipt` and `verify` unchanged), engineering tests,
 testing documentation and continuity. Application code, Dockerfiles,
 `tests/e2e/compose.yml`, test cases, production Compose and `frontend/nginx.conf` are
-unchanged. Expected wall time of the release part drops from about 32 to about 15
-minutes; this is an estimate until a hosted run measures it.
+unchanged. The release part dropped from about 32 to about 10.5 minutes (whole CI run
+11 min 51 s) in hosted run 37227886949.
