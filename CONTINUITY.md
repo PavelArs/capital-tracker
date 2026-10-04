@@ -12,6 +12,28 @@ migration. Shell control names in E2E are now English (`Main navigation`,
 `Skip to content`, `Menu`, `Log out`); SHELL-UI keeps its critical title.
 Archived as `2026-10-04-add-app-shell` after hosted CI 37214714966 passed all jobs. Next: M2 (classify-assets), M8, M10, M17/M18.
 
+## Current release slice — deploy on approval (2026-10-04)
+
+Active OpenSpec change `deploy-on-approval` (RAP-001..005, ENG-002 modified): green
+main CI starts an approval-gated `release` (environment `production`), the dispatcher
+accepts version 2 requests carrying the promoted receipt, the runner gains
+`resume-activation` for the interrupted 2026-10-02 activation, Compose frontend
+health uses 127.0.0.1 and the installer gains `update`. Not yet deployed. After merge
+the owner must: set a required reviewer on `production`, run the installer `update`
+as root from the merged checkout, then dispatch `release` with
+`installation=resume-activation` once. Archive only after that release is verified.
+Change `tag-release-versions` (RVR-001/002, owner request 2026-10-04): images also get
+the readable tag `v<YYYY.MM.DD>-<short SHA>` at promotion, and a separate
+`contents: write` job tags the commit after a successful deploy. No server file
+change; archive after the first approved release shows both tags.
+Change `fast-acceptance-restarts` (ISO-006, owner request 2026-10-04 to speed up CI):
+acceptance restarts backends with `--timeout 0`; Node as PID 1 ignores SIGTERM, so each
+restart waited 10 s for the same SIGKILL. Archive after hosted CI shows the timing.
+Change `e2e-on-main-only` (ENG-006, owner decision 2026-10-04 after Actions minutes ran
+out and the repo went public): the release/acceptance job runs only on pushes to main;
+pull requests carry no browser evidence. Archive after the first main run with it.
+Change `parallel-release-acceptance` (ENG-007): images built once, critical acceptance in 5 parallel verified shards merged into the same receipt; CI also runs on manual dispatch (CD still push-only). Hosted run pending.
+
 ## Current product slice — unrealized profit/loss (2026-10-03)
 
 Owner goal restated 2026-10-03: track crypto per wallet from purchase, realized and

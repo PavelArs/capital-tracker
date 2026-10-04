@@ -26,13 +26,18 @@ function flatten(suites) {
   return found;
 }
 
-function select(manifest, listing) {
+function validateManifest(manifest) {
   if (!Array.isArray(manifest) || manifest.length === 0 || manifest.some((item) => !validCase(item))) {
     throw new Error('Invalid or empty critical manifest');
   }
   if (new Set(manifest.map(key)).size !== manifest.length || new Set(manifest.map((item) => item.title)).size !== manifest.length) {
     throw new Error('Duplicate critical selection');
   }
+  return manifest;
+}
+
+function select(manifest, listing) {
+  validateManifest(manifest);
   if (listing?.errors?.length) throw new Error('Playwright discovery errors');
   const inventory = flatten(listing?.suites);
   const matches = manifest.map((item) => {
@@ -106,6 +111,55 @@ function verify(value, manifest, commit, runId) {
   return value;
 }
 
+// Deterministic shard subset derived from manifest order: every case lands in exactly one shard.
+function partition(manifest, index, count) {
+  validateManifest(manifest);
+  if (!Number.isInteger(count) || count < 1 || count > manifest.length
+    || !Number.isInteger(index) || index < 0 || index >= count) {
+    throw new Error('Invalid critical shard partition');
+  }
+  return manifest.filter((_item, position) => position % count === index);
+}
+
+// Keeps only what receipt() checks, so a shard receipt carries no output or attachments.
+function project(result) {
+  if (!result || typeof result !== 'object' || !Array.isArray(result.errors ?? [])) {
+    throw new Error('Invalid Playwright result');
+  }
+  return {
+    errors: (result.errors ?? []).map((error) => ({ message: String(error?.message ?? 'error').slice(0, 2000) })),
+    suites: flatten(result.suites).map(({ file, title, tests }) => ({
+      file: file.replace(/^tests\/e2e\//, ''),
+      specs: [{ title, tests: (Array.isArray(tests) ? tests : []).map((test) => ({
+        expectedStatus: test?.expectedStatus,
+        status: test?.status,
+        results: (Array.isArray(test?.results) ? test.results : []).map((item) => ({ status: item?.status })),
+      })) }],
+    })),
+  };
+}
+
+// Each shard must have run exactly its own cases, the shards must cover the manifest exactly
+// once, and the combined result must pass the unchanged whole-manifest receipt().
+function merge(manifest, parts, commit, runId) {
+  validateManifest(manifest);
+  if (!Array.isArray(parts) || parts.length === 0) throw new Error('Missing critical shard results');
+  const covered = new Set();
+  const suites = [];
+  for (const part of parts) {
+    const cases = validateManifest(part?.cases);
+    for (const item of cases) {
+      if (!manifest.some((required) => key(required) === key(item))) throw new Error(`Extra critical case: ${item.title}`);
+      if (covered.has(key(item))) throw new Error(`Critical case in more than one shard: ${item.title}`);
+      covered.add(key(item));
+    }
+    receipt({ cases, manifestSha256: sha(cases) }, part.result, commit, runId);
+    suites.push(...part.result.suites);
+  }
+  if (covered.size !== manifest.length) throw new Error('Critical shards miss a declared case');
+  return receipt({ cases: manifest, manifestSha256: sha(manifest) }, { errors: [], suites }, commit, runId);
+}
+
 async function publishAfterGates(runGates, path) {
   if (existsSync(path)) unlinkSync(path);
   const value = await runGates();
@@ -115,7 +169,9 @@ async function publishAfterGates(runGates, path) {
   return value;
 }
 
-module.exports = { select, assertRouted, receipt, verify, publishAfterGates };
+module.exports = {
+  validateManifest, select, assertRouted, receipt, verify, partition, project, merge, publishAfterGates,
+};
 if (require.main === module) {
   try {
     const [, , command, path, commit, runId] = process.argv;

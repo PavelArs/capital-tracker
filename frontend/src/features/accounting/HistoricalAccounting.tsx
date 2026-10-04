@@ -7,6 +7,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { AssetSwapTotals } from './AssetSwapTotals';
 import { accountingError } from './feedback';
+import { errorMatchesShownJournal, journalChanged, matchesShownJournal } from './journal-revision';
 
 type Loaded = {
   snapshot: HistoricalSnapshot;
@@ -33,19 +34,21 @@ export function HistoricalAccounting({
 
   current.current = { accountId, journalRevision };
   useEffect(() => {
-    if (
-      previous.current.accountId !== accountId ||
-      previous.current.journalRevision !== journalRevision
-    ) {
-      previous.current = { accountId, journalRevision };
-      setLoaded(null);
-      setLoading(false);
-      setError(null);
-    }
-    return () => {
-      request.current++;
-    };
+    const next = { accountId, journalRevision };
+    const changed = journalChanged(previous.current, next);
+    previous.current = next;
+    if (!changed) return;
+    request.current++;
+    setLoaded(null);
+    setLoading(false);
+    setError(null);
   }, [accountId, journalRevision]);
+  useEffect(
+    () => () => {
+      request.current++;
+    },
+    [],
+  );
 
   function edit(value: string) {
     request.current++;
@@ -67,7 +70,11 @@ export function HistoricalAccounting({
       if (
         generation !== request.current ||
         current.current.accountId !== owner ||
-        current.current.journalRevision !== observedRevision
+        !matchesShownJournal(
+          observedRevision,
+          snapshot.journalRevision,
+          current.current.journalRevision,
+        )
       )
         return;
       if (
@@ -89,7 +96,7 @@ export function HistoricalAccounting({
       }));
     } catch (caught) {
       if (generation !== request.current || current.current.accountId !== owner) return;
-      if (current.current.journalRevision !== observedRevision) return;
+      if (!errorMatchesShownJournal(observedRevision, current.current.journalRevision)) return;
       if (isAxiosError(caught) && caught.response?.status === 409) {
         setLoaded(null);
         setError(
@@ -110,7 +117,10 @@ export function HistoricalAccounting({
   }
 
   const visible =
-    loaded?.accountId === accountId && loaded.observedRevision === journalRevision ? loaded : null;
+    loaded?.accountId === accountId &&
+    matchesShownJournal(loaded.observedRevision, loaded.snapshot.journalRevision, journalRevision)
+      ? loaded
+      : null;
   const snapshot = visible?.snapshot;
 
   return (

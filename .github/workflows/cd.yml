@@ -1,5 +1,10 @@
 name: Deploy Manual MVP
 on:
+  # A successful CI run for a push to main starts an approval-gated release.
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       ci_run_id:
@@ -7,17 +12,17 @@ on:
         required: true
         type: string
       mode:
-        description: inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
+        description: release (promote, preflight and deploy after environment approval), inventory (read-only), promote (publish tested images and receipt), preflight or deploy (owner-approved receipt)
         required: true
         default: inventory
         type: choice
-        options: [inventory, promote, preflight, deploy]
+        options: [release, inventory, promote, preflight, deploy]
       installation:
-        description: Recorded in the promoted receipt; existing upgrade or first install after verified absence of application data
+        description: Recorded in the promoted receipt; existing upgrade, first install after verified absence of application data, or completion of an interrupted activation
         required: true
         default: existing
         type: choice
-        options: [existing, fresh, resume-fresh]
+        options: [existing, fresh, resume-fresh, resume-activation]
 permissions:
   contents: read
 concurrency:
@@ -25,25 +30,34 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # Holds DEPLOY_DISPATCH_SSH_KEY; the owner can add required reviewers and a main-only branch rule.
+    # Holds DEPLOY_DISPATCH_SSH_KEY. Its required reviewer is the release approval button;
+    # without that protection rule an automatic release deploys without a click.
     environment: production
+    env:
+      RELEASE_MODE: ${{ github.event_name == 'workflow_run' && 'release' || inputs.mode }}
+      RUN_ID: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.id || inputs.ci_run_id }}
+      RELEASE_INSTALLATION: ${{ github.event_name == 'workflow_run' && 'existing' || inputs.installation }}
     permissions:
       contents: read
       actions: read
       packages: write
+    # Set only after the dispatcher accepted a deploy request; the tag job reads it.
+    outputs:
+      version: ${{ steps.deployed.outputs.version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22.21.1'
       - name: Validate trusted successful candidate provenance
-        if: inputs.mode != 'inventory'
+        if: env.RELEASE_MODE != 'inventory'
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
@@ -53,35 +67,49 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
           node - <<'NODE'
           const jobs = JSON.parse(require('node:fs').readFileSync('jobs.json')).jobs;
-          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Release Images and Security', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
+          // Critical acceptance runs once per shard on the images built once; all must succeed.
+          const shards = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3'].map(shard => `Critical acceptance (${shard})`);
+          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Build Release Images', ...shards, 'Release Images and Security', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
             if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error('Required candidate gate missing or unsuccessful');
           }
-          const release = jobs.find(job => job.name === 'Release Images and Security' && job.conclusion === 'success');
-          for (const name of ['Run critical real release acceptance', 'Verify critical acceptance receipt']) {
-            if (!release.steps?.some(step => step.name === name && step.conclusion === 'success')) throw new Error('Critical real acceptance missing or unsuccessful');
+          const succeeded = (jobName, stepName) => jobs.find(job => job.name === jobName && job.conclusion === 'success').steps?.some(step => step.name === stepName && step.conclusion === 'success');
+          for (const name of shards) {
+            if (!succeeded(name, 'Run critical real release acceptance')) throw new Error('Critical real acceptance missing or unsuccessful');
+          }
+          for (const name of ['Merge verified critical acceptance shards', 'Verify critical acceptance receipt']) {
+            if (!succeeded('Release Images and Security', name)) throw new Error('Critical real acceptance missing or unsuccessful');
           }
           NODE
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n critical-release-acceptance -D acceptance
           node scripts/critical-release-profile.cjs verify acceptance/critical-release-acceptance.json "$GITHUB_SHA" "$RUN_ID"
+      - name: Name the release version
+        if: env.RELEASE_MODE != 'inventory'
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          # Readable, deterministic per commit: commit date in UTC plus the short SHA.
+          version="v$(TZ=UTC git show -s --format=%cd --date=format-local:%Y.%m.%d "$GITHUB_SHA")-${GITHUB_SHA:0:7}"
+          [[ "$version" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ ]]
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "Release version: \`$version\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Download and verify the tested candidate
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_INSTALLATION: ${{ inputs.installation }}
         run: |
           set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ ]]
           gzip -dc candidate/images.tar.gz | docker load
           node - <<'NODE'
           const manifest = require('./candidate/manifest.json');
@@ -108,6 +136,9 @@ jobs:
             digest=$(docker image inspect "$destination" --format '{{index .RepoDigests 0}}')
             [[ "$digest" =~ ^ghcr\.io/[a-z0-9_-]+/capital-tracker-(backend|frontend|postgres)@sha256:[a-f0-9]{64}$ ]]
             echo "RELEASE_${name^^}=$digest" >> "$GITHUB_ENV"
+            # Same tested image, readable name; the receipt keeps the digest above.
+            docker tag "$tested" "ghcr.io/$owner/capital-tracker-$name:$RELEASE_VERSION"
+            docker push "ghcr.io/$owner/capital-tracker-$name:$RELEASE_VERSION"
           done
           if [[ $RELEASE_INSTALLATION == resume-fresh ]]; then
             old_postgres=$(jq -er '.postgres.registryDigest' deploy/manual-mvp-infrastructure-pins.json)
@@ -118,10 +149,7 @@ jobs:
           fi
           docker logout ghcr.io
       - name: Write the release receipt for owner approval
-        if: inputs.mode == 'promote'
-        env:
-          RUN_ID: ${{ inputs.ci_run_id }}
-          RELEASE_INSTALLATION: ${{ inputs.installation }}
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         run: |
           set -euo pipefail
           mkdir receipt
@@ -129,7 +157,7 @@ jobs:
           # The receipt holds only public commit/run/digest/hash identities for owner review.
           { echo '### Release receipt awaiting owner approval'; echo '```json'; cat "receipt/$GITHUB_SHA-$RUN_ID.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload the release receipt
-        if: inputs.mode == 'promote'
+        if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: manual-mvp-release-receipt
@@ -137,7 +165,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
       - name: Configure restricted release SSH with pinned identity
-        if: inputs.mode != 'promote'
+        if: env.RELEASE_MODE != 'promote'
         env:
           DEPLOY_DISPATCH_SSH_KEY: ${{ secrets.DEPLOY_DISPATCH_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -150,27 +178,68 @@ jobs:
           printf '%s\n' "$DEPLOY_DISPATCH_SSH_KEY" > ~/.ssh/release-key
           chmod 600 ~/.ssh/known_hosts ~/.ssh/release-key
       - name: Send a data-only request to the root-owned release dispatcher
-        if: inputs.mode != 'promote'
+        if: env.RELEASE_MODE != 'promote'
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_DISPATCH_USER: ${{ vars.DEPLOY_DISPATCH_USER }}
           DEPLOY_SSH_PORT: ${{ vars.DEPLOY_SSH_PORT }}
-          RELEASE_MODE: ${{ inputs.mode }}
-          RUN_ID: ${{ inputs.ci_run_id }}
         run: |
           set -euo pipefail
           [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.-]+$ && "$DEPLOY_DISPATCH_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          [[ "$RELEASE_MODE" == inventory || "$RELEASE_MODE" == preflight || "$RELEASE_MODE" == deploy ]]
+          [[ "$RELEASE_MODE" =~ ^(inventory|preflight|deploy|release)$ ]]
           # Inventory is not bound to a candidate; it only names this workflow run.
           if [[ "$RELEASE_MODE" == inventory ]]; then RUN_ID=$GITHUB_RUN_ID; fi
           [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
           port=${DEPLOY_SSH_PORT:-22}
           [[ "$port" =~ ^[0-9]+$ && "$port" -ge 1 && "$port" -le 65535 ]]
           # The forced command ignores any remote command; the request is data on stdin.
-          jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
-            '{version: 1, operation: $operation, commit: $commit, runId: $runId}' \
-            | ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+          dispatch() {
+            ssh -T -p "$port" -i ~/.ssh/release-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
               "$DEPLOY_DISPATCH_USER@$DEPLOY_HOST"
+          }
+          if [[ "$RELEASE_MODE" == release ]]; then
+            # The environment approval authorizes the receipt promoted above; deploy follows a passed preflight.
+            receipt="receipt/$GITHUB_SHA-$RUN_ID.json"
+            for operation in preflight deploy; do
+              jq -c --arg operation "$operation" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+                '{version: 2, operation: $operation, commit: $commit, runId: $runId, receipt: .}' "$receipt" | dispatch
+            done
+          else
+            jq -cn --arg operation "$RELEASE_MODE" --arg commit "$GITHUB_SHA" --arg runId "$RUN_ID" \
+              '{version: 1, operation: $operation, commit: $commit, runId: $runId}' | dispatch
+          fi
+      - name: Report the deployed release version
+        id: deployed
+        if: env.RELEASE_MODE == 'release' || env.RELEASE_MODE == 'deploy'
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ ]]
+          echo "version=$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
       - name: Remove runner credentials
         if: always()
         run: rm -f ~/.ssh/release-key
+  # Marks the release now running. Separate from deploy so the job holding the
+  # dispatcher key never gets contents: write; this one holds no secret.
+  tag:
+    needs: deploy
+    if: needs.deploy.outputs.version != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the deployed commit with its release version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.deploy.outputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}-[0-9a-f]{7}$ && "${VERSION: -7}" == "${GITHUB_SHA:0:7}" ]]
+          existing=$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$VERSION" | jq -r --arg ref "refs/tags/$VERSION" '.[] | select(.ref == $ref) | .object.sha')
+          if [[ -z "$existing" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" >/dev/null
+          else
+            # A re-run may meet its own tag; never move a tag to another commit.
+            test "$existing" = "$GITHUB_SHA"
+          fi
+          echo "Deployed \`$VERSION\` ($GITHUB_SHA)" >> "$GITHUB_STEP_SUMMARY"

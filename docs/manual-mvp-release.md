@@ -75,7 +75,42 @@ Inventory now runs as root: it reports the fixed managed runtime and Docker view
 including legacy setting names only if that managed directory contains `.env` (never
 values). Direct unmanaged inventory/runner use retains the `/opt/capital-tracker` default.
 
-Release flow:
+Approved release (`deploy-on-approval`, default after 2026-10-04): every successful
+`CI` run for a push to main starts `Deploy Manual MVP` in `release` mode. The job
+waits for the `production` environment; the owner presses "Review deployments" →
+"Approve and deploy" in GitHub. The approved job validates the exact CI run and main
+commit, promotes the tested images, writes the receipt and sends it inside version 2
+`preflight` and then `deploy` requests; deploy runs only after preflight passes. No
+root step is needed per release. Keep a required reviewer on `production`: without it
+the release runs without a click. Manual dispatch offers the same `release` mode with
+an explicit installation.
+
+Root remains the only source of server files. Whenever a release changes the runner,
+inventory, normalizer, Compose, pins or resume helper (the dispatcher refuses with
+"installed … differs from the reviewed receipt"), run as root from a clean checkout of
+that commit `scripts/manual-mvp-dispatcher-install.sh update`, then re-run the
+release. `update` never touches the SSH principal, its key, the sudo rule, the
+registry login or receipts.
+
+Interrupted first activation (production run 37001810387, 2026-10-02): migrations,
+owner and MFA succeeded, the frontend health check failed and both applications were
+stopped without activation metadata. Complete it once with manual `release` and
+`installation=resume-activation` after `update`. It requires `operator/recovery.json`,
+a provisioned owner and no `docker-compose.yml`, `.env.images` or
+`.release-managed-env`; it backs up, rehearses restore, migrates, starts the pair and
+activates without provisioning the owner again. Later releases use `existing`.
+
+Release versions (`tag-release-versions`): every candidate-bound run names the version
+`v<YYYY.MM.DD>-<short SHA>` from the commit date in UTC (for example
+`v2026.10.04-74604d9`). Promotion pushes each image to GHCR under that tag as well as
+the commit SHA, before preflight. After a successful `deploy` or `release`, a separate
+job with only `contents: write` creates the Git tag of the same name on the commit, so
+the newest `v…` tag under GitHub → Tags is the release running on the server; failed
+releases create none. The server still pins digests: the digests in the runtime
+`.env.images` match the GHCR version tag of that release.
+
+Owner-installed receipts (version 1) still work for manual `preflight`/`deploy`:
+
 
 1. After successful main-push CI for the exact current main commit, run `mode=promote`
    on main with that `ci_run_id` and `installation=fresh` for the first installation.
