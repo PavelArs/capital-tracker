@@ -1,8 +1,5 @@
-# application-shell Specification
+## MODIFIED Requirements
 
-## Purpose
-Provide the responsive English application shell (new sections, Legacy group, theme setting) and honest entry while preserving real authentication, legacy data and operation recovery.
-## Requirements
 ### Requirement: SHELL-001 Honest accounting entry and grouped navigation
 After full owner authentication, the private root SHALL open the new Dashboard at
 `/dashboard`. The navigation SHALL list the new sections Dashboard, Portfolio,
@@ -54,33 +51,7 @@ respected.
 - **WHEN** the owner navigates away and returns
 - **THEN** the established frozen same-request recovery and independent trade-draft behavior remain intact
 
-### Requirement: SHELL-003 Restrained login and private session preservation
-Login/password, second-factor/recovery, errors, loading and logout SHALL use clear
-Russian controls and consistent restrained styling while preserving real session,
-CSRF and MFA behavior. Private shell/account information SHALL remain unavailable
-to anonymous and password-only sessions. Theme preferences SHALL remain usable.
-
-#### Scenario: SHELL-003-A Real authentication at compact width
-- **GIVEN** an unauthenticated360px browser and real PostgreSQL-backed owner credentials
-- **WHEN** it opens a private account URL
-- **THEN** it reaches the login surface without private navigation or account data
-- **WHEN** only the correct password is entered
-- **THEN** the second-factor step remains required and the protected API still denies access
-- **WHEN** a valid second factor succeeds and the owner later logs out
-- **THEN** the manual-account entry is usable, and logout revokes access through the real API
-- **AND** labels, errors and focused controls remain visible without decorative animation or viewport overflow
-
-### Requirement: SHELL-004 Bounded redesign preserves existing data
-This shell change SHALL preserve legacy and accounting data, existing backend
-security boundaries, exact evidence and explicit retry semantics. It SHALL NOT
-claim completion of the entire frontend redesign, full portfolio coverage or owner
-visual approval. New browser coverage SHALL focus on navigation/authentication;
-arithmetic boundaries SHALL remain on lower test levels.
-
-#### Scenario: SHELL-004-A Retained financial journey
-- **WHEN** the selected real swap create/review/lost-response/SPA-retry/correct/void journey runs through the redesigned shell
-- **THEN** the same PostgreSQL financial, immutable receipt, stale-review and separate draft assertions pass
-- **AND** no own backend or authentication response is mocked, no owner database is reset and no external provider is required by accounting
+## ADDED Requirements
 
 ### Requirement: SHELL-005 New sections with honest placeholders
 The shell SHALL route Dashboard to `/dashboard`, Portfolio to `/portfolio`,
@@ -131,4 +102,3 @@ NOT claim that prices or wallets are synced.
 - **GIVEN** a full owner session
 - **WHEN** the sidebar is shown at1440px
 - **THEN** the sync area reads "Sync not set up" and does not claim prices or wallets are synced
-

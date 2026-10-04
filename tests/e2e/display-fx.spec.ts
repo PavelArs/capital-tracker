@@ -361,7 +361,7 @@ test('DFX-UI: Settings explicitly collects, converts exact amounts and discards 
           bounds.top + offset,
         );
         await expect(
-          page.getByRole('link', { name: 'К содержимому', exact: true }),
+          page.getByRole('link', { name: 'Skip to content', exact: true }),
         ).not.toBeInViewport();
         await testInfo.attach(`${name}-${index + 1}`, {
           body: await page.screenshot({

@@ -1,0 +1,176 @@
+/* New-section pages inside the shell (prototype "page" and "card" patterns). */
+.shell-page {
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 1200px;
+  margin: 0 auto;
+  font-family: var(--font-ui);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+}
+
+.shell-page h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shell-card {
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+
+.shell-card h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.shell-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 56px 24px;
+  text-align: center;
+}
+
+.shell-empty__ill {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 6px;
+  border-radius: 18px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.shell-empty__ill .shell-icon {
+  width: 28px;
+  height: 28px;
+}
+
+.shell-empty h2 {
+  font-size: var(--fs-xl);
+}
+
+.shell-empty p {
+  max-width: 46ch;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.shell-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  margin-top: 10px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.shell-button:hover {
+  border-color: var(--ink-3);
+}
+
+.shell-settings {
+  display: grid;
+  gap: var(--sp-5);
+  max-width: 780px;
+}
+
+.shell-setting {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--line);
+}
+
+.shell-setting__label {
+  display: block;
+  font-weight: 600;
+}
+
+.shell-setting__text {
+  min-width: 0;
+}
+
+.shell-setting__hint {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.shell-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--sunken);
+}
+
+.shell-seg label {
+  position: relative;
+  padding: 6px 12px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.shell-seg label:hover {
+  color: var(--ink);
+}
+
+/* The native radio covers its label so pointer and keyboard both reach it. */
+.shell-seg input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.shell-seg label:has(input:checked) {
+  background: var(--raised);
+  color: var(--ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), inset 0 0 0 1px var(--line);
+}
+
+.shell-seg label:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shell-note {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
+.shell-note a {
+  color: var(--accent);
+}

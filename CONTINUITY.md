@@ -1,5 +1,17 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — new application shell, M1 (2026-10-04)
+
+Owner target since 2026-10-04: Personal Capital Tracker business requirements, product
+requirements and change order M1–M22 (PR #37), accepted prototype. Change
+`add-app-shell` (branch `claude/m1-add-app-shell-wsa09g`): English sidebar with
+Dashboard, Portfolio, Transactions, Wallets, Settings (`/preferences`); root opens
+`/dashboard`; every current screen under "Legacy" with unchanged URL and Russian label;
+theme System/Dark/Light (System default, `localStorage.theme`). Frontend only, no
+migration. Shell control names in E2E are now English (`Main navigation`,
+`Skip to content`, `Menu`, `Log out`); SHELL-UI keeps its critical title.
+Archived as `2026-10-04-add-app-shell` after hosted CI 37214714966 passed all jobs. Next: M2 (classify-assets), M8, M10, M17/M18.
+
 ## Current product slice — unrealized profit/loss (2026-10-03)
 
 Owner goal restated 2026-10-03: track crypto per wallet from purchase, realized and

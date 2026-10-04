@@ -96,13 +96,12 @@ function walletProviderRequests(address: string): ProviderRequest[] {
 async function loginThroughBrowser(page: Page): Promise<string> {
   const result = await loginWithMfa(page);
   expect(result.user).toMatchObject({ id: owner.id, email: owner.email });
-  await expect(page.getByRole('button', { name: 'Выход', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
   return result.csrfToken;
 }
 
 async function openWallets(page: Page): Promise<void> {
-  const navigation = page.getByRole('navigation', { name: 'Основная навигация' });
-  await navigation.getByText('Прежние данные', { exact: true }).click();
+  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
   await navigation.getByRole('link', { name: 'Криптокошельки', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
 }

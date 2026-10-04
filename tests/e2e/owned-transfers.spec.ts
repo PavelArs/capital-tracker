@@ -445,7 +445,7 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
           bounds.top + offset,
         );
         await expect(
-          page.getByRole('link', { name: 'К содержимому', exact: true }),
+          page.getByRole('link', { name: 'Skip to content', exact: true }),
         ).not.toBeInViewport();
         await testInfo.attach(`${name}-${index + 1}`, {
           body: await page.screenshot({

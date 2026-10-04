@@ -362,7 +362,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
             bounds.top + offset,
           );
           await expect(
-            page.getByRole('link', { name: 'К содержимому', exact: true }),
+            page.getByRole('link', { name: 'Skip to content', exact: true }),
           ).not.toBeInViewport();
           await testInfo.attach(`${name}-${index + 1}`, {
             body: await page.screenshot({

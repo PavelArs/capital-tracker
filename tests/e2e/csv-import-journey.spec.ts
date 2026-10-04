@@ -490,7 +490,7 @@ test('CSV-006-A: full Russian sale-first import retains250/100/0.5, source prove
         );
         // Capture the real viewport; element clipping can misplace transformed fixed links.
         await expect(
-          page.getByRole('link', { name: 'К содержимому', exact: true }),
+          page.getByRole('link', { name: 'Skip to content', exact: true }),
         ).not.toBeInViewport();
         await testInfo.attach(`${name}-${index + 1}`, {
           body: await page.screenshot({
