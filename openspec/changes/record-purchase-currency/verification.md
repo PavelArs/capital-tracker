@@ -52,15 +52,20 @@ dependency, lockfile, image or `frontend/nginx.conf` change.
 | `purchase-currency-db.cjs` | PASS PCUR-COMPAT/SHAPE, PCUR-RUB, PCUR-MIXED, PCUR-ERRORS, PCUR-MIGRATE |
 | `migrations.cjs` | PASS populated13/14/15/16/18/21-to24 |
 | `wallet-addresses-db.cjs`, `auth-limits-db.cjs` | PASS (24 migrations) |
-| Remaining acceptance probes | PROBES3_RESULT |
+| `asset-rewards(-bounds)`, `asset-swaps-bounds`, `historical-accounting`, `historical-valuation`, `linked-twr`, `manual-portfolio-valuation`, `manual-usd-prices`, `owned-transfers(-bounds)`, `period-profit`, `twr-preview`, `valuation-history`, `xirr-preview` probes | exit 0 |
+| `display-fx-db`, `mfa-db`, `sessions-db` (with CI's backend environment: MFA key file, display-FX flags, provider proxy) | exit 0 |
+| `client-source-startup.cjs` after `migrate.js` (24 applied) and `seed.cjs` | PASS (24 migrations, latest `AddTradePaymentRecords1790500000000`) |
 
 Probes ran against a throwaway local PostgreSQL 16 cluster with the repository's own
 migrations, the compiled backend linked at `/app/backend`, isolated `DB_*` settings and the
 synthetic `providers.cjs` fixture on `providers:8080` with a throwaway TLS certificate.
 
-`csv-import-db.cjs` (CSV-007-A) and `usd-trades-db.cjs` (TRADE-006-B) fail at their
-RESTRICT SQLSTATE stage on local PostgreSQL 16; unchanged `main` fails them identically in
-the same sandbox (CI uses PostgreSQL 18), so this is environmental, not a regression.
+Six probes fail at a referenced-deletion RESTRICT SQLSTATE stage on local PostgreSQL 16:
+`csv-import-db` (CSV-007-A), `usd-trades-db` (TRADE-006-B), `carry-in-db` (CARRY-006-A),
+`external-usd-flows-db` (FLOW-MIG-001), `manual-opening-db` (OPEN-004) and `asset-swaps-db`
+(SWAP-006, expects 23001). Unchanged `main` at `f63be8c`, built and run the same way in the
+same sandbox, fails all six too (CI uses PostgreSQL 18), so this is environmental, not a
+regression; hosted CI is the authority for them.
 
 ## Not run here
 
