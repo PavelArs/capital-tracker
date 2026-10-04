@@ -23,6 +23,10 @@ already complete, so releases use `existing`. Release acceptance runs only on pu
 main; acceptance restarts backends with `--timeout 0` (Node as PID 1 ignores SIGTERM).
 Archived: `deploy-on-approval`, `tag-release-versions`, `fix-analytics-journal-race`,
 `e2e-on-main-only`, `fast-acceptance-restarts`.
+Change `parallel-release-acceptance` (ENG-007, PR #46 merged 2026-10-04): images built
+once, critical acceptance in five parallel verified shards merged into the same receipt;
+CI also runs on manual dispatch (CD still push-only). Dispatch run 37227886949 took
+11 min 51 s. Archive after the first approved release validates the new provenance.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 

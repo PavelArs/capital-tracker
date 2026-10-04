@@ -27,12 +27,38 @@ gates; the browser runner does not perform them. CI must bind the successful cri
 gate receipt to the candidate source and exact manifest before candidate export or
 promotion. A paused, skipped or partial critical gate cannot produce release evidence.
 
-Since 2026-10-04 (owner decision) the `Release Images and Security` job, with the
-critical browser acceptance and image scans, runs only on pushes to main. Pull
-requests run the other eight gates and the aggregate accepts the skipped release
-job only for the `pull_request` event. A pull request therefore carries no browser
-evidence: run the affected journeys locally where possible, and expect a red main
-run after merge to block deployment until it is fixed.
+Since 2026-10-04 (owner decision) the release jobs — `Build Release Images`, the five
+`Critical acceptance (<shard>)` jobs and `Release Images and Security` — run for every
+event except pull requests: pushes to main and a manual run of the CI workflow
+(`workflow_dispatch`, any branch). Pull requests run the other eight gates and the
+aggregate accepts the skipped release jobs only for the `pull_request` event. A pull
+request therefore carries no browser evidence: run the affected journeys locally where
+possible, or dispatch CI for the branch before merge. Only a push run on main can be
+deployed; a dispatched run is review evidence only.
+
+In CI the critical profile runs in parallel shards on images built once:
+
+- `Build Release Images` pulls and verifies the pinned PostgreSQL and Redis images,
+  runs `node scripts/acceptance.mjs images --manifest release-images/manifest.json`
+  (the same Compose build of backend and frontend) and uploads `docker save` of the
+  four images with their schema-v3 manifest.
+- Each shard loads them, refuses any ID that differs from the manifest and runs
+  `node scripts/acceptance.mjs critical --shard <name> --images release-images/manifest.json`
+  on its own stack. `probes-1` and `probes-2` run the 31 real checks of the serial
+  runner, each check in exactly one shard (`scripts/acceptance-shards.cjs` holds the
+  list and the assignment; the shard with client source startup migrates and seeds
+  first). `browser-1..3` take the manifest cases whose index modulo 3 is 0, 1 or 2, after
+  migration, seed, application start, the HTTPS ingress check and the artifact check.
+  Each shard writes `test-results/critical-shard-<name>.json`.
+- `Release Images and Security` merges the receipts with
+  `node scripts/acceptance-shards.cjs merge …` into the unchanged
+  `test-results/critical-release-acceptance.json` only if every shard tested the
+  manifest images for this commit and run and the checks and cases are covered exactly
+  once and passed; then it verifies the receipt, scans and exports the same images.
+
+Shard mode needs a CI run id and prebuilt images; locally keep using
+`pnpm test:e2e:critical` (serial, builds its own images) or `pnpm test:e2e`. Print the
+split with `node scripts/acceptance-shards.cjs plan`.
 
 Within an initialized isolated acceptance stack, Playwright accepts concrete files
 or file:line selectors, for example:
