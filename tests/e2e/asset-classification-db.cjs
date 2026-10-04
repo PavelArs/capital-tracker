@@ -153,7 +153,10 @@ async function main() {
     ]);
     const constraintsAfter = await schemaConstraints(db);
     const added = ['accounting_instruments_asset_classification', 'accounting_instruments_asset_values'];
-    assert.deepEqual(constraintsAfter.filter((row) => !added.includes(row.conname)), constraintsBefore);
+    // PostgreSQL 18 also lists each new NOT NULL column as a named constraint.
+    const notNull = (row) => row.relname === 'accounting_instruments' && newColumns.some((column) =>
+      row.conname === `accounting_instruments_${column}_not_null` && row.definition === `NOT NULL "${column}"`);
+    assert.deepEqual(constraintsAfter.filter((row) => !added.includes(row.conname) && !notNull(row)), constraintsBefore);
     assert.deepEqual(constraintsAfter.filter((row) => added.includes(row.conname)).map((row) => row.conname), added);
     assert.deepEqual(await s.valuation.getSnapshot(owner, trading, { at }), valuationBefore, 'Valuation is identical');
     assert.match(migrate(), /Migrations applied: 0\b/);

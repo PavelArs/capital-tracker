@@ -636,12 +636,14 @@ async function previousInstrument(source, owner, name, symbol) {
   return id;
 }
 // ClassifyAssets1790700000000 adds exactly these columns and checks to accounting_instruments.
+// PostgreSQL 18 also lists each new NOT NULL column as a named contype 'n' constraint.
 const classificationColumns = ['assetType', 'valuationCurrency', 'priceSource'];
+const classificationChecks = ['accounting_instruments_asset_classification', 'accounting_instruments_asset_values'];
 function classificationAddition(kind, row) {
   if (kind === 'columns') return row.table_name === 'accounting_instruments' && classificationColumns.includes(row.column_name);
-  if (kind === 'constraints') return row.relname === 'accounting_instruments' && [
-    'accounting_instruments_asset_classification', 'accounting_instruments_asset_values',
-  ].includes(row.conname);
+  if (kind === 'constraints') return row.relname === 'accounting_instruments' && (classificationChecks.includes(row.conname)
+    || (row.contype === 'n' && classificationColumns.some((column) =>
+      row.conname === `accounting_instruments_${column}_not_null` && row.definition === `NOT NULL "${column}"`)));
   return false;
 }
 function replacedOriginCheck(kind, row) {
@@ -975,8 +977,8 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
         ['valuationCurrency', 'text', 'NO', "'USD'::text"],
         ['priceSource', 'text', 'NO', "'manual'::text"],
       ]);
-      assert.deepEqual(after.constraints.filter(row => classificationAddition('constraints', row)).map(row => row.conname),
-        ['accounting_instruments_asset_classification', 'accounting_instruments_asset_values']);
+      assert.deepEqual(after.constraints.filter(row => classificationAddition('constraints', row) && row.contype === 'c')
+        .map(row => row.conname), classificationChecks);
     }
     for (const [table, rows] of Object.entries(before.rows)) {
       if (table !== 'migrations') {
