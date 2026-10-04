@@ -4,6 +4,8 @@
 > starting against existing data. Explicit migration preflight refuses unsafe legacy upgrades.
 > Production deployment is disabled by default and is not release-ready.
 > The target contract is [the refactor brief](capital-tracker-openspec-prompt.md).
+> The owner's current product target (2026-10-04) is the [business requirements](docs/business-requirements.md)
+> and the derived [product requirements and change order](docs/product-requirements.md).
 
 ## Verification during the refactor
 
