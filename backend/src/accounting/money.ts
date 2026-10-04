@@ -21,3 +21,19 @@ export function formatProduct(value: bigint): string {
   const fraction = digits.slice(-60).replace(/0+$/, '');
   return `${digits.slice(0, -60)}${fraction ? `.${fraction}` : ''}`;
 }
+
+/** Signed scale60 difference of products and lifted scale30 amounts. */
+export function formatSignedProduct(value: bigint): string {
+  return value < 0n ? `-${formatProduct(-value)}` : formatProduct(value);
+}
+
+/** Display ratio numerator/denominator*100, half away from zero, two fixed places. */
+export function formatPercent(numerator: bigint, denominator: bigint): string {
+  const negative = numerator < 0n !== denominator < 0n;
+  const top = (numerator < 0n ? -numerator : numerator) * 10000n;
+  const bottom = denominator < 0n ? -denominator : denominator;
+  const hundredths = (top * 2n + bottom) / (bottom * 2n);
+  const whole = (hundredths / 100n).toString();
+  const fraction = (hundredths % 100n).toString().padStart(2, '0');
+  return `${negative && hundredths > 0n ? '-' : ''}${whole}.${fraction}`;
+}

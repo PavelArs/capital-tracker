@@ -132,8 +132,11 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
       pricePolicy: 'exact-instant',
       completeness: 'incomplete',
       missingPriceCount: 1,
+      unknownCostCount: 0,
       pricedSubtotalUsd: '150',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       items: [
         {
           instrumentId: first.id,
@@ -143,6 +146,8 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
           costUsd: '50',
           price: { priceUsd: '300', observedAt: at, revision: 1 },
           valueUsd: '150',
+          unrealizedPnlUsd: '100',
+          unrealizedReturnPercent: '200.00',
         },
         {
           instrumentId: second.id,
@@ -152,6 +157,8 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
           costUsd: '400',
           price: null,
           valueUsd: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
         },
       ].sort((left, right) => left.instrumentId.localeCompare(right.instrumentId)),
     });
@@ -177,12 +184,16 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
       missingPriceCount: 0,
       pricedSubtotalUsd: '150',
       totalValueUsd: '150',
+      unrealizedPnlUsd: '-300',
+      unrealizedReturnPercent: '-66.67',
       items: expect.arrayContaining([
         expect.objectContaining({
           instrumentId: second.id,
           quantity: '2',
           price: { priceUsd: '0', observedAt: at, revision: 1 },
           valueUsd: '0',
+          unrealizedPnlUsd: '-400',
+          unrealizedReturnPercent: '-100.00',
         }),
       ]),
     });
@@ -207,6 +218,8 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
       completeness: 'complete',
       pricedSubtotalUsd: '160',
       totalValueUsd: '160',
+      unrealizedPnlUsd: '-290',
+      unrealizedReturnPercent: '-64.44',
       items: expect.arrayContaining([
         expect.objectContaining({
           instrumentId: first.id,
@@ -214,6 +227,8 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
           costUsd: '50',
           price: { priceUsd: '320', observedAt: at, revision: 2 },
           valueUsd: '160',
+          unrealizedPnlUsd: '110',
+          unrealizedReturnPercent: '220.00',
         }),
       ]),
     });
@@ -244,6 +259,8 @@ test('VAL-API: authenticated valuation uses exact UUID prices and preserves inco
       missingPriceCount: 1,
       pricedSubtotalUsd: '160',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       items: expect.arrayContaining([
         expect.objectContaining({
           instrumentId: second.id,
@@ -306,6 +323,7 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       missingPriceCount: 1,
       pricedSubtotalUsd: '150',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
     });
     expect(
       fingerprint(['auth_sessions', 'auth_request_limits']),
@@ -326,6 +344,14 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
     await expect(firstPosition.getByRole('cell').nth(4)).toHaveText('150');
     await expect(secondPosition.getByRole('cell').nth(3)).toHaveText('Нет точной цены');
     await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('—');
+    await expect(firstPosition.getByRole('cell').nth(5)).toHaveText('100');
+    await expect(firstPosition.getByRole('cell').nth(6)).toHaveText('200.00 %');
+    await expect(secondPosition.getByRole('cell').nth(5)).toHaveText('Нужна точная цена');
+    await expect(
+      section.getByText('Нереализованная прибыль недоступна: нет точной цены для 1 позиций.', {
+        exact: true,
+      }),
+    ).toBeVisible();
     await inspectAnalysis(page, testInfo, section, 'valuation');
 
     await page.getByRole('button', { name: 'Операции', exact: true }).click();
@@ -358,6 +384,8 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       missingPriceCount: 0,
       pricedSubtotalUsd: '150',
       totalValueUsd: '150',
+      unrealizedPnlUsd: '-300',
+      unrealizedReturnPercent: '-66.67',
     });
     expect(
       fingerprint(['auth_sessions', 'auth_request_limits']),
@@ -371,6 +399,10 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       secondPosition.getByRole('cell').nth(3).getByText('0', { exact: true }),
     ).toBeVisible();
     await expect(secondPosition.getByRole('cell').nth(4)).toHaveText('0');
+    await expect(summaryValue(section, 'Нереализованная прибыль, USD')).toHaveText('-300');
+    await expect(summaryValue(section, 'Доход, %')).toHaveText('-66.67 %');
+    await expect(secondPosition.getByRole('cell').nth(5)).toHaveText('-400');
+    await expect(secondPosition.getByRole('cell').nth(6)).toHaveText('-100.00 %');
 
     const pattern = `**${path}?*`;
     let release = () => {};

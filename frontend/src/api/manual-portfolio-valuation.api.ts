@@ -11,6 +11,9 @@ export interface ManualPortfolioValuationAccount {
   missingPriceCount: number | null;
   pricedSubtotalUsd: string | null;
   totalValueUsd: string | null;
+  unknownCostCount: number | null;
+  unrealizedPnlUsd: string | null;
+  unrealizedReturnPercent: string | null;
   items: ValuationPosition[];
 }
 
@@ -27,6 +30,9 @@ export interface ManualPortfolioValuationResponse {
   missingPriceCount: number;
   pricedSubtotalUsd: string;
   totalValueUsd: string | null;
+  unknownCostCount: number;
+  unrealizedPnlUsd: string | null;
+  unrealizedReturnPercent: string | null;
   accounts: ManualPortfolioValuationAccount[];
 }
 

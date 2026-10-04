@@ -10,6 +10,8 @@ export interface ValuationPosition {
   unknownCostQuantity?: string;
   price: { priceUsd: string; observedAt: string; revision: number } | null;
   valueUsd: string | null;
+  unrealizedPnlUsd: string | null;
+  unrealizedReturnPercent: string | null;
 }
 
 export interface HistoricalValuationSnapshot {
@@ -25,8 +27,11 @@ export interface HistoricalValuationSnapshot {
   pricePolicy: 'exact-instant';
   completeness: 'complete' | 'incomplete';
   missingPriceCount: number;
+  unknownCostCount: number;
   pricedSubtotalUsd: string;
   totalValueUsd: string | null;
+  unrealizedPnlUsd: string | null;
+  unrealizedReturnPercent: string | null;
   items: ValuationPosition[];
 }
 

@@ -20,6 +20,9 @@ const complete: ManualPortfolioValuationResponse = {
   missingPriceCount: 0,
   pricedSubtotalUsd: '308.64',
   totalValueUsd: '308.64',
+  unknownCostCount: 0,
+  unrealizedPnlUsd: '58.64',
+  unrealizedReturnPercent: '23.46',
   accounts: [
     {
       accountId: first,
@@ -31,6 +34,9 @@ const complete: ManualPortfolioValuationResponse = {
       missingPriceCount: 0,
       pricedSubtotalUsd: '61.728',
       totalValueUsd: '61.728',
+      unknownCostCount: 0,
+      unrealizedPnlUsd: '11.728',
+      unrealizedReturnPercent: '23.46',
       items: [
         {
           instrumentId: shared,
@@ -40,6 +46,8 @@ const complete: ManualPortfolioValuationResponse = {
           costUsd: '50',
           price: { priceUsd: '123.456', observedAt: at, revision: 2 },
           valueUsd: '61.728',
+          unrealizedPnlUsd: '11.728',
+          unrealizedReturnPercent: '23.46',
         },
       ],
     },
@@ -53,6 +61,9 @@ const complete: ManualPortfolioValuationResponse = {
       missingPriceCount: 0,
       pricedSubtotalUsd: '246.912',
       totalValueUsd: '246.912',
+      unknownCostCount: 0,
+      unrealizedPnlUsd: '46.912',
+      unrealizedReturnPercent: '23.46',
       items: [
         {
           instrumentId: shared,
@@ -62,6 +73,8 @@ const complete: ManualPortfolioValuationResponse = {
           costUsd: '200',
           price: { priceUsd: '123.456', observedAt: at, revision: 2 },
           valueUsd: '246.912',
+          unrealizedPnlUsd: '46.912',
+          unrealizedReturnPercent: '23.46',
         },
       ],
     },
@@ -95,12 +108,16 @@ describe('selected manual-account valuation presentation', () => {
       missingPriceCount: 1,
       pricedSubtotalUsd: '61.728',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       accounts: [
         {
           ...complete.accounts[0],
           completeness: 'incomplete',
           missingPriceCount: 1,
           totalValueUsd: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
           items: [
             complete.accounts[0].items[0],
             {
@@ -111,6 +128,8 @@ describe('selected manual-account valuation presentation', () => {
               costUsd: '1',
               price: null,
               valueUsd: null,
+              unrealizedPnlUsd: null,
+              unrealizedReturnPercent: null,
             },
           ],
         },
@@ -123,6 +142,9 @@ describe('selected manual-account valuation presentation', () => {
           missingPriceCount: null,
           pricedSubtotalUsd: null,
           totalValueUsd: null,
+          unknownCostCount: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
           items: [],
         },
       ],
@@ -152,12 +174,16 @@ describe('selected manual-account valuation presentation', () => {
       missingPriceCount: 0,
       pricedSubtotalUsd: '0',
       totalValueUsd: null,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
       accounts: [
         {
           ...complete.accounts[0],
           items: [],
           pricedSubtotalUsd: '0',
           totalValueUsd: '0',
+          unrealizedPnlUsd: '0',
+          unrealizedReturnPercent: null,
         },
         {
           ...complete.accounts[1],
@@ -166,6 +192,9 @@ describe('selected manual-account valuation presentation', () => {
           missingPriceCount: null,
           pricedSubtotalUsd: null,
           totalValueUsd: null,
+          unknownCostCount: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
           items: [],
         },
       ],
@@ -178,5 +207,41 @@ describe('selected manual-account valuation presentation', () => {
         subtotalText: 'Не определена',
       },
     ]);
+  });
+});
+
+describe('UPNL-PORTFOLIO selected-account unrealized presentation', () => {
+  it('passes through exact aggregate and per-account unrealized strings', () => {
+    const view = toManualPortfolioView(complete);
+    expect(view).toMatchObject({
+      unrealizedText: '58.64',
+      returnText: '23.46 %',
+      rows: [
+        { unrealizedText: '11.728', returnText: '23.46 %' },
+        { unrealizedText: '46.912', returnText: '23.46 %' },
+      ],
+    });
+  });
+
+  it('labels unavailable unrealized results instead of showing zero', () => {
+    const view = toManualPortfolioView({
+      ...complete,
+      unknownCostCount: 1,
+      unrealizedPnlUsd: null,
+      unrealizedReturnPercent: null,
+      accounts: [
+        {
+          ...complete.accounts[0],
+          unknownCostCount: 1,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
+        },
+      ],
+    });
+    expect(view).toMatchObject({
+      unrealizedText: 'Не определена',
+      returnText: 'Не определён',
+      rows: [{ unrealizedText: 'Не определена', returnText: 'Не определён' }],
+    });
   });
 });
