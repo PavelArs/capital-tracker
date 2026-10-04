@@ -1,7 +1,6 @@
 import { authApi } from '@api';
 import { setUnauthorizedHandler } from '@api/client';
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
-import { type ReactNode, StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AuthProvider, useAuth } from './AuthContext';
 
@@ -236,12 +235,11 @@ describe('cookie-backed auth state', () => {
   });
 
   it('registers a usable callback after StrictMode effect replay and removes it on unmount', async () => {
-    const wrapper = ({ children }: { children: ReactNode }) => (
-      <StrictMode>
-        <AuthProvider>{children}</AuthProvider>
-      </StrictMode>
-    );
-    const { result, unmount } = renderHook(useAuth, { wrapper });
+    // React 19 skips the mount replay for a StrictMode nested in a wrapper; render it as the root.
+    const { result, unmount } = renderHook(useAuth, {
+      wrapper: AuthProvider,
+      reactStrictMode: true,
+    });
     await waitFor(() => expect(result.current.user).toEqual(owner));
     expect(setUnauthorizedHandler).toHaveBeenCalledTimes(2);
     act(notifyUnauthorized);

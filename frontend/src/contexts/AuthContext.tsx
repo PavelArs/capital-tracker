@@ -1,7 +1,7 @@
 import { authApi } from '@api';
 import { setUnauthorizedHandler } from '@api/client';
 import type { FactorCredentials, User } from '@shared/types';
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 interface AuthContextType {
   user: User | null;

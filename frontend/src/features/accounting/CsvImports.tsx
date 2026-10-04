@@ -17,9 +17,9 @@ import { CsvBatchDetail, CsvReceiptView, csvStateLabel } from './CsvBatchDetail'
 import {
   CsvMapping,
   type CsvMappingDraft,
-  type InstrumentCatalogControls,
   csvSettings,
   emptyCsvMapping,
+  type InstrumentCatalogControls,
 } from './CsvMapping';
 import { CsvPreview, CsvSource } from './CsvPreview';
 import { accountingError, newRequestId } from './feedback';

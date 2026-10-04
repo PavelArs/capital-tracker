@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { MARKET_ASSETS, QUOTE_CURRENCY } from './price-catalog';
-import { type SourceOutcome, freshness, gatherQuotes, isDue, nextRunAt } from './price-collection';
+import { freshness, gatherQuotes, isDue, nextRunAt, type SourceOutcome } from './price-collection';
 import { CoinGeckoClient, KrakenClient, type PriceFailure, type Quote } from './price-providers';
 
 export type CollectionResult =

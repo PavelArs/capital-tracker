@@ -10,10 +10,10 @@ import { lockAccountingOwner } from './accounting-lock';
 import {
   type AssetClassification,
   type AssetType,
-  type PriceSource,
-  type ValuationCurrency,
   classifyAsset,
   instrumentPayload,
+  type PriceSource,
+  type ValuationCurrency,
 } from './asset-classification';
 import {
   parseAccount,
@@ -23,7 +23,7 @@ import {
   parseOpening,
   parseUuid,
 } from './input';
-import { type SnapshotRow, projectOpening } from './opening.store';
+import { projectOpening, type SnapshotRow } from './opening.store';
 
 interface AccountRow {
   id: string;

@@ -23,7 +23,9 @@ import { accountingError } from './feedback';
 
 function Instrument({
   trade,
-}: { trade: { instrumentName: string; instrumentSymbol: string | null } }) {
+}: {
+  trade: { instrumentName: string; instrumentSymbol: string | null };
+}) {
   return (
     <>
       {trade.instrumentName}
@@ -35,7 +37,11 @@ function More({
   next,
   disabled,
   onClick,
-}: { next: number | null | undefined; disabled: boolean; onClick: () => void }) {
+}: {
+  next: number | null | undefined;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   return next !== null && next !== undefined ? (
     <button
       className="manual-button manual-button--secondary"

@@ -1,4 +1,4 @@
-import { SetMetadata, applyDecorators } from '@nestjs/common';
+import { applyDecorators, SetMetadata } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { AuthClientSource } from './client-source';
 import type { AuthRequestScope } from './request-limits.service';

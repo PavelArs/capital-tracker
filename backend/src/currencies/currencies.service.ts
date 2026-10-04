@@ -1,8 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
 import { Currency } from '../entities/currency.entity';
+import { UserCurrencyPreference } from '../entities/UserCurrencyPreference.entity';
 import { CurrencyUpdateService } from './currency-update.service';
 
 @Injectable()

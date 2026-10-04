@@ -1,10 +1,10 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import { accountingApi, type Instrument } from '@api/accounting.api';
 import {
+  assetSwapsApi,
   type SwapPage,
   type SwapReceipt,
   type SwapVersion,
   type SwapVersions,
-  assetSwapsApi,
 } from '@api/asset-swaps.api';
 import { tradesApi } from '@api/trades.api';
 import { useAuth } from '@contexts/AuthContext';
@@ -22,13 +22,13 @@ import { AssetSwapFields, AssetSwapReview, savedSwapName } from './AssetSwapEvid
 import { AssetSwapForm } from './AssetSwapForm';
 import { accountingError } from './feedback';
 import {
+  draftFromSwap,
+  emptySwapDraft,
+  normalizeSwapDraft,
   type ReviewedSwapCommand,
   type SwapDraft,
   type SwapMode,
   type SwapReview,
-  draftFromSwap,
-  emptySwapDraft,
-  normalizeSwapDraft,
   swapCommandFor,
 } from './swap-draft';
 import './TradeJournal.css';

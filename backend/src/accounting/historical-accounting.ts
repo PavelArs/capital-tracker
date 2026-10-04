@@ -1,11 +1,11 @@
 import {
   type CarryInFifoResult,
+  calculateFifo,
+  deriveCarryInAmounts,
   type FifoCarryInInput,
   FifoHistoryError,
   type FifoTrade,
   MAX_ACTIVE_TRADES,
-  calculateFifo,
-  deriveCarryInAmounts,
 } from './fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { TradeKind } from './trade-journal.store';

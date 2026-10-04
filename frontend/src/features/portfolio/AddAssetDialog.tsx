@@ -2,8 +2,8 @@ import {
   type AssetType,
   type NewPortfolioAsset,
   type PortfolioAsset,
-  type ValuationCurrency,
   portfolioAssetsApi,
+  type ValuationCurrency,
 } from '@api/portfolio-assets.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';

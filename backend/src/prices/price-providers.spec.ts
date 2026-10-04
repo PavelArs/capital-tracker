@@ -1,5 +1,5 @@
 import { once } from 'node:events';
-import { type IncomingMessage, type Server, type ServerResponse, createServer } from 'node:http';
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { MARKET_ASSETS, type MarketAsset } from './price-catalog';
 import { CoinGeckoClient, KrakenClient } from './price-providers';

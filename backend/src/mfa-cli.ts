@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import {
-  constants,
   closeSync,
+  constants,
   fchmodSync,
   fstatSync,
   fsyncSync,

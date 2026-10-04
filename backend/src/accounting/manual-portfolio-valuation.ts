@@ -1,5 +1,5 @@
 import type { HistoricalPosition } from './historical-accounting';
-import { type ValuationPrice, projectUnrealized, projectValuation } from './historical-valuation';
+import { projectUnrealized, projectValuation, type ValuationPrice } from './historical-valuation';
 
 interface AccountIdentity {
   accountId: string;

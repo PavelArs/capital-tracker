@@ -5,9 +5,9 @@ import { parseUuid } from '../accounting/input';
 import {
   type ChainObservation,
   EsploraClient,
+  formatSats,
   PAGE_SIZE,
   type ProviderFailure,
-  formatSats,
 } from './esplora-client';
 import { parseRegistration, parseTransactionQuery } from './wallet-address-input';
 

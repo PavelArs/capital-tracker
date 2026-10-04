@@ -5,8 +5,8 @@ import { expect, it } from 'vitest';
 import { AssetSwapFields } from './AssetSwapEvidence';
 import { AssetSwapForm } from './AssetSwapForm';
 import { AssetSwapTotals } from './AssetSwapTotals';
+import { emptySwapDraft, type SwapDraft } from './swap-draft';
 import { AllocationOrigin } from './TransferAllocationDetails';
-import { type SwapDraft, emptySwapDraft } from './swap-draft';
 
 it('SWAP-004 shows separate unknown result evidence and preserves a transferred original swap interval', () => {
   const known = { knownSubtotalUsd: '0', unknownCount: 0 };

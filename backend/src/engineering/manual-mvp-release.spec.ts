@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+
 const { parse } = require('yaml') as { parse: (source: string) => unknown };
 const root = resolve(__dirname, '../../..');
 type Workflow = {

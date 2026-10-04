@@ -1,9 +1,9 @@
 import { cryptoApi } from '@api';
 import CryptoSkeleton from '@components/CryptoSkeleton';
-import ErrorMessage from '@components/ErrorMessage';
 import { PageHeader } from '@components/common';
-import { WalletForm, WalletList, getInitialFormData } from '@features/crypto';
+import ErrorMessage from '@components/ErrorMessage';
 import type { CryptoPrice, TokenPrices, WalletFormData, WalletType } from '@features/crypto';
+import { getInitialFormData, WalletForm, WalletList } from '@features/crypto';
 import type { CryptoToken, CryptoWallet } from '@shared/types';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';

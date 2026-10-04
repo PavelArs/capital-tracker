@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigService } from '@nestjs/config';
-import { MfaCipher, createTotp, recoveryHash } from './mfa-crypto';
+import { createTotp, MfaCipher, recoveryHash } from './mfa-crypto';
 
 describe('MFA-003-A / MFA-006-A factor cryptography', () => {
   let directory: string;

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { parseHistoricalQuery } from './historical-accounting-input';
 import { readHistoricalState } from './historical-accounting.store';
+import { parseHistoricalQuery } from './historical-accounting-input';
 import { parseUuid } from './input';
 
 @Injectable()

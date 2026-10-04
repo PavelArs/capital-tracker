@@ -1,4 +1,4 @@
-import { type Instrument, accountingApi } from '@api/accounting.api';
+import { accountingApi, type Instrument } from '@api/accounting.api';
 import type { CsvDocument } from '@api/csv-imports.api';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';

@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
-import { MAX_INPUT_ATOMS, canonicalDecimalToAtoms } from './money';
+import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
 
 export interface JournalInitializationInput {
   requestId: string;

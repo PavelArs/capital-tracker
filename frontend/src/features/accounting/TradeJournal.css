@@ -13,13 +13,13 @@
 }
 .trade-journal .manual-form-grid label {
   display: grid;
-  gap: .35rem;
+  gap: 0.35rem;
 }
 .trade-journal input:not([type="checkbox"]),
 .trade-journal select {
   width: 100%;
   min-width: 0;
-  padding: .6rem;
+  padding: 0.6rem;
   border: 1px solid #ccd2db;
   border-radius: 5px;
   background: white;
@@ -37,7 +37,7 @@
 .trade-summary {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) minmax(100px, 1fr);
-  gap: .5rem 1rem;
+  gap: 0.5rem 1rem;
 }
 .trade-summary dd {
   margin: 0;
@@ -47,14 +47,14 @@
 .trade-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: .35rem;
+  gap: 0.35rem;
 }
 @media (max-width: 540px) {
   .trade-summary {
     grid-template-columns: 1fr;
   }
   .trade-summary dd {
-    margin-bottom: .5rem;
+    margin-bottom: 0.5rem;
   }
 }
 

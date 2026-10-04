@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2020",
     "useDefineForClassFields": true,
-    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -17,18 +17,17 @@
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@api": ["src/api/index.ts"],
-      "@api/*": ["src/api/*"],
-      "@components/*": ["src/components/*"],
-      "@pages/*": ["src/pages/*"],
-      "@contexts/*": ["src/contexts/*"],
-      "@utils/*": ["src/utils/*"],
-      "@shared/*": ["src/shared/*"],
-      "@hooks/*": ["src/hooks/*"],
-      "@features/*": ["src/features/*"]
+      "@/*": ["./src/*"],
+      "@api": ["./src/api/index.ts"],
+      "@api/*": ["./src/api/*"],
+      "@components/*": ["./src/components/*"],
+      "@pages/*": ["./src/pages/*"],
+      "@contexts/*": ["./src/contexts/*"],
+      "@utils/*": ["./src/utils/*"],
+      "@shared/*": ["./src/shared/*"],
+      "@hooks/*": ["./src/hooks/*"],
+      "@features/*": ["./src/features/*"]
     }
   },
   "include": ["src"],

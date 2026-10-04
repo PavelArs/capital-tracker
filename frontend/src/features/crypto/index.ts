@@ -1,15 +1,13 @@
 // Components
-export { WalletForm, WalletCard, WalletList } from './components';
-
+export { WalletCard, WalletForm, WalletList } from './components';
+// Constants
+export { ADDRESS_PLACEHOLDERS, getInitialFormData, WALLET_TYPES } from './constants';
 // Types
 export type {
-  WalletType,
-  WalletFormData,
   CryptoPrice,
   TokenPrices,
-  WalletFormProps,
   WalletCardProps,
+  WalletFormData,
+  WalletFormProps,
+  WalletType,
 } from './types';
-
-// Constants
-export { WALLET_TYPES, ADDRESS_PLACEHOLDERS, getInitialFormData } from './constants';

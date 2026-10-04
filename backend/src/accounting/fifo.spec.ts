@@ -1,4 +1,4 @@
-import { FifoHistoryError, type FifoTrade, calculateFifo } from './fifo';
+import { calculateFifo, FifoHistoryError, type FifoTrade } from './fifo';
 
 const instrumentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const otherInstrumentId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';

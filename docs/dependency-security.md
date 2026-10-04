@@ -157,7 +157,7 @@ for actual RED/GREEN evidence and image identities.
 The passed severity threshold is not a zero-vulnerability audit or a production
 security-readiness claim.
 
-Use Node 22.21.1 and pnpm 10.33.0:
+Use Node 26.10.0 and pnpm 12.9.1:
 
 ```sh
 pnpm install --frozen-lockfile

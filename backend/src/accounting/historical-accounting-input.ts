@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseAsOf } from './input';
-import { type TradePageQuery, parseDerivedTradePageQuery } from './trade-input';
+import { parseDerivedTradePageQuery, type TradePageQuery } from './trade-input';
 
 export interface HistoricalQuery extends TradePageQuery {
   at: string;
