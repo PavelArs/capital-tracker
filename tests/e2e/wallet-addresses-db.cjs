@@ -111,7 +111,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 23/);
+  assert.match(migrate(database), /Migrations applied: 24/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -305,7 +305,7 @@ async function main() {
         const oracle = expected(addresses.pages, i);
         return { txid: oracle.txid, blockHeight: oracle.blockHeight, blockTime: oracle.blockTime, direction: oracle.direction,
           receivedBtc: btc(oracle.receivedSats), sentBtc: btc(oracle.sentSats), feeBtc: btc(oracle.feeSats),
-          netBtc: btc(BigInt(oracle.receivedSats) - BigInt(oracle.sentSats)), usdValue: null, usdValueStatus: 'missing' };
+          netBtc: btc(BigInt(oracle.receivedSats) - BigInt(oracle.sentSats)), usdValue: null, usdValueStatus: 'missing', trade: null };
       }),
     });
     assert.equal(page.items[0].netBtc, '-0.00051300');
@@ -319,7 +319,7 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new AddWalletAddressImport1790400000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS ADDR-MIGRATION fresh 23 applies once; down refuses');
+    console.log('PASS ADDR-MIGRATION fresh 24 applies once; down refuses');
   } finally {
     await db.destroy();
   }

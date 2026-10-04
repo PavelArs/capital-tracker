@@ -82,5 +82,9 @@
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
     "title": "ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing"
+  },
+  {
+    "file": "tests/e2e/wallet-address-trades.spec.ts",
+    "title": "ADDRT-UI / ADDRT-PRIVATE: owner completes a received transaction as a buy trade"
   }
 ]

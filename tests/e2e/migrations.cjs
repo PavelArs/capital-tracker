@@ -35,7 +35,7 @@ const previousSixteenName = 'capital_tracker_previous_sixteen_e2e';
 const previousEighteenName = 'capital_tracker_previous_eighteen_e2e';
 const previousTwentyOneName = 'capital_tracker_previous_twenty_one_e2e';
 const swapTables = ['account_swaps', 'account_swap_versions'];
-const walletTables = ['wallet_addresses', 'wallet_address_transactions'];
+const walletTables = ['wallet_addresses', 'wallet_address_transactions', 'wallet_address_trade_links'];
 const rewardTables = ['account_rewards', 'account_reward_versions'];
 const transferTables = ['owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions'];
 const fxTables = ['display_fx_collection', 'display_fx_observations'];
@@ -77,6 +77,7 @@ const migrationNames = [
   'AddAssetRewards1790200000000',
   'AddAssetSwaps1790300000000',
   'AddWalletAddressImport1790400000000',
+  'AddWalletAddressTradeLinks1790600000000',
 ];
 
 function connection(database) {
@@ -169,7 +170,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly twenty-three migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly twenty-four migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -976,7 +977,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790600000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
@@ -1014,7 +1015,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       await assert.rejects(() => new AddAssetSwaps1790300000000().down(), /recovery plan/);
       assert.deepEqual(await snapshot(client), after, 'Refused downgrade preserves all data and schema');
     }
-    console.log(`PASS ${scenario} populated${previousCount}-to23 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
+    console.log(`PASS ${scenario} populated${previousCount}-to24 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
     finally { rmSync(directory, { recursive: true, force: true }); }

@@ -34,7 +34,7 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
         IF current_database() <> 'capital_tracker_e2e' OR current_user <> 'capital_e2e' THEN
           RAISE EXCEPTION 'Refuse wallet-address fixture outside synthetic acceptance';
         END IF;
-        TRUNCATE wallet_address_transactions, wallet_addresses;
+        TRUNCATE wallet_address_trade_links, wallet_address_transactions, wallet_addresses;
         INSERT INTO wallet_addresses(id, "ownerId", network, address)
           VALUES ('${foreignAddressId}', '22222222-2222-4222-8222-222222222222', 'bitcoin', '${address}');
       END $$`);
