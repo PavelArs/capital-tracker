@@ -11,4 +11,5 @@
 ## 3. Verification
 
 - [x] 3.1 Backend tests, engineering gates, lint and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI green on the PR with a shorter critical acceptance step; record the timing, then archive.
+- [x] 3.2 Hosted CI green on the PR with a shorter critical acceptance step (run 37224977589: 18 min 03 s, was 29 min 21 s).
+- [ ] 3.3 Archive after merge.

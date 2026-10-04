@@ -29,7 +29,13 @@ release acceptance" 17:35:34 → 18:04:55:
 - Strict OpenSpec validation: 54/54.
 - `docker compose restart --help` lists `-t, --timeout int` (local CLI 2026-10-04).
 
+## Hosted CI
+
+PR run 37224977589 attempt 2 (head `81b78c2`, before `e2e-on-main-only` merged, so the
+release job still ran on the PR): all 10 jobs green. "Run critical real release
+acceptance" took 18 min 03 s (18:40:58 → 18:59:01) against 29 min 21 s in run
+37220925062; the release job took 19 min 52 s against 31 min 36 s.
+
 ## Not run
 
-- Playwright critical acceptance (Docker is unavailable in the sandbox; hosted CI
-  only). The saving (about 4 minutes) is an estimate until hosted CI measures it.
+- Playwright critical acceptance locally (Docker is unavailable in the sandbox).
