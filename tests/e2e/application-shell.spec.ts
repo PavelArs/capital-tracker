@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { type Page, expect } from '@playwright/test';
 import { nextFactor, origin, owner, passwordStep, test } from './mfa-fixtures';
 
@@ -93,7 +94,6 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   // SHELL-005-A: honest placeholders, each linking to the legacy screen meanwhile.
   for (const [name, path, legacyLink, legacyPath] of [
     ['Dashboard', '/dashboard', 'Open manual accounts', '/manual-accounts'],
-    ['Portfolio', '/portfolio', 'Open manual accounts', '/manual-accounts'],
     ['Transactions', '/transactions', 'Open manual accounts', '/manual-accounts'],
     ['Wallets', '/wallets', 'Open wallet addresses', '/wallet-addresses'],
   ] as const) {
@@ -119,6 +119,64 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await page.screenshot({ path: testInfo.outputPath('wallets-1440-light.png'), fullPage: true });
   await page.getByRole('main').getByRole('link', { name: 'Open wallet addresses' }).click();
   await expect(page).toHaveURL(`${origin}/wallet-addresses`);
+
+  // AST-UI: Portfolio lists real assets with their classification and adds one.
+  await nav.getByRole('link', { name: 'Portfolio', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/portfolio`);
+  await expect(nav.getByRole('link', { name: 'Portfolio', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const portfolio = page.getByRole('main');
+  await expect(
+    portfolio.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
+  ).toBeVisible();
+  await expect(portfolio.getByText(/not built yet/i)).toHaveCount(0);
+  await portfolio.getByRole('button', { name: 'Add asset', exact: true }).first().click();
+  const addAsset = page.getByRole('dialog', { name: 'Add asset' });
+  const depositName = `SHELL-UI deposit ${randomUUID()}`;
+  await addAsset.getByRole('radio', { name: 'Manual', exact: true }).check();
+  await addAsset.getByLabel('Name', { exact: true }).fill(depositName);
+  await addAsset.getByRole('radio', { name: 'RUB', exact: true }).check();
+  const assetCreated = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/accounting/instruments' &&
+      response.request().method() === 'POST',
+  );
+  await addAsset.getByRole('button', { name: 'Add asset', exact: true }).click();
+  const assetResponse = await assetCreated;
+  expect(assetResponse.status()).toBe(201);
+  expect(await assetResponse.json()).toMatchObject({
+    name: depositName,
+    symbol: null,
+    assetType: 'manual',
+    valuationCurrency: 'RUB',
+    priceSource: 'manual',
+  });
+  await expect(addAsset).toHaveCount(0);
+  await expect(
+    portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell'),
+  ).toHaveText([depositName, 'Manual', 'RUB', 'Manual']);
+  await page.reload();
+  await expect(
+    portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell'),
+  ).toHaveText([depositName, 'Manual', 'RUB', 'Manual']);
+  const chips = portfolio.getByRole('group', { name: 'Filter assets' });
+  await chips.getByRole('button', { name: /^Manual/ }).click();
+  await expect(chips.getByRole('button', { name: /^Manual/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) })).toBeVisible();
+  for (const other of ['Crypto', 'Cash']) {
+    await expect(
+      portfolio
+        .getByRole('row')
+        .filter({ has: page.getByRole('cell', { name: other, exact: true }) }),
+    ).toHaveCount(0);
+  }
+  await fitsViewport(page);
+  await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
   // SHELL-001-A: current screens stay reachable under the open Legacy group.
   const legacy = nav.locator('details', { has: page.getByText('Legacy', { exact: true }) });

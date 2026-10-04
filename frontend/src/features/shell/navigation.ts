@@ -1,6 +1,6 @@
 import type { IconName } from './icons';
 
-export type PlaceholderSection = 'dashboard' | 'portfolio' | 'transactions' | 'wallets';
+export type PlaceholderSection = 'dashboard' | 'transactions' | 'wallets';
 
 export interface ShellSection {
   path: string;
@@ -50,14 +50,6 @@ export const placeholderSections: Record<PlaceholderSection, PlaceholderContent>
     icon: 'dashboard',
     description:
       'Total net worth, change for the period, the history chart and allocation will appear here.',
-    legacyPath: '/manual-accounts',
-    legacyLabel: 'Open manual accounts',
-  },
-  portfolio: {
-    title: 'Portfolio',
-    icon: 'portfolio',
-    description:
-      'Every asset across your accounts with quantity, value, cost basis and profit will appear here.',
     legacyPath: '/manual-accounts',
     legacyLabel: 'Open manual accounts',
   },

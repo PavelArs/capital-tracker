@@ -1,4 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
+import {
+  type AssetType,
+  type ValuationCurrency,
+  assetTypes,
+  valuationCurrencies,
+} from './asset-classification';
 
 export interface AccountInput {
   requestId: string;
@@ -6,6 +12,8 @@ export interface AccountInput {
 }
 export interface InstrumentInput extends AccountInput {
   symbol: string | null;
+  assetType?: AssetType;
+  valuationCurrency?: ValuationCurrency;
 }
 export interface PositionInput {
   instrumentId: string;
@@ -107,12 +115,21 @@ export function parseAccount(input: unknown): AccountInput {
   const row = object(input, ['requestId', 'name']);
   return { requestId: parseUuid(row.requestId), name: label(row.name, 120) };
 }
+function member<T extends string>(value: unknown, allowed: readonly T[]): T {
+  return allowed.find((item) => item === value) ?? bad();
+}
 export function parseInstrument(input: unknown): InstrumentInput {
-  const row = object(input, ['requestId', 'name', 'symbol']);
+  const row = object(input, ['requestId', 'name', 'symbol', 'assetType', 'valuationCurrency']);
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(row, key);
   return {
     requestId: parseUuid(row.requestId),
     name: label(row.name, 120),
-    symbol: Object.prototype.hasOwnProperty.call(row, 'symbol') ? label(row.symbol, 32) : null,
+    symbol: has('symbol') ? label(row.symbol, 32) : null,
+    // Present only when sent, so the legacy body keeps its exact shape (AST-LEGACY).
+    ...(has('assetType') ? { assetType: member(row.assetType, assetTypes) } : {}),
+    ...(has('valuationCurrency')
+      ? { valuationCurrency: member(row.valuationCurrency, valuationCurrencies) }
+      : {}),
   };
 }
 export function parseOpening(input: unknown): OpeningInput {

@@ -22,6 +22,9 @@ export type Instrument = {
   name: string;
   symbol: string | null;
   namespace: 'manual';
+  assetType: 'crypto' | 'fiat' | 'manual';
+  valuationCurrency: 'USD' | 'EUR' | 'RUB';
+  priceSource: 'market' | 'manual' | 'fixed';
   createdAt: string;
 };
 export type PositionInput = {
@@ -102,13 +105,28 @@ export function readAccount(value: unknown): Account {
 
 export function readInstrument(value: unknown): Instrument {
   const row = record(value);
-  keys(row, ['id', 'name', 'symbol', 'namespace', 'createdAt']);
+  keys(row, [
+    'id',
+    'name',
+    'symbol',
+    'namespace',
+    'assetType',
+    'valuationCurrency',
+    'priceSource',
+    'createdAt',
+  ]);
   expect(row.namespace).toBe('manual');
+  expect(['crypto', 'fiat', 'manual']).toContain(row.assetType);
+  expect(['USD', 'EUR', 'RUB']).toContain(row.valuationCurrency);
+  expect(['market', 'manual', 'fixed']).toContain(row.priceSource);
   return {
     id: uuid(row.id),
     name: text(row.name),
     symbol: row.symbol === null ? null : text(row.symbol),
     namespace: 'manual',
+    assetType: row.assetType as Instrument['assetType'],
+    valuationCurrency: row.valuationCurrency as Instrument['valuationCurrency'],
+    priceSource: row.priceSource as Instrument['priceSource'],
     createdAt: timestamp(row.createdAt),
   };
 }
