@@ -1,6 +1,6 @@
 import type { IconName } from './icons';
 
-export type PlaceholderSection = 'transactions' | 'wallets';
+export type PlaceholderSection = 'wallets';
 
 export interface ShellSection {
   path: string;
@@ -45,13 +45,6 @@ export interface PlaceholderContent {
 }
 
 export const placeholderSections: Record<PlaceholderSection, PlaceholderContent> = {
-  transactions: {
-    title: 'Transactions',
-    icon: 'transactions',
-    description: 'All purchases, sales, transfers and other operations will be listed here.',
-    legacyPath: '/manual-accounts',
-    legacyLabel: 'Open manual accounts',
-  },
   wallets: {
     title: 'Wallets',
     icon: 'wallets',
