@@ -1,3 +1,16 @@
 packages:
   - 'backend'
   - 'frontend'
+
+overrides:
+  '@nestjs/platform-express@11.1.18>multer': 2.3.0
+  '@nestjs/swagger@11.2.7>js-yaml': 4.3.2
+
+allowBuilds:
+  '@biomejs/biome': true
+  esbuild: true
+  argon2: true
+  # Install scripts these packages ship are not needed (telemetry and funding notices).
+  '@fission-ai/openspec': false
+  '@nestjs/core': false
+  '@scarf/scarf': false

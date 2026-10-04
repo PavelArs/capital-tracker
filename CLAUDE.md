@@ -5,7 +5,7 @@ Read [AGENTS.md](AGENTS.md), [CONTINUITY.md](CONTINUITY.md), the full
 Git diff before continuing. The full refactor is incomplete; the current slice's
 verification record is the authority for checks actually run.
 
-Use Node 22.21.1 and pinned pnpm 10.33.0. From the repository root:
+Use Node 26.10.0 and pinned pnpm 12.9.1. From the repository root:
 
 ```sh
 pnpm install --frozen-lockfile
