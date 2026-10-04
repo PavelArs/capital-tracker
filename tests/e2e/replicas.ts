@@ -87,7 +87,9 @@ function state(service: (typeof services)[number]) {
 
 export async function restartBackends(): Promise<void> {
   const before = services.map(state);
-  docker(...compose, 'restart', ...services);
+  // Node runs as PID 1 without a SIGTERM handler, so the stop signal is ignored and a
+  // default restart only waits 10 s for the same SIGKILL.
+  docker(...compose, 'restart', '--timeout', '0', ...services);
   const deadline = Date.now() + 60_000;
   for (let index = 0; index < services.length; index++) {
     let ready = false;

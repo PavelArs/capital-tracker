@@ -26,6 +26,9 @@ Change `tag-release-versions` (RVR-001/002, owner request 2026-10-04): images al
 the readable tag `v<YYYY.MM.DD>-<short SHA>` at promotion, and a separate
 `contents: write` job tags the commit after a successful deploy. No server file
 change; archive after the first approved release shows both tags.
+Change `fast-acceptance-restarts` (ISO-006, owner request 2026-10-04 to speed up CI):
+acceptance restarts backends with `--timeout 0`; Node as PID 1 ignores SIGTERM, so each
+restart waited 10 s for the same SIGKILL. Archive after hosted CI shows the timing.
 Change `e2e-on-main-only` (ENG-006, owner decision 2026-10-04 after Actions minutes ran
 out and the repo went public): the release/acceptance job runs only on pushes to main;
 pull requests carry no browser evidence. Archive after the first main run with it.
