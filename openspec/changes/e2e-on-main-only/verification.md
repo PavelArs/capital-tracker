@@ -22,7 +22,11 @@ aggregate required the release job for every event.
 - The aggregate tests execute the real `ci-status` step with the event rendered as
   `pull_request`, `push`, `workflow_dispatch`, empty and `pull_request_target`.
 
+## Hosted CI
+
+- PR run 37225591208 (head `70f67b9`): eight gates green, `Release Images and
+  Security` skipped, `CI Status` green; the run took about 1.5 minutes.
+
 ## Not run
 
-- Hosted CI: pending on the PR (the release job is expected to be skipped there) and
-  on the first main push after merge (the release job is expected to run).
+- The first main push after merge, where the release job is expected to run.

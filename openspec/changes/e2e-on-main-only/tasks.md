@@ -11,5 +11,5 @@
 ## 3. Verification
 
 - [x] 3.1 Backend tests, engineering and security gates, lint and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI on the PR green with the release job skipped.
+- [x] 3.2 Hosted CI on the PR green with the release job skipped (run 37225591208).
 - [ ] 3.3 First main run after merge runs the release job and passes; then archive.
