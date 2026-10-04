@@ -12,4 +12,4 @@
 
 - [x] 3.1 Backend tests, engineering gates, lint and strict spec validation GREEN; record results.
 - [x] 3.2 Hosted CI green on the PR with a shorter critical acceptance step (run 37224977589: 18 min 03 s, was 29 min 21 s).
-- [ ] 3.3 Archive after merge.
+- [x] 3.3 Archive after merge (PR #44 merged 2026-10-04).

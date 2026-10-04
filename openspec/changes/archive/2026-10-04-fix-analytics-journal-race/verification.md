@@ -31,3 +31,10 @@ result. The companion case (other revision dropped) passed before and after.
 - Playwright critical acceptance (needs Docker; hosted CI only). The root cause is
   inferred from the component logic and reproduced in the component test, not observed
   in the failed run's trace.
+
+## Hosted CI (2026-10-04)
+
+- PR run 37220925062 green on every job, critical acceptance including VAL-UI and
+  VCH-UI.
+- Main CI 37225929714 on `3bdceea` green on every job; the release reached
+  production as `v2026.10.04-3bdceea`.

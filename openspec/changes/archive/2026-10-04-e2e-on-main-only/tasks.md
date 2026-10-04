@@ -12,4 +12,4 @@
 
 - [x] 3.1 Backend tests, engineering and security gates, lint and strict spec validation GREEN; record results.
 - [x] 3.2 Hosted CI on the PR green with the release job skipped (run 37225591208).
-- [ ] 3.3 First main run after merge runs the release job and passes; then archive.
+- [x] 3.3 First main run after merge runs the release job and passes; then archive. (Main run 37225929714 ran the release job on the push and passed.)

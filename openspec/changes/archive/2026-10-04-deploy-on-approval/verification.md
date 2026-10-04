@@ -40,3 +40,24 @@ All checks below ran in the cloud sandbox on 2026-10-04 against branch
 - The server `update`, `resume-activation` preflight/deploy and the frontend health
   fix have not run on the host. The IPv6 `localhost` cause of the 2026-10-02 failure
   is an inference from configuration, not an observed host log.
+
+## Hosted CI and first approved release (2026-10-04)
+
+- PR run 37218242193 passed the same tree; main CI 37218384482 failed VAL-UI on a
+  frontend race fixed by `fix-analytics-journal-race`.
+- First dispatch (run 37227454002, `release` + `resume-activation`) failed with
+  `refused: unexpected request fields`: the server still ran the pre-change dispatcher.
+  The owner ran the installer `update` as root from a clean `3bdceea` checkout; the
+  seven installed files matched that commit's SHA-256. The re-run reached preflight,
+  which refused `Activation resume refused: a release is already activated; use
+  existing`: the server already had the activation metadata, so the interrupted
+  activation recorded on 2026-10-02 had been completed before this change. Neither
+  refusal changed server state.
+- Main CI 37225929714 on `3bdceea` (main through #45): every job green, including
+  critical release acceptance and image scans.
+- Deploy Manual MVP run 37227344833 (automatic `workflow_run`, attempt 2, approved by
+  the owner in the `production` environment, installation `existing`): provenance,
+  promotion, preflight and deploy succeeded; one migration applied after the encrypted
+  backup, backend and frontend healthy, release verified. The tag job created
+  `v2026.10.04-3bdceea` on `3bdceea`. The owner confirmed the new sidebar on the live
+  site.

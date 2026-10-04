@@ -30,3 +30,8 @@ aggregate required the release job for every event.
 ## Not run
 
 - The first main push after merge, where the release job is expected to run.
+
+## First main run (2026-10-04)
+
+- Main CI 37225929714 (push of `3bdceea`, the #45 merge) ran `Release Images and
+  Security` and passed every job; it was deployed as `v2026.10.04-3bdceea`.
