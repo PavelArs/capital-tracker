@@ -45,11 +45,15 @@ function migrate(name) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
-async function fingerprint(source, excluded = []) {
+// AST-2 adds three classification columns to accounting_instruments; upgrade comparisons
+// strip only those keys and check their defaults separately.
+async function fingerprint(source, excluded = [], withoutClassification = false) {
   const rows = [];
   for (const { tablename } of await source.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")) {
     assert.match(tablename, /^[a-z_]+$/);
-    if (!excluded.includes(tablename)) rows.push([tablename, await source.query(`SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`)]);
+    const row = withoutClassification && tablename === 'accounting_instruments'
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+    if (!excluded.includes(tablename)) rows.push([tablename, await source.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 }
@@ -69,7 +73,7 @@ async function checkedRead(source, statements, action) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 23/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 25/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -86,14 +90,20 @@ async function main() {
     for (const name of ['owner', 'foreign']) owners.push((await source.query('INSERT INTO users(email,password,"emailVerified") VALUES($1,$2,true) RETURNING id', [`prices-${name}@example.invalid`, 'synthetic-not-a-login-hash']))[0].id);
     const accounts = new AccountingService(source);
     const instruments = [];
-    for (const name of ['Exact', 'Same symbol', 'Race', 'Cap']) instruments.push((await accounts.createInstrument(owners[0], { requestId: randomUUID(), name, symbol: 'SAME' })).value);
-    const foreign = (await accounts.createInstrument(owners[1], { requestId: randomUUID(), name: 'Foreign', symbol: 'SAME' })).value;
+    // The predecessor schema has no classification columns; write its original column list.
+    const previousInstrument = async (owner, name) => (await source.query(`INSERT INTO accounting_instruments
+      (id,"ownerId","requestId","canonicalPayload",name,symbol) VALUES($1,$2,$3,$4,$5,'SAME') RETURNING id,name,symbol`,
+    [randomUUID(), owner, randomUUID(), JSON.stringify({ name, symbol: 'SAME' }), name]))[0];
+    for (const name of ['Exact', 'Same symbol', 'Race', 'Cap']) instruments.push(await previousInstrument(owners[0], name));
+    const foreign = await previousInstrument(owners[1], 'Foreign');
     const account = (await accounts.createAccount(owners[0], { requestId: randomUUID(), name: 'Preserved' })).value;
     const opening = await accounts.saveOpening(owners[0], account.id, { requestId: randomUUID(), expectedRevision: 0, asOf: at, positions: [{ instrumentId: instruments[0].id, quantity: atom, costStatus: 'known', totalCostUsd: maximum }] });
-    const beforeUpgrade = await fingerprint(source, ['migrations']);
-    assert.match(migrate(database), /Migrations applied: 6/);
-    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions']), beforeUpgrade);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 23);
+    const beforeUpgrade = await fingerprint(source, ['migrations'], true);
+    assert.match(migrate(database), /Migrations applied: 8/);
+    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources'], true), beforeUpgrade);
+    assert.deepEqual(await source.query('SELECT DISTINCT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
+      [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 25);
     assert.equal((await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n, 0);
     for (const table of ['account_swaps', 'account_swap_versions']) assert.equal((await source.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     assert.match(migrate(database), /Migrations applied: 0/);

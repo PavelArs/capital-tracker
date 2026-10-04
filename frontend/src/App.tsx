@@ -4,6 +4,7 @@ import Layout from '@components/Layout';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
+import PortfolioPage from '@features/portfolio/PortfolioPage';
 import SectionPlaceholder from '@features/shell/SectionPlaceholder';
 import SettingsPage from '@features/shell/SettingsPage';
 import Assets from '@pages/Assets';
@@ -57,7 +58,7 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<SectionPlaceholder section="dashboard" />} />
-        <Route path="portfolio" element={<SectionPlaceholder section="portfolio" />} />
+        <Route path="portfolio" element={<PortfolioPage />} />
         <Route path="transactions" element={<SectionPlaceholder section="transactions" />} />
         <Route path="wallets" element={<SectionPlaceholder section="wallets" />} />
         <Route path="preferences" element={<SettingsPage />} />

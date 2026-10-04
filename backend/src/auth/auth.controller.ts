@@ -21,6 +21,7 @@ import { AuthRequestLimit } from './request-limit.decorator';
 import { AuthRequestLimitsService } from './request-limits.service';
 import {
   COOKIE_OPTIONS,
+  FULL_SESSION_MS,
   readSessionCookie,
   SESSION_COOKIE,
   SessionService,
@@ -76,7 +77,7 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const state = await this.factors.complete(req.authSession.hash, factor);
-    res.cookie(SESSION_COOKIE, state.token, { ...COOKIE_OPTIONS, maxAge: 12 * 60 * 60 * 1000 });
+    res.cookie(SESSION_COOKIE, state.token, { ...COOKIE_OPTIONS, maxAge: FULL_SESSION_MS });
     return { user: state.user, csrfToken: state.csrfToken };
   }
 
