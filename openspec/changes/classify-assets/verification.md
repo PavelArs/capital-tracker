@@ -41,19 +41,26 @@ migration 24). No dependency, lockfile, Dockerfile or `frontend/nginx.conf` chan
 | `tsc --noEmit --strict` on changed e2e TypeScript | clean |
 | Critical selection | 21/21 cases from 175 listed tests |
 
-Real-PostgreSQL probes ran against a local PostgreSQL 16 with the compiled backend and
-the synthetic provider (`providers.cjs`, self-signed certificate). Passing:
-`asset-classification-db`, `migrations`, `auth-limits-db`, `historical-accounting-db`,
-`period-profit-db`, `xirr-preview-db`, `twr-preview-db`, `linked-twr-db`,
-`manual-usd-prices-db`, `historical-valuation-db`, `valuation-history-db`,
-`manual-portfolio-valuation-db`, `owned-transfers-db`, `owned-transfers-bounds-db`,
-`asset-rewards-db`, `asset-rewards-bounds-db`, `asset-swaps-bounds-db`.
-Not conclusive locally (they need the Compose network, proxy, MFA key or a
-RESTRICT behaviour this local cluster does not reproduce on `main` either):
-`manual-opening-db`, `usd-trades-db`, `csv-import-db`, `carry-in-db`,
-`external-usd-flows-db`, `asset-swaps-db`, `wallet-addresses-db`, `display-fx-db`,
-`provider-proxy`, `owner-cli`, `sessions-db`, `mfa-db`, `mfa-expiry`,
+Real-PostgreSQL probes ran locally with the compiled backend and the synthetic
+provider (`providers.cjs`, self-signed certificate), first on PostgreSQL 16 and then on
+PostgreSQL 18.4 (CI uses 18.6). On PostgreSQL 18 these 23 pass: `migrations`,
+`auth-limits-db`, `manual-opening-db`, `usd-trades-db`, `csv-import-db`, `carry-in-db`,
+`historical-accounting-db`, `external-usd-flows-db`, `period-profit-db`,
+`xirr-preview-db`, `twr-preview-db`, `linked-twr-db`, `manual-usd-prices-db`,
+`historical-valuation-db`, `valuation-history-db`, `manual-portfolio-valuation-db`,
+`owned-transfers-db`, `owned-transfers-bounds-db`, `asset-rewards-db`,
+`asset-rewards-bounds-db`, `asset-swaps-db`, `asset-swaps-bounds-db`,
+`asset-classification-db`. Not runnable outside the Compose stack (proxy, MFA key,
+display-FX and startup configuration): `provider-proxy`, `display-fx-db`,
+`wallet-addresses-db`, `owner-cli`, `sessions-db`, `mfa-db`, `mfa-expiry`,
 `client-source-startup`. Hosted CI runs all of them.
+
+The first hosted run failed in `migrations.cjs` (TRADE-MIG-001): PostgreSQL 18 records
+each new NOT NULL column as a named `contype 'n'` constraint, which PostgreSQL 16 does
+not. The schema-preservation checks in `migrations.cjs` and
+`asset-classification-db.cjs` now accept exactly the three
+`accounting_instruments_<column>_not_null` entries; reproduced and verified on local
+PostgreSQL 18.
 
 ## Screenshots
 
