@@ -62,6 +62,15 @@ Decisions taken without asking, open to correction:
 - **D6 Interface language is English** (owner, 2026-10-04, design thread). The
   dashboard's default period is one month. The current Russian screens stay as they
   are until they are retired.
+- **D7 Transfers between known own wallets are automatic** (owner, 2026-10-04). When
+  both sides of a transaction are wallets or accounts the owner registered, it is
+  classified as Transfer without asking; the owner can still reclassify it.
+- **D8 Bybit is the one exchange exception** (owner, 2026-10-04) to "exchange API
+  integrations" being out of scope (BR 18). Bybit's V5 API is free with a read-only
+  key and returns balances, spot trades, deposits, withdrawals and a transaction log
+  covering up to two years. Whether the two RUB purchases (likely P2P) are visible
+  is unverified: Bybit's P2P API is documented as a separate API. Anything the API
+  cannot return stays manual. Change M22 verifies this against Pavel's own read-only key.
 - **D5 Browser TOTP enrollment stays CLI-only in MVP.** The owner is already enrolled;
   Settings adds recovery-code regeneration, active sessions and "log out everywhere".
   Re-enrolment from the browser is a later item.
@@ -146,12 +155,13 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-WAL-2 | Each wallet syncs its transactions (time, asset, amount, hash, fee, sender, recipient) and balance in the background, incrementally. | 6, 12 | 14–17, 24 |
 | PR-WAL-3 | A chain transaction is unique per network and transaction identity (hash, plus log or instruction index where one hash moves several assets). Resync never duplicates it. | 13 | 17 |
 | PR-WAL-4 | When the computed balance differs from the chain balance, the wallet and dashboard show a mismatch. | 6, 16 | 25 |
+| PR-EXC-1 | The Bybit account syncs read-only through Bybit's free V5 API (D8): balances, spot trades as Buy/Sell with their real prices and fees, deposits and withdrawals. The API key is read-only, bound to the server's IP and stored encrypted; it is never shown again after saving. | 18 (exception) | 17, 24 |
 | PR-OPS-1 | All asset changes are visible as one operation list regardless of source (manual, CSV, chain), with type, date, asset, amount, value, account, status and source. | 7 | 13, 17 |
 | PR-OPS-2 | Operation types: Buy, Sell, Transfer between own accounts, Income, Expense, Fee, Reward, Staking reward, Airdrop, Gift, Other. | 7.1 | 18 |
 | PR-OPS-3 | New chain transactions are "Needs classification"; the dashboard shows how many. | 7.2 | 18 |
 | PR-OPS-4 | The owner creates, edits and deletes manual operations with date (time optional), type, asset, quantity, amount, currency, fee, account and comment; required fields depend on type. | 8 | 13, 20 |
 | PR-OPS-5 | For a chain transaction the owner can set classification, comment, cost or proceeds, linked transaction, or hide it from calculations. Raw data is never edited. | 9 | 18 |
-| PR-OPS-6 | Outgoing and incoming legs between own wallets are proposed as one transfer and can be linked by hand; a transfer changes capital only by its fee. | 7.1 | 19, 20 |
+| PR-OPS-6 | Outgoing and incoming legs between known own wallets or accounts are classified as one transfer automatically (D7); other legs can be linked by hand; a transfer changes capital only by its fee. | 7.1 | 19, 20 |
 | PR-OPS-7 | Every create, correction, classification and void is kept as an immutable version with its time and source. | 14 | — |
 | PR-OPS-8 | A Sell, Expense or Transfer cannot exceed the available quantity (lowest balance from its date forward); the form shows it and offers "Use all". A Buy that later operations consume cannot be deleted. | 7, 8 | 13 |
 | PR-OPS-9 | Sale proceeds stay in the account as cash; a Buy spends that cash before counting outside money as a deposit. | 10, 11 | 13, 22 |
@@ -435,6 +445,21 @@ I know where its value comes from.
   **when** the owner opens the app **then** the sidebar shows the last successful
   sync time, **and** the wallet card shows "Sync failed" with the reason.
 
+**US-3.6** As the owner my Bybit account fills itself (D8).
+
+- BYBIT-KEY: **Given** the Bybit account **when** the owner saves a read-only API key
+  **then** the app checks that the key is read-only and refuses one with trading or
+  withdrawal permission; the secret is stored encrypted and never displayed again.
+- BYBIT-TRADES: **Given** a stubbed Bybit API returning a spot buy of 0.01 BTC for 650
+  USDT with fee 0.00001 BTC **when** the account syncs **then** one Buy exists in the
+  Bybit account with that price and fee; a second sync adds nothing.
+- BYBIT-DEPOSIT: **Given** a Bybit deposit whose transaction hash matches a withdrawal
+  from the owner's BTC wallet **when** both are synced **then** they form one transfer
+  automatically (D7).
+- BYBIT-GAPS: **Given** an operation the API does not return (for example a P2P RUB
+  purchase) **then** the owner enters it by hand, and the balance check against
+  Bybit's reported balance shows any remaining difference.
+
 **US-3.4 / US-3.5** Ethereum and Solana wallets. Same criteria as US-3.1–3.3 with
 network-specific identity:
 
@@ -507,9 +532,12 @@ network-specific identity:
 **US-4.5** As the owner my transfers between own wallets do not look like income.
 
 - XFER-AUTO: **Given** wallet A sends 0.5 BTC to own wallet B in one transaction with
-  fee 0.0001 BTC **when** both are synced **then** the app proposes one transfer A→B,
-  **and when** confirmed **then** neither leg is unclassified.
-- XFER-CAPITAL (E2E): **Given** that confirmed transfer and BTC at 60000 **then**
+  fee 0.0001 BTC **when** both are synced **then** the app records one transfer A→B
+  without asking, neither leg counts as unclassified, **and** the owner can still
+  reclassify it.
+- XFER-UNKNOWN: **Given** wallet A sends BTC to an address the owner has not registered
+  **then** the leg stays "Needs classification"; nothing is guessed.
+- XFER-CAPITAL (E2E): **Given** that transfer and BTC at 60000 **then**
   portfolio value changes by −6 USD (the fee) only, net flow is 0, **and** B's 0.5 BTC
   keeps A's original cost basis.
 - XFER-MANUAL: **Given** an outgoing BTC leg from a wallet and a manual account
@@ -661,7 +689,8 @@ to section 8.
 | 16 | Solana wallet tracking | Build | none | history adapter (Q7) | M15 |
 | 17 | Automatic chain import | Adapt | Esplora client, idempotent walk (BTC) | generic adapter interface, scheduler | M11 |
 | 18 | Transaction classification | Adapt | PR #36 (incoming BTC → buy) | all types, provisional state, hide, count | M12 |
-| 19 | Own-transfer detection | Build | `owned-account-transfers` (manual accounts, FIFO basis kept) | matching chain legs, linking | M13 |
+| 19 | Own-transfer detection | Build | `owned-account-transfers` (manual accounts, FIFO basis kept) | automatic matching of legs between known wallets (D7), manual linking | M13 |
+| — | Bybit account sync (D8, exception to BR 18) | Build | none; Bybit purchases entered by hand or via CSV today | read-only key storage, V5 adapter, mapping to Buy/Sell and transfers | M22 |
 | 20 | Fees | Adapt | trade `feeUsd`, chain `feeUnits` stored | network fee as a Fee operation in the native asset | M12, M13 |
 | 21 | Cost basis | Keep | `fifo-cost-conservation`, `known-cost-carry-in` | average buy price display | M4 |
 | 22 | Realized/unrealized P&L | Keep | `usd-fifo-trades` realizations, `unrealized-profit-loss` (PR #30) | per-asset view across accounts | M4 |
@@ -706,7 +735,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M10 | `bind-wallets-to-accounts` | Wallets list, add wallet, wallet details for BTC; label, account, chain balance, mismatch | M1, #36 | — |
 | M11 | `sync-wallets-in-background` | scheduled sync, per-wallet status, adapter interface | M10, M3 | — |
 | M12 | `classify-chain-transactions` | Classification entity, all types, provisional state, hide, count, drawer; migrates PR #36 links | M8, M10 | — |
-| M13 | `link-own-transfers` | automatic proposals and manual links; network fee as Fee | M12 | — |
+| M13 | `link-own-transfers` | automatic transfers between known wallets (D7), manual links; network fee as Fee | M12 | — |
 | M14 | `track-ethereum-wallets` | ETH + USDT/USDC history and balance | M11, M12 | Q6, Q7 |
 | M15 | `track-solana-wallets` | SOL + USDT/USDC history and balance | M11, M12 | Q7 |
 | M16 | `show-dashboard-attention` | attention block, allocation and top assets on the dashboard | M6, M11, M12 | — |
@@ -715,6 +744,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M19 | `export-owner-data` | CSV archive and JSON backup in Settings | M8 | — |
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
+| M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
 
 ```mermaid
 flowchart LR
@@ -740,6 +770,9 @@ flowchart LR
   M17 --> M20
   M18 --> M20
   M19 --> M20
+  M9 --> M22
+  M11 --> M22
+  M13 --> M22
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
@@ -775,5 +808,5 @@ sidebar, five sections) so it does not wait for mockups.
 From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (unless
 Q8 says yes), Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
 re-enrolment, an audit history screen, stocks, bonds, ETFs, deposits, real estate,
-metals and liabilities as asset types, exchange and bank integrations, tax reports,
+metals and liabilities as asset types, exchanges other than Bybit, bank integrations, tax reports,
 DeFi and NFT valuation, mobile layouts.
