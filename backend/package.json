@@ -53,7 +53,7 @@
     "typeorm": "1.1.1"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.5.15",
     "@nestjs/cli": "12.0.8",
     "@nestjs/schematics": "12.0.6",
     "@nestjs/testing": "12.1.2",
