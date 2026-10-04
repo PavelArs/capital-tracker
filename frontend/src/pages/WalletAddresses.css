@@ -46,6 +46,7 @@
 }
 
 .wallet-card button {
+  align-self: flex-start;
   justify-self: start;
   min-height: 44px;
   padding: 0.6rem 1rem;
@@ -99,7 +100,13 @@
   white-space: nowrap;
 }
 
-.wallet-number {
+/* Headers may wrap so the USD column stays visible without scrolling on desktop. */
+.wallet-card th {
+  vertical-align: bottom;
+  white-space: normal;
+}
+
+.wallet-card .wallet-number {
   font-variant-numeric: tabular-nums;
   text-align: end;
 }

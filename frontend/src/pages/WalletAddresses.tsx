@@ -47,9 +47,15 @@ function TransactionTable({ address, page }: { address: string; page: Transactio
             <tr>
               <th scope="col">Дата</th>
               <th scope="col">Тип</th>
-              <th scope="col">Изменение, BTC</th>
-              <th scope="col">Комиссия сети, BTC</th>
-              <th scope="col">Блок</th>
+              <th scope="col" className="wallet-number">
+                Изменение, BTC
+              </th>
+              <th scope="col" className="wallet-number">
+                Комиссия сети, BTC
+              </th>
+              <th scope="col" className="wallet-number">
+                Блок
+              </th>
               <th scope="col">Транзакция</th>
               <th scope="col">Стоимость, USD</th>
             </tr>
