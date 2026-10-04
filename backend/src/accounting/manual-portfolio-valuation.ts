@@ -1,5 +1,5 @@
 import type { HistoricalPosition } from './historical-accounting';
-import { type ValuationPrice, projectValuation } from './historical-valuation';
+import { type ValuationPrice, projectUnrealized, projectValuation } from './historical-valuation';
 
 interface AccountIdentity {
   accountId: string;
@@ -28,7 +28,7 @@ export function projectManualPortfolioValue(
   const coveredPositions = accounts.flatMap((account) =>
     account.coverage === 'covered' ? account.positions : [],
   );
-  const aggregate = projectValuation(coveredPositions, prices);
+  const aggregate = projectUnrealized(projectValuation(coveredPositions, prices));
   const unavailableAccountCount = accounts.filter(
     (account) => account.coverage !== 'covered',
   ).length;
@@ -39,6 +39,10 @@ export function projectManualPortfolioValue(
     missingPriceCount: aggregate.missingPriceCount,
     pricedSubtotalUsd: aggregate.pricedSubtotalUsd,
     totalValueUsd: complete ? aggregate.pricedSubtotalUsd : null,
+    unknownCostCount: aggregate.unknownCostCount,
+    unrealizedPnlUsd: unavailableAccountCount === 0 ? aggregate.unrealizedPnlUsd : null,
+    unrealizedReturnPercent:
+      unavailableAccountCount === 0 ? aggregate.unrealizedReturnPercent : null,
     accounts: accounts.map((account) => {
       if (account.coverage !== 'covered')
         return {
@@ -47,10 +51,13 @@ export function projectManualPortfolioValue(
           missingPriceCount: null,
           pricedSubtotalUsd: null,
           totalValueUsd: null,
+          unknownCostCount: null,
+          unrealizedPnlUsd: null,
+          unrealizedReturnPercent: null,
           items: [],
         };
       const { positions, ...metadata } = account;
-      return { ...metadata, ...projectValuation(positions, prices) };
+      return { ...metadata, ...projectUnrealized(projectValuation(positions, prices)) };
     }),
   };
 }

@@ -71,7 +71,8 @@ async function exactGapsAndPrivacy(db, s, f) {
   const providers = await providerRequests();
   const value = await read(s, owner, [b, a]);
   assert.deepEqual(Object.keys(value).sort(), ['at','accountIds','scope','basis','priceSource','quoteCurrency',
-    'pricePolicy','completeness','unavailableAccountCount','missingPriceCount','pricedSubtotalUsd','totalValueUsd','accounts'].sort());
+    'pricePolicy','completeness','unavailableAccountCount','missingPriceCount','pricedSubtotalUsd','totalValueUsd',
+    'unknownCostCount','unrealizedPnlUsd','unrealizedReturnPercent','accounts'].sort());
   assert.deepEqual(value.accountIds, [a, b].sort());
   assert.deepEqual(value.accounts.map((entry) => entry.accountId), [a, b].sort());
   assert.equal(value.scope, 'selected-manual-accounts');
@@ -87,6 +88,12 @@ async function exactGapsAndPrivacy(db, s, f) {
   assert.equal(value.missingPriceCount, 0);
   assert.equal(row(value, a).totalValueUsd, '61.728');
   assert.equal(row(value, b).totalValueUsd, '246.912');
+  assert.equal(value.unrealizedPnlUsd, '108.64');
+  assert.equal(value.unrealizedReturnPercent, '54.32');
+  assert.equal(row(value, a).unrealizedPnlUsd, '-38.272');
+  assert.equal(row(value, a).unrealizedReturnPercent, '-38.27');
+  assert.equal(row(value, b).items[0].unrealizedPnlUsd, '146.912');
+  assert.equal(row(value, b).items[0].unrealizedReturnPercent, '146.91');
   assert.equal(row(value, a).journalRevision, 1);
   assert.equal(row(value, a).coverageFrom, coverageFrom);
   assert.equal(row(value, a).name, '<script>literal first</script>');
@@ -94,6 +101,8 @@ async function exactGapsAndPrivacy(db, s, f) {
   assert.deepEqual(await read(s, owner, [a, b]), value, 'Selection ordering does not change output');
   const gaps = await read(s, owner, [a, b, unknown, future, empty]);
   assert.equal(gaps.totalValueUsd, null);
+  assert.equal(gaps.unrealizedPnlUsd, null);
+  assert.equal(row(gaps, a).unrealizedPnlUsd, '-38.272');
   assert.equal(gaps.pricedSubtotalUsd, '308.64');
   assert.equal(gaps.unavailableAccountCount, 2);
   assert.equal(gaps.missingPriceCount, 0);
@@ -102,6 +111,7 @@ async function exactGapsAndPrivacy(db, s, f) {
     assert.equal(row(gaps, id).totalValueUsd, null);
     assert.equal(row(gaps, id).pricedSubtotalUsd, null);
     assert.equal(row(gaps, id).missingPriceCount, null);
+    assert.equal(row(gaps, id).unrealizedPnlUsd, null);
     assert.deepEqual(row(gaps, id).items, []);
   }
   assert.equal(row(gaps, unknown).coverage, 'missing-journal');

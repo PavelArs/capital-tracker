@@ -6,6 +6,24 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { accountingError } from './feedback';
 
+type Position = HistoricalValuationSnapshot['items'][number];
+
+function unrealizedGap(snapshot: HistoricalValuationSnapshot) {
+  const reasons = [
+    snapshot.missingPriceCount > 0 && `нет точной цены для ${snapshot.missingPriceCount} позиций`,
+    snapshot.unknownCostCount > 0 &&
+      `неизвестна себестоимость ${snapshot.unknownCostCount} позиций`,
+  ].filter(Boolean);
+  return `Нереализованная прибыль недоступна: ${reasons.join('; ')}.`;
+}
+
+function unrealizedCell(item: Position) {
+  if (item.unrealizedPnlUsd !== null) return item.unrealizedPnlUsd;
+  return item.price === null ? 'Нужна точная цена' : 'Неизвестна себестоимость';
+}
+
+const percent = (value: string | null) => (value === null ? '—' : `${value} %`);
+
 type Loaded = {
   snapshot: HistoricalValuationSnapshot;
   accountId: string;
@@ -149,8 +167,9 @@ export function HistoricalValuation({
         <p className="manual-muted">
           Только позиции этого счёта по текущему исправленному журналу. Ручные цены USD за единицу
           применяются только при точном совпадении момента UTC. Нет переноса предыдущей цены,
-          интерполяции или цены по символу. Результат не включает денежный остаток, весь портфель,
-          прибыль или доходность; исправления могут пересчитать прошлую оценку.
+          интерполяции или цены по символу. Нереализованная прибыль равна стоимости минус оставшаяся
+          себестоимость FIFO; доход в процентах округляется до сотых. Результат не включает денежный
+          остаток и весь портфель; исправления могут пересчитать прошлую оценку.
         </p>
       </details>
       {loading && <p>Расчёт стоимости…</p>}
@@ -177,6 +196,16 @@ export function HistoricalValuation({
               </dl>
             </>
           )}
+          {snapshot.unrealizedPnlUsd === null ? (
+            <p>{unrealizedGap(snapshot)}</p>
+          ) : (
+            <dl>
+              <dt>Нереализованная прибыль, USD</dt>
+              <dd>{snapshot.unrealizedPnlUsd}</dd>
+              <dt>Доход, %</dt>
+              <dd>{percent(snapshot.unrealizedReturnPercent)}</dd>
+            </dl>
+          )}
           {snapshot.items.length === 0 ? (
             <p>На этот момент позиций нет. Стоимость позиций: 0 USD.</p>
           ) : (
@@ -195,6 +224,8 @@ export function HistoricalValuation({
                     <th scope="col">Себестоимость, USD</th>
                     <th scope="col">Цена за единицу, USD</th>
                     <th scope="col">Стоимость, USD</th>
+                    <th scope="col">Нереализованная прибыль, USD</th>
+                    <th scope="col">Доход, %</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -228,6 +259,8 @@ export function HistoricalValuation({
                         )}
                       </td>
                       <td>{item.valueUsd ?? '—'}</td>
+                      <td>{unrealizedCell(item)}</td>
+                      <td>{percent(item.unrealizedReturnPercent)}</td>
                     </tr>
                   ))}
                 </tbody>
