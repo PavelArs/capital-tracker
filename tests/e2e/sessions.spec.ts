@@ -178,7 +178,7 @@ test('SES-001-B: real browser logout revokes a copied issued credential', async 
   const pending = page.waitForResponse(
     (response) => new URL(response.url()).pathname === '/api/auth/logout',
   );
-  await page.getByRole('button', { name: 'Выход', exact: true }).click();
+  await page.getByRole('button', { name: 'Log out', exact: true }).click();
   const response = await pending;
   expect(response.status()).toBe(204);
   const clearCookie =

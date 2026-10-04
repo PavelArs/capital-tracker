@@ -190,7 +190,7 @@ export async function inspectAnalysis(
             bounds.top + offset,
           );
           await expect(
-            page.getByRole('link', { name: 'К содержимому', exact: true }),
+            page.getByRole('link', { name: 'Skip to content', exact: true }),
           ).not.toBeInViewport();
           await page.screenshot({
             path: testInfo.outputPath(`analytics-${task}-${theme}-${width}-${index + 1}.png`),

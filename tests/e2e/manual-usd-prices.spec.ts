@@ -372,7 +372,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
           bounds.top + offset,
         );
         await expect(
-          page.getByRole('link', { name: 'К содержимому', exact: true }),
+          page.getByRole('link', { name: 'Skip to content', exact: true }),
         ).not.toBeInViewport();
         await testInfo.attach(`${name}-${index + 1}`, {
           body: await page.screenshot({

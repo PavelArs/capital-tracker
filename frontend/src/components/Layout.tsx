@@ -1,30 +1,13 @@
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
+import { BrandMark, Icon } from '@features/shell/icons';
+import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import '@features/shell/tokens.css';
 import './Layout.css';
-
-const accountingLinks = [
-  ['/manual-accounts', 'Ручные счета'],
-  ['/owned-transfers', 'Переводы между счетами'],
-  ['/capital-flows', 'Вводы и выводы'],
-  ['/manual-prices', 'Ручные цены'],
-  ['/wallet-addresses', 'Адреса кошельков'],
-  ['/period-profit', 'Прибыль за период'],
-  ['/settings', 'Настройки'],
-] as const;
-
-const legacyLinks = [
-  ['/legacy-overview', 'Прежний обзор'],
-  ['/assets', 'Активы'],
-  ['/crypto', 'Криптокошельки'],
-] as const;
-
-function isLegacyPath(pathname: string) {
-  return legacyLinks.some(([path]) => pathname === path || pathname.startsWith(`${path}/`));
-}
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -34,7 +17,8 @@ export default function Layout() {
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [legacyOpen, setLegacyOpen] = useState(() => isLegacyPath(pathname));
+  // Open by default: the owner still works in these screens until they are replaced.
+  const [legacyOpen, setLegacyOpen] = useState(true);
   const menuToggleRef = useRef<HTMLButtonElement>(null);
   const mainRef = useRef<HTMLElement>(null);
 
@@ -64,14 +48,16 @@ export default function Layout() {
     mainRef.current?.focus();
   }
 
+  const email = user?.email ?? '';
+
   return (
-    <div className="layout">
+    <div className="shell">
       <a className="skip-link" href="#main-content">
-        К содержимому
+        Skip to content
       </a>
       <nav
-        className="app-navigation"
-        aria-label="Основная навигация"
+        className="shell-nav"
+        aria-label="Main navigation"
         onKeyDown={(event) => {
           if (event.key === 'Escape' && mobileMenuOpen) {
             event.preventDefault();
@@ -80,43 +66,40 @@ export default function Layout() {
           }
         }}
       >
-        <div className="app-navigation__header">
-          <div className="app-navigation__identity">
-            <div className="app-navigation__brand">Capital Tracker</div>
-            <div className="app-navigation__email">{user?.email}</div>
+        <div className="shell-nav__header">
+          <div className="shell-brand">
+            <BrandMark />
+            Capital
           </div>
           <button
             ref={menuToggleRef}
             type="button"
-            className="app-navigation__toggle"
+            className="shell-nav__toggle"
             onClick={() => setMobileMenuOpen((open) => !open)}
             aria-expanded={mobileMenuOpen}
             aria-controls="application-menu"
           >
-            Меню
+            Menu
           </button>
         </div>
-        <div
-          id="application-menu"
-          className={`app-navigation__menu${mobileMenuOpen ? ' is-open' : ''}`}
-        >
-          <p className="app-navigation__label">Учет капитала</p>
-          <ul className="app-navigation__links">
-            {accountingLinks.map(([path, label]) => (
-              <li key={path}>
-                <NavLink to={path} onClick={followLink}>
-                  {label}
+        <div id="application-menu" className={`shell-nav__menu${mobileMenuOpen ? ' is-open' : ''}`}>
+          <ul className="shell-nav__sections" data-nav-group="sections">
+            {shellSections.map((section) => (
+              <li key={section.path}>
+                <NavLink to={section.path} onClick={followLink}>
+                  <Icon name={section.icon} />
+                  {section.label}
                 </NavLink>
               </li>
             ))}
           </ul>
           <details
-            className="app-navigation__legacy"
+            className="shell-nav__legacy"
             open={legacyOpen}
             onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
           >
-            <summary>Прежние данные</summary>
-            <ul className="app-navigation__links">
+            <summary>Legacy</summary>
+            <ul>
               {legacyLinks.map(([path, label]) => (
                 <li key={path}>
                   <NavLink to={path} onClick={followLink}>
@@ -126,14 +109,37 @@ export default function Layout() {
               ))}
             </ul>
           </details>
-          <div className="app-navigation__session">
-            <button type="button" onClick={handleLogout} disabled={isLoggingOut}>
-              {isLoggingOut ? t('common.loading') : t('auth.logout')}
-            </button>
+          <div className="shell-sync" data-sync-status>
+            <span className="shell-sync__dot" aria-hidden="true" />
+            <span>
+              <b>Sync not set up</b>
+              Automatic updates come in a later step
+            </span>
           </div>
         </div>
+        <div className="shell-owner">
+          <span className="shell-owner__avatar" aria-hidden="true">
+            {email.charAt(0).toUpperCase()}
+          </span>
+          <span className="shell-owner__who">
+            <span className="shell-owner__email" title={email}>
+              {email}
+            </span>
+            <small>Owner · 2FA on</small>
+          </span>
+          <button
+            type="button"
+            className="shell-owner__logout"
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+            aria-label="Log out"
+            title="Log out"
+          >
+            <Icon name="logout" />
+          </button>
+        </div>
       </nav>
-      <main id="main-content" ref={mainRef} className="main-content" tabIndex={-1}>
+      <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
         <Outlet />
       </main>
     </div>

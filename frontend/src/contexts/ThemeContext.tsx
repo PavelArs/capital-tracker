@@ -1,4 +1,4 @@
-import { ReactNode, createContext, useContext, useEffect, useState } from 'react';
+import { ReactNode, createContext, useContext, useEffect, useLayoutEffect, useState } from 'react';
 
 type Theme = 'light' | 'dark' | 'system';
 type ResolvedTheme = 'light' | 'dark';
@@ -61,7 +61,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [theme]);
 
-  useEffect(() => {
+  // Layout effect: apply before the first paint so the dark-first shell tokens never flash.
+  useLayoutEffect(() => {
     // Применяем тему к документу
     const root = document.documentElement;
     root.setAttribute('data-theme', resolvedTheme);
