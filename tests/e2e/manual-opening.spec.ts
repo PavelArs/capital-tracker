@@ -97,6 +97,12 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
     expect(response.status()).toBe(201);
     const instrument = readInstrument(await response.json());
     expect(instrument.namespace).toBe('manual');
+    // AST-LEGACY: the legacy form's body is classified like the migration; USD is not crypto.
+    expect([instrument.assetType, instrument.valuationCurrency, instrument.priceSource]).toEqual([
+      'manual',
+      'USD',
+      'manual',
+    ]);
     instruments.push(instrument);
   }
   const quantities = ['9007199254740993.000000000000000001', '0.000000000000000001', '1'];

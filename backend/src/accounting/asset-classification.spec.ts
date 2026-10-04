@@ -165,7 +165,12 @@ describe('AST-NEW create and list return the classification', () => {
     });
     expect(calls[0].sql).toMatch(/"assetType","valuationCurrency","priceSource"/);
     expect(calls[0].params.slice(3)).toEqual([
-      JSON.stringify({ name: 'Deposit', symbol: null, assetType: 'manual', valuationCurrency: 'RUB' }),
+      JSON.stringify({
+        name: 'Deposit',
+        symbol: null,
+        assetType: 'manual',
+        valuationCurrency: 'RUB',
+      }),
       'Deposit',
       null,
       'manual',

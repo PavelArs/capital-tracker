@@ -10,10 +10,10 @@ import { lockAccountingOwner } from './accounting-lock';
 import {
   type AssetClassification,
   type AssetType,
-  classifyAsset,
-  instrumentPayload,
   type PriceSource,
   type ValuationCurrency,
+  classifyAsset,
+  instrumentPayload,
 } from './asset-classification';
 import {
   parseAccount,

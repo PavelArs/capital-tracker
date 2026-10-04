@@ -56,7 +56,8 @@ export function classifyAsset(input: InstrumentInput): AssetClassification {
 
 /** Replay identity: the legacy body keeps its original payload. */
 export function instrumentPayload(input: InstrumentInput, value: AssetClassification): string {
-  if (input.assetType === undefined) return JSON.stringify({ name: input.name, symbol: input.symbol });
+  if (input.assetType === undefined)
+    return JSON.stringify({ name: input.name, symbol: input.symbol });
   return JSON.stringify({
     name: input.name,
     symbol: input.symbol,

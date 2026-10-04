@@ -1,8 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   type AssetType,
-  assetTypes,
   type ValuationCurrency,
+  assetTypes,
   valuationCurrencies,
 } from './asset-classification';
 

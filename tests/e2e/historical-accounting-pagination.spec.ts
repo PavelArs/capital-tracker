@@ -30,7 +30,7 @@ function seedPinnedInstruments(): Instrument[] {
     query(`WITH seeded AS (
     INSERT INTO accounting_instruments (id, "ownerId", "requestId", "canonicalPayload", name, symbol)
     VALUES ${values.join(',')}
-    RETURNING id, name, symbol, namespace,
+    RETURNING id, name, symbol, namespace, "assetType", "valuationCurrency", "priceSource",
       to_char("createdAt" AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"
   ) SELECT jsonb_agg(to_jsonb(seeded) ORDER BY id)::text FROM seeded`),
   ) as unknown[];
