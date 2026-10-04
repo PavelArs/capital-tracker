@@ -100,6 +100,15 @@ a provisioned owner and no `docker-compose.yml`, `.env.images` or
 `.release-managed-env`; it backs up, rehearses restore, migrates, starts the pair and
 activates without provisioning the owner again. Later releases use `existing`.
 
+Release versions (`tag-release-versions`): every candidate-bound run names the version
+`v<YYYY.MM.DD>-<short SHA>` from the commit date in UTC (for example
+`v2026.10.04-74604d9`). Promotion pushes each image to GHCR under that tag as well as
+the commit SHA, before preflight. After a successful `deploy` or `release`, a separate
+job with only `contents: write` creates the Git tag of the same name on the commit, so
+the newest `v…` tag under GitHub → Tags is the release running on the server; failed
+releases create none. The server still pins digests: the digests in the runtime
+`.env.images` match the GHCR version tag of that release.
+
 Owner-installed receipts (version 1) still work for manual `preflight`/`deploy`:
 
 
