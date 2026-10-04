@@ -68,7 +68,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded migration CLI must succeed');
-  assert.match(result.stdout, /Migrations applied: 26/);
+  assert.match(result.stdout, /Migrations applied: 27/);
 }
 async function fingerprint(db) {
   const tables = await db.query(
@@ -520,7 +520,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 26);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 27);
     const owners = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('reward-race@example.invalid','synthetic-not-a-hash',true),
       ('reward-owner-active@example.invalid','synthetic-not-a-hash',true),

@@ -1,5 +1,23 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — portfolio snapshots (M6, 2026-10-04)
+
+The `portfolio-snapshots` module stores `portfolio_snapshots` (owner, whole-hour
+`takenAt`, currency USD/EUR/RUB, nullable `value`, `complete`) as a cache that is a pure
+function of operations, stored prices and stored Bank of Russia rates: daily UTC
+midnights from 2025-01-01 and hourly rows for the last 8 days (from the first refresh
+hour). `portfolio_snapshot_state` keeps an md5 `inputsRevision` over the owner's 16
+input tables plus price/rate `fetchedAt` watermarks; any change rebuilds from the
+earliest affected instant (a full recompute that rewrites only changed rows), never
+calling a provider. Days before an account's coverage count as empty, so they are 0.
+The job runs every 5 minutes under `PRICE_COLLECTION_ENABLED`; `GET
+/accounting/portfolio/history?period=24H|7D|1M|3M|1Y|ALL&currency=` (default 1M, main
+currency) refreshes first, then returns stored points plus a live "now" point with
+change and percent from the first known point (percent null from 0). The Dashboard
+shows net worth, change and the chart. Migration 27
+`RecordPortfolioSnapshots1791000000000` (probe counts 27); probe `portfolio-snapshots-db`
+in shard probes-2; browser case `CHART-PERIODS` is the 24th critical case.
+
 ## Current product slice — three accounting currencies (M5, 2026-10-04)
 
 Adds Bank of Russia USD and EUR rates and USD/EUR/RUB accounting. The `fx-rates` module
