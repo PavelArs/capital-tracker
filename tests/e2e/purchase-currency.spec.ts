@@ -48,12 +48,13 @@ test('PCUR-UI: owner imports a RUB purchase at its rate and sees the paid amount
   await expect(
     mapping.getByRole('combobox', { name: 'Колонка: Валовая сумма в валюте оплаты', exact: true }),
   ).toHaveValue('5');
-  await expect(
-    mapping.getByRole('checkbox', {
-      name: 'Валовые суммы и комиссии выражены в валюте оплаты',
-      exact: true,
-    }),
-  ).toBeChecked();
+  // The USD attestation ticked by inspectAndMap no longer applies to RUB amounts.
+  const attest = mapping.getByRole('checkbox', {
+    name: 'Валовые суммы и комиссии выражены в валюте оплаты',
+    exact: true,
+  });
+  await expect(attest).not.toBeChecked();
+  await attest.check();
 
   await previewInBrowser(page, account.id, batch, {
     ...emptySummary,

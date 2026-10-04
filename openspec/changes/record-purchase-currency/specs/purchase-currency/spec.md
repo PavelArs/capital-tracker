@@ -42,8 +42,9 @@ rate cell SHALL be empty or equal 1.
 For a non-USD row, the mapped gross and fee columns SHALL be read as paid amounts, and
 the system SHALL derive `grossUsd` and `feeUsd` as paid amount divided by rate, rounded
 half up to 8 fractional digits, or exactly equal to the paid amount when the rate is 1.
-A derived gross of zero SHALL fail with `converted-gross-zero`; a derived amount or buy
-cost above the journal bound SHALL fail with `buy-cost-overflow`. Confirmation SHALL
+A derived gross of zero SHALL fail with `converted-gross-zero`; a derived buy cost above
+the journal bound SHALL fail with `buy-cost-overflow` and a derived sale gross above it
+with `invalid-gross`. Confirmation SHALL
 store each row's exact paid currency, amounts and rate with the created version. A USD
 row SHALL store no payment record.
 

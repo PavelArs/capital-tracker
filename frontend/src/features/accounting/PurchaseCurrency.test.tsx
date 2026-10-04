@@ -103,6 +103,45 @@ describe('PCUR-UI payment currency in CSV mapping', () => {
     });
   });
 
+  it('clears the attestation and the typed rate when the currency changes', () => {
+    render(<Mapping />);
+    const currency = screen.getByRole('combobox', { name: 'Валюта оплаты для всего файла' });
+    fireEvent.change(currency, { target: { value: 'RUB' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Курс: сколько RUB за 1 USD' }), {
+      target: { value: '79.0246' },
+    });
+    const attest = screen.getByRole('checkbox', {
+      name: 'Валовые суммы и комиссии выражены в валюте оплаты',
+    });
+    fireEvent.click(attest);
+    expect(attest).toBeChecked();
+    fireEvent.change(currency, { target: { value: 'USDT' } });
+    expect(
+      screen.getByRole('checkbox', { name: 'Валовые суммы и комиссии выражены в валюте оплаты' }),
+    ).not.toBeChecked();
+    expect(screen.getByRole('textbox', { name: 'Курс: сколько USDT за 1 USD' })).toHaveValue('');
+    const draft = JSON.parse(screen.getByTestId('draft').textContent ?? '{}');
+    expect(draft).toMatchObject({ paymentCurrency: 'USDT', perUsd: '', assertUsd: false });
+    expect(csvSettings({ ...draft, assertUsd: true }, document, ';').payment).toEqual({
+      currency: 'USDT',
+    });
+  });
+
+  it('resets the file-wide choice when a currency column is mapped', () => {
+    render(<Mapping start={mapped({ paymentCurrency: 'RUB', perUsd: '79.0246' })} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Колонка: Валюта' }), {
+      target: { value: '7' },
+    });
+    expect(screen.getByRole('combobox', { name: 'Валюта оплаты для всего файла' })).toHaveValue(
+      'USD',
+    );
+    expect(JSON.parse(screen.getByTestId('draft').textContent ?? '{}')).toMatchObject({
+      paymentCurrency: 'USD',
+      perUsd: '',
+      assertUsd: false,
+    });
+  });
+
   it('takes the currency from a mapped column and disables the file-wide choice', () => {
     render(<Mapping />);
     fireEvent.change(screen.getByRole('combobox', { name: 'Колонка: Валюта' }), {
@@ -128,6 +167,22 @@ describe('PCUR-UI settings sent to the server', () => {
     );
     const usdt = csvSettings(mapped({ paymentCurrency: 'USDT' }), document, ';');
     expect(usdt.payment).toEqual({ currency: 'USDT' });
+  });
+  it('normalizes a decimal-comma rate and refuses a malformed one', () => {
+    expect(
+      csvSettings(mapped({ paymentCurrency: 'RUB', perUsd: ' 79,0246 ' }), document, ';').payment,
+    ).toEqual({ currency: 'RUB', perUsd: '79.0246' });
+    for (const perUsd of ['79 024,6', '1,000.5', '1e2', '-79'])
+      expect(() => csvSettings(mapped({ paymentCurrency: 'RUB', perUsd }), document, ';')).toThrow(
+        'Курс укажите числом, например 79.0246 или 79,0246.',
+      );
+  });
+  it('sends no file-wide rate when a rate column is mapped', () => {
+    const draft = mapped({ paymentCurrency: 'RUB', perUsd: '79.0246' });
+    draft.columns = { ...draft.columns, rate: '8' };
+    const settings = csvSettings(draft, document, ';');
+    expect(settings.payment).toEqual({ currency: 'RUB' });
+    expect(settings.mapping.columns).toMatchObject({ rate: 8 });
   });
   it('omits payment for the default USD and maps currency/rate columns', () => {
     expect(csvSettings(mapped(), document, ';')).not.toHaveProperty('payment');

@@ -183,6 +183,27 @@ async function rubPurchase(source, svc, owner, instrument) {
   console.log('PASS PCUR-RUB 100000 RUB at 79.0246 -> 1265.42873991 USD stored with exact payment, FIFO cost and rollback');
 }
 
+async function paymentBound(svc, owner, instrument) {
+  stage = 'PCUR-RUB payment alone is bound into the preview hash';
+  const account = await journal(svc, owner, 'USDT purchases');
+  const bytes = csv(['asset;side;at;order;quantity;gross;fee', 'BTC;buy;2025-07-01T00:00:00Z;0;0.01;1000;1']);
+  const value = mapping(instrument, {}, { payment: { currency: 'USDT' } });
+  const { uploaded, preview } = await importFile(svc, owner, account, bytes, value);
+  assert.deepEqual(preview.rows.map(r => [r.execution.grossUsd, r.execution.feeUsd]), [['1000', '1']]);
+  // Same USD amounts; only the recorded payment differs, so only the hash can refuse it.
+  for (const payment of [{ currency: 'USDC' }, { currency: 'USDT', perUsd: '1' }])
+    await status(() => svc.csv.confirm(owner, account, uploaded.batchId, { requestId: randomUUID(), expectedJournalRevision: 0,
+      parserVersion: preview.parserVersion, ...value, payment, previewHash: preview.previewHash }), 409);
+  const { mapping: m, format, assertUsd } = value;
+  await status(() => svc.csv.confirm(owner, account, uploaded.batchId, { requestId: randomUUID(), expectedJournalRevision: 0,
+    parserVersion: preview.parserVersion, format, mapping: m, assertUsd, previewHash: preview.previewHash }), 409);
+  assert.equal((await svc.trade.listTrades(owner, account)).items.length, 0);
+  await confirm(svc, owner, account, uploaded, preview, value);
+  assert.deepEqual((await svc.trade.listTrades(owner, account)).items.map(t => t.payment),
+    [{ currency: 'USDT', gross: '1000', fee: '1', perUsd: '1' }]);
+  console.log('PASS PCUR-RUB a payment-only change (USDT to USDC, implicit to explicit rate, dropped) refuses the preview hash');
+}
+
 async function mixed(source, svc, owner, instrument) {
   stage = 'PCUR-MIXED currency and rate columns';
   const account = await journal(svc, owner, 'Mixed currencies');
@@ -275,6 +296,7 @@ async function main() {
     await migrateAndShape(source);
     await usdCompat(source, svc, owner, instrument);
     await rubPurchase(source, svc, owner, instrument);
+    await paymentBound(svc, owner, instrument);
     await mixed(source, svc, owner, instrument);
     await errors(source, svc, owner, instrument);
     await constraints(source, owner);

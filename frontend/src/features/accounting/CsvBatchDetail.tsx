@@ -45,6 +45,9 @@ export function CsvBatchDetail({
   onRows: (append: boolean) => void;
 }) {
   const settings = value.acceptedSettings;
+  // Amount columns hold the paid currency once a non-USD source is set.
+  const paidInOther =
+    settings?.payment !== undefined || settings?.mapping.columns.currency !== undefined;
   const review = value.rollbackReview;
   return (
     <section className="csv-imports__section" aria-label="Партия CSV">
@@ -76,7 +79,9 @@ export function CsvBatchDetail({
               ? `Валюта оплаты: ${settings.payment.currency}${
                   settings.payment.perUsd
                     ? `, курс ${settings.payment.perUsd} ${settings.payment.currency} за 1 USD`
-                    : ''
+                    : settings.mapping.columns.rate !== undefined
+                      ? ', курс — из колонки файла'
+                      : ', курс 1'
                 }.`
               : settings.mapping.columns.currency !== undefined
                 ? 'Валюта оплаты — из колонки файла.'
@@ -85,7 +90,12 @@ export function CsvBatchDetail({
           <ul>
             {Object.entries(settings.mapping.columns).map(([field, index]) => (
               <li key={field}>
-                {csvFields[field as keyof typeof csvFields]}: колонка {index + 1}
+                {paidInOther && (field === 'grossUsd' || field === 'feeUsd')
+                  ? field === 'grossUsd'
+                    ? 'Валовая сумма в валюте оплаты'
+                    : 'Комиссия в валюте оплаты'
+                  : csvFields[field as keyof typeof csvFields]}
+                : колонка {index + 1}
               </li>
             ))}
           </ul>

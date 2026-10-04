@@ -18,8 +18,9 @@ dependency, lockfile, image or `frontend/nginx.conf` change.
 | PCUR-RUB | Backend unit (file-wide RUB, decimal-comma rate cell and setting); probe confirm, exact payment row, FIFO cost, changed rate → 409, rollback void keeps the payment; critical PCUR-UI |
 | PCUR-MIXED | Backend unit (USD without payment, USDT at 1, RUB 30000 at 77.9568, USD rate 1); probe confirm |
 | PCUR-ERRORS | Backend unit (missing/invalid currency or rate, converted zero, overflow, contradictory settings 400); probe nonconfirmable batch (409) and 400 without writes |
+| PCUR-RUB hash binding | Probe: same USD amounts with only the payment changed (USDT → USDC, implicit → explicit rate 1, payment dropped) each refuse confirmation with 409, then the original confirms |
 | PCUR-COMPAT | Backend unit (no `payment`/`rate` keys added); probe recomputes the legacy preview hash and canonical payload formula for USD-only settings; existing `csv-import-db.cjs` fixtures unchanged |
-| PCUR-UI | Frontend `PurchaseCurrency.test.tsx` (8 tests: default USD labels unchanged, RUB rate input and relabelling, currency column disables file-wide choice, settings payload, preview and journal paid text); critical Playwright `purchase-currency.spec.ts` (hosted CI only) |
+| PCUR-UI | Frontend `PurchaseCurrency.test.tsx` (12 tests: default USD labels unchanged, RUB rate input and relabelling, currency column disables file-wide choice, settings payload, preview and journal paid text); critical Playwright `purchase-currency.spec.ts` (hosted CI only) |
 
 ## RED (before implementation)
 
@@ -44,7 +45,7 @@ dependency, lockfile, image or `frontend/nginx.conf` change.
 | Command | Result |
 |---|---|
 | `pnpm --dir backend test --runInBand` | 1647 passed |
-| `pnpm --dir frontend test` | 144 passed (coverage thresholds passed) |
+| `pnpm --dir frontend test` | 148 passed after review fixes (coverage thresholds passed) |
 | `pnpm lint` | exit 0; 77 backend / 27 frontend warnings, same as baseline |
 | `pnpm --dir backend build` / `pnpm --dir frontend build` | exit 0 |
 | `pnpm test:engineering` | 196 Jest + 10 Node checks passed |
@@ -76,8 +77,27 @@ regression; hosted CI is the authority for them.
 
 ## Review
 
-REVIEW_RESULT
+An independent read-only review of the diff against this change found nothing blocking
+and confirmed the conversion, hash binding, migration, store join and void/rollback paths.
+Fixed after review (frontend tests went RED 3/12 on the pre-fix `CsvMapping.tsx`, then
+GREEN; probe re-run PASS):
+
+- Changing the file-wide currency or mapping a currency column now clears the amount
+  attestation and the typed rate, so a RUB rate can no longer leak into USDT and a USD
+  attestation never silently becomes a paid-currency one. PCUR-UI now re-ticks the box.
+- Mapping a currency column resets the disabled file-wide choice to USD.
+- A malformed rate (`79 024,6`, `1,000.5`, `1e2`, `-79`) gets a field message instead of a
+  generic 400; `79,0246` still normalizes to `79.0246`.
+- The probe now proves a payment-only change refuses the preview hash.
+- Saved-mapping text names the rate source and labels amount columns as paid currency.
+- Spec wording: a derived sale gross above the bound reports `invalid-gross` (existing
+  sell behaviour), a derived buy cost `buy-cost-overflow`.
+
+Left as is: a manual correction of an imported paid-currency trade writes a USD-only
+version (accepted in design.md); a warning belongs in the manual trade form, which the
+"simple dates and manual trades" work is reworking, and the currency field lands there
+next.
 
 ## Hosted CI
 
-HOSTED_RESULT
+Pending on PR #34.

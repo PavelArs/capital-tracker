@@ -91,6 +91,8 @@ export function csvSettings(
   });
   const fileCurrency = draft.columns.currency === '' && draft.paymentCurrency !== 'USD';
   const perUsd = draft.perUsd.trim().replace(',', '.');
+  if (fileCurrency && perUsd !== '' && !/^\d+(\.\d+)?$/.test(perUsd))
+    throw new Error('Курс укажите числом, например 79.0246 или 79,0246.');
   if (
     fileCurrency &&
     draft.columns.rate === '' &&
@@ -185,6 +187,10 @@ export function CsvMapping({
                     columns: { ...draft.columns, [field]: event.target.value },
                     ...(field === 'instrument' ? { instruments: [] } : {}),
                     ...(field === 'side' ? { sides: [] } : {}),
+                    // A changed currency source changes what the amounts mean: re-attest.
+                    ...(field === 'currency'
+                      ? { paymentCurrency: 'USD', perUsd: '', assertUsd: false }
+                      : {}),
                   })
                 }
               >
@@ -353,7 +359,14 @@ export function CsvMapping({
               value={draft.paymentCurrency}
               disabled={draft.columns.currency !== ''}
               aria-describedby={`${descriptionId}-payment`}
-              onChange={(event) => onChange({ ...draft, paymentCurrency: event.target.value })}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  paymentCurrency: event.target.value,
+                  perUsd: '',
+                  assertUsd: false,
+                })
+              }
             >
               {paymentCurrencies.map((currency) => (
                 <option key={currency} value={currency}>
