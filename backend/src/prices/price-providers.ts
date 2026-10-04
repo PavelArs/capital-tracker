@@ -124,13 +124,19 @@ export class KrakenClient implements PriceProvider {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
+  private readonly retryPauseMs: number;
   private lastRequestAt = 0;
 
-  constructor(options: { baseUrl?: string; timeoutMs?: number; pauseMs?: number } = {}) {
+  constructor(
+    options: { baseUrl?: string; timeoutMs?: number; pauseMs?: number; retryPauseMs?: number } = {},
+  ) {
     this.baseUrl = options.baseUrl ?? 'https://api.kraken.com';
     this.timeoutMs = options.timeoutMs ?? 10_000;
-    // Kraken's public endpoints allow about one request per second.
-    this.pauseMs = options.pauseMs ?? 1_100;
+    // Kraken documents about one public request per second; back-to-back calls at that
+    // pace still failed every other request in production, so keep a wider gap.
+    this.pauseMs = options.pauseMs ?? 2_000;
+    // A throttled or dropped request is sent once more after this pause.
+    this.retryPauseMs = options.retryPauseMs ?? 5_000;
   }
 
   async latest(assets: readonly MarketAsset[], now: Date): Promise<QuoteResult> {
@@ -187,7 +193,19 @@ export class KrakenClient implements PriceProvider {
     since: number,
     nowSeconds: number,
   ): Promise<{ closedAt: number; close: string }[] | PriceFailure> {
-    const wait = this.lastRequestAt + this.pauseMs - Date.now();
+    const first = await this.request(asset, interval, since, nowSeconds, this.pauseMs);
+    if (first !== 'rate_limited' && first !== 'unavailable') return first;
+    return this.request(asset, interval, since, nowSeconds, this.retryPauseMs);
+  }
+
+  private async request(
+    asset: MarketAsset,
+    interval: number,
+    since: number,
+    nowSeconds: number,
+    pauseMs: number,
+  ): Promise<{ closedAt: number; close: string }[] | PriceFailure> {
+    const wait = this.lastRequestAt + pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     const query = new URLSearchParams({
       pair: asset.krakenPair,

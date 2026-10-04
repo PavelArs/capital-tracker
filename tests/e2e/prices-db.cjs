@@ -77,7 +77,7 @@ function migrate(name) {
   return result.stdout;
 }
 const service = (db, enabled = true) => new PricesService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: String(enabled) }),
-  new KrakenClient({ pauseMs: 0 }), new CoinGeckoClient());
+  new KrakenClient({ pauseMs: 0, retryPauseMs: 0 }), new CoinGeckoClient());
 async function observations(db, where = 'TRUE', params = []) {
   return db.query(`SELECT asset, "quoteCurrency", source, kind, price::text AS price, "observedAt", "fetchedAt"
     FROM price_observations WHERE ${where} ORDER BY asset, source, "observedAt"`, params);
@@ -107,7 +107,7 @@ async function disabled(db) {
     assert.deepEqual(result, { outcome: 'disabled' });
     assert.deepEqual(urls, [], 'A disabled collector never calls a provider');
   }
-  const unset = new PricesService(db, new ConfigService({}), new KrakenClient({ pauseMs: 0 }), new CoinGeckoClient());
+  const unset = new PricesService(db, new ConfigService({}), new KrakenClient({ pauseMs: 0, retryPauseMs: 0 }), new CoinGeckoClient());
   const { result, urls } = await newRequests(() => unset.tick(at('even')));
   assert.deepEqual(result, { outcome: 'disabled' });
   assert.deepEqual(urls, []);
@@ -208,7 +208,7 @@ async function fallback(db) {
   const updatedAt = Math.floor(now.getTime() / 1000) - 30;
   await post('prices', { kraken: { hourly, daily, fail: Object.fromEntries(catalog.map(([, pair]) => [pair, 500])) }, coingecko: { prices: gecko(), updatedAt } });
   const { result, urls } = await newRequests(() => service(db).collect(now));
-  assert.deepEqual(krakenCalls(urls, '60'), catalog.map(([, pair]) => pair));
+  assert.deepEqual(krakenCalls(urls, '60'), catalog.flatMap(([, pair]) => [pair, pair]), 'Each failed Kraken pair is retried once');
   assert.equal(geckoCalls(urls).length, 1, 'CoinGecko is asked when Kraken is due and fails');
   assert.equal(result.stored, catalog.length);
   assert.deepEqual((await observations(db, '"observedAt"=$1', [iso(updatedAt * 1000)])).map(({ asset, source }) => `${asset}:${source}`),
@@ -221,7 +221,7 @@ async function fallback(db) {
   const view = await service(db).read(now);
   for (const code of codes) assert.equal(priced(view, code).status, 'fresh', `${code} stays fresh after Kraken fails`);
   assert.equal(view.sources.find(({ key }) => key === 'prices:kraken').errorMessage, 'Kraken did not answer');
-  console.log('PASS PRC-FALLBACK Kraken 500 -> CoinGecko stored, Kraken error shown, prices fresh');
+  console.log('PASS PRC-FALLBACK Kraken 500 twice -> CoinGecko stored, Kraken error shown, prices fresh');
 }
 
 async function rateLimited(db) {
@@ -308,6 +308,7 @@ async function backfillRetry(db) {
   const now = at('even');
   const days = closedDays(now);
   const first = await newRequests(() => service(db).collect(now));
+  assert.equal(krakenCalls(first.urls, '1440').filter((pair) => pair === 'ETHUSD').length, 2, 'A failed daily request is retried once');
   assert.equal(first.result.backfilled, days * (catalog.length - 1));
   assert.equal(await count(db, `asset='ETH' AND kind='daily-close'`), 0);
   let state = await sources(db);
