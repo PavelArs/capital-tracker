@@ -67,34 +67,42 @@ export class PricesService {
 
   async tick(now = new Date()): Promise<CollectionResult> {
     if (!this.enabled) return { outcome: 'disabled' };
-    const [row]: { at: Date | null }[] = await this.source.query(
-      `SELECT max("lastAttemptAt") AS at FROM sync_sources WHERE key = ANY($1)`,
-      [Object.values(PROVIDER_KEYS)],
-    );
-    if (!isDue(row?.at ?? null, now)) return { outcome: 'not_due' };
-    return this.collect(now);
+    return this.collect(now, true);
   }
 
-  async collect(now = new Date()): Promise<CollectionResult> {
-    // A session advisory lock held on one dedicated connection: one run at a time.
+  // Runs one collection; with onlyIfDue, skips it when the hour already had one.
+  async collect(now = new Date(), onlyIfDue = false): Promise<CollectionResult> {
+    // A transaction-scoped advisory lock on a dedicated connection: one run at a time,
+    // released by the rollback below or by the connection ending, never left behind.
     const runner = this.source.createQueryRunner();
     await runner.connect();
     try {
-      const [lock]: { locked: boolean }[] = await runner.query(
-        'SELECT pg_try_advisory_lock($1) AS locked',
-        [LOCK_KEY],
-      );
-      if (!lock.locked) return { outcome: 'busy' };
+      await runner.startTransaction();
       try {
+        const [lock]: { locked: boolean }[] = await runner.query(
+          'SELECT pg_try_advisory_xact_lock($1) AS locked',
+          [LOCK_KEY],
+        );
+        if (!lock.locked) return { outcome: 'busy' };
+        // Checked under the lock so a run that just finished elsewhere is not repeated.
+        if (onlyIfDue && !isDue(await this.lastAttempt(), now)) return { outcome: 'not_due' };
         const backfilled = await this.backfill(now);
         const stored = await this.collectLatest(now);
         return { outcome: 'collected', stored, backfilled };
       } finally {
-        await runner.query('SELECT pg_advisory_unlock($1)', [LOCK_KEY]);
+        await runner.rollbackTransaction();
       }
     } finally {
       await runner.release();
     }
+  }
+
+  private async lastAttempt(): Promise<Date | null> {
+    const [row]: { at: Date | null }[] = await this.source.query(
+      `SELECT max("lastAttemptAt") AS at FROM sync_sources WHERE key = ANY($1)`,
+      [Object.values(PROVIDER_KEYS)],
+    );
+    return row?.at ?? null;
   }
 
   private async collectLatest(now: Date): Promise<number> {
@@ -212,7 +220,7 @@ export class PricesService {
         `SELECT DISTINCT ON (asset) asset, price::text AS price, "observedAt", source
          FROM price_observations
          WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" <= $3
-         ORDER BY asset, "observedAt" DESC, source`,
+         ORDER BY asset, "observedAt" DESC, kind DESC, source`,
         [MARKET_ASSETS.map(({ code }) => code), QUOTE_CURRENCY, now],
       );
       const sources: SourceRow[] = await manager.query(

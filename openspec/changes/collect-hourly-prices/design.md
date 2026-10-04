@@ -51,17 +51,22 @@ providers; the service persists its result in one transaction.
 Production runs with `BACKGROUND_JOBS_ENABLED=false` (checked by the release and resume
 scripts), which disables `@Cron` jobs. The service therefore uses a 5-minute
 `@Interval` tick (intervals stay enabled) that does nothing unless
-`PRICE_COLLECTION_ENABLED=true`. A run is due when no price source was attempted in the
-current UTC hour. A PostgreSQL session advisory lock on a dedicated connection keeps
-one run at a time across processes. Provider calls happen outside database
-transactions; all writes of a run happen in one transaction afterwards.
+`PRICE_COLLECTION_ENABLED=true`. A run is due from five minutes past the hour when no
+price source was attempted in that UTC hour. A transaction-scoped PostgreSQL advisory
+lock, taken in an otherwise empty transaction on a dedicated connection, keeps one run
+at a time across processes; the due check is repeated under the lock, and the lock ends
+with that transaction's rollback or the connection, never left on a pooled connection.
+No data transaction stays open during provider calls; each run's writes happen in short
+transactions afterwards.
 
 Turning collection on in production needs the variable in the server environment and
 in the release/resume scripts' exact environment key list. Those deploy files are
 also changed by the frozen PR #33, so that step is separate and owner-approved.
 
 ### Storage
-- `price_observations`: primary key (`asset`, `quoteCurrency`, `source`, `observedAt`),
+- `price_observations`: primary key (`asset`, `quoteCurrency`, `source`, `kind`,
+  `observedAt`), because yesterday's daily close and the 23:00 hourly close both close at
+  midnight,
   `price numeric(78,30) > 0`, `kind` in (`hourly-close`, `spot`, `daily-close`),
   `fetchedAt`. Inserts use `ON CONFLICT DO NOTHING`. A trigger rejects UPDATE and
   DELETE so history is append-only in the database, not only in code. An index on

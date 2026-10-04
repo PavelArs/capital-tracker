@@ -20,7 +20,8 @@ for HTTP 429, else `unavailable` or `invalid_response`), never a stored price.
 
 ### Requirement: PRC-2 Hourly collection alternates providers with failover
 When `PRICE_COLLECTION_ENABLED` is `true` the system SHALL run one collection per UTC
-hour. The primary provider SHALL be Kraken in even UTC hours and CoinGecko in odd UTC
+hour, no earlier than five minutes past the hour, and at most one at a time across
+processes (whether the hour is due is decided while holding the collector's lock). The primary provider SHALL be Kraken in even UTC hours and CoinGecko in odd UTC
 hours. Every catalog asset the primary does not deliver (whole failure or missing
 asset) SHALL be asked from the other provider in the same run. Each provider asked
 SHALL update its own sync source; a provider that is not asked keeps its state. When
@@ -47,8 +48,8 @@ the switch is unset or `false`, no provider SHALL be called.
 - **THEN** no provider request is made and no row is written.
 
 ### Requirement: PRC-3 Append-only idempotent storage
-`price_observations` SHALL be unique per asset, quote currency, source and observed
-instant, store the price as an exact positive decimal with its fetch time and kind
+`price_observations` SHALL be unique per asset, quote currency, source, kind and
+observed instant (a daily close and an hourly close may share an instant), store the price as an exact positive decimal with its fetch time and kind
 (`hourly-close`, `spot`, `daily-close`), and reject every UPDATE and DELETE in the
 database. Replaying the same provider answer SHALL add nothing.
 

@@ -168,6 +168,17 @@ async function idempotent(db, now) {
   console.log('PASS PRC-IDEMPOTENT replay stores nothing and no daily request repeats');
 }
 
+// The daily close of yesterday and the 23:00 hourly close both close at today 00:00.
+async function midnight(db) {
+  const now = new Date(Math.floor(Date.now() / DAY) * DAY + 5 * 60000);
+  const { result } = await newRequests(() => service(db).collect(now));
+  assert.equal(result.outcome, 'collected');
+  const rows = await observations(db, `asset='BTC' AND source='kraken' AND "observedAt"=$1`, [iso(now.getTime() - 5 * 60000)]);
+  assert.deepEqual(rows.map(({ kind }) => kind), ['daily-close', 'hourly-close'], 'Both kinds are kept at the same instant');
+  assert.equal(exact(rows.find(({ kind }) => kind === 'hourly-close').price), '84945.1');
+  console.log('PASS PRC-3 a daily and an hourly close at the same midnight instant are both stored');
+}
+
 async function alternate(db) {
   const now = at('odd');
   const updatedAt = Math.floor(now.getTime() / 1000) - 45;
@@ -241,9 +252,19 @@ async function schedule(db) {
   const due = await newRequests(() => service(db).tick(nextHour));
   assert.equal(due.result.outcome, 'collected');
   assert.ok(due.urls.length > 0);
-  const [first, second] = await Promise.all([service(db).collect(nextHour), service(db).collect(nextHour)]);
-  assert.deepEqual([first.outcome, second.outcome].sort(), ['busy', 'collected'], 'One run at a time');
-  console.log('PASS PRC-2 schedule: not due within the attempted hour, due the next hour, concurrent runs exclude each other');
+  // Another process holding the collector's lock makes this run step aside.
+  const holder = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME, password: settings.DB_PASSWORD, database: databases.main });
+  await holder.connect();
+  try {
+    await holder.query('BEGIN');
+    await holder.query('SELECT pg_advisory_xact_lock(7340600001)');
+    const blocked = await newRequests(() => service(db).collect(nextHour));
+    assert.deepEqual(blocked.result, { outcome: 'busy' });
+    assert.deepEqual(blocked.urls, [], 'A busy run calls no provider');
+    await holder.query('COMMIT');
+  } finally { await holder.end(); }
+  assert.equal((await service(db).collect(nextHour)).outcome, 'collected', 'The lock is free once the holder ends');
+  console.log('PASS PRC-2 schedule: not due within the attempted hour, due the next hour, a run steps aside while another holds the lock');
 }
 
 async function appendOnly(db) {
@@ -326,6 +347,7 @@ async function main() {
     await disabled(main);
     const now = await hourlyAndBackfill(main);
     await idempotent(main, now);
+    await midnight(main);
     await alternate(main);
     await fallback(main);
     await rateLimited(main);

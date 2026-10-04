@@ -94,7 +94,12 @@ export function parseKrakenCandles(
   const response = record(body);
   if (!Array.isArray(response.error)) invalid();
   if (response.error.length) {
-    return response.error.some((item) => typeof item === 'string' && item.startsWith('EAPI:Rate'))
+    // Public endpoints throttle with EGeneral:Too many requests, private ones with EAPI:Rate…
+    return response.error.some(
+      (item) =>
+        typeof item === 'string' &&
+        (item.startsWith('EAPI:Rate') || item.startsWith('EGeneral:Too many requests')),
+    )
       ? 'rate_limited'
       : 'unavailable';
   }

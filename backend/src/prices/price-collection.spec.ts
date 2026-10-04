@@ -164,6 +164,11 @@ describe('PRC-5 freshness and schedule', () => {
     expect(isDue(new Date('2026-10-04T13:59:59.999Z'), now)).toBe(true);
     expect(isDue(new Date('2026-10-04T14:00:00.000Z'), now)).toBe(false);
     expect(isDue(new Date('2026-10-04T14:04:00.000Z'), now)).toBe(false);
+    // Not before five minutes past the hour, so the previous hourly candle is closed.
+    expect(isDue(null, new Date('2026-10-04T14:04:59.999Z'))).toBe(false);
+    expect(isDue(new Date('2026-10-04T13:05:00.000Z'), new Date('2026-10-04T14:04:59Z'))).toBe(
+      false,
+    );
   });
 
   it('plans the next run five minutes after the next hour', () => {

@@ -108,6 +108,7 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
     it.each([
       [429, { error: [] }, 'rate_limited'],
       [200, { error: ['EAPI:Rate limit exceeded'] }, 'rate_limited'],
+      [200, { error: ['EGeneral:Too many requests'] }, 'rate_limited'],
       [503, { error: [] }, 'unavailable'],
       [200, { error: ['EGeneral:Internal error'] }, 'unavailable'],
       [200, 'not json', 'invalid_response'],

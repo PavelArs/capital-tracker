@@ -14,7 +14,8 @@ export class AddHourlyPrices1790600000000 implements MigrationInterface {
         AND price NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
       kind text NOT NULL CHECK (kind IN ('hourly-close','spot','daily-close')),
       "fetchedAt" timestamptz(3) NOT NULL DEFAULT clock_timestamp() CHECK (isfinite("fetchedAt")),
-      PRIMARY KEY (asset, "quoteCurrency", source, "observedAt")
+      -- A daily close and the 23:00 hourly close share the same instant.
+      PRIMARY KEY (asset, "quoteCurrency", source, kind, "observedAt")
     )`);
     await runner.query(
       `CREATE INDEX price_observations_latest ON price_observations (asset, "quoteCurrency", "observedAt" DESC)`,

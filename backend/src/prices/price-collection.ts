@@ -32,8 +32,11 @@ export function primaryProvider(now: Date): ProviderSource {
   return (hourStart(now) / HOUR_MS) % 2 === 0 ? 'kraken' : 'coingecko';
 }
 
+// Once per UTC hour, a few minutes after it starts so the previous candle is closed.
 export function isDue(lastAttemptAt: Date | null, now: Date): boolean {
-  return !lastAttemptAt || lastAttemptAt.getTime() < hourStart(now);
+  const start = hourStart(now);
+  if (now.getTime() < start + RUN_OFFSET_MS) return false;
+  return !lastAttemptAt || lastAttemptAt.getTime() < start;
 }
 
 export function nextRunAt(now: Date): Date {
