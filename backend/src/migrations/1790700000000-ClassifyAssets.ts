@@ -24,8 +24,9 @@ export class ClassifyAssets1790700000000 implements MigrationInterface {
         AND "valuationCurrency" IN ('USD', 'EUR', 'RUB')
         AND "priceSource" IN ('market', 'manual', 'fixed')),
       ADD CONSTRAINT accounting_instruments_asset_classification CHECK (
-        ("assetType" = 'crypto' AND symbol IS NOT NULL AND "valuationCurrency" = 'USD')
-        OR ("assetType" = 'fiat' AND "priceSource" = 'fixed'
+        ("assetType" = 'crypto' AND symbol IS NOT NULL AND "valuationCurrency" = 'USD'
+          AND "priceSource" IN ('market', 'manual'))
+        OR ("assetType" = 'fiat' AND "priceSource" = 'fixed' AND symbol IS NOT NULL
           AND upper(symbol) = "valuationCurrency")
         OR ("assetType" = 'manual' AND "priceSource" = 'manual'))`);
   }

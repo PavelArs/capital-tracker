@@ -55,6 +55,8 @@ export default function PortfolioPage() {
   const visible = sorted.filter((asset) => filter === 'all' || asset.assetType === filter);
   const added = (asset: PortfolioAsset) => {
     setAssets((current) => [...(current ?? []).filter((item) => item.id !== asset.id), asset]);
+    // The new row must be visible, so a filter that would hide it is cleared.
+    setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
     setAdding(false);
   };
   const addButton = (

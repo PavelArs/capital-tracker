@@ -19,6 +19,9 @@ const types: [AssetType, string, string][] = [
   ['manual', 'Manual', 'For a deposit or anything else whose value you enter by hand.'],
 ];
 const currencies: ValuationCurrency[] = ['USD', 'EUR', 'RUB'];
+// Tab order inside the modal: a radio group is one stop, at its checked radio.
+const focusableFields =
+  'button:not([disabled]), input:not([disabled]):not([type="radio"]), input[type="radio"]:checked';
 
 function failure(error: unknown): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -48,15 +51,31 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
   const nameField = useRef<HTMLInputElement>(null);
 
+  const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  const busy = useRef(false);
+  busy.current = saving;
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     nameField.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') close.current();
+      // Closing mid-save would let a reopened form send a second request id.
+      if (event.key === 'Escape' && !busy.current) close.current();
+      if (event.key !== 'Tab' || !dialog.current) return;
+      const focusable = [...dialog.current.querySelectorAll<HTMLElement>(focusableFields)];
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
+        event.preventDefault();
+        (event.shiftKey ? last : first)?.focus();
+      }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      opener?.focus();
+    };
   }, []);
 
   const submit = async (event: FormEvent) => {
@@ -90,7 +109,13 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const hint = types.find(([value]) => value === assetType)?.[2];
   return (
     <div className="portfolio-scrim">
-      <div className="portfolio-dialog" role="dialog" aria-modal="true" aria-labelledby="add-asset">
+      <div
+        ref={dialog}
+        className="portfolio-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-asset"
+      >
         <form onSubmit={submit} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id="add-asset">Add asset</h2>
@@ -186,7 +211,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
             )}
           </div>
           <div className="portfolio-dialog__foot">
-            <button type="button" className="shell-button shell-button--ghost" onClick={onClose}>
+            <button
+              type="button"
+              className="shell-button shell-button--ghost"
+              onClick={onClose}
+              disabled={saving}
+            >
               Cancel
             </button>
             <button type="submit" className="shell-button shell-button--primary" disabled={saving}>

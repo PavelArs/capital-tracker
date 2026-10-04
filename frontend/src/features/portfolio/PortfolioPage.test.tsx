@@ -173,6 +173,68 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(create.mock.calls[2][0].requestId).not.toBe(create.mock.calls[0][0].requestId);
   });
 
+  it('shows a new asset even when a filter would hide it', async () => {
+    vi.spyOn(portfolioAssetsApi, 'listPage').mockResolvedValue({
+      items: [bitcoin],
+      nextCursor: null,
+    });
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(deposit);
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(screen.getByRole('button', { name: /^Crypto/ }));
+    await user.click(screen.getByRole('button', { name: 'Add asset' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add asset' });
+    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(rowOf('Deposit')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps focus inside the dialog, returns it on close and cannot close mid-save', async () => {
+    vi.spyOn(portfolioAssetsApi, 'listPage').mockResolvedValue({
+      items: [bitcoin],
+      nextCursor: null,
+    });
+    let finish: (asset: PortfolioAsset) => void = () => undefined;
+    vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const opener = screen.getByRole('button', { name: 'Add asset' });
+    await user.click(opener);
+    let dialog = screen.getByRole('dialog', { name: 'Add asset' });
+    expect(within(dialog).getByLabelText('Name')).toHaveFocus();
+    const submit = within(dialog).getByRole('button', { name: 'Add asset' });
+    submit.focus();
+    await user.tab();
+    expect(dialog).toContainElement(document.activeElement as HTMLElement);
+    await user.tab({ shift: true });
+    expect(submit).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(opener).toHaveFocus();
+
+    await user.click(opener);
+    dialog = screen.getByRole('dialog', { name: 'Add asset' });
+    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await user.keyboard('{Escape}');
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    expect(screen.getByRole('dialog', { name: 'Add asset' })).toBeInTheDocument();
+    finish(deposit);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(rowOf('Deposit')).toBeInTheDocument();
+  });
+
   it('shows the empty, loading and error states honestly', async () => {
     let fail = true;
     vi.spyOn(portfolioAssetsApi, 'listPage').mockImplementation(async () => {

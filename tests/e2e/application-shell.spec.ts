@@ -123,6 +123,10 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   // AST-UI: Portfolio lists real assets with their classification and adds one.
   await nav.getByRole('link', { name: 'Portfolio', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
+  await expect(nav.getByRole('link', { name: 'Portfolio', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   const portfolio = page.getByRole('main');
   await expect(
     portfolio.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
@@ -157,6 +161,20 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(
     portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell'),
   ).toHaveText([depositName, 'Manual', 'RUB', 'Manual']);
+  const chips = portfolio.getByRole('group', { name: 'Filter assets' });
+  await chips.getByRole('button', { name: /^Manual/ }).click();
+  await expect(chips.getByRole('button', { name: /^Manual/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) })).toBeVisible();
+  for (const other of ['Crypto', 'Cash']) {
+    await expect(
+      portfolio
+        .getByRole('row')
+        .filter({ has: page.getByRole('cell', { name: other, exact: true }) }),
+    ).toHaveCount(0);
+  }
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 

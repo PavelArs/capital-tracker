@@ -24,12 +24,16 @@ describe('AST-RULES derived price source and valuation currency', () => {
     [{ assetType: 'fiat', symbol: 'eur', valuationCurrency: 'EUR' }, 'fiat', 'EUR', 'fixed'],
     [{ assetType: 'manual', valuationCurrency: 'RUB' }, 'manual', 'RUB', 'manual'],
     [{ assetType: 'manual', symbol: 'GOLD' }, 'manual', 'USD', 'manual'],
+    // Only ASCII letters are uppercased, as PostgreSQL upper() does in the checks.
+    [{ assetType: 'crypto', symbol: '\u017fol' }, 'crypto', 'USD', 'manual'],
+    [{ symbol: '\u017fol' }, 'manual', 'USD', 'manual'],
   ])('classifies %j', (body, assetType, valuationCurrency, priceSource) => {
     expect(classify(body)).toEqual({ assetType, valuationCurrency, priceSource });
   });
 
   it.each([
     { assetType: 'fiat', symbol: 'GBP' },
+    { assetType: 'fiat', symbol: 'u\u017fd' },
     { assetType: 'fiat' },
     { assetType: 'fiat', symbol: 'USD', valuationCurrency: 'RUB' },
     { assetType: 'crypto' },

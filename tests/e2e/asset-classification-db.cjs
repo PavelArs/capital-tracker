@@ -217,6 +217,7 @@ async function main() {
     for (const [assetType, symbol, valuationCurrency, priceSource] of [
       ['fiat', 'USD', 'USD', 'market'], ['crypto', 'BTC', 'RUB', 'market'], ['crypto', null, 'USD', 'manual'],
       ['manual', null, 'USD', 'fixed'], ['stock', 'X', 'USD', 'manual'], ['manual', null, 'GBP', 'manual'],
+      ['fiat', null, 'USD', 'fixed'], ['crypto', 'BTC', 'USD', 'fixed'],
     ]) {
       await assert.rejects(() => db.query(`INSERT INTO accounting_instruments
         (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")

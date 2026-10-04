@@ -31,7 +31,8 @@ const bad = (): never => {
 
 /** One rule for new bodies, the legacy body and the migration (AST-1, AST-2). */
 export function classifyAsset(input: InstrumentInput): AssetClassification {
-  const ticker = input.symbol?.toUpperCase() ?? null;
+  // ASCII-only, so the ticker matches PostgreSQL upper() in the migration and checks.
+  const ticker = input.symbol?.replace(/[a-z]+/g, (letters) => letters.toUpperCase()) ?? null;
   const type = input.assetType ?? (ticker && marketTickers.includes(ticker) ? 'crypto' : 'manual');
   if (input.assetType === undefined && input.valuationCurrency !== undefined) return bad();
   if (type === 'crypto') {
