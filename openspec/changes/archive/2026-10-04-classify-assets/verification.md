@@ -1,8 +1,8 @@
 # Asset classification (M2) verification
 
-Status: local checks complete; hosted CI is the authority for critical browser
-acceptance and the probes that need the Compose network. Archive follows a green
-hosted run.
+Status: complete. Hosted CI run 37219674696 on `65e306f` passed every job, including
+critical release acceptance (`SHELL-UI` with AST-UI), every PostgreSQL 18 probe and the
+release image gate.
 
 Base: `main` at `692be87` (M1 shell merged). Node 22.22.0 (engine `>=22.21.1 <23`),
 pnpm 10.33.0, OpenSpec 1.2.0. One additive migration (`ClassifyAssets1790700000000`,
@@ -79,4 +79,9 @@ closed while saving; `SHELL-UI` asserts Portfolio's `aria-current` and the Manua
 
 ## Hosted CI
 
-Pending.
+- Runs 37218581412 (`2f4601d`) and 37219026351 (`540e5ee`) failed only in
+  `migrations.cjs` TRADE-MIG-001 (PostgreSQL 18 NOT NULL constraints, fixed above).
+- Run 37219380773 (`5e29c8b`) passed every job it finished; release acceptance was
+  cancelled by the next push.
+- Run 37219674696 (`65e306f`): all ten checks green, including `Release Images and
+  Security`.

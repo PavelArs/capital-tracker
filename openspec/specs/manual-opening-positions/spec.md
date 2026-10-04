@@ -6,8 +6,10 @@ known or unknown cost, durable revision history and data-preserving owner isolat
 ## Requirements
 ### Requirement: OPEN-001 Private manual accounts and instrument identity
 The system SHALL provide owner-scoped manual accounts and manual UUID instrument
-identities with duplicate labels allowed. Labels MUST NOT imply fiat, chain or provider
-identity. Empty accounts SHALL show revision 0 and no opening. All routes SHALL retain
+identities with duplicate labels allowed. Labels MUST NOT imply chain identity, and
+MUST NOT imply fiat or provider identity except where `asset-classification` (AST-1,
+AST-2) derives an asset's type and price source from its declared type and ticker.
+Empty accounts SHALL show revision 0 and no opening. All routes SHALL retain
 full-owner session/CSRF protection, parameterized owner-scoped access and no provider calls.
 
 #### Scenario: OPEN-001-A Exact manual opening survives a real restart
@@ -106,3 +108,4 @@ types; names SHALL render as text and sensitive position data SHALL NOT enter lo
 - **WHEN** actual migration 13 and replay run
 - **THEN** every prior row/schema remains identical, new accounting tables start empty, and replay changes nothing
 - **AND** all retained financial/authentication assertions and unsafe historical migration refusals remain enforced
+
