@@ -15,14 +15,14 @@ const commit = 'a'.repeat(40);
 
 test('critical profile selects every exact declared file and title once', () => {
   const selection = profile.select(manifest, listing);
-  assert.equal(selection.cases.length, 21);
+  assert.equal(selection.cases.length, 22);
   assert.equal(selection.cases.filter((item) => item.title.startsWith('CSV-006-B regression')).length, 1);
-  assert.equal(selection.matches.length, 21);
+  assert.equal(selection.matches.length, 22);
   const routed = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', ...selection.files,
     '--grep', selection.grep, '--list', '--reporter=json'], {
     cwd: resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, CI: 'true' },
   }));
-  assert.equal(profile.assertRouted(selection, routed).length, 21);
+  assert.equal(profile.assertRouted(selection, routed).length, 22);
 });
 
 test('critical profile refuses empty, duplicate, missing, and ambiguous selections', () => {
@@ -92,14 +92,14 @@ test('a failed cleanup or preservation clears stale evidence and never publishes
 
 test('ENG-007-C partition splits the manifest deterministically by index modulo shard count', () => {
   const parts = [0, 1, 2].map((index) => profile.partition(manifest, index, 3));
-  assert.deepEqual(parts.map((part) => part.length), [7, 7, 7]);
+  assert.deepEqual(parts.map((part) => part.length), [8, 7, 7]);
   parts.forEach((part, index) => {
     assert.deepEqual(part, manifest.filter((_item, position) => position % 3 === index));
     // Each subset is itself a valid exact selection against actual Playwright discovery.
-    assert.equal(profile.select(part, listing).cases.length, 7);
+    assert.equal(profile.select(part, listing).cases.length, part.length);
   });
   assert.deepEqual(profile.partition(manifest, 1, 3), parts[1]);
-  for (const [index, count] of [[3, 3], [-1, 3], [0, 0], [0, 22], [1.5, 3], ['0', 3]]) {
+  for (const [index, count] of [[3, 3], [-1, 3], [0, 0], [0, manifest.length + 1], [1.5, 3], ['0', 3]]) {
     assert.throws(() => profile.partition(manifest, index, count));
   }
 });
@@ -116,7 +116,7 @@ test('ENG-007-D merge combines shard results into the unchanged receipt and reje
   const merged = profile.merge(manifest, parts(), commit, '123');
   const whole = profile.receipt(profile.select(manifest, listing), run(manifest), commit, '123');
   assert.deepEqual(merged, whole);
-  assert.equal(profile.verify(merged, manifest, commit, '123').cases.length, 21);
+  assert.equal(profile.verify(merged, manifest, commit, '123').cases.length, 22);
   const reject = (value) => assert.throws(() => profile.merge(manifest, value, commit, '123'));
   reject([]);
   reject(parts().slice(1));

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
+import { latestMarketPrices } from './market-price.store';
 import { MARKET_ASSETS, QUOTE_CURRENCY } from './price-catalog';
 import { freshness, gatherQuotes, isDue, nextRunAt, type SourceOutcome } from './price-collection';
 import { CoinGeckoClient, KrakenClient, type PriceFailure, type Quote } from './price-providers';
@@ -28,16 +29,7 @@ interface SourceRow {
   errorCode: string | null;
   errorMessage: string | null;
 }
-interface LatestRow {
-  asset: string;
-  price: string;
-  observedAt: Date;
-  source: string;
-}
-
 const iso = (date: Date | null) => date?.toISOString() ?? null;
-// numeric(78,30) text without trailing zeros.
-const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
 
 @Injectable()
 export class PricesService {
@@ -215,13 +207,10 @@ export class PricesService {
   async read(now = new Date()) {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      // Valuation rule: the latest observation at or before the instant, from any source.
-      const latest: LatestRow[] = await manager.query(
-        `SELECT DISTINCT ON (asset) asset, price::text AS price, "observedAt", source
-         FROM price_observations
-         WHERE asset = ANY($1) AND "quoteCurrency" = $2 AND "observedAt" <= $3
-         ORDER BY asset, "observedAt" DESC, kind DESC, source`,
-        [MARKET_ASSETS.map(({ code }) => code), QUOTE_CURRENCY, now],
+      const latest = await latestMarketPrices(
+        manager,
+        MARKET_ASSETS.map(({ code }) => code),
+        now,
       );
       const sources: SourceRow[] = await manager.query(
         `SELECT * FROM sync_sources WHERE key LIKE 'prices:%' ORDER BY key`,
@@ -231,10 +220,10 @@ export class PricesService {
         quoteCurrency: QUOTE_CURRENCY,
         assets: MARKET_ASSETS.map(({ code }) => {
           const row = byAsset.get(code);
-          const observedAt = row ? row.observedAt.toISOString() : null;
+          const observedAt = row?.observedAt ?? null;
           return {
             asset: code,
-            price: row ? exact(row.price) : null,
+            price: row?.price ?? null,
             quoteCurrency: QUOTE_CURRENCY,
             observedAt,
             source: row?.source ?? null,

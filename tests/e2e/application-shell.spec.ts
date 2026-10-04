@@ -154,13 +154,17 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
     priceSource: 'manual',
   });
   await expect(addAsset).toHaveCount(0);
-  await expect(
-    portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell'),
-  ).toHaveText([depositName, 'Manual', 'RUB', 'Manual']);
+  // The asset cell carries the type and value currency; a manual asset never bought shows
+  // amount 0 and no price yet (portfolio-valuation PV-5).
+  const depositCells = portfolio
+    .getByRole('row', { name: new RegExp(`^${depositName}`) })
+    .getByRole('cell');
+  await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · RUB`);
+  await expect(depositCells.nth(1)).toHaveText('0');
+  await expect(depositCells.nth(2)).toHaveText('No priceManual');
   await page.reload();
-  await expect(
-    portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell'),
-  ).toHaveText([depositName, 'Manual', 'RUB', 'Manual']);
+  await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · RUB`);
+  await expect(depositCells.nth(2)).toHaveText('No priceManual');
   const chips = portfolio.getByRole('group', { name: 'Filter assets' });
   await chips.getByRole('button', { name: /^Manual/ }).click();
   await expect(chips.getByRole('button', { name: /^Manual/ })).toHaveAttribute(
@@ -171,8 +175,8 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   for (const other of ['Crypto', 'Cash']) {
     await expect(
       portfolio
-        .getByRole('row')
-        .filter({ has: page.getByRole('cell', { name: other, exact: true }) }),
+        .locator('.portfolio-asset__ticker')
+        .filter({ hasText: new RegExp(`^(.+ · )?${other} · `) }),
     ).toHaveCount(0);
   }
   await fitsViewport(page);
