@@ -34,4 +34,5 @@ area. Desktop 1440 and 1280 show the full sidebar.
 
 The earlier Russian shell is described in the archived change
 `2026-09-26-redesign-application-shell`. Verification for this change is in
-`openspec/changes/add-app-shell/verification.md` (moves to the archive after hosted CI).
+`openspec/changes/archive/2026-10-04-add-app-shell/verification.md` (hosted CI run
+37214714966 green).

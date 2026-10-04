@@ -10,7 +10,7 @@ Dashboard, Portfolio, Transactions, Wallets, Settings (`/preferences`); root ope
 theme System/Dark/Light (System default, `localStorage.theme`). Frontend only, no
 migration. Shell control names in E2E are now English (`Main navigation`,
 `Skip to content`, `Menu`, `Log out`); SHELL-UI keeps its critical title.
-Evidence in the change's `verification.md`. Next: M2 (classify-assets), M8, M10, M17/M18.
+Archived as `2026-10-04-add-app-shell` after hosted CI 37214714966 passed all jobs. Next: M2 (classify-assets), M8, M10, M17/M18.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 

@@ -14,4 +14,4 @@
 
 - [x] 3.1 Independently review the diff against the spec; resolve findings without weakening assertions.
 - [x] 3.2 Run frontend lint, build and unit tests, backend unchanged checks as needed, and strict OpenSpec locally; capture screenshots (dark and light, 1440 and 1280); record what ran where in `verification.md`.
-- [ ] 3.3 Archive with the installed CLI only after hosted critical acceptance is green, and confirm canonical spec sync.
+- [x] 3.3 Archive with the installed CLI only after hosted critical acceptance is green, and confirm canonical spec sync.

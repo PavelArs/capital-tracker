@@ -1,7 +1,8 @@
 # Application shell (M1) verification
 
-Status: local checks complete; hosted critical acceptance pending (Docker and the
-HTTPS acceptance stack cannot run in the cloud sandbox). Archive waits for it.
+Status: complete. Local RED/GREEN and independent review ran in a cloud sandbox;
+hosted CI run 37214714966 on `dc50e4f` passed every job, including critical release
+acceptance (21 cases, SHELL-UI and SWAP-UI among them) and the release image gate.
 
 Base: `main` at `f63be8c`. Node 22.22.0 (engine `>=22.21.1 <23`), pnpm 10.33.0,
 OpenSpec 1.2.0. No migration, schema, API, backend, dependency, lockfile, Dockerfile or
@@ -70,4 +71,7 @@ changed) and the release image gate: hosted CI only.
 
 ## Hosted CI
 
-Pending.
+Run 37214714966 on `dc50e4f6ec66dfe3fcc6ff9934a5ca45a64632da`: all 10 jobs succeeded
+(backend/frontend lint, build and tests, specification and engineering gates,
+production dependency audit, Release Images and Security with critical acceptance,
+CI Status). The change was archived afterwards with the installed CLI.
