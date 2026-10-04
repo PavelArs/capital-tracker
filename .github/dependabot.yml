@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # One pnpm workspace: the root lockfile covers backend/ and frontend/.
+  - package-ecosystem: npm
+    directories: [/, /backend, /frontend]
+    schedule:
+      interval: weekly
+      day: monday
+    # pnpm refuses releases younger than one day (minimumReleaseAge).
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: build(deps)
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 2
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ['*']
+
+  # Build-time base images only; server Compose pins stay manual.
+  - package-ecosystem: docker
+    directories: [/backend, /frontend]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 2
+    commit-message:
+      prefix: build(docker)
