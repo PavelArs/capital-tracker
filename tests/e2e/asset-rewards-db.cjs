@@ -35,13 +35,17 @@ function services(db) {
     series: make('valuation-history.service', 'ValuationHistoryService'),
     portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService') };
 }
-async function fingerprint(db, excluded = []) {
+// AST-2 adds three classification columns to accounting_instruments; upgrade comparisons
+// strip only those keys and check their defaults separately.
+async function fingerprint(db, excluded = [], withoutClassification = false) {
   const tables = await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
   const values = [];
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
-    values.push([tablename, await db.query(`SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`)]);
+    const row = withoutClassification && tablename === 'accounting_instruments'
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+    values.push([tablename, await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
 }
@@ -131,9 +135,11 @@ async function migrationPreservation() {
     await db.query(`INSERT INTO account_csv_imports(id,"ownerId","accountId",sha256,"originalBytes","byteLength",filename,state)
       VALUES($1,$2,$3,$4,$5,$6,'prior.csv','draft')`,
       [randomUUID(), owner, accountId, createHash('sha256').update(csvBytes).digest('hex'), csvBytes, csvBytes.length]);
-    const before = await fingerprint(db, ['migrations']);
-    assert.match(migrate(predecessor), /Migrations applied: 3/);
-    assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'migrations']), before);
+    const before = await fingerprint(db, ['migrations'], true);
+    assert.match(migrate(predecessor), /Migrations applied: 4/);
+    assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'migrations'], true), before);
+    assert.deepEqual(await db.query('SELECT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
+      [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
     for (const table of [...rewardTables, 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int n FROM ${table}`))[0].n, 0);
     const s = services(db);
     const { kind: _kind, ...body } = execution;
@@ -462,7 +468,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 23/);
+  assert.match(migrate(database), /Migrations applied: 24/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();
