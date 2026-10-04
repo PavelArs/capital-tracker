@@ -3,7 +3,7 @@ import {
   type ValuationPosition,
   historicalValuationApi,
 } from '@api/historical-valuation.api';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { HistoricalValuation } from './HistoricalValuation';
 
@@ -116,5 +116,41 @@ describe('UPNL-UI account valuation shows unrealized result', () => {
     expect(within(unpriced).getByText('Нужна точная цена')).toBeInTheDocument();
     const unknownCost = within(table).getByRole('row', { name: /Ether/ });
     expect(within(unknownCost).getByText('Неизвестна себестоимость')).toBeInTheDocument();
+  });
+});
+
+describe('VAL-UI journal loading race', () => {
+  function deferredSnapshot() {
+    let resolve: (value: HistoricalValuationSnapshot) => void = () => undefined;
+    vi.spyOn(historicalValuationApi, 'snapshot').mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    return (value: HistoricalValuationSnapshot) => resolve(value);
+  }
+
+  function requestBeforeJournalLoads() {
+    const view = render(<HistoricalValuation accountId={accountId} journalRevision={null} />);
+    fireEvent.change(screen.getByLabelText('Момент оценки (ISO)'), { target: { value: at } });
+    fireEvent.click(screen.getByRole('button', { name: 'Рассчитать стоимость' }));
+    return view;
+  }
+
+  it('shows a result requested before the journal loaded when it matches the loaded revision', async () => {
+    const respond = deferredSnapshot();
+    const { rerender } = requestBeforeJournalLoads();
+    rerender(<HistoricalValuation accountId={accountId} journalRevision={1} />);
+    respond(snapshot);
+    expect(await screen.findByRole('table', { name: 'Оценка позиций' })).toBeInTheDocument();
+  });
+
+  it('drops a result computed at another revision than the one that loaded', async () => {
+    const respond = deferredSnapshot();
+    const { rerender } = requestBeforeJournalLoads();
+    rerender(<HistoricalValuation accountId={accountId} journalRevision={2} />);
+    respond(snapshot);
+    await waitFor(() => expect(screen.queryByText('Расчёт стоимости…')).toBeNull());
+    expect(screen.queryByRole('table', { name: 'Оценка позиций' })).toBeNull();
   });
 });
