@@ -8,6 +8,14 @@ import {
 import { DataSource } from 'typeorm';
 import { lockAccountingOwner } from './accounting-lock';
 import {
+  type AssetClassification,
+  type AssetType,
+  type PriceSource,
+  type ValuationCurrency,
+  classifyAsset,
+  instrumentPayload,
+} from './asset-classification';
+import {
   parseAccount,
   parseHistoryQuery,
   parseInstrument,
@@ -24,7 +32,7 @@ interface AccountRow {
   createdAt: Date;
   canonicalPayload: string;
 }
-interface InstrumentRow {
+interface InstrumentRow extends AssetClassification {
   id: string;
   name: string;
   symbol: string | null;
@@ -43,6 +51,9 @@ export interface Instrument {
   name: string;
   symbol: string | null;
   namespace: 'manual';
+  assetType: AssetType;
+  valuationCurrency: ValuationCurrency;
+  priceSource: PriceSource;
   createdAt: string;
 }
 export interface Position {
@@ -72,6 +83,9 @@ const instrumentView = (row: InstrumentRow): Instrument => ({
   name: row.name,
   symbol: row.symbol,
   namespace: row.namespace,
+  assetType: row.assetType,
+  valuationCurrency: row.valuationCurrency,
+  priceSource: row.priceSource,
   createdAt: row.createdAt.toISOString(),
 });
 const conflict = () => new ConflictException('Accounting request conflicts with saved state');
@@ -118,12 +132,24 @@ export class AccountingService {
   ): Promise<{ created: boolean; value: Instrument }> {
     const owner = parseUuid(ownerId);
     const value = parseInstrument(input);
-    const payload = JSON.stringify({ name: value.name, symbol: value.symbol });
+    const asset = classifyAsset(value);
+    const payload = instrumentPayload(value, asset);
     const rows: InstrumentRow[] = await this.source.query(
       `INSERT INTO accounting_instruments
-      (id,"ownerId","requestId","canonicalPayload",name,symbol) VALUES ($1,$2,$3,$4,$5,$6)
+      (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
-      [randomUUID(), owner, value.requestId, payload, value.name, value.symbol],
+      [
+        randomUUID(),
+        owner,
+        value.requestId,
+        payload,
+        value.name,
+        value.symbol,
+        asset.assetType,
+        asset.valuationCurrency,
+        asset.priceSource,
+      ],
     );
     const row =
       rows[0] ??

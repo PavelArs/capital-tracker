@@ -78,6 +78,7 @@ const migrationNames = [
   'AddAssetRewards1790200000000',
   'AddAssetSwaps1790300000000',
   'AddWalletAddressImport1790400000000',
+  'ClassifyAssets1790700000000',
   'AddHourlyPrices1790800000000',
 ];
 
@@ -171,7 +172,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly twenty-four migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly twenty-five migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -567,8 +568,7 @@ async function seedPreviousFourteen(client, target) {
     for (const [index, { id: owner }] of owners.entries()) {
       const account = (await accounting.createAccount(owner, {
         requestId: randomUUID(), name: `Preserved USD account ${index}` })).value.id;
-      const instrument = (await accounting.createInstrument(owner, {
-        requestId: randomUUID(), name: `Preserved USD instrument ${index}`, symbol: 'SAME' })).value.id;
+      const instrument = await previousInstrument(source, owner, `Preserved USD instrument ${index}`, 'SAME');
       const origin = { requestId: randomUUID(), coverageFrom: '2025-01-01T00:00:00.000Z', assertEmpty: true };
       const originReceipt = await trade.initialize(owner, account, origin);
       const execution = (day, grossUsd, extra = {}) => ({ instrumentId: instrument, side: 'buy',
@@ -630,6 +630,24 @@ async function seedPreviousFourteen(client, target) {
 
 // The only changes allowed to a pre-existing journal schema are the reviewed
 // source link and replacement origin CHECK. No prior row or entire table is excluded.
+// Predecessor schemas have no classification columns (AST-2): write the original column list.
+async function previousInstrument(source, owner, name, symbol) {
+  const [{ id }] = await source.query(`INSERT INTO accounting_instruments
+    (id,"ownerId","requestId","canonicalPayload",name,symbol) VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+  [randomUUID(), owner, randomUUID(), JSON.stringify({ name, symbol }), name, symbol]);
+  return id;
+}
+// ClassifyAssets1790700000000 adds exactly these columns and checks to accounting_instruments.
+// PostgreSQL 18 also lists each new NOT NULL column as a named contype 'n' constraint.
+const classificationColumns = ['assetType', 'valuationCurrency', 'priceSource'];
+const classificationChecks = ['accounting_instruments_asset_classification', 'accounting_instruments_asset_values'];
+function classificationAddition(kind, row) {
+  if (kind === 'columns') return row.table_name === 'accounting_instruments' && classificationColumns.includes(row.column_name);
+  if (kind === 'constraints') return row.relname === 'accounting_instruments' && (classificationChecks.includes(row.conname)
+    || (row.contype === 'n' && classificationColumns.some((column) =>
+      row.conname === `accounting_instruments_${column}_not_null` && row.definition === `NOT NULL "${column}"`)));
+  return false;
+}
 function replacedOriginCheck(kind, row) {
   return kind === 'constraints' && row.relname === 'account_trade_journals'
     && row.conname === 'account_trade_journals_originKind_check';
@@ -661,7 +679,7 @@ async function seedPreviousFifteen(client, target) {
     assert.equal(owners.length,2);
     for (const [index,{id:owner}] of owners.entries()) {
       const account = (await accounting.createAccount(owner,{requestId:randomUUID(),name:`Preserved CSV account ${index}`})).value.id;
-      const instrument = (await accounting.createInstrument(owner,{requestId:randomUUID(),name:`Preserved CSV instrument ${index}`,symbol:'TOKEN'})).value.id;
+      const instrument = await previousInstrument(source, owner, `Preserved CSV instrument ${index}`, 'TOKEN');
       const origin = {requestId:randomUUID(),coverageFrom:'2025-01-01T00:00:00.000Z',assertEmpty:true};
       await trade.initialize(owner,account,origin);
       const settings = {format:{delimiter:',',decimalSeparator:'.',timestampMode:'offset'},
@@ -809,8 +827,7 @@ async function seedPreviousSixteen(client, target) {
     for (const [index, { id: owner }] of owners.entries()) {
       const account = (await accounting.createAccount(owner,
         { requestId: randomUUID(), name: `Preserved carry account ${index}` })).value.id;
-      const instrument = (await accounting.createInstrument(owner,
-        { requestId: randomUUID(), name: `Preserved carry instrument ${index}`, symbol: 'CARRY' })).value.id;
+      const instrument = await previousInstrument(source, owner, `Preserved carry instrument ${index}`, 'CARRY');
       const openingInput = { requestId: randomUUID(), expectedRevision: 0,
         asOf: '2025-01-01T00:00:00.000Z', positions: [
           { instrumentId: instrument, quantity: '2', costStatus: 'known', totalCostUsd: '300' },
@@ -955,6 +972,16 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(after.constraints.filter(row => carryInJournalAddition('constraints',row)).map(row => row.conname).sort(),
       ['account_trade_journals_opening_fk','account_trade_journals_opening_key','account_trade_journals_origin_check']);
     for (const table of addedTables) assert.deepEqual(after.rows[table], [], 'New tables must be empty');
+    if (previousCount >= 13) {
+      assert.deepEqual(after.columns.filter(row => classificationAddition('columns', row))
+        .map(row => [row.column_name, row.data_type, row.is_nullable, row.column_default]), [
+        ['assetType', 'text', 'NO', "'manual'::text"],
+        ['valuationCurrency', 'text', 'NO', "'USD'::text"],
+        ['priceSource', 'text', 'NO', "'manual'::text"],
+      ]);
+      assert.deepEqual(after.constraints.filter(row => classificationAddition('constraints', row) && row.contype === 'c')
+        .map(row => row.conname), classificationChecks);
+    }
     for (const [table, rows] of Object.entries(before.rows)) {
       if (table !== 'migrations') {
         if (table === 'account_trade_journals' && previousCount < 16) {
@@ -966,6 +993,16 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           }
           const ordered = values => values.sort((a,b) => a.accountId.localeCompare(b.accountId));
           assert.deepEqual(ordered(newRows), ordered(oldRows), 'Every old journal column/value remains identical');
+        } else if (table === 'accounting_instruments') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.deepEqual(classificationColumns.map((key) => row[key]), ['manual', 'USD', 'manual'],
+              'Prior instruments without a market ticker become manual, USD, manual');
+            for (const key of classificationColumns) delete row[key];
+          }
+          const ordered = (values) => values.sort((a, b) => a.id.localeCompare(b.id));
+          assert.deepEqual(ordered(parsed), ordered(rows.map(({ row }) => JSON.parse(row))),
+            'Every old instrument column/value remains identical');
         } else {
           assert.deepEqual(after.rows[table], rows, `Preserve every previous ${table} row, including all session classes`);
         }
@@ -978,13 +1015,14 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790800000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
     ]) {
       const prior = before[kind].filter(row => !(previousCount < 16 && replacedOriginCheck(kind,row)));
-      const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row)));
+      const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row))
+        && !(previousCount >= 13 && classificationAddition(kind, row)));
       assert.deepEqual(retained, prior, `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);
@@ -1016,7 +1054,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       await assert.rejects(() => new AddAssetSwaps1790300000000().down(), /recovery plan/);
       assert.deepEqual(await snapshot(client), after, 'Refused downgrade preserves all data and schema');
     }
-    console.log(`PASS ${scenario} populated${previousCount}-to24 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
+    console.log(`PASS ${scenario} populated${previousCount}-to25 preserves every prior row/schema/session/admission, authentic encrypted factors and used/unused recovery; empty additive tables and exact replay`);
   } finally {
     try { if (connected) await client.end(); }
     finally { rmSync(directory, { recursive: true, force: true }); }

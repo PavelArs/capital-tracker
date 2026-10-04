@@ -19,5 +19,5 @@
 ## 3. Verification
 
 - [x] 3.1 Focused suites, security tests, engineering gates, lint, builds and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI green on the PR.
-- [ ] 3.3 After merge: owner runs `update` on the server, sets the required reviewer, and the first approved `release` with `resume-activation` succeeds. Archive only after that evidence or record why not.
+- [x] 3.2 Hosted CI green on the PR. (PR run 37218242193; main run 37225929714.)
+- [x] 3.3 After merge: owner runs `update` on the server, sets the required reviewer, and the first approved `release` with `resume-activation` succeeds. Archive only after that evidence or record why not. (Done 2026-10-04 with `existing`: `resume-activation` was refused because the activation had already completed; see verification.)

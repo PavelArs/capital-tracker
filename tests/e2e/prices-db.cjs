@@ -97,7 +97,7 @@ async function migration(db) {
   assert.deepEqual(await observations(db), []);
   assert.deepEqual(await db.query('SELECT * FROM sync_sources'), []);
   await assert.rejects(() => new AddHourlyPrices1790800000000().down(), /recovery plan/);
-  console.log('PASS PRC-MIGRATION fresh 24 applies once, replay applies none, tables empty, down refuses');
+  console.log('PASS PRC-MIGRATION fresh 25 applies once, replay applies none, tables empty, down refuses');
 }
 
 async function disabled(db) {
@@ -335,7 +335,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 24/);
+    assert.match(migrate(name), /Migrations applied: 25/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const main = sourceFor(databases.main);

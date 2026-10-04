@@ -36,13 +36,17 @@ function services(db) {
     prices: make('manual-price.service', 'ManualPriceService'),
     portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService') };
 }
-async function fingerprint(db, excluded = []) {
+// AST-2 adds three classification columns to accounting_instruments; upgrade comparisons
+// strip only those keys and check their defaults separately.
+async function fingerprint(db, excluded = [], withoutClassification = false) {
   const tables = await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
   const rows = [];
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
-    rows.push([tablename, await db.query(`SELECT to_jsonb(t)::text AS row FROM "${tablename}" t ORDER BY row`)]);
+    const row = withoutClassification && tablename === 'accounting_instruments'
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+    rows.push([tablename, await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 }
@@ -115,8 +119,10 @@ async function populatedUpgrade() {
       VALUES('transfer-upgrade@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(prior);
     const a = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Preserved previous journal' })).value.id;
-    const instrument = (await s.accounting.createInstrument(owner,
-      { requestId: randomUUID(), name: 'Preserved previous instrument', symbol: 'SAME' })).value.id;
+    // The predecessor schema has no classification columns; write its original column list.
+    const [{ id: instrument }] = await prior.query(`INSERT INTO accounting_instruments
+      (id,"ownerId","requestId","canonicalPayload",name,symbol) VALUES($1,$2,$3,$4,'Preserved previous instrument','SAME') RETURNING id`,
+    [randomUUID(), owner, randomUUID(), JSON.stringify({ name: 'Preserved previous instrument', symbol: 'SAME' })]);
     const request = randomUUID(), buy = randomUUID(), initialization = randomUUID();
     const execution = trade(instrument, 0);
     await prior.transaction(async manager => {
@@ -135,10 +141,12 @@ async function populatedUpgrade() {
     });
     await prior.query(`INSERT INTO assets("userId",name,category,amount,"currencyId",date)
       SELECT $1,'Preserved unrelated fixture','savings',123.45,id,'2025-01-01' FROM currencies WHERE code='USD'`, [owner]);
-    const old = await fingerprint(prior, ['migrations']);
-    assert.match(migrate(previousDatabase), /Migrations applied: 5/);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 24);
-    assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources']), old);
+    const old = await fingerprint(prior, ['migrations'], true);
+    assert.match(migrate(previousDatabase), /Migrations applied: 6/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 25);
+    assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources'], true), old);
+    assert.deepEqual(await prior.query('SELECT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
+      [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
     for (const table of [...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']) assert.equal((await prior.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const after = await fingerprint(prior);
     assert.match(migrate(previousDatabase), /Migrations applied: 0/);
@@ -622,13 +630,13 @@ async function main() {
   assert.ok(existsSync('/app/backend/dist/accounting/owned-transfer.service.js'),
     'Missing module is prerequisite failure, not behavioral RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 24/);
+  assert.match(migrate(database), /Migrations applied: 25/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 24);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 25);
     for (const table of [...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const [owner, other, activeCap, versionCap] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),
