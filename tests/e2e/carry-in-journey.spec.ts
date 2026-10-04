@@ -78,7 +78,7 @@ test('CARRY-005-A: original accepted command survives lost delivery, real401, MF
     // Expire only this real synthetic session; backend must actually reject the retry.
     const tokenHash = hashToken(await cookie(page));
     query(
-      `UPDATE auth_sessions SET "lastSeenAt"=clock_timestamp()-interval '30 minutes' WHERE "tokenHash"='${tokenHash}'`,
+      `UPDATE auth_sessions SET "expiresAt"=clock_timestamp() WHERE "tokenHash"='${tokenHash}'`,
     );
     const denied = await browserPost(page, path, () => retryButton(page).click());
     expect(denied.status()).toBe(401);
