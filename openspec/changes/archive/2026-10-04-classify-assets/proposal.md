@@ -50,8 +50,8 @@ probes that count migrations.
 Data impact: three new columns on `accounting_instruments` with defaults
 manual/USD/manual, filled for existing rows by the rule above. No row is deleted, no
 existing column or value changes, and no trade, lot, price or P&L value changes.
-Owner data in production is classified when Pavel runs the migration during his
-next deploy.
+Owner data in production is classified when the migration runs during the next
+deploy.
 
 Non-goals: quantities, prices, values or P&L in the Portfolio list (M4); collecting
 market prices (M3); valuing a manual asset in EUR or RUB (M5, until then manual

@@ -12,7 +12,7 @@ reference come with the chain and price changes that need them.
 ## Goals / Non-Goals
 
 Goals: store and return a classification that M3 (prices), M4 (valuation) and M5
-(three currencies) can rely on; classify Pavel's existing instruments without
+(three currencies) can rely on; classify the owner's existing instruments without
 touching any accounting row; show the classification in the new Portfolio section.
 Non-goals: see proposal.
 
@@ -27,8 +27,8 @@ Non-goals: see proposal.
    manual assets); the server decides `market`, `manual` or `fixed`. That keeps one
    rule for the API, the legacy body and the migration, and stops a client from
    claiming a market source the app cannot serve. The known market tickers are BTC,
-   ETH, SOL (MVP wallets), USDT, USDC (MVP tokens, Q7) and ZEC, TRX, XLM (Pavel's
-   manual holdings, D4, all listed on Kraken). M3 may extend the list.
+   ETH, SOL (MVP wallets), USDT, USDC (MVP tokens, Q7) and ZEC, TRX, XLM (D4, all
+   listed on Kraken). M3 may extend the list.
 3. **Crypto is valued in USD; fiat in itself.** Providers quote crypto in USD and
    EUR/RUB come from Bank of Russia rates in M5, so `valuationCurrency` is the quote
    currency of the asset's own price, not the owner's accounting currency. Nothing in
@@ -54,9 +54,9 @@ Non-goals: see proposal.
 
 ## Risks / Trade-offs
 
-- A misclassified old instrument cannot be corrected in the UI yet. Pavel's
-  instruments are BTC, ETH, SOL, ZEC, TRX and XLM (from his CSVs), which all become
-  crypto/market. Reclassification can follow as its own change if needed.
+- A misclassified old instrument cannot be corrected in the UI yet. Instruments with
+  the known tickers become crypto/market and all others manual; reclassification can
+  follow as its own change if needed.
 - Manual assets valued in EUR or RUB cannot get a value yet: manual prices are USD
   only until M5. The Portfolio list shows no prices, so nothing is shown wrongly.
 - Strict-schema probes that compare every column of `accounting_instruments` before

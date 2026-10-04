@@ -107,7 +107,7 @@ async function main() {
     const eth = await legacyInstrument(db, owner, 'Ether', 'eth');
     const cash = await legacyInstrument(db, owner, 'Cash USD', 'USD');
     const untitled = await legacyInstrument(db, other, 'No ticker', null);
-    const trading = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Trust Wallet' })).value.id;
+    const trading = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Synthetic trading account' })).value.id;
     await s.trades.initialize(owner, trading, { requestId: randomUUID(), coverageFrom, assertEmpty: true });
     const trade = (instrumentId, revision, side, quantity, grossUsd) => s.trades.create(owner, trading, {
       requestId: randomUUID(), expectedJournalRevision: revision, instrumentId, side,
