@@ -48,7 +48,7 @@ const snapshot = {
 async function calculate(result: HistoricalValuationSnapshot) {
   vi.spyOn(historicalValuationApi, 'snapshot').mockResolvedValue(result);
   render(<HistoricalValuation accountId={accountId} journalRevision={1} />);
-  fireEvent.change(screen.getByLabelText('Момент оценки (ISO)'), { target: { value: at } });
+  fireEvent.change(screen.getByLabelText('Дата оценки'), { target: { value: at.slice(0, 10) } });
   fireEvent.click(screen.getByRole('button', { name: 'Рассчитать стоимость' }));
   return screen.findByRole('table', { name: 'Оценка позиций' });
 }

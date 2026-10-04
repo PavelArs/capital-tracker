@@ -7,6 +7,7 @@ import {
   ledger,
   ledgerState,
 } from './admission-fixtures';
+import { fillMoment } from './date-fields';
 import {
   accountRows,
   backendLogs,
@@ -78,7 +79,7 @@ async function fillTrade(page: Page, input: TradeInput): Promise<void> {
   await form
     .getByRole('combobox', { name: 'Тип сделки', exact: true })
     .selectOption({ label: input.side === 'buy' ? 'Покупка' : 'Продажа' });
-  await form.getByLabel('Дата и время сделки (UTC)', { exact: true }).fill(input.occurredAt);
+  await fillMoment(form, 'Дата сделки', 'Время сделки, UTC', input.occurredAt);
   await form
     .getByLabel('Порядок в этот момент', { exact: true })
     .fill(String(input.orderWithinTimestamp));
@@ -153,7 +154,7 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
   ).toBeVisible();
   const assertion = page.getByRole('checkbox', { name: 'Позиции были пустыми', exact: true });
   await expect(assertion).not.toBeChecked();
-  await page.getByLabel('Дата начала журнала (UTC)', { exact: true }).fill(coverageFrom);
+  await fillMoment(page, 'Дата начала журнала', 'Время начала журнала, UTC', coverageFrom);
   await expect(page.getByRole('button', { name: 'Открыть журнал', exact: true })).toBeDisabled();
   await assertion.check();
   const initialized = await browserPost(page, `/accounts/${account.id}/trade-journal`, () =>
@@ -183,7 +184,8 @@ test('TRADE-003-A / TRADE-006-A: real Russian forms show FIFO250/100/0.5, lock i
               for (const label of [
                 'Инструмент',
                 'Тип сделки',
-                'Дата и время сделки (UTC)',
+                'Дата сделки',
+                'Время сделки, UTC',
                 'Порядок в этот момент',
                 'Количество',
                 'Валовая сумма, USD',
@@ -1389,7 +1391,8 @@ test('TRADE-006-D regression: a pre-controller403 cannot resolve an earlier comm
     for (const label of [
       'Инструмент',
       'Тип сделки',
-      'Дата и время сделки (UTC)',
+      'Дата сделки',
+      'Время сделки, UTC',
       'Порядок в этот момент',
       'Количество',
       'Валовая сумма, USD',
@@ -1468,7 +1471,7 @@ test('TRADE-006-D regression: ambiguous initialization keeps the opening editor 
     'The known eligible predecessor state permits editing an opening',
   ).toBeEnabled();
   await page.getByRole('button', { name: 'Операции', exact: true }).click();
-  await page.getByLabel('Дата начала журнала (UTC)', { exact: true }).fill(coverageFrom);
+  await fillMoment(page, 'Дата начала журнала', 'Время начала журнала, UTC', coverageFrom);
   await page.getByRole('checkbox', { name: 'Позиции были пустыми', exact: true }).check();
   const path = `/api/accounting/accounts/${account.id}/trade-journal`;
   const pattern = `**${path}`;
@@ -1500,9 +1503,8 @@ test('TRADE-006-D regression: ambiguous initialization keeps the opening editor 
       saveOpening,
       'An unresolved initialization cannot restore stale opening eligibility',
     ).toBeDisabled();
-    await expect(
-      opening.getByLabel('Дата и время начала учета (UTC)', { exact: true }),
-    ).toBeDisabled();
+    await expect(opening.getByLabel('Дата начала учета', { exact: true })).toBeDisabled();
+    await expect(opening.getByLabel('Время начала учета, UTC', { exact: true })).toBeDisabled();
     await expect(
       opening
         .getByRole('group', { name: 'Позиция 1', exact: true })

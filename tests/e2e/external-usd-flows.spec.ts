@@ -337,10 +337,10 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     await page.keyboard.press('Space');
     await expect(rules).not.toHaveAttribute('open', '');
 
-    const coverage = page.getByLabel('Граница учёта потоков (ISO)', { exact: true });
+    const coverage = page.getByLabel('Начало учёта потоков', { exact: true });
     await expect(coverage).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
-    const periodStart = page.getByLabel('Начало периода (ISO, включительно)', { exact: true });
-    const periodEnd = page.getByLabel('Конец периода (ISO, не включительно)', { exact: true });
+    const periodStart = page.getByLabel('Начало периода (включительно)', { exact: true });
+    const periodEnd = page.getByLabel('Конец периода (не включительно)', { exact: true });
 
     const checkPresentation = async (phase: 'initialization' | 'recorded') => {
       const rowsBefore = fingerprint(['auth_sessions', 'auth_request_limits']);
@@ -447,7 +447,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     };
     await checkPresentation('initialization');
 
-    await coverage.fill(coverageFrom);
+    await coverage.fill(coverageFrom.slice(0, 10));
     const coverageReview = page.getByRole('checkbox', {
       name: 'Я проверил границу учёта',
       exact: true,
@@ -475,11 +475,11 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
 
     const direction = page.getByRole('combobox', { name: 'Направление', exact: true });
     await direction.selectOption({ label: 'Ввод' });
-    await page.getByLabel('Момент операции (ISO)', { exact: true }).fill('2025-01-02T00:00:00Z');
+    await page.getByLabel('Дата операции', { exact: true }).fill('2025-01-02');
     const amount = page.getByLabel('Сумма, USD', { exact: true });
-    await expect(
-      page.getByLabel('Момент операции (ISO)', { exact: true }),
-    ).toHaveAccessibleDescription(/UTC|часов.*пояс|смещени/i);
+    await expect(page.getByLabel('Дата операции', { exact: true })).toHaveAccessibleDescription(
+      /UTC|часов.*пояс|смещени/i,
+    );
     await expect(amount).toHaveAccessibleDescription(/положительн|больше нуля|>\s*0/i);
     await expect(amount).toHaveAccessibleDescription(/USD/);
     await amount.fill('1000');
@@ -503,8 +503,8 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
       amountUsd: '1000',
     });
 
-    await page.getByLabel('Начало периода (ISO, включительно)', { exact: true }).fill(dateFrom);
-    await page.getByLabel('Конец периода (ISO, не включительно)', { exact: true }).fill(dateTo);
+    await periodStart.fill(dateFrom.slice(0, 10));
+    await periodEnd.fill(dateTo.slice(0, 10));
     const periodPath = '/api/accounting/portfolio/cash-flows';
     const firstRead = page.waitForResponse(
       (response) =>
@@ -676,9 +676,7 @@ test('FLOW-004-A: real Russian owner explicitly initializes, records, corrects a
     try {
       await page.getByRole('button', { name: 'Показать потоки', exact: true }).click();
       await expect.poll(() => readFetched).toBe(true);
-      await page
-        .getByLabel('Конец периода (ISO, не включительно)', { exact: true })
-        .fill('2025-01-06T00:00:00.000Z');
+      await periodEnd.fill('2025-01-06');
       const delivered = page.waitForResponse(
         (response) => new URL(response.url()).pathname === periodPath,
       );

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { type Locator, expect } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
+import { expectMoment, fillMoment } from './date-fields';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
 import { coverageFrom, tradeApi, tradeInput } from './usd-trades-fixtures';
@@ -436,8 +437,8 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   // Retained valuation heading after explicitly opening the supplementary panel.
   await expect(heading).toBeVisible();
   const region = page.getByRole('region', { name: 'Оценка выбранных счетов', exact: true });
-  const at = page.getByLabel('Момент оценки (UTC)', { exact: true });
-  await at.fill(valuationAt);
+  const at = page.getByLabel('Дата оценки', { exact: true });
+  await at.fill(valuationAt.slice(0, 10));
 
   const halfChoice = page.getByRole('checkbox', {
     name: `Включить счет ${data.accounts.half.name}`,
@@ -488,7 +489,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
   expect(await mountedValuation?.evaluate((node) => node.isConnected)).toBe(true);
   await expect(halfChoice).toBeChecked();
   await expect(doubleChoice).toBeChecked();
-  await expect(at).toHaveValue(valuationAt);
+  await expectMoment(page, 'Дата оценки', 'Время оценки, UTC', valuationAt);
   await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
   expect(writes).toHaveLength(1);
   await mountedValuation?.dispose();
@@ -534,7 +535,7 @@ test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late
     );
     await region.getByRole('button', { name: 'Рассчитать оценку', exact: true }).click();
     await expect.poll(() => held).toBe(true);
-    await at.fill(beforeCoverageAt);
+    await fillMoment(page, 'Дата оценки', 'Время оценки, UTC', beforeCoverageAt);
     await expect(
       region.getByText('Неполная оценка выбранных счетов', { exact: true }),
     ).toBeHidden();

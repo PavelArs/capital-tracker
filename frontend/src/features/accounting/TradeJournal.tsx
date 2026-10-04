@@ -8,8 +8,17 @@ import {
   type VoidCommand,
   tradesApi,
 } from '@api/trades.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { AccountAnalytics } from './AccountAnalytics';
 import { AccountOperations, type OperationWorkflow } from './AccountOperations';
 import { type AccountSection, AccountWorkspace } from './AccountWorkspace';
@@ -78,7 +87,8 @@ export function TradeJournal({
   const [carryInBlocked, setCarryInBlocked] = useState(false);
   const carryInLock = useRef(false);
   const knownJournal = useRef<boolean | null>(null);
-  const [coverage, setCoverage] = useState(() => new Date().toISOString());
+  const journalId = useId();
+  const [coverage, setCoverage] = useState(utcDay);
   const [assertEmpty, setAssertEmpty] = useState(false);
   const [draft, setDraft] = useState<TradeDraft>(emptyTradeDraft);
   const [target, setTarget] = useState<TradeVersion | null>(null);
@@ -508,20 +518,25 @@ export function TradeJournal({
                 <form onSubmit={initialize} className="manual-form">
                   <fieldset disabled={disabled}>
                     <legend>Явное пустое начало</legend>
-                    <label className="manual-field">
-                      Дата начала журнала (UTC)
-                      <input
-                        type="text"
+                    <div className="manual-field">
+                      <DateTimeField
+                        label="Дата начала журнала"
+                        timeLabel="Время начала журнала, UTC"
+                        describedBy={`${journalId}-coverage-help`}
                         value={coverage}
                         disabled={ambiguous}
                         required
-                        onChange={(event) => {
+                        onChange={(value) => {
                           if (retry.current?.ambiguous) return;
                           retry.current = null;
-                          setCoverage(event.target.value);
+                          setCoverage(value);
                         }}
                       />
-                    </label>
+                      <small id={`${journalId}-coverage-help`}>
+                        Время можно не указывать: тогда журнал начинается в 00:00 UTC. Дата должна
+                        быть не позже первой сделки.
+                      </small>
+                    </div>
                     <label className="manual-review-check">
                       <input
                         type="checkbox"

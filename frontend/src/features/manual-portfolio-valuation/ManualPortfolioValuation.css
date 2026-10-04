@@ -43,6 +43,15 @@
   gap: 0.4rem;
 }
 
+.manual-portfolio__form .date-time-field {
+  flex: 1 1 20rem;
+}
+
+.manual-portfolio__form .date-time-field + small {
+  flex-basis: 100%;
+  color: var(--text-secondary);
+}
+
 .manual-portfolio__form input {
   width: 100%;
   min-width: 0;

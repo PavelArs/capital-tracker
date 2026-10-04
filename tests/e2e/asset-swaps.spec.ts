@@ -291,9 +291,12 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   await expect(form.getByLabel('Источник комиссии', { exact: true })).toHaveAccessibleDescription(
     /остат[\s\S]*FIFO[\s\S]*получаем|получаем[\s\S]*остат[\s\S]*FIFO/iu,
   );
-  await expect(
-    form.getByLabel('Момент обмена (ISO с часовым поясом)', { exact: true }),
-  ).toHaveAccessibleDescription(/ISO[\s\S]*часов[\s\S]*пояс/iu);
+  await expect(form.getByLabel('Дата обмена', { exact: true })).toHaveAccessibleDescription(
+    /00:00 UTC/u,
+  );
+  await expect(form.getByLabel('Время обмена, UTC', { exact: true })).toHaveAccessibleDescription(
+    /UTC/u,
+  );
   await expect(form.getByLabel('Порядок в моменте', { exact: true })).toHaveAccessibleDescription(
     /поряд[\s\S]*(?:одинаков|одном)|(?:одинаков|одном)[\s\S]*поряд/iu,
   );
@@ -302,7 +305,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
   await form.getByLabel('Получаемый актив', { exact: true }).selectOption(incoming.id);
   await form.getByLabel('Отдаваемое количество', { exact: true }).fill('1');
   await form.getByLabel('Получаемое количество до комиссии', { exact: true }).fill('3');
-  await form.getByLabel('Момент обмена (ISO с часовым поясом)', { exact: true }).fill(at);
+  await form.getByLabel('Дата обмена', { exact: true }).fill(at.slice(0, 10));
   await form.getByLabel('Порядок в моменте', { exact: true }).fill('0');
   await form
     .getByLabel('Оценка обмена в USD', { exact: true })

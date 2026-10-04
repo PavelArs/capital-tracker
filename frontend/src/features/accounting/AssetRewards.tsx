@@ -8,6 +8,7 @@ import {
   assetRewardsApi,
 } from '@api/asset-rewards.api';
 import { tradesApi } from '@api/trades.api';
+import { utcDay } from '@components/common/DateTimeField';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import {
@@ -98,7 +99,7 @@ function draftFromCommand(command: Command, previous: RewardDraft): RewardDraft 
 const emptyDraft = (): RewardDraft => ({
   instrumentId: '',
   category: 'unclassified',
-  occurredAt: new Date().toISOString(),
+  occurredAt: utcDay(),
   orderWithinTimestamp: '0',
   quantity: '',
   basisKnown: false,

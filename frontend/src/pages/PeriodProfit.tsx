@@ -5,6 +5,7 @@ import {
   type XirrUnavailableReason,
   xirrPreviewApi,
 } from '@api/xirr-preview.api';
+import { DateTimeField } from '@components/common/DateTimeField';
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
@@ -156,33 +157,31 @@ function PeriodProfitOwner() {
         <form className="profit-form" onSubmit={(event) => void submit(event)}>
           <div className="profit-fields">
             <div className="profit-field">
-              <label htmlFor="profit-from">Начало периода (UTC)</label>
-              <input
-                id="profit-from"
+              <DateTimeField
+                label="Начало периода"
+                timeLabel="Время начала периода, UTC"
                 value={from}
-                onChange={(event) => edit(setFrom, event.target.value)}
-                placeholder="2025-01-01T00:00:00.000Z"
-                aria-describedby="profit-from-help"
+                onChange={(value) => edit(setFrom, value)}
+                describedBy="profit-from-help"
                 required
               />
               <small id="profit-from-help">
-                Укажите ISO-время с часовым поясом. Оценка в начале берётся непосредственно перед
-                всеми потоками в этот момент; потоки точно в начале включаются.
+                Без времени — 00:00 UTC. Оценка в начале берётся непосредственно перед всеми
+                потоками в этот момент; потоки точно в начале включаются.
               </small>
             </div>
             <div className="profit-field">
-              <label htmlFor="profit-to">Конец периода (UTC)</label>
-              <input
-                id="profit-to"
+              <DateTimeField
+                label="Конец периода"
+                timeLabel="Время конца периода, UTC"
                 value={to}
-                onChange={(event) => edit(setTo, event.target.value)}
-                placeholder="2026-01-01T00:00:00.000Z"
-                aria-describedby="profit-to-help"
+                onChange={(value) => edit(setTo, value)}
+                describedBy="profit-to-help"
                 required
               />
               <small id="profit-to-help">
-                Конец не включается. Оценка в конце берётся непосредственно перед потоком точно в
-                этот момент.
+                Без времени — 00:00 UTC. Конец не включается. Оценка в конце берётся непосредственно
+                перед потоком точно в этот момент.
               </small>
             </div>
             <div className="profit-field">

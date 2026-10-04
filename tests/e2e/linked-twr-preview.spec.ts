@@ -324,8 +324,8 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
     });
     await expect(loadPlan).toBeVisible();
 
-    const fromInput = page.getByLabel('Начало периода (UTC)', { exact: true });
-    const toInput = page.getByLabel('Конец периода (UTC)', { exact: true });
+    const fromInput = page.getByLabel('Начало периода', { exact: true });
+    const toInput = page.getByLabel('Конец периода', { exact: true });
     const openingInput = page.getByLabel('Оценка в начале, USD', { exact: true });
     const closingInput = page.getByLabel('Оценка в конце, USD', { exact: true });
     const review = section.getByRole('checkbox', {
@@ -341,8 +341,8 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
       .getByText('TWR, % за период', { exact: true })
       .locator('xpath=following-sibling::dd[1]');
 
-    await fromInput.fill(from);
-    await toInput.fill(to);
+    await fromInput.fill(from.slice(0, 10));
+    await toInput.fill(to.slice(0, 10));
     await openingInput.fill('1000');
     await closingInput.fill('2310');
 
@@ -403,7 +403,7 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
         await linkedSummary.click();
       });
       await expect(linkedDisclosure).not.toHaveAttribute('open', '');
-      await toInput.fill('2025-01-04T00:00:00.000Z');
+      await toInput.fill('2025-01-04');
       await expect(valuation).toHaveCount(0);
       planRelease();
       expect((await latePlanResponse).status()).toBe(200);
@@ -420,7 +420,7 @@ test('LTWR-UI: linked boundary review resets on edits and refuses stale plans an
       await page.unroute(`**${boundaryEndpoint}**`);
     }
 
-    await toInput.fill(to);
+    await toInput.fill(to.slice(0, 10));
     const refreshedPlanResponse = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === boundaryEndpoint &&

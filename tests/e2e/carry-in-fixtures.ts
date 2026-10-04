@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { type Page, expect } from '@playwright/test';
+import { fillMoment } from './date-fields';
 import { openingInput, rows, uuid } from './manual-opening-fixtures';
 import { fingerprint } from './mfa-fixtures';
 import { browserPost, tradeApi, tradeTables } from './usd-trades-fixtures';
@@ -146,7 +147,7 @@ export async function fillLot(page: Page, index: number, lot: LotInput) {
   await expect(instrument).toBeEnabled();
   await expect(instrument.locator(`option[value="${lot.instrumentId}"]`)).toHaveCount(1);
   await instrument.selectOption(lot.instrumentId);
-  await group.getByLabel('Дата и время приобретения (UTC)', { exact: true }).fill(lot.acquiredAt);
+  await fillMoment(group, 'Дата приобретения', 'Время приобретения, UTC', lot.acquiredAt);
   await group
     .getByLabel('Порядок в этот момент', { exact: true })
     .fill(String(lot.orderWithinTimestamp));

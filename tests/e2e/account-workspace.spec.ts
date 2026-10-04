@@ -73,16 +73,14 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await page.goto(`/manual-accounts/${account.id}`);
   const form = page.getByRole('group', { name: 'Сделка в USD', exact: true });
   await expect(form).toBeVisible();
-  const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', { exact: true });
+  const instant = page.getByLabel('Дата среза', { exact: true });
   // Genuine predecessor RED: analysis and setup are always visible on the old page.
   await expect(instant).toBeHidden();
   const instrumentName = page.getByLabel('Название инструмента', { exact: true });
   await expect(instrumentName).toBeHidden();
   const quantity = form.getByLabel('Количество', { exact: true });
   await form.getByRole('combobox', { name: 'Инструмент', exact: true }).selectOption(instrument.id);
-  await form
-    .getByLabel('Дата и время сделки (UTC)', { exact: true })
-    .fill('2025-01-03T00:00:00.000Z');
+  await form.getByLabel('Дата сделки', { exact: true }).fill('2025-01-03');
   await form.getByLabel('Количество', { exact: true }).fill('0.123456789012345678');
   await form.getByLabel('Валовая сумма, USD', { exact: true }).fill('12.34');
   await form.getByLabel('Комиссия, USD', { exact: true }).fill('0.01');
@@ -114,11 +112,11 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   const controlledPanel = await analysisChoice.getAttribute('aria-controls');
   expect(controlledPanel).toBeTruthy();
   await expect(page.locator(`[id="${controlledPanel}"]`)).toBeVisible();
-  const valuationInstant = page.getByLabel('Момент оценки (ISO)', { exact: true });
+  const valuationInstant = page.getByLabel('Дата оценки', { exact: true });
   await analysisChoice.focus();
   await page.keyboard.press('Tab');
   await expect(valuationInstant).toBeFocused();
-  await valuationInstant.fill('2025-01-04T00:00:00.000Z');
+  await valuationInstant.fill('2025-01-04');
   const beforeTaskNavigation = fingerprint(['auth_sessions', 'auth_request_limits']);
   await analysisChoice.focus();
   await typeAnalysisChoice(page, 'И');
@@ -126,10 +124,10 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await expect(analysisChoice).toBeFocused();
   await expect(owners[1]).toBeVisible();
   await expect(owners[0]).toBeHidden();
-  const historyFrom = page.getByLabel('Начало периода (ISO)', { exact: true });
-  const historyTo = page.getByLabel('Конец периода (ISO)', { exact: true });
-  await historyFrom.fill('2025-01-01T00:00:00.000Z');
-  await historyTo.fill('2025-01-04T00:00:00.000Z');
+  const historyFrom = page.getByLabel('Начало периода', { exact: true });
+  const historyTo = page.getByLabel('Конец периода', { exact: true });
+  await historyFrom.fill('2025-01-01');
+  await historyTo.fill('2025-01-04');
   await analysisChoice.focus();
   await typeAnalysisChoice(page, 'У');
   await expect(analysisChoice).toHaveValue('accounting');
@@ -147,7 +145,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(beforeTaskNavigation);
   expect(providerRequests()).toEqual(providers);
   await expect(form).toBeHidden();
-  await instant.fill('2025-01-02T00:00:00Z');
+  await instant.fill('2025-01-02');
   await page.getByRole('button', { name: 'Показать учётный срез', exact: true }).click();
   const positions = page.getByRole('table', { name: 'Позиции на выбранный момент', exact: true });
   await expect(positions.getByRole('cell', { name: '1', exact: true })).toBeVisible();
@@ -159,10 +157,10 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
     await selectAnalysis(page, task);
     await expect(analysisChoice).toHaveValue(task);
   }
-  await expect(valuationInstant).toHaveValue('2025-01-04T00:00:00.000Z');
-  await expect(historyFrom).toHaveValue('2025-01-01T00:00:00.000Z');
-  await expect(historyTo).toHaveValue('2025-01-04T00:00:00.000Z');
-  await expect(instant).toHaveValue('2025-01-02T00:00:00Z');
+  await expect(valuationInstant).toHaveValue('2025-01-04');
+  await expect(historyFrom).toHaveValue('2025-01-01');
+  await expect(historyTo).toHaveValue('2025-01-04');
+  await expect(instant).toHaveValue('2025-01-02');
   await expect(positions.getByRole('cell', { name: '100', exact: true })).toBeVisible();
   expect(await positions.evaluate((node, original) => node === original, originalResult)).toBe(
     true,
@@ -211,7 +209,7 @@ test('WORKSPACE-UI: sections retain exact drafts, historical results and origina
   await selectSection(page, 'Аналитика');
   await expect(analysisChoice).toHaveValue('accounting');
   expect(analyticsRequests).toEqual(taskReads);
-  await expect(instant).toHaveValue('2025-01-02T00:00:00Z');
+  await expect(instant).toHaveValue('2025-01-02');
   await expect(positions.getByRole('cell', { name: '100', exact: true })).toBeVisible();
   await selectSection(page, 'Операции');
   await expect(quantity).toHaveValue('0.123456789012345678');

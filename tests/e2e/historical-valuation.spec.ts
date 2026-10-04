@@ -308,8 +308,8 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       page.getByRole('heading', { name: 'Оценка счёта на дату', exact: true }),
     ).toBeVisible();
     const section = page.getByRole('region', { name: 'Оценка счёта на дату', exact: true });
-    const instant = page.getByLabel('Момент оценки (ISO)', { exact: true });
-    await instant.fill(at);
+    const instant = page.getByLabel('Дата оценки', { exact: true });
+    await instant.fill(at.slice(0, 10));
     const firstRead = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === path && response.request().method() === 'GET',
@@ -428,7 +428,7 @@ test('VAL-UI: account valuation refreshes exact totals, preserves the trade draf
       );
       await page.getByRole('button', { name: 'Обновить оценку', exact: true }).click();
       await expect.poll(() => held).toBe(true);
-      await instant.fill('2025-01-04T00:00:00.000Z');
+      await instant.fill('2025-01-04');
       release();
       const late = await delayed;
       expect(late.status()).toBe(200);

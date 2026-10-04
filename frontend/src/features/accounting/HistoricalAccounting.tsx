@@ -3,6 +3,7 @@ import {
   type HistoricalSnapshot,
   historicalAccountingApi,
 } from '@api/historical-accounting.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { AssetSwapTotals } from './AssetSwapTotals';
@@ -23,7 +24,7 @@ export function HistoricalAccounting({
   journalRevision: number | null;
 }) {
   const id = useId();
-  const [instant, setInstant] = useState('');
+  const [instant, setInstant] = useState(utcDay);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,19 +126,16 @@ export function HistoricalAccounting({
       </p>
       <form onSubmit={submit} className="historical-accounting__form account-analytics__form">
         <div className="account-analytics__field">
-          <label>
-            Момент времени (ISO, с часовым поясом)
-            <input
-              aria-describedby={`${id}-field-0-hint`}
-              type="text"
-              value={instant}
-              onChange={(event) => edit(event.target.value)}
-              placeholder="2025-01-02T00:00:00Z"
-              required
-            />
-          </label>
+          <DateTimeField
+            label="Дата среза"
+            timeLabel="Время среза, UTC"
+            describedBy={`${id}-field-0-hint`}
+            value={instant}
+            onChange={edit}
+            required
+          />
           <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
-            Укажите дату и время с часовым поясом. Срез включает операции до выбранного момента UTC
+            Без времени срез берётся на 00:00 UTC. Срез включает операции до выбранного момента UTC
             включительно.
           </small>
         </div>

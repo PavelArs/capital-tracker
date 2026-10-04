@@ -376,16 +376,19 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
   await expect(
     form.getByLabel('Категория вознаграждения', { exact: true }),
   ).toHaveAccessibleDescription(/не уточн[\s\S]*провер/iu);
+  await expect(form.getByLabel('Дата получения', { exact: true })).toHaveAccessibleDescription(
+    /00:00 UTC/u,
+  );
   await expect(
-    form.getByLabel('Момент получения (ISO с часовым поясом)', { exact: true }),
-  ).toHaveAccessibleDescription(/ISO[\s\S]*часов[\s\S]*пояс/iu);
+    form.getByLabel('Время получения, UTC', { exact: true }),
+  ).toHaveAccessibleDescription(/UTC/u);
   await expect(form.getByLabel('Порядок в моменте', { exact: true })).toHaveAccessibleDescription(
     /поряд[\s\S]*(?:одинаков|одном)|(?:одинаков|одном)[\s\S]*поряд/iu,
   );
 
   await form.getByLabel('Актив вознаграждения', { exact: true }).selectOption(instrument.id);
   await form.getByLabel('Категория вознаграждения', { exact: true }).selectOption('unclassified');
-  await form.getByLabel('Момент получения (ISO с часовым поясом)', { exact: true }).fill(at);
+  await form.getByLabel('Дата получения', { exact: true }).fill(at.slice(0, 10));
   await form.getByLabel('Порядок в моменте', { exact: true }).fill('0');
   await form.getByLabel('Полученное количество', { exact: true }).fill('2');
   await form

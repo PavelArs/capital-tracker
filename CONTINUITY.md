@@ -1,5 +1,14 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — simple date entry (2026-10-04)
+
+Owner said the UI is over-engineered: every date field demanded an ISO timestamp. Change
+`simplify-date-entry` (capability `simple-date-entry`, DATE-1/2) replaces all 19
+owner-facing instant inputs with a shared calendar date + optional UTC time field
+(`frontend/src/components/common/DateTimeField`); date only = 00:00 UTC, analytics
+default to today. Frontend only. Next: a plain-language manual trade form (same thread),
+purchase currency (separate thread).
+
 ## Current product slice — unrealized profit/loss (2026-10-03)
 
 Owner goal restated 2026-10-03: track crypto per wallet from purchase, realized and

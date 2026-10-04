@@ -5,6 +5,7 @@ import {
   type Position,
   accountingApi,
 } from '@api/accounting.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import type { AccountSection } from '@features/accounting/AccountWorkspace';
 import { TradeJournal } from '@features/accounting/TradeJournal';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
@@ -37,10 +38,6 @@ function asDraft(position: Position): PositionDraft {
     costStatus: position.costStatus,
     totalCostUsd: position.totalCostUsd ?? '',
   };
-}
-
-function defaultAsOf(): string {
-  return new Date().toISOString();
 }
 
 function InstrumentLabel({ position }: { position: Position }) {
@@ -94,7 +91,7 @@ export default function ManualAccountDetail() {
   const [history, setHistory] = useState<Opening[]>([]);
   const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [draft, setDraft] = useState<PositionDraft[]>([]);
-  const [asOf, setAsOf] = useState(defaultAsOf);
+  const [asOf, setAsOf] = useState(utcDay);
   const [instrumentName, setInstrumentName] = useState('');
   const [instrumentSymbol, setInstrumentSymbol] = useState('');
   const [journalGuard, setJournalGuard] = useState<{
@@ -183,7 +180,7 @@ export default function ManualAccountDetail() {
                 },
               ],
             );
-            setAsOf(value.currentOpening?.asOf ?? defaultAsOf());
+            setAsOf(value.currentOpening?.asOf ?? utcDay());
           }
         }
       } catch (loadError) {
@@ -387,7 +384,7 @@ export default function ManualAccountDetail() {
       setConflictReviewed(false);
       setAccount(latestAccount);
       setDraft(latestAccount.currentOpening?.positions.map(asDraft) ?? []);
-      setAsOf(latestAccount.currentOpening?.asOf ?? defaultAsOf());
+      setAsOf(latestAccount.currentOpening?.asOf ?? utcDay());
       await loadHistory(undefined, false, true);
       if (!isCurrentRoute()) return;
       setNotice(
@@ -529,24 +526,20 @@ export default function ManualAccountDetail() {
                         style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}
                       >
                         <div className="manual-field manual-date-field">
-                          <label htmlFor="manual-as-of">Дата и время начала учета (UTC)</label>
-                          <input
-                            id="manual-as-of"
-                            name="asOf"
-                            type="text"
-                            inputMode="text"
-                            autoComplete="off"
+                          <DateTimeField
+                            label="Дата начала учета"
+                            timeLabel="Время начала учета, UTC"
+                            describedBy="manual-as-of-help"
                             disabled={saving}
-                            placeholder="2026-09-22T12:30:00.000Z"
                             value={asOf}
-                            onChange={(event) => {
-                              setAsOf(event.target.value);
+                            onChange={(value) => {
+                              setAsOf(value);
                               setError(null);
                             }}
                           />
-                          <small>
-                            Укажите точное время с часовым поясом UTC, например
-                            2026-09-22T12:30:00.000Z.
+                          <small id="manual-as-of-help">
+                            Время можно не указывать: тогда позиции фиксируются на 00:00 UTC
+                            выбранного дня.
                           </small>
                         </div>
 

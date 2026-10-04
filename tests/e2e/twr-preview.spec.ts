@@ -229,8 +229,8 @@ test('TWR-UI: reviewed return, missing flow valuation and delayed result invalid
       page.getByRole('heading', { name: 'Прибыль за период', exact: true }),
     ).toBeVisible();
 
-    const fromInput = page.getByLabel('Начало периода (UTC)', { exact: true });
-    const toInput = page.getByLabel('Конец периода (UTC)', { exact: true });
+    const fromInput = page.getByLabel('Начало периода', { exact: true });
+    const toInput = page.getByLabel('Конец периода', { exact: true });
     const openingInput = page.getByLabel('Оценка в начале, USD', { exact: true });
     const closingInput = page.getByLabel('Оценка в конце, USD', { exact: true });
     const review = page.getByRole('checkbox', {
@@ -245,8 +245,8 @@ test('TWR-UI: reviewed return, missing flow valuation and delayed result invalid
         .getByText('TWR, % за период', { exact: true })
         .locator('xpath=following-sibling::dd[1]');
 
-    await fromInput.fill(from);
-    await toInput.fill(to);
+    await fromInput.fill(from.slice(0, 10));
+    await toInput.fill(to.slice(0, 10));
     await openingInput.fill('0');
     await closingInput.fill('1100');
     await review.check();

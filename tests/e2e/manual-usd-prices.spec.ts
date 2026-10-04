@@ -287,7 +287,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   const load = page.getByRole('button', { name: 'Загрузить цены', exact: true });
   const save = page.getByRole('button', { name: 'Сохранить цену', exact: true });
 
-  const dateInput = page.getByLabel('Дата цены (UTC)', { exact: true });
+  const dateInput = page.getByLabel('Дата цены', { exact: true });
   const editPrice = page.getByLabel('Цена за единицу, USD', { exact: true });
   const editor = page.getByRole('region', { name: 'Редактирование цены', exact: true });
   const currentRegion = page.getByRole('region', { name: 'Сохранённые цены', exact: true });
@@ -462,7 +462,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   expect(initialRead.status()).toBe(200);
   await expect(save).toBeDisabled();
 
-  await page.getByLabel('Дата цены (UTC)', { exact: true }).fill(pointAt);
+  await page.getByLabel('Дата цены', { exact: true }).fill(pointAt.slice(0, 10));
   await page.getByLabel('Цена за единицу, USD', { exact: true }).fill('100');
   const review = page.getByLabel('Я проверил инструмент, дату и цену', { exact: true });
   await review.check();
@@ -551,7 +551,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
     await expect(voidAction).toBeFocused();
     await expect(review).not.toBeChecked();
     await expect(editPrice).toHaveValue('115');
-    await expect(dateInput).toHaveValue(pointAt);
+    await expect(dateInput).toHaveValue(pointAt.slice(0, 10));
   }, true);
   expect(priceRows(firstInstrument.id, secondInstrument.id)).toBe(stageRows);
 
@@ -685,7 +685,7 @@ test('PRICE-UI / PRICE-RECOVERY: actual Russian editor retries the committed com
   await review.check();
   await page.getByRole('button', { name: 'Подтвердить исключение', exact: true }).click();
   await expect(page.getByText('Сохранённых цен нет.', { exact: true })).toBeVisible();
-  await page.getByLabel('Дата цены (UTC)', { exact: true }).fill(pointAt);
+  await page.getByLabel('Дата цены', { exact: true }).fill(pointAt.slice(0, 10));
   const dateHistoryAction = page.getByRole('button', {
     name: 'История указанной даты',
     exact: true,

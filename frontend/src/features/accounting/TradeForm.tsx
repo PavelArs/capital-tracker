@@ -1,5 +1,6 @@
 import type { Instrument } from '@api/accounting.api';
 import type { TradeExecution, TradeVersion } from '@api/trades.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { useId } from 'react';
 import './OperationForm.css';
 import './TradeForm.css';
@@ -12,7 +13,7 @@ export function emptyTradeDraft(): TradeDraft {
   return {
     instrumentId: '',
     side: 'buy',
-    occurredAt: new Date().toISOString(),
+    occurredAt: utcDay(),
     orderWithinTimestamp: '0',
     quantity: '',
     grossUsd: '',
@@ -137,18 +138,17 @@ export function TradeForm({
           <h3>Время исполнения</h3>
           <div className="operation-form__fields">
             <div className="operation-form__field">
-              <label>
-                Дата и время сделки (UTC)
-                <input
-                  aria-describedby={`${hintId}-time`}
-                  disabled={lockDraft}
-                  value={draft.occurredAt}
-                  onChange={(event) => update({ occurredAt: event.target.value })}
-                  required
-                />
-              </label>
+              <DateTimeField
+                label="Дата сделки"
+                timeLabel="Время сделки, UTC"
+                describedBy={`${hintId}-time`}
+                disabled={lockDraft}
+                value={draft.occurredAt}
+                onChange={(occurredAt) => update({ occurredAt })}
+                required
+              />
               <small id={`${hintId}-time`}>
-                Укажите дату и время UTC, например 2025-01-01T00:00:00.000Z.
+                Время можно не указывать: тогда сделка записывается на 00:00 UTC выбранного дня.
               </small>
             </div>
             <div className="operation-form__field">

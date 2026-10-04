@@ -299,14 +299,16 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
 
   const editor = page.getByRole('region', { name: 'Команда перевода', exact: true });
   const quantity = page.getByLabel('Количество получателю', { exact: true });
-  const time = page.getByLabel('Время перевода (UTC)', { exact: true });
+  const time = page.getByLabel('Дата перевода', { exact: true });
+  const timeOfDay = page.getByLabel('Время перевода, UTC', { exact: true });
   const order = page.getByLabel('Порядок в эту миллисекунду', { exact: true });
   const feeAsset = page.getByLabel('Актив комиссии', { exact: true });
   const feeQuantity = page.getByLabel('Количество комиссии', { exact: true });
   const attestation = page.getByRole('checkbox', { name: 'Это перевод между моими счетами' });
   const createButton = page.getByRole('button', { name: 'Записать перевод', exact: true });
   await expect(quantity).toHaveAccessibleDescription(/получател.*(без|не включает).*комисси/i);
-  await expect(time).toHaveAccessibleDescription(/UTC.*YYYY-MM-DDTHH:mm:ss\.sssZ/i);
+  await expect(time).toHaveAccessibleDescription(/00:00 UTC/);
+  await expect(timeOfDay).toHaveAccessibleDescription(/UTC/);
   await expect(order).toHaveAccessibleDescription(/миллисекунд/i);
   await expect(order).toHaveAccessibleDescription(/порядок|последовательность/i);
   for (const control of [feeAsset, feeQuantity]) {
@@ -321,7 +323,7 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   await page.getByLabel('На счёт', { exact: true }).selectOption(to.id);
   await page.getByLabel('Актив перевода', { exact: true }).selectOption(instrument.id);
   await page.getByLabel('Количество получателю', { exact: true }).fill('1.5');
-  await page.getByLabel('Время перевода (UTC)', { exact: true }).fill('2025-01-03T00:00:00.000Z');
+  await time.fill('2025-01-03');
   await page.getByLabel('Порядок в эту миллисекунду', { exact: true }).fill('0');
   await page.getByLabel('Актив комиссии', { exact: true }).selectOption(instrument.id);
   await page.getByLabel('Количество комиссии', { exact: true }).fill('0.1');
@@ -562,6 +564,7 @@ test('TRANSFER-UI: review, exact create retry, correction and terminal void use 
   await expect(editor.getByRole('heading', { name: 'Отмена перевода', exact: true })).toBeFocused();
   await expect(quantity).toBeDisabled();
   await expect(time).toBeDisabled();
+  await expect(timeOfDay).toBeDisabled();
   await expect(order).toBeDisabled();
   await expect(feeAsset).toBeDisabled();
   await expect(feeQuantity).toBeDisabled();

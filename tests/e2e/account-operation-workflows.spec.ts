@@ -286,7 +286,8 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     'Инструмент',
     'Тип сделки',
     'Количество',
-    'Дата и время сделки (UTC)',
+    'Дата сделки',
+    'Время сделки, UTC',
     'Порядок в этот момент',
     'Валовая сумма, USD',
     'Комиссия, USD',
@@ -302,9 +303,12 @@ test('WORKFLOW-UI: choose one operation and retain all independent drafts withou
     /(?:общ|полн|валов).*сумм.*(?:не.*цен.*единиц|не.*единичн)/i,
   );
   await expect(fee).toHaveAccessibleDescription(/(?:отдельн.*USD|USD.*отдельн)/i);
-  await expect(
-    trade.getByLabel('Дата и время сделки (UTC)', { exact: true }),
-  ).toHaveAccessibleDescription(/UTC/);
+  await expect(trade.getByLabel('Дата сделки', { exact: true })).toHaveAccessibleDescription(
+    /00:00 UTC/,
+  );
+  await expect(trade.getByLabel('Время сделки, UTC', { exact: true })).toHaveAccessibleDescription(
+    /UTC/,
+  );
   await expect(
     trade.getByLabel('Порядок в этот момент', { exact: true }),
   ).toHaveAccessibleDescription(/(?:одинаков|совпадающ).*времен|(?:одинаков|совпадающ).*момент/i);

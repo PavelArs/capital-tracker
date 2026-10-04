@@ -1,4 +1,5 @@
 import { type ValuationHistorySeries, valuationHistoryApi } from '@api/valuation-history.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
 import { Chart as ChartJS, Legend, LinearScale, PointElement, Title, Tooltip } from 'chart.js';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
@@ -22,8 +23,8 @@ export function ValuationHistory({
   journalRevision: number | null;
 }) {
   const id = useId();
-  const [from, setFrom] = useState('');
-  const [to, setTo] = useState('');
+  const [from, setFrom] = useState(() => utcDay(-7));
+  const [to, setTo] = useState(utcDay);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,37 +119,31 @@ export function ValuationHistory({
       </p>
       <form className="valuation-history__form account-analytics__form" onSubmit={submit}>
         <div className="account-analytics__field">
-          <label>
-            Начало периода (ISO)
-            <input
-              aria-describedby={`${id}-field-0-hint`}
-              type="text"
-              value={from}
-              onChange={(event) => edit('from', event.target.value)}
-              placeholder="2025-01-01T00:00:00.000Z"
-              required
-            />
-          </label>
+          <DateTimeField
+            label="Начало периода"
+            timeLabel="Время начала периода, UTC"
+            describedBy={`${id}-field-0-hint`}
+            value={from}
+            onChange={(value) => edit('from', value)}
+            required
+          />
           <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
-            Дата и время с часовым поясом, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа
-            от начала и точный конец.
+            Без времени — 00:00 UTC, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа от
+            начала и точный конец.
           </small>
         </div>
         <div className="account-analytics__field">
-          <label>
-            Конец периода (ISO)
-            <input
-              aria-describedby={`${id}-field-1-hint`}
-              type="text"
-              value={to}
-              onChange={(event) => edit('to', event.target.value)}
-              placeholder="2025-01-04T00:00:00.000Z"
-              required
-            />
-          </label>
+          <DateTimeField
+            label="Конец периода"
+            timeLabel="Время конца периода, UTC"
+            describedBy={`${id}-field-1-hint`}
+            value={to}
+            onChange={(value) => edit('to', value)}
+            required
+          />
           <small className="account-analytics__hint" id={`${id}-field-1-hint`}>
-            Дата и время с часовым поясом, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа
-            от начала и точный конец.
+            Без времени — 00:00 UTC, расчёт в UTC. До 30 истекших дней; точки каждые 24 часа от
+            начала и точный конец.
           </small>
         </div>
         <div className="account-analytics__actions">

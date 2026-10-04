@@ -59,7 +59,7 @@ test('FLOW-004-B: accepted flow survives lost delivery, real 401/MFA and a lost 
   await page
     .getByRole('combobox', { name: 'Направление', exact: true })
     .selectOption('contribution');
-  await page.getByLabel('Момент операции (ISO)', { exact: true }).fill('2025-01-02T00:00:00Z');
+  await page.getByLabel('Дата операции', { exact: true }).fill('2025-01-02');
   await page.getByLabel('Сумма, USD', { exact: true }).fill('1000');
   await page.getByRole('checkbox', { name: 'Это внешний ввод или вывод USD' }).check();
 
@@ -102,7 +102,7 @@ test('FLOW-004-B: accepted flow survives lost delivery, real 401/MFA and a lost 
       requestId: expect.stringMatching(/^[a-f0-9-]{36}$/),
       expectedJournalRevision: 0,
       direction: 'contribution',
-      occurredAt: '2025-01-02T00:00:00Z',
+      occurredAt: '2025-01-02T00:00:00.000Z',
       amountUsd: '1000',
       assertExternal: true,
     });

@@ -7,6 +7,7 @@ import {
   ledger,
   ledgerState,
 } from './admission-fixtures';
+import { fillMoment } from './date-fields';
 import {
   type Account,
   type Instrument,
@@ -112,9 +113,12 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
     if (costs[index] !== null)
       await group.getByLabel('Общая себестоимость, USD', { exact: true }).fill(costs[index]!);
   }
-  await page
-    .getByLabel('Дата и время начала учета (UTC)', { exact: true })
-    .fill('2024-02-29T01:02:03.004Z');
+  await fillMoment(
+    page,
+    'Дата начала учета',
+    'Время начала учета, UTC',
+    '2024-02-29T01:02:03.004Z',
+  );
   const saved = await withManualWritesBlocked(async (release) => {
     const pending = browserPost(page, `/accounts/${account.id}/openings`, () =>
       page.getByRole('button', { name: 'Сохранить начальные позиции', exact: true }).click(),
@@ -129,9 +133,8 @@ test('OPEN-001-A / OPEN-002-A: real Russian forms retain exact amounts, unknown 
             .getByLabel('Количество', { exact: true }),
         ).toBeDisabled();
       }
-      await expect(
-        page.getByLabel('Дата и время начала учета (UTC)', { exact: true }),
-      ).toBeDisabled();
+      await expect(page.getByLabel('Дата начала учета', { exact: true })).toBeDisabled();
+      await expect(page.getByLabel('Время начала учета, UTC', { exact: true })).toBeDisabled();
       await expect(page.getByRole('button', { name: 'Сохранение…', exact: true })).toBeDisabled();
       await release();
       return await pending;

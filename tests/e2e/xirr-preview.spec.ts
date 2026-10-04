@@ -195,8 +195,8 @@ test('XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewe
     await expect(
       page.getByRole('heading', { name: 'Прибыль за период', exact: true }),
     ).toBeVisible();
-    const fromInput = page.getByLabel('Начало периода (UTC)', { exact: true });
-    const toInput = page.getByLabel('Конец периода (UTC)', { exact: true });
+    const fromInput = page.getByLabel('Начало периода', { exact: true });
+    const toInput = page.getByLabel('Конец периода', { exact: true });
     const openingInput = page.getByLabel('Оценка в начале, USD', { exact: true });
     const closingInput = page.getByLabel('Оценка в конце, USD', { exact: true });
     const review = page.getByRole('checkbox', {
@@ -213,8 +213,8 @@ test('XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewe
         .getByText('XIRR, % годовых', { exact: true })
         .locator('xpath=following-sibling::dd[1]');
 
-    await fromInput.fill(from);
-    await toInput.fill(to);
+    await fromInput.fill(from.slice(0, 10));
+    await toInput.fill(to.slice(0, 10));
     await openingInput.fill('0');
     await closingInput.fill('1100');
     await review.check();
@@ -235,8 +235,8 @@ test('XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewe
     await expect(xirrRegion).toContainText('Потоки не сверены');
     await expect(xirrRegion).toContainText('64');
 
-    await fromInput.fill('2025-01-02T00:00:00.000Z');
-    await toInput.fill('2025-01-03T00:00:00.000Z');
+    await fromInput.fill('2025-01-02');
+    await toInput.fill('2025-01-03');
     await openingInput.fill('1000');
     await closingInput.fill('1100');
     await expect(profitRegion).toBeHidden();
@@ -273,8 +273,8 @@ test('XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewe
     await expect(profitRegion).toBeHidden();
     await expect(xirrRegion).toBeHidden();
     await expect(review).not.toBeChecked();
-    await fromInput.fill(from);
-    await toInput.fill(to);
+    await fromInput.fill(from.slice(0, 10));
+    await toInput.fill(to.slice(0, 10));
     await openingInput.fill('0');
     await closingInput.fill('1100');
     await review.check();

@@ -237,10 +237,10 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     page.getByRole('heading', { name: 'История стоимости счёта', exact: true }),
   ).toBeVisible();
   const region = page.getByRole('region', { name: 'История стоимости счёта', exact: true });
-  const fromInput = page.getByLabel('Начало периода (ISO)', { exact: true });
-  const toInput = page.getByLabel('Конец периода (ISO)', { exact: true });
-  await fromInput.fill(from);
-  await toInput.fill(to);
+  const fromInput = page.getByLabel('Начало периода', { exact: true });
+  const toInput = page.getByLabel('Конец периода', { exact: true });
+  await fromInput.fill(from.slice(0, 10));
+  await toInput.fill(to.slice(0, 10));
   const result = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === path && response.request().method() === 'GET',
@@ -285,8 +285,8 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
 
   // A gap-only real series keeps its table without inventing a chart value.
-  await fromInput.fill(dayThree);
-  await toInput.fill(dayThree);
+  await fromInput.fill(dayThree.slice(0, 10));
+  await toInput.fill(dayThree.slice(0, 10));
   const gapOnly = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === path && response.request().method() === 'GET',
@@ -300,8 +300,8 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
   await expect(gross).toHaveValue('110');
 
   // A different exact period uses the real backend and retained PostgreSQL data.
-  await fromInput.fill(from);
-  await toInput.fill(dayThree);
+  await fromInput.fill(from.slice(0, 10));
+  await toInput.fill(dayThree.slice(0, 10));
   const changedPeriod = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === path && response.request().method() === 'GET',
@@ -367,7 +367,7 @@ test('VCH-UI: chart history refreshes zero data and ignores a late period respon
     );
     await page.getByRole('button', { name: 'Обновить историю', exact: true }).click();
     await expect.poll(() => held).toBe(true);
-    await toInput.fill(to);
+    await toInput.fill(to.slice(0, 10));
     release();
     const late = await lateResponse;
     expect(late.status()).toBe(200);

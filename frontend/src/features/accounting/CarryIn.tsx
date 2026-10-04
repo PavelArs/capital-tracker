@@ -7,8 +7,9 @@ import {
   type CarryInState,
   carryInApi,
 } from '@api/carry-in.api';
+import { DateTimeField } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { CarryInEvidence, CarryInOpening, CarryInPreviewView } from './CarryInEvidence';
 import { accountingError, newRequestId } from './feedback';
 
@@ -69,6 +70,7 @@ export function CarryIn({
   onBlocked: (blocked: boolean) => void;
   onJournalRefresh: () => Promise<boolean>;
 }) {
+  const lotTimeHint = useId();
   const [state, setState] = useState<CarryInState | null>(null);
   const [draft, setDraft] = useState<LotDraft[]>(
     () =>
@@ -412,9 +414,18 @@ export function CarryIn({
                     ))}
                   </select>
                 </label>
+                <DateTimeField
+                  label="Дата приобретения"
+                  timeLabel="Время приобретения, UTC"
+                  describedBy={lotTimeHint}
+                  value={lot.acquiredAt}
+                  required
+                  onChange={(acquiredAt) =>
+                    edit(draft.map((row) => (row.key === lot.key ? { ...row, acquiredAt } : row)))
+                  }
+                />
                 {(
                   [
-                    ['acquiredAt', 'Дата и время приобретения (UTC)'],
                     ['orderWithinTimestamp', 'Порядок в этот момент'],
                     ['originalQuantity', 'Исходное количество'],
                     ['originalCostUsd', 'Исходная стоимость, USD'],
@@ -427,15 +438,8 @@ export function CarryIn({
                       type="text"
                       required
                       autoComplete="off"
-                      inputMode={
-                        field === 'acquiredAt'
-                          ? 'text'
-                          : field === 'orderWithinTimestamp'
-                            ? 'numeric'
-                            : 'decimal'
-                      }
+                      inputMode={field === 'orderWithinTimestamp' ? 'numeric' : 'decimal'}
                       value={lot[field]}
-                      placeholder={field === 'acquiredAt' ? '2025-01-01T12:30:00.000Z' : undefined}
                       onChange={(event) =>
                         edit(
                           draft.map((row) =>
@@ -457,10 +461,10 @@ export function CarryIn({
               </button>
             </fieldset>
           ))}
-          <p className="manual-muted">
-            Время укажите явно с часовым поясом, например 2025-01-01T12:30:00.000Z. Оно не может
-            быть позже границы покрытия. Порядок различает все лоты с одинаковым временем, в том
-            числе разных инструментов.
+          <p className="manual-muted" id={lotTimeHint}>
+            Время приобретения указывается в UTC и необязательно: без него лот записывается на 00:00
+            UTC. Оно не может быть позже границы покрытия. Порядок различает все лоты с одинаковым
+            временем, в том числе разных инструментов.
           </p>
           <button
             type="button"

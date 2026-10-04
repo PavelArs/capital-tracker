@@ -1,4 +1,5 @@
 import type { Instrument } from '@api/accounting.api';
+import { DateTimeField } from '@components/common/DateTimeField';
 import { type ReactNode, useId } from 'react';
 import type { SwapDraft, SwapMode } from './swap-draft';
 import './OperationForm.css';
@@ -219,16 +220,14 @@ export function AssetSwapForm({
         <section className="operation-form__section" aria-labelledby={`${guidanceId}-time`}>
           <h3 id={`${guidanceId}-time`}>Время обмена</h3>
           <div className="operation-form__fields">
-            <label className="operation-form__field">
-              Момент обмена (ISO с часовым поясом)
-              <input
-                aria-describedby={`${guidanceId}-time-hint`}
-                type="text"
-                required
-                value={draft.occurredAt}
-                onChange={(event) => update({ occurredAt: event.target.value })}
-              />
-            </label>
+            <DateTimeField
+              label="Дата обмена"
+              timeLabel="Время обмена, UTC"
+              describedBy={`${guidanceId}-time-hint`}
+              required
+              value={draft.occurredAt}
+              onChange={(occurredAt) => update({ occurredAt })}
+            />
             <label className="operation-form__field">
               Порядок в моменте
               <input
@@ -241,8 +240,8 @@ export function AssetSwapForm({
             </label>
           </div>
           <p className="operation-form__hint" id={`${guidanceId}-time-hint`}>
-            Укажите момент в формате ISO 8601 с часовым поясом. Порядок различает операции с
-            одинаковым временем обмена.
+            Время указывается в UTC и необязательно: без него обмен записывается на 00:00 UTC.
+            Порядок различает операции с одинаковым временем обмена.
           </p>
         </section>
         <label className="manual-review-check">

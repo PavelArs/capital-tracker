@@ -116,10 +116,8 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
-    const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', {
-      exact: true,
-    });
-    await instant.fill(coverageFrom);
+    const instant = page.getByLabel('Дата среза', { exact: true });
+    await instant.fill(coverageFrom.slice(0, 10));
     expect(accountingPosts).toEqual([]);
     expect(historyRequests).toHaveLength(0);
     const delayed = page.waitForResponse(
@@ -172,7 +170,7 @@ test('HIST-004-A: switching accounts invalidates a pending historical snapshot',
     await expect(section.getByText(instrument.name, { exact: true })).toHaveCount(0);
     expect(historyRequests).toHaveLength(1);
     expect(new URL(historyRequests[0]).pathname).toBe(endpoint);
-    await instant.fill(coverageFrom);
+    await instant.fill(coverageFrom.slice(0, 10));
     const current = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === historyPath(selected.id) &&
@@ -327,10 +325,8 @@ test('HIST-003-A / HIST-004-A: a real concurrent write invalidates pinned browse
       name: 'Учётный срез на дату',
       exact: true,
     });
-    const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', {
-      exact: true,
-    });
-    await instant.fill(coverageFrom);
+    const instant = page.getByLabel('Дата среза', { exact: true });
+    await instant.fill(coverageFrom.slice(0, 10));
     expect(historyRequests).toHaveLength(0);
     const firstPage = page.waitForResponse(
       (response) =>

@@ -226,8 +226,8 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
 
     await inspectPeriodMethods(page);
 
-    const fromInput = page.getByLabel('Начало периода (UTC)', { exact: true });
-    const toInput = page.getByLabel('Конец периода (UTC)', { exact: true });
+    const fromInput = page.getByLabel('Начало периода', { exact: true });
+    const toInput = page.getByLabel('Конец периода', { exact: true });
     const openingInput = page.getByLabel('Оценка в начале, USD', { exact: true });
     const closingInput = page.getByLabel('Оценка в конце, USD', { exact: true });
     const review = page.getByRole('checkbox', {
@@ -237,8 +237,8 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     const calculate = page.getByRole('button', { name: 'Рассчитать прибыль', exact: true });
     const result = page.getByRole('region', { name: 'Результат расчёта', exact: true });
 
-    await fromInput.fill('2024-12-31T00:00:00.000Z');
-    await toInput.fill(to);
+    await fromInput.fill('2024-12-31');
+    await toInput.fill(to.slice(0, 10));
     await openingInput.fill('1000');
     await closingInput.fill('2000');
     await review.check();
@@ -247,7 +247,7 @@ test('PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors 
     await expect(page.getByRole('alert')).toBeVisible();
     await expect(result).toBeHidden();
 
-    await fromInput.fill(from);
+    await fromInput.fill(from.slice(0, 10));
     await expect(review).not.toBeChecked();
     await expect(calculate).toBeDisabled();
     await review.check();

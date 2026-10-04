@@ -1,5 +1,6 @@
 import type { Instrument } from '@api/accounting.api';
 import type { RewardCategory } from '@api/asset-rewards.api';
+import { DateTimeField } from '@components/common/DateTimeField';
 import { type ReactNode, useId } from 'react';
 import './OperationForm.css';
 
@@ -217,18 +218,17 @@ export function AssetRewardForm({
           <h3>Время получения</h3>
           <div className="operation-form__fields">
             <div className="operation-form__field">
-              <label>
-                Момент получения (ISO с часовым поясом)
-                <input
-                  aria-describedby={`${hintId}-time`}
-                  type="text"
-                  required
-                  value={draft.occurredAt}
-                  onChange={(event) => update({ occurredAt: event.target.value })}
-                />
-              </label>
+              <DateTimeField
+                label="Дата получения"
+                timeLabel="Время получения, UTC"
+                describedBy={`${hintId}-time`}
+                required
+                value={draft.occurredAt}
+                onChange={(occurredAt) => update({ occurredAt })}
+              />
               <small className="operation-form__hint" id={`${hintId}-time`}>
-                Укажите точный момент в формате ISO 8601 с часовым поясом.
+                Время указывается в UTC и необязательно: без него получение записывается на 00:00
+                UTC.
               </small>
             </div>
             <div className="operation-form__field">

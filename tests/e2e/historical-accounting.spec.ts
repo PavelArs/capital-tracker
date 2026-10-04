@@ -247,10 +247,8 @@ test('HIST-004-A: UI snapshot shows exact quantity and cost', async ({ page }) =
     await expect(
       page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
     ).toBeVisible();
-    const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', {
-      exact: true,
-    });
-    await instant.fill('2025-01-02T00:00:00Z');
+    const instant = page.getByLabel('Дата среза', { exact: true });
+    await instant.fill('2025-01-02');
     const responsePromise = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname ===

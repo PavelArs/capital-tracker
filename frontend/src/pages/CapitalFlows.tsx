@@ -6,6 +6,7 @@ import {
   type FlowVersions,
   portfolioFlowsApi,
 } from '@api/portfolio-flows.api';
+import { DateTimeField } from '@components/common/DateTimeField';
 import { useAuth } from '@contexts/AuthContext';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
 import {
@@ -407,18 +408,18 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
             }}
           >
             <div className="flow-field-with-hint">
-              <label className="flow-field">
-                <span>Граница учёта потоков (ISO)</span>
-                <input
-                  aria-describedby={`${hintId}-coverage`}
-                  value={coverageFrom}
-                  onChange={(event) => setCoverageFrom(event.target.value)}
-                  required
-                />
-              </label>
+              <DateTimeField
+                label="Начало учёта потоков"
+                timeLabel="Время начала учёта потоков, UTC"
+                labelClassName="flow-field"
+                describedBy={`${hintId}-coverage`}
+                value={coverageFrom}
+                onChange={setCoverageFrom}
+                required
+              />
               <p className="flow-hint" id={`${hintId}-coverage`}>
-                Укажите начало учёта с часовым поясом, например 2025-01-01T00:00:00Z (UTC). Записать
-                более ранние потоки нельзя. Эта граница не подтверждает полноту данных.
+                Без времени учёт начинается в 00:00 UTC выбранного дня. Записать более ранние потоки
+                нельзя. Эта граница не подтверждает полноту данных.
               </p>
             </div>
             <label className="flow-check">
@@ -502,18 +503,18 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
                   </p>
                 </div>
                 <div className="flow-field-with-hint flow-field-with-hint--wide">
-                  <label className="flow-field">
-                    <span>Момент операции (ISO)</span>
-                    <input
-                      aria-describedby={`${hintId}-time`}
-                      value={occurredAt}
-                      onChange={(event) => setOccurredAt(event.target.value)}
-                      required
-                    />
-                  </label>
+                  <DateTimeField
+                    label="Дата операции"
+                    timeLabel="Время операции, UTC"
+                    labelClassName="flow-field"
+                    describedBy={`${hintId}-time`}
+                    value={occurredAt}
+                    onChange={setOccurredAt}
+                    required
+                  />
                   <p className="flow-hint" id={`${hintId}-time`}>
-                    Дата и время с часовым поясом: 2025-01-02T12:30:00Z (UTC) или со смещением,
-                    например +03:00. В журнале время приводится к UTC.
+                    Время можно не указывать: тогда операция записывается на 00:00 UTC выбранного
+                    дня.
                   </p>
                 </div>
               </div>
@@ -564,37 +565,37 @@ function CapitalFlowsOwner({ ownerId }: { ownerId: string }) {
               }}
             >
               <div className="flow-field-with-hint">
-                <label className="flow-field">
-                  <span>Начало периода (ISO, включительно)</span>
-                  <input
-                    aria-describedby={`${hintId}-from`}
-                    value={from}
-                    onChange={(event) => {
-                      setFrom(event.target.value);
-                      invalidatePeriod();
-                    }}
-                    required
-                  />
-                </label>
+                <DateTimeField
+                  label="Начало периода (включительно)"
+                  timeLabel="Время начала периода, UTC"
+                  labelClassName="flow-field"
+                  describedBy={`${hintId}-from`}
+                  value={from}
+                  onChange={(value) => {
+                    setFrom(value);
+                    invalidatePeriod();
+                  }}
+                  required
+                />
                 <p className="flow-hint" id={`${hintId}-from`}>
-                  Начало включается. Укажите часовой пояс: Z означает UTC.
+                  Начало включается. Без времени — 00:00 UTC.
                 </p>
               </div>
               <div className="flow-field-with-hint">
-                <label className="flow-field">
-                  <span>Конец периода (ISO, не включительно)</span>
-                  <input
-                    aria-describedby={`${hintId}-to`}
-                    value={to}
-                    onChange={(event) => {
-                      setTo(event.target.value);
-                      invalidatePeriod();
-                    }}
-                    required
-                  />
-                </label>
+                <DateTimeField
+                  label="Конец периода (не включительно)"
+                  timeLabel="Время конца периода, UTC"
+                  labelClassName="flow-field"
+                  describedBy={`${hintId}-to`}
+                  value={to}
+                  onChange={(value) => {
+                    setTo(value);
+                    invalidatePeriod();
+                  }}
+                  required
+                />
                 <p className="flow-hint" id={`${hintId}-to`}>
-                  Конец не включается. Укажите часовой пояс: Z означает UTC.
+                  Конец не включается. Без времени — 00:00 UTC.
                 </p>
               </div>
               <button

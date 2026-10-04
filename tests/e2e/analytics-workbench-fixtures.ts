@@ -55,7 +55,7 @@ export async function inspectAnalysis(
   try {
     for (const input of await inputs.all()) {
       await expect(input).toHaveAccessibleDescription(/UTC/);
-      await expect(input).toHaveAccessibleDescription(/часов[\s\S]*пояс/i);
+      await expect(input).toHaveAccessibleDescription(/00:00 UTC/);
       if (task === 'valuation')
         await expect(input).toHaveAccessibleDescription(
           /ручн[\s\S]*(?:точн|совпад)|(?:точн|совпад)[\s\S]*ручн/i,

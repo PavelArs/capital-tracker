@@ -1,3 +1,4 @@
+import { DateTimeField } from '@components/common/DateTimeField';
 import { type ReactNode, useId } from 'react';
 import './OperationForm.css';
 
@@ -143,16 +144,14 @@ export function OwnedTransferForm({
         <section className="operation-form__section" aria-labelledby={`${formId}-time-heading`}>
           <h3 id={`${formId}-time-heading`}>Время и порядок</h3>
           <div className="operation-form__fields">
-            <label>
-              Время перевода (UTC)
-              <input
-                aria-describedby={`${hintId}-time`}
-                type="text"
-                value={draft.occurredAt}
-                onChange={(event) => update({ occurredAt: event.target.value })}
-                required
-              />
-            </label>
+            <DateTimeField
+              label="Дата перевода"
+              timeLabel="Время перевода, UTC"
+              describedBy={`${hintId}-time`}
+              value={draft.occurredAt}
+              onChange={(occurredAt) => update({ occurredAt })}
+              required
+            />
             <label>
               Порядок в эту миллисекунду
               <input
@@ -165,8 +164,7 @@ export function OwnedTransferForm({
             </label>
           </div>
           <p className="operation-form__hint" id={`${hintId}-time`}>
-            Укажите время в UTC в формате YYYY-MM-DDTHH:mm:ss.sssZ, например
-            2025-01-03T12:30:00.000Z.
+            Время можно не указывать: тогда перевод записывается на 00:00 UTC выбранного дня.
           </p>
           <p className="operation-form__hint" id={`${hintId}-order`}>
             Порядок задаёт последовательность операций с одинаковой миллисекундой на обоих счетах.

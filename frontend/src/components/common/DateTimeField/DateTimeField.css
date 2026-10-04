@@ -1,0 +1,19 @@
+.date-time-field {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  align-items: end;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.date-time-field > label {
+  display: grid;
+  min-width: 0;
+  gap: 0.35rem;
+}
+
+.date-time-field input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}

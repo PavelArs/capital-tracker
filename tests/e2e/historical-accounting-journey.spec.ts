@@ -78,10 +78,8 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
       name: 'Учётный срез на дату',
       exact: true,
     });
-    const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', {
-      exact: true,
-    });
-    await instant.fill('2025-01-03T00:00:00Z');
+    const instant = page.getByLabel('Дата среза', { exact: true });
+    await instant.fill('2025-01-03');
     await page.route(
       pattern,
       async (route) => {
@@ -102,7 +100,7 @@ test('HIST-004-A: a late history response cannot replace edited intent or the un
     await page.getByRole('button', { name: 'Показать учётный срез', exact: true }).click();
     await expect.poll(() => held).toBe(true);
 
-    await instant.fill('2025-01-02T00:00:00Z');
+    await instant.fill('2025-01-02');
     release();
     const lateResponse = await delayed;
     expect(lateResponse.status()).toBe(200);

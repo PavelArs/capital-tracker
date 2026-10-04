@@ -1,4 +1,5 @@
 import type { SwapCommand, SwapFields, SwapVersion, SwapVoidCommand } from '@api/asset-swaps.api';
+import { utcDay } from '@components/common/DateTimeField';
 import { newRequestId } from './feedback';
 
 export type SwapMode = 'create' | 'correct' | 'void';
@@ -25,7 +26,7 @@ export type SwapReview = { journalRevision: number; version: number | null; draf
 export const emptySwapDraft = (): SwapDraft => ({
   outgoingInstrumentId: '',
   incomingInstrumentId: '',
-  occurredAt: new Date().toISOString(),
+  occurredAt: utcDay(),
   orderWithinTimestamp: '0',
   outgoingQuantity: '',
   incomingQuantity: '',

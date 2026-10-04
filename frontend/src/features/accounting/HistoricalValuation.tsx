@@ -2,6 +2,7 @@ import {
   type HistoricalValuationSnapshot,
   historicalValuationApi,
 } from '@api/historical-valuation.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { accountingError } from './feedback';
@@ -38,7 +39,7 @@ export function HistoricalValuation({
   journalRevision: number | null;
 }) {
   const id = useId();
-  const [instant, setInstant] = useState('');
+  const [instant, setInstant] = useState(utcDay);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -130,20 +131,17 @@ export function HistoricalValuation({
       </p>
       <form className="historical-valuation__form account-analytics__form" onSubmit={submit}>
         <div className="account-analytics__field">
-          <label>
-            Момент оценки (ISO)
-            <input
-              aria-describedby={`${id}-field-0-hint`}
-              type="text"
-              value={instant}
-              onChange={(event) => edit(event.target.value)}
-              placeholder="2025-01-04T00:00:00.000Z"
-              required
-            />
-          </label>
+          <DateTimeField
+            label="Дата оценки"
+            timeLabel="Время оценки, UTC"
+            describedBy={`${id}-field-0-hint`}
+            value={instant}
+            onChange={edit}
+            required
+          />
           <small className="account-analytics__hint" id={`${id}-field-0-hint`}>
-            Укажите дату и время с часовым поясом. Ручная цена должна точно совпадать с выбранным
-            моментом UTC.
+            Без времени оценка считается на 00:00 UTC. Ручная цена должна точно совпадать с
+            выбранными датой и временем UTC.
           </small>
         </div>
         <div className="account-analytics__actions">

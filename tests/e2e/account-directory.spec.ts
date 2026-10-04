@@ -41,7 +41,7 @@ test('DIRECTORY-UI: browse saved accounts and preserve explicit creation retry a
   await expect(directory).toBeVisible();
   // Genuine predecessor RED: creation is always expanded on the old page.
   await expect(page.getByLabel('Название счета', { exact: true })).toBeHidden();
-  await expect(page.getByLabel('Момент оценки (UTC)', { exact: true })).toBeHidden();
+  await expect(page.getByLabel('Дата оценки', { exact: true })).toBeHidden();
   await expect(directory.getByRole('link')).toHaveCount(50);
   await expect(directory).toContainText('Показано счетов: 50');
   expect(firstPage.nextCursor).not.toBeNull();

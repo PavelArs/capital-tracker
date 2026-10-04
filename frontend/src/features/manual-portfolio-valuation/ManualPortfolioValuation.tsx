@@ -3,6 +3,7 @@ import {
   type ManualPortfolioValuationResponse,
   manualPortfolioValuationApi,
 } from '@api/manual-portfolio-valuation.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { accountingError } from '@features/accounting/feedback';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
@@ -14,7 +15,7 @@ const selectionLimit = 10;
 
 export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummary[] }) {
   const [selected, setSelected] = useState<AccountSummary[]>([]);
-  const [instant, setInstant] = useState('');
+  const [instant, setInstant] = useState(utcDay);
   const [report, setReport] = useState<ManualPortfolioValuationResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,19 +133,20 @@ export function ManualPortfolioValuation({ accounts }: { accounts: AccountSummar
         )}
       </div>
       <form className="manual-portfolio__form" onSubmit={(event) => void calculate(event)}>
-        <label>
-          Момент оценки (UTC)
-          <input
-            type="text"
-            value={instant}
-            placeholder="2025-01-04T00:00:00.000Z"
-            required
-            onChange={(event) => {
-              invalidate();
-              setInstant(event.target.value);
-            }}
-          />
-        </label>
+        <DateTimeField
+          label="Дата оценки"
+          timeLabel="Время оценки, UTC"
+          describedBy="manual-portfolio-at-help"
+          value={instant}
+          required
+          onChange={(value) => {
+            invalidate();
+            setInstant(value);
+          }}
+        />
+        <small id="manual-portfolio-at-help">
+          Без времени оценка считается на 00:00 UTC; ручные цены должны быть на те же дату и время.
+        </small>
         <button
           className="manual-button"
           type="submit"

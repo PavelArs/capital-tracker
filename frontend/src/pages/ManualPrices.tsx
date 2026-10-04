@@ -7,6 +7,7 @@ import {
   type VoidPriceCommand,
   manualPricesApi,
 } from '@api/manual-prices.api';
+import { DateTimeField, utcDay } from '@components/common/DateTimeField';
 import { useAuth } from '@contexts/AuthContext';
 import { accountingError, newRequestId } from '@features/accounting/feedback';
 import { isAxiosError } from 'axios';
@@ -83,7 +84,7 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
   const [bookRead, setBookRead] = useState<ReadState>('idle');
   const [bookError, setBookError] = useState('');
   const [needsRefresh, setNeedsRefresh] = useState(false);
-  const [observedAt, setObservedAt] = useState('');
+  const [observedAt, setObservedAt] = useState(utcDay);
   const [priceUsd, setPriceUsd] = useState('');
   const [reviewed, setReviewed] = useState(false);
   const [stagedVoidAt, setStagedVoidAt] = useState<string | null>(null);
@@ -148,7 +149,7 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
     setBookRead('idle');
     setBookError('');
     setNeedsRefresh(false);
-    setObservedAt('');
+    setObservedAt(utcDay());
     setPriceUsd('');
     setReviewed(false);
     setStagedVoidAt(null);
@@ -421,18 +422,17 @@ function ManualPricesOwner({ ownerId }: { ownerId: string }) {
         )}
         <div className="prices-fields">
           <div className="prices-field">
-            <label htmlFor="prices-at">Дата цены (UTC)</label>
-            <input
-              id="prices-at"
-              aria-describedby="prices-at-help"
+            <DateTimeField
+              label="Дата цены"
+              timeLabel="Время цены, UTC"
+              describedBy="prices-at-help"
               value={observedAt}
-              placeholder="2025-01-01T00:00:00.000Z"
               disabled={saving || Boolean(recovery) || stagedVoidAt !== null}
-              onChange={(event) => editForm(setObservedAt, event.target.value)}
+              onChange={(value) => editForm(setObservedAt, value)}
             />
             <small id="prices-at-help">
-              Укажите ISO-время с явным часовым поясом: Z означает UTC, допустимо смещение, например
-              +03:00. Сохранённый момент приводится к UTC.
+              Время можно не указывать: тогда цена сохраняется на 00:00 UTC. Оценка на дату
+              использует цену ровно на эту дату и время UTC.
             </small>
           </div>
           <div className="prices-field">
