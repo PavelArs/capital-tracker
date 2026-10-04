@@ -7,6 +7,12 @@ a gap analysis against the current code and an ordered list of small OpenSpec ch
 It does not change behaviour; every item below still goes through the repository's
 OpenSpec propose → acceptance RED → implement → review → verify → archive sequence.
 
+Updated 2026-10-04 after the owner accepted the clickable prototype from the design
+thread: English interface, one-month default period, and the money rules from its
+"Structure & flows" tab, section "How the numbers work"
+([prototype](https://claude.ai/artifact/PfuvS6Hn6Jep69TJLANmaR)). Those rules are
+folded into sections 2, 3 and 5 below.
+
 Contents:
 
 1. [Open questions](#1-open-questions)
@@ -35,7 +41,7 @@ changes only the changes named in brackets.
 | Q6 | Will you create a free Etherscan API key for Ethereum history? | Yes | M14 |
 | Q7 | Tokens in MVP: only USDT and USDC (ERC-20 and SPL), other tokens later? | Yes | M14, M15 |
 | Q8 | Trezor (a new BTC address per purchase, needs xpub scanning) in MVP? | No, right after MVP | M21 |
-| Q9 | A purchase paid with money that is not tracked in the app counts as a deposit (new capital), not market growth? | Yes | M7 |
+| Q9 | A purchase paid with money that is not tracked in the app counts as a deposit (new capital), not market growth? (The accepted prototype already works this way.) | Yes | M7 |
 | Q10 | Hide XIRR, TWR and "period profit" from the new interface (code stays until a separate removal)? | Yes | M20 |
 
 Decisions taken without asking, open to correction:
@@ -53,6 +59,9 @@ Decisions taken without asking, open to correction:
   (BR 14). Chain transactions can only be hidden, never deleted (BR 9).
 - **D4 Zcash, TRON and Stellar stay manual assets in MVP** (BR 17 lists only BTC,
   ETH and SOL wallets).
+- **D6 Interface language is English** (owner, 2026-10-04, design thread). The
+  dashboard's default period is one month. The current Russian screens stay as they
+  are until they are retired.
 - **D5 Browser TOTP enrollment stays CLI-only in MVP.** The owner is already enrolled;
   Settings adds recovery-code regeneration, active sessions and "log out everywhere".
   Re-enrolment from the browser is a later item.
@@ -91,9 +100,9 @@ What counts as a flow (default Q9):
 
 | Operation | Flow |
 |---|---|
-| Buy paid with money not tracked in the app | deposit of the paid USD amount including fee |
-| Buy paid with a tracked asset (e.g. USDT held in the same account) | none (it is an exchange) |
-| Sell whose proceeds leave the app | withdrawal of net proceeds |
+| Buy | spends the account's cash in the paid currency first (no flow); only the part paid with money from outside the app is a deposit |
+| Sell | none; proceeds (USDT, RUB, USD…) stay in the same account as cash |
+| Explicit withdrawal of cash from an account | withdrawal |
 | Income, Gift received | deposit at USD value on receipt |
 | Expense, Gift sent | withdrawal at USD value on disposal |
 | Reward, Staking reward, Airdrop | none (part of return) |
@@ -102,12 +111,28 @@ What counts as a flow (default Q9):
 | Explicit deposit / withdrawal (existing external USD flows) | as declared |
 | Unclassified (D1) | none until classified |
 
+### Cash and available balance (accepted prototype)
+
+- **Sale proceeds stay as cash.** A Sell adds its proceeds, net of fee, to the same
+  account as a cash position in the proceeds currency. Net worth changes only by the
+  difference between sale price and current price; realized P&L = proceeds − cost
+  basis of the sold quantity.
+- **A Buy spends cash first.** If the account holds cash in the paid currency, the
+  Buy uses it; only the remainder is new money from outside (a deposit).
+- **No overspending.** A Sell, Expense or Transfer cannot exceed the quantity available
+  in that account on its date, where available = the lowest balance of that asset
+  from that date forward. A backdated operation therefore cannot break a later sale.
+  The form shows the available amount and a "Use all" button.
+- **No orphaned sales.** A Buy whose lots a later Sell, Expense or Transfer consumed
+  cannot be deleted; the app names the dependent operation.
+
 ## 3. Product requirements
 
 IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 
 | ID | Requirement | BR | MVP |
 |---|---|---|---|
+| PR-UI-1 | The new interface is in English; numbers, dates and currencies follow the formats in the design brief. | — | 5 |
 | PR-AUTH-1 | One owner, created only by the CLI; no signup route. | 2.1 | 1 |
 | PR-AUTH-2 | Sign-in needs email, password and a TOTP code or a single-use recovery code. | 2.1, 2.3 | 2, 4 |
 | PR-AUTH-3 | Password reset by an emailed single-use link that expires after 30 minutes; success revokes every session and still requires TOTP. The request answer is identical for known and unknown emails. | 2.2 | 3 |
@@ -128,11 +153,13 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-OPS-5 | For a chain transaction the owner can set classification, comment, cost or proceeds, linked transaction, or hide it from calculations. Raw data is never edited. | 9 | 18 |
 | PR-OPS-6 | Outgoing and incoming legs between own wallets are proposed as one transfer and can be linked by hand; a transfer changes capital only by its fee. | 7.1 | 19, 20 |
 | PR-OPS-7 | Every create, correction, classification and void is kept as an immutable version with its time and source. | 14 | — |
+| PR-OPS-8 | A Sell, Expense or Transfer cannot exceed the available quantity (lowest balance from its date forward); the form shows it and offers "Use all". A Buy that later operations consume cannot be deleted. | 7, 8 | 13 |
+| PR-OPS-9 | Sale proceeds stay in the account as cash; a Buy spends that cash before counting outside money as a deposit. | 10, 11 | 13, 22 |
 | PR-VAL-1 | Portfolio value now, in the selected base currency (USD, EUR, RUB), over all accounts. | 3.1 | 5, 6, 9 |
 | PR-VAL-2 | Per asset: quantity, price, value, allocation, average buy price, cost basis, unrealized and realized P&L. | 11 | 21, 22 |
 | PR-VAL-3 | Allocation by asset, asset type and account. | 3.3 | 8 |
 | PR-HIS-1 | An hourly portfolio snapshot is stored; backdated operation changes rebuild later snapshots. | 3.2, 12 | 7, 24 |
-| PR-HIS-2 | Chart periods 24H, 7D, 1M, 3M, 1Y, ALL, with absolute and percentage change for the period. | 3.1, 3.2 | 7 |
+| PR-HIS-2 | Chart periods 24H, 7D, 1M, 3M, 1Y, ALL (default 1M), with absolute and percentage change for the period. | 3.1, 3.2 | 7 |
 | PR-HIS-3 | For any period, the change splits into market effect and net deposits/withdrawals. | 10 | 7 |
 | PR-SYN-1 | Each background source (prices, FX, each wallet) has its own state: last success, last attempt, state (synced, syncing, delayed, failed) and a readable error. One failing source never blocks another. | 12 | 24, 25 |
 | PR-EXP-1 | Export CSV (assets, accounts and wallets, operations with classifications) and a JSON backup. | 15 | 23 |
@@ -250,7 +277,9 @@ correction rules are tested, and adds one read model over them:
 | version | current version number |
 
 New journal kinds needed: Income, Expense, Gift, Fee and Other where no existing
-journal fits. Rewards, Staking rewards and Airdrops map to the existing reward journal.
+journal fits. The current USD trade journal does not hold the paid or received money
+as a position; PR-OPS-9 needs a cash position per account and currency, written by
+Buys and Sells from M9 on (existing trades keep their meaning: paid from outside). Rewards, Staking rewards and Airdrops map to the existing reward journal.
 
 ### Price and FX
 
@@ -315,7 +344,7 @@ see my capital. (Existing; kept as regression.)
   email and password **then** they are asked for a code, **and when** they enter a
   valid TOTP **then** they land on the dashboard.
 - AUTH-LOGIN-BAD-CODE: **Given** a pending password step **when** a wrong code is sent
-  **then** access is refused with "Неверный код" and the attempt counts against the limit.
+  **then** access is refused with "Invalid code" and the attempt counts against the limit.
 - AUTH-NO-SIGNUP: **Given** any visitor **when** they look for a registration page or
   call a signup route **then** none exists.
 
@@ -347,10 +376,10 @@ see my capital. (Existing; kept as regression.)
 **US-2.1** As the owner I see each asset with its type, ticker and price source so
 I know where its value comes from.
 
-- AST-TYPES: **Given** existing instruments BTC, ETH and "Наличные USD" **when** the
+- AST-TYPES: **Given** existing instruments BTC, ETH and "Cash USD" **when** the
   migration runs **then** BTC and ETH are crypto with a provider source, the cash is
   manual, and no trade, lot or P&L value changes.
-- AST-NEW: **Given** the asset form **when** the owner adds "Депозит" of type manual in
+- AST-NEW: **Given** the asset form **when** the owner adds "Deposit" of type manual in
   RUB **then** it appears with source "manual" and "no price" until a value is entered.
 
 **US-2.2** As the owner I get prices automatically every hour.
@@ -362,14 +391,14 @@ I know where its value comes from.
   **then** one observation exists.
 - PRC-OUTAGE (E2E): **Given** a stored BTC price from 3 hours ago and a failing
   provider **when** the owner opens the dashboard **then** value uses the stored
-  price, the price is marked "обновлено 3 ч назад", **and** the attention block says
+  price, the price is marked "updated 3 h ago", **and** the attention block says
   prices are delayed.
 - PRC-NONE: **Given** an asset with no observation **when** the portfolio is valued
-  **then** the asset shows "нет цены", the total is marked incomplete and nothing is 0.
+  **then** the asset shows "No price", the total is marked incomplete and nothing is 0.
 
 **US-2.3** As the owner I keep a manual asset and update its value by hand.
 
-- AST-MANUAL-VALUE: **Given** manual asset "Депозит" with quantity 1 **when** the
+- AST-MANUAL-VALUE: **Given** manual asset "Deposit" with quantity 1 **when** the
   owner sets its value to 500000 RUB on 01.10.2026 and to 505000 RUB on 01.11.2026
   **then** both values are kept and the current value is 505000 RUB.
 
@@ -379,7 +408,7 @@ I know where its value comes from.
 
 - WAL-ADD (E2E): **Given** the Wallets page **when** the owner picks Bitcoin, enters a
   valid address, names it "Trust Wallet BTC" and picks account "Trust Wallet"
-  **then** the wallet appears with "Синхронизация…" and the account shows the wallet.
+  **then** the wallet appears with "Syncing…" and the account shows the wallet.
 - WAL-INVALID: **Given** Ethereum is picked **when** a Bitcoin address is entered
   **then** the form says the address is not an Ethereum address and nothing is saved.
 - WAL-DUP: **Given** a wallet with an address **when** the same address is added again
@@ -397,14 +426,14 @@ I know where its value comes from.
   Bitcoin wallets still sync and only the Ethereum wallet shows "failed" with a
   readable reason.
 - SYNC-RECONCILE: **Given** the chain reports 0.0100 BTC and operations compute 0.0098
-  BTC **when** the wallet is shown **then** it shows "Баланс расходится на 0.0002 BTC"
+  BTC **when** the wallet is shown **then** it shows "Balance differs by 0.0002 BTC"
   and the dashboard attention block lists it.
 
 **US-3.3** As the owner I see when data was last updated.
 
 - SYNC-STATUS (E2E): **Given** prices synced 12 minutes ago and one wallet failed
   **when** the owner opens the app **then** the sidebar shows the last successful
-  sync time, **and** the wallet card shows "Ошибка синхронизации" with the reason.
+  sync time, **and** the wallet card shows "Sync failed" with the reason.
 
 **US-3.4 / US-3.5** Ethereum and Solana wallets. Same criteria as US-3.1–3.3 with
 network-specific identity:
@@ -444,25 +473,34 @@ network-specific identity:
   correction.
 - OPS-DELETE (E2E): **Given** a manual buy **when** the owner deletes it and confirms
   **then** it disappears from holdings and totals, **and** its history keeps the void.
-- OPS-DELETE-GUARD: **Given** a buy whose lots were later sold **when** it is deleted
-  **then** the app refuses with the sale that depends on it, or recomputes when the
-  remaining lots still cover the sale.
+- OPS-DELETE-GUARD: **Given** a buy whose lots a later sale consumed **when** the owner
+  tries to delete it **then** the app refuses and names the sale that depends on it,
+  and nothing changes.
+- OPS-OVERSPEND (E2E): **Given** wallet "Trust Wallet" bought 1 BTC on 01.03.2026 and
+  sold 0.8 BTC on 01.05.2026 **when** the owner adds a Sell dated 01.04.2026 **then**
+  the form shows "Available 0.2 BTC"; 0.3 BTC is refused, **and** "Use all" fills 0.2.
+- OPS-SELL-CASH: **Given** 0.5 BTC bought for 25000 USD **when** it is sold for 30000
+  USDT with fee 0 **then** the account holds 30000 USDT as cash, realized P&L is +5000,
+  net flow is 0, **and** net worth changes only by the gap between 30000 and the
+  current value of 0.5 BTC.
+- OPS-BUY-CASH: **Given** an account holding 30000 USDT **when** the owner buys BTC for
+  40000 USDT **then** the 30000 USDT cash is spent and only 10000 USDT counts as a deposit.
 
 **US-4.4** As the owner I classify transactions the app found.
 
 - CLS-COUNT (E2E): **Given** two new incoming BTC transactions **when** the owner
-  opens the dashboard **then** it shows "2 операции ждут классификации".
+  opens the dashboard **then** it shows "2 transactions need classification".
 - CLS-BUY (E2E): **Given** an unclassified receipt of 0.00918359 BTC **when** the
   owner picks Buy and enters 1000 USDT **then** the count drops by one and BTC cost
   basis rises by 1000 USD.
 - CLS-PROVISIONAL: **Given** an unclassified receipt of 0.01 BTC priced 80000 **then**
-  holdings include 0.01 BTC, value includes 800 USD, cost basis shows "частично
-  неизвестна" **and** no deposit is recorded (D1).
+  holdings include 0.01 BTC, value includes 800 USD, cost basis shows "partly
+  unknown" **and** no deposit is recorded (D1).
 - CLS-RESYNC: **Given** a classified transaction with a comment **when** the wallet is
   fully resynced **then** classification, cost and comment are unchanged and no
   duplicate appears.
 - CLS-HIDE: **Given** a dust token receipt **when** hidden **then** it leaves holdings,
-  value and the count, **and** remains visible under "Скрытые".
+  value and the count, **and** remains visible under "Hidden".
 - CLS-RECLASSIFY: **Given** a receipt classified as Income **when** changed to Buy
   **then** the income operation is voided, a buy is created, and both versions remain.
 
@@ -509,7 +547,7 @@ network-specific identity:
   **when** EUR is selected in Settings **then** the dashboard shows €920.00, **and**
   the choice persists after logout.
 - CUR-NO-RATE: **Given** no stored RUB rate **when** RUB is selected **then** values
-  show "нет курса" and USD remains available; nothing is 0.
+  show "No rate" and USD remains available; nothing is 0.
 
 ### E6 Capital history
 
@@ -593,7 +631,7 @@ journeys below, replacing older screen-specific cases as screens are retired:
 | J6 Reset password by email | RESET-REQUEST, RESET-USE |
 | J7 Provider outage keeps data | PRC-OUTAGE, SYNC-STATUS |
 | J8 Dashboard chart and allocation | DASH-MAIN, CHART-PERIODS, ALLOC |
-| J9 Delete a manual operation | OPS-DELETE |
+| J9 Delete a manual operation; overspend refused | OPS-DELETE, OPS-OVERSPEND |
 
 E2E cannot run in the cloud sandbox (Docker builds are blocked by its proxy); hosted
 CI is the E2E evidence, as for the current changes.
@@ -617,7 +655,7 @@ to section 8.
 | 10 | Hourly market prices | Build | legacy `crypto-prices.service` (CoinGecko, memory only) | provider interface, hourly job, Q3 | M3 |
 | 11 | Historical price storage | Adapt | `manual-usd-prices` (`manual_usd_price_versions`) | `price_observations` with source | M3 |
 | 12 | Manual assets | Adapt | `accounting_instruments` (name, symbol), `manual-opening-positions` | type, valuation currency, source; legacy `assets` module retired | M2 |
-| 13 | Manual transactions | Adapt | `usd-fifo-trades`, swaps, rewards, transfers, `external-usd-flows`; PR #35 dates, PR #34 currency | one form, no explicit journal start, comment, Income/Expense/Gift/Fee/Other kinds, edit and delete from the list | M8, M9 |
+| 13 | Manual transactions | Adapt | `usd-fifo-trades`, swaps, rewards, transfers, `external-usd-flows`; PR #35 dates, PR #34 currency | one form, no explicit journal start, comment, Income/Expense/Gift/Fee/Other kinds, edit and delete from the list, cash positions, available-balance check | M8, M9 |
 | 14 | BTC wallet tracking | Adapt | `wallet-address-import` (PR #31), PR #36 completion as buy | account binding, label, balance, background sync | M10, M11 |
 | 15 | Ethereum wallet tracking | Build | legacy `backend/src/crypto` reads ETH balance only | history adapter, tokens (Q6, Q7) | M14 |
 | 16 | Solana wallet tracking | Build | none | history adapter (Q7) | M15 |
@@ -656,7 +694,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 
 | # | Change | Delivers | Depends on | Open question |
 |---|---|---|---|---|
-| M1 | `add-app-shell` | sidebar Dashboard, Portfolio, Transactions, Wallets, Settings; current screens under "Старые разделы"; sync indicator slot | — | — |
+| M1 | `add-app-shell` | sidebar Dashboard, Portfolio, Transactions, Wallets, Settings; current screens under "Legacy"; sync indicator slot | — | — |
 | M2 | `classify-assets` | asset type, ticker, valuation currency, price source; Portfolio list | M1 | — |
 | M3 | `collect-hourly-prices` | price provider interface, hourly job, `price_observations`, `SyncSource` | M2 | Q3 |
 | M4 | `value-whole-portfolio` | all-account valuation, average buy, cost basis, P&L per asset, allocation; Portfolio and Asset details | M2 (M3 for automatic prices) | Q2 |
@@ -664,7 +702,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M6 | `record-portfolio-snapshots` | hourly snapshots, rebuild on backdated edits, backfill; dashboard value and chart | M4, M5 | Q4 |
 | M7 | `split-market-and-flows` | flow rules of section 2; change split on the dashboard | M6 | Q9 |
 | M8 | `list-all-operations` | unified operation read model and Transactions screen with filters | M1, #34, #35 | — |
-| M9 | `simplify-manual-operations` | one add/edit/delete form, type-dependent fields, comment, new kinds, no explicit journal start | M8 | — |
+| M9 | `simplify-manual-operations` | one add/edit/delete form, type-dependent fields, comment, new kinds, no explicit journal start, cash from sales, available balance and "Use all", delete guard | M8 | — |
 | M10 | `bind-wallets-to-accounts` | Wallets list, add wallet, wallet details for BTC; label, account, chain balance, mismatch | M1, #36 | — |
 | M11 | `sync-wallets-in-background` | scheduled sync, per-wallet status, adapter interface | M10, M3 | — |
 | M12 | `classify-chain-transactions` | Classification entity, all types, provisional state, hide, count, drawer; migrates PR #36 links | M8, M10 | — |
@@ -675,7 +713,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M17 | `reset-password-by-email` | reset request, email, link, pages | — | Q5 |
 | M18 | `manage-security-settings` | recovery-code regeneration, sessions, log out everywhere | M1 | — |
 | M19 | `export-owner-data` | CSV archive and JSON backup in Settings | M8 | — |
-| M20 | `retire-legacy-screens` | remove "Старые разделы" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
+| M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 
 ```mermaid
@@ -720,7 +758,7 @@ sidebar, five sections) so it does not wait for mockups.
   purchases appear in the new screens as soon as those exist.
 - **New shell first (M1).** The sidebar gets the five new sections. Every current
   screen (manual accounts, journal, CSV import, prices, transfers, wallet addresses,
-  period profit, capital flows, settings) stays reachable under "Старые разделы"
+  period profit, capital flows, settings) stays reachable under "Legacy"
   with its URL unchanged.
 - **One screen at a time.** When a new screen covers an old one (for example,
   Transactions covers the account journal and CSV import entry), the old link stays
