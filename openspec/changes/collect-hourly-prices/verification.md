@@ -82,8 +82,9 @@ A separate review context read the whole diff (no edits). Findings and outcomes:
 
 - Playwright E2E and the critical profile: hosted CI only.
 - Remaining PostgreSQL probes with only a count change: hosted CI only.
-- No live Kraken or CoinGecko call (sandbox egress); first live run happens when the
-  owner enables `PRICE_COLLECTION_ENABLED` on the server.
+- No live Kraken or CoinGecko call (sandbox egress); the first live run happens after
+  the owner deploys this change (production Compose sets `PRICE_COLLECTION_ENABLED`,
+  guarded by `price-deployment.spec.ts`).
 
 ## Provider coverage
 

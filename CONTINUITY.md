@@ -7,8 +7,7 @@ module: Kraken and CoinGecko keyless clients alternating by UTC hour with failov
 one-time Kraken daily backfill from 2025-01-01, append-only `price_observations` keyed
 by market code, `sync_sources`, `GET /prices` with fresh/stale/none, and migration 24
 `AddHourlyPrices1790800000000`. Collection is off unless `PRICE_COLLECTION_ENABLED=true`;
-production Compose and release/resume scripts are unchanged, so enabling it on the
-server is a separate owner-approved step. Evidence: the change's `verification.md`.
+production Compose sets it to true (owner decision 2026-10-04); release scripts unchanged. Evidence: the change's `verification.md`.
 
 ## Current product slice — new application shell, M1 (2026-10-04)
 

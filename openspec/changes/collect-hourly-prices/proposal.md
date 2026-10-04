@@ -28,7 +28,9 @@ CoinGecko prices in memory only, and production runs with background jobs disabl
   price sources' states. This is the read model the later Portfolio, Dashboard and
   "prices unavailable" states use.
 - Switch `PRICE_COLLECTION_ENABLED` (default `false`), independent of
-  `BACKGROUND_JOBS_ENABLED`, so prices can run without the legacy jobs.
+  `BACKGROUND_JOBS_ENABLED`, so prices can run without the legacy jobs. Production
+  Compose sets it to `true` (owner decision 2026-10-04), so collection and the backfill
+  start with the first deploy of this change.
 
 ## Non-goals
 
@@ -36,8 +38,7 @@ CoinGecko prices in memory only, and production runs with background jobs disabl
   come in M4/M6/M16 (PRC-OUTAGE and the incomplete-total part of PRC-NONE are E2E
   criteria of those screens).
 - No Bank of Russia fiat rates (M5) and no use of prices in valuation yet (M4).
-- No change to the production Compose file or release scripts; turning collection
-  on in production is a separate, owner-approved deploy configuration step.
+- No change to release scripts or workflows.
 - Legacy `crypto` module, manual USD prices and display FX keep their contracts.
 
 ## Capabilities
@@ -51,6 +52,7 @@ None.
 
 ## Impact
 
+- Deploy: one fixed backend setting in `docker-compose.yml`; no secret.
 - Backend: new `prices` module (catalog, Kraken and CoinGecko clients, collection
   planner, service, controller), one additive migration
   `1790800000000-AddHourlyPrices`, two optional environment variables.

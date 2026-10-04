@@ -59,9 +59,13 @@ with that transaction's rollback or the connection, never left on a pooled conne
 No data transaction stays open during provider calls; each run's writes happen in short
 transactions afterwards.
 
-Turning collection on in production needs the variable in the server environment and
-in the release/resume scripts' exact environment key list. Those deploy files are
-also changed by the frozen PR #33, so that step is separate and owner-approved.
+Production enables collection with `PRICE_COLLECTION_ENABLED: "true"` in the backend
+environment of `docker-compose.yml` (owner decision 2026-10-04), next to the other fixed
+backend settings; `BACKGROUND_JOBS_ENABLED` stays `false`. No secret is needed (the
+optional CoinGecko Demo key is not set) and the backend reaches both providers directly
+over HTTPS. Rollback is setting the value to `"false"` and redeploying; stored history
+stays. Kraken serves only the latest 720 daily candles, so the backfill reaches
+2025-01-01 only if the first deploy happens before about 2026-12-21.
 
 ### Storage
 - `price_observations`: primary key (`asset`, `quoteCurrency`, `source`, `kind`,
@@ -86,5 +90,6 @@ also changed by the frozen PR #33, so that step is separate and owner-approved.
   for the backfill; CoinGecko one request per run.
 - Rollback: the module can be disabled by the switch; `down` refuses because dropping
   observations would lose history that providers may no longer serve.
-- Migration timestamp `1790800000000` is reserved in team memory; M2 uses
-  `1790500000000`. Whichever change merges second updates the probes' migration counts.
+- Migration timestamp `1790800000000` follows M2's `1790700000000` (1790500000000 and
+  1790600000000 stay with closed PR branches). Whichever change merges second updates the
+  probes' migration counts.
