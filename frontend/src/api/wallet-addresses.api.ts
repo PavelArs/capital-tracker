@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { TradeCommand, TradeReceipt } from './trades.api';
 
 export type SyncState = 'never' | 'partial' | 'complete';
 export type SyncOutcome = 'complete' | 'partial' | 'provider_error';
@@ -29,8 +30,17 @@ export interface AddressTransaction {
   sentBtc: string;
   netBtc: string;
   feeBtc: string;
-  usdValue: null;
-  usdValueStatus: 'missing';
+  usdValue: string | null;
+  usdValueStatus: 'known' | 'missing';
+  trade: CompletedTrade | null;
+}
+
+export interface CompletedTrade {
+  accountId: string;
+  tradeId: string;
+  status: 'active' | 'voided';
+  grossUsd: string;
+  feeUsd: string;
 }
 
 export interface TransactionPage {
@@ -60,5 +70,16 @@ export const walletAddressesApi = {
       await apiClient.get<TransactionPage>(`${path}/${encodeURIComponent(id)}/transactions`, {
         params: { offset, limit: 50 },
       })
+    ).data,
+  complete: async (
+    id: string,
+    txid: string,
+    body: { accountId: string; trade: TradeCommand },
+  ): Promise<TradeReceipt> =>
+    (
+      await apiClient.post<TradeReceipt>(
+        `${path}/${encodeURIComponent(id)}/transactions/${encodeURIComponent(txid)}/trade`,
+        body,
+      )
     ).data,
 };

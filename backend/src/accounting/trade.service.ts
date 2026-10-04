@@ -147,13 +147,21 @@ export class TradeService {
     });
   }
 
-  async create(ownerId: string, accountId: string, input: unknown) {
+  // withinTransaction runs inside the trade's own transaction, only when a trade is created,
+  // so a caller can record a reference that commits or rolls back with the trade.
+  async create(
+    ownerId: string,
+    accountId: string,
+    input: unknown,
+    withinTransaction?: (manager: EntityManager, receipt: TradeReceipt) => Promise<void>,
+  ) {
     return this.mutate(
       parseUuid(ownerId),
       parseUuid(accountId),
       'create',
       undefined,
       parseTradeCreate(input),
+      withinTransaction,
     );
   }
   async correct(ownerId: string, accountId: string, tradeId: string, input: unknown) {
@@ -181,6 +189,7 @@ export class TradeService {
     kind: Kind,
     target: string | undefined,
     value: TradeCreateInput | TradeVoidInput,
+    withinTransaction?: (manager: EntityManager, receipt: TradeReceipt) => Promise<void>,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     const fields = kind === 'void' ? undefined : execution(value as TradeCreateInput);
     const payload = JSON.stringify({
@@ -256,7 +265,9 @@ export class TradeService {
           canonicalPayload: payload,
         });
         await advanceConnectedJournals(manager, owner, ledger);
-        return { created: true, value: receipt(id, saved) };
+        const created = receipt(id, saved);
+        await withinTransaction?.(manager, created);
+        return { created: true, value: created };
       })
       .catch(rethrowAccountingHistory);
   }

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { parseUuid } from '../accounting/input';
+import { parseDecimal, parseUuid } from '../accounting/input';
 import {
   type ChainObservation,
   EsploraClient,
@@ -35,6 +35,11 @@ interface TransactionRow {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  tradeAccountId: string | null;
+  tradeId: string | null;
+  tradeKind: 'create' | 'correct' | 'void' | null;
+  grossUsd: string | null;
+  feeUsd: string | null;
 }
 type SyncOutcome = 'complete' | 'partial' | 'provider_error';
 
@@ -67,11 +72,42 @@ function transaction(row: TransactionRow) {
     sentBtc: formatSats(sent),
     netBtc: formatSats(received - sent),
     feeBtc: formatSats(BigInt(row.feeUnits)),
-    // No price source exists yet: the value is unknown, never zero.
-    usdValue: null,
-    usdValueStatus: 'missing' as const,
+    ...completion(row),
   };
 }
+
+// The USD value comes only from the owner's linked journal trade, never from a price
+// source; without an active trade it stays unknown, never zero.
+function completion(row: TransactionRow) {
+  if (row.tradeId === null || row.tradeAccountId === null || row.grossUsd === null)
+    return { usdValue: null, usdValueStatus: 'missing' as const, trade: null };
+  const active = row.tradeKind !== 'void';
+  const grossUsd = parseDecimal(row.grossUsd, true);
+  return {
+    usdValue: active ? grossUsd : null,
+    usdValueStatus: active ? ('known' as const) : ('missing' as const),
+    trade: {
+      accountId: row.tradeAccountId,
+      tradeId: row.tradeId,
+      status: active ? ('active' as const) : ('voided' as const),
+      grossUsd,
+      feeUsd: parseDecimal(row.feeUsd, false),
+    },
+  };
+}
+
+// The transaction's active linked trade, else its latest voided one, at the trade's
+// current version: corrections and voids made in the journal show here.
+const linkedTrade = `LEFT JOIN LATERAL (
+    SELECT l."accountId", l."tradeId", v.kind, v."grossUsd", v."feeUsd"
+    FROM wallet_address_trade_links l
+    JOIN account_trades h ON h."ownerId" = l."ownerId" AND h."accountId" = l."accountId" AND h.id = l."tradeId"
+    JOIN account_trade_versions v ON v."ownerId" = h."ownerId" AND v."accountId" = h."accountId"
+      AND v."tradeId" = h.id AND v.version = h."currentVersion"
+    WHERE l."addressId" = t."addressId" AND l.txid = t.txid
+    ORDER BY v.kind = 'void', l."createdAt" DESC, l."tradeId"
+    LIMIT 1
+  ) c ON true`;
 
 @Injectable()
 export class WalletAddressService {
@@ -144,11 +180,19 @@ export class WalletAddressService {
     return this.read(async (manager) => {
       const address = await this.address(manager, owner, addressId);
       const rows: TransactionRow[] = await manager.query(
-        `SELECT txid, "blockHeight", "blockTime", direction, "receivedUnits"::text AS "receivedUnits",
-          "sentUnits"::text AS "sentUnits", "feeUnits"::text AS "feeUnits"
-          FROM wallet_address_transactions WHERE "addressId" = $1
-          ORDER BY "blockHeight" DESC, txid LIMIT $2 OFFSET $3`,
+        `SELECT t.txid, t."blockHeight", t."blockTime", t.direction,
+          t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
+          t."feeUnits"::text AS "feeUnits", c."accountId" AS "tradeAccountId", c."tradeId",
+          c.kind AS "tradeKind", c."grossUsd"::text AS "grossUsd", c."feeUsd"::text AS "feeUsd"
+          FROM wallet_address_transactions t ${linkedTrade}
+          WHERE t."addressId" = $1
+          ORDER BY t."blockHeight" DESC, t.txid LIMIT $2 OFFSET $3`,
         [addressId, limit, offset],
+      );
+      const [{ known }]: { known: number }[] = await manager.query(
+        `SELECT count(*)::int AS known FROM wallet_address_transactions t ${linkedTrade}
+          WHERE t."addressId" = $1 AND c.kind <> 'void'`,
+        [addressId],
       );
       const total = address.transactionCount;
       return {
@@ -156,7 +200,7 @@ export class WalletAddressService {
         offset,
         limit,
         nextOffset: offset + rows.length < total ? offset + rows.length : null,
-        missingUsdValueCount: total,
+        missingUsdValueCount: total - known,
         items: rows.map(transaction),
       };
     });

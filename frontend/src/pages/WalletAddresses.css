@@ -94,7 +94,7 @@
 
 .wallet-card th,
 .wallet-card td {
-  padding: 0.4rem 0.6rem;
+  padding: 0.4rem 0.5rem;
   border-bottom: 1px solid var(--border-color);
   text-align: start;
   white-space: nowrap;
@@ -113,4 +113,41 @@
 
 .wallet-missing-value {
   font-style: italic;
+}
+
+.wallet-card button.wallet-inline {
+  min-height: 32px;
+  padding: 0.25rem 0.75rem;
+}
+
+.wallet-voided {
+  font-style: italic;
+}
+
+.wallet-completion {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.wallet-completion h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.wallet-completion > select {
+  justify-self: start;
+  min-width: min(100%, 20rem);
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
+/* Dates and completion links wrap so the USD column stays visible on desktop. */
+.wallet-card td.wallet-wrap {
+  min-width: 6.5rem;
+  white-space: normal;
 }

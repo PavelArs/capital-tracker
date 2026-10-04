@@ -30,3 +30,13 @@ export function parseTransactionQuery(raw: unknown): { offset: number; limit: nu
     limit: queryInteger(row.limit, 50, 1, 100),
   };
 }
+
+export function parseTxid(value: unknown): string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value) ? value : bad();
+}
+
+// The trade body stays opaque here: TradeService parses it exactly like a manual trade.
+export function parseCompletion(raw: unknown): { accountId: unknown; trade: unknown } {
+  const row = object(raw, ['accountId', 'trade']);
+  return { accountId: row.accountId, trade: row.trade };
+}
