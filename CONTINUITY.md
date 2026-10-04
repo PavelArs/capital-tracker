@@ -1,5 +1,20 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — whole-portfolio valuation (M4, 2026-10-04)
+
+Change `value-whole-portfolio` (capability `portfolio-valuation`, PV-1..5; AST-3
+modified) adds `GET /accounting/portfolio`: every account's FIFO holdings (connected
+replay, one per component) valued with stored prices in one read-only snapshot. Market
+assets use the latest `price_observations` row by upper-case ticker (stale after 2 h is
+still used and counted), manual assets the latest non-void manual point, fixed USD is 1,
+fixed EUR/RUB is `no-rate` until M5. Missing prices and unknown cost are never zero:
+totals become null with priced/known subtotals. Average buy price, cost basis,
+unrealized and realized P&L (swaps realize the outgoing asset), allocation by asset,
+type and account. `/portfolio` shows summary, allocation and a valued assets table;
+`/portfolio/:assetId` shows one asset across accounts. No migration (count stays 25).
+Probe `portfolio-valuation-db` runs in shard probes-2; browser case `PORTFOLIO-UI` is the
+22nd critical case. The latest-market-price query moved to `prices/market-price.store.ts`.
+
 ## Current product slice — hourly market prices (M3, 2026-10-04)
 
 Change `collect-hourly-prices` (capability `market-prices`, PRC-1..6) adds the `prices`
