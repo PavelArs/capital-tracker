@@ -27,6 +27,14 @@ export class EnvironmentVariables {
   @IsOptional()
   DISPLAY_FX_TRUST_PROXY = 'false';
 
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  PRICE_COLLECTION_ENABLED = 'false';
+
+  @IsString()
+  @IsOptional()
+  COINGECKO_DEMO_API_KEY?: string;
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;
