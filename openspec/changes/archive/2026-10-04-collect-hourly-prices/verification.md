@@ -1,7 +1,7 @@
 # Hourly market prices verification
 
-Status: implemented; local checks below passed; hosted CI pending on the draft PR.
-The change stays active until hosted CI is green on the PR head.
+Status: implemented and verified; local checks below passed and hosted CI is green on
+the PR head (run 37219503372, commit 71b19a3).
 
 Baseline: main `24c3ce1`, then main `692be87` (PR #38) merged in. Branch
 `claude/m3-collect-hourly-prices-ipqvo8`.
@@ -78,10 +78,21 @@ A separate review context read the whole diff (no edits). Findings and outcomes:
    `GET /prices` over HTTP remains uncovered here (no UI yet); the first screen that
    reads it (M4) adds the HTTP/E2E check.
 
+## Hosted CI (run 37219503372, head 71b19a3)
+
+All ten checks passed: Specification and Engineering Gates, Backend and Frontend Lint &
+Format, Tests and Build, Production Dependency Audit, Release Images and Security and
+CI Status. In the release job the real PostgreSQL probe `prices-db.cjs` printed every
+PRC PASS line (PRC-MIGRATION, PRC-OFF, PRC-HOURLY/PRC-BACKFILL with 641 closed days x 8
+assets, PRC-IDEMPOTENT, PRC-3 midnight, PRC-ALTERNATE, PRC-FALLBACK, PRC-SOURCES,
+schedule and lock, PRC-APPEND-ONLY, interrupted source, PRC-STALE, PRC-BACKFILL-RETRY),
+the stack reported "Migrations applied: 24" and the 21 release-acceptance browser
+scenarios passed.
+
 ## Unrun checks
 
-- Playwright E2E and the critical profile: hosted CI only.
-- Remaining PostgreSQL probes with only a count change: hosted CI only.
+- Playwright E2E, the critical profile and the remaining count-only probes ran in hosted
+  CI only (above), not locally.
 - No live Kraken or CoinGecko call (sandbox egress); the first live run happens after
   the owner deploys this change (production Compose sets `PRICE_COLLECTION_ENABLED`,
   guarded by `price-deployment.spec.ts`).

@@ -15,8 +15,8 @@
 
 - [x] 3.1 Independent review of schema, clients and collection; fix findings without weakening assertions.
 - [x] 3.2 Run scoped checks locally (lint, build, unit tests, real PostgreSQL probe, migration probe) and record results in `verification.md`.
-- [ ] 3.3 Hosted CI green on the PR head; record run id.
+- [x] 3.3 Hosted CI green on the PR head; record run id (37219503372).
 
 ## 4. Archive
 
-- [ ] 4.1 After 3.3 passes, strictly validate and archive with the OpenSpec CLI.
+- [x] 4.1 After 3.3 passes, strictly validate and archive with the OpenSpec CLI.

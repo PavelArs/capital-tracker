@@ -7,7 +7,11 @@ module: Kraken and CoinGecko keyless clients alternating by UTC hour with failov
 one-time Kraken daily backfill from 2025-01-01, append-only `price_observations` keyed
 by market code, `sync_sources`, `GET /prices` with fresh/stale/none, and migration 24
 `AddHourlyPrices1790800000000`. Collection is off unless `PRICE_COLLECTION_ENABLED=true`;
-production Compose sets it to true (owner decision 2026-10-04); release scripts unchanged. Evidence: the change's `verification.md`.
+production Compose sets it to true (owner decision 2026-10-04); release scripts unchanged.
+Archived as `2026-10-04-collect-hourly-prices` after hosted CI 37219503372 passed all
+jobs (evidence in its `verification.md`). Kraken serves only 720 daily candles, so the
+backfill reaches 2025-01-01 only if deployed before about 2026-12-21. Next: M4
+(value-whole-portfolio) after M2 and M3 land.
 
 ## Current product slice — new application shell, M1 (2026-10-04)
 
