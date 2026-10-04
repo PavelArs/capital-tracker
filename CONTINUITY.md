@@ -37,6 +37,10 @@ already complete, so releases use `existing`. Release acceptance runs only on pu
 main; acceptance restarts backends with `--timeout 0` (Node as PID 1 ignores SIGTERM).
 Archived: `deploy-on-approval`, `tag-release-versions`, `fix-analytics-journal-race`,
 `e2e-on-main-only`, `fast-acceptance-restarts`.
+Change `skip-obsolete-deploy-runs` (RAP-001-D, owner question 2026-10-04 about two
+deploy runs after one pipeline): an automatic deploy run whose CI commit is no longer
+the main head is skipped before the approval. Archive after one main CI starts exactly
+one deploy run.
 Change `parallel-release-acceptance` (ENG-007, PR #46 merged 2026-10-04): images built
 once, critical acceptance in five parallel verified shards merged into the same receipt;
 CI also runs on manual dispatch (CD still push-only). Dispatch run 37227886949 took

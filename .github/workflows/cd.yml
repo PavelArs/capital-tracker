@@ -30,8 +30,11 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    # For workflow_run, github.sha is the current main head: a green CI run of an older
+    # commit (e.g. one that finished after a newer push) is skipped instead of asking
+    # for an approval that provenance would refuse anyway.
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.ref == 'refs/heads/main')
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main')
       || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))
     runs-on: ubuntu-latest
     timeout-minutes: 30

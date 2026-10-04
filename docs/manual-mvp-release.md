@@ -83,7 +83,9 @@ commit, promotes the tested images, writes the receipt and sends it inside versi
 `preflight` and then `deploy` requests; deploy runs only after preflight passes. No
 root step is needed per release. Keep a required reviewer on `production`: without it
 the release runs without a click. Manual dispatch offers the same `release` mode with
-an explicit installation.
+an explicit installation. A green CI run whose commit is no longer the main head (for
+example one that finished after a newer push) skips its deploy run, so only the current
+head asks for approval (`skip-obsolete-deploy-runs`).
 
 Root remains the only source of server files. Whenever a release changes the runner,
 inventory, normalizer, Compose, pins or resume helper (the dispatcher refuses with

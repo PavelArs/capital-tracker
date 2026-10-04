@@ -56,7 +56,7 @@ describe('RAP-001: approved release after green main CI', () => {
     expect(job.environment).toBe('production');
     // Exact expression: an OR/always() escape must not pass string-presence checks.
     expect(expression(job.if)).toBe(
-      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))",
+      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha == github.sha && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))",
     );
     expect(job.env).toEqual({
       RELEASE_MODE: "${{ github.event_name == 'workflow_run' && 'release' || inputs.mode }}",
@@ -65,6 +65,13 @@ describe('RAP-001: approved release after green main CI', () => {
       RELEASE_INSTALLATION:
         "${{ github.event_name == 'workflow_run' && 'existing' || inputs.installation }}",
     });
+  });
+
+  it('RAP-001-D skips an automatic run for a CI commit that is no longer the main head', () => {
+    // github.sha of a workflow_run event is the current main head; an older green CI run
+    // would only fail provenance after the approval, so it must not ask for one.
+    const automatic = expression(job.if).split(' || ')[0];
+    expect(automatic).toContain('github.event.workflow_run.head_sha == github.sha');
   });
 
   it('RAP-001-A promotes, then sends preflight and deploy in one approved job', () => {
