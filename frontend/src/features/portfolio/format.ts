@@ -1,5 +1,5 @@
 import type { PriceSource } from '@api/portfolio-assets.api';
-import type { AssetValuation } from '@api/portfolio-valuation.api';
+import type { AccountingCurrency, AssetValuation } from '@api/portfolio-valuation.api';
 
 // Display only: exact decimal strings are rounded here and nowhere else (PV-5).
 const number = (value: string, minimum: number, maximum: number) =>
@@ -15,16 +15,27 @@ const sign = (value: string, signed: boolean) => {
 
 export const DASH = '—';
 
-/** $1,234.56; signed adds "+" to gains. Missing values are a dash, never 0. */
-export function usd(value: string | null, signed = false): string {
+export const currencySymbols: Record<AccountingCurrency, string> = {
+  USD: '$',
+  EUR: '€',
+  RUB: '₽',
+};
+
+/** $1,234.56, €920.00 or ₽104,500.00; signed adds "+" to gains. Missing is a dash, never 0. */
+export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
   if (value === null) return DASH;
-  return `${sign(value, signed)}$${number(value, 2, 2)}`;
+  return `${sign(value, signed)}${currencySymbols[currency]}${number(value, 2, 2)}`;
 }
 
 /** Prices below 1 keep up to six decimals. */
-export function price(value: string | null): string {
+export function price(value: string | null, currency: AccountingCurrency): string {
   if (value === null) return DASH;
-  return `$${number(value, 2, Math.abs(Number(value)) < 1 ? 6 : 2)}`;
+  return `${currencySymbols[currency]}${number(value, 2, Math.abs(Number(value)) < 1 ? 6 : 2)}`;
+}
+
+/** "1 USD = 95.00 RUB" from a Bank of Russia rate. */
+export function rateText(currency: string, rubPerUnit: string): string {
+  return `1 ${currency} = ${number(rubPerUnit, 2, 4)} RUB`;
 }
 
 const SMALLEST_QUANTITY = 0.00000001;

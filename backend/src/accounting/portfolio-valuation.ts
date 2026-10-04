@@ -1,6 +1,13 @@
+import {
+  type AccountingCurrency,
+  FxConverter,
+  type FxRates,
+  moscowDate,
+} from '../fx-rates/fx-conversion';
 import { freshness } from '../prices/price-collection';
 import type { AssetType, PriceSource, ValuationCurrency } from './asset-classification';
-import type { HistoricalPosition } from './historical-accounting';
+import type { SwapAllocation } from './asset-swap-types';
+import type { FifoCarryInInput, FifoTrade } from './fifo';
 import {
   canonicalDecimalToAtoms,
   formatAtoms,
@@ -8,6 +15,7 @@ import {
   formatProduct,
   formatSignedProduct,
 } from './money';
+import type { AccountFifoResult } from './owned-transfer-types';
 
 const ATOM_SCALE = 10n ** 30n;
 
@@ -19,15 +27,29 @@ export interface PortfolioInstrument {
   valuationCurrency: ValuationCurrency;
   priceSource: PriceSource;
 }
+/** A held FIFO fragment with its original acquisition instant (Q1: cost at that date). */
+export interface PortfolioLot {
+  instrumentId: string;
+  quantity: string;
+  costUsd: string | null;
+  acquiredAt: string;
+}
+export interface ConsumedCost {
+  costUsd: string | null;
+  acquiredAt: string;
+}
+/** A sale or swap: proceeds at its date minus the FIFO cost of what it consumed. */
 export interface PortfolioRealization {
   instrumentId: string;
-  realizedUsd: string | null;
+  occurredAt: string;
+  proceedsUsd: string | null;
+  consumed: readonly ConsumedCost[];
 }
 export interface PortfolioAccountInput {
   accountId: string;
   name: string;
   coverage: 'covered' | 'not-started' | 'before-coverage';
-  positions: readonly HistoricalPosition[];
+  lots: readonly PortfolioLot[];
   realizations: readonly PortfolioRealization[];
 }
 /** A stored price before the asset's source decides how it is used. */
@@ -40,8 +62,9 @@ export interface PortfolioPrices {
   market: ReadonlyMap<string, StoredPrice>;
   manual: ReadonlyMap<string, StoredPrice>;
 }
+/** A price stated in the report's currency. */
 export interface AssetPrice {
-  priceUsd: string;
+  value: string;
   observedAt: string | null;
   source: string;
   status: 'fresh' | 'stale' | 'manual' | 'fixed';
@@ -49,11 +72,13 @@ export interface AssetPrice {
 export interface AllocationSlice {
   key: string;
   label: string;
-  valueUsd: string;
+  value: string;
   percent: string | null;
 }
 
 const typeLabels: Record<AssetType, string> = { crypto: 'Crypto', fiat: 'Cash', manual: 'Manual' };
+const NO_RATES: FxRates = { USD: [], EUR: [] };
+export const usdOnly = () => new FxConverter(NO_RATES, 'USD');
 
 /** Signed scale-30 decimal (realized results may be negative). */
 function signedAtoms(value: string): bigint {
@@ -67,29 +92,130 @@ function quotient(numerator: bigint, denominator: bigint): string {
   return formatAtoms((numerator * ATOM_SCALE * 2n + denominator) / (denominator * 2n));
 }
 
-/** Valuation rule (product model, section 4): price by the asset's own source. */
+/** Valuation rule (product model, section 4): price by the asset's own source, in the
+ * report's currency at today's rate. */
 export function resolvePrice(
   instrument: PortfolioInstrument,
   prices: PortfolioPrices,
   at: Date,
+  fx: FxConverter = usdOnly(),
 ): { price: AssetPrice | null; missingPrice: 'no-price' | 'no-rate' | null } {
+  const today = moscowDate(at);
   if (instrument.priceSource === 'fixed') {
-    // EUR and RUB need Bank of Russia rates (M5); a rate is never invented.
-    if (instrument.valuationCurrency !== 'USD') return { price: null, missingPrice: 'no-rate' };
+    // One unit of the asset's own currency; a rate is never invented.
+    const value = fx.convert(ATOM_SCALE, instrument.valuationCurrency, today);
+    if (value === null) return { price: null, missingPrice: 'no-rate' };
     return {
-      price: { priceUsd: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+      price: { value: formatAtoms(value), observedAt: null, source: 'fixed', status: 'fixed' },
       missingPrice: null,
     };
   }
-  if (instrument.priceSource === 'market') {
-    const stored = instrument.symbol ? prices.market.get(instrument.symbol.toUpperCase()) : null;
-    if (!stored) return { price: null, missingPrice: 'no-price' };
-    const status = freshness(stored.observedAt, at) === 'fresh' ? 'fresh' : 'stale';
-    return { price: { ...stored, status }, missingPrice: null };
-  }
-  const stored = prices.manual.get(instrument.id);
+  const stored =
+    instrument.priceSource === 'market'
+      ? instrument.symbol
+        ? prices.market.get(instrument.symbol.toUpperCase())
+        : undefined
+      : prices.manual.get(instrument.id);
   if (!stored) return { price: null, missingPrice: 'no-price' };
-  return { price: { ...stored, status: 'manual' }, missingPrice: null };
+  // Stored market and manual prices are in USD.
+  const value = fx.convert(canonicalDecimalToAtoms(stored.priceUsd), 'USD', today);
+  if (value === null) return { price: null, missingPrice: 'no-rate' };
+  const status =
+    instrument.priceSource === 'manual'
+      ? 'manual'
+      : freshness(stored.observedAt, at) === 'fresh'
+        ? 'fresh'
+        : 'stale';
+  return {
+    price: {
+      value: formatAtoms(value),
+      observedAt: stored.observedAt,
+      source: stored.source,
+      status,
+    },
+    missingPrice: null,
+  };
+}
+
+const tradeKey = (tradeId: string, version: number) => `${tradeId}:${version}`;
+const lotKey = (lotId: string, revision: number, ordinal: number) =>
+  `${lotId}:${revision}:${ordinal}`;
+
+/**
+ * One covered account's FIFO result as dated lots and realizations. A transferred, rewarded
+ * or swapped fragment keeps its original acquisition instant.
+ */
+export function portfolioAccount(
+  identity: { accountId: string; name: string },
+  fifo: Pick<AccountFifoResult, 'lots' | 'realizations' | 'matches'>,
+  journal: {
+    trades: readonly FifoTrade[];
+    initialLots: readonly FifoCarryInInput[];
+    swaps?: readonly { swapId: string; outgoingInstrumentId: string; occurredAt: string }[];
+  },
+  swapAllocations: ReadonlyMap<string, SwapAllocation> = new Map(),
+): PortfolioAccountInput {
+  const trades = new Map(
+    journal.trades.map((trade) => [tradeKey(trade.tradeId, trade.version), trade.occurredAt]),
+  );
+  const carried = new Map(
+    journal.initialLots.map((lot) => [
+      lotKey(lot.lotId, lot.openingRevision, lot.ordinal),
+      lot.acquiredAt,
+    ]),
+  );
+  const known = <T>(value: T | undefined): T => {
+    if (value === undefined) throw new Error('FIFO evidence without its source');
+    return value;
+  };
+  const lots = fifo.lots.map((lot): PortfolioLot => {
+    const acquiredAt =
+      'origin' in lot
+        ? lot.origin.acquiredAt
+        : 'buyTradeId' in lot
+          ? lot.occurredAt
+          : lot.acquiredAt;
+    return {
+      instrumentId: lot.instrumentId,
+      quantity: lot.remainingQuantity,
+      costUsd: lot.remainingCostUsd,
+      acquiredAt,
+    };
+  });
+  const consumed = new Map<string, ConsumedCost[]>();
+  for (const match of fifo.matches) {
+    const acquiredAt =
+      'origin' in match
+        ? match.origin.acquiredAt
+        : 'buyTradeId' in match
+          ? known(trades.get(tradeKey(match.buyTradeId, match.buyVersion)))
+          : known(carried.get(lotKey(match.lotId, match.openingRevision, match.ordinal)));
+    const key = tradeKey(match.sellTradeId, match.sellVersion);
+    const list = consumed.get(key) ?? [];
+    list.push({ costUsd: match.costUsd, acquiredAt });
+    consumed.set(key, list);
+  }
+  const realizations: PortfolioRealization[] = fifo.realizations.map((sale) => ({
+    instrumentId: sale.instrumentId,
+    occurredAt: sale.occurredAt,
+    proceedsUsd: sale.netUsd,
+    consumed: consumed.get(tradeKey(sale.sellTradeId, sale.sellVersion)) ?? [],
+  }));
+  // A swap realizes its outgoing asset: consideration minus principal and fee basis.
+  for (const swap of journal.swaps ?? []) {
+    const allocation = swapAllocations.get(swap.swapId);
+    if (!allocation) continue;
+    realizations.push({
+      instrumentId: swap.outgoingInstrumentId,
+      occurredAt: swap.occurredAt,
+      proceedsUsd: allocation.considerationUsd,
+      consumed: allocation.items.map((item) => ({
+        costUsd: item.costUsd,
+        acquiredAt: item.origin.acquiredAt,
+      })),
+    });
+  }
+  return { ...identity, coverage: 'covered', lots, realizations };
 }
 
 function slices(values: Map<string, { label: string; value: bigint }>, subtotal: bigint) {
@@ -105,7 +231,7 @@ function slices(values: Map<string, { label: string; value: bigint }>, subtotal:
       ({ key, label, value }): AllocationSlice => ({
         key,
         label,
-        valueUsd: formatProduct(value),
+        value: formatProduct(value),
         percent: subtotal === 0n ? null : formatPercent(value, subtotal),
       }),
     );
@@ -122,63 +248,125 @@ function add(
   map.set(key, entry);
 }
 
-/** Whole-portfolio valuation from one database snapshot (portfolio-valuation, PV-1..4). */
+interface CostTotals {
+  quantity: bigint;
+  knownCost: bigint;
+  unknownQuantity: bigint;
+  missingRateQuantity: bigint;
+}
+interface RealizedTotals {
+  known: bigint;
+  unknown: number;
+  missingRate: number;
+}
+
+/**
+ * Whole-portfolio valuation from one database snapshot (portfolio-valuation, PV-1..4) in one
+ * accounting currency (CUR-*): costs at each acquisition date's rate, proceeds at each sale
+ * date's rate and current values at today's rate.
+ */
 export function projectPortfolio(
   at: Date,
   instruments: readonly PortfolioInstrument[],
   accounts: readonly PortfolioAccountInput[],
   prices: PortfolioPrices,
+  fx: FxConverter = usdOnly(),
 ) {
+  const today = moscowDate(at);
+  const toCurrency = (usd: string, instant: string) =>
+    fx.convert(signedAtoms(usd), 'USD', moscowDate(instant));
   const unavailableAccountCount = accounts.filter(
     (account) => account.coverage === 'before-coverage',
   ).length;
-  const resolved = new Map(instruments.map((item) => [item.id, resolvePrice(item, prices, at)]));
+  const resolved = new Map(
+    instruments.map((item) => [item.id, resolvePrice(item, prices, at, fx)]),
+  );
   const byAccount = new Map<string, { label: string; value: bigint }>();
   const accountValues = new Map<string, { value: bigint; missing: number }>();
   const holdings = new Map<
     string,
-    { accountId: string; accountName: string; quantity: bigint; value: bigint | null }[]
+    Map<string, { accountId: string; accountName: string; quantity: bigint }>
   >();
-  const totals = new Map<
-    string,
-    { quantity: bigint; knownCost: bigint; unknownQuantity: bigint }
-  >();
+  const totals = new Map<string, CostTotals>();
   for (const account of accounts) {
-    const summary = { value: 0n, missing: 0 };
-    for (const position of account.positions) {
-      const quantity = canonicalDecimalToAtoms(position.quantity);
+    for (const lot of account.lots) {
+      const quantity = canonicalDecimalToAtoms(lot.quantity);
       if (quantity === 0n) continue;
-      const price = resolved.get(position.instrumentId)?.price ?? null;
-      const value = price ? quantity * canonicalDecimalToAtoms(price.priceUsd) : null;
-      if (value === null) summary.missing++;
-      else summary.value += value;
-      const list = holdings.get(position.instrumentId) ?? [];
-      list.push({ accountId: account.accountId, accountName: account.name, quantity, value });
-      holdings.set(position.instrumentId, list);
-      const total = totals.get(position.instrumentId) ?? {
+      const perAccount = holdings.get(lot.instrumentId) ?? new Map();
+      const holding = perAccount.get(account.accountId) ?? {
+        accountId: account.accountId,
+        accountName: account.name,
+        quantity: 0n,
+      };
+      holding.quantity += quantity;
+      perAccount.set(account.accountId, holding);
+      holdings.set(lot.instrumentId, perAccount);
+      const total = totals.get(lot.instrumentId) ?? {
         quantity: 0n,
         knownCost: 0n,
         unknownQuantity: 0n,
+        missingRateQuantity: 0n,
       };
       total.quantity += quantity;
-      const unknown = position.unknownCostQuantity
-        ? canonicalDecimalToAtoms(position.unknownCostQuantity)
-        : 0n;
-      total.unknownQuantity += unknown;
-      total.knownCost += canonicalDecimalToAtoms(
-        position.costUsd ?? position.knownCostSubtotalUsd ?? '0',
-      );
-      totals.set(position.instrumentId, total);
+      if (lot.costUsd === null) total.unknownQuantity += quantity;
+      else {
+        const cost = toCurrency(lot.costUsd, lot.acquiredAt);
+        if (cost === null) total.missingRateQuantity += quantity;
+        else total.knownCost += cost;
+      }
+      totals.set(lot.instrumentId, total);
+    }
+  }
+  const valueAt = (instrumentId: string, quantity: bigint) => {
+    const price = resolved.get(instrumentId)?.price ?? null;
+    return price ? quantity * canonicalDecimalToAtoms(price.value) : null;
+  };
+  for (const account of accounts) {
+    const summary = { value: 0n, missing: 0 };
+    for (const [instrumentId, perAccount] of holdings) {
+      const holding = perAccount.get(account.accountId);
+      if (!holding) continue;
+      const value = valueAt(instrumentId, holding.quantity);
+      if (value === null) summary.missing++;
+      else summary.value += value;
     }
     accountValues.set(account.accountId, summary);
     if (summary.value > 0n) add(byAccount, account.accountId, account.name, summary.value);
   }
-  const realized = new Map<string, { known: bigint; unknown: number }>();
+  const realized = new Map<string, RealizedTotals>();
   for (const account of accounts) {
     for (const realization of account.realizations) {
-      const entry = realized.get(realization.instrumentId) ?? { known: 0n, unknown: 0 };
-      if (realization.realizedUsd === null) entry.unknown++;
-      else entry.known += signedAtoms(realization.realizedUsd);
+      const entry = realized.get(realization.instrumentId) ?? {
+        known: 0n,
+        unknown: 0,
+        missingRate: 0,
+      };
+      let result: bigint | null = null;
+      let missingRate = false;
+      const amounts = [
+        realization.proceedsUsd === null
+          ? null
+          : { usd: realization.proceedsUsd, at: realization.occurredAt, sign: 1n },
+        ...realization.consumed.map((item) =>
+          item.costUsd === null ? null : { usd: item.costUsd, at: item.acquiredAt, sign: -1n },
+        ),
+      ];
+      if (amounts.every((amount) => amount !== null)) {
+        result = 0n;
+        for (const amount of amounts) {
+          const converted = toCurrency(amount!.usd, amount!.at);
+          if (converted === null) {
+            missingRate = true;
+            result = null;
+            break;
+          }
+          result += amount!.sign * converted;
+        }
+      }
+      if (result === null) {
+        entry.unknown++;
+        if (missingRate) entry.missingRate++;
+      } else entry.known += result;
       realized.set(realization.instrumentId, entry);
     }
   }
@@ -188,6 +376,7 @@ export function projectPortfolio(
   let stalePriceCount = 0;
   let knownCost = 0n;
   let unknownCostCount = 0;
+  let missingRateCount = 0;
   let unrealized = 0n;
   let unrealizedComplete = true;
   let knownRealized = 0n;
@@ -196,13 +385,19 @@ export function projectPortfolio(
   const byAsset = new Map<string, { label: string; value: bigint }>();
   const assets = instruments.map((instrument) => {
     const { price, missingPrice } = resolved.get(instrument.id)!;
-    const total = totals.get(instrument.id) ?? { quantity: 0n, knownCost: 0n, unknownQuantity: 0n };
+    const total = totals.get(instrument.id) ?? {
+      quantity: 0n,
+      knownCost: 0n,
+      unknownQuantity: 0n,
+      missingRateQuantity: 0n,
+    };
     const held = total.quantity > 0n;
-    const knownQuantity = total.quantity - total.unknownQuantity;
-    const value = price ? total.quantity * canonicalDecimalToAtoms(price.priceUsd) : null;
-    const cost = total.unknownQuantity > 0n ? null : total.knownCost;
+    const knownQuantity = total.quantity - total.unknownQuantity - total.missingRateQuantity;
+    const value = valueAt(instrument.id, total.quantity);
+    const cost =
+      total.unknownQuantity > 0n || total.missingRateQuantity > 0n ? null : total.knownCost;
     const result = held && value !== null && cost !== null ? value - cost * ATOM_SCALE : null;
-    const realization = realized.get(instrument.id) ?? { known: 0n, unknown: 0 };
+    const realization = realized.get(instrument.id) ?? { known: 0n, unknown: 0, missingRate: 0 };
     if (held) {
       if (value === null) missingPriceCount++;
       else {
@@ -212,10 +407,11 @@ export function projectPortfolio(
       }
       if (price?.status === 'stale') stalePriceCount++;
       knownCost += total.knownCost;
-      if (cost === null) unknownCostCount++;
+      if (total.unknownQuantity > 0n) unknownCostCount++;
       if (result === null) unrealizedComplete = false;
       else unrealized += result;
     }
+    if ((held && total.missingRateQuantity > 0n) || realization.missingRate > 0) missingRateCount++;
     knownRealized += realization.known;
     unknownRealizedCount += realization.unknown;
     return {
@@ -229,42 +425,47 @@ export function projectPortfolio(
       price,
       missingPrice: price ? null : missingPrice,
       // Nothing held is a known zero whatever the price.
-      valueUsd: !held ? '0' : value === null ? null : formatProduct(value),
-      value,
+      value: !held ? '0' : value === null ? null : formatProduct(value),
+      sortValue: value,
       held,
-      costBasisUsd: cost === null ? null : formatAtoms(cost),
-      knownCostSubtotalUsd: formatAtoms(total.knownCost),
+      costBasis: cost === null ? null : formatAtoms(cost),
+      knownCostSubtotal: formatAtoms(total.knownCost),
       unknownCostQuantity: formatAtoms(total.unknownQuantity),
-      averageBuyPriceUsd: knownQuantity > 0n ? quotient(total.knownCost, knownQuantity) : null,
-      unrealizedPnlUsd: result === null ? null : formatSignedProduct(result),
+      missingRateQuantity: formatAtoms(total.missingRateQuantity),
+      averageBuyPrice: knownQuantity > 0n ? quotient(total.knownCost, knownQuantity) : null,
+      unrealizedPnl: result === null ? null : formatSignedProduct(result),
       unrealizedReturnPercent:
         result === null || cost === null || cost === 0n
           ? null
           : formatPercent(result, cost * ATOM_SCALE),
-      realizedPnlUsd: realization.unknown > 0 ? null : formatAtoms(realization.known),
-      knownRealizedSubtotalUsd: formatAtoms(realization.known),
+      realizedPnl: realization.unknown > 0 ? null : formatAtoms(realization.known),
+      knownRealizedSubtotal: formatAtoms(realization.known),
       unknownRealizedCount: realization.unknown,
-      holdings: (holdings.get(instrument.id) ?? [])
+      holdings: [...(holdings.get(instrument.id)?.values() ?? [])]
         .sort(
           (left, right) =>
             (left.quantity < right.quantity ? 1 : left.quantity > right.quantity ? -1 : 0) ||
             left.accountName.localeCompare(right.accountName, 'en'),
         )
-        .map((holding) => ({
-          accountId: holding.accountId,
-          accountName: holding.accountName,
-          quantity: formatAtoms(holding.quantity),
-          valueUsd: holding.value === null ? null : formatProduct(holding.value),
-        })),
+        .map((holding) => {
+          const holdingValue = valueAt(instrument.id, holding.quantity);
+          return {
+            accountId: holding.accountId,
+            accountName: holding.accountName,
+            quantity: formatAtoms(holding.quantity),
+            value: holdingValue === null ? null : formatProduct(holdingValue),
+          };
+        }),
     };
   });
   // Held and priced by value, held without a price, then everything else by name.
-  const rank = (asset: (typeof assets)[number]) => (!asset.held ? 2 : asset.value === null ? 1 : 0);
+  const rank = (asset: (typeof assets)[number]) =>
+    !asset.held ? 2 : asset.sortValue === null ? 1 : 0;
   assets.sort(
     (left, right) =>
       rank(left) - rank(right) ||
-      (left.value !== null && right.value !== null && left.value !== right.value
-        ? left.value < right.value
+      (left.sortValue !== null && right.sortValue !== null && left.sortValue !== right.sortValue
+        ? left.sortValue < right.sortValue
           ? 1
           : -1
         : 0) ||
@@ -274,28 +475,30 @@ export function projectPortfolio(
 
   const available = unavailableAccountCount === 0;
   const complete = available && missingPriceCount === 0;
-  const costComplete = available && unknownCostCount === 0;
+  const costComplete = available && unknownCostCount === 0 && missingRateCount === 0;
   return {
     at: at.toISOString(),
-    quoteCurrency: 'USD' as const,
+    currency: fx.currency as AccountingCurrency,
+    rates: fx.ratesOn(today),
     completeness: complete ? ('complete' as const) : ('incomplete' as const),
-    totalValueUsd: complete ? formatProduct(subtotal) : null,
-    pricedSubtotalUsd: formatProduct(subtotal),
+    totalValue: complete ? formatProduct(subtotal) : null,
+    pricedSubtotal: formatProduct(subtotal),
     missingPriceCount,
     stalePriceCount,
     unavailableAccountCount,
-    costBasisUsd: costComplete ? formatAtoms(knownCost) : null,
-    knownCostSubtotalUsd: formatAtoms(knownCost),
+    costBasis: costComplete ? formatAtoms(knownCost) : null,
+    knownCostSubtotal: formatAtoms(knownCost),
     unknownCostCount,
-    unrealizedPnlUsd: available && unrealizedComplete ? formatSignedProduct(unrealized) : null,
+    missingRateCount,
+    unrealizedPnl: available && unrealizedComplete ? formatSignedProduct(unrealized) : null,
     unrealizedReturnPercent:
       available && unrealizedComplete && costComplete && knownCost !== 0n
         ? formatPercent(unrealized, knownCost * ATOM_SCALE)
         : null,
-    realizedPnlUsd: available && unknownRealizedCount === 0 ? formatAtoms(knownRealized) : null,
-    knownRealizedSubtotalUsd: formatAtoms(knownRealized),
+    realizedPnl: available && unknownRealizedCount === 0 ? formatAtoms(knownRealized) : null,
+    knownRealizedSubtotal: formatAtoms(knownRealized),
     unknownRealizedCount,
-    assets: assets.map(({ value: _value, held: _held, ...asset }) => {
+    assets: assets.map(({ sortValue: _value, held: _held, ...asset }) => {
       const allocation = byAsset.get(asset.instrumentId);
       return {
         ...asset,
@@ -315,8 +518,7 @@ export function projectPortfolio(
         accountId: account.accountId,
         name: account.name,
         coverage: account.coverage,
-        pricedValueUsd:
-          account.coverage === 'before-coverage' ? null : formatProduct(summary.value),
+        pricedValue: account.coverage === 'before-coverage' ? null : formatProduct(summary.value),
         missingPriceCount: summary.missing,
       };
     }),

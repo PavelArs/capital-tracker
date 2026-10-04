@@ -1,5 +1,24 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — three accounting currencies (M5, 2026-10-04)
+
+Adds Bank of Russia USD and EUR rates and USD/EUR/RUB accounting. The `fx-rates` module
+collects `XML_dynamic` series (R01235, R01239) into append-only `fx_rates`, backfilled
+from 2025-01-01 and re-read a week back up to tomorrow (Moscow), hourly at most, under
+the existing `PRICE_COLLECTION_ENABLED` switch (sync source `fx:cbr`, `GET /fx-rates`).
+`owner_settings.mainCurrency` (USD default, `GET/PUT /owner-settings`) picks the
+Portfolio currency; `GET /accounting/portfolio?currency=` asks for another one. The
+report fields are now currency-neutral (`value`, `costBasis`, `realizedPnl`, ...,
+`price.value`) with `currency`, `mainCurrency`, `rates`, `missingRateCount`. A rate
+applies by the Moscow date of an operation, the latest stored rate on or before it
+(weekends and holidays); each FIFO lot keeps its acquisition-date cost and each
+realization its own date, so RUB/EUR P&L includes currency movement. A missing rate is
+never zero: the figure is null with `missingRateQuantity`. Fixed EUR/RUB cash is now
+valued. Migration 26 `AccountInThreeCurrencies1790900000000` (probes count 26); probe
+`fx-rates-db` in shard probes-1; browser case `CURRENCY-UI` is the 23rd critical case
+and stores the only acceptance rates. Buys paid in RUB/EUR (CUR-PAID-RUB) follow in a
+separate change.
+
 ## Current product slice — whole-portfolio valuation (M4, 2026-10-04)
 
 Change `value-whole-portfolio` (capability `portfolio-valuation`, PV-1..5; AST-3

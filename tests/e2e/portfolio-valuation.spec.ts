@@ -9,14 +9,14 @@ type AssetRow = {
   instrumentId: string;
   name: string;
   quantity: string;
-  price: { priceUsd: string; status: string } | null;
-  valueUsd: string | null;
-  costBasisUsd: string | null;
-  averageBuyPriceUsd: string | null;
-  unrealizedPnlUsd: string | null;
+  price: { value: string; status: string } | null;
+  value: string | null;
+  costBasis: string | null;
+  averageBuyPrice: string | null;
+  unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
-  realizedPnlUsd: string | null;
-  holdings: { accountId: string; quantity: string; valueUsd: string | null }[];
+  realizedPnl: string | null;
+  holdings: { accountId: string; quantity: string; value: string | null }[];
 };
 
 test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset across real accounts', async ({
@@ -66,14 +66,14 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   expect(asset).toMatchObject({
     name: assetName,
     quantity: '1.2',
-    price: { priceUsd: '80000', status: 'manual' },
-    valueUsd: '96000',
-    costBasisUsd: '66000',
-    averageBuyPriceUsd: '55000',
-    unrealizedPnlUsd: '30000',
+    price: { value: '80000', status: 'manual' },
+    value: '96000',
+    costBasis: '66000',
+    averageBuyPrice: '55000',
+    unrealizedPnl: '30000',
     unrealizedReturnPercent: '45.45',
-    realizedPnlUsd: '0',
-    holdings: [{ accountId: account.id, quantity: '1.2', valueUsd: '96000' }],
+    realizedPnl: '0',
+    holdings: [{ accountId: account.id, quantity: '1.2', value: '96000' }],
   });
   expect((await api.send('GET', '/portfolio?at=2025-01-01T00:00:00.000Z')).status()).toBe(400);
 

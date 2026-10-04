@@ -19,9 +19,11 @@ import { TypeOrmConfigService } from './config/typeorm.config';
 import { CryptoModule } from './crypto/crypto.module';
 import { CurrenciesModule } from './currencies/currencies.module';
 import { DisplayFxModule } from './display-fx/display-fx.module';
+import { FxRatesModule } from './fx-rates/fx-rates.module';
 import { HealthModule } from './health/health.module';
 import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { OwnerSettingsModule } from './owner-settings/owner-settings.module';
 import { PricesModule } from './prices/prices.module';
 import { GlobalExceptionFilter } from './shared/filters';
 import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.module';
@@ -102,7 +104,9 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     CryptoModule,
     CurrenciesModule,
     DisplayFxModule,
+    FxRatesModule,
     MetricsModule,
+    OwnerSettingsModule,
     HealthModule,
     PricesModule,
     WalletAddressesModule,
