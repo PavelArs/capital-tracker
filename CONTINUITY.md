@@ -29,6 +29,7 @@ change; archive after the first approved release shows both tags.
 Change `e2e-on-main-only` (ENG-006, owner decision 2026-10-04 after Actions minutes ran
 out and the repo went public): the release/acceptance job runs only on pushes to main;
 pull requests carry no browser evidence. Archive after the first main run with it.
+Change `parallel-release-acceptance` (ENG-007): images built once, critical acceptance in 5 parallel verified shards merged into the same receipt; CI also runs on manual dispatch (CD still push-only). Hosted run pending.
 
 ## Current product slice — unrealized profit/loss (2026-10-03)
 
