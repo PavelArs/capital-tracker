@@ -443,7 +443,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     for (const width of [360, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       if (width < 1000) {
-        const menu = page.getByRole('button', { name: 'Меню', exact: true });
+        const menu = page.getByRole('button', { name: 'Menu', exact: true });
         await menu.click();
         await expect(menu).toHaveAttribute('aria-expanded', 'true');
         await page.keyboard.press('Escape');
@@ -554,7 +554,7 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
             bounds.top + offset,
           );
           await expect(
-            page.getByRole('link', { name: 'К содержимому', exact: true }),
+            page.getByRole('link', { name: 'Skip to content', exact: true }),
           ).not.toBeInViewport();
           await page.screenshot({
             path: testInfo.outputPath(`swap-focus-${name}-${themeName}-${width}-${index + 1}.png`),

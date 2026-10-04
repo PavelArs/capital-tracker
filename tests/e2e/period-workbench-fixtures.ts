@@ -134,7 +134,7 @@ export async function capturePeriodWorkbench(
               bounds.top + offset,
             );
             await expect(
-              page.getByRole('link', { name: 'К содержимому', exact: true }),
+              page.getByRole('link', { name: 'Skip to content', exact: true }),
             ).not.toBeInViewport();
             const imageName = `${name}-${theme}-${width}-${targetIndex + 1}-${index + 1}`;
             await testInfo.attach(imageName, {

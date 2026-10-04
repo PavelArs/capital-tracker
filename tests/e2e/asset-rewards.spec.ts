@@ -592,7 +592,7 @@ test('REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry 
             bounds.top + offset,
           );
           await expect(
-            page.getByRole('link', { name: 'К содержимому', exact: true }),
+            page.getByRole('link', { name: 'Skip to content', exact: true }),
           ).not.toBeInViewport();
           await page.screenshot({
             path: testInfo.outputPath(

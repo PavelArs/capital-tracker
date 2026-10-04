@@ -1,29 +1,37 @@
-# Application navigation
+# Application shell
 
-Status: `redesign-application-shell` passed independent review and scoped verification
-and was archived on 2026-09-26. The complete frontend redesign and owner visual review
-are still required. The saved local preview has not been updated to this candidate.
+Status: change `add-app-shell` (M1 of [product requirements](product-requirements.md)
+once PR #37 lands; visual reference is the owner-accepted prototype of 2026-10-04).
 
-After password and MFA, the working entry is **Ручные счета**. It lists real manual
-accounts; selected-account valuation is not whole-portfolio/cash/provider coverage.
-Existing account URLs and editors remain available with their established exact
-amounts, correction/void protections and explicit recovery behavior.
+After password and TOTP the app opens **Dashboard**. The left sidebar lists the new
+sections in this order:
 
-On desktop, use the left navigation. On compact screens, **Меню** opens the same
-destinations in the page flow. The current section is highlighted. Escape closes an
-open menu and returns focus to its button; following a destination closes the menu.
-Keyboard users can use **К содержимому** to jump to the main content. Opening the menu
-or resizing the viewport does not remount an entered operation or submit it.
+| Section | URL | State in M1 |
+|---|---|---|
+| Dashboard | `/dashboard` | placeholder, links to manual accounts |
+| Portfolio | `/portfolio` | placeholder, links to manual accounts |
+| Transactions | `/transactions` | placeholder, links to manual accounts |
+| Wallets | `/wallets` | placeholder, links to wallet addresses |
+| Settings | `/preferences` | theme: System / Dark / Light |
 
-**Прежние данные** contains the old overview, assets and crypto wallets. The overview
-now lives at `/legacy-overview` and visibly excludes manual accounts. Existing legacy
-data remains intact; retired liability URLs still show their existing notice.
-**Выход** retains real server-side session revocation. Light/dark/system preferences
-remain in Settings; password, authenticator and recovery behavior is unchanged.
+Placeholders say the section is not built yet, show no numbers and make no requests.
+Their own changes replace them (M2/M4, M6, M8, M10, M18).
 
-This slice replaces only navigation, entry and login presentation. The next active
-[directory slice](account-directory.md) now leads with saved accounts and exposes
-creation/valuation on demand. Long operation editors, valuation/performance screens
-and settings still need the workflow redesign in [the backlog](frontend-redesign-plan.md). See the
-[verification record](../openspec/changes/archive/2026-09-26-redesign-application-shell/verification.md)
-for actual RED/GREEN, images, screenshots, unrun checks and review blocker.
+**Legacy** (open by default, collapsible) holds every current screen with its Russian
+name and unchanged URL: manual accounts, owned transfers, external flows, manual
+prices, wallet addresses, period profit, legacy settings (`/settings`), the old
+overview, legacy assets and crypto wallets. Retired liabilities stay out of the
+navigation. Legacy screens keep their own styles and language (decision D6).
+
+Theme: System is the default and follows the device; Dark or Light is stored in this
+browser (`localStorage.theme`) and survives reload. The shell and new pages use the
+prototype's tokens (`frontend/src/features/shell/tokens.css`), dark first, system font.
+
+The sidebar foot holds a sync slot ("Sync not set up" until background sync exists)
+and the owner block with **Log out**. Below 960 px the sidebar collapses behind
+**Menu** (Escape closes it and returns focus); **Skip to content** jumps to the main
+area. Desktop 1440 and 1280 show the full sidebar.
+
+The earlier Russian shell is described in the archived change
+`2026-09-26-redesign-application-shell`. Verification for this change is in
+`openspec/changes/add-app-shell/verification.md` (moves to the archive after hosted CI).

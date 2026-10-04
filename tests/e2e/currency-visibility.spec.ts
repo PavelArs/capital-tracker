@@ -458,7 +458,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
         ] as const) {
           await target.evaluate((node) => node.scrollIntoView({ block: 'start' }));
           await expect(
-            page.getByRole('link', { name: 'К содержимому', exact: true }),
+            page.getByRole('link', { name: 'Skip to content', exact: true }),
           ).not.toBeInViewport();
           await page.screenshot({
             path: testInfo.outputPath(`currency-visible-${theme}-${width}-${part}.png`),
@@ -484,7 +484,7 @@ test('CVIS-UI: currency visibility recovers real lost reads and committed prefer
         }
         await manager.evaluate((node) => node.scrollIntoView({ block: 'start' }));
         await expect(
-          page.getByRole('link', { name: 'К содержимому', exact: true }),
+          page.getByRole('link', { name: 'Skip to content', exact: true }),
         ).not.toBeInViewport();
         await page.screenshot({
           path: testInfo.outputPath(`currency-hidden-${theme}-${width}.png`),
