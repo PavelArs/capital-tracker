@@ -102,8 +102,8 @@ if(tool==='docker'){
    }
    process.exit(0);
   }
-  if(s.includes('PG_VERSION'))process.stdout.write(process.env.RELEASE_INSTALLATION==='resume-fresh'?'18':'16');
-  else if(s.includes('owner_auth WHERE id=1'))process.stdout.write('11111111-1111-1111-1111-111111111111');
+  if(s.includes('PG_VERSION'))process.stdout.write(['resume-fresh','resume-activation'].includes(process.env.RELEASE_INSTALLATION)?'18':'16');
+  else if(s.includes('owner_auth WHERE id=1'))process.stdout.write(mode==='no-owner'?'':'11111111-1111-1111-1111-111111111111');
   else if(s.includes('SELECT name FROM migrations'))process.stdout.write((mode==='unsafe-schema'?original.split('\\n').slice(1).join('\\n'):original)+(fs.existsSync(changed)?'\\nNewAdditiveMigration':'')+'\\n');
   else if(s.includes('pg_restore')){fs.readFileSync(0);if(mode==='restore'||(mode==='restore-temp-window'&&!fs.existsSync(path.join(root,'final-restore-ready'))))process.exit(1);}
   else if(s.includes('pg_dump -Fc')){if(mode==='dump')process.exit(1);process.stdout.write('SYNTHETIC_DUMP');}
@@ -457,6 +457,98 @@ describe('MVP-008: generated runtime does not depend on the legacy template', ()
     writeFileSync(join(directory, '.release-managed-env'), 'generated-runtime-only\n');
     const { result } = release('success', 'existing', 'preflight');
     expect(result.status).toBe(0);
+  });
+});
+
+describe('RAP-003: resume an interrupted activation', () => {
+  const ownerCli = (call: Command) =>
+    call.tool === 'docker' &&
+    call.args.some((item) => item.includes('owner-cli.js') || item.includes('mfa-cli.js'));
+  const infrastructure = (call: Command) =>
+    call.tool === 'docker' &&
+    call.args[0] === 'compose' &&
+    (call.args.includes('pull') || call.args.includes('up')) &&
+    (call.args.includes('postgres') || call.args.includes('redis'));
+  const stop = (call: Command) =>
+    call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('stop');
+  const dump = (call: Command) =>
+    call.tool === 'docker' && call.args.join(' ').includes('pg_dump -Fc');
+  const pull = (call: Command) =>
+    call.tool === 'docker' && call.args[0] === 'compose' && call.args.includes('pull');
+  beforeEach(() => {
+    // The 2026-10-02 attempt: migrated and provisioned, never activated.
+    rmSync(join(directory, 'docker-compose.yml'));
+    rmSync(join(directory, '.env'));
+    writeFileSync(join(directory, 'operator', 'recovery.json'), '{"codes":["synthetic"]}');
+  });
+
+  it('RAP-003-A completes activation without provisioning the owner or touching infrastructure', () => {
+    writeFileSync(join(directory, 'candidate.yml'), '# Reviewed candidate configuration\n');
+    const { result, calls } = release('success', 'resume-activation');
+    expect(result.status).toBe(0);
+    const stopIndex = calls.findIndex(stop);
+    const dumpIndex = calls.findIndex(dump);
+    const restoreIndex = calls.findIndex(
+      (call) => call.tool === 'docker' && call.args.includes('pg_restore'),
+    );
+    expect(stopIndex).toBeGreaterThan(0);
+    expect(dumpIndex).toBeGreaterThan(stopIndex);
+    expect(restoreIndex).toBeGreaterThan(dumpIndex);
+    expect(calls.findIndex(migration)).toBeGreaterThan(restoreIndex);
+    expect(calls.filter(ownerCli)).toEqual([]);
+    expect(calls.filter(infrastructure)).toEqual([]);
+    expect(
+      calls.some((call) => appUp(call) && call.backend === backend && call.frontend === frontend),
+    ).toBe(true);
+    expect(readFileSync(join(directory, '.env.images'), 'utf8')).toBe(
+      `BACKEND_IMAGE=${backend}\nFRONTEND_IMAGE=${frontend}\n`,
+    );
+    expect(readFileSync(join(directory, 'docker-compose.yml'), 'utf8')).toBe(
+      '# Reviewed candidate configuration\n',
+    );
+    expect(readFileSync(join(directory, '.release-managed-env'), 'utf8')).toBe(
+      'generated-runtime-only\n',
+    );
+  }, 20000);
+
+  it('RAP-003-A read-only preflight verifies the interrupted state without changes', () => {
+    const { result, calls } = release('success', 'resume-activation', 'preflight');
+    expect(result.status).toBe(0);
+    expect(
+      calls.some((call) => call.tool === 'docker' && call.args.join(' ').includes('owner_auth')),
+    ).toBe(true);
+    for (const forbidden of [stop, dump, pull, migration, appUp, ownerCli])
+      expect(calls.filter(forbidden)).toEqual([]);
+  });
+
+  it.each([
+    ['activated compose', 'docker-compose.yml'],
+    ['activated image selection', '.env.images'],
+    ['managed marker', '.release-managed-env'],
+    ['missing recovery codes', ''],
+    ['missing owner', ''],
+  ])('RAP-003-B refuses %s before any change', (name, file) => {
+    if (file) writeFileSync(join(directory, file), '# Already activated\n');
+    if (name === 'missing recovery codes') rmSync(join(directory, 'operator', 'recovery.json'));
+    for (const action of ['preflight', 'deploy']) {
+      const { result, calls } = release(
+        name === 'missing owner' ? 'no-owner' : 'success',
+        'resume-activation',
+        action,
+      );
+      expect(result.status).not.toBe(0);
+      for (const forbidden of [stop, dump, pull, migration, appUp, ownerCli])
+        expect(calls.filter(forbidden)).toEqual([]);
+      expect(existsSync(join(directory, '.env.images'))).toBe(file === '.env.images');
+    }
+  });
+
+  it('RAP-003-C existing release without activation names the recovery mode', () => {
+    writeFileSync(join(directory, '.release-managed-env'), 'generated-runtime-only\n');
+    const { result, calls } = release('success', 'existing', 'preflight');
+    expect(result.status).not.toBe(0);
+    expect(result.stdout).toContain('resume-activation');
+    expect(calls.some((call) => call.tool === 'docker')).toBe(false);
   });
 });
 

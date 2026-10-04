@@ -4,7 +4,7 @@ set -Eeuo pipefail
 umask 077
 mode=${1:?Use preflight or deploy}
 installation=${RELEASE_INSTALLATION:-existing}
-[[ $installation == existing || $installation == fresh || $installation == resume-fresh ]] || exit 2
+[[ $installation =~ ^(existing|fresh|resume-fresh|resume-activation)$ ]] || exit 2
 commit=${2:?Required commit}
 backend=${3:-}
 frontend=${4:-}
@@ -25,8 +25,18 @@ fi
 # This lock serializes server operations independently of Actions concurrency.
 exec 9>"$root/.release.lock"
 flock -n 9 || { echo 'Another release holds the server lock'; exit 1; }
-if [[ $installation == existing || $installation == resume-fresh ]]; then
-  if [[ $installation == existing ]]; then [[ -f "$root/docker-compose.yml" ]] || exit 1; fi
+if [[ $installation == resume-activation ]]; then
+  # Only the interrupted first activation qualifies: migrated, owner and MFA provisioned,
+  # never activated. An activated release upgrades as existing instead.
+  for file in docker-compose.yml .env.images .release-managed-env; do
+    [[ ! -e "$root/$file" && ! -L "$root/$file" ]] || { echo 'Activation resume refused: a release is already activated; use existing'; exit 1; }
+  done
+  [[ -f "$root/operator/recovery.json" && ! -L "$root/operator/recovery.json" ]] || { echo 'Activation resume refused: no confirmed MFA enrollment from the interrupted installation'; exit 1; }
+fi
+if [[ $installation == existing || $installation == resume-fresh || $installation == resume-activation ]]; then
+  if [[ $installation == existing ]]; then
+    [[ -f "$root/docker-compose.yml" ]] || { echo 'No activated release; complete the interrupted installation with installation=resume-activation'; exit 1; }
+  fi
   db=$(docker inspect capital_tracker_db --format '{{.Id}}')
   project=$(docker inspect "$db" --format '{{index .Config.Labels "com.docker.compose.project"}}')
   actual_major=$(docker exec "$db" sh -c 'cat "$PGDATA/PG_VERSION"')
@@ -55,7 +65,7 @@ candidate_target=$(jq -er '.services.postgres.volumes[] | select(.type=="volume"
 [[ $expected_major == 16 || $expected_major == 18 ]] || { echo 'Unsupported PostgreSQL major'; exit 1; }
 if [[ $expected_major == 18 ]]; then expected_target=/var/lib/postgresql; else expected_target=/var/lib/postgresql/data; fi
 [[ $candidate_target == "$expected_target" ]] || { echo 'PostgreSQL volume layout mismatch'; exit 1; }
-if [[ $installation == existing || $installation == resume-fresh ]]; then
+if [[ $installation == existing || $installation == resume-fresh || $installation == resume-activation ]]; then
   [[ $actual_major == "$expected_major" ]] || { echo 'PostgreSQL major change refused; preserve existing data'; exit 1; }
   volume=$(docker inspect "$db" | jq -er --arg target "$candidate_target" '.[0].Mounts[] | select(.Destination==$target and .Type=="volume") | .Name')
   # Resolve locally. Never pull or restart infrastructure during an application release.
@@ -105,13 +115,20 @@ smoke() {
 }
 # Schema names alone contain no owner portfolio values.
 ledger() { docker exec "$db" sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT name FROM migrations ORDER BY id"'; }
-if [[ $installation == existing ]]; then before=$(ledger); else before=''; fi
+if [[ $installation == existing || $installation == resume-activation ]]; then before=$(ledger); else before=''; fi
 # Explicit refusal before changing owner data; migrate.js also enforces this invariant.
-if [[ $installation == existing ]]; then
+if [[ $installation == existing || $installation == resume-activation ]]; then
 for migration in MigrateCurrencyToForeignKey1764000000000 DropStubModuleTables1764100000000 DropRemovedModuleTables1764200000000 CleanupCryptoTypeEnum1764300000000; do
   [[ $before == *"$migration"* ]] || { echo 'Legacy schema requires a separate data-preserving upgrade plan'; exit 1; }
 done
+fi
+if [[ $installation == existing ]]; then
 smoke || { echo 'Existing HTTPS readiness/privacy preflight failed'; exit 1; }
+elif [[ $installation == resume-activation ]]; then
+  owner_id=$(docker exec "$db" sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT \"userId\" FROM owner_auth WHERE id=1"')
+  [[ $owner_id =~ ^[a-f0-9-]{36}$ ]] || { echo 'Activation resume refused: no provisioned owner'; exit 1; }
+  # The applications are stopped; only the TLS identity can be checked before activation.
+  curl --silent --show-error --max-time 10 --output /dev/null "$origin/"
 else
   # TLS identity must already be valid; an absent app may return 404/502 before first deployment.
   curl --silent --show-error --max-time 10 --output /dev/null "$origin/"
@@ -119,6 +136,8 @@ fi
 if [[ $mode == preflight ]]; then
   if [[ $installation == resume-fresh ]]; then
     echo 'Read-only resume preflight passed: interrupted infrastructure and TLS identity verified; application not activated'
+  elif [[ $installation == resume-activation ]]; then
+    echo 'Read-only activation resume preflight passed: migrated database, provisioned owner and TLS identity verified; application not activated'
   else
     echo 'Read-only preflight passed: existing project/volume, configuration, key and HTTPS privacy boundaries verified'
   fi
@@ -188,7 +207,7 @@ apps_stopped=true
 if [[ $installation == existing || $installation == resume-fresh ]]; then
   compare_resume
 fi
-if [[ $installation == existing ]]; then
+if [[ $installation == existing || $installation == resume-activation ]]; then
   dc stop backend frontend
 elif [[ $installation == fresh ]]; then
   # Fresh data creation follows explicit absence proof; never overwrite an existing project.
@@ -285,11 +304,11 @@ compare_resume active
 printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' "$backend" "$frontend" >"$root/.env.images.next"
 printf 'commit=%s\nbackend=%s\nfrontend=%s\nbackup=%s\nhealth=passed\n' "$commit" "$backend" "$frontend" "$backup" >"$state/receipt.next"
 cp "$candidate" "$root/docker-compose.yml.next"
-if [[ $installation == fresh || $installation == resume-fresh ]]; then printf 'generated-runtime-only\n' >"$root/.release-managed-env.next"; fi
+if [[ $installation != existing ]]; then printf 'generated-runtime-only\n' >"$root/.release-managed-env.next"; fi
 activation_started=true
 mv "$root/.env.images.next" "$root/.env.images"
 mv "$root/docker-compose.yml.next" "$root/docker-compose.yml"
-if [[ $installation == fresh || $installation == resume-fresh ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
+if [[ $installation != existing ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
 mv "$state/receipt.next" "$state/receipt"
 success=true
 echo 'Release verified; private server receipt records images, schema and encrypted backup'

@@ -110,9 +110,9 @@ class InstallerProcessAcceptance(unittest.TestCase):
             source = source.replace("ROOT_UID = 0", "ROOT_UID = " + str(os.getuid()))
         script = self.checkout / "scripts/installer-fixture.sh"
         script.write_text(source)
-        argument = self.key if operation == "install" else self.root / "receipt.json"
+        arguments = {"install": [str(self.key)], "approve": [str(self.root / "receipt.json")]}.get(operation, [])
         environment = {**os.environ, "PATH": str(self.bin) + os.pathsep + os.environ["PATH"], "FIXTURE_ROOT": str(self.root), "TMPDIR": str(self.root), "FIXTURE_BAD_INSTALL": "1" if bad_install else "0"}
-        return subprocess.run(["/bin/bash", str(script), operation, str(argument)], capture_output=True, text=True, env=environment)
+        return subprocess.run(["/bin/bash", str(script), operation, *arguments], capture_output=True, text=True, env=environment)
 
     def mutations(self):
         path = self.root / "mutations"
@@ -313,6 +313,54 @@ class InstallerProcessAcceptance(unittest.TestCase):
                     path.chmod(0o755 if path.is_dir() else 0o644)
                     (self.root / "mutations").unlink(missing_ok=True)
                     (self.root / "dispatcher-executed").unlink(missing_ok=True)
+
+    def snapshot(self, *paths):
+        return {str(path): path.read_bytes() for path in paths}
+
+    def test_update_refreshes_only_reviewed_files_without_rekeying(self):
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.write_receipt()
+        self.assertEqual(self.run_installer("approve").returncode, 0)
+        protected = [
+            self.home / ".ssh/authorized_keys", self.server / "etc/sudoers.d/capital-release",
+            self.server / "etc/capital-tracker/docker-config/config.json", self.receipts / (COMMIT + "-123.json"),
+        ]
+        before = self.snapshot(*protected)
+        (self.root / "mutations").unlink()
+        for relative in ("docker-compose.yml", "scripts/manual-mvp-release.sh", "scripts/manual-mvp-dispatcher.py"):
+            with open(self.checkout / relative, "a") as handle:
+                handle.write("\n# reviewed update\n")
+        result = self.run_installer("update")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.libexec / "manual-mvp-dispatcher").read_bytes(),
+                         (self.checkout / "scripts/manual-mvp-dispatcher.py").read_bytes())
+        self.assertEqual((self.libexec / "manual-mvp-dispatcher").stat().st_mode & 0o777, 0o755)
+        for source, name in (("docker-compose.yml", "docker-compose.yml"), ("scripts/manual-mvp-release.sh", "manual-mvp-release.sh")):
+            installed = self.libexec / "release" / name
+            self.assertEqual(installed.read_bytes(), (self.checkout / source).read_bytes())
+            self.assertEqual(installed.stat().st_mode & 0o777, 0o644)
+        self.assertEqual(self.snapshot(*protected), before)
+        commands = {json.loads(line)[0] for line in self.mutations().splitlines()}
+        self.assertEqual(commands, {"install", "mv"})
+
+    def test_update_refuses_without_a_completed_installation(self):
+        result = self.run_installer("update")
+        self.assert_clean_refusal(result)
+        self.assertFalse((self.libexec / "manual-mvp-dispatcher").exists())
+
+    def test_update_refuses_unsafe_installation_paths_before_any_change(self):
+        result = self.run_installer()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        (self.root / "mutations").unlink()
+        release = self.libexec / "release"
+        before = self.snapshot(*sorted(release.iterdir()))
+        release.chmod(0o777)
+        try:
+            self.assert_clean_refusal(self.run_installer("update"))
+        finally:
+            release.chmod(0o755)
+        self.assertEqual(self.snapshot(*sorted(release.iterdir())), before)
 
 
 if __name__ == "__main__":
