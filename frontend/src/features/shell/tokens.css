@@ -1,0 +1,63 @@
+/* Design tokens of the accepted prototype (2026-10-04). Dark first; light follows
+   data-theme from ThemeContext. Names avoid the legacy tokens in index.css. */
+:root {
+  --bg: #0d1016;
+  --surface: #141821;
+  --raised: #1b202b;
+  --sunken: #0a0d12;
+  --line: rgba(214, 224, 255, 0.08);
+  --line-strong: rgba(214, 224, 255, 0.15);
+  --ink: #eef1f8;
+  --ink-2: #a9b1c3;
+  --ink-3: #727a8e;
+  --accent: #8c9bff;
+  --accent-hover: #a3afff;
+  --accent-ink: #0d1016;
+  --accent-soft: rgba(140, 155, 255, 0.14);
+  --pos: #3dd68c;
+  --pos-soft: rgba(61, 214, 140, 0.12);
+  --neg: #ff6b6b;
+  --warn: #f2b544;
+  --warn-soft: rgba(242, 181, 68, 0.12);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+
+  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+}
+
+:root[data-theme="light"] {
+  --bg: #f3f4f7;
+  --surface: #ffffff;
+  --raised: #f7f8fb;
+  --sunken: #eceef3;
+  --line: rgba(20, 28, 52, 0.08);
+  --line-strong: rgba(20, 28, 52, 0.15);
+  --ink: #121726;
+  --ink-2: #4f586b;
+  --ink-3: #7d8599;
+  --accent: #4b55d6;
+  --accent-hover: #3c46c4;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(75, 85, 214, 0.1);
+  --pos: #0b8a4a;
+  --pos-soft: rgba(11, 138, 74, 0.1);
+  --neg: #cc3340;
+  --warn: #9a6200;
+  --warn-soft: rgba(214, 150, 20, 0.14);
+  --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
+}

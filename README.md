@@ -57,10 +57,11 @@ Original project folders/data remain untouched.
 
 Capital tracking application with manual-account workflows and retained legacy asset, crypto-wallet and financial-metrics screens during the incremental refactor.
 
-The first [navigation redesign](docs/application-shell.md) opens manual accounts after
-login and groups legacy views separately. It passes scoped runtime checks and awaits
-independent review; the [complete frontend redesign](docs/frontend-redesign-plan.md)
-is still in progress. The saved local preview has not yet been updated.
+The [application shell](docs/application-shell.md) follows the owner-accepted
+prototype (change M1 of `docs/product-requirements.md`): an English left sidebar with
+Dashboard, Portfolio, Transactions, Wallets and Settings, and every current screen
+under "Legacy" with its URL unchanged. New sections are placeholders until their own
+changes ship.
 
 ## Tech Stack
 
