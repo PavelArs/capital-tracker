@@ -43,7 +43,7 @@ criteria AST-TYPES and AST-NEW; gap-analysis row 12).
 
 Depends on M1 (`add-app-shell`, PR #38) for the Portfolio route. Backend:
 `backend/src/accounting` input parsing, `accounting.service.ts`, entity and one
-migration. Frontend: `accounting.api.ts` types and a new `features/portfolio` page.
+migration. Frontend: a new `portfolio-assets.api.ts` client and a new `features/portfolio` page.
 Tests: backend unit tests, a new real-PostgreSQL probe, the migration probe and the
 probes that count migrations.
 
