@@ -2,6 +2,7 @@
 # Privileged operator setup for the restricted manual MVP release identity.
 # Run as root from the reviewed Git checkout of the commit being released:
 #   install PUBLIC_KEY_FILE   create/refresh the Capital-only SSH principal and root-owned files
+#   update                    refresh only the dispatcher and reviewed server files
 #   approve RECEIPT_FILE      install an owner-reviewed CI receipt for this checkout's commit
 # It never adds the principal to the docker group, changes shared deploy rights,
 # reads application secrets or starts containers.
@@ -90,6 +91,20 @@ for name, digest in sorted(receipt['files'].items()):
 PY
 }
 
+# Publish the dispatcher and reviewed server files through validated staging names.
+publish_release_files() {
+  install -o root -g root -m 0755 "$source/scripts/manual-mvp-dispatcher.py" "$dispatcher.next"
+  validate_paths required "f:$dispatcher.next"
+  mv -T "$dispatcher.next" "$dispatcher"
+  for pair in "${files[@]}"; do
+    install -o root -g root -m 0644 "$source/${pair%%:*}" "$release/${pair#*:}.next"
+    validate_paths required "f:$release/${pair#*:}.next"
+    mv -T "$release/${pair#*:}.next" "$release/${pair#*:}"
+    validate_paths required "f:$release/${pair#*:}"
+  done
+  validate_paths required "f:$dispatcher"
+}
+
 case ${1:-} in
   install)
     key=${2:?Public key file}
@@ -113,16 +128,7 @@ case ${1:-} in
     install -d -o root -g root -m 0755 "$home" "$home/.ssh" "$libexec" "$release" /etc/capital-tracker
     install -d -o root -g root -m 0700 "$receipts" "$docker_config"
     validate_paths required "d:$home/.ssh" "d:$release" "d:$receipts" "d:$docker_config"
-    install -o root -g root -m 0755 "$source/scripts/manual-mvp-dispatcher.py" "$dispatcher.next"
-    validate_paths required "f:$dispatcher.next"
-    mv -T "$dispatcher.next" "$dispatcher"
-    for pair in "${files[@]}"; do
-      install -o root -g root -m 0644 "$source/${pair%%:*}" "$release/${pair#*:}.next"
-      validate_paths required "f:$release/${pair#*:}.next"
-      mv -T "$release/${pair#*:}.next" "$release/${pair#*:}"
-      validate_paths required "f:$release/${pair#*:}"
-    done
-    validate_paths required "f:$dispatcher"
+    publish_release_files
     # Keep registry authentication private while configuring only the installed
     # native Snap Compose directory. No global Docker executable/plugin changes.
     staged=$(mktemp)
@@ -180,6 +186,16 @@ PYCONFIG
     echo "Installed $user with forced dispatcher; confirm any AllowUsers/AllowGroups above permit it."
     sha256sum "$dispatcher" "$release"/*
     ;;
+  update)
+    # Server files only: the principal, its key, sudo rule, registry login and receipts stay as installed.
+    [[ $# == 1 ]] || { echo 'update takes no arguments'; exit 2; }
+    validate_paths existing "${installation_paths[@]}"
+    validate_paths required "f:$dispatcher" "d:$release" "f:$home/.ssh/authorized_keys" "f:$sudoers"
+    [[ -z $(git -C "$source" status --porcelain --untracked-files=no) ]] || { echo 'Checkout has local changes'; exit 1; }
+    publish_release_files
+    echo "Updated release files from commit $(git -C "$source" rev-parse HEAD)"
+    sha256sum "$dispatcher" "$release"/*
+    ;;
   approve)
     file=${2:?Receipt file}
     validate_paths existing "${installation_paths[@]}"
@@ -210,7 +226,7 @@ PYCONFIG
     echo "Approved single-use receipt for commit $commit run $run"
     ;;
   *)
-    echo 'Usage: manual-mvp-dispatcher-install.sh install PUBLIC_KEY_FILE | approve RECEIPT_FILE'
+    echo 'Usage: manual-mvp-dispatcher-install.sh install PUBLIC_KEY_FILE | update | approve RECEIPT_FILE'
     exit 2
     ;;
 esac

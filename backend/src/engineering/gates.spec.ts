@@ -388,7 +388,7 @@ describe('ENG-005: critical real release acceptance preserves security and block
       const validation = workflow('cd').jobs.deploy.steps?.find(
         (step) => step.name === 'Validate trusted successful candidate provenance',
       );
-      expect(validation?.if).toBe("inputs.mode != 'inventory'");
+      expect(validation?.if).toBe("env.RELEASE_MODE != 'inventory'");
       const script = validation?.run?.match(/node - <<'NODE'\n([\s\S]*?)\nNODE/);
       expect(script).not.toBeNull();
       const names = [
@@ -495,10 +495,11 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     steps = cd.jobs.deploy.steps ?? [];
   });
 
-  it('ENG-002-A permits manual dispatch only, without automatic push deployment', () => {
-    expect(Object.keys(cd.on)).toEqual(['workflow_dispatch']);
+  it('ENG-002-A permits manual dispatch or completed main CI only, never push deployment', () => {
+    expect(Object.keys(cd.on).sort()).toEqual(['workflow_dispatch', 'workflow_run']);
+    expect(cd.on).not.toHaveProperty('push');
     expect(Object.keys(cd.jobs)).toEqual(['deploy']);
-    expect(inputs.mode.options).toEqual(['inventory', 'promote', 'preflight', 'deploy']);
+    expect(inputs.mode.options).toEqual(['release', 'inventory', 'promote', 'preflight', 'deploy']);
     // Deployment credentials live in an owner-protectable environment.
     const deploy = cd.jobs.deploy as WorkflowJob & { environment?: string };
     expect(deploy.environment).toBe('production');
@@ -507,8 +508,8 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
 
   it('ENG-002-A allows only read-only inventory of one pinned commit outside main', () => {
     // Exact expression: an OR/always() escape must not pass string-presence checks.
-    expect(expression(cd.jobs.deploy.if)).toBe(
-      "github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)",
+    expect(expression(cd.jobs.deploy.if).replace(/\s+/g, ' ')).toBe(
+      "(github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && (github.ref == 'refs/heads/main' || (inputs.mode == 'inventory' && github.ref == 'refs/heads/release/manual-mvp' && github.sha == vars.MVP_PREFLIGHT_COMMIT)))",
     );
   });
 
@@ -518,18 +519,25 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     expect(serverSteps.map((step) => step.name)).toEqual([
       'Send a data-only request to the root-owned release dispatcher',
     ]);
-    expect(serverSteps[0].if).toBe("inputs.mode != 'promote'");
+    expect(serverSteps[0].if).toBe("env.RELEASE_MODE != 'promote'");
     // The Docker-capable shared deployment key, uploads and remote shell execution are gone.
     expect(JSON.stringify(cd)).not.toMatch(/DEPLOY_SSH_KEY\b|DEPLOY_USER\b/);
     expect(commands).not.toMatch(/\bscp\b|\brsync\b|\bsftp\b|bash -s|DOCKER_CONFIG/);
     expect(serverSteps[0].run).toMatch(
-      /jq -cn [^|]*'\{version: 1, operation: \$operation, commit: \$commit, runId: \$runId\}' \\\n\s*\| ssh -T /,
+      /jq -cn [^|]*'\{version: 1, operation: \$operation, commit: \$commit, runId: \$runId\}' \| dispatch$/m,
     );
-    expect(serverSteps[0].run).toMatch(/"\$DEPLOY_DISPATCH_USER@\$DEPLOY_HOST"\s*$/);
+    expect(serverSteps[0].run).toMatch(
+      /'\{version: 2, operation: \$operation, commit: \$commit, runId: \$runId, receipt: \.\}' "\$receipt" \| dispatch$/m,
+    );
+    // The only ssh invocation is the fixed dispatcher principal with a pinned identity.
+    expect(serverSteps[0].run?.match(/(?:^|\s)ssh\s/gm)).toHaveLength(1);
+    expect(serverSteps[0].run).toMatch(/^\s*"\$DEPLOY_DISPATCH_USER@\$DEPLOY_HOST"$/m);
   });
 
   it('ENG-002-B publishes images and an approval receipt only from validated promotion', () => {
-    const promote = steps.filter((step) => step.if === "inputs.mode == 'promote'");
+    const promote = steps.filter(
+      (step) => step.if === "env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'",
+    );
     expect(promote.map((step) => step.name)).toEqual([
       'Download and verify the tested candidate',
       'Promote the identical tested images',
@@ -539,7 +547,7 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     const validation = steps.find(
       (step) => step.name === 'Validate trusted successful candidate provenance',
     );
-    expect(validation?.if).toBe("inputs.mode != 'inventory'");
+    expect(validation?.if).toBe("env.RELEASE_MODE != 'inventory'");
     expect(steps.indexOf(validation as never)).toBeLessThan(steps.indexOf(promote[0] as never));
     expect(promote[2].run).toMatch(/python3 scripts\/manual-mvp-receipt\.py /);
   });

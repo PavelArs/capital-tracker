@@ -155,6 +155,62 @@ class DispatcherRequestAcceptance(unittest.TestCase):
             self.assertRaises(dispatcher.Refusal, dispatcher.verify_installation, receipt, config)
 
 
+class EnvironmentApprovedRequestAcceptance(unittest.TestCase):
+    """RAP-002: version 2 requests carry the receipt promoted in the approved job."""
+
+    def setUp(self):
+        self.receipt = {
+            "version": 1, "commit": "a" * 40, "runId": "123", "installation": "existing",
+            "backend": "ghcr.io/pavelars/capital-tracker-backend@sha256:" + "b" * 64,
+            "frontend": "ghcr.io/pavelars/capital-tracker-frontend@sha256:" + "c" * 64,
+            "postgres": "ghcr.io/pavelars/capital-tracker-postgres@sha256:" + "d" * 64,
+            "redis": "redis@sha256:" + "e" * 64,
+            "files": {name: "f" * 64 for name in dispatcher.FILES},
+        }
+        self.request = {"version": 2, "operation": "deploy", "commit": "a" * 40, "runId": "123",
+                        "receipt": self.receipt}
+
+    def parse(self, value):
+        return dispatcher.read_request(io.BytesIO(json.dumps(value).encode()))
+
+    def test_accepts_preflight_and_deploy_with_embedded_receipt(self):
+        for operation in ("preflight", "deploy"):
+            with self.subTest(operation=operation):
+                request = {**self.request, "operation": operation}
+                self.assertEqual(self.parse(request), request)
+
+    def test_rejects_missing_or_extra_fields_inventory_and_other_versions(self):
+        without = {key: value for key, value in self.request.items() if key != "receipt"}
+        for value in (
+            without,
+            {**self.request, "command": "id"},
+            {**self.request, "operation": "inventory"},
+            {**self.request, "version": 3},
+            {**self.request, "receipt": "not an object"},
+            {**self.request, "version": 1},
+        ):
+            with self.subTest(value=sorted(value)):
+                self.assertRaises(dispatcher.Refusal, self.parse, value)
+
+    def test_rejects_oversized_request(self):
+        padded = {**self.request, "receipt": {**self.receipt, "files": {"runner": "f" * 5000}}}
+        self.assertRaisesRegex(dispatcher.Refusal, "request too large", self.parse, padded)
+
+    def test_embedded_receipt_gets_the_owner_receipt_validation(self):
+        for changes in (
+            {"commit": "b" * 40}, {"runId": "124"}, {"installation": "other"},
+            {"backend": "alpine:latest"}, {"frontend": "ghcr.io/other/capital-tracker-frontend@sha256:" + "c" * 64},
+            {"shell": "id"},
+        ):
+            with self.subTest(changes=changes):
+                request = self.parse({**self.request, "receipt": {**self.receipt, **changes}})
+                self.assertRaises(dispatcher.Refusal, dispatcher.validate_receipt, request, request["receipt"])
+
+    def test_accepts_resume_activation_installation(self):
+        receipt = {**self.receipt, "installation": "resume-activation"}
+        self.assertEqual(dispatcher.validate_receipt(self.request, receipt), receipt)
+
+
 class TrustedFileAcceptance(unittest.TestCase):
     def test_rejects_symlink_and_writable_file_or_ancestor(self):
         with tempfile.TemporaryDirectory() as directory:

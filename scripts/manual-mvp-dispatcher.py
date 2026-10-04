@@ -5,8 +5,11 @@ Installed root-owned and invoked only through an SSH forced command plus an exac
 sudo rule without arguments. The client supplies one small JSON data request on
 stdin; it never supplies commands, paths, images, environment or files. Image
 digests, installation mode and reviewed server-file hashes come from an owner-
-installed receipt for the exact requested commit and CI run. A deploy consumes its
-receipt before the runner starts, so an approval cannot be replayed.
+installed receipt for the exact requested commit and CI run (version 1), or from the
+receipt promoted in the same environment-approved Actions job (version 2). A version 1
+deploy consumes its receipt before the runner starts, so that approval cannot be
+replayed; a version 2 request needs a new environment approval for every run. Either
+way the installed server files must match the receipt, so only root decides what runs.
 """
 
 import hashlib
@@ -44,7 +47,8 @@ FILES = {
     'resume': 'manual-mvp-resume.py',
 }
 OPERATIONS = ('inventory', 'preflight', 'deploy')
-INSTALLATIONS = ('existing', 'fresh', 'resume-fresh')
+APPROVED_OPERATIONS = ('preflight', 'deploy')
+INSTALLATIONS = ('existing', 'fresh', 'resume-fresh', 'resume-activation')
 SAFE_PATH = '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/docker/current/bin'
 SNAP_PLUGINS_DIR = pathlib.Path('/snap/docker/current/usr/libexec/docker/cli-plugins')
 
@@ -61,6 +65,7 @@ INFRASTRUCTURE_IMAGE = {
 }
 
 REQUEST_KEYS = {'version', 'operation', 'commit', 'runId'}
+APPROVED_REQUEST_KEYS = REQUEST_KEYS | {'receipt'}
 RECEIPT_KEYS = {
     'version', 'commit', 'runId', 'installation',
     'backend', 'frontend', 'postgres', 'redis', 'files',
@@ -119,12 +124,15 @@ def read_request(stream):
     if len(data) > MAX_REQUEST_BYTES:
         raise Refusal('request too large')
     request = parse_json(data)
-    if set(request) != REQUEST_KEYS:
+    approved = _is_int(request.get('version'), 2)
+    if set(request) != (APPROVED_REQUEST_KEYS if approved else REQUEST_KEYS):
         raise Refusal('unexpected request fields')
-    if not _is_int(request['version'], 1):
+    if not (approved or _is_int(request['version'], 1)):
         raise Refusal('unsupported request version')
-    if request['operation'] not in OPERATIONS:
+    if request['operation'] not in (APPROVED_OPERATIONS if approved else OPERATIONS):
         raise Refusal('unapproved operation')
+    if approved and not isinstance(request['receipt'], dict):
+        raise Refusal('independent release receipt required')
     if not _full(COMMIT, request['commit']):
         raise Refusal('malformed commit')
     if not _full(RUN_ID, request['runId']):
@@ -425,9 +433,14 @@ def build_command(request, config, receipt=None):
 
 
 def dispatch(request, config, run):
-    receipt = None if request['operation'] == 'inventory' else load_receipt(request, config)
+    approved = request['version'] == 2
+    if approved:
+        # The environment-approved job promoted this receipt; it never touches owner receipts.
+        receipt = validate_receipt(request, request['receipt'])
+    else:
+        receipt = None if request['operation'] == 'inventory' else load_receipt(request, config)
     argv, environment = build_command(request, config, receipt)
-    if request['operation'] == 'deploy':
+    if request['operation'] == 'deploy' and not approved:
         consume_receipt(request, config)
     return run(argv, environment)
 
