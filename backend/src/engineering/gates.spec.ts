@@ -498,7 +498,7 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
   it('ENG-002-A permits manual dispatch or completed main CI only, never push deployment', () => {
     expect(Object.keys(cd.on).sort()).toEqual(['workflow_dispatch', 'workflow_run']);
     expect(cd.on).not.toHaveProperty('push');
-    expect(Object.keys(cd.jobs)).toEqual(['deploy']);
+    expect(Object.keys(cd.jobs)).toEqual(['deploy', 'tag']);
     expect(inputs.mode.options).toEqual(['release', 'inventory', 'promote', 'preflight', 'deploy']);
     // Deployment credentials live in an owner-protectable environment.
     const deploy = cd.jobs.deploy as WorkflowJob & { environment?: string };
