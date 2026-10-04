@@ -26,3 +26,15 @@ passes on the regex and same-commit checks.
 - Hosted CI on the PR (pending).
 - A real promotion and Git tag: they happen only on the first approved release after
   merge (task 3.3).
+
+## Hosted CI and first approved release (2026-10-04)
+
+- PR run 37219632689 green on every job.
+- Main CI 37225929714 on `3bdceea` (main through #45): every job green, including
+  critical release acceptance and image scans.
+- Deploy Manual MVP run 37227344833 (automatic `workflow_run`, attempt 2, approved by
+  the owner in the `production` environment, installation `existing`): provenance,
+  promotion, preflight and deploy succeeded; one migration applied after the encrypted
+  backup, backend and frontend healthy, release verified. The tag job created
+  `v2026.10.04-3bdceea` on `3bdceea`. The owner confirmed the new sidebar on the live
+  site.

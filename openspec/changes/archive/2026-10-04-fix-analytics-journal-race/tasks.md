@@ -11,4 +11,4 @@
 ## 3. Verification
 
 - [x] 3.1 Frontend tests, lint, typecheck, build and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI green on the PR, including VAL-UI and VCH-UI in critical acceptance.
+- [x] 3.2 Hosted CI green on the PR, including VAL-UI and VCH-UI in critical acceptance. (PR run 37220925062 and main run 37225929714, both with VAL-UI and VCH-UI passing.)

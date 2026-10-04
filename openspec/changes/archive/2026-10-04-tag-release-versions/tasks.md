@@ -12,5 +12,5 @@
 ## 3. Verification
 
 - [x] 3.1 Engineering gates, backend tests, lint and strict spec validation GREEN; record results.
-- [ ] 3.2 Hosted CI green on the PR.
-- [ ] 3.3 After merge: the first approved release pushes the version image tags and creates the Git tag. Archive only after that evidence or record why not.
+- [x] 3.2 Hosted CI green on the PR. (PR run 37219632689; main run 37225929714.)
+- [x] 3.3 After merge: the first approved release pushes the version image tags and creates the Git tag. Archive only after that evidence or record why not. (Deploy run 37227344833 pushed `v2026.10.04-3bdceea` image tags and created the Git tag.)
