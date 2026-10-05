@@ -151,9 +151,9 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   ).toBeVisible();
   await expect(main.getByText(/not built yet/i)).toHaveCount(0);
   const table = main.getByRole('table', { name: 'Transactions', exact: true });
-  const rows = table.locator('tbody tr');
+  // Day headings are rows of their own; operations are the other rows.
+  const rows = table.locator('tbody tr:not(.transactions-day)');
   await expect(table.getByRole('columnheader')).toHaveText([
-    'Date',
     'Type',
     'Asset',
     'Amount',
@@ -166,38 +166,45 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   const accountFilter = main.getByRole('combobox', { name: 'Account', exact: true });
   await accountFilter.selectOption({ label: accountName });
   await expect(rows).toHaveCount(2);
+  await expect(table.getByRole('rowheader')).toHaveText(['Jun 14, 2025', 'Jun 13, 2025']);
   await expect(cells(rows.nth(0))).toHaveText([
-    'Jun 14, 202510:30 UTC',
-    'Buy',
-    `BTCOPS-UI bitcoin ${suffix}`,
-    '+0.01 BTC',
+    'Buy10:30',
+    'BTC',
+    '+0.01',
     '$1,050.50',
     accountName,
     'Recorded',
     'CSV',
   ]);
   await expect(cells(rows.nth(1))).toHaveText([
-    'Jun 13, 202500:00 UTC',
-    'Buy',
-    `BTCOPS-UI bitcoin ${suffix}`,
-    '+0.00918359 BTC',
+    'BuyNo time',
+    'BTC',
+    '+0.00918359',
     '$1,000.00',
     accountName,
     'Recorded',
     'Manual',
   ]);
+  // OPS-CURRENCY: the list switches to RUB at Bank of Russia rates and keeps the filter.
+  await main.getByRole('radio', { name: 'RUB', exact: true }).check();
+  await expect(page).toHaveURL(/currency=RUB/);
+  await expect(page).toHaveURL(/account=/);
+  await expect(rows).toHaveCount(2);
+  await expect(cells(rows.nth(0)).nth(3)).toHaveText(/^(₽[\d,]+\.\d{2}|—No rate)$/);
+  await main.getByRole('radio', { name: 'USD', exact: true }).check();
+  await expect(cells(rows.nth(0)).nth(3)).toHaveText('$1,050.50');
   await accountFilter.selectOption({ label: walletLabel });
   await expect(rows).toHaveCount(1);
   const receipt = cells(rows.nth(0));
-  await expect(receipt.nth(0)).toHaveText('Nov 14, 202322:13 UTC');
-  await expect(receipt.nth(1)).toHaveText('Incoming');
-  await expect(receipt.nth(2)).toHaveText('BTCBitcoin');
-  await expect(receipt.nth(3)).toHaveText('+0.001 BTC');
+  await expect(table.getByRole('rowheader')).toHaveText(['Nov 14, 2023']);
+  await expect(receipt.nth(0)).toHaveText('Incoming22:13');
+  await expect(receipt.nth(1)).toHaveText('BTC');
+  await expect(receipt.nth(2)).toHaveText('+0.001');
   // A raw chain row has no recorded value: an estimate at a stored price, or none at all.
-  await expect(receipt.nth(4)).toHaveText(/^(≈ \$[\d,]+\.\d{2}at latest price|—)$/);
-  await expect(receipt.nth(5)).toHaveText(walletLabel);
-  await expect(receipt.nth(6)).toHaveText('Needs classification');
-  await expect(receipt.nth(7)).toHaveText('Blockchain');
+  await expect(receipt.nth(3)).toHaveText(/^(≈ \$[\d,]+\.\d{2}|—)$/);
+  await expect(receipt.nth(4)).toHaveText(walletLabel);
+  await expect(receipt.nth(5)).toHaveText('Needs classification');
+  await expect(receipt.nth(6)).toHaveText('Blockchain');
   await page.screenshot({ path: testInfo.outputPath('transactions-wallet-1440-dark.png') });
 
   // OPS-FILTER: asset BTC and status "Needs classification" leave only matching rows.
@@ -213,8 +220,8 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   await expect(rows.filter({ hasText: accountName })).toHaveCount(0);
   const count = await rows.count();
   for (let index = 0; index < count; index++) {
-    await expect(cells(rows.nth(index)).nth(2)).toHaveText(/^BTC/);
-    await expect(cells(rows.nth(index)).nth(6)).toHaveText('Needs classification');
+    await expect(cells(rows.nth(index)).nth(1)).toHaveText(/^BTC/);
+    await expect(cells(rows.nth(index)).nth(5)).toHaveText('Needs classification');
   }
   await page.screenshot({ path: testInfo.outputPath('transactions-filter-1440-dark.png') });
 

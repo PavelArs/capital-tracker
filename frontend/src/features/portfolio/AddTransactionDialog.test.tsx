@@ -361,6 +361,10 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     status: 'recorded',
     source: 'manual',
     version: 1,
+    value: '1000',
+    estimatedValue: null,
+    costBasis: null,
+    feeValue: '0',
   };
 
   it('OPS-EDIT corrects a recorded buy in place, keeping its moment and place in the day', async () => {

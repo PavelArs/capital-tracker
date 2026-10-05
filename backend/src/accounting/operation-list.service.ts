@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import {
+  type AccountingCurrency,
+  FxConverter,
+  isAccountingCurrency,
+} from '../fx-rates/fx-conversion';
+import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -135,14 +142,16 @@ function payment(row: TradeRow): TradePayment | null {
   };
 }
 
-function parseEmptyQuery(query: unknown): void {
-  if (
-    !query ||
-    typeof query !== 'object' ||
-    Array.isArray(query) ||
-    Object.keys(query).length !== 0
-  )
+/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
+function parseQuery(query: unknown): AccountingCurrency | null {
+  if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
+  const keys = Object.keys(query);
+  if (keys.length === 0) return null;
+  const { currency } = query as Record<string, unknown>;
+  if (keys.length !== 1 || keys[0] !== 'currency' || !isAccountingCurrency(currency))
+    throw new BadRequestException('Invalid accounting input');
+  return currency;
 }
 
 @Injectable()
@@ -151,7 +160,7 @@ export class OperationListService {
 
   async read(ownerId: string, rawQuery: unknown, now = new Date()): Promise<OperationList> {
     const owner = parseUuid(ownerId);
-    parseEmptyQuery(rawQuery);
+    const asked = parseQuery(rawQuery);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
       const trades: TradeRow[] = await manager.query(
@@ -250,99 +259,105 @@ export class OperationListService {
         [owner],
       );
       const market = await latestMarketPrices(manager, chain.length > 0 ? ['BTC'] : [], now);
+      const currency = asked ?? (await readMainCurrency(manager, owner));
+      const fx = new FxConverter(await readFxRates(manager), currency);
 
-      return projectOperations(now, {
-        trades: trades.map((row) => ({
-          tradeId: row.tradeId,
-          version: row.version,
-          account: place(row),
-          asset: held(row),
-          side: row.side,
-          occurredAt: row.occurredAt.toISOString(),
-          orderWithinTimestamp: row.orderWithinTimestamp,
-          quantity: decimal(row.quantity),
-          grossUsd: decimal(row.grossUsd),
-          feeUsd: decimal(row.feeUsd),
-          csv: row.csv,
-          paid: payment(row),
-          comment: row.comment,
-        })),
-        transfers: transfers.map((row) => ({
-          transferId: row.transferId,
-          version: row.version,
-          from: place(row),
-          to: { id: row.toAccountId, name: row.toAccountName },
-          asset: held(row),
-          occurredAt: row.occurredAt.toISOString(),
-          orderWithinTimestamp: row.orderWithinTimestamp,
-          quantity: decimal(row.quantity),
-          fee: fee(row),
-        })),
-        swaps: swaps.map((row) => ({
-          swapId: row.swapId,
-          version: row.version,
-          account: place(row),
-          outgoing: held(row),
-          incoming: asset(row.incomingInstrumentId, row.incomingName, row.incomingSymbol),
-          occurredAt: row.occurredAt.toISOString(),
-          orderWithinTimestamp: row.orderWithinTimestamp,
-          outgoingQuantity: decimal(row.outgoingQuantity),
-          incomingQuantity: decimal(row.incomingQuantity),
-          considerationUsd: optional(row.considerationUsd),
-          fee: fee(row),
-        })),
-        rewards: rewards.map((row) => ({
-          rewardId: row.rewardId,
-          version: row.version,
-          account: place(row),
-          asset: held(row),
-          category: row.category,
-          occurredAt: row.occurredAt.toISOString(),
-          orderWithinTimestamp: row.orderWithinTimestamp,
-          quantity: decimal(row.quantity),
-          incomeValueUsd: optional(row.incomeValueUsd),
-          acquisitionBasisUsd: optional(row.acquisitionBasisUsd),
-        })),
-        openings: openings.map((row) => {
-          const quantity = decimal(row.carriedQuantity);
-          return {
-            lotId: row.lotId,
+      return projectOperations(
+        now,
+        {
+          trades: trades.map((row) => ({
+            tradeId: row.tradeId,
+            version: row.version,
             account: place(row),
             asset: held(row),
-            acquiredAt: row.occurredAt.toISOString(),
+            side: row.side,
+            occurredAt: row.occurredAt.toISOString(),
             orderWithinTimestamp: row.orderWithinTimestamp,
-            quantity,
-            costBasisUsd: deriveCarryInAmounts(
-              decimal(row.originalQuantity),
-              decimal(row.originalCostUsd),
+            quantity: decimal(row.quantity),
+            grossUsd: decimal(row.grossUsd),
+            feeUsd: decimal(row.feeUsd),
+            csv: row.csv,
+            paid: payment(row),
+            comment: row.comment,
+          })),
+          transfers: transfers.map((row) => ({
+            transferId: row.transferId,
+            version: row.version,
+            from: place(row),
+            to: { id: row.toAccountId, name: row.toAccountName },
+            asset: held(row),
+            occurredAt: row.occurredAt.toISOString(),
+            orderWithinTimestamp: row.orderWithinTimestamp,
+            quantity: decimal(row.quantity),
+            fee: fee(row),
+          })),
+          swaps: swaps.map((row) => ({
+            swapId: row.swapId,
+            version: row.version,
+            account: place(row),
+            outgoing: held(row),
+            incoming: asset(row.incomingInstrumentId, row.incomingName, row.incomingSymbol),
+            occurredAt: row.occurredAt.toISOString(),
+            orderWithinTimestamp: row.orderWithinTimestamp,
+            outgoingQuantity: decimal(row.outgoingQuantity),
+            incomingQuantity: decimal(row.incomingQuantity),
+            considerationUsd: optional(row.considerationUsd),
+            fee: fee(row),
+          })),
+          rewards: rewards.map((row) => ({
+            rewardId: row.rewardId,
+            version: row.version,
+            account: place(row),
+            asset: held(row),
+            category: row.category,
+            occurredAt: row.occurredAt.toISOString(),
+            orderWithinTimestamp: row.orderWithinTimestamp,
+            quantity: decimal(row.quantity),
+            incomeValueUsd: optional(row.incomeValueUsd),
+            acquisitionBasisUsd: optional(row.acquisitionBasisUsd),
+          })),
+          openings: openings.map((row) => {
+            const quantity = decimal(row.carriedQuantity);
+            return {
+              lotId: row.lotId,
+              account: place(row),
+              asset: held(row),
+              acquiredAt: row.occurredAt.toISOString(),
+              orderWithinTimestamp: row.orderWithinTimestamp,
               quantity,
-            ).carriedCostUsd,
-          };
-        }),
-        flows: flows.map((row) => ({
-          flowId: row.flowId,
-          version: row.version,
-          direction: row.direction,
-          occurredAt: row.occurredAt.toISOString(),
-          amountUsd: decimal(row.amountUsd),
-        })),
-        chain: chain.map((row) => ({
-          wallet: { id: row.addressId, network: row.network, address: row.address },
-          txid: row.txid,
-          blockHeight: row.blockHeight,
-          blockTime: row.blockTime.toISOString(),
-          direction: row.direction,
-          receivedUnits: row.receivedUnits,
-          sentUnits: row.sentUnits,
-          feeUnits: row.feeUnits,
-        })),
-        marketPrices: new Map(
-          market.map((row) => [
-            row.asset,
-            { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-          ]),
-        ),
-      });
+              costBasisUsd: deriveCarryInAmounts(
+                decimal(row.originalQuantity),
+                decimal(row.originalCostUsd),
+                quantity,
+              ).carriedCostUsd,
+            };
+          }),
+          flows: flows.map((row) => ({
+            flowId: row.flowId,
+            version: row.version,
+            direction: row.direction,
+            occurredAt: row.occurredAt.toISOString(),
+            amountUsd: decimal(row.amountUsd),
+          })),
+          chain: chain.map((row) => ({
+            wallet: { id: row.addressId, network: row.network, address: row.address },
+            txid: row.txid,
+            blockHeight: row.blockHeight,
+            blockTime: row.blockTime.toISOString(),
+            direction: row.direction,
+            receivedUnits: row.receivedUnits,
+            sentUnits: row.sentUnits,
+            feeUnits: row.feeUnits,
+          })),
+          marketPrices: new Map(
+            market.map((row) => [
+              row.asset,
+              { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
+            ]),
+          ),
+        },
+        fx,
+      );
     });
   }
 }

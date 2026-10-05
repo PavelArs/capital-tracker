@@ -1,3 +1,4 @@
+import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 
@@ -160,11 +161,17 @@ export interface Operation {
   comment: string | null;
   /** Position among operations at the same instant; an edit at the same time keeps it. */
   orderWithinTimestamp: number;
+  // The amounts above in the list's quote currency at the Bank of Russia rate of the
+  // operation's Moscow date (an estimate: of today); null without an amount or a rate.
+  value: string | null;
+  estimatedValue: string | null;
+  costBasis: string | null;
+  feeValue: string | null;
 }
 
 export interface OperationList {
   at: string;
-  quoteCurrency: 'USD';
+  quoteCurrency: AccountingCurrency;
   needsClassificationCount: number;
   operations: Operation[];
 }
@@ -195,6 +202,40 @@ const blank = {
   paid: null,
   comment: null,
 } satisfies Partial<Operation>;
+type Projected = Omit<Operation, 'value' | 'estimatedValue' | 'costBasis' | 'feeValue'>;
+const inUsdOnly = () => new FxConverter({ USD: [], EUR: [] }, 'USD');
+
+/** A product of two scale-30 amounts (up to 60 places) as scale-60 atoms. */
+function productAtoms(value: string): bigint {
+  const [whole, fraction = ''] = value.split('.');
+  return BigInt(whole) * 10n ** 60n + BigInt(fraction.padEnd(60, '0'));
+}
+
+/** Adds the amounts in the asked currency (CUR-*); a trade paid in RUB or EUR converts from
+ * the amounts as paid, so 30,000 RUB stays exactly 30,000 RUB. */
+function inCurrency(operation: Projected, fx: FxConverter, today: string): Operation {
+  const date = moscowDate(operation.occurredAt);
+  const paid = fx.currency === 'USD' ? null : operation.paid;
+  const convert = (usd: string | null, native: string | undefined) => {
+    if (usd === null) return null;
+    const amount =
+      paid && native !== undefined
+        ? fx.convert(canonicalDecimalToAtoms(native), paid.currency, date)
+        : fx.convert(canonicalDecimalToAtoms(usd), 'USD', date);
+    return amount === null ? null : formatAtoms(amount);
+  };
+  const estimate =
+    operation.estimatedValueUsd === null
+      ? null
+      : fx.convert(productAtoms(operation.estimatedValueUsd), 'USD', today);
+  return {
+    ...operation,
+    value: convert(operation.valueUsd, paid?.gross),
+    estimatedValue: estimate === null ? null : formatProduct(estimate),
+    costBasis: convert(operation.costBasisUsd, undefined),
+    feeValue: convert(operation.feeUsd, paid?.fee),
+  };
+}
 const recorded = { status: 'recorded', source: 'manual' } as const;
 
 function sats(units: string): string {
@@ -207,7 +248,7 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
   const magnitude = net < 0n ? -net : net;
   const quantity = formatAtoms(magnitude * SAT_TO_ATOMS);
   const price = asset.symbol ? prices.get(asset.symbol) : undefined;
-  const operation: Operation = {
+  const operation: Projected = {
     ...blank,
     id: `chain:${row.wallet.id}:${row.txid}`,
     kind: 'chain',
@@ -239,9 +280,13 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
 }
 
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
-export function projectOperations(at: Date, sources: OperationSources): OperationList {
-  const entries: { operation: Operation; order: number }[] = [];
-  const push = (operation: Omit<Operation, 'orderWithinTimestamp'>, order: number) =>
+export function projectOperations(
+  at: Date,
+  sources: OperationSources,
+  fx: FxConverter = inUsdOnly(),
+): OperationList {
+  const entries: { operation: Projected; order: number }[] = [];
+  const push = (operation: Omit<Projected, 'orderWithinTimestamp'>, order: number) =>
     entries.push({ operation: { ...operation, orderWithinTimestamp: order }, order });
 
   for (const row of sources.trades) {
@@ -376,10 +421,11 @@ export function projectOperations(at: Date, sources: OperationSources): Operatio
       right.order - left.order ||
       left.operation.id.localeCompare(right.operation.id),
   );
-  const operations = entries.map((entry) => entry.operation);
+  const today = moscowDate(at);
+  const operations = entries.map((entry) => inCurrency(entry.operation, fx, today));
   return {
     at: at.toISOString(),
-    quoteCurrency: 'USD',
+    quoteCurrency: fx.currency,
     needsClassificationCount: operations.filter(
       (operation) => operation.status === 'needs-classification',
     ).length,

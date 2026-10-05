@@ -1,3 +1,4 @@
+import { FxConverter } from '../fx-rates/fx-conversion';
 import {
   type ChainOperationInput,
   type OperationAsset,
@@ -129,6 +130,11 @@ describe('list-all-operations projection', () => {
       paid: null,
       comment: 'First buy from the spreadsheet',
       orderWithinTimestamp: 0,
+      // Without asked rates the list is in USD, exactly as recorded.
+      value: '1000',
+      estimatedValue: null,
+      costBasis: null,
+      feeValue: '0',
     });
     expect(imported).toMatchObject({
       id: `trade:${id(31)}`,
@@ -169,6 +175,10 @@ describe('list-all-operations projection', () => {
       paid: null,
       comment: null,
       orderWithinTimestamp: 0,
+      value: null,
+      estimatedValue: '780.10005255',
+      costBasis: null,
+      feeValue: null,
     });
   });
 
@@ -366,6 +376,125 @@ describe('list-all-operations projection', () => {
     expect(transfer).toMatchObject({ fee: { asset: btc, quantity: '0.0001' }, version: 2 });
     const opening = list.operations.find((operation) => operation.kind === 'opening');
     expect(opening).toMatchObject({ id: `opening:${id(45)}`, version: null });
+  });
+
+  it('OPS-CURRENCY: values in EUR or RUB use the Bank of Russia rate of each date; paid amounts stay exact', () => {
+    const rates = {
+      USD: [
+        { date: '2025-06-13', rubPerUnit: '80' },
+        { date: '2025-06-14', rubPerUnit: '79' },
+        { date: '2026-10-03', rubPerUnit: '95' },
+      ],
+      EUR: [
+        { date: '2025-06-13', rubPerUnit: '92' },
+        { date: '2025-06-14', rubPerUnit: '90' },
+        { date: '2026-10-03', rubPerUnit: '110' },
+      ],
+    };
+    const input = sources({
+      trades: [
+        {
+          tradeId: id(30),
+          version: 1,
+          account: bybit,
+          asset: btc,
+          side: 'buy',
+          occurredAt: '2025-06-13T00:00:00.000Z',
+          orderWithinTimestamp: 0,
+          quantity: '0.00918359',
+          grossUsd: '1000',
+          feeUsd: '2.5',
+          csv: false,
+          paid: null,
+          comment: null,
+        },
+        {
+          tradeId: id(31),
+          version: 1,
+          account: bybit,
+          asset: btc,
+          side: 'buy',
+          occurredAt: '2025-06-14T10:30:00.000Z',
+          orderWithinTimestamp: 0,
+          quantity: '0.01',
+          grossUsd: '1050.632911392405063291139240506329',
+          feeUsd: '1.265822784810126582278481012658',
+          csv: false,
+          paid: {
+            currency: 'RUB',
+            gross: '83000',
+            fee: '100',
+            rateDate: '2025-06-14',
+            perUsd: '79',
+            rateSource: 'bank-of-russia',
+          },
+          comment: null,
+        },
+      ],
+      openings: [
+        {
+          lotId: id(45),
+          account: trust,
+          asset: btc,
+          acquiredAt: '2024-12-01T00:00:00.000Z',
+          orderWithinTimestamp: 0,
+          quantity: '0.3',
+          costBasisUsd: '15000',
+        },
+      ],
+      chain: [chain(1)],
+      marketPrices: new Map([
+        ['BTC', { priceUsd: '84945', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+      ]),
+    });
+    const rub = projectOperations(now, input, new FxConverter(rates, 'RUB'));
+    expect(rub.quoteCurrency).toBe('RUB');
+    const values = (list: typeof rub) =>
+      list.operations.map((operation) => [
+        operation.kind,
+        operation.value,
+        operation.estimatedValue,
+        operation.costBasis,
+        operation.feeValue,
+      ]);
+    expect(values(rub)).toEqual([
+      // An estimate at the latest price uses today's rate (Moscow date 2026-10-04).
+      ['chain', null, '74109.50499225', null, null],
+      // Paid in rubles: the amounts as paid, not a round trip through USD.
+      ['trade', '83000', null, null, '100'],
+      ['trade', '80000', null, null, '200'],
+      // No rate is stored for that date: unknown, never zero.
+      ['opening', null, null, null, null],
+    ]);
+    // USD amounts as recorded stay alongside.
+    expect(rub.operations[2]).toMatchObject({ valueUsd: '1000', feeUsd: '2.5' });
+
+    const eur = projectOperations(now, input, new FxConverter(rates, 'EUR'));
+    expect(eur.quoteCurrency).toBe('EUR');
+    expect(values(eur)).toEqual([
+      [
+        'chain',
+        null,
+        '673.722772656818181818181818181818181818181818181818181818181818',
+        null,
+        null,
+      ],
+      [
+        'trade',
+        '922.222222222222222222222222222222',
+        null,
+        null,
+        '1.111111111111111111111111111111',
+      ],
+      [
+        'trade',
+        '869.565217391304347826086956521739',
+        null,
+        null,
+        '2.173913043478260869565217391304',
+      ],
+      ['opening', null, null, null, null],
+    ]);
   });
 
   it('OPS-EMPTY: no operations is an empty list', () => {

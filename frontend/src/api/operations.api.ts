@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { AccountingCurrency } from './portfolio-valuation.api';
 import type { TradePayment } from './trades.api';
 
 // Exact decimal strings from GET /accounting/operations (list-all-operations, OPS-1..3).
@@ -52,18 +53,27 @@ export interface Operation {
   paid: TradePayment | null;
   comment: string | null;
   orderWithinTimestamp: number;
+  // The amounts above in the list's quote currency at the Bank of Russia rate of the
+  // operation's date (an estimate: of today); null without an amount or a rate.
+  value: string | null;
+  estimatedValue: string | null;
+  costBasis: string | null;
+  feeValue: string | null;
 }
 
 export interface OperationList {
   at: string;
-  quoteCurrency: 'USD';
+  quoteCurrency: AccountingCurrency;
   needsClassificationCount: number;
   operations: Operation[];
 }
 
 export const operationsApi = {
-  list: async (): Promise<OperationList> => {
-    const response = await apiClient.get<OperationList>('/accounting/operations');
+  /** Without a currency the owner's main currency is used. */
+  list: async (currency?: AccountingCurrency): Promise<OperationList> => {
+    const response = await apiClient.get<OperationList>('/accounting/operations', {
+      params: currency ? { currency } : undefined,
+    });
     return response.data;
   },
 };

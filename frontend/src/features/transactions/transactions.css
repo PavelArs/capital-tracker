@@ -46,7 +46,66 @@
   cursor: pointer;
 }
 
-/* Eight columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
+/* The prototype table sits on the card: no legacy table fill, header band or underlines. */
+.transactions-table,
+.transactions-table th,
+.transactions-table tr:hover {
+  background: transparent;
+}
+
+.transactions-table th,
+.transactions-table td {
+  border-bottom: 0;
+}
+
+/* Day headings of the prototype: rows of their own, never clickable. */
+.transactions-table tr.transactions-day {
+  cursor: default;
+}
+
+.transactions-table tr.transactions-day th {
+  padding: 18px 8px 6px;
+  background: transparent;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.02em;
+}
+
+.transactions-table tbody tr.transactions-day:hover th {
+  background: transparent;
+}
+
+.transactions-type {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.transactions-type-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink-2);
+}
+
+.transactions-glyph {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Seven columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
 .transactions-table th,
 .transactions-table td {
   padding-inline: 8px;
@@ -130,6 +189,9 @@
 }
 
 .transactions-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--ink-2);
   font-size: var(--fs-sm);
 }
