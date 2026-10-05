@@ -83,6 +83,15 @@ export const accountingApi = {
     return response.data;
   },
 
+  /** WAL-RENAME: only the name changes; what is recorded in the account stays. */
+  renameAccount: async (id: string, name: string): Promise<AccountSummary> => {
+    const response = await apiClient.patch<AccountSummary>(
+      `/accounting/accounts/${encodeURIComponent(id)}`,
+      { name },
+    );
+    return response.data;
+  },
+
   getAccount: async (id: string): Promise<AccountDetail> => {
     const response = await apiClient.get<AccountDetail>(
       `/accounting/accounts/${encodeURIComponent(id)}`,

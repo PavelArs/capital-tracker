@@ -172,6 +172,11 @@ describe('WAL-LIST: wallets grouped by account', () => {
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
     expect(screen.getByRole('heading', { level: 1, name: 'Wallets' })).toBeInTheDocument();
     expect(within(trustCard).getByText('Bitcoin · 1 address')).toBeInTheDocument();
+    // WAL-PAGE: the wallet's name opens its own page.
+    expect(within(trustCard).getByRole('link', { name: 'Trust Wallet' })).toHaveAttribute(
+      'href',
+      `/wallets/${trust}`,
+    );
     expect(within(trustCard).getByText('$1,784.00')).toBeInTheDocument();
     const row = within(trustCard).getByRole('button', {
       name: `Trust Wallet BTC ${addresses.trust}`,

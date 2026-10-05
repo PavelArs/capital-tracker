@@ -316,5 +316,54 @@ isolated(
     } finally {
       query(`DELETE FROM sync_sources WHERE key = 'prices:kraken'`);
     }
+
+    // WAL-PAGE: the wallet's own page lists its address, assets and chain transactions.
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await card.getByRole('link', { name: walletName, exact: true }).click();
+    await expect(page).toHaveURL(/\/wallets\/[0-9a-f-]{36}$/);
+    await expect(
+      main.getByRole('heading', { level: 2, name: walletName, exact: true }),
+    ).toBeVisible();
+    const walletAddresses = main.getByRole('region', {
+      name: 'Addresses',
+      exact: true,
+    });
+    await expect(
+      walletAddresses.getByRole('button', {
+        name: `Cold ${address}`,
+        exact: true,
+      }),
+    ).toContainText('46.88647965 BTC');
+    const walletTransactions = main.getByRole('region', {
+      name: /^Transactions/,
+    });
+    await expect(walletTransactions.getByText('Needs classification').first()).toBeVisible();
+    await expect(walletTransactions.getByRole('link', { name: /^Show all \d+$/ })).toBeVisible();
+
+    // WAL-RENAME: only the name changes; the address stays in the wallet.
+    const renamed = `${walletName} renamed`;
+    await main.getByRole('button', { name: 'Rename', exact: true }).click();
+    const rename = page.getByRole('dialog', { name: 'Rename wallet' });
+    await rename.getByLabel('Name', { exact: true }).fill(`  ${renamed} `);
+    await rename.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(rename).toHaveCount(0);
+    await expect(main.getByRole('heading', { level: 2, name: renamed, exact: true })).toBeVisible();
+    expect(
+      query(`SELECT a.name FROM wallet_addresses w
+        JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
+        WHERE w."ownerId" = '${ownerId}' AND w.address = '${address}'`),
+    ).toBe(renamed);
+    await page.screenshot({
+      path: testInfo.outputPath('wallet-1440.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await fitsViewport(page);
+    await page.setViewportSize({ width: 1440, height: 1000 });
+
+    // WAL-ACCOUNT: in Transactions the chain rows name the wallet and the address.
+    await walletTransactions.getByRole('link', { name: /^Show all \d+$/ }).click();
+    await expect(page).toHaveURL(/\/transactions\?account=[0-9a-f-]{36}$/);
+    await expect(main.getByText(`${renamed} · Cold`).first()).toBeVisible();
   },
 );

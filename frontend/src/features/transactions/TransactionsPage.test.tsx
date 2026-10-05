@@ -21,6 +21,7 @@ const wallet = {
   id: id(20),
   network: 'bitcoin' as const,
   address: 'bc1qsyntheticwalletaddress000000000f3t4',
+  label: null,
 };
 const txid = (n: number) => String(n).padStart(64, 'a');
 
@@ -260,6 +261,35 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['USDT']);
   });
 
+  it('WAL-ACCOUNT: a chain row of an address in a wallet shows and filters by that wallet', async () => {
+    const user = userEvent.setup();
+    const bound = { ...wallet, label: 'Savings' };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        chainOperation(3, { account: cold, wallet: bound, occurredAt: '2025-06-22T08:00:00.000Z' }),
+        transfer,
+        manual,
+      ]),
+    );
+    renderPage(`/transactions?account=${cold.id}`);
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(bodyRows().map((row) => cellTexts(row)[4])).toEqual([
+      'Cold storage · Savings',
+      'Bybit → Cold storage',
+    ]);
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Wallet')).toBe('Cold storage');
+    expect(fact('Address')).toBe(`Savings · ${wallet.address}`);
+    expect(within(drawer).getByRole('link', { name: 'Open Cold storage' })).toHaveAttribute(
+      'href',
+      `/wallets/${cold.id}`,
+    );
+  });
+
   it('keeps every filter change when a second one comes before the address updates', async () => {
     // The router applies an address change later, in a transition (OPS-UI on a fast runner).
     const user = userEvent.setup();
@@ -441,7 +471,12 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(within(drawer).getByText('+0.00918359 BTC')).toBeInTheDocument();
     expect(fact('Date')).toBe('Jun 20, 2025, 08:05 UTC');
     expect(fact('Network')).toBe('Bitcoin');
-    expect(fact('Wallet')).toBe(wallet.address);
+    expect(fact('Wallet')).toBe('Not in a wallet yet');
+    expect(fact('Address')).toBe(wallet.address);
+    expect(within(drawer).getByRole('link', { name: 'Open Wallets' })).toHaveAttribute(
+      'href',
+      '/wallets',
+    );
     expect(fact('Transaction')).toBe(txid(1));
     expect(fact('Block')).toBe('800,001');
     expect(fact('Network fee')).toBe('Paid by sender');

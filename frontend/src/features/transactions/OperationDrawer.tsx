@@ -43,7 +43,10 @@ export const editable = (operation: Operation) =>
 /** Where other operations can be changed today; their forms come with M9 and M12. */
 function editLink(operation: Operation): [string, string] | null {
   if (editable(operation)) return null;
-  if (operation.kind === 'chain') return ['/wallet-addresses', 'Open wallet addresses'];
+  if (operation.kind === 'chain')
+    return operation.account
+      ? [`/wallets/${operation.account.id}`, `Open ${operation.account.name}`]
+      : ['/wallets', 'Open Wallets'];
   if (operation.kind === 'transfer') return ['/owned-transfers', 'Open transfers'];
   if (operation.kind === 'flow') return ['/capital-flows', 'Open deposits and withdrawals'];
   return operation.account
@@ -73,9 +76,11 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
   if (wallet && chain) {
     rows.push(
       ['Network', networkName(wallet)],
+      ['Wallet', operation.account?.name ?? 'Not in a wallet yet'],
       [
-        'Wallet',
+        'Address',
         <span key="wallet" className="transactions-mono">
+          {wallet.label ? `${wallet.label} · ` : ''}
           {wallet.address}
         </span>,
       ],

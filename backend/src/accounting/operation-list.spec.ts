@@ -17,6 +17,7 @@ const wallet = {
   id: id(20),
   network: 'bitcoin' as const,
   address: 'bc1qsyntheticwalletaddress000000000000000',
+  label: null,
 };
 const txid = (n: number) => String(n).padStart(64, 'a');
 
@@ -35,6 +36,7 @@ function sources(overrides: Partial<OperationSources> = {}): OperationSources {
 }
 const chain = (n: number, overrides: Partial<ChainOperationInput> = {}): ChainOperationInput => ({
   wallet,
+  account: null,
   txid: txid(n),
   blockHeight: 800000 + n,
   blockTime: '2025-06-20T08:00:00.000Z',
@@ -519,5 +521,23 @@ describe('list-all-operations projection', () => {
       needsClassificationCount: 0,
       operations: [],
     });
+  });
+
+  it('WAL-ACCOUNT: a chain transaction of an address bound to a wallet shows that wallet', () => {
+    const named = { ...wallet, label: 'Savings' };
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [chain(1, { wallet: named, account: trust }), chain(2)],
+        marketPrices: new Map(),
+      }),
+    );
+    const [first, second] = [...list.operations].sort((a, b) => a.id.localeCompare(b.id));
+    expect([first.account, first.wallet, first.status]).toEqual([
+      trust,
+      named,
+      'needs-classification',
+    ]);
+    expect([second.account, second.wallet]).toEqual([null, wallet]);
   });
 });

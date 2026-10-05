@@ -45,10 +45,12 @@ function inView(operation: Operation, view: View): boolean {
 }
 
 function placeKeys(operation: Operation): string[] {
-  if (operation.wallet) return [`wallet:${operation.wallet.id}`];
-  return [operation.account?.id, operation.counterAccount?.id].filter(
-    (key): key is string => key !== undefined,
-  );
+  // A chain row is found by its address and, once it belongs to one, by its wallet (M10).
+  return [
+    operation.wallet ? `wallet:${operation.wallet.id}` : undefined,
+    operation.account?.id,
+    operation.counterAccount?.id,
+  ].filter((key): key is string => key !== undefined);
 }
 
 function assetKeys(operation: Operation): string[] {
@@ -179,7 +181,7 @@ function OperationRow({
         <ValueCell operation={operation} currency={currency} />
       </td>
       <td className="transactions-wrap transactions-place">
-        {operation.wallet ? (
+        {operation.wallet && !operation.account ? (
           <>
             {networkName(operation.wallet)} wallet{' '}
             <span className="transactions-nowrap">{shortAddress(operation.wallet.address)}</span>
@@ -351,11 +353,12 @@ export default function TransactionsPage() {
   const placeOptions = useMemo(
     () =>
       options(operations, (operation) => {
-        if (operation.wallet)
-          return [[`wallet:${operation.wallet.id}`, walletLabel(operation.wallet)]];
-        return [operation.account, operation.counterAccount].flatMap((item) =>
+        const accounts = [operation.account, operation.counterAccount].flatMap((item) =>
           item ? [[item.id, item.name] as [string, string]] : [],
         );
+        return operation.wallet
+          ? [...accounts, [`wallet:${operation.wallet.id}`, walletLabel(operation.wallet)]]
+          : accounts;
       }),
     [operations],
   );

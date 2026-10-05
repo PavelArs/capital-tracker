@@ -48,7 +48,8 @@ export interface Operation {
   fee: { asset: OperationAsset; quantity: string } | null;
   account: OperationPlace | null;
   counterAccount: OperationPlace | null;
-  wallet: { id: string; network: 'bitcoin'; address: string } | null;
+  /** A blockchain row's address; its account is in `account` once the owner picked one (M10). */
+  wallet: { id: string; network: 'bitcoin'; address: string; label: string | null } | null;
   chain: { txid: string; blockHeight: number; priceObservedAt: string | null } | null;
   status: 'recorded' | 'needs-classification';
   source: 'manual' | 'csv' | 'chain';
