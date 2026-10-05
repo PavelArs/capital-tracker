@@ -6,6 +6,7 @@
   "devDependencies": {
     "@fission-ai/openspec": "1.14.0",
     "@playwright/test": "1.63.0",
+    "@types/node": "^26.6.4",
     "yaml": "2.9.1"
   },
   "engines": {
