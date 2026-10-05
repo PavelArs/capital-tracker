@@ -100,12 +100,14 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   await expect(sell).toHaveCount(0);
 
   const table = main.getByRole('table', { name: 'Transactions', exact: true });
-  const rows = table.locator('tbody tr');
+  // Day headings are rows of their own; operations are the other rows.
+  const rows = table.locator('tbody tr:not(.transactions-day)');
   await main.getByRole('combobox', { name: 'Account', exact: true }).selectOption({
     label: accountName,
   });
   await expect(rows).toHaveCount(3);
-  await expect(rows.nth(1).getByRole('cell').nth(3)).toHaveText(`-0.2 ${symbol}`);
+  await expect(rows.nth(1).getByRole('cell').nth(1)).toHaveText(symbol);
+  await expect(rows.nth(1).getByRole('cell').nth(2)).toHaveText('-0.2');
 
   // OPS-DELETE-GUARD: the purchase the sales spend cannot be deleted, and nothing changes.
   await rows.nth(2).getByRole('button', { name: 'Buy' }).click();
