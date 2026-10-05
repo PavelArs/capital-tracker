@@ -155,7 +155,7 @@ async function fitsViewport(page: Page) {
 }
 
 isolated(
-  'WAL-UI / WAL-NO-SECRETS: owner adds a Bitcoin address to a new wallet and sees its chain balance against recorded transactions',
+  'WAL-UI / WAL-NO-SECRETS / SYNC-STATUS: owner adds a Bitcoin address to a new wallet, sees its chain balance against recorded transactions and a failed sync with its reason',
   async ({ page }, testInfo) => {
     await loginWithMfa(page);
     const walletName = `WAL-UI ${randomUUID().slice(0, 8)}`;
@@ -265,5 +265,56 @@ isolated(
       fullPage: true,
     });
     expect(bodies.join('\n')).not.toContain('abandon');
+
+    // SYNC-STATUS: prices synced 12 minutes ago and this wallet's next sync fails. The failure
+    // is stored, so it is still there after a reload, with the sidebar's last good sync.
+    query(`DO $$ BEGIN
+      IF current_database() <> 'capital_tracker_e2e' OR current_user <> 'capital_e2e' THEN
+        RAISE EXCEPTION 'Refuse sync-status fixture outside synthetic acceptance';
+      END IF;
+      INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt")
+        VALUES ('prices:kraken', 'synced', now() - interval '12 minutes', now() - interval '12 minutes',
+          now() + interval '1 hour')
+        ON CONFLICT (key) DO UPDATE SET state = 'synced', "lastAttemptAt" = EXCLUDED."lastAttemptAt",
+          "lastSuccessAt" = EXCLUDED."lastSuccessAt", "nextRunAt" = EXCLUDED."nextRunAt",
+          "errorCode" = NULL, "errorMessage" = NULL;
+    END $$`);
+    try {
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      bitcoinHistory({ address, count: 60, fault: { onRequest: 1, status: 503 } });
+      await card.getByRole('button', { name: `Cold ${address}`, exact: true }).click();
+      const coldDrawer = page.getByRole('dialog', { name: `${walletName} · Bitcoin`, exact: true });
+      await coldDrawer.getByRole('button', { name: 'Sync now', exact: true }).click();
+      await expect(coldDrawer.getByRole('alert')).toContainText(
+        'Bitcoin data is temporarily unavailable.',
+      );
+      await coldDrawer.getByRole('button', { name: 'Close', exact: true }).click();
+      await page.reload();
+      const failedRow = card.getByRole('button', { name: `Cold ${address}`, exact: true });
+      await expect(failedRow).toContainText('Sync failed');
+      await expect(failedRow).toContainText('46.88647965 BTC');
+      await expect(
+        card.getByText(
+          /^Bitcoin data is temporarily unavailable\. Balances shown are from (just now|\d+ min ago)\.$/,
+        ),
+      ).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Retry now', exact: true })).toBeVisible();
+      const status = page
+        .getByRole('navigation', { name: 'Main navigation' })
+        .locator('[data-sync-status]');
+      await expect(status).toContainText('1 source needs attention');
+      await expect(status).toContainText('Others synced 12 min ago');
+      await expect(status).toHaveAttribute('href', '/wallets');
+      expect(
+        query(`SELECT state || '|' || "errorMessage" FROM sync_sources s JOIN wallet_addresses a
+          ON s.key = 'wallet:' || a.id::text WHERE a."ownerId" = '${ownerId}' AND a.address = '${address}'`),
+      ).toBe('failed|Bitcoin data is temporarily unavailable.');
+      await page.screenshot({
+        path: testInfo.outputPath('wallets-sync-failed-1440.png'),
+        fullPage: true,
+      });
+    } finally {
+      query(`DELETE FROM sync_sources WHERE key = 'prices:kraken'`);
+    }
   },
 );

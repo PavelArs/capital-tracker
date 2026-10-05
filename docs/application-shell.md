@@ -27,8 +27,9 @@ Theme: System is the default and follows the device; Dark or Light is stored in 
 browser (`localStorage.theme`) and survives reload. The shell and new pages use the
 prototype's tokens (`frontend/src/features/shell/tokens.css`), dark first, system font.
 
-The sidebar foot holds a sync slot ("Sync not set up" until background sync exists)
-and the owner block with **Log out**. Below 960 px the sidebar collapses behind
+The sidebar foot holds the sync status (M11, from `GET /api/sync-status`): "All synced"
+with the last successful sync, "Syncing…", or "N sources need attention" with the
+others' last sync and each reason in its tooltip; it opens Wallets. Then comes the owner block with **Log out**. Below 960 px the sidebar collapses behind
 **Menu** (Escape closes it and returns focus); **Skip to content** jumps to the main
 area. Desktop 1440 and 1280 show the full sidebar.
 

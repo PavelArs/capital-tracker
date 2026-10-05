@@ -4,6 +4,7 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
+import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,7 +16,14 @@ import PageHeader from '../shell/PageHeader';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
-import { failureMessages, SyncBadge, type SyncRun, syncAge, syncBadge } from './SyncStatus';
+import {
+  failureMessages,
+  SyncBadge,
+  type SyncRun,
+  syncAge,
+  syncBadge,
+  syncProblem,
+} from './SyncStatus';
 import { isBitcoin, type Reconciliation, reconcile, shortAddress, sum } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -24,6 +32,8 @@ import './wallets.css';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
+// While the background job loads a history, the page looks again this often.
+const BACKGROUND_REFRESH_MS = 10_000;
 
 interface Holding {
   asset: AssetValuation;
@@ -71,31 +81,34 @@ function AddressRow({
   const name = address.label ?? 'Bitcoin';
   const amount = address.chainBalance === null ? DASH : `${quantity(address.chainBalance)} BTC`;
   const when = syncAge(address, run);
-  const message =
-    run?.state === 'running' && address.sync.state !== 'complete' ? (
-      <div className="wallets-message">
-        Loading the transaction history. A long history takes a few minutes; keep this page open
-        until it finishes.
-      </div>
-    ) : run?.state === 'failed' ? (
-      <div className="wallets-message wallets-message--error">
-        <span>{run.message}</span>
-        <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
-          Retry now
-        </button>
-      </div>
-    ) : run === undefined && address.sync.state !== 'complete' ? (
-      <div className="wallets-message">
-        <span>
-          {address.sync.state === 'partial'
-            ? 'Part of the history is loaded; the balance appears when the rest is.'
-            : 'The transaction history is not loaded yet.'}
-        </span>
-        <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
-          {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
-        </button>
-      </div>
-    ) : null;
+  const problem = syncProblem(address, run);
+  const loading =
+    address.sync.state !== 'complete' &&
+    (run?.state === 'running' || (run === undefined && address.sync.status === 'syncing'));
+  const message = loading ? (
+    <div className="wallets-message">
+      Loading the transaction history. A long history takes a few minutes; it keeps loading in the
+      background, so you can leave this page.
+    </div>
+  ) : problem ? (
+    <div className="wallets-message wallets-message--error">
+      <span>{problem}</span>
+      <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+        Retry now
+      </button>
+    </div>
+  ) : run === undefined && address.sync.state !== 'complete' ? (
+    <div className="wallets-message">
+      <span>
+        {address.sync.state === 'partial'
+          ? 'Part of the history is loaded; the balance appears when the rest is.'
+          : 'The transaction history is not loaded yet.'}
+      </span>
+      <button type="button" className="shell-button shell-button--secondary" onClick={onSync}>
+        {address.sync.state === 'partial' ? 'Continue loading' : 'Load history'}
+      </button>
+    </div>
+  ) : null;
   const label = `${name} ${address.address}`;
   if (narrow) {
     return (
@@ -277,8 +290,8 @@ export default function WalletsPage() {
     });
   }, []);
 
-  // Loads the history in bounded requests until it is complete or the source fails. Background
-  // sync comes with M11; until then the page asks while it stays open.
+  // "Sync now": loads the history in bounded requests until it is complete or the source fails.
+  // The background job (M11) does the same every hour without the page.
   const sync = useCallback(
     async (id: string) => {
       if (running.current.has(id)) return;
@@ -292,7 +305,8 @@ export default function WalletsPage() {
           if (result.outcome === 'provider_error') {
             setRun(id, {
               state: 'failed',
-              message: failureMessages[result.reason ?? 'unavailable'],
+              message:
+                result.address.sync.errorMessage ?? failureMessages[result.reason ?? 'unavailable'],
             });
             return;
           }
@@ -301,6 +315,7 @@ export default function WalletsPage() {
         setRun(id, null);
         // A list asked for while the history loaded may be older than the last page.
         void load(true);
+        announceSyncChange();
       } catch (error) {
         if (!mounted.current) return;
         const status = isAxiosError(error) ? error.response?.status : undefined;
@@ -309,11 +324,21 @@ export default function WalletsPage() {
           message: failureMessages[status === 409 ? 'busy' : 'server'],
         });
       } finally {
+        announceSyncChange();
         running.current.delete(id);
       }
     },
     [load, replace, setRun],
   );
+
+  // The background job is loading a history: show its progress without a reload.
+  const backgroundSyncing =
+    addresses?.some((address) => address.sync.status === 'syncing' && !runs[address.id]) ?? false;
+  useEffect(() => {
+    if (!backgroundSyncing) return;
+    const timer = window.setInterval(() => void load(true), BACKGROUND_REFRESH_MS);
+    return () => window.clearInterval(timer);
+  }, [backgroundSyncing, load]);
 
   const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId, name }) => ({
     accountId,

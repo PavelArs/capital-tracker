@@ -199,6 +199,26 @@
   background: var(--ink-3);
 }
 
+a.shell-sync {
+  text-decoration: none;
+}
+
+a.shell-sync:hover {
+  color: var(--ink);
+}
+
+.shell-sync--pos .shell-sync__dot {
+  background: var(--pos);
+}
+
+.shell-sync--info .shell-sync__dot {
+  background: var(--accent);
+}
+
+.shell-sync--warn .shell-sync__dot {
+  background: var(--warn);
+}
+
 .shell-owner {
   display: flex;
   align-items: center;

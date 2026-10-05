@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { SourceState } from './sync-status.api';
 
 export type SyncState = 'never' | 'partial' | 'complete';
 export type SyncOutcome = 'complete' | 'partial' | 'provider_error';
@@ -15,7 +16,18 @@ export interface WalletAddress {
   transactionCount: number;
   /** BTC on the chain from the whole stored history; null until a sync completes. */
   chainBalance: string | null;
-  sync: { state: SyncState; completedAt: string | null };
+  sync: {
+    /** How much of the history is stored. */
+    state: SyncState;
+    completedAt: string | null;
+    /** The background source of this wallet (PR-SYN-1); null until its first sync. */
+    status: SourceState | null;
+    lastAttemptAt: string | null;
+    lastSuccessAt: string | null;
+    nextRunAt: string | null;
+    /** Why the last sync failed or was delayed, in plain words. */
+    errorMessage: string | null;
+  };
 }
 
 export interface NewWalletAddress {

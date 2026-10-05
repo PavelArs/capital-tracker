@@ -4,6 +4,7 @@ import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
+import SyncIndicator from '@features/shell/SyncIndicator';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -115,13 +116,7 @@ export default function Layout() {
               ))}
             </ul>
           </details>
-          <div className="shell-sync" data-sync-status>
-            <span className="shell-sync__dot" aria-hidden="true" />
-            <span>
-              <b>Sync not set up</b>
-              Automatic updates come in a later step
-            </span>
-          </div>
+          <SyncIndicator onFollow={followLink} />
         </div>
         <div className="shell-owner">
           <span className="shell-owner__avatar" aria-hidden="true">

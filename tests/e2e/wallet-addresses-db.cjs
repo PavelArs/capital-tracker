@@ -11,6 +11,9 @@ const { DataSource } = require('typeorm');
 const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.config.js');
 const { WalletAddressService } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
 const { EsploraClient } = require('/app/backend/dist/wallet-addresses/esplora-client.js');
+const { BitcoinSyncAdapter } = require('/app/backend/dist/wallet-addresses/bitcoin-sync.adapter.js');
+const { WalletSyncService } = require('/app/backend/dist/wallet-addresses/wallet-sync.service.js');
+const { SyncStatusService } = require('/app/backend/dist/sync-status/sync-status.service.js');
 const { AddWalletAddressImport1790400000000 } = require('/app/backend/dist/migrations/1790400000000-AddWalletAddressImport.js');
 const { BindWalletsToAccounts1791600000000 } = require('/app/backend/dist/migrations/1791600000000-BindWalletsToAccounts.js');
 
@@ -29,6 +32,11 @@ const addresses = {
   limit: 'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q6vkm53',
   trust: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
   cold: '3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC',
+  // Synthetic base58check P2PKH addresses for background sync (hash of a fixed label).
+  background: '1H1dv7Mxs3yqdEGkx3HuMx6jLStmJi8e1d',
+  down: '163rBrz831SADWG2mTwT9UMX4XdSKtr4Wr',
+  throws: '18PjkHGLoZETfDKmyASszWiqvN69Knq64x',
+  long: '162gaPRBaLg8rtmdQW7Zar6DbKdm9u39CA',
 };
 // Synthetic BIP-39 words of the standard test vector: never a real wallet's phrase.
 const seedPhrase = Array(11).fill('abandon').concat('about').join(' ');
@@ -131,7 +139,11 @@ async function main() {
     const [owner, stranger] = (await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('wallet-owner@example.invalid','synthetic-not-a-login-hash',true),
       ('wallet-stranger@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)).map(({ id }) => id);
-    const service = new WalletAddressService(db, new EsploraClient());
+    const bitcoin = new BitcoinSyncAdapter(db, new EsploraClient());
+    // The background switch is the hourly collection's (M3); the probe drives ticks itself.
+    const scheduler = (enabled, adapters = [bitcoin]) =>
+      new WalletSyncService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: String(enabled) }), adapters);
+    const service = new WalletAddressService(db, scheduler(false));
 
     // ADDR-ADD
     const added = await newRequests(async () => {
@@ -147,7 +159,8 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      accountId: null, label: null, transactionCount: 0, chainBalance: null, sync: { state: 'never', completedAt: null },
+      accountId: null, label: null, transactionCount: 0, chainBalance: null,
+      sync: { state: 'never', completedAt: null, status: null, lastAttemptAt: null, lastSuccessAt: null, nextRunAt: null, errorMessage: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');
     assert.equal((await db.query('SELECT count(*)::int AS n FROM wallet_addresses'))[0].n, 1);
@@ -219,6 +232,12 @@ async function main() {
     assert.equal(first.result.address.transactionCount, 60);
     assert.equal(first.result.address.sync.state, 'complete');
     assert.ok(first.result.address.sync.completedAt);
+    // PR-SYN-1: "Sync now" records the wallet's source like the background job does.
+    assert.equal(first.result.address.sync.status, 'synced');
+    assert.equal(first.result.address.sync.errorMessage, null);
+    assert.equal(first.result.address.sync.lastSuccessAt, first.result.address.sync.lastAttemptAt);
+    assert.ok(Date.parse(first.result.address.sync.nextRunAt) - Date.parse(first.result.address.sync.lastAttemptAt) === 3600000,
+      'A synced wallet is checked again in an hour');
     assertStored(await rows(db, pages), addresses.pages, 60);
     console.log('PASS ADDR-SYNC-PAGES three page requests store 60 exact rows and complete');
 
@@ -257,6 +276,8 @@ async function main() {
     assert.deepEqual({ outcome: failed.result.outcome, reason: failed.result.reason, imported: failed.result.imported,
       state: failed.result.address.sync.state, count: failed.result.address.transactionCount },
     { outcome: 'provider_error', reason: 'rate_limited', imported: 25, state: 'partial', count: 25 });
+    assert.deepEqual([failed.result.address.sync.status, failed.result.address.sync.errorMessage, failed.result.address.sync.lastSuccessAt],
+      ['delayed', 'The Bitcoin data source is busy. The app tries again in a few minutes.', null]);
     assertStored(await rows(db, resume), addresses.resume, 60, 25);
     const resumed = await newRequests(() => service.sync(owner, resume));
     assert.deepEqual(resumed.urls, [
@@ -270,6 +291,9 @@ async function main() {
       await post('bitcoin-history', { address: addresses.resume, count: 60, fault: { onRequest: 1, status } });
       const unavailable = await service.sync(owner, resume);
       assert.deepEqual([unavailable.outcome, unavailable.reason, unavailable.imported], ['provider_error', 'unavailable', 0]);
+      assert.deepEqual([unavailable.address.sync.status, unavailable.address.sync.errorMessage],
+        ['failed', 'Bitcoin data is temporarily unavailable.']);
+      assert.ok(unavailable.address.sync.lastSuccessAt, 'A failure keeps the last success');
     }
     console.log('PASS ADDR-SYNC-RESUME 429 keeps 25 committed rows; next sync resumes to 60 without gaps; 5xx reported unavailable');
 
@@ -385,6 +409,133 @@ async function main() {
     assert.equal(last.items.length, 13);
     assert.equal(last.nextOffset, null);
     console.log('PASS ADDR-PRIVATE foreign 404, invalid query 400, owner-scoped reads; usdValue missing, never zero');
+
+    // SYNC-SWITCH: the background job follows the hourly collection switch and is single.
+    const off = await newRequests(() => scheduler(false).tick());
+    assert.deepEqual([off.result, off.urls], [{ outcome: 'disabled' }, []]);
+    const holder = new Client({ host: settings.DB_HOST, port: 5432, user: settings.DB_USERNAME, password: settings.DB_PASSWORD, database });
+    await holder.connect();
+    try {
+      await holder.query('SELECT pg_advisory_lock(7340600011)');
+      const locked = await newRequests(() => scheduler(true).tick());
+      assert.deepEqual([locked.result, locked.urls], [{ outcome: 'busy' }, []]);
+    } finally {
+      await holder.query('SELECT pg_advisory_unlock(7340600011)');
+      await holder.end();
+    }
+    console.log('PASS SYNC-SWITCH tick disabled without PRICE_COLLECTION_ENABLED; a held scheduler lock reports busy; no provider call');
+
+    // SYNC-BG, SYNC-ISOLATION. Wallets synced above are due again only after their hour; the
+    // ones never synced (trust, foreign) are left out by pretending they were just checked.
+    const quiet = await db.query(`INSERT INTO sync_sources (key, state, "lastAttemptAt", "nextRunAt")
+      SELECT 'wallet:' || id, 'synced', now(), now() + interval '1 day' FROM wallet_addresses
+      ON CONFLICT (key) DO UPDATE SET "nextRunAt" = EXCLUDED."nextRunAt" RETURNING key`);
+    assert.equal(quiet.length, 8);
+    const background = (await service.register(owner, { address: addresses.background, accountId: trustAccount, label: 'Background' })).value.id;
+    const down = (await service.register(owner, { address: addresses.down })).value.id;
+    const throws = (await service.register(owner, { address: addresses.throws })).value.id;
+    await post('bitcoin-history', { address: addresses.background, count: 3 });
+    await post('bitcoin-history', { address: addresses.down, count: 5, fault: { onRequest: 1, status: 503 } });
+    await post('bitcoin-history', { address: addresses.throws, count: 2 });
+    // An adapter that throws for one wallet stands for any unexpected error in one source.
+    const brittle = { network: 'bitcoin', name: 'Bitcoin', step: async (ownerId, addressId) => {
+      if (addressId === throws) throw new Error('synthetic adapter failure');
+      return bitcoin.step(ownerId, addressId);
+    } };
+    const t0 = new Date();
+    const tick = (at) => newRequests(() => scheduler(true, [brittle]).tick(at));
+    const firstTick = await tick(t0);
+    assert.deepEqual(firstTick.result, { outcome: 'ran', wallets: [
+      { id: background, state: 'synced' }, { id: down, state: 'failed' }, { id: throws, state: 'failed' }] });
+    assert.deepEqual(firstTick.urls, [`${esplora}/${addresses.background}/txs/chain`, `${esplora}/${addresses.down}/txs/chain`]);
+    assertStored(await rows(db, background), addresses.background, 3);
+    assert.equal((await rows(db, down)).length, 0);
+    const byId = async () => new Map((await service.list(owner)).map((item) => [item.id, item]));
+    let listed = await byId();
+    assert.deepEqual(listed.get(background).sync, { state: 'complete', completedAt: listed.get(background).sync.completedAt,
+      status: 'synced', lastAttemptAt: t0.toISOString(), lastSuccessAt: t0.toISOString(),
+      nextRunAt: new Date(t0.getTime() + 3600000).toISOString(), errorMessage: null });
+    assert.equal(listed.get(background).chainBalance, balance(addresses.background, 3));
+    assert.deepEqual(listed.get(down).sync, { state: 'never', completedAt: null, status: 'failed', lastAttemptAt: t0.toISOString(),
+      lastSuccessAt: null, nextRunAt: new Date(t0.getTime() + 900000).toISOString(), errorMessage: 'Bitcoin data is temporarily unavailable.' });
+    assert.deepEqual([listed.get(throws).sync.status, listed.get(throws).sync.errorMessage], ['failed', 'The sync stopped unexpectedly.']);
+    const again = await tick(new Date(t0.getTime() + 60000));
+    assert.deepEqual([again.result, again.urls], [{ outcome: 'ran', wallets: [] }, []], 'Nothing is due a minute later');
+
+    await post('bitcoin-history', { address: addresses.background, append: 1 });
+    const t1 = new Date(t0.getTime() + 3600000);
+    const hourLater = await tick(t1);
+    assert.deepEqual(hourLater.result, { outcome: 'ran', wallets: [
+      { id: down, state: 'synced' }, { id: throws, state: 'failed' }, { id: background, state: 'synced' }] });
+    assertStored(await rows(db, background), addresses.background, 4);
+    assertStored(await rows(db, down), addresses.down, 5);
+    listed = await byId();
+    assert.deepEqual([listed.get(down).sync.status, listed.get(down).sync.errorMessage, listed.get(down).sync.lastSuccessAt],
+      ['synced', null, t1.toISOString()], 'A recovered wallet clears its error');
+    assert.equal(listed.get(background).transactionCount, 4);
+    console.log('PASS SYNC-BG background job stores 3 raw transactions, then exactly 4 an hour later; nothing runs before it is due');
+    console.log('PASS SYNC-ISOLATION a 503 and a throwing adapter fail only their own wallets with readable reasons; the next run recovers');
+
+    // SYNC-LONG: a long history continues on the next tick, not in an hour.
+    const long = (await service.register(owner, { address: addresses.long })).value.id;
+    await post('bitcoin-history', { address: addresses.long, count: 300 });
+    const t2 = new Date(t1.getTime() + 60000);
+    const firstPart = await tick(t2);
+    assert.deepEqual(firstPart.result, { outcome: 'ran', wallets: [{ id: long, state: 'syncing' }] });
+    assert.equal(firstPart.urls.length, 10);
+    listed = await byId();
+    assert.deepEqual([listed.get(long).sync.state, listed.get(long).sync.status, listed.get(long).sync.nextRunAt, listed.get(long).chainBalance],
+      ['partial', 'syncing', t2.toISOString(), null]);
+    const rest = await tick(new Date(t2.getTime() + 60000));
+    assert.deepEqual(rest.result, { outcome: 'ran', wallets: [{ id: long, state: 'synced' }] });
+    assertStored(await rows(db, long), addresses.long, 300);
+    console.log('PASS SYNC-LONG 300 transactions load over two ticks; partial shows syncing and is due at once');
+
+    // SYNC-INTERRUPTED: a pass that died while syncing reads as failed and runs again.
+    await db.query(`UPDATE sync_sources SET state = 'syncing', "errorCode" = NULL, "errorMessage" = NULL,
+      "lastAttemptAt" = $2, "nextRunAt" = $3 WHERE key = $1`,
+    [`wallet:${throws}`, new Date(Date.now() - 20 * 60000), new Date(Date.now() - 5 * 60000)]);
+    // The list reads the clock: twenty minutes in "syncing" means the pass died.
+    const died = (await service.list(owner)).find((item) => item.id === throws);
+    assert.deepEqual([died.sync.status, died.sync.errorMessage], ['failed', 'The sync stopped before it finished.']);
+    const rerun = await tick(new Date(t2.getTime() + 120000));
+    assert.deepEqual(rerun.result.wallets, [{ id: throws, state: 'failed' }]);
+    const healthy = await scheduler(true).tick(new Date(t2.getTime() + 120000 + 900000));
+    assert.deepEqual(healthy.wallets, [{ id: throws, state: 'synced' }]);
+    assertStored(await rows(db, throws), addresses.throws, 2);
+    console.log('PASS SYNC-INTERRUPTED a stale syncing state reads as failed, is picked up again and recovers');
+
+    // SYNC-STATUS: one state per source; prices are healthy while either provider is fresh.
+    await db.query(`INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt", "errorCode", "errorMessage") VALUES
+      ('prices:kraken', 'synced', $1, $1, $3, NULL, NULL),
+      ('prices:coingecko', 'failed', $2, NULL, $3, 'unavailable', 'CoinGecko did not answer'),
+      ('fx:cbr', 'delayed', $1, $4, $3, 'invalid_response', 'Bank of Russia sent an unreadable answer; no new rates for USD')
+      ON CONFLICT (key) DO UPDATE SET state = EXCLUDED.state, "lastAttemptAt" = EXCLUDED."lastAttemptAt",
+        "lastSuccessAt" = EXCLUDED."lastSuccessAt", "nextRunAt" = EXCLUDED."nextRunAt",
+        "errorCode" = EXCLUDED."errorCode", "errorMessage" = EXCLUDED."errorMessage"`,
+    [new Date(t2.getTime() - 12 * 60000), new Date(t2.getTime() - 60000), new Date(t2.getTime() + 3600000), new Date(t2.getTime() - 86400000)]);
+    await db.query(`UPDATE sync_sources SET state = 'failed', "errorCode" = 'unavailable',
+      "errorMessage" = 'Bitcoin data is temporarily unavailable.' WHERE key = $1`, [`wallet:${down}`]);
+    const status = new SyncStatusService(db);
+    const report = await status.read(owner, t2);
+    const named = Object.fromEntries(report.sources.map((item) => [item.key, item]));
+    assert.deepEqual(named.prices, { key: 'prices', kind: 'prices', name: 'Prices', state: 'synced',
+      lastAttemptAt: new Date(t2.getTime() - 60000).toISOString(), lastSuccessAt: new Date(t2.getTime() - 12 * 60000).toISOString(), errorMessage: null });
+    assert.deepEqual([named['fx:cbr'].state, named['fx:cbr'].name, named['fx:cbr'].errorMessage],
+      ['delayed', 'Bank of Russia rates', 'Bank of Russia sent an unreadable answer; no new rates for USD']);
+    assert.deepEqual(named[`wallet:${down}`], { key: `wallet:${down}`, kind: 'wallet', name: 'Bitcoin', state: 'failed',
+      lastAttemptAt: t1.toISOString(), lastSuccessAt: t1.toISOString(), errorMessage: 'Bitcoin data is temporarily unavailable.' });
+    assert.deepEqual([named[`wallet:${background}`].name, named[`wallet:${background}`].state], ['Background', 'synced']);
+    assert.equal(report.sources.filter((item) => item.kind === 'wallet').length, 11);
+    assert.deepEqual(report.sources.slice(0, 2).map((item) => item.key), ['prices', 'fx:cbr']);
+    const strangers = await status.read(stranger, t2);
+    assert.deepEqual(strangers.sources.filter((item) => item.kind === 'wallet').map((item) => item.key), [`wallet:${foreign}`],
+      "Another owner's wallets never appear");
+    const stale = await status.read(owner, new Date(t2.getTime() + 3 * 3600000));
+    assert.deepEqual([stale.sources[0].state, stale.sources[0].errorMessage], ['failed', 'CoinGecko did not answer'],
+      'Prices older than two hours need attention, with the last provider error');
+    await refusal(() => status.read('not-a-uuid'), 400);
+    console.log('PASS SYNC-STATUS prices synced 12 min ago, FX delayed and a failed wallet each report their own state and reason; owner-scoped');
 
     // ADDR-MIGRATION down refusal
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
