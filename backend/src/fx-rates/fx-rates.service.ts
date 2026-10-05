@@ -191,11 +191,11 @@ export class FxRatesService {
     });
   }
 
-  /** Rates effective today (Moscow date) and the collector's state. */
-  async read(now = new Date()) {
+  /** Rates effective on a Moscow date (today by default) and the collector's state. */
+  async read(now = new Date(), date?: string) {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const today = moscowDate(now);
+      const today = date ?? moscowDate(now);
       const rows: RateRow[] = await manager.query(
         `SELECT DISTINCT ON (currency) currency, to_char("rateDate", 'YYYY-MM-DD') AS "rateDate",
            "rubPerUnit"::text AS "rubPerUnit"

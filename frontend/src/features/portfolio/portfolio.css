@@ -41,6 +41,10 @@
   cursor: not-allowed;
 }
 
+.shell-button--secondary {
+  margin-top: 0;
+}
+
 .shell-button--ghost {
   margin-top: 0;
   border-color: transparent;
@@ -553,4 +557,75 @@ a.portfolio-asset__name:hover {
   .portfolio-row {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* "Add transaction" dialog (prototype modal: affix inputs, asset chips, more options). */
+.portfolio-dialog--wide {
+  width: min(560px, 100%);
+}
+
+.portfolio-affix {
+  position: relative;
+  display: block;
+}
+
+.portfolio-affix .portfolio-input {
+  padding-right: 64px;
+}
+
+.portfolio-affix--wide .portfolio-input {
+  padding-right: 118px;
+}
+
+.portfolio-affix__suffix {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.portfolio-chip--asset {
+  padding-left: 4px;
+}
+
+.portfolio-asset__icon--sm {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+}
+
+.portfolio-more summary {
+  color: var(--ink-2);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.portfolio-more[open] summary {
+  margin-bottom: var(--sp-4);
+}
+
+.portfolio-dialog__summary {
+  margin-right: auto;
+  align-self: center;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.portfolio-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.portfolio-link:hover {
+  text-decoration: underline;
 }

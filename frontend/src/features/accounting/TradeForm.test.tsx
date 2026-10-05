@@ -38,8 +38,8 @@ const saved: TradeVersion = {
     gross: '100000',
     fee: '0',
     rateDate: '2025-06-03',
-    rubPerUsd: '79',
-    rubPerUnit: '1',
+    perUsd: '79',
+    rateSource: 'bank-of-russia',
   },
 };
 
@@ -114,6 +114,13 @@ describe('CUR-PAID-RUB the trade form takes amounts in the currency paid', () =>
       grossUsd: '100000',
       feeUsd: '0',
     });
+    // A rate the owner entered stays with the correction unless the currency changes.
+    const own = { ...saved, paid: { ...saved.paid!, perUsd: '80', rateSource: 'owner' as const } };
+    expect(tradeDraft(own)).toMatchObject({ paidCurrency: 'RUB', paidPerUsd: '80' });
+    expect(tradeCommand(tradeDraft(own), identity)).toMatchObject({
+      paid: { currency: 'RUB', gross: '100000', fee: '0', perUsd: '80' },
+    });
+    expect(tradeCommand(tradeDraft(saved), identity)).not.toHaveProperty('paid.perUsd');
     const { paid: _paid, ...usd } = saved;
     expect(tradeDraft(usd)).toMatchObject({
       paidCurrency: 'USD',

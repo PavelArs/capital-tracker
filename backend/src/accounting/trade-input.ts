@@ -116,12 +116,13 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
 
 function parsePaid(value: unknown, grossUsd: unknown, feeUsd: unknown): TradePaymentInput {
   if (grossUsd !== undefined || feeUsd !== undefined) return bad();
-  const paid = object(value, ['currency', 'gross', 'fee']);
+  const paid = object(value, ['currency', 'gross', 'fee', 'perUsd']);
   if (!isPaidCurrency(paid.currency)) return bad();
   return {
     currency: paid.currency,
     gross: parseDecimal(paid.gross, true),
     fee: parseDecimal(paid.fee, false),
+    ...(paid.perUsd === undefined ? {} : { perUsd: parseDecimal(paid.perUsd, true) }),
   };
 }
 

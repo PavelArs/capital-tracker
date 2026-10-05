@@ -5,7 +5,8 @@ export class PaidCurrencyTrades1791100000000 implements MigrationInterface {
 
   async up(runner: QueryRunner): Promise<void> {
     // CUR-PAID-RUB: a trade version paid in RUB or EUR keeps the amounts as paid and the
-    // Bank of Russia rates its stored USD amounts were derived at. No row means USD.
+    // rate its stored USD amounts were derived at (paid units per 1 USD): the Bank of Russia
+    // rate of the trade's date, or the one the owner entered. No row means USD.
     await runner.query(`CREATE TABLE account_trade_version_payments (
       "ownerId" uuid NOT NULL,
       "accountId" uuid NOT NULL,
@@ -18,11 +19,9 @@ export class PaidCurrencyTrades1791100000000 implements MigrationInterface {
         AND fee NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
       "rateDate" date NOT NULL CHECK ("rateDate" >= date '1992-07-01'
         AND "rateDate" < date '10000-01-01'),
-      "rubPerUsd" numeric(78,30) NOT NULL CHECK ("rubPerUsd" > 0
-        AND "rubPerUsd" NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
-      "rubPerUnit" numeric(78,30) NOT NULL CHECK ("rubPerUnit" > 0
-        AND "rubPerUnit" NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)
-        AND (currency <> 'RUB' OR "rubPerUnit" = 1)),
+      "perUsd" numeric(78,30) NOT NULL CHECK ("perUsd" > 0
+        AND "perUsd" NOT IN ('NaN'::numeric, 'Infinity'::numeric, '-Infinity'::numeric)),
+      "rateSource" varchar(16) NOT NULL CHECK ("rateSource" IN ('bank-of-russia','owner')),
       "createdAt" timestamptz(3) NOT NULL DEFAULT clock_timestamp() CHECK (isfinite("createdAt")),
       PRIMARY KEY ("ownerId", "accountId", "tradeId", version),
       FOREIGN KEY ("ownerId", "accountId", "tradeId", version)

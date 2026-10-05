@@ -11,17 +11,22 @@ export interface TradeExecution {
   grossUsd: string;
   feeUsd: string;
 }
-/** Amounts as paid in RUB or EUR; the trade's USD amounts were derived from them at the
- * Bank of Russia rates of its date. */
+/** Amounts as paid in RUB or EUR; the trade's USD amounts are derived from them at the
+ * Bank of Russia rate of its date, or at `perUsd` (units per 1 USD) when the owner gives it. */
 export interface TradePaymentInput {
   currency: 'RUB' | 'EUR';
   gross: string;
   fee: string;
+  perUsd?: string;
 }
-export interface TradePayment extends TradePaymentInput {
+export interface TradePayment {
+  currency: 'RUB' | 'EUR';
+  gross: string;
+  fee: string;
   rateDate: string;
-  rubPerUsd: string;
-  rubPerUnit: string;
+  /** Units of the paid currency per 1 USD that gave the stored USD amounts. */
+  perUsd: string;
+  rateSource: 'bank-of-russia' | 'owner';
 }
 export interface JournalOrigin {
   accountId: string;

@@ -42,6 +42,12 @@ describe('PAID-INPUT a trade states its amounts in the currency it was paid in',
     expect(
       parseTradeCreate({ ...base, paid: { currency: 'EUR', gross: '1000', fee: '10.5' } }).paid,
     ).toEqual({ currency: 'EUR', gross: '1000', fee: '10.5' });
+    expect(
+      parseTradeCreate({
+        ...base,
+        paid: { currency: 'RUB', gross: '100000', fee: '0', perUsd: '80.50' },
+      }).paid,
+    ).toEqual({ currency: 'RUB', gross: '100000', fee: '0', perUsd: '80.5' });
     expect(parseTradeCreate({ ...base, grossUsd: '1000', feeUsd: '0' })).toEqual({
       ...base,
       grossUsd: '1000',
@@ -60,6 +66,9 @@ describe('PAID-INPUT a trade states its amounts in the currency it was paid in',
     ['a zero amount', { paid: { currency: 'RUB', gross: '0', fee: '0' } }],
     ['a missing fee', { paid: { currency: 'RUB', gross: '1' } }],
     ['an unknown key', { paid: { currency: 'RUB', gross: '1', fee: '0', rate: '79' } }],
+    ['a zero rate', { paid: { currency: 'RUB', gross: '1', fee: '0', perUsd: '0' } }],
+    ['a negative rate', { paid: { currency: 'RUB', gross: '1', fee: '0', perUsd: '-80' } }],
+    ['a rate as a number', { paid: { currency: 'RUB', gross: '1', fee: '0', perUsd: 80 } }],
     ['a list', { paid: [] }],
   ])('refuses %s', (_label, amounts) => {
     expect(() => parseTradeCreate({ ...base, ...amounts })).toThrow(BadRequestException);
@@ -78,8 +87,8 @@ describe('PAID-DERIVE USD amounts come from the Bank of Russia rate of the trade
         gross: '100000',
         fee: '0',
         rateDate: '2025-06-03',
-        rubPerUsd: '79',
-        rubPerUnit: '1',
+        perUsd: '79',
+        rateSource: 'bank-of-russia',
       },
     });
   });
@@ -101,10 +110,49 @@ describe('PAID-DERIVE USD amounts come from the Bank of Russia rate of the trade
         gross: '1000',
         fee: '10',
         rateDate: '2025-06-08',
-        rubPerUsd: '80',
-        rubPerUnit: '90',
+        perUsd: '0.888888888888888888888888888889',
+        rateSource: 'bank-of-russia',
       },
     });
+  });
+
+  it('uses the rate the owner entered instead, even with no stored rate', () => {
+    const none: FxRates = { USD: [], EUR: [] };
+    expect(
+      derivePaidAmounts(
+        { currency: 'RUB', gross: '100000', fee: '400', perUsd: '80' },
+        none,
+        '2025-05-01T09:00:00.000Z',
+      ),
+    ).toEqual({
+      grossUsd: '1250',
+      feeUsd: '5',
+      paid: {
+        currency: 'RUB',
+        gross: '100000',
+        fee: '400',
+        rateDate: '2025-05-01',
+        perUsd: '80',
+        rateSource: 'owner',
+      },
+    });
+    expect(
+      derivePaidAmounts(
+        { currency: 'EUR', gross: '1000', fee: '0', perUsd: '0.9' },
+        rates,
+        base.occurredAt,
+      ),
+    ).toMatchObject({
+      grossUsd: '1111.111111111111111111111111111111',
+      paid: { perUsd: '0.9', rateSource: 'owner' },
+    });
+    expect(() =>
+      derivePaidAmounts(
+        { currency: 'RUB', gross: '1', fee: '0', perUsd: '1000000000000000000000000000000000' },
+        none,
+        base.occurredAt,
+      ),
+    ).toThrow(BadRequestException);
   });
 
   it('has no USD amount without a stored rate and refuses an amount that rounds to zero', () => {

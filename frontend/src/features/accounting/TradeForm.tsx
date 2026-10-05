@@ -6,10 +6,12 @@ import './TradeForm.css';
 
 /** The currency the amounts were paid in; RUB and EUR are converted by the server. */
 export type PaidCurrency = 'USD' | 'RUB' | 'EUR';
-/** `grossUsd` and `feeUsd` hold the amounts typed in `paidCurrency`. */
+/** `grossUsd` and `feeUsd` hold the amounts typed in `paidCurrency`; `paidPerUsd` keeps a
+ * rate the owner entered for the trade, so a correction does not replace it. */
 export type TradeDraft = Omit<TradeExecution, 'orderWithinTimestamp'> & {
   orderWithinTimestamp: string;
   paidCurrency: PaidCurrency;
+  paidPerUsd?: string;
 };
 
 export function emptyTradeDraft(): TradeDraft {
@@ -34,7 +36,12 @@ export function tradeDraft(trade: TradeVersion): TradeDraft {
     orderWithinTimestamp: String(trade.orderWithinTimestamp),
     quantity: trade.quantity,
     ...(trade.paid
-      ? { paidCurrency: trade.paid.currency, grossUsd: trade.paid.gross, feeUsd: trade.paid.fee }
+      ? {
+          paidCurrency: trade.paid.currency,
+          grossUsd: trade.paid.gross,
+          feeUsd: trade.paid.fee,
+          ...(trade.paid.rateSource === 'owner' ? { paidPerUsd: trade.paid.perUsd } : {}),
+        }
       : { paidCurrency: 'USD', grossUsd: trade.grossUsd, feeUsd: trade.feeUsd }),
   };
 }
@@ -44,13 +51,20 @@ export function tradeCommand(
   draft: TradeDraft,
   identity: { requestId: string; expectedJournalRevision: number },
 ): TradeCommand {
-  const { paidCurrency, grossUsd, feeUsd, orderWithinTimestamp, ...fields } = draft;
+  const { paidCurrency, paidPerUsd, grossUsd, feeUsd, orderWithinTimestamp, ...fields } = draft;
   return {
     ...fields,
     orderWithinTimestamp: Number(orderWithinTimestamp),
     ...(paidCurrency === 'USD'
       ? { grossUsd, feeUsd }
-      : { paid: { currency: paidCurrency, gross: grossUsd, fee: feeUsd } }),
+      : {
+          paid: {
+            currency: paidCurrency,
+            gross: grossUsd,
+            fee: feeUsd,
+            ...(paidPerUsd ? { perUsd: paidPerUsd } : {}),
+          },
+        }),
     ...identity,
   };
 }
@@ -152,6 +166,8 @@ export function TradeForm({
                         event.target.value === 'RUB' || event.target.value === 'EUR'
                           ? event.target.value
                           : 'USD',
+                      // A rate belongs to its currency.
+                      paidPerUsd: undefined,
                     })
                   }
                 >
@@ -163,7 +179,9 @@ export function TradeForm({
               <small id={`${hintId}-currency`}>
                 {currency === 'USD'
                   ? 'Валюта, в которой вы заплатили или получили деньги.'
-                  : `Суммы сохранятся в ${currency}, а USD рассчитается по курсу ЦБ РФ на дату сделки.`}
+                  : draft.paidPerUsd
+                    ? `Суммы сохранятся в ${currency}, а USD рассчитается по вашему курсу ${draft.paidPerUsd} ${currency} за 1 USD.`
+                    : `Суммы сохранятся в ${currency}, а USD рассчитается по курсу ЦБ РФ на дату сделки.`}
               </small>
             </div>
             <div className="operation-form__field">
