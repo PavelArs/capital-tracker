@@ -17,6 +17,7 @@ type History = {
   complete: boolean;
   change: string | null;
   changePercent: string | null;
+  profit: string | null;
   points: Point[];
 };
 
@@ -125,9 +126,11 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   const hero = main.getByRole('region', { name: 'Net worth' });
   await expect(hero.getByText('Total net worth · USD')).toBeVisible();
   await expect(hero.getByText(money(shown.value, 'USD'), { exact: true })).toBeVisible();
-  await expect(hero.getByLabel('Change for the past month')).toContainText(
-    money(shown.change, 'USD').replace(/^(?=[$])/, Number(shown.change) > 0 ? '+' : ''),
+  // Profit or loss to date sits under the net worth; the period's split below names the month.
+  await expect(hero.getByLabel('Profit or loss to date')).toContainText(
+    money(shown.profit, 'USD').replace(/^(?=[$])/, Number(shown.profit) > 0 ? '+' : ''),
   );
+  await expect(hero.getByLabel('What changed')).toContainText('Past month');
   await expect(page.getByText(/not built yet/i)).toHaveCount(0);
   const chart = main.getByRole('region', { name: 'Portfolio value over time' });
   const tabs = chart.getByRole('tablist', { name: 'Chart period' });

@@ -133,8 +133,8 @@ async function backfill(db, s, f) {
   check('2026-10-04T12:00:00.000Z', btcClose(midnight('2026-10-04T00:00:00.000Z')) + 1200, true);
   const all = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' }, now);
   assert.deepEqual(Object.keys(all).sort(), ['at', 'change', 'changePercent', 'complete', 'currency', 'deposits',
-    'from', 'invested', 'mainCurrency', 'marketEffect', 'marketReturnPercent', 'netFlow', 'period', 'points', 'value',
-    'withdrawals'].sort());
+    'from', 'invested', 'mainCurrency', 'marketEffect', 'marketReturnPercent', 'netFlow', 'period', 'points', 'profit',
+    'profitPercent', 'value', 'withdrawals'].sort());
   assert.deepEqual([all.period, all.currency, all.mainCurrency, all.at, all.from],
     ['ALL', 'USD', 'USD', now.toISOString(), '2025-01-01T00:00:00.000Z']);
   assert.equal(all.points[0].at, '2025-01-01T00:00:00.000Z', "The chart's ALL period starts on 01.01.2025 (Q4)");

@@ -158,3 +158,20 @@ export function splitChange(
     marketReturnPercent: base > 0n ? formatPercent(market, base) : null,
   };
 }
+
+/**
+ * Profit or loss to date: net worth minus all-time net invested, and its share of net
+ * invested; no percentage of nothing when more was taken out than put in.
+ */
+export function profitToDate(
+  value: string | null,
+  invested: string | null,
+): { profit: string | null; profitPercent: string | null } {
+  if (value === null || invested === null) return { profit: null, profitPercent: null };
+  const base = valueAtoms(invested);
+  const profit = valueAtoms(value) - base;
+  return {
+    profit: formatSignedProduct(profit),
+    profitPercent: base > 0n ? formatPercent(profit, base) : null,
+  };
+}

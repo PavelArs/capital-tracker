@@ -22,7 +22,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
-import { capitalFlows, investedAt, splitChange, stateFlows } from './capital-flows';
+import { capitalFlows, investedAt, profitToDate, splitChange, stateFlows } from './capital-flows';
 import {
   DEFAULT_PERIOD,
   HISTORY_FROM_MS,
@@ -251,6 +251,8 @@ export class PortfolioSnapshotsService {
         complete: points.every((point) => point.complete),
         ...periodChange(start?.value ?? null, current.value),
         invested: invested.at(-1) ?? null,
+        // Profit or loss to date against all-time net invested, whatever the period.
+        ...profitToDate(current.value, invested.at(-1) ?? null),
         ...splitChange(start, series.at(-1)!, flows),
         points,
       };

@@ -21,6 +21,8 @@ const history = (changes: Partial<PortfolioHistory> = {}): PortfolioHistory => (
   change: '15000',
   changePercent: '15.00',
   invested: '90000',
+  profit: '25000',
+  profitPercent: '27.78',
   deposits: '10000',
   withdrawals: '0',
   netFlow: '10000',
@@ -53,15 +55,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('record-portfolio-snapshots dashboard', () => {
-  it('DASH-MAIN shows net worth, the change for the default month and the chart', async () => {
+  it('DASH-MAIN shows net worth, the profit to date, the month and the chart', async () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     expect(get).toHaveBeenCalledWith('1M', undefined);
     expect(within(hero).getByText('Total net worth · USD')).toBeInTheDocument();
     expect(within(hero).getByText('$115,000.00')).toBeInTheDocument();
-    const delta = within(hero).getByLabelText('Change for the past month');
-    expect(delta).toHaveTextContent('▲ +$15,000.00+15.00%past month');
-    expect(delta).toHaveClass('portfolio-pos');
+    const profit = within(hero).getByLabelText('Profit or loss to date');
+    expect(profit).toHaveTextContent('▲ +$25,000.00+27.78%on $90,000.00 net invested');
+    expect(profit).toHaveClass('portfolio-pos');
+    expect(within(hero).getByLabelText('What changed')).toHaveTextContent(/^Past month/);
+    expect(within(hero).queryByText('+$15,000.00')).toBeNull();
     const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
     expect(within(chart).getByRole('tab', { name: '1M' })).toHaveAttribute('aria-selected', 'true');
     expect(
@@ -88,7 +92,9 @@ describe('record-portfolio-snapshots dashboard', () => {
       expect(get).toHaveBeenLastCalledWith(period, undefined);
     }
     await user.click(within(chart).getByRole('tab', { name: '7D' }));
-    await screen.findByLabelText('Change for the past 7 days');
+    await waitFor(() =>
+      expect(screen.getByLabelText('What changed')).toHaveTextContent(/^Past 7 days/),
+    );
     const plot = within(chart).getByRole('group');
     plot.focus();
     await user.keyboard('{Home}');
@@ -123,6 +129,9 @@ describe('record-portfolio-snapshots dashboard', () => {
         complete: false,
         change: '-500',
         changePercent: '-0.50',
+        profit: '-500',
+        profitPercent: '-0.50',
+        invested: '100000',
         points: [
           { at: '2026-09-05T00:00:00.000Z', value: null, complete: false, invested: null },
           { at: '2026-09-06T00:00:00.000Z', value: '100000', complete: false, invested: null },
@@ -133,9 +142,9 @@ describe('record-portfolio-snapshots dashboard', () => {
     );
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
-    expect(within(hero).getByLabelText('Change for the past month')).toHaveTextContent(
-      '▼ -$500.00-0.50%',
-    );
+    const loss = within(hero).getByLabelText('Profit or loss to date');
+    expect(loss).toHaveTextContent('▼ -$500.00-0.50%on $100,000.00 net invested');
+    expect(loss).toHaveClass('portfolio-neg');
     expect(within(hero).getByRole('note')).toHaveTextContent(/Incomplete/);
     cleanup();
     get.mockResolvedValue(
@@ -145,6 +154,8 @@ describe('record-portfolio-snapshots dashboard', () => {
         changePercent: null,
         complete: false,
         invested: null,
+        profit: null,
+        profitPercent: null,
         deposits: null,
         withdrawals: null,
         netFlow: null,
@@ -156,17 +167,64 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage('/dashboard?currency=RUB');
     const empty = await screen.findByRole('region', { name: 'Net worth' });
     expect(within(empty).getByText('No rate')).toBeInTheDocument();
-    expect(within(empty).getByLabelText('Change for the past month')).toHaveTextContent('—');
-    expect(within(empty).getByLabelText('What changed')).toHaveTextContent('Market—Net deposits—');
+    expect(within(empty).getByLabelText('Profit or loss to date')).toHaveTextContent('—');
+    expect(within(empty).getByLabelText('What changed')).toHaveTextContent(
+      'Past monthMarket—Net deposits—',
+    );
     expect(screen.getByText(/No value can be shown for this period/)).toBeInTheDocument();
     expect(get).toHaveBeenLastCalledWith('1M', 'RUB');
+  });
+
+  it('PROFIT-ALL-TIME the profit line is net worth minus all-time net invested, whatever the period', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const chart = screen.getByRole('region', { name: 'Portfolio value over time' });
+    for (const period of ['24H', 'ALL'] as const) {
+      await user.click(within(chart).getByRole('tab', { name: period }));
+      await waitFor(() => expect(get).toHaveBeenLastCalledWith(period, undefined));
+      expect(within(hero).getByLabelText('Profit or loss to date')).toHaveTextContent(
+        '▲ +$25,000.00+27.78%on $90,000.00 net invested',
+      );
+    }
+    cleanup();
+    // A month where only the market rose still shows the loss against the money put in.
+    get.mockResolvedValue(
+      history({
+        value: '80000',
+        change: '8000',
+        changePercent: '11.11',
+        profit: '-10000',
+        profitPercent: '-11.11',
+        deposits: '0',
+        netFlow: '0',
+        marketEffect: '8000',
+        marketReturnPercent: '11.11',
+      }),
+    );
+    renderPage();
+    const down = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(down).getByLabelText('Profit or loss to date')).toHaveTextContent(
+      '▼ -$10,000.00-11.11%on $90,000.00 net invested',
+    );
+    expect(within(down).getByLabelText('What changed')).toHaveTextContent(
+      'Past monthMarket+$8,000.00+11.11%Net deposits$0.00',
+    );
+    cleanup();
+    // More taken out than put in: no percentage of nothing.
+    get.mockResolvedValue(history({ invested: '-2000', profit: '117000', profitPercent: null }));
+    renderPage();
+    const out = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(out).getByLabelText('Profit or loss to date')).toHaveTextContent(
+      '▲ +$117,000.00on -$2,000.00 net invested',
+    );
   });
 
   it('FLOW-SPLIT splits the change into market and net deposits for the period', async () => {
     renderPage();
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     const split = within(hero).getByLabelText('What changed');
-    expect(split).toHaveTextContent('Market+$5,000.00+4.55%Net deposits+$10,000.00');
+    expect(split).toHaveTextContent('Past monthMarket+$5,000.00+4.55%Net deposits+$10,000.00');
     expect(within(split).getByText('+$5,000.00')).toHaveClass('portfolio-pos');
     expect(within(split).getByText('+$10,000.00')).not.toHaveClass('portfolio-pos');
     cleanup();
@@ -185,7 +243,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     renderPage();
     const transfer = await screen.findByRole('region', { name: 'Net worth' });
     expect(within(transfer).getByLabelText('What changed')).toHaveTextContent(
-      'Market-$6.00-0.01%Net deposits$0.00',
+      'Past monthMarket-$6.00-0.01%Net deposits$0.00',
     );
     cleanup();
     get.mockResolvedValue(history({ withdrawals: '2500', netFlow: '-2500', deposits: '0' }));
