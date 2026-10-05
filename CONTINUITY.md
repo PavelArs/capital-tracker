@@ -108,6 +108,15 @@ Change `skip-obsolete-deploy-runs` (RAP-001-D, owner question 2026-10-04 about t
 deploy runs after one pipeline): an automatic deploy run whose CI commit is no longer
 the main head is skipped before the approval. Archive after one main CI starts exactly
 one deploy run.
+Change `tests-on-pull-requests` (owner decision 2026-10-05, ENG-006): every check
+(lint, unit, builds, specification gates, dependency audit, PostgreSQL probes, the five
+critical acceptance shards, receipt merge and the four image scans) runs on pull requests
+and manual dispatch; a push to main only runs `Build Release Images` (build and export
+the candidate) and `Merged Pull Request CI` (`scripts/check-merged-pr-ci.cjs`: the PR
+merged as this commit must have a successful newest pull_request CI run on its final head
+with every shard, the receipt/scan job and CI Status green). CD provenance requires those
+two jobs plus CI Status. No server file changed. A green deploy no longer proves the
+merged main tree itself passed acceptance when the PR was behind main.
 Change `parallel-release-acceptance` (ENG-007, PR #46 merged 2026-10-04): images built
 once, critical acceptance in five parallel verified shards merged into the same receipt;
 CI also runs on manual dispatch (CD still push-only). Dispatch run 37227886949 took
