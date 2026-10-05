@@ -67,6 +67,15 @@ export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// Portfolio snapshots are a cache rebuilt from the other tables whenever the dashboard
+// reads its history, so they are never compared as preserved business state.
+export const derivedCacheTables = ['portfolio_snapshots', 'portfolio_snapshot_state'];
+
+// One "table|md5" line per table, in table order whatever plan PostgreSQL picks.
+export function orderedFingerprintSql(selects: string[]): string {
+  return `SELECT * FROM (${selects.join(' UNION ALL ')}) fingerprint ORDER BY 1`;
+}
+
 export function fingerprint(
   excluded = ['auth_sessions', 'owner_mfa', 'owner_mfa_recovery'],
 ): string {
@@ -74,18 +83,18 @@ export function fingerprint(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
   )
     .split('\n')
-    .filter((table) => !excluded.includes(table));
+    .filter((table) => !excluded.includes(table) && !derivedCacheTables.includes(table));
   expect(tables).toContain('users');
   if (!excluded.includes('owner_auth')) expect(tables).toContain('owner_auth');
   expect(tables).toContain('crypto_wallets');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(
-    tables
-      .map(
+    orderedFingerprintSql(
+      tables.map(
         (table) =>
           `SELECT '${table}', md5(COALESCE(jsonb_agg(row_data ORDER BY row_data::text)::text, '[]')) FROM (SELECT to_jsonb(t) AS row_data FROM public."${table}" t) rows`,
-      )
-      .join(' UNION ALL '),
+      ),
+    ),
   );
 }
 

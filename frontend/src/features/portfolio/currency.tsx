@@ -3,6 +3,7 @@ import {
   accountingCurrencies,
   type PortfolioValuation,
 } from '@api/portfolio-valuation.api';
+import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { rateText } from './format';
 
@@ -34,6 +35,10 @@ export function CurrencySwitch({
   value: AccountingCurrency;
   onChange: (currency: AccountingCurrency) => void;
 }) {
+  // The router applies the new address in a transition, after React has already put the
+  // controlled radio back; keep the clicked one marked until the page's currency changes.
+  const [choice, setChoice] = useState({ value, chosen: value });
+  const chosen = choice.value === value ? choice.chosen : value;
   return (
     <div className="shell-seg" role="radiogroup" aria-label="Currency">
       {accountingCurrencies.map((currency) => (
@@ -42,8 +47,11 @@ export function CurrencySwitch({
             type="radio"
             name="portfolio-currency"
             value={currency}
-            checked={value === currency}
-            onChange={() => onChange(currency)}
+            checked={chosen === currency}
+            onChange={() => {
+              setChoice({ value, chosen: currency });
+              onChange(currency);
+            }}
           />
           {currency}
         </label>
