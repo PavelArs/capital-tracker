@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { providerRequests } from './manual-opening-fixtures';
 import { compose, loginWithMfa, origin, query, test } from './mfa-fixtures';
 
@@ -138,5 +138,132 @@ isolated(
     expect(
       query(`SELECT count(*) FROM wallet_address_transactions WHERE "addressId" = '${foreignAddressId}'`),
     ).toBe('0');
+  },
+);
+
+const ownerId = '11111111-1111-4111-8111-111111111111';
+const seedPhrase = `${'abandon '.repeat(11)}about`;
+
+async function fitsViewport(page: Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
+}
+
+isolated(
+  'WAL-UI / WAL-NO-SECRETS: owner adds a Bitcoin address to a new wallet and sees its chain balance against recorded transactions',
+  async ({ page }, testInfo) => {
+    await loginWithMfa(page);
+    const walletName = `WAL-UI ${randomUUID().slice(0, 8)}`;
+    // Every request body the page sends, to prove a pasted seed phrase never leaves the browser.
+    const bodies: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/'))
+        bodies.push(request.postData() ?? '');
+    });
+    bitcoinHistory({ address, count: 60 });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/wallets');
+    const main = page.getByRole('main');
+    await expect(
+      main.getByRole('heading', { level: 1, name: 'Wallets', exact: true }),
+    ).toBeVisible();
+    await expect(main.getByText(/not built yet/i)).toHaveCount(0);
+
+    await main.getByRole('button', { name: 'Add wallet', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Add wallet' });
+    await dialog.getByRole('button', { name: /^Bitcoin/ }).click();
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    const field = dialog.getByLabel('Bitcoin wallet address', { exact: true });
+    await field.fill(seedPhrase);
+    await expect(dialog.getByRole('alert')).toContainText('This looks like a seed phrase');
+    await expect(field).toHaveValue('');
+    await field.fill('0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31');
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(dialog.getByText(/This looks like an Ethereum address/)).toBeVisible();
+    await expect(dialog.getByText('Step 2 of 3', { exact: true })).toBeVisible();
+
+    await field.fill(address);
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await dialog.getByLabel(/^Wallet/).fill(walletName);
+    await expect(
+      dialog.getByText(`A new wallet named ${walletName} is created.`, {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await dialog.getByLabel(/^Address name/).fill('Savings');
+    await dialog.getByRole('button', { name: 'Add wallet', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // The page loads the whole history, then compares it with the wallet's transactions.
+    const card = main.getByRole('region', { name: walletName, exact: true });
+    const row = card.getByRole('button', {
+      name: `Savings ${address}`,
+      exact: true,
+    });
+    await expect(row).toContainText('Synced');
+    await expect(row).toContainText('46.88647965 BTC');
+    await expect(card.getByText('Bitcoin · 1 address', { exact: true })).toBeVisible();
+    await expect(card.getByRole('note')).toContainText(
+      'Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.',
+    );
+    expect(
+      query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
+        JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
+        WHERE w."ownerId" = '${ownerId}' AND w.address = '${address}'`),
+    ).toBe(`${walletName}|Savings`);
+    expect(
+      query(`SELECT count(*) FROM wallet_address_transactions t JOIN wallet_addresses a ON a.id = t."addressId"
+        WHERE a."ownerId" = '${ownerId}'`),
+    ).toBe('60');
+    await fitsViewport(page);
+    await page.screenshot({
+      path: testInfo.outputPath('wallets-1440.png'),
+      fullPage: true,
+    });
+
+    // WAL-DUP: the same address again opens the wallet that already tracks it.
+    await main.getByRole('button', { name: 'Add wallet', exact: true }).first().click();
+    await dialog.getByRole('button', { name: /^Bitcoin/ }).click();
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await field.fill(address);
+    await expect(
+      dialog.getByText(`This address is already tracked in ${walletName}.`),
+    ).toBeVisible();
+    await dialog.getByRole('button', { name: 'Open it', exact: true }).click();
+    const drawer = page.getByRole('dialog', {
+      name: `${walletName} · Bitcoin`,
+      exact: true,
+    });
+    await expect(drawer).toContainText('46.88647965 BTC');
+    await expect(drawer).toContainText('Blockstream Esplora');
+    await expect(drawer.getByRole('link', { name: 'All in Transactions' })).toBeVisible();
+    await drawer.getByLabel(/^Address name/).fill('Cold');
+    await drawer.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(drawer.getByRole('status')).toHaveText('Saved.');
+    await drawer.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(card.getByRole('button', { name: `Cold ${address}`, exact: true })).toBeVisible();
+    expect(
+      query(
+        `SELECT label FROM wallet_addresses WHERE "ownerId" = '${ownerId}' AND address = '${address}'`,
+      ),
+    ).toBe('Cold');
+    expect(query('SELECT count(*) FROM wallet_addresses')).toBe('2');
+
+    // Phones get two-line rows and no horizontal scroll.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(card.getByRole('button', { name: `Cold ${address}`, exact: true })).toContainText(
+      '46.88647965 BTC',
+    );
+    await fitsViewport(page);
+    await page.screenshot({
+      path: testInfo.outputPath('wallets-390.png'),
+      fullPage: true,
+    });
+    expect(bodies.join('\n')).not.toContain('abandon');
   },
 );

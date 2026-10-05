@@ -112,32 +112,27 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(nav.getByText('Sync not set up', { exact: true })).toBeVisible();
   await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
 
-  // SHELL-005-A: honest placeholders, each linking to the legacy screen meanwhile.
-  for (const [name, path, legacyLink, legacyPath] of [
-    ['Wallets', '/wallets', 'Open wallet addresses', '/wallet-addresses'],
-  ] as const) {
-    await nav.getByRole('link', { name, exact: true }).click();
-    await expect(page).toHaveURL(`${origin}${path}`);
-    await expect(nav.getByRole('link', { name, exact: true })).toHaveAttribute(
-      'aria-current',
-      'page',
-    );
-    const main = page.getByRole('main');
-    await expect(main.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
-    await expect(main.getByText(/not built yet/i)).toBeVisible();
-    await expect(main.getByText(/your portfolio is empty/i)).toHaveCount(0);
-    await expect(main.getByRole('link', { name: legacyLink, exact: true })).toHaveAttribute(
-      'href',
-      legacyPath,
-    );
-  }
-  // Client-side navigation fires no load event; give a late request time to appear.
-  await page.waitForTimeout(1_000);
-  expect(apiRequests).toEqual([]);
+  // WAL-LIST: Wallets is a real page that reads the owner's wallets, no longer a placeholder.
+  await nav.getByRole('link', { name: 'Wallets', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/wallets`);
+  await expect(nav.getByRole('link', { name: 'Wallets', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
+  const wallets = page.getByRole('main');
+  await expect(
+    wallets.getByRole('heading', { level: 1, name: 'Wallets', exact: true }),
+  ).toBeVisible();
+  await expect(
+    wallets.getByRole('button', { name: 'Add wallet', exact: true }).first(),
+  ).toBeVisible();
+  await expect(wallets.getByText(/not built yet/i)).toHaveCount(0);
+  await expect(wallets.getByText(/your portfolio is empty/i)).toHaveCount(0);
+  await expect.poll(() => apiRequests).toContain('GET /api/wallet-addresses');
+  // Opening the page only reads.
+  expect(apiRequests.filter((request) => !request.startsWith('GET '))).toEqual([]);
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('wallets-1440-light.png'), fullPage: true });
-  await page.getByRole('main').getByRole('link', { name: 'Open wallet addresses' }).click();
-  await expect(page).toHaveURL(`${origin}/wallet-addresses`);
 
   // AST-UI: Portfolio lists real assets with their classification and adds one.
   await nav.getByRole('link', { name: 'Portfolio', exact: true }).click();

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { WalletAddressService } from './wallet-address.service';
@@ -21,6 +21,11 @@ export class WalletAddressController {
     const result = await this.addresses.register(owner.userId, input);
     response.status(result.created ? 201 : 200);
     return result.value;
+  }
+
+  @Patch(':id')
+  update(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {
+    return this.addresses.update(owner.userId, id, input);
   }
 
   @Post(':id/sync')

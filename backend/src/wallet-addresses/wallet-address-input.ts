@@ -1,5 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
+import { parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
+
+export const LABEL_MAX_LENGTH = 40;
 
 function bad(): never {
   throw new BadRequestException('Invalid wallet address input');
@@ -17,10 +20,47 @@ function queryInteger(value: unknown, fallback: number, minimum: number, maximum
   const number = Number(value);
   return number < minimum || number > maximum ? bad() : number;
 }
+// A blank name is no name; the stored form is trimmed, one line and at most 40 characters.
+function label(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return bad();
+  const trimmed = value.trim();
+  if (trimmed.length > LABEL_MAX_LENGTH || /\p{Cc}/u.test(trimmed)) return bad();
+  return trimmed || null;
+}
+function account(value: unknown): string | null {
+  return value === null || value === undefined ? null : parseUuid(value);
+}
 
-export function parseRegistration(raw: unknown): { address: string } {
-  const row = object(raw, ['address']);
-  return { address: normalizeBitcoinAddress(row.address) };
+export interface Registration {
+  address: string;
+  accountId: string | null;
+  label: string | null;
+}
+
+// Only Bitcoin is tracked so far; Ethereum and Solana join with their own sync (M14, M15).
+export function parseRegistration(raw: unknown): Registration {
+  const row = object(raw, ['network', 'address', 'accountId', 'label']);
+  if (row.network !== undefined && row.network !== 'bitcoin') return bad();
+  return {
+    address: normalizeBitcoinAddress(row.address),
+    accountId: account(row.accountId),
+    label: label(row.label),
+  };
+}
+
+export interface Update {
+  accountId?: string | null;
+  label?: string | null;
+}
+
+export function parseUpdate(raw: unknown): Update {
+  const row = object(raw, ['accountId', 'label']);
+  if (!('accountId' in row) && !('label' in row)) return bad();
+  return {
+    ...('accountId' in row ? { accountId: account(row.accountId) } : {}),
+    ...('label' in row ? { label: label(row.label) } : {}),
+  };
 }
 
 export function parseTransactionQuery(raw: unknown): { offset: number; limit: number } {
