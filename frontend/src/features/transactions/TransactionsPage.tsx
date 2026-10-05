@@ -1,10 +1,12 @@
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
-import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
-import { CurrencySwitch } from '../portfolio/currency';
+import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
+import AssetIcon from '../shell/AssetIcon';
+import PageHeader from '../shell/PageHeader';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
@@ -77,9 +79,6 @@ function options(operations: Operation[], entries: (operation: Operation) => [st
     for (const [key, label] of entries(operation)) if (!found.has(key)) found.set(key, label);
   return [...found].sort((left, right) => left[1].localeCompare(right[1], 'en'));
 }
-
-const isCurrency = (value: string | null): value is AccountingCurrency =>
-  accountingCurrencies.includes(value as AccountingCurrency);
 
 function ValueCell({
   operation,
@@ -158,11 +157,11 @@ function OperationRow({
         </span>
       </td>
       <td className="transactions-wrap">
-        {/* The asset mark (one colour and glyph per asset) goes first here, app-wide. */}
         <span
           className="transactions-asset"
           title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
+          <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} size="sm" />
           {ticker(operation.asset)}
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
@@ -216,7 +215,7 @@ export default function TransactionsPage() {
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
-  // The one Add/Edit window of the prototype (M9): new when `editing` is absent.
+  // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
   const [params, setParams] = useSearchParams();
   // The router commits an address change later, in a transition; a second filter change
@@ -225,9 +224,7 @@ export default function TransactionsPage() {
   const latest = useRef(0);
 
   // No currency in the address means the owner's main currency (Settings).
-  const asked = isCurrency(params.get('currency'))
-    ? (params.get('currency') as AccountingCurrency)
-    : undefined;
+  const [asked] = useAskedCurrency();
 
   // A switched currency keeps the rows on screen until its values arrive.
   const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
@@ -307,6 +304,7 @@ export default function TransactionsPage() {
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
+    // The header's display currency is not a filter.
     replaceParams(new URLSearchParams(asked ? { currency: asked } : {}));
   };
   const currency = list?.quoteCurrency ?? 'USD';
@@ -323,31 +321,15 @@ export default function TransactionsPage() {
     setOpenId(null);
     void load(asked, true);
   };
-  const addButton = (
-    <button
-      type="button"
-      className="shell-button shell-button--primary"
-      onClick={() => setDialog({})}
-    >
-      Add transaction
-    </button>
-  );
 
   return (
     <div className="shell-page">
-      <div className="shell-page__head">
-        <h1>Transactions</h1>
-        {list !== null && operations.length > 0 && (
-          <div className="portfolio-actions">
-            {/* The asked currency shows as chosen while its values load. */}
-            <CurrencySwitch
-              value={asked ?? list.quoteCurrency}
-              onChange={(next) => update({ currency: next })}
-            />
-            {addButton}
-          </div>
-        )}
-      </div>
+      {/* The header's switch sets ?currency=; the list reloads in that currency. */}
+      <PageHeader
+        title="Transactions"
+        currency={list?.quoteCurrency}
+        onTransactionSaved={changed}
+      />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
@@ -366,8 +348,8 @@ export default function TransactionsPage() {
             Purchases, sales and transfers you record and transactions found in your wallets appear
             here.
           </p>
+          {/* Add transaction is in the page header. */}
           <div className="transactions-actions">
-            {addButton}
             <Link className="shell-button" to="/manual-accounts">
               Open manual accounts
             </Link>

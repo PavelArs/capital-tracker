@@ -53,8 +53,10 @@
   background: transparent;
 }
 
+/* Seven columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
 .transactions-table th,
 .transactions-table td {
+  padding-inline: 8px;
   border-bottom: 0;
 }
 
@@ -105,12 +107,6 @@
   stroke-linejoin: round;
 }
 
-/* Seven columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
-.transactions-table th,
-.transactions-table td {
-  padding-inline: 8px;
-}
-
 .transactions-table td.transactions-wrap {
   max-width: 130px;
   white-space: normal;
@@ -152,6 +148,9 @@
 }
 
 .transactions-asset {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
 }
 
@@ -321,7 +320,7 @@
 }
 
 .transactions-mono {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 

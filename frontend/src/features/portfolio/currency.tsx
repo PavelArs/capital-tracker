@@ -19,7 +19,16 @@ export function useAskedCurrency(): [
   const asked = params.get('currency');
   return [
     isCurrency(asked) ? asked : undefined,
-    (currency) => setParams({ currency }, { replace: true }),
+    // Other parameters of the page (Transactions filters) stay as they are.
+    (currency) =>
+      setParams(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set('currency', currency);
+          return next;
+        },
+        { replace: true },
+      ),
   ];
 }
 
