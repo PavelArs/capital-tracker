@@ -16,6 +16,23 @@
   letter-spacing: -0.01em;
 }
 
+/* Top bar of every page (PageHeader): title, then currency and "Add transaction". */
+.shell-page__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.shell-page__head h1 {
+  margin-right: auto;
+}
+
+.shell-icon--sm {
+  width: 15px;
+  height: 15px;
+}
+
 .shell-card {
   min-width: 0;
   padding: 20px 22px;
@@ -84,6 +101,31 @@
 
 .shell-button:hover {
   border-color: var(--ink-3);
+}
+
+.shell-button--primary {
+  margin-top: 0;
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.shell-button--primary:hover {
+  border-color: transparent;
+  background: var(--accent-hover);
+}
+
+.shell-button--primary:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.shell-button--secondary {
+  margin-top: 0;
+}
+
+.shell-page__head .shell-button {
+  margin-top: 0;
 }
 
 .shell-settings {
@@ -175,4 +217,10 @@
 
 .shell-note a {
   color: var(--accent);
+}
+
+@media (max-width: 560px) {
+  .shell-page__head h1 {
+    width: 100%;
+  }
 }

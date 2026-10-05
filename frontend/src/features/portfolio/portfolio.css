@@ -1,12 +1,4 @@
 /* Portfolio asset list and "Add asset" dialog (prototype table, chip and modal patterns). */
-.shell-page__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-}
-
 .portfolio-actions,
 .portfolio-crumbs {
   display: flex;
@@ -22,27 +14,6 @@
 .portfolio-actions .shell-seg,
 .portfolio-crumbs .shell-seg {
   margin: 0;
-}
-
-.shell-button--primary {
-  margin-top: 0;
-  border-color: transparent;
-  background: var(--accent);
-  color: var(--accent-ink);
-}
-
-.shell-button--primary:hover {
-  border-color: transparent;
-  background: var(--accent-hover);
-}
-
-.shell-button--primary:disabled {
-  opacity: 0.42;
-  cursor: not-allowed;
-}
-
-.shell-button--secondary {
-  margin-top: 0;
 }
 
 .shell-button--danger {
@@ -189,23 +160,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-}
-
-.portfolio-asset__icon {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: var(--fs-sm);
-}
-
-.portfolio-asset__icon::before {
-  content: attr(data-letter);
 }
 
 .portfolio-asset__name {
@@ -357,6 +311,10 @@
   border-radius: 3px;
 }
 
+.portfolio-slices__ticker {
+  color: var(--ink-3);
+}
+
 .portfolio-slices__value {
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
@@ -412,8 +370,10 @@ a.portfolio-asset__name:hover {
   min-width: 200px;
 }
 
-.portfolio-head__title h1 {
+.portfolio-head__title h2 {
+  margin: 0;
   font-size: var(--fs-2xl);
+  font-weight: 600;
   letter-spacing: -0.015em;
 }
 
@@ -477,12 +437,6 @@ a.portfolio-asset__name:hover {
   border-radius: 50%;
   background: currentColor;
   content: "";
-}
-
-.portfolio-asset__icon--lg {
-  width: 44px;
-  height: 44px;
-  font-size: 18px;
 }
 
 .portfolio-stats {
@@ -709,12 +663,6 @@ a.portfolio-asset__name:hover {
 
 .portfolio-chip--asset {
   padding-left: 4px;
-}
-
-.portfolio-asset__icon--sm {
-  width: 24px;
-  height: 24px;
-  font-size: 11px;
 }
 
 .portfolio-more summary {

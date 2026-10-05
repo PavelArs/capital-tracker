@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Icon } from './icons';
 import { type PlaceholderSection, placeholderSections } from './navigation';
+import PageHeader from './PageHeader';
 import './shell-page.css';
 
 // Stands in for a section until its own change ships. It makes no requests and
@@ -9,7 +10,7 @@ export default function SectionPlaceholder({ section }: { section: PlaceholderSe
   const content = placeholderSections[section];
   return (
     <div className="shell-page">
-      <h1>{content.title}</h1>
+      <PageHeader title={content.title} />
       <section className="shell-card shell-empty" aria-labelledby={`${section}-status`}>
         <span className="shell-empty__ill" aria-hidden="true">
           <Icon name={content.icon} />
