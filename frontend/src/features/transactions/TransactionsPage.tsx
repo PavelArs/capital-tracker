@@ -3,6 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { DASH } from '../portfolio/format';
+import AssetIcon from '../shell/AssetIcon';
+import PageHeader from '../shell/PageHeader';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
@@ -117,6 +119,7 @@ function OperationRow({ operation, onOpen }: { operation: Operation; onOpen: () 
       </td>
       <td className="transactions-wrap">
         <span className="transactions-asset">
+          <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} size="sm" />
           {ticker(operation.asset)}
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
@@ -166,7 +169,7 @@ export default function TransactionsPage() {
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
-  // The one Add/Edit window of the prototype (M9): new when `editing` is absent.
+  // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
   const [params, setParams] = useSearchParams();
   // The router commits an address change later, in a transition; a second filter change
@@ -251,31 +254,19 @@ export default function TransactionsPage() {
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
-    replaceParams(new URLSearchParams());
+    // The header's display currency is not a filter.
+    const currency = params.get('currency');
+    replaceParams(new URLSearchParams(currency ? { currency } : {}));
   };
   const changed = () => {
     setDialog(null);
     setOpenId(null);
     void load();
   };
-  const addButton = (
-    <button
-      type="button"
-      className="shell-button shell-button--primary"
-      onClick={() => setDialog({})}
-    >
-      Add transaction
-    </button>
-  );
 
   return (
     <div className="shell-page">
-      <div className="shell-page__head">
-        <h1>Transactions</h1>
-        {list !== null && operations.length > 0 && (
-          <div className="portfolio-actions">{addButton}</div>
-        )}
-      </div>
+      <PageHeader title="Transactions" onTransactionSaved={changed} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
@@ -294,8 +285,8 @@ export default function TransactionsPage() {
             Purchases, sales and transfers you record and transactions found in your wallets appear
             here.
           </p>
+          {/* Add transaction is in the page header. */}
           <div className="transactions-actions">
-            {addButton}
             <Link className="shell-button" to="/manual-accounts">
               Open manual accounts
             </Link>

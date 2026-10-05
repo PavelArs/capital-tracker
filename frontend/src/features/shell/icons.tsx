@@ -35,6 +35,7 @@ const paths = {
       <path d="m16 17 5-5-5-5M21 12H9" />
     </>
   ),
+  plus: <path d="M12 5v14M5 12h14" />,
   archive: (
     <>
       <rect x="2" y="3" width="20" height="5" rx="1" />

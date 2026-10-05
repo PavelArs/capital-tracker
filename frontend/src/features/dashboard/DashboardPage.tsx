@@ -5,8 +5,9 @@ import {
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
+import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
+import PageHeader from '../shell/PageHeader';
 import HistoryChart from './HistoryChart';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -92,7 +93,7 @@ export default function DashboardPage() {
   const [history, setHistory] = useState<PortfolioHistory | null>(null);
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
-  const [asked, setAsked] = useAskedCurrency();
+  const [asked] = useAskedCurrency();
   const latest = useRef(0);
 
   // Only the newest request may change the page; switching keeps the last chart visible.
@@ -120,10 +121,7 @@ export default function DashboardPage() {
 
   return (
     <div className="shell-page">
-      <div className="shell-page__head">
-        <h1>Dashboard</h1>
-        {shown && <CurrencySwitch value={shown.currency} onChange={setAsked} />}
-      </div>
+      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={load} />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>

@@ -6,7 +6,9 @@ import {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { CurrencySwitch, ratesNote, useAskedCurrency, withCurrency } from './currency';
+import AssetIcon from '../shell/AssetIcon';
+import PageHeader from '../shell/PageHeader';
+import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
 import { assetCaption, Signed } from './PortfolioPage';
 import '../shell/shell-page.css';
@@ -65,13 +67,9 @@ function AssetDetails({
   return (
     <>
       <div className="portfolio-head">
-        <span
-          className="portfolio-asset__icon portfolio-asset__icon--lg"
-          data-letter={(asset.symbol ?? asset.name).slice(0, 1).toUpperCase()}
-          aria-hidden="true"
-        />
+        <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} size="lg" />
         <div className="portfolio-head__title">
-          <h1>{asset.name}</h1>
+          <h2>{asset.name}</h2>
           <span className="portfolio-sub">{assetCaption(asset)}</span>
         </div>
         <div className="portfolio-head__price">
@@ -158,7 +156,7 @@ export default function AssetPage() {
   const { assetId } = useParams();
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
   const [failed, setFailed] = useState(false);
-  const [asked, setAsked] = useAskedCurrency();
+  const [asked] = useAskedCurrency();
 
   const load = useCallback(async () => {
     setFailed(false);
@@ -174,15 +172,17 @@ export default function AssetPage() {
   }, [load]);
 
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
-  // The asked currency shows as chosen while its values load.
-  const shownCurrency = asked ?? portfolio?.currency;
   return (
     <div className="shell-page">
+      <PageHeader
+        title={asset?.name ?? 'Asset'}
+        currency={portfolio?.currency}
+        onTransactionSaved={() => void load()}
+      />
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
         </Link>
-        {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
@@ -199,7 +199,7 @@ export default function AssetPage() {
         <AssetDetails asset={asset} portfolio={portfolio} now={new Date()} />
       ) : (
         <section className="shell-card shell-empty" aria-labelledby="asset-missing">
-          <h1 id="asset-missing">Asset not found</h1>
+          <h2 id="asset-missing">Asset not found</h2>
           <p>It may belong to another owner or the link is wrong.</p>
         </section>
       )}
