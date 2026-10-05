@@ -1,6 +1,7 @@
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { DASH } from '../portfolio/format';
 import OperationDrawer from './OperationDrawer';
 import {
@@ -165,6 +166,8 @@ export default function TransactionsPage() {
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
+  // The one Add/Edit window of the prototype (M9): new when `editing` is absent.
+  const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
   const [params, setParams] = useSearchParams();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
@@ -250,11 +253,28 @@ export default function TransactionsPage() {
     setSearch('');
     replaceParams(new URLSearchParams());
   };
+  const changed = () => {
+    setDialog(null);
+    setOpenId(null);
+    void load();
+  };
+  const addButton = (
+    <button
+      type="button"
+      className="shell-button shell-button--primary"
+      onClick={() => setDialog({})}
+    >
+      Add transaction
+    </button>
+  );
 
   return (
     <div className="shell-page">
       <div className="shell-page__head">
         <h1>Transactions</h1>
+        {list !== null && operations.length > 0 && (
+          <div className="portfolio-actions">{addButton}</div>
+        )}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
@@ -275,6 +295,7 @@ export default function TransactionsPage() {
             here.
           </p>
           <div className="transactions-actions">
+            {addButton}
             <Link className="shell-button" to="/manual-accounts">
               Open manual accounts
             </Link>
@@ -385,7 +406,25 @@ export default function TransactionsPage() {
           </p>
         </section>
       )}
-      {opened && <OperationDrawer operation={opened} onClose={() => setOpenId(null)} />}
+      {opened && (
+        <OperationDrawer
+          operation={opened}
+          operations={operations}
+          onClose={() => setOpenId(null)}
+          onEdit={(operation) => {
+            setOpenId(null);
+            setDialog({ editing: operation });
+          }}
+          onDeleted={changed}
+        />
+      )}
+      {dialog && (
+        <AddTransactionDialog
+          editing={dialog.editing}
+          onClose={() => setDialog(null)}
+          onSaved={changed}
+        />
+      )}
     </div>
   );
 }

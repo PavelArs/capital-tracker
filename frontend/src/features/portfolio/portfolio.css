@@ -45,6 +45,23 @@
   margin-top: 0;
 }
 
+.shell-button--danger {
+  margin-top: 0;
+  border-color: transparent;
+  background: var(--neg);
+  color: #fff;
+}
+
+.shell-button--danger:hover {
+  border-color: transparent;
+  filter: brightness(1.08);
+}
+
+.shell-button--danger:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
 .shell-button--ghost {
   margin-top: 0;
   border-color: transparent;
@@ -466,6 +483,10 @@ a.portfolio-asset__name:hover {
   font-size: var(--fs-md);
 }
 
+.portfolio-dialog--narrow {
+  width: min(420px, 100%);
+}
+
 .portfolio-dialog__head {
   padding: 18px 22px 0;
 }
@@ -549,6 +570,15 @@ a.portfolio-asset__name:hover {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.portfolio-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.portfolio-more .portfolio-row + .portfolio-field {
+  margin-top: var(--sp-4);
+}
+
 .portfolio-input[aria-invalid="true"] {
   border-color: var(--neg);
 }
@@ -567,6 +597,12 @@ a.portfolio-asset__name:hover {
 .portfolio-affix {
   position: relative;
   display: block;
+}
+
+.portfolio-textarea {
+  height: 76px;
+  padding: 10px 12px;
+  resize: vertical;
 }
 
 .portfolio-affix .portfolio-input {

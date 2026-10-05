@@ -246,7 +246,15 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   await expect(
     tradeDrawer.getByText('Source', { exact: true }).locator('xpath=following-sibling::dd[1]'),
   ).toHaveText('Imported from CSV');
-  await tradeDrawer.getByRole('link', { name: `Open in ${accountName}` }).click();
-  await expect(page).toHaveURL(`${origin}/manual-accounts/${account.id}`);
+  // Since M9 a buy or sell is edited and deleted right in the drawer.
+  await expect(tradeDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  await expect(tradeDrawer.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+  await expect(tradeDrawer.getByRole('link')).toHaveCount(0);
+  await tradeDrawer.getByRole('button', { name: 'Edit', exact: true }).click();
+  const edit = page.getByRole('dialog', { name: 'Edit transaction', exact: true });
+  await expect(edit.getByLabel('Amount')).toHaveValue('0.01');
+  await expect(edit.getByLabel('Total paid')).toHaveValue('1050.5');
+  await edit.getByRole('button', { name: 'Cancel' }).click();
+  await expect(edit).toHaveCount(0);
   expect(errors).toEqual([]);
 });

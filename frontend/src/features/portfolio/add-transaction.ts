@@ -1,8 +1,9 @@
 import type { FxRatesReport } from '@api/fx-rates.api';
+import type { Operation } from '@api/operations.api';
 import type { TradeCommand } from '@api/trades.api';
 
-// "Add transaction" from the accepted prototype, limited to buys and sells and the currency
-// they were paid in (CUR-PAID-RUB). Other types and wallet-balance rules come with M9.
+// "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
+// (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8).
 export const paidIn = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'] as const;
 export type PaidIn = (typeof paidIn)[number];
 export const needsRate = (currency: PaidIn): currency is 'EUR' | 'RUB' =>
@@ -21,7 +22,10 @@ export interface TransactionEntry {
   /** Whether the owner changed the prefilled Bank of Russia rate. */
   rateEdited: boolean;
   fee: string;
+  comment: string;
 }
+
+export const MAX_COMMENT_LENGTH = 500;
 
 /** "1 000,50" as typed becomes "1000.50"; anything else that is not a decimal is null. */
 export function decimal(value: string): string | null {
@@ -58,7 +62,15 @@ export function usdTotal(entry: TransactionEntry): number | null {
   return rate === null ? null : Number(total) / Number(rate);
 }
 
-export type EntryProblem = 'instrument' | 'amount' | 'date' | 'time' | 'total' | 'rate' | 'fee';
+export type EntryProblem =
+  | 'instrument'
+  | 'amount'
+  | 'date'
+  | 'time'
+  | 'total'
+  | 'rate'
+  | 'fee'
+  | 'comment';
 
 export function problems(entry: TransactionEntry, today: string): Set<EntryProblem> {
   const found = new Set<EntryProblem>();
@@ -69,7 +81,43 @@ export function problems(entry: TransactionEntry, today: string): Set<EntryProbl
   if (positive(entry.total) === null) found.add('total');
   if (needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
   if (entry.fee && decimal(entry.fee) === null) found.add('fee');
+  if ([...entry.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
+}
+
+/** The instant the entry stands for: its date at the time given, or at 00:00 UTC. */
+export const occurredAt = (entry: Pick<TransactionEntry, 'date' | 'time'>) =>
+  `${entry.date}T${entry.time || '00:00'}:00.000Z`;
+
+/** Exact comparison of two nonnegative decimal strings: -1, 0 or 1. */
+export function compareDecimal(left: string, right: string): number {
+  const [leftWhole, leftFraction = ''] = left.split('.');
+  const [rightWhole, rightFraction = ''] = right.split('.');
+  const places = Math.max(leftFraction.length, rightFraction.length);
+  const scaled = (whole: string, fraction: string) => BigInt(whole + fraction.padEnd(places, '0'));
+  const difference = scaled(leftWhole, leftFraction) - scaled(rightWhole, rightFraction);
+  return difference < 0n ? -1 : difference > 0n ? 1 : 0;
+}
+
+/** A saved trade as the window shows it for editing (OPS-EDIT). */
+export function entryFromOperation(operation: Operation): TransactionEntry {
+  const at = operation.occurredAt;
+  const time = at.slice(11, 16);
+  const paid = operation.paid;
+  const fee = paid ? paid.fee : (operation.feeUsd ?? '0');
+  return {
+    side: operation.type === 'sell' ? 'sell' : 'buy',
+    instrumentId: operation.asset.instrumentId ?? '',
+    amount: operation.quantity,
+    date: at.slice(0, 10),
+    time: time === '00:00' && at.slice(16, 23) === ':00.000' ? '' : time,
+    total: paid ? paid.gross : (operation.valueUsd ?? ''),
+    currency: paid ? paid.currency : 'USD',
+    rate: paid?.rateSource === 'owner' ? paid.perUsd : '',
+    rateEdited: paid?.rateSource === 'owner',
+    fee: Number(fee) === 0 ? '' : fee,
+    comment: operation.comment ?? '',
+  };
 }
 
 /**
@@ -80,15 +128,19 @@ export function problems(entry: TransactionEntry, today: string): Set<EntryProbl
 export function tradeFromEntry(
   entry: TransactionEntry,
   identity: { requestId: string; expectedJournalRevision: number },
+  orderWithinTimestamp?: number,
 ): TradeCommand {
   const gross = decimal(entry.total)!;
   const fee = entry.fee ? decimal(entry.fee)! : '0';
+  const comment = entry.comment.trim();
+  // Without an order the server places the trade after every operation at that instant.
   const trade = {
     instrumentId: entry.instrumentId,
     side: entry.side,
-    occurredAt: `${entry.date}T${entry.time || '00:00'}:00.000Z`,
-    orderWithinTimestamp: 0,
+    occurredAt: occurredAt(entry),
+    ...(orderWithinTimestamp === undefined ? {} : { orderWithinTimestamp }),
     quantity: decimal(entry.amount)!,
+    ...(comment ? { comment } : {}),
     ...identity,
   };
   if (!needsRate(entry.currency)) return { ...trade, grossUsd: gross, feeUsd: fee };
