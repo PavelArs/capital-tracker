@@ -7,7 +7,8 @@ const { parse } = require('yaml') as { parse: (source: string) => unknown };
 
 const repositoryRoot = resolve(__dirname, '../../..');
 const gatePath = resolve(repositoryRoot, 'scripts/check-ci-results.cjs');
-const requiredJobs = [
+// The full suite every pull request (and manual dispatch) must pass.
+const fullSuiteJobs = [
   'backend-check',
   'backend-test',
   'backend-build',
@@ -20,8 +21,11 @@ const requiredJobs = [
   'spec-check',
   'dependency-audit',
 ];
-// Release work: one image build, the critical acceptance shards and the final merge/scan job.
-const releaseJobs = ['release-images', 'critical-acceptance', 'docker-build'];
+// A push to main only builds the release after confirming its pull request passed the suite.
+const pushJobs = ['release-images', 'merged-pr-ci'];
+const requiredJobs = [...fullSuiteJobs, 'merged-pr-ci'];
+// Checks that never run on main: everything in the full suite except the image build.
+const testJobs = fullSuiteJobs.filter((job) => job !== 'release-images');
 
 type Needs = Record<string, unknown>;
 type WorkflowStep = {
@@ -92,7 +96,7 @@ function gateStep(ci: Workflow): WorkflowStep {
   return matches[0];
 }
 
-function invokeWorkflowGate(step: WorkflowStep, needs: Needs, event = 'push') {
+function invokeWorkflowGate(step: WorkflowStep, needs: Needs, event = 'pull_request') {
   const needsExpression = /\$\{\{\s*toJSON\(needs\)\s*\}\}/g;
   const eventExpression = /\$\{\{\s*github\.event_name\s*\}\}/g;
   const render = (value: string) =>
@@ -113,7 +117,7 @@ function invokeWorkflowGate(step: WorkflowStep, needs: Needs, event = 'push') {
 }
 
 describe('ENG-001: fail-closed CI result CLI', () => {
-  it('ENG-001-A accepts exact success for all eleven required jobs', () => {
+  it('ENG-001-A accepts exact success for all twelve required jobs', () => {
     const result = invokeGate([JSON.stringify(successfulNeeds()), ...requiredJobs]);
     expect(result.status).toBe(0);
   });
@@ -169,56 +173,69 @@ describe('ENG-001: fail-closed CI result CLI', () => {
   );
 });
 
-const releaseCondition = "github.event_name != 'pull_request'";
+const testCondition = "github.event_name != 'push'";
+const pushCondition = "github.event_name == 'push'";
 
-describe('ENG-006: release acceptance runs for every event except pull requests', () => {
-  const withoutRelease = () => {
-    const needs = successfulNeeds();
-    for (const job of releaseJobs) needs[job] = { result: 'skipped' };
-    return needs;
-  };
+function pushNeeds(): Needs {
+  const needs = successfulNeeds();
+  for (const job of testJobs) needs[job] = { result: 'skipped' };
+  return needs;
+}
 
-  it('ENG-006-A skips every release job for pull requests through its only job condition', () => {
+function pullRequestNeeds(): Needs {
+  const needs = successfulNeeds();
+  needs['merged-pr-ci'] = { result: 'skipped' };
+  return needs;
+}
+
+describe('ENG-006: pull requests run every check, a push to main only builds the release', () => {
+  it('ENG-006-A skips every check on push and the merged pull request check elsewhere', () => {
     const ci = workflow('ci');
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch']);
     expect(ci.on.push?.branches).toEqual(['main']);
-    // A manual dispatch accepts no inputs: it runs the unchanged gates for the chosen ref.
+    // A manual dispatch accepts no inputs: it runs the unchanged full suite for the chosen ref.
     expect(ci.on.workflow_dispatch ?? null).toBeNull();
-    for (const job of releaseJobs) expect(expression(ci.jobs[job].if)).toBe(releaseCondition);
+    for (const job of testJobs) expect(expression(ci.jobs[job].if)).toBe(testCondition);
+    expect(expression(ci.jobs['merged-pr-ci'].if)).toBe(pushCondition);
+    expect(ci.jobs['release-images'].if).toBeUndefined();
   });
 
-  it('ENG-006-A accepts a pull request whose release jobs were skipped', () => {
-    const result = invokeWorkflowGate(gateStep(workflow('ci')), withoutRelease(), 'pull_request');
+  it('ENG-006-A accepts a push whose image build and merged pull request check succeeded', () => {
+    const result = invokeWorkflowGate(gateStep(workflow('ci')), pushNeeds(), 'push');
     expect(result.status).toBe(0);
   });
 
-  it.each(['failure', 'cancelled', 'unknown'])(
-    'ENG-006-A still rejects a pull request whose other job has result %p',
-    (status) => {
-      const needs = withoutRelease();
-      needs['spec-check'] = { result: status };
-      const result = invokeWorkflowGate(gateStep(workflow('ci')), needs, 'pull_request');
+  it.each(pushJobs)('ENG-006-A rejects a push whose %s did not succeed', (job) => {
+    for (const status of ['failure', 'cancelled', 'skipped', 'unknown']) {
+      const needs = pushNeeds();
+      needs[job] = { result: status };
+      const result = invokeWorkflowGate(gateStep(workflow('ci')), needs, 'push');
       expect(result.status).not.toBe(0);
-      expect(result.output).toContain('spec-check');
-    },
-  );
+      expect(result.output).toContain(job);
+    }
+    const needs = pushNeeds();
+    delete needs[job];
+    expect(invokeWorkflowGate(gateStep(workflow('ci')), needs, 'push').status).not.toBe(0);
+  });
 
-  it.each(['push', 'workflow_dispatch', '', 'pull_request_target'])(
-    'ENG-006-B requires every release job to succeed for event %p',
+  it.each(['pull_request', 'workflow_dispatch', '', 'pull_request_target'])(
+    'ENG-006-B requires every full-suite job to succeed for event %p',
     (event) => {
-      const result = invokeWorkflowGate(gateStep(workflow('ci')), withoutRelease(), event);
+      const result = invokeWorkflowGate(gateStep(workflow('ci')), pushNeeds(), event);
       expect(result.status).not.toBe(0);
-      for (const job of releaseJobs) expect(result.output).toContain(job);
-      for (const job of releaseJobs) {
+      for (const job of testJobs) expect(result.output).toContain(job);
+      for (const job of fullSuiteJobs) {
         for (const status of ['failure', 'cancelled', 'skipped']) {
-          const needs = successfulNeeds();
+          const needs = pullRequestNeeds();
           needs[job] = { result: status };
           const single = invokeWorkflowGate(gateStep(workflow('ci')), needs, event);
           expect(single.status).not.toBe(0);
           expect(single.output).toContain(job);
         }
       }
-      expect(invokeWorkflowGate(gateStep(workflow('ci')), successfulNeeds(), event).status).toBe(0);
+      expect(invokeWorkflowGate(gateStep(workflow('ci')), pullRequestNeeds(), event).status).toBe(
+        0,
+      );
     },
   );
 });
@@ -235,13 +252,12 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
     expect(ci.on.push?.branches).toContain('main');
   });
 
-  it('aggregates all eleven real jobs, including release shards, specifications and dependency audit', () => {
+  it('aggregates all twelve real jobs, including release shards, specifications and dependency audit', () => {
     expect(dependencies(ci.jobs['ci-status']).sort()).toEqual([...requiredJobs].sort());
     for (const job of requiredJobs) {
       expect(ci.jobs[job]).toBeDefined();
       expect(ci.jobs[job]['continue-on-error']).not.toBe(true);
     }
-    for (const job of releaseJobs) expect(expression(ci.jobs[job].if)).toBe(releaseCondition);
   });
 
   it('always evaluates the aggregate and cannot ignore its failure', () => {
@@ -257,24 +273,26 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
     const step = gateStep(ci);
     const expressions = [step.run ?? '', ...Object.values(step.env ?? {})].join('\n');
     expect(expressions).toMatch(/\$\{\{\s*toJSON\(needs\)\s*\}\}/);
-    expect(invokeWorkflowGate(step, successfulNeeds()).status).toBe(0);
+    expect(invokeWorkflowGate(step, pullRequestNeeds()).status).toBe(0);
   });
 
-  it.each(requiredJobs)('the actual workflow command rejects missing required job %s', (job) => {
-    const needs = successfulNeeds();
-    delete needs[job];
-    const result = invokeWorkflowGate(gateStep(ci), needs);
-    expect(result.status).not.toBe(0);
-    expect(result.output).toContain(job);
-  });
+  it.each(fullSuiteJobs)(
+    'the actual workflow command rejects a pull request missing required job %s',
+    (job) => {
+      const needs = pullRequestNeeds();
+      delete needs[job];
+      const result = invokeWorkflowGate(gateStep(ci), needs);
+      expect(result.status).not.toBe(0);
+      expect(result.output).toContain(job);
+    },
+  );
 
   it.each(['failure', 'cancelled', 'skipped', 'unknown', '', null])(
     'DEP-001-A/DEP-001-B: actual workflow command rejects dependency-audit result %p',
     (status) => {
-      const needs = successfulNeeds();
+      const needs = pullRequestNeeds();
       needs['dependency-audit'] = { result: status };
       // Execute the unchanged workflow shell command, not just a newly supplied CLI list.
-      // Before wiring the ninth argument, this wrongly returns success for all six cases.
       const result = invokeWorkflowGate(gateStep(ci), needs);
       expect(result.status).not.toBe(0);
       expect(result.output).toContain('dependency-audit');
@@ -303,7 +321,8 @@ describe('DEP-001: required production dependency audit', () => {
   it('runs a mandatory frozen-workspace audit job without conditional or continue-on-error bypasses', () => {
     const audit = workflow('ci').jobs['dependency-audit'];
     expect(audit).toBeDefined();
-    expect(audit.if).toBeUndefined();
+    // Skipped only on a push to main, which may release only a pull request that passed it.
+    expect(expression(audit.if)).toBe(testCondition);
     expect(audit['continue-on-error'] ?? false).toBe(false);
     expect(audit.defaults?.run?.['working-directory'] ?? '.').toBe('.');
     const steps = audit.steps ?? [];
@@ -326,52 +345,46 @@ describe('DEP-001: required production dependency audit', () => {
   });
 });
 
-describe('ENG-004: release work waits for successful early gates', () => {
-  const releasePrerequisites = [
-    'backend-build',
-    'frontend-build',
-    'backend-test',
-    'frontend-test',
-    'dependency-audit',
-    'spec-check',
-  ];
+describe('ENG-004: release work runs beside the early gates and the aggregate requires both', () => {
+  const earlyGates = testJobs.filter(
+    (job) => !['critical-acceptance', 'docker-build'].includes(job),
+  );
 
-  it('ENG-004-A/ENG-004-B requires both early gates before any release step starts', () => {
+  it('ENG-004-A builds the images at once; shards and the final job follow the build', () => {
     const ci = workflow('ci');
-    // The image build is the only entry into release work; shards and the final job follow it.
-    expect(dependencies(ci.jobs['release-images']).sort()).toEqual(
-      [...releasePrerequisites].sort(),
-    );
+    // Actions minutes are free (public repository): acceptance no longer waits for lint and unit.
+    expect(dependencies(ci.jobs['release-images'])).toEqual([]);
     expect(dependencies(ci.jobs['critical-acceptance'])).toEqual(['release-images']);
     expect(dependencies(ci.jobs['docker-build']).sort()).toEqual([
       'critical-acceptance',
       'release-images',
     ]);
+    expect(dependencies(ci.jobs['merged-pr-ci'])).toEqual([]);
   });
 
   it('ENG-004-A/ENG-004-B has no job-level failure or scheduling bypass', () => {
     const ci = workflow('ci');
-    for (const name of [...releaseJobs, ...releasePrerequisites]) {
+    for (const name of requiredJobs) {
       const job = ci.jobs[name];
       expect(job).toBeDefined();
-      // Default success scheduling is required: always() or OR expressions could bypass failures.
-      expect(expression(job.if)).toBe(releaseJobs.includes(name) ? releaseCondition : '');
+      // Only the event split is allowed: always() or OR expressions could bypass failures.
+      expect(expression(job.if)).toBe(
+        name === 'release-images' ? '' : name === 'merged-pr-ci' ? pushCondition : testCondition,
+      );
       expect(job['continue-on-error'] ?? false).toBe(false);
       for (const step of job.steps ?? []) expect(step['continue-on-error'] ?? false).toBe(false);
     }
   });
 
-  it('ENG-004-A/ENG-004-B rejects failed early gates and skipped release in the real aggregate', () => {
+  it('ENG-004-B rejects a pull request with a failed early gate even when release work passed', () => {
     const ci = workflow('ci');
-    for (const job of ['dependency-audit', 'spec-check']) {
+    for (const job of earlyGates) {
       for (const status of ['failure', 'cancelled', 'skipped']) {
-        const needs = successfulNeeds();
+        const needs = pullRequestNeeds();
         needs[job] = { result: status };
-        for (const release of releaseJobs) needs[release] = { result: 'skipped' };
         const result = invokeWorkflowGate(gateStep(ci), needs);
         expect(result.status).not.toBe(0);
         expect(result.output).toContain(job);
-        for (const release of releaseJobs) expect(result.output).toContain(release);
       }
     }
   });
@@ -379,18 +392,8 @@ describe('ENG-004: release work waits for successful early gates', () => {
 
 const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3'];
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
-const legacyGateNames = [
-  'Backend Lint & Format',
-  'Backend Tests',
-  'Backend Build',
-  'Frontend Lint & Format',
-  'Frontend Tests',
-  'Frontend Build',
-  'Release Images and Security',
-  'Specification and Engineering Gates',
-  'Production Dependency Audit',
-  'CI Status',
-];
+const mergedPrStep = 'Require a successful full pull request CI run';
+const exportStepName = 'Export the release candidate images';
 const loadImages = [
   'set -euo pipefail',
   '(cd release-images && sha256sum -c images.tar.sha256)',
@@ -404,21 +407,21 @@ const fourImages =
 type ProvenanceStep = { name: string; conclusion: string | undefined };
 type ProvenanceJob = { name: string; conclusion: string; steps: ProvenanceStep[] };
 
-// A complete successful sharded CI run as the GitHub jobs API reports it.
+// A complete successful main push run as the GitHub jobs API reports it.
 function provenanceJobs(): ProvenanceJob[] {
-  return [...legacyGateNames, 'Build Release Images', ...shardJobNames].map((name) => ({
-    name,
-    conclusion: 'success',
-    steps:
-      name === 'Release Images and Security'
-        ? [
-            { name: 'Merge verified critical acceptance shards', conclusion: 'success' },
-            { name: 'Verify critical acceptance receipt', conclusion: 'success' },
-          ]
-        : shardJobNames.includes(name)
-          ? [{ name: 'Run critical real release acceptance', conclusion: 'success' }]
-          : [],
-  }));
+  return [
+    {
+      name: 'Build Release Images',
+      conclusion: 'success',
+      steps: [{ name: exportStepName, conclusion: 'success' }],
+    },
+    {
+      name: 'Merged Pull Request CI',
+      conclusion: 'success',
+      steps: [{ name: mergedPrStep, conclusion: 'success' }],
+    },
+    { name: 'CI Status', conclusion: 'success', steps: [] },
+  ];
 }
 
 function provenanceStep(): WorkflowStep {
@@ -448,10 +451,7 @@ function runProvenanceScript(jobs: ProvenanceJob[]) {
   }
 }
 
-describe('ENG-005: critical real release acceptance preserves security and blocks incomplete promotion', () => {
-  const accepted =
-    "success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'";
-
+describe('ENG-005: pull request acceptance preserves security; main promotes only checked candidates', () => {
   it('ENG-005-A runs the reviewed critical profile in every shard and keeps full manual E2E available', () => {
     const ci = workflow('ci');
     expect(ci.env?.CI_E2E_ENABLED).toBeUndefined();
@@ -523,32 +523,47 @@ describe('ENG-005: critical real release acceptance preserves security and block
     );
   });
 
-  it('ENG-005-C exports a candidate only after successful merged acceptance and receipt validation', () => {
-    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
+  it('ENG-005-C exports the candidate only on a push to main, from the images it just built', () => {
+    const steps = workflow('ci').jobs['release-images'].steps ?? [];
     const exports = steps.filter(
-      (step) =>
-        step.name === 'Export the actual tested candidate images' ||
-        step.with?.name === 'manual-mvp-candidate',
+      (step) => step.name === exportStepName || step.with?.name === 'manual-mvp-candidate',
     );
     expect(exports).toHaveLength(2);
     for (const step of exports) {
-      expect(expression(step.if)).toBe(accepted);
+      expect(expression(step.if)).toBe(pushCondition);
       expect(step['continue-on-error'] ?? false).toBe(false);
     }
-    const exportStep = steps.find(
-      (step) => step.name === 'Export the actual tested candidate images',
+    const build = steps.findIndex(
+      (step) => step.name === 'Build the backend and frontend acceptance images once',
     );
-    expect(exportStep?.run).toContain('critical-release-profile.cjs verify');
-    expect(exportStep?.run).toContain(`docker save ${fourImages} | gzip > candidate/images.tar.gz`);
-    expect(exportStep?.run).toContain('schemaVersion: 3');
+    const exportStep = exports[0];
+    expect(exportStep.name).toBe(exportStepName);
+    expect(steps.indexOf(exportStep)).toBeGreaterThan(build);
+    expect(exportStep.run).toContain('set -euo pipefail');
+    expect(exportStep.run).toContain(`docker save ${fourImages} | gzip > candidate/images.tar.gz`);
+    expect(exportStep.run).toContain('schemaVersion: 3');
+    expect(exportStep.run).toContain(
+      'node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID"',
+    );
+    expect(exports[1].with).toMatchObject({ path: 'candidate/', 'if-no-files-found': 'error' });
+    // Pull requests never produce a deployable candidate.
+    for (const name of ['critical-acceptance', 'docker-build']) {
+      for (const step of workflow('ci').jobs[name].steps ?? []) {
+        expect(step.with?.name).not.toBe('manual-mvp-candidate');
+      }
+    }
+  });
+
+  it('ENG-005-C merges and verifies the shard receipts on pull requests before the scans', () => {
+    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
     const merge = steps.find((step) => step.id === 'critical-release-acceptance');
     const verify = steps.find((step) => step.id === 'verify-critical-receipt');
+    const scan = steps.find((step) => step.uses?.startsWith('aquasecurity/trivy-action@'));
     expect(steps.indexOf(merge as WorkflowStep)).toBeLessThan(
       steps.indexOf(verify as WorkflowStep),
     );
-    expect(steps.indexOf(verify as WorkflowStep)).toBeLessThan(
-      steps.indexOf(exportStep as WorkflowStep),
-    );
+    expect(steps.indexOf(verify as WorkflowStep)).toBeLessThan(steps.indexOf(scan as WorkflowStep));
+    expect(verify?.if).toBeUndefined();
     expect(verify?.run).toContain(
       'node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
     );
@@ -557,55 +572,61 @@ describe('ENG-005: critical real release acceptance preserves security and block
     expect(receipt?.with?.path).toBe('test-results/critical-release-acceptance.json');
   });
 
+  it('ENG-005-B the main run checks the merged pull request with the script under test', () => {
+    const job = workflow('ci').jobs['merged-pr-ci'] as WorkflowJob & {
+      permissions?: Record<string, string>;
+    };
+    expect(job.name).toBe('Merged Pull Request CI');
+    expect(job.permissions).toEqual({
+      contents: 'read',
+      actions: 'read',
+      'pull-requests': 'read',
+    });
+    const steps = (job.steps ?? []).filter((step) => step.name === mergedPrStep);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].run?.trim()).toBe('node scripts/check-merged-pr-ci.cjs');
+    expect(steps[0].if).toBeUndefined();
+    const { REQUIRED_JOBS } = require(
+      resolve(repositoryRoot, 'scripts/check-merged-pr-ci.cjs'),
+    ) as {
+      REQUIRED_JOBS: string[];
+    };
+    // The merged pull request must have run every shard and the receipt/scan job by name.
+    expect(REQUIRED_JOBS).toEqual([
+      ...shardJobNames,
+      workflow('ci').jobs['docker-build'].name,
+      workflow('ci').jobs['ci-status'].name,
+    ]);
+  });
+
   it.each([undefined, 'skipped', 'failure', 'cancelled', 'unknown', 'success'])(
-    'ENG-005-B actual CD provenance accepts only a successful merge of verified shards, result %p',
+    'ENG-005-B actual CD provenance accepts only a successful merged pull request check, result %p',
     (conclusion) => {
       const jobs = provenanceJobs();
-      // Even an obsolete successful job name must not substitute for actual step evidence.
-      jobs.push({ name: 'Release Images and Real Acceptance', conclusion: 'success', steps: [] });
-      const release = jobs.find((job) => job.name === 'Release Images and Security');
-      if (release) {
-        release.steps =
-          conclusion === undefined
-            ? []
-            : [
-                { name: 'Merge verified critical acceptance shards', conclusion },
-                { name: 'Verify critical acceptance receipt', conclusion: 'success' },
-              ];
-      }
+      // An obsolete successful job name must not substitute for actual step evidence.
+      jobs.push({ name: 'Release Images and Security', conclusion: 'success', steps: [] });
+      const check = jobs.find((job) => job.name === 'Merged Pull Request CI');
+      if (check) check.steps = conclusion === undefined ? [] : [{ name: mergedPrStep, conclusion }];
       const result = runProvenanceScript(jobs);
       expect(result.status).toBe(conclusion === 'success' ? 0 : 1);
       if (conclusion !== 'success') {
-        expect(result.stderr).toContain('Critical real acceptance missing or unsuccessful');
+        expect(result.stderr).toContain('Pull request acceptance evidence missing or unsuccessful');
       }
-      const validation = provenanceStep();
-      expect(validation.run).toContain('gh run download "$RUN_ID"');
-      expect(validation.run).toContain(
-        'critical-release-profile.cjs verify acceptance/critical-release-acceptance.json',
-      );
     },
   );
 
-  it('ENG-005-B refuses a successful merge without successful receipt verification', () => {
-    const jobs = provenanceJobs();
-    const release = jobs.find((job) => job.name === 'Release Images and Security');
-    if (release) release.steps = release.steps.slice(0, 1);
-    const result = runProvenanceScript(jobs);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('Critical real acceptance missing or unsuccessful');
-  });
-
-  it('ENG-005-B no longer accepts the serial acceptance step name as merged shard evidence', () => {
-    const jobs = provenanceJobs();
-    const release = jobs.find((job) => job.name === 'Release Images and Security');
-    if (release) {
-      release.steps = [
-        { name: 'Run critical real release acceptance', conclusion: 'success' },
-        { name: 'Verify critical acceptance receipt', conclusion: 'success' },
-      ];
-    }
-    expect(runProvenanceScript(jobs).status).toBe(1);
-  });
+  it.each([undefined, 'skipped', 'failure', 'cancelled'])(
+    'ENG-005-B actual CD provenance refuses a run without a successful candidate export, result %p',
+    (conclusion) => {
+      const jobs = provenanceJobs();
+      const build = jobs.find((job) => job.name === 'Build Release Images');
+      if (build)
+        build.steps = conclusion === undefined ? [] : [{ name: exportStepName, conclusion }];
+      const result = runProvenanceScript(jobs);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('Release candidate export missing or unsuccessful');
+    },
+  );
 });
 
 describe('ENG-007: images are built once and critical acceptance runs in verified shards', () => {
@@ -639,8 +660,14 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       'if-no-files-found': 'error',
       'compression-level': 0,
     });
+    // Pull requests hand the images to the shards; a push to main exports them instead.
+    for (const position of [order[2], order[3]]) {
+      expect(expression(steps[position].if)).toBe(testCondition);
+    }
     for (const step of steps) {
-      expect(step.if).toBeUndefined();
+      if (![steps[order[2]], steps[order[3]]].includes(step) && !step.if?.includes('push')) {
+        expect(step.if).toBeUndefined();
+      }
       expect(step.run ?? '').not.toMatch(/playwright|test:e2e|--shard/);
     }
   });
@@ -698,7 +725,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
 
   it('ENG-007-D the final job merges all shard receipts before verification and never re-runs acceptance', () => {
     const job = ci.jobs['docker-build'];
-    expect(job.name).toBe('Release Images and Security');
+    expect(job.name).toBe('Acceptance Receipt and Image Security');
     const steps = job.steps ?? [];
     const receipts = steps.find(
       (step) =>
@@ -720,11 +747,12 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     }
   });
 
-  it('ENG-007-E CD provenance requires the build job and every named shard with its acceptance step', () => {
+  it('ENG-007-E CD provenance requires the image build, the merged pull request check and the aggregate', () => {
     expect(runProvenanceScript(provenanceJobs()).status).toBe(0);
-    for (const name of ['Build Release Images', ...shardJobNames]) {
-      const missing = provenanceJobs().filter((job) => job.name !== name);
-      const missingResult = runProvenanceScript(missing);
+    for (const name of ['Build Release Images', 'Merged Pull Request CI', 'CI Status']) {
+      const missingResult = runProvenanceScript(
+        provenanceJobs().filter((job) => job.name !== name),
+      );
       expect(missingResult.status).toBe(1);
       expect(missingResult.stderr).toContain('Required candidate gate missing or unsuccessful');
       for (const conclusion of ['failure', 'cancelled', 'skipped']) {
@@ -732,21 +760,6 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
         const target = failed.find((job) => job.name === name);
         if (target) target.conclusion = conclusion;
         expect(runProvenanceScript(failed).status).toBe(1);
-      }
-    }
-    for (const name of shardJobNames) {
-      for (const conclusion of [undefined, 'skipped', 'failure', 'cancelled']) {
-        const jobs = provenanceJobs();
-        const target = jobs.find((job) => job.name === name);
-        if (target) {
-          target.steps =
-            conclusion === undefined
-              ? []
-              : [{ name: 'Run critical real release acceptance', conclusion }];
-        }
-        const result = runProvenanceScript(jobs);
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain('Critical real acceptance missing or unsuccessful');
       }
     }
   });
@@ -763,42 +776,6 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       const commit = 'a'.repeat(40);
       const repository = 'pavelars/capital-tracker';
       try {
-        const profile = require(
-          resolve(repositoryRoot, 'scripts/critical-release-profile.cjs'),
-        ) as {
-          receipt: (selection: unknown, result: unknown, sha: string, run: string) => unknown;
-        };
-        const manifest = JSON.parse(
-          readFileSync(resolve(repositoryRoot, 'tests/e2e/manual-mvp-manifest.json'), 'utf8'),
-        ) as { file: string; title: string }[];
-        const { createHash } = require('node:crypto') as typeof import('node:crypto');
-        const passed = profile.receipt(
-          {
-            cases: manifest,
-            manifestSha256: createHash('sha256').update(JSON.stringify(manifest)).digest('hex'),
-          },
-          {
-            errors: [],
-            suites: manifest.map((item) => ({
-              file: item.file.replace('tests/e2e/', ''),
-              specs: [
-                {
-                  title: item.title,
-                  tests: [
-                    {
-                      expectedStatus: 'passed',
-                      status: 'expected',
-                      results: [{ status: 'passed' }],
-                    },
-                  ],
-                },
-              ],
-            })),
-          },
-          commit,
-          '123',
-        );
-        writeFileSync(resolve(directory, 'receipt-fixture.json'), JSON.stringify(passed));
         writeFileSync(
           resolve(directory, 'jobs-fixture.json'),
           JSON.stringify({ jobs: provenanceJobs() }),
@@ -827,17 +804,9 @@ const fixture = (name) => process.stdout.write(fs.readFileSync(process.env.FIXTU
 if (command === 'api' && path.endsWith('/jobs?per_page=100')) fixture('jobs-fixture.json');
 else if (command === 'api' && path.endsWith('/git/ref/heads/main')) process.stdout.write(process.env.FIXTURE_MAIN + '\\n');
 else if (command === 'api' && /\\/actions\\/runs\\/[0-9]+$/.test(path)) fixture('run-fixture.json');
-else if (command === 'run' && path === 'download') {
-  const target = process.argv[process.argv.indexOf('-D') + 1];
-  fs.mkdirSync(target, { recursive: true });
-  fs.copyFileSync(process.env.FIXTURE_DIR + '/receipt-fixture.json', target + '/critical-release-acceptance.json');
-} else process.exit(9);
+else process.exit(9);
 `,
           { mode: 0o700 },
-        );
-        require('node:fs').symlinkSync(
-          resolve(repositoryRoot, 'scripts'),
-          resolve(directory, 'scripts'),
         );
         const result = spawnSync('bash', ['-e', '-c', provenanceStep().run ?? ''], {
           cwd: directory,
@@ -856,14 +825,18 @@ else if (command === 'run' && path === 'download') {
         });
         expect(result.error).toBeUndefined();
         expect(result.status === 0 ? 0 : 1).toBe(status);
-        if (status === 0) {
-          expect(result.stdout).toContain('Exact critical release acceptance receipt verified');
-        }
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
     },
   );
+
+  it('ENG-006-C the CD provenance step refuses an obsolete commit that is no longer the main head', () => {
+    const step = provenanceStep();
+    expect(step.run).toContain(
+      'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"',
+    );
+  });
 });
 
 describe('ENG-002: controlled manual MVP deployment entry', () => {

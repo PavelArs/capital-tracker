@@ -27,14 +27,18 @@ gates; the browser runner does not perform them. CI must bind the successful cri
 gate receipt to the candidate source and exact manifest before candidate export or
 promotion. A paused, skipped or partial critical gate cannot produce release evidence.
 
-Since 2026-10-04 (owner decision) the release jobs — `Build Release Images`, the five
-`Critical acceptance (<shard>)` jobs and `Release Images and Security` — run for every
-event except pull requests: pushes to main and a manual run of the CI workflow
-(`workflow_dispatch`, any branch). Pull requests run the other eight gates and the
-aggregate accepts the skipped release jobs only for the `pull_request` event. A pull
-request therefore carries no browser evidence: run the affected journeys locally where
-possible, or dispatch CI for the branch before merge. Only a push run on main can be
-deployed; a dispatched run is review evidence only.
+Since 2026-10-05 (owner decision) every check runs on pull requests: lint, unit tests,
+builds, specification gates, the dependency audit, `Build Release Images`, the five
+`Critical acceptance (<shard>)` jobs and `Acceptance Receipt and Image Security`. A
+manual run of the CI workflow (`workflow_dispatch`, any branch) runs the same suite. A
+push to main runs no tests: `Build Release Images` builds and exports the deploy
+candidate and `Merged Pull Request CI` (`scripts/check-merged-pr-ci.cjs`) requires that
+the pull request merged as that commit had a successful newest CI run on its final head
+with every shard, the receipt/scan job and `CI Status` green (it waits while that run is
+still going). Only a push run on main can be deployed; pull request and dispatched runs
+are review evidence only. A pull request tested while behind main proves its own merge
+result, not the main tree after later merges; keep branches up to date before merging
+when that matters.
 
 In CI the critical profile runs in parallel shards on images built once:
 
@@ -50,11 +54,11 @@ In CI the critical profile runs in parallel shards on images built once:
   first). `browser-1..3` take the manifest cases whose index modulo 3 is 0, 1 or 2, after
   migration, seed, application start, the HTTPS ingress check and the artifact check.
   Each shard writes `test-results/critical-shard-<name>.json`.
-- `Release Images and Security` merges the receipts with
+- `Acceptance Receipt and Image Security` merges the receipts with
   `node scripts/acceptance-shards.cjs merge …` into the unchanged
   `test-results/critical-release-acceptance.json` only if every shard tested the
   manifest images for this commit and run and the checks and cases are covered exactly
-  once and passed; then it verifies the receipt, scans and exports the same images.
+  once and passed; then it verifies the receipt and scans the same images.
 
 Shard mode needs a CI run id and prebuilt images; locally keep using
 `pnpm test:e2e:critical` (serial, builds its own images) or `pnpm test:e2e`. Print the
