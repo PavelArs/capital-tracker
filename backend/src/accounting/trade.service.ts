@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { readFxRates } from '../fx-rates/fx-rates.service';
 import { lockAccountingOwner } from './accounting-lock';
 import type { RewardSummary } from './asset-reward-types';
 import type { SwapSummary } from './asset-swap-types';
@@ -17,6 +18,7 @@ import {
 import type { Execution } from './fifo';
 import { parseUuid } from './input';
 import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
+import { derivePaidAmounts } from './paid-currency';
 import {
   parseDerivedTradePageQuery,
   parseJournalInitialization,
@@ -81,6 +83,7 @@ interface CurrentSnapshot {
   fifo: AccountFifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
+const noRate = () => new ConflictException('No Bank of Russia rate is stored for the trade date');
 
 function execution(value: Execution): Execution {
   return {
@@ -91,6 +94,19 @@ function execution(value: Execution): Execution {
     quantity: value.quantity,
     grossUsd: value.grossUsd,
     feeUsd: value.feeUsd,
+    ...(value.paid ? { paid: value.paid } : {}),
+  };
+}
+/** The request as sent: amounts paid in RUB or EUR stay unconverted, so a replay never
+ * depends on rates stored later (CUR-PAID-RUB). */
+function requested(value: TradeCreateInput) {
+  return {
+    instrumentId: value.instrumentId,
+    side: value.side,
+    occurredAt: value.occurredAt,
+    orderWithinTimestamp: value.orderWithinTimestamp,
+    quantity: value.quantity,
+    ...(value.paid ? { paid: value.paid } : { grossUsd: value.grossUsd, feeUsd: value.feeUsd }),
   };
 }
 function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): JournalOrigin {
@@ -183,7 +199,8 @@ export class TradeService {
     target: string | undefined,
     value: TradeCreateInput | TradeVoidInput,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
-    const fields = kind === 'void' ? undefined : execution(value as TradeCreateInput);
+    const input = kind === 'void' ? undefined : (value as TradeCreateInput);
+    const fields = input && requested(input);
     const payload = JSON.stringify({
       kind,
       ...(target === undefined ? {} : { tradeId: target }),
@@ -211,13 +228,21 @@ export class TradeService {
         if (target !== undefined && !current) throw new NotFoundException();
         let nextExecution: Execution;
         let labels: { instrumentName: string; instrumentSymbol: string | null };
-        if (fields) {
+        if (input) {
           const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
             'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
-            [owner, fields.instrumentId],
+            [owner, input.instrumentId],
           );
           if (!instrument) throw new NotFoundException();
-          nextExecution = fields;
+          if (input.paid) {
+            const derived = derivePaidAmounts(
+              input.paid,
+              await readFxRates(manager),
+              input.occurredAt,
+            );
+            if (!derived) throw noRate();
+            nextExecution = execution({ ...input, ...derived });
+          } else nextExecution = execution(input);
           labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
         } else {
           if (!current) throw new NotFoundException();

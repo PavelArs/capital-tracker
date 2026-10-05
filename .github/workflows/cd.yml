@@ -70,23 +70,17 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > jobs.json
           node - <<'NODE'
           const jobs = JSON.parse(require('node:fs').readFileSync('jobs.json')).jobs;
-          // Critical acceptance runs once per shard on the images built once; all must succeed.
-          const shards = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3'].map(shard => `Critical acceptance (${shard})`);
-          for (const name of ['Backend Lint & Format', 'Backend Tests', 'Backend Build', 'Frontend Lint & Format', 'Frontend Tests', 'Frontend Build', 'Build Release Images', ...shards, 'Release Images and Security', 'Specification and Engineering Gates', 'Production Dependency Audit', 'CI Status']) {
+          // Main runs no tests: it builds the candidate after confirming that the merged pull
+          // request passed the full suite (lint, unit, probes, every acceptance shard, scans).
+          for (const name of ['Build Release Images', 'Merged Pull Request CI', 'CI Status']) {
             if (!jobs.some(job => job.name === name && job.conclusion === 'success')) throw new Error('Required candidate gate missing or unsuccessful');
           }
           const succeeded = (jobName, stepName) => jobs.find(job => job.name === jobName && job.conclusion === 'success').steps?.some(step => step.name === stepName && step.conclusion === 'success');
-          for (const name of shards) {
-            if (!succeeded(name, 'Run critical real release acceptance')) throw new Error('Critical real acceptance missing or unsuccessful');
-          }
-          for (const name of ['Merge verified critical acceptance shards', 'Verify critical acceptance receipt']) {
-            if (!succeeded('Release Images and Security', name)) throw new Error('Critical real acceptance missing or unsuccessful');
-          }
+          if (!succeeded('Merged Pull Request CI', 'Require a successful full pull request CI run')) throw new Error('Pull request acceptance evidence missing or unsuccessful');
+          if (!succeeded('Build Release Images', 'Export the release candidate images')) throw new Error('Release candidate export missing or unsuccessful');
           NODE
           # Reject obsolete queued commits, even when their older CI succeeded.
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"
-          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n critical-release-acceptance -D acceptance
-          node scripts/critical-release-profile.cjs verify acceptance/critical-release-acceptance.json "$GITHUB_SHA" "$RUN_ID"
       - name: Name the release version
         if: env.RELEASE_MODE != 'inventory'
         run: |

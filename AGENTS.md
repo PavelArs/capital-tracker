@@ -1,7 +1,8 @@
 # Capital Tracker engineering contract
 
-Read CONTINUITY.md, capital-tracker-openspec-prompt.md, active OpenSpec changes,
-and Git diff before continuing. The target brief supersedes old MVP exclusions
+Read capital-tracker-openspec-prompt.md, active OpenSpec changes, and Git diff
+before continuing. CONTINUITY.md, if you have one, is a local-only note ignored
+by Git; never commit it. The target brief supersedes old MVP exclusions
 and stale architecture descriptions in CLAUDE.md. Retain compatible code style
 and English Conventional Commit conventions. Do not commit directly to main.
 
@@ -40,8 +41,8 @@ Keep code clean and consistent with compatible project conventions. Use current
 practices supported by the installed tools, and choose simple architecture patterns
 that fit the task rather than introducing unnecessary abstractions.
 
-Maintain concise CONTINUITY.md with goal, constraints, decisions, done/now/next,
-open questions and evidence. Never record secrets. Read docs/brownfield-audit.md
+A local CONTINUITY.md may hold goal, constraints, decisions, done/now/next,
+open questions and evidence; it is ignored by Git. Never record secrets. Read docs/brownfield-audit.md
 before database upgrades: explicit migration preflight refuses unsafe legacy history.
 Default to verification scoped to the changed code and its critical risks: relevant
 unit/integration checks, real PostgreSQL and selected critical HTTPS Playwright cases.
@@ -60,8 +61,7 @@ See docs/testing-and-migrations.md for the isolated environment and commands.
 Never use the production Compose file for tests or alter the owner Nginx edit.
 
 For the current authorized manual + CSV MVP release and durable whole-target
-handoff, read [docs/post-mvp-backlog.md](docs/post-mvp-backlog.md) and the top
-checkpoint in CONTINUITY.md first. Astra handles orchestration only; Root
+handoff, read [docs/post-mvp-backlog.md](docs/post-mvp-backlog.md) first. Astra handles orchestration only; Root
 coordinates integration and assigns exclusive ownership; Sol implements/reviews
 when assigned; Luna handles bounded documentation/audit/simple tasks. The backlog distinguishes
 mandatory in-progress release gates from deferred product work; it does not replace

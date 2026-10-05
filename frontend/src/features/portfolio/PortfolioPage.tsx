@@ -1,5 +1,6 @@
 import type { AssetType, PortfolioAsset } from '@api/portfolio-assets.api';
 import {
+  type AccountingCurrency,
   type AssetValuation,
   type PortfolioValuation,
   portfolioValuationApi,
@@ -7,7 +8,9 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddAssetDialog from './AddAssetDialog';
-import { DASH, missingLabel, percent, price, priceNote, quantity, tone, usd } from './format';
+import AddTransactionDialog from './AddTransactionDialog';
+import { CurrencySwitch, ratesNote, useAskedCurrency, withCurrency } from './currency';
+import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -37,10 +40,18 @@ export function assetCaption(asset: AssetValuation): string {
     .join(' · ');
 }
 
-export function Signed({ value, ratio }: { value: string | null; ratio?: string | null }) {
+export function Signed({
+  value,
+  currency,
+  ratio,
+}: {
+  value: string | null;
+  currency: AccountingCurrency;
+  ratio?: string | null;
+}) {
   return (
     <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>
-      {usd(value, true)}
+      {money(value, currency, true)}
       {ratio !== undefined && value !== null && ratio !== null && (
         <span className="portfolio-sub">{percent(ratio)}</span>
       )}
@@ -50,16 +61,18 @@ export function Signed({ value, ratio }: { value: string | null; ratio?: string 
 
 function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const unpriced = portfolio.missingPriceCount;
+  const currency = portfolio.currency;
+  const amount = (value: string | null) => money(value, currency);
   return (
     <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
       <dl>
         <div>
           <dt>Current value</dt>
           <dd>
-            {portfolio.totalValueUsd !== null ? usd(portfolio.totalValueUsd) : 'Incomplete'}
-            {portfolio.totalValueUsd === null && (
+            {portfolio.totalValue !== null ? amount(portfolio.totalValue) : 'Incomplete'}
+            {portfolio.totalValue === null && (
               <span className="portfolio-sub">
-                {usd(portfolio.pricedSubtotalUsd)} priced
+                {amount(portfolio.pricedSubtotal)} priced
                 {unpriced > 0 &&
                   `, ${unpriced} ${unpriced === 1 ? 'asset' : 'assets'} without a price`}
                 {portfolio.unavailableAccountCount > 0 &&
@@ -71,13 +84,15 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         <div>
           <dt>Cost basis</dt>
           <dd>
-            {usd(portfolio.costBasisUsd)}
-            {portfolio.costBasisUsd === null && (
+            {amount(portfolio.costBasis)}
+            {portfolio.costBasis === null && (
               <span className="portfolio-sub">
-                {usd(portfolio.knownCostSubtotalUsd)} known,{' '}
+                {amount(portfolio.knownCostSubtotal)} known,{' '}
                 {portfolio.unknownCostCount > 0
                   ? 'part has no purchase price'
-                  : 'an account history starts later'}
+                  : portfolio.missingRateCount > 0
+                    ? 'part predates the stored rates'
+                    : 'an account history starts later'}
               </span>
             )}
           </dd>
@@ -85,13 +100,17 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         <div>
           <dt>Unrealized P&amp;L</dt>
           <dd>
-            <Signed value={portfolio.unrealizedPnlUsd} ratio={portfolio.unrealizedReturnPercent} />
+            <Signed
+              value={portfolio.unrealizedPnl}
+              currency={currency}
+              ratio={portfolio.unrealizedReturnPercent}
+            />
           </dd>
         </div>
         <div>
           <dt>Realized P&amp;L</dt>
           <dd>
-            <Signed value={portfolio.realizedPnlUsd} />
+            <Signed value={portfolio.realizedPnl} currency={currency} />
           </dd>
         </div>
       </dl>
@@ -100,6 +119,15 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
           {portfolio.stalePriceCount === 1
             ? '1 price is older than 2 hours; the last stored price is used.'
             : `${portfolio.stalePriceCount} prices are older than 2 hours; the last stored prices are used.`}
+        </p>
+      )}
+      {portfolio.missingRateCount > 0 && (
+        <p className="portfolio-warn" role="note">
+          {portfolio.missingRateCount === 1
+            ? '1 asset has'
+            : `${portfolio.missingRateCount} assets have`}{' '}
+          operations dated before the stored Bank of Russia rates, so their cost or P&amp;L in{' '}
+          {currency} is not shown.
         </p>
       )}
     </section>
@@ -149,7 +177,9 @@ function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
               <li key={slice.key}>
                 <span className="portfolio-swatch" data-tone={index % 6} aria-hidden="true" />
                 <span className="portfolio-slices__label">{slice.label}</span>
-                <span className="portfolio-slices__value">{usd(slice.valueUsd)}</span>
+                <span className="portfolio-slices__value">
+                  {money(slice.value, portfolio.currency)}
+                </span>
                 <span className="portfolio-slices__percent">{percent(slice.percent, false)}</span>
               </li>
             ))}
@@ -168,7 +198,17 @@ function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
   );
 }
 
-function AssetsTable({ assets, now }: { assets: AssetValuation[]; now: Date }) {
+function AssetsTable({
+  assets,
+  currency,
+  asked,
+  now,
+}: {
+  assets: AssetValuation[];
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  now: Date;
+}) {
   return (
     <div className="portfolio-table-wrap">
       <table className="portfolio-table">
@@ -206,7 +246,10 @@ function AssetsTable({ assets, now }: { assets: AssetValuation[]; now: Date }) {
                     aria-hidden="true"
                   />
                   <span>
-                    <Link className="portfolio-asset__name" to={`/portfolio/${asset.instrumentId}`}>
+                    <Link
+                      className="portfolio-asset__name"
+                      to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+                    >
                       {asset.name}
                     </Link>
                     <span className="portfolio-asset__ticker">{assetCaption(asset)}</span>
@@ -215,16 +258,20 @@ function AssetsTable({ assets, now }: { assets: AssetValuation[]; now: Date }) {
               </td>
               <td className="portfolio-num">{quantity(asset.quantity)}</td>
               <td className="portfolio-num">
-                {asset.price ? price(asset.price.priceUsd) : missingLabel(asset)}
+                {asset.price ? price(asset.price.value, currency) : missingLabel(asset)}
                 <span className="portfolio-sub">{priceNote(asset, now)}</span>
               </td>
-              <td className="portfolio-num portfolio-strong">{usd(asset.valueUsd)}</td>
+              <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
               <td className="portfolio-num">{percent(asset.allocationPercent, false)}</td>
               <td className="portfolio-num">
-                {asset.averageBuyPriceUsd === null ? DASH : price(asset.averageBuyPriceUsd)}
+                {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
               </td>
               <td className="portfolio-num">
-                <Signed value={asset.unrealizedPnlUsd} ratio={asset.unrealizedReturnPercent} />
+                <Signed
+                  value={asset.unrealizedPnl}
+                  currency={currency}
+                  ratio={asset.unrealizedReturnPercent}
+                />
               </td>
             </tr>
           ))}
@@ -240,24 +287,29 @@ export default function PortfolioPage() {
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [adding, setAdding] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
+  const [asked, setAsked] = useAskedCurrency();
   const latest = useRef(0);
 
   // Only the newest request may change the page; a quiet refresh keeps what is shown.
-  const load = useCallback(async (quiet = false) => {
-    const request = ++latest.current;
-    setFailed(false);
-    setRefreshFailed(false);
-    if (!quiet) setPortfolio(null);
-    try {
-      const next = await portfolioValuationApi.get();
-      if (request === latest.current) setPortfolio(next);
-    } catch {
-      if (request !== latest.current) return;
-      if (quiet) setRefreshFailed(true);
-      else setFailed(true);
-    }
-  }, []);
+  const load = useCallback(
+    async (quiet = false) => {
+      const request = ++latest.current;
+      setFailed(false);
+      setRefreshFailed(false);
+      if (!quiet) setPortfolio(null);
+      try {
+        const next = await portfolioValuationApi.get(asked);
+        if (request === latest.current) setPortfolio(next);
+      } catch {
+        if (request !== latest.current) return;
+        if (quiet) setRefreshFailed(true);
+        else setFailed(true);
+      }
+    },
+    [asked],
+  );
   useEffect(() => {
     void load();
   }, [load]);
@@ -270,22 +322,40 @@ export default function PortfolioPage() {
     setAdding(false);
     void load(true);
   };
-  const addButton = (
+  const addButton = (primary: boolean) => (
     <button
       type="button"
-      className="shell-button shell-button--primary"
+      className={`shell-button${primary ? ' shell-button--primary' : ' shell-button--secondary'}`}
       onClick={() => setAdding(true)}
     >
       Add asset
     </button>
   );
+  const recorded = () => {
+    setRecording(false);
+    void load(true);
+  };
   const now = new Date();
+  // The asked currency shows as chosen while its values load.
+  const shownCurrency = asked ?? portfolio?.currency;
 
   return (
     <div className="shell-page">
       <div className="shell-page__head">
         <h1>Portfolio</h1>
-        {assets.length > 0 && addButton}
+        <div className="portfolio-actions">
+          {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
+          {assets.length > 0 && addButton(false)}
+          {assets.length > 0 && (
+            <button
+              type="button"
+              className="shell-button shell-button--primary"
+              onClick={() => setRecording(true)}
+            >
+              Add transaction
+            </button>
+          )}
+        </div>
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
@@ -302,7 +372,7 @@ export default function PortfolioPage() {
         <section className="shell-card shell-empty" aria-labelledby="portfolio-empty">
           <h2 id="portfolio-empty">No assets yet</h2>
           <p>Add a coin, cash or anything else you want to track.</p>
-          {addButton}
+          {addButton(true)}
         </section>
       ) : (
         <>
@@ -339,16 +409,17 @@ export default function PortfolioPage() {
                 ))}
               </div>
             </div>
-            <AssetsTable assets={visible} now={now} />
+            <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
             {visible.length === 0 && <p className="portfolio-none">No assets of this type.</p>}
             <p className="shell-note portfolio-note">
-              Values are in USD from the latest stored prices. Holdings come from your{' '}
+              {ratesNote(portfolio)} Holdings come from your{' '}
               <Link to="/manual-accounts">manual accounts</Link>.
             </p>
           </section>
         </>
       )}
       {adding && <AddAssetDialog onClose={() => setAdding(false)} onAdded={added} />}
+      {recording && <AddTransactionDialog onClose={() => setRecording(false)} onSaved={recorded} />}
     </div>
   );
 }

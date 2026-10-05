@@ -1,11 +1,17 @@
 import type { Instrument } from '@api/accounting.api';
-import type { TradeExecution, TradeVersion } from '@api/trades.api';
+import type { TradeCommand, TradeExecution, TradeVersion } from '@api/trades.api';
 import { useId } from 'react';
 import './OperationForm.css';
 import './TradeForm.css';
 
+/** The currency the amounts were paid in; RUB and EUR are converted by the server. */
+export type PaidCurrency = 'USD' | 'RUB' | 'EUR';
+/** `grossUsd` and `feeUsd` hold the amounts typed in `paidCurrency`; `paidPerUsd` keeps a
+ * rate the owner entered for the trade, so a correction does not replace it. */
 export type TradeDraft = Omit<TradeExecution, 'orderWithinTimestamp'> & {
   orderWithinTimestamp: string;
+  paidCurrency: PaidCurrency;
+  paidPerUsd?: string;
 };
 
 export function emptyTradeDraft(): TradeDraft {
@@ -17,6 +23,49 @@ export function emptyTradeDraft(): TradeDraft {
     quantity: '',
     grossUsd: '',
     feeUsd: '0',
+    paidCurrency: 'USD',
+  };
+}
+
+/** A saved trade as an editable draft, in the currency it was paid in. */
+export function tradeDraft(trade: TradeVersion): TradeDraft {
+  return {
+    instrumentId: trade.instrumentId,
+    side: trade.side,
+    occurredAt: trade.occurredAt,
+    orderWithinTimestamp: String(trade.orderWithinTimestamp),
+    quantity: trade.quantity,
+    ...(trade.paid
+      ? {
+          paidCurrency: trade.paid.currency,
+          grossUsd: trade.paid.gross,
+          feeUsd: trade.paid.fee,
+          ...(trade.paid.rateSource === 'owner' ? { paidPerUsd: trade.paid.perUsd } : {}),
+        }
+      : { paidCurrency: 'USD', grossUsd: trade.grossUsd, feeUsd: trade.feeUsd }),
+  };
+}
+
+/** USD amounts as typed, or RUB/EUR amounts for the server to convert (CUR-PAID-RUB). */
+export function tradeCommand(
+  draft: TradeDraft,
+  identity: { requestId: string; expectedJournalRevision: number },
+): TradeCommand {
+  const { paidCurrency, paidPerUsd, grossUsd, feeUsd, orderWithinTimestamp, ...fields } = draft;
+  return {
+    ...fields,
+    orderWithinTimestamp: Number(orderWithinTimestamp),
+    ...(paidCurrency === 'USD'
+      ? { grossUsd, feeUsd }
+      : {
+          paid: {
+            currency: paidCurrency,
+            gross: grossUsd,
+            fee: feeUsd,
+            ...(paidPerUsd ? { perUsd: paidPerUsd } : {}),
+          },
+        }),
+    ...identity,
   };
 }
 
@@ -45,6 +94,7 @@ export function TradeForm({
 }) {
   const hintId = useId();
   const update = (value: Partial<TradeDraft>) => onChange({ ...draft, ...value });
+  const currency = draft.paidCurrency;
   return (
     <form className="trade-form operation-form" onSubmit={onSubmit}>
       <fieldset className="manual-position" aria-label="Сделка в USD" disabled={disabled}>
@@ -105,7 +155,38 @@ export function TradeForm({
             </label>
             <div className="operation-form__field">
               <label>
-                Валовая сумма, USD
+                Валюта оплаты
+                <select
+                  aria-describedby={`${hintId}-currency`}
+                  disabled={lockDraft}
+                  value={currency}
+                  onChange={(event) =>
+                    update({
+                      paidCurrency:
+                        event.target.value === 'RUB' || event.target.value === 'EUR'
+                          ? event.target.value
+                          : 'USD',
+                      // A rate belongs to its currency.
+                      paidPerUsd: undefined,
+                    })
+                  }
+                >
+                  <option value="USD">USD</option>
+                  <option value="RUB">RUB</option>
+                  <option value="EUR">EUR</option>
+                </select>
+              </label>
+              <small id={`${hintId}-currency`}>
+                {currency === 'USD'
+                  ? 'Валюта, в которой вы заплатили или получили деньги.'
+                  : draft.paidPerUsd
+                    ? `Суммы сохранятся в ${currency}, а USD рассчитается по вашему курсу ${draft.paidPerUsd} ${currency} за 1 USD.`
+                    : `Суммы сохранятся в ${currency}, а USD рассчитается по курсу ЦБ РФ на дату сделки.`}
+              </small>
+            </div>
+            <div className="operation-form__field">
+              <label>
+                Валовая сумма, {currency}
                 <input
                   aria-describedby={`${hintId}-gross`}
                   disabled={lockDraft}
@@ -119,7 +200,7 @@ export function TradeForm({
             </div>
             <div className="operation-form__field">
               <label>
-                Комиссия, USD
+                Комиссия, {currency}
                 <input
                   aria-describedby={`${hintId}-fee`}
                   disabled={lockDraft}
@@ -129,7 +210,9 @@ export function TradeForm({
                   required
                 />
               </label>
-              <small id={`${hintId}-fee`}>Комиссия отдельно в USD. Если её нет, оставьте 0.</small>
+              <small id={`${hintId}-fee`}>
+                Комиссия отдельно в {currency}. Если её нет, оставьте 0.
+              </small>
             </div>
           </div>
         </div>

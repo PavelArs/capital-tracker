@@ -108,41 +108,43 @@ async function wholePortfolio(db, s, f) {
   const before = await fingerprint(db);
   const providers = await providerRequests();
   const report = await read(s, owner);
-  assert.deepEqual(Object.keys(report).sort(), ['at', 'quoteCurrency', 'completeness', 'totalValueUsd',
-    'pricedSubtotalUsd', 'missingPriceCount', 'stalePriceCount', 'unavailableAccountCount', 'costBasisUsd',
-    'knownCostSubtotalUsd', 'unknownCostCount', 'unrealizedPnlUsd', 'unrealizedReturnPercent', 'realizedPnlUsd',
-    'knownRealizedSubtotalUsd', 'unknownRealizedCount', 'assets', 'allocation', 'accounts'].sort());
+  assert.deepEqual(Object.keys(report).sort(), ['at', 'currency', 'mainCurrency', 'rates', 'completeness', 'totalValue',
+    'pricedSubtotal', 'missingPriceCount', 'stalePriceCount', 'unavailableAccountCount', 'costBasis',
+    'knownCostSubtotal', 'unknownCostCount', 'missingRateCount', 'unrealizedPnl', 'unrealizedReturnPercent', 'realizedPnl',
+    'knownRealizedSubtotal', 'unknownRealizedCount', 'assets', 'allocation', 'accounts'].sort());
+  // No Bank of Russia rate is stored here: USD is the default main currency and needs none.
+  assert.deepEqual([report.currency, report.mainCurrency, report.rates, report.missingRateCount], ['USD', 'USD', [], 0]);
   assert.equal(report.at, now.toISOString());
   assert.equal(report.completeness, 'complete');
-  assert.equal(report.totalValueUsd, '10000');
+  assert.equal(report.totalValue, '10000');
   assert.equal(report.stalePriceCount, 1);
-  assert.equal(report.costBasisUsd, '9100');
-  assert.equal(report.unrealizedPnlUsd, '900');
+  assert.equal(report.costBasis, '9100');
+  assert.equal(report.unrealizedPnl, '900');
   assert.equal(report.unrealizedReturnPercent, '9.89');
-  assert.equal(report.realizedPnlUsd, '800');
+  assert.equal(report.realizedPnl, '800');
   assert.deepEqual(report.assets.map((entry) => entry.name), ['Bitcoin', 'Deposit', 'Ethereum', 'US dollar', 'Toncoin']);
   const bitcoin = asset(report, btc);
-  assert.deepEqual(bitcoin.price, { priceUsd: '70000', observedAt: ago(30).toISOString(), source: 'coingecko', status: 'fresh' });
+  assert.deepEqual(bitcoin.price, { value: '70000', observedAt: ago(30).toISOString(), source: 'coingecko', status: 'fresh' });
   assert.equal(bitcoin.quantity, '0.06');
-  assert.equal(bitcoin.valueUsd, '4200');
-  assert.equal(bitcoin.costBasisUsd, '4100');
-  assert.equal(bitcoin.averageBuyPriceUsd, '68333.333333333333333333333333333333');
-  assert.equal(bitcoin.unrealizedPnlUsd, '100');
-  assert.deepEqual(bitcoin.holdings.map((h) => [h.accountName, h.quantity, h.valueUsd]),
+  assert.equal(bitcoin.value, '4200');
+  assert.equal(bitcoin.costBasis, '4100');
+  assert.equal(bitcoin.averageBuyPrice, '68333.333333333333333333333333333333');
+  assert.equal(bitcoin.unrealizedPnl, '100');
+  assert.deepEqual(bitcoin.holdings.map((h) => [h.accountName, h.quantity, h.value]),
     [['Bybit', '0.03', '2100'], ['Trust Wallet', '0.03', '2100']], 'A transferred lot counts once');
   const ether = asset(report, eth);
-  assert.deepEqual(ether.price, { priceUsd: '2000', observedAt: ago(180).toISOString(), source: 'kraken', status: 'stale' });
+  assert.deepEqual(ether.price, { value: '2000', observedAt: ago(180).toISOString(), source: 'kraken', status: 'stale' });
   assert.equal(ether.quantity, '1');
-  assert.equal(ether.costBasisUsd, '1500');
-  assert.equal(ether.averageBuyPriceUsd, '1500');
-  assert.equal(ether.realizedPnlUsd, '800');
-  assert.equal(ether.unrealizedPnlUsd, '500');
-  assert.deepEqual(asset(report, deposit).price, { priceUsd: '2300', observedAt: '2025-01-05T00:00:00.000Z',
+  assert.equal(ether.costBasis, '1500');
+  assert.equal(ether.averageBuyPrice, '1500');
+  assert.equal(ether.realizedPnl, '800');
+  assert.equal(ether.unrealizedPnl, '500');
+  assert.deepEqual(asset(report, deposit).price, { value: '2300', observedAt: '2025-01-05T00:00:00.000Z',
     source: 'manual', status: 'manual' });
-  assert.deepEqual(asset(report, usd).price, { priceUsd: '1', observedAt: null, source: 'fixed', status: 'fixed' });
-  assert.equal(asset(report, usd).valueUsd, '1500');
+  assert.deepEqual(asset(report, usd).price, { value: '1', observedAt: null, source: 'fixed', status: 'fixed' });
+  assert.equal(asset(report, usd).value, '1500');
   assert.equal(asset(report, ton).quantity, '0');
-  assert.equal(asset(report, ton).valueUsd, '0');
+  assert.equal(asset(report, ton).value, '0');
   assert.equal(asset(report, ton).missingPrice, 'no-price');
   assert.deepEqual(shares(report.allocation.byAsset),
     [['Bitcoin', '42.00'], ['Deposit', '23.00'], ['Ethereum', '20.00'], ['US dollar', '15.00']]);
@@ -154,7 +156,7 @@ async function wholePortfolio(db, s, f) {
   assert.ok(report.accounts.every((entry) => entry.accountId !== foreign.id), 'Foreign accounts are absent');
 
   const foreignReport = await read(s, other);
-  assert.equal(foreignReport.totalValueUsd, '350000');
+  assert.equal(foreignReport.totalValue, '350000');
   assert.deepEqual(foreignReport.assets.map((entry) => entry.instrumentId), [foreignBtc]);
   await rejected(() => read(s, owner, { at: now.toISOString() }), 400);
   await rejected(() => read(s, owner, []), 400);
@@ -176,12 +178,12 @@ async function gapsAndInvalidHistory(db, s, f) {
   await trade(s, third, cash, usd, 'buy', '2025-01-02T02:00:00.000Z', '10', '10');
   const report = await read(s, third);
   assert.equal(report.completeness, 'incomplete');
-  assert.equal(report.totalValueUsd, null);
-  assert.equal(report.pricedSubtotalUsd, '10');
+  assert.equal(report.totalValue, null);
+  assert.equal(report.pricedSubtotal, '10');
   assert.equal(report.missingPriceCount, 2);
-  assert.equal(report.unrealizedPnlUsd, null);
+  assert.equal(report.unrealizedPnl, null);
   assert.equal(asset(report, sol).missingPrice, 'no-price');
-  assert.equal(asset(report, sol).valueUsd, null);
+  assert.equal(asset(report, sol).value, null);
   assert.equal(asset(report, rub).missingPrice, 'no-rate');
   assert.equal(asset(report, rub).allocationPercent, null);
   assert.equal(report.allocation.complete, false);
@@ -189,7 +191,7 @@ async function gapsAndInvalidHistory(db, s, f) {
   await account(s, third, 'Starts later', new Date(now.getTime() + 86_400_000).toISOString());
   const later = await read(s, third);
   assert.equal(later.unavailableAccountCount, 1);
-  assert.equal(later.costBasisUsd, null);
+  assert.equal(later.costBasis, null);
   assert.equal(later.accounts.find((entry) => entry.name === 'Starts later').coverage, 'before-coverage');
 
   const before = await fingerprint(db);
@@ -219,7 +221,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 25);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 28);
     const [owner, other, third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('portfolio-owner@example.invalid','synthetic-not-a-hash',true),
       ('portfolio-other@example.invalid','synthetic-not-a-hash',true),

@@ -65,6 +65,9 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(
     page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
   ).toBeVisible();
+  // record-portfolio-snapshots: the dashboard shows net worth instead of a placeholder.
+  await expect(page.getByRole('region', { name: 'Net worth' })).toBeVisible();
+  await expect(page.getByRole('main').getByText(/not built yet/i)).toHaveCount(0);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(200);
 
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
@@ -93,8 +96,6 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
 
   // SHELL-005-A: honest placeholders, each linking to the legacy screen meanwhile.
   for (const [name, path, legacyLink, legacyPath] of [
-    ['Dashboard', '/dashboard', 'Open manual accounts', '/manual-accounts'],
-    ['Transactions', '/transactions', 'Open manual accounts', '/manual-accounts'],
     ['Wallets', '/wallets', 'Open wallet addresses', '/wallet-addresses'],
   ] as const) {
     await nav.getByRole('link', { name, exact: true }).click();

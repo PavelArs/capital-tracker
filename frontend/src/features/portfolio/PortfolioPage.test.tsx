@@ -28,16 +28,17 @@ const valued = (
   quantity: '0',
   price: null,
   missingPrice: 'no-price',
-  valueUsd: '0',
+  value: '0',
   allocationPercent: null,
-  costBasisUsd: '0',
-  knownCostSubtotalUsd: '0',
+  costBasis: '0',
+  knownCostSubtotal: '0',
   unknownCostQuantity: '0',
-  averageBuyPriceUsd: null,
-  unrealizedPnlUsd: null,
+  missingRateQuantity: '0',
+  averageBuyPrice: null,
+  unrealizedPnl: null,
   unrealizedReturnPercent: null,
-  realizedPnlUsd: '0',
-  knownRealizedSubtotalUsd: '0',
+  realizedPnl: '0',
+  knownRealizedSubtotal: '0',
   unknownRealizedCount: 0,
   holdings: [],
   ...changes,
@@ -46,18 +47,18 @@ const crypto = { assetType: 'crypto', valuationCurrency: 'USD', priceSource: 'ma
 // PV-BR11: 1.2 BTC bought for 66000 USD, priced 80000.
 const bitcoin = valued(1, 'Bitcoin', 'BTC', crypto, {
   quantity: '1.2',
-  price: { priceUsd: '80000', observedAt: minutesAgo(30), source: 'kraken', status: 'fresh' },
+  price: { value: '80000', observedAt: minutesAgo(30), source: 'kraken', status: 'fresh' },
   missingPrice: null,
-  valueUsd: '96000',
+  value: '96000',
   allocationPercent: '96.00',
-  costBasisUsd: '66000',
-  knownCostSubtotalUsd: '66000',
-  averageBuyPriceUsd: '55000',
-  unrealizedPnlUsd: '30000',
+  costBasis: '66000',
+  knownCostSubtotal: '66000',
+  averageBuyPrice: '55000',
+  unrealizedPnl: '30000',
   unrealizedReturnPercent: '45.45',
   holdings: [
-    { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', valueUsd: '80000' },
-    { accountId: id(102), accountName: 'Bybit', quantity: '0.2', valueUsd: '16000' },
+    { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value: '80000' },
+    { accountId: id(102), accountName: 'Bybit', quantity: '0.2', value: '16000' },
   ],
 });
 const cash = valued(
@@ -67,13 +68,13 @@ const cash = valued(
   { assetType: 'fiat', valuationCurrency: 'USD', priceSource: 'fixed' },
   {
     quantity: '4000',
-    price: { priceUsd: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+    price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
     missingPrice: null,
-    valueUsd: '4000',
+    value: '4000',
     allocationPercent: '4.00',
-    costBasisUsd: '4000',
-    averageBuyPriceUsd: '1',
-    unrealizedPnlUsd: '0',
+    costBasis: '4000',
+    averageBuyPrice: '1',
+    unrealizedPnl: '0',
     unrealizedReturnPercent: '0.00',
   },
 );
@@ -86,7 +87,7 @@ const rubles = valued(
     valuationCurrency: 'RUB',
     priceSource: 'fixed',
   },
-  { quantity: '100000', missingPrice: 'no-rate', valueUsd: null, costBasisUsd: '1200' },
+  { quantity: '100000', missingPrice: 'no-rate', value: null, costBasis: '1200' },
 );
 const toncoin = valued(2, 'Toncoin', 'TON', {
   assetType: 'crypto',
@@ -112,35 +113,38 @@ const depositAsset: PortfolioAsset = {
 function portfolio(assets: AssetValuation[], changes: Partial<PortfolioValuation> = {}) {
   return {
     at: new Date().toISOString(),
-    quoteCurrency: 'USD',
+    currency: 'USD',
+    mainCurrency: 'USD',
+    rates: [],
     completeness: 'complete',
-    totalValueUsd: '100000',
-    pricedSubtotalUsd: '100000',
+    totalValue: '100000',
+    pricedSubtotal: '100000',
     missingPriceCount: 0,
     stalePriceCount: 0,
     unavailableAccountCount: 0,
-    costBasisUsd: '70000',
-    knownCostSubtotalUsd: '70000',
+    costBasis: '70000',
+    knownCostSubtotal: '70000',
     unknownCostCount: 0,
-    unrealizedPnlUsd: '30000',
+    missingRateCount: 0,
+    unrealizedPnl: '30000',
     unrealizedReturnPercent: '42.86',
-    realizedPnlUsd: '-250.5',
-    knownRealizedSubtotalUsd: '-250.5',
+    realizedPnl: '-250.5',
+    knownRealizedSubtotal: '-250.5',
     unknownRealizedCount: 0,
     assets,
     allocation: {
       complete: true,
       byAsset: [
-        { key: bitcoin.instrumentId, label: 'Bitcoin', valueUsd: '96000', percent: '96.00' },
-        { key: cash.instrumentId, label: 'US dollar', valueUsd: '4000', percent: '4.00' },
+        { key: bitcoin.instrumentId, label: 'Bitcoin', value: '96000', percent: '96.00' },
+        { key: cash.instrumentId, label: 'US dollar', value: '4000', percent: '4.00' },
       ],
       byType: [
-        { key: 'crypto', label: 'Crypto', valueUsd: '96000', percent: '96.00' },
-        { key: 'fiat', label: 'Cash', valueUsd: '4000', percent: '4.00' },
+        { key: 'crypto', label: 'Crypto', value: '96000', percent: '96.00' },
+        { key: 'fiat', label: 'Cash', value: '4000', percent: '4.00' },
       ],
       byAccount: [
-        { key: id(101), label: 'Trust Wallet', valueUsd: '80000', percent: '80.00' },
-        { key: id(102), label: 'Bybit', valueUsd: '20000', percent: '20.00' },
+        { key: id(101), label: 'Trust Wallet', value: '80000', percent: '80.00' },
+        { key: id(102), label: 'Bybit', value: '20000', percent: '20.00' },
       ],
     },
     accounts: [],
@@ -182,7 +186,7 @@ describe('PV-UI Portfolio values every asset', () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([bitcoin, cash, rubles, toncoin], {
         completeness: 'incomplete',
-        totalValueUsd: null,
+        totalValue: null,
         missingPriceCount: 1,
         allocation: { ...portfolio([]).allocation, complete: false },
       }),
@@ -260,20 +264,20 @@ describe('PV-UI Portfolio values every asset', () => {
     const stale = {
       ...bitcoin,
       price: { ...bitcoin.price!, observedAt: minutesAgo(180), status: 'stale' as const },
-      costBasisUsd: null,
+      costBasis: null,
       unknownCostQuantity: '0.2',
-      knownCostSubtotalUsd: '50000',
-      averageBuyPriceUsd: '50000',
-      unrealizedPnlUsd: null,
+      knownCostSubtotal: '50000',
+      averageBuyPrice: '50000',
+      unrealizedPnl: null,
       unrealizedReturnPercent: null,
     };
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([stale], {
         stalePriceCount: 1,
-        costBasisUsd: null,
-        knownCostSubtotalUsd: '50000',
+        costBasis: null,
+        knownCostSubtotal: '50000',
         unknownCostCount: 1,
-        unrealizedPnlUsd: null,
+        unrealizedPnl: null,
         unrealizedReturnPercent: null,
       }),
     );
@@ -294,11 +298,11 @@ describe('PV-UI Portfolio values every asset', () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
       portfolio([dust], {
         completeness: 'incomplete',
-        totalValueUsd: null,
+        totalValue: null,
         unavailableAccountCount: 1,
-        costBasisUsd: null,
-        knownCostSubtotalUsd: '70000',
-        unrealizedPnlUsd: null,
+        costBasis: null,
+        knownCostSubtotal: '70000',
+        unrealizedPnl: null,
         unrealizedReturnPercent: null,
         allocation: { ...portfolio([]).allocation, complete: false },
       }),
@@ -397,7 +401,7 @@ describe('PV-UI Portfolio values every asset', () => {
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Rubles' })).toBeInTheDocument();
     expect(screen.getByText('No rate')).toBeInTheDocument();
-    expect(screen.getByText('Rates for EUR and RUB are not collected yet')).toBeInTheDocument();
+    expect(screen.getByText('No Bank of Russia rate stored to show it in USD')).toBeInTheDocument();
     expect(screen.getByText('Nothing held right now.')).toBeInTheDocument();
     cleanup();
     renderAt(`/portfolio/${id(999)}`);
@@ -550,5 +554,193 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('CUR-UI values in the main currency with a switch to the other two', () => {
+  // CUR-SWITCH: 1000 USD at 0.92 EUR per USD (92 and 100 RUB per unit).
+  const eurBitcoin = {
+    ...bitcoin,
+    price: { ...bitcoin.price!, value: '920' },
+    value: '920',
+    allocationPercent: '100.00',
+    costBasis: '828',
+    knownCostSubtotal: '828',
+    averageBuyPrice: '828',
+    unrealizedPnl: '92',
+    unrealizedReturnPercent: '11.11',
+    holdings: [{ accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value: '920' }],
+  };
+  const inEur = portfolio([{ ...eurBitcoin, quantity: '1' }], {
+    currency: 'EUR',
+    mainCurrency: 'EUR',
+    rates: [
+      { currency: 'USD', date: '2026-10-01', rubPerUnit: '92' },
+      { currency: 'EUR', date: '2026-10-01', rubPerUnit: '100' },
+    ],
+    totalValue: '920',
+    pricedSubtotal: '920',
+    costBasis: '828',
+    knownCostSubtotal: '828',
+    unrealizedPnl: '92',
+    unrealizedReturnPercent: '11.11',
+    realizedPnl: '0',
+    knownRealizedSubtotal: '0',
+    allocation: {
+      complete: true,
+      byAsset: [{ key: bitcoin.instrumentId, label: 'Bitcoin', value: '920', percent: '100.00' }],
+      byType: [{ key: 'crypto', label: 'Crypto', value: '920', percent: '100.00' }],
+      byAccount: [{ key: id(101), label: 'Trust Wallet', value: '920', percent: '100.00' }],
+    },
+  });
+
+  it('CUR-SWITCH: shows the main currency first and switches to RUB on request', async () => {
+    const inRub = portfolio([], {
+      ...inEur,
+      currency: 'RUB',
+      totalValue: null,
+      completeness: 'incomplete',
+      rates: [],
+      assets: [
+        {
+          ...eurBitcoin,
+          quantity: '1',
+          price: null,
+          missingPrice: 'no-rate',
+          value: null,
+          costBasis: null,
+          knownCostSubtotal: '0',
+          missingRateQuantity: '1',
+          averageBuyPrice: null,
+          unrealizedPnl: null,
+          unrealizedReturnPercent: null,
+          allocationPercent: null,
+          holdings: [
+            { accountId: id(101), accountName: 'Trust Wallet', quantity: '1', value: null },
+          ],
+        },
+      ],
+      pricedSubtotal: '0',
+      missingPriceCount: 1,
+      costBasis: null,
+      knownCostSubtotal: '0',
+      missingRateCount: 1,
+      unrealizedPnl: null,
+      unrealizedReturnPercent: null,
+      allocation: { complete: false, byAsset: [], byType: [], byAccount: [] },
+    });
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockImplementation(async (currency) => (currency === 'RUB' ? inRub : inEur));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    expect(get).toHaveBeenLastCalledWith(undefined);
+    const switcher = screen.getByRole('radiogroup', { name: 'Currency' });
+    expect(within(switcher).getByRole('radio', { name: 'EUR' })).toBeChecked();
+    const summary = screen.getByRole('region', { name: 'Portfolio summary' });
+    expect(summary).toHaveTextContent('Current value€920.00');
+    expect(summary).toHaveTextContent('Cost basis€828.00');
+    expect(summary).toHaveTextContent('Unrealized P&L+€92.00+11.11%');
+    expect(cells(rowOf('Bitcoin')).slice(2, 7)).toEqual([
+      '€920.00Market price · 30 min ago',
+      '€920.00',
+      '100.00%',
+      '€828.00',
+      '+€92.00+11.11%',
+    ]);
+    expect(
+      screen.getByText(
+        /Bank of Russia rates: 1 USD = 92\.00 RUB \(Oct 1, 2026\), 1 EUR = 100\.00 RUB/,
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(within(switcher).getByRole('radio', { name: 'RUB' }));
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
+    await screen.findByText(/No Bank of Russia rate is stored yet, so values in RUB/);
+    expect(cells(rowOf('Bitcoin')).slice(2, 7)).toEqual([
+      'No rateMarket price',
+      '—',
+      '—',
+      '—',
+      '—',
+    ]);
+    expect(screen.getByRole('region', { name: 'Portfolio summary' })).toHaveTextContent(
+      'Cost basis—₽0.00 known, part predates the stored rates',
+    );
+    expect(
+      screen.getByText(/1 asset has operations dated before the stored Bank of Russia rates/),
+    ).toBeInTheDocument();
+    // The asset page keeps the switched currency.
+    expect(within(rowOf('Bitcoin')).getByRole('link', { name: 'Bitcoin' })).toHaveAttribute(
+      'href',
+      `/portfolio/${bitcoin.instrumentId}?currency=RUB`,
+    );
+  });
+
+  it('marks the chosen currency at once while its values load', async () => {
+    let answer: (value: PortfolioValuation) => void = () => {};
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockImplementation((currency) =>
+      currency === 'RUB'
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve(inEur),
+    );
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    );
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    ).toBeChecked();
+    answer({ ...inEur, currency: 'RUB' });
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+
+    cleanup();
+    let assetAnswer: (value: PortfolioValuation) => void = () => {};
+    get.mockImplementation((currency) =>
+      currency === 'RUB'
+        ? new Promise((resolve) => {
+            assetAnswer = resolve;
+          })
+        : Promise.resolve(inEur),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}?currency=EUR`);
+    await screen.findByRole('region', { name: 'Position' });
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    );
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    ).toBeChecked();
+    assetAnswer({ ...inEur, currency: 'RUB' });
+    await screen.findByRole('region', { name: 'Position' });
+  });
+
+  it('shows one asset in the asked currency', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(inEur);
+    renderAt(`/portfolio/${bitcoin.instrumentId}?currency=EUR`);
+    const position = await screen.findByRole('region', { name: 'Position' });
+    expect(get).toHaveBeenCalledWith('EUR');
+    expect(position).toHaveTextContent('Current value€920.00');
+    expect(position).toHaveTextContent('Cost basis€828.00');
+    expect(screen.getByRole('link', { name: '← Portfolio' })).toHaveAttribute(
+      'href',
+      '/portfolio?currency=EUR',
+    );
+    expect(screen.getByRole('region', { name: 'Holdings' })).toHaveTextContent('€920.00');
   });
 });

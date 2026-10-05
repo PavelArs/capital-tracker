@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import {
+  type AccountingCurrency,
+  FxConverter,
+  isAccountingCurrency,
+} from '../fx-rates/fx-conversion';
+import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { PriceSource } from './asset-classification';
 import {
@@ -9,17 +16,18 @@ import {
   readConnectedLedger,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
-import { projectHistoricalFifo } from './historical-accounting';
 import { parseDecimal, parseUuid } from './input';
 import type { OwnedProjection } from './owned-transfer-fifo';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  type PortfolioPrices,
+  portfolioAccount,
   projectPortfolio,
   type StoredPrice,
 } from './portfolio-valuation';
 
-interface AccountRow {
+export interface AccountRow {
   accountId: string;
   name: string;
   coverageFrom: Date | null;
@@ -30,14 +38,16 @@ interface ManualPriceRow {
   priceUsd: string;
 }
 
-function parseEmptyQuery(query: unknown): void {
-  if (
-    !query ||
-    typeof query !== 'object' ||
-    Array.isArray(query) ||
-    Object.keys(query).length !== 0
-  )
+/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
+function parseQuery(query: unknown): AccountingCurrency | null {
+  if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
+  const keys = Object.keys(query);
+  if (keys.length === 0) return null;
+  const { currency } = query as Record<string, unknown>;
+  if (keys.length !== 1 || keys[0] !== 'currency' || !isAccountingCurrency(currency))
+    throw new BadRequestException('Invalid accounting input');
+  return currency;
 }
 
 /** Latest manual point at or before the instant whose current version is not void. */
@@ -74,104 +84,154 @@ async function latestManualPrices(
   );
 }
 
+export interface ValuationInputs {
+  instruments: PortfolioInstrument[];
+  accounts: AccountRow[];
+  ledgers: ConnectedLedgerCache;
+}
+
+/**
+ * The owner's instruments, accounts and connected ledgers, read once. With `startedBy`,
+ * only accounts whose journal had started by then are replayed.
+ */
+export async function readValuationInputs(
+  manager: EntityManager,
+  owner: string,
+  startedBy?: string,
+): Promise<ValuationInputs> {
+  const instruments: PortfolioInstrument[] = await manager.query(
+    `SELECT id,name,symbol,"assetType","valuationCurrency","priceSource"
+      FROM accounting_instruments WHERE "ownerId"=$1 ORDER BY id`,
+    [owner],
+  );
+  const accounts: AccountRow[] = await manager.query(
+    `SELECT a.id AS "accountId",a.name,j."coverageFrom"
+      FROM manual_accounts a LEFT JOIN account_trade_journals j
+        ON j."ownerId"=a."ownerId" AND j."accountId"=a.id
+      WHERE a."ownerId"=$1 ORDER BY a.id`,
+    [owner],
+  );
+  const ledgers: ConnectedLedgerCache = new Map();
+  try {
+    for (const row of accounts) {
+      if (!row.coverageFrom || ledgers.has(row.accountId)) continue;
+      if (startedBy !== undefined && row.coverageFrom.toISOString() > startedBy) continue;
+      // One replay per connected component, shared by all of its accounts.
+      const ledger = await readConnectedLedger(manager, owner, [row.accountId]);
+      for (const id of ledger.accounts.keys()) ledgers.set(id, ledger);
+    }
+  } catch (error) {
+    rethrowAccountingHistory(error);
+  }
+  return { instruments, accounts, ledgers };
+}
+
+/**
+ * Every account's FIFO lots and realizations at one instant. An account whose journal starts
+ * later is unknown then, unless `emptyBeforeCoverage` and it carried nothing in: such an
+ * account held nothing before its first operation.
+ */
+export function accountsAt(
+  inputs: ValuationInputs,
+  at: string,
+  options: { emptyBeforeCoverage?: boolean } = {},
+): PortfolioAccountInput[] {
+  const accounts: PortfolioAccountInput[] = [];
+  const projections = new Map<ConnectedLedger, OwnedProjection>();
+  try {
+    for (const row of inputs.accounts) {
+      const identity = { accountId: row.accountId, name: row.name };
+      const ledger = inputs.ledgers.get(row.accountId);
+      const started = !!row.coverageFrom && row.coverageFrom.toISOString() <= at;
+      const empty =
+        options.emptyBeforeCoverage &&
+        ledger?.accounts.get(row.accountId)?.initialLots.length === 0;
+      if (!ledger || (!started && !empty)) {
+        accounts.push({
+          ...identity,
+          coverage: row.coverageFrom ? 'before-coverage' : 'not-started',
+          lots: [],
+          realizations: [],
+        });
+        continue;
+      }
+      const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
+      projections.set(ledger, projection);
+      accounts.push(
+        portfolioAccount(
+          identity,
+          projection.accounts.get(row.accountId)!,
+          {
+            ...ledger.accounts.get(row.accountId)!,
+            linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+          },
+          projection.swapAllocations,
+        ),
+      );
+    }
+  } catch (error) {
+    rethrowAccountingHistory(error);
+  }
+  return accounts;
+}
+
+/** Stored market prices by code and manual prices by instrument, latest at or before `at`. */
+export async function latestPortfolioPrices(
+  manager: EntityManager,
+  owner: string,
+  instruments: readonly PortfolioInstrument[],
+  at: Date,
+): Promise<PortfolioPrices> {
+  const bySource = (source: PriceSource) =>
+    instruments.filter((instrument) => instrument.priceSource === source);
+  const market = await latestMarketPrices(manager, marketCodes(instruments), at);
+  const manual = await latestManualPrices(
+    manager,
+    owner,
+    bySource('manual').map((instrument) => instrument.id),
+    at,
+  );
+  return {
+    market: new Map(
+      market.map((row) => [
+        row.asset,
+        { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
+      ]),
+    ),
+    manual,
+  };
+}
+
+/** Market codes of the instruments priced from stored market prices. */
+export function marketCodes(instruments: readonly PortfolioInstrument[]): string[] {
+  return [
+    ...new Set(
+      instruments.flatMap((instrument) =>
+        instrument.priceSource === 'market' && instrument.symbol
+          ? [instrument.symbol.toUpperCase()]
+          : [],
+      ),
+    ),
+  ];
+}
+
 @Injectable()
 export class PortfolioValuationService {
   constructor(private readonly source: DataSource) {}
 
   async read(ownerId: string, rawQuery: unknown, now = new Date()) {
     const owner = parseUuid(ownerId);
-    parseEmptyQuery(rawQuery);
+    const asked = parseQuery(rawQuery);
     const at = now.toISOString();
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const instruments: PortfolioInstrument[] = await manager.query(
-        `SELECT id,name,symbol,"assetType","valuationCurrency","priceSource"
-          FROM accounting_instruments WHERE "ownerId"=$1 ORDER BY id`,
-        [owner],
-      );
-      const rows: AccountRow[] = await manager.query(
-        `SELECT a.id AS "accountId",a.name,j."coverageFrom"
-          FROM manual_accounts a LEFT JOIN account_trade_journals j
-            ON j."ownerId"=a."ownerId" AND j."accountId"=a.id
-          WHERE a."ownerId"=$1 ORDER BY a.id`,
-        [owner],
-      );
-      const accounts: PortfolioAccountInput[] = [];
-      const ledgers: ConnectedLedgerCache = new Map();
-      const projections = new Map<ConnectedLedger, OwnedProjection>();
-      try {
-        for (const row of rows) {
-          const identity = { accountId: row.accountId, name: row.name };
-          if (!row.coverageFrom || row.coverageFrom.toISOString() > at) {
-            accounts.push({
-              ...identity,
-              coverage: row.coverageFrom ? 'before-coverage' : 'not-started',
-              positions: [],
-              realizations: [],
-            });
-            continue;
-          }
-          // One replay per connected component, shared by all of its accounts.
-          const ledger =
-            ledgers.get(row.accountId) ??
-            (await readConnectedLedger(manager, owner, [row.accountId]));
-          for (const id of ledger.accounts.keys()) ledgers.set(id, ledger);
-          const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
-          projections.set(ledger, projection);
-          const account = ledger.accounts.get(row.accountId)!;
-          const fifo = projection.accounts.get(row.accountId)!;
-          accounts.push({
-            ...identity,
-            coverage: 'covered',
-            positions: projectHistoricalFifo(fifo, account.initialLots).positions,
-            realizations: [
-              ...fifo.realizations.map(({ instrumentId, realizedUsd }) => ({
-                instrumentId,
-                realizedUsd,
-              })),
-              // A swap realizes its outgoing asset.
-              ...(account.swaps ?? []).flatMap((swap) => {
-                const allocation = projection.swapAllocations.get(swap.swapId);
-                return allocation
-                  ? [
-                      {
-                        instrumentId: swap.outgoingInstrumentId,
-                        realizedUsd: allocation.realizedUsd,
-                      },
-                    ]
-                  : [];
-              }),
-            ],
-          });
-        }
-      } catch (error) {
-        rethrowAccountingHistory(error);
-      }
-      const bySource = (source: PriceSource) =>
-        instruments.filter((instrument) => instrument.priceSource === source);
-      const codes = [
-        ...new Set(
-          bySource('market').flatMap((instrument) =>
-            instrument.symbol ? [instrument.symbol.toUpperCase()] : [],
-          ),
-        ),
-      ];
-      const market = await latestMarketPrices(manager, codes, now);
-      const manual = await latestManualPrices(
-        manager,
-        owner,
-        bySource('manual').map((instrument) => instrument.id),
-        now,
-      );
-      return projectPortfolio(now, instruments, accounts, {
-        market: new Map(
-          market.map((row) => [
-            row.asset,
-            { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-          ]),
-        ),
-        manual,
-      });
+      const inputs = await readValuationInputs(manager, owner, at);
+      const accounts = accountsAt(inputs, at);
+      const prices = await latestPortfolioPrices(manager, owner, inputs.instruments, now);
+      const mainCurrency = await readMainCurrency(manager, owner);
+      const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
+      const report = projectPortfolio(now, inputs.instruments, accounts, prices, fx);
+      return { ...report, mainCurrency };
     });
   }
 }

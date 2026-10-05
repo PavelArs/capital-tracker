@@ -33,6 +33,22 @@ function Instrument({
     </>
   );
 }
+/** A USD amount and, for a trade paid in RUB or EUR, the amount as paid. */
+function Paid({ usd, paid }: { usd: string; paid?: { currency: string; amount: string } }) {
+  return (
+    <>
+      {usd}
+      {paid && (
+        <>
+          <br />
+          <small>
+            оплачено {paid.amount} {paid.currency}
+          </small>
+        </>
+      )}
+    </>
+  );
+}
 function More({
   next,
   disabled,
@@ -484,8 +500,18 @@ export function TradeResults({
                       : 'Продажа'}
                 </td>
                 <td>{trade.quantity}</td>
-                <td>{trade.grossUsd}</td>
-                <td>{trade.feeUsd}</td>
+                <td>
+                  <Paid
+                    usd={trade.grossUsd}
+                    paid={trade.paid && { currency: trade.paid.currency, amount: trade.paid.gross }}
+                  />
+                </td>
+                <td>
+                  <Paid
+                    usd={trade.feeUsd}
+                    paid={trade.paid && { currency: trade.paid.currency, amount: trade.paid.fee }}
+                  />
+                </td>
                 <td>
                   <div className="trade-actions">
                     {trade.kind !== 'void' && (
@@ -795,8 +821,22 @@ export function TradeResults({
                       {trade.orderWithinTimestamp}
                     </td>
                     <td>{trade.quantity}</td>
-                    <td>{trade.grossUsd}</td>
-                    <td>{trade.feeUsd}</td>
+                    <td>
+                      <Paid
+                        usd={trade.grossUsd}
+                        paid={
+                          trade.paid && { currency: trade.paid.currency, amount: trade.paid.gross }
+                        }
+                      />
+                    </td>
+                    <td>
+                      <Paid
+                        usd={trade.feeUsd}
+                        paid={
+                          trade.paid && { currency: trade.paid.currency, amount: trade.paid.fee }
+                        }
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
