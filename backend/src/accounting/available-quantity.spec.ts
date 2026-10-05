@@ -1,5 +1,10 @@
 import type { FifoSwap } from './asset-swap-types';
-import { availableQuantity, firstShortfall, withoutTrade } from './available-quantity';
+import {
+  availableQuantity,
+  firstShortfall,
+  withoutOperation,
+  withoutTrade,
+} from './available-quantity';
 import { FifoHistoryError, type FifoTrade } from './fifo';
 import { calculateOwnedTransfers } from './owned-transfer-fifo';
 import type { ActiveTransferInput, OwnedAccountInput } from './owned-transfer-types';
@@ -108,6 +113,35 @@ describe('OPS-OVERSPEND available quantity is the lowest balance from the date o
     const editing = withoutTrade(history, wallet, uuid(2));
     expect(availableQuantity(editing, wallet, btc, at('2026-05-01'))).toBe('1');
     expect(history.accounts.get(wallet)!.trades).toHaveLength(2);
+  });
+
+  it('counts a transfer or reward being edited as not there (PR-OPS-2)', () => {
+    const moved = ledger(
+      [
+        { accountId: wallet, trades: [trade(1, 'buy', '1', '2026-03-01')] },
+        { accountId: exchange },
+      ],
+      [
+        {
+          transferId: uuid(50),
+          version: 1,
+          fromAccountId: wallet,
+          toAccountId: exchange,
+          instrumentId: btc,
+          occurredAt: at('2026-04-01'),
+          orderWithinTimestamp: 0,
+          quantity: '0.6',
+          feeInstrumentId: btc,
+          feeQuantity: '0.1',
+        },
+      ],
+    );
+    expect(availableQuantity(moved, wallet, btc, at('2026-04-01'))).toBe('0.3');
+    const editing = withoutOperation(moved, `transfer:${uuid(50)}`);
+    expect(availableQuantity(editing, wallet, btc, at('2026-04-01'))).toBe('1');
+    expect(availableQuantity(editing, exchange, btc, at('2026-04-01'))).toBe('0');
+    expect(withoutOperation(moved, `trade:${uuid(1)}`).accounts.get(wallet)!.trades).toEqual([]);
+    expect(moved.transfers).toHaveLength(1);
   });
 
   it('follows transfers, swaps, rewards and carried-in lots of the account', () => {

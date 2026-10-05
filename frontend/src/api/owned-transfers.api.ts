@@ -32,7 +32,9 @@ export interface TransferReceipt {
   transfer: TransferVersion;
 }
 
-export interface TransferCommand extends TransferMovement {
+/** Without an order the server places the transfer after every operation at its instant. */
+export interface TransferCommand extends Omit<TransferMovement, 'orderWithinTimestamp'> {
+  orderWithinTimestamp?: number;
   requestId: string;
   expectedFromJournalRevision: number;
   expectedToJournalRevision: number;

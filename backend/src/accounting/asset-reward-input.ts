@@ -11,7 +11,8 @@ interface RewardFields {
   instrumentId: string;
   category: RewardCategory;
   occurredAt: string;
-  orderWithinTimestamp: number;
+  /** null: place after every event already at this instant (M9, OPS-SAME-DAY). */
+  orderWithinTimestamp: number | null;
   quantity: string;
   acquisitionBasisUsd: string | null;
   incomeValueUsd: string | null;
@@ -64,7 +65,8 @@ function fields(row: Record<string, unknown>): RewardFields {
     instrumentId: parseUuid(row.instrumentId),
     category: row.category,
     occurredAt: parseAsOf(row.occurredAt),
-    orderWithinTimestamp: integer(row.orderWithinTimestamp, 0, 2147483647),
+    orderWithinTimestamp:
+      'orderWithinTimestamp' in row ? integer(row.orderWithinTimestamp, 0, 2147483647) : null,
     quantity: parseDecimal(row.quantity, true),
     acquisitionBasisUsd:
       row.acquisitionBasisUsd === null ? null : parseDecimal(row.acquisitionBasisUsd, false),

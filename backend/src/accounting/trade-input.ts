@@ -3,6 +3,7 @@ import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
 import { isPaidCurrency, type TradePaymentInput } from './paid-currency';
+import { isTradePurpose, purposeSide } from './trade-purpose';
 import { type SettlementCurrency, settlementCurrencies } from './trade-settlement';
 
 export interface JournalInitializationInput {
@@ -102,6 +103,7 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     'paid',
     'comment',
     'settlementCurrency',
+    'purpose',
   ]);
   if (row.side !== 'buy' && row.side !== 'sell') return bad();
   const quantity = parseDecimal(row.quantity, true);
@@ -117,6 +119,7 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     canonicalDecimalToAtoms(gross) + canonicalDecimalToAtoms(fee) > MAX_INPUT_ATOMS
   )
     return bad();
+  const purpose = parsePurpose(row, amounts);
   return {
     requestId: parseUuid(row.requestId),
     expectedJournalRevision: integer(row.expectedJournalRevision, 10000),
@@ -129,7 +132,24 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     ...amounts,
     ...parseComment(row.comment),
     ...parseSettlement(row.settlementCurrency, amounts.paid?.currency ?? 'USD'),
+    ...purpose,
   };
+}
+
+/**
+ * Income, expense, gift or fee (PR-OPS-2) on the side it moves the asset. Its money comes
+ * from or goes to outside, so it settles in no cash; a fee is all fee, its value given as
+ * both the gross and the fee in USD.
+ */
+function parsePurpose(
+  row: Record<string, unknown>,
+  amounts: { grossUsd?: string; feeUsd?: string; paid?: TradePaymentInput },
+): Pick<TradeFields, 'purpose'> {
+  if (row.purpose === undefined) return {};
+  if (!isTradePurpose(row.purpose) || purposeSide[row.purpose] !== row.side) return bad();
+  if (row.settlementCurrency !== undefined) return bad();
+  if (row.purpose === 'fee' && (amounts.paid || amounts.grossUsd !== amounts.feeUsd)) return bad();
+  return { purpose: row.purpose };
 }
 
 /** RUB and EUR cash settles a trade paid in that currency; USD and stablecoins one in USD. */
@@ -213,15 +233,24 @@ export interface AvailableQuery {
   instrumentId: string;
   at: string;
   excludeTradeId?: string;
+  /** An operation being edited, as the operation list names it: `trade:`, `reward:` or `transfer:` and its id. */
+  exclude?: string;
 }
 
 export function parseAvailableQuery(input: unknown): AvailableQuery {
-  const row = object(input, ['instrumentId', 'at', 'excludeTradeId']);
+  const row = object(input, ['instrumentId', 'at', 'excludeTradeId', 'exclude']);
   return {
     instrumentId: parseUuid(row.instrumentId),
     at: parseAsOf(row.at),
     ...(row.excludeTradeId === undefined ? {} : { excludeTradeId: parseUuid(row.excludeTradeId) }),
+    ...(row.exclude === undefined ? {} : { exclude: parseExcluded(row.exclude) }),
   };
+}
+
+function parseExcluded(value: unknown): string {
+  const match = typeof value === 'string' ? /^(trade|reward|transfer):(.+)$/.exec(value) : null;
+  if (!match) throw new BadRequestException('Invalid accounting input');
+  return `${match[1]}:${parseUuid(match[2])}`;
 }
 
 export function parseTradeHistoryQuery(input: unknown): TradeHistoryQuery {

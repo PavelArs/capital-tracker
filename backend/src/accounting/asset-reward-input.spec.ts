@@ -60,7 +60,10 @@ describe('REWARD-001/006 strict command input', () => {
     for (const key of Object.keys(valid())) {
       const value = { ...valid() } as Record<string, unknown>;
       delete value[key];
-      invalid(() => parseRewardCreate(value));
+      // M9: without an order the reward goes after every event at its instant.
+      if (key === 'orderWithinTimestamp')
+        expect(parseRewardCreate(value)).toMatchObject({ orderWithinTimestamp: null });
+      else invalid(() => parseRewardCreate(value));
     }
     for (const value of [false, 1, 'true', null, {}, []])
       invalid(() => parseRewardCreate({ ...valid(), assertReward: value }));

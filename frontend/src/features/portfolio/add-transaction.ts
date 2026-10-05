@@ -1,6 +1,8 @@
+import type { RewardCommand } from '@api/asset-rewards.api';
 import type { FxRatesReport } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
-import type { TradeCommand } from '@api/trades.api';
+import type { TransferCommand } from '@api/owned-transfers.api';
+import type { TradeCommand, TradePurpose } from '@api/trades.api';
 
 // "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
 // (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8). The
@@ -38,6 +40,45 @@ export interface TransactionEntry {
   fee: string;
   comment: string;
 }
+
+/**
+ * The window's types (M9, PR-OPS-2): Buy, Sell, Transfer, Income and Expense, and under More
+ * Reward, Airdrop, Gift and Fee. A gift is received or sent.
+ */
+export type EntryKind =
+  | 'buy'
+  | 'sell'
+  | 'transfer'
+  | 'income'
+  | 'expense'
+  | 'reward'
+  | 'airdrop'
+  | 'gift-received'
+  | 'gift-sent'
+  | 'fee';
+
+/** Kinds recorded as a buy or sale with a purpose: their value is money in or out. */
+const purposeKinds = {
+  income: 'income',
+  expense: 'expense',
+  'gift-received': 'gift-received',
+  'gift-sent': 'gift-sent',
+  fee: 'fee',
+} as const satisfies Partial<Record<EntryKind, TradePurpose>>;
+type PurposeKind = keyof typeof purposeKinds;
+export const isPurposeKind = (kind: EntryKind): kind is PurposeKind => kind in purposeKinds;
+/** Kinds that take coins out of the account: limited to what it holds then. */
+export const spends = (kind: EntryKind) =>
+  kind === 'sell' ||
+  kind === 'expense' ||
+  kind === 'gift-sent' ||
+  kind === 'fee' ||
+  kind === 'transfer';
+/** Kinds with a value in USD instead of a price paid in a currency. */
+export const valued = (kind: EntryKind) =>
+  isPurposeKind(kind) || kind === 'reward' || kind === 'airdrop';
+/** A reward or airdrop may have no known value: it then counts in net worth, not in profit. */
+export const valueOptional = (kind: EntryKind) => kind === 'reward' || kind === 'airdrop';
 
 export const MAX_COMMENT_LENGTH = 500;
 
@@ -86,15 +127,21 @@ export type EntryProblem =
   | 'fee'
   | 'comment';
 
-export function problems(entry: TransactionEntry, today: string): Set<EntryProblem> {
+export function problems(
+  entry: TransactionEntry,
+  today: string,
+  kind: EntryKind = entry.side,
+): Set<EntryProblem> {
   const found = new Set<EntryProblem>();
+  const priced = kind === 'buy' || kind === 'sell';
   if (!entry.instrumentId) found.add('instrument');
   if (positive(entry.amount) === null) found.add('amount');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(entry.date) || entry.date > today) found.add('date');
   if (entry.time && !/^\d{2}:\d{2}$/.test(entry.time)) found.add('time');
-  if (positive(entry.total) === null) found.add('total');
-  if (needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
-  if (entry.fee && decimal(entry.fee) === null) found.add('fee');
+  if (kind !== 'transfer' && positive(entry.total) === null)
+    if (!valueOptional(kind) || entry.total.trim()) found.add('total');
+  if (priced && needsRate(entry.currency) && positive(entry.rate) === null) found.add('rate');
+  if ((priced || kind === 'transfer') && entry.fee && decimal(entry.fee) === null) found.add('fee');
   if ([...entry.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
 }
@@ -102,6 +149,36 @@ export function problems(entry: TransactionEntry, today: string): Set<EntryProbl
 /** The instant the entry stands for: its date at the time given, or at 00:00 UTC. */
 export const occurredAt = (entry: Pick<TransactionEntry, 'date' | 'time'>) =>
   `${entry.date}T${entry.time || '00:00'}:00.000Z`;
+
+/** Two nonnegative decimal strings as integers of the same scale, and that scale. */
+function scaledPair(left: string, right: string): [bigint, bigint, number] {
+  const [leftWhole, leftFraction = ''] = left.split('.');
+  const [rightWhole, rightFraction = ''] = right.split('.');
+  const places = Math.max(leftFraction.length, rightFraction.length);
+  const scaled = (whole: string, fraction: string) => BigInt(whole + fraction.padEnd(places, '0'));
+  return [scaled(leftWhole, leftFraction), scaled(rightWhole, rightFraction), places];
+}
+
+function unscaled(value: bigint, places: number): string {
+  if (value <= 0n) return '0';
+  if (places === 0) return String(value);
+  const padded = String(value).padStart(places + 1, '0');
+  const fraction = padded.slice(-places).replace(/0+$/, '');
+  const whole = padded.slice(0, -places);
+  return fraction ? `${whole}.${fraction}` : whole;
+}
+
+/** Exact sum of two nonnegative decimal strings, as a transfer spends its amount and fee. */
+export function addDecimal(left: string, right: string): string {
+  const [a, b, places] = scaledPair(left, right);
+  return unscaled(a + b, places);
+}
+
+/** Exact difference of two nonnegative decimal strings, never below 0. */
+export function subtractDecimal(left: string, right: string): string {
+  const [a, b, places] = scaledPair(left, right);
+  return unscaled(a - b, places);
+}
 
 /** Exact comparison of two nonnegative decimal strings: -1, 0 or 1. */
 export function compareDecimal(left: string, right: string): number {
@@ -113,7 +190,28 @@ export function compareDecimal(left: string, right: string): number {
   return difference < 0n ? -1 : difference > 0n ? 1 : 0;
 }
 
-/** A saved trade as the window shows it for editing (OPS-EDIT). */
+/** The window's type for a saved operation, or null for one it does not edit. */
+export function entryKind(operation: Operation): EntryKind | null {
+  switch (operation.type) {
+    case 'buy':
+    case 'sell':
+    case 'income':
+    case 'expense':
+    case 'fee':
+    case 'airdrop':
+      return operation.type;
+    case 'transfer':
+      return operation.kind === 'transfer' ? 'transfer' : null;
+    case 'reward':
+      return operation.kind === 'reward' ? 'reward' : null;
+    case 'gift':
+      return operation.direction === 'out' ? 'gift-sent' : 'gift-received';
+    default:
+      return null;
+  }
+}
+
+/** A saved operation as the window shows it for editing (OPS-EDIT). */
 export function entryFromOperation(operation: Operation): TransactionEntry {
   const at = operation.occurredAt;
   const time = at.slice(11, 16);
@@ -122,8 +220,10 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
   // A trade settled in USDT or USDC keeps that choice; otherwise the amounts tell it.
   const kept = operation.settlement?.asset.symbol?.toUpperCase();
   const stable = kept === 'USDT' || kept === 'USDC' ? kept : null;
+  // A transfer's fee is in the coin moved; every other fee is money.
+  const shownFee = operation.kind === 'transfer' ? (operation.fee?.quantity ?? '0') : fee;
   return {
-    side: operation.type === 'sell' ? 'sell' : 'buy',
+    side: operation.direction === 'out' ? 'sell' : 'buy',
     instrumentId: operation.asset.instrumentId ?? '',
     amount: operation.quantity,
     date: at.slice(0, 10),
@@ -132,7 +232,7 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
     currency: paid ? paid.currency : (stable ?? 'USD'),
     rate: paid?.rateSource === 'owner' ? paid.perUsd : '',
     rateEdited: paid?.rateSource === 'owner',
-    fee: Number(fee) === 0 ? '' : fee,
+    fee: Number(shownFee) === 0 || operation.type === 'fee' ? '' : shownFee,
     comment: operation.comment ?? '',
   };
 }
@@ -172,5 +272,78 @@ export function tradeFromEntry(
       fee,
       ...(entry.rateEdited ? { perUsd: decimal(entry.rate)! } : {}),
     },
+  };
+}
+
+/**
+ * Income, an expense, a gift or a fee as the server takes it (PR-OPS-2): a buy or sale with
+ * that purpose, its value in USD and no settlement, so the value is money in or out. A fee is
+ * all fee: what it costs is what it was worth.
+ */
+export function purposeTradeFromEntry(
+  entry: TransactionEntry,
+  kind: PurposeKind,
+  identity: { requestId: string; expectedJournalRevision: number },
+  orderWithinTimestamp?: number,
+): TradeCommand {
+  const value = decimal(entry.total)!;
+  const comment = entry.comment.trim();
+  const purpose = purposeKinds[kind];
+  return {
+    instrumentId: entry.instrumentId,
+    side: purpose === 'income' || purpose === 'gift-received' ? 'buy' : 'sell',
+    occurredAt: occurredAt(entry),
+    ...(orderWithinTimestamp === undefined ? {} : { orderWithinTimestamp }),
+    quantity: decimal(entry.amount)!,
+    grossUsd: value,
+    feeUsd: purpose === 'fee' ? value : '0',
+    purpose,
+    ...(comment ? { comment } : {}),
+    ...identity,
+  };
+}
+
+/** A reward or airdrop: what it was worth is both its income and its cost basis. */
+export function rewardFromEntry(
+  entry: TransactionEntry,
+  kind: 'reward' | 'airdrop',
+  identity: { requestId: string; expectedJournalRevision: number },
+  orderWithinTimestamp?: number,
+): RewardCommand {
+  const value = positive(entry.total);
+  return {
+    ...identity,
+    assertReward: true,
+    instrumentId: entry.instrumentId,
+    category: kind === 'airdrop' ? 'airdrop' : 'other',
+    occurredAt: occurredAt(entry),
+    ...(orderWithinTimestamp === undefined ? {} : { orderWithinTimestamp }),
+    quantity: decimal(entry.amount)!,
+    acquisitionBasisUsd: value,
+    incomeValueUsd: value,
+  };
+}
+
+/** A move between two of the owner's accounts; the fee, if any, is paid in the same coin. */
+export function transferFromEntry(
+  entry: TransactionEntry,
+  identity: {
+    requestId: string;
+    expectedFromJournalRevision: number;
+    expectedToJournalRevision: number;
+  },
+  orderWithinTimestamp?: number,
+): TransferCommand {
+  const fee = entry.fee ? decimal(entry.fee)! : '0';
+  const paidFee = Number(fee) > 0;
+  return {
+    ...identity,
+    assertInternal: true,
+    instrumentId: entry.instrumentId,
+    occurredAt: occurredAt(entry),
+    ...(orderWithinTimestamp === undefined ? {} : { orderWithinTimestamp }),
+    quantity: decimal(entry.amount)!,
+    feeInstrumentId: paidFee ? entry.instrumentId : null,
+    feeQuantity: paidFee ? fee : '0',
   };
 }

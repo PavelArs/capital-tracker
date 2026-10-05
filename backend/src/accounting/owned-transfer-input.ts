@@ -12,17 +12,21 @@ export interface TransferMovement {
   feeInstrumentId: string | null;
   feeQuantity: string;
 }
+/** A requested movement; a null order places it after every event already at its instant. */
+export type RequestedMovement = Omit<TransferMovement, 'orderWithinTimestamp'> & {
+  orderWithinTimestamp: number | null;
+};
 interface AccountPins {
   expectedFromJournalRevision: number;
   expectedToJournalRevision: number;
 }
-export interface TransferCreateInput extends TransferMovement, AccountPins {
+export interface TransferCreateInput extends RequestedMovement, AccountPins {
   requestId: string;
   fromAccountId: string;
   toAccountId: string;
   assertInternal: true;
 }
-export interface TransferCorrectionInput extends TransferMovement, AccountPins {
+export interface TransferCorrectionInput extends RequestedMovement, AccountPins {
   requestId: string;
   expectedVersion: number;
   assertInternal: true;
@@ -75,7 +79,7 @@ function pins(row: Record<string, unknown>) {
     expectedToJournalRevision: integer(row.expectedToJournalRevision, 0, 10000),
   };
 }
-function movement(row: Record<string, unknown>): TransferMovement & { assertInternal: true } {
+function movement(row: Record<string, unknown>): RequestedMovement & { assertInternal: true } {
   if (row.assertInternal !== true) return bad();
   const feeQuantity = parseDecimal(row.feeQuantity, false);
   const feeInstrumentId = row.feeInstrumentId === null ? null : parseUuid(row.feeInstrumentId);
@@ -84,7 +88,8 @@ function movement(row: Record<string, unknown>): TransferMovement & { assertInte
     assertInternal: true,
     instrumentId: parseUuid(row.instrumentId),
     occurredAt: parseAsOf(row.occurredAt),
-    orderWithinTimestamp: integer(row.orderWithinTimestamp, 0, 2147483647),
+    orderWithinTimestamp:
+      'orderWithinTimestamp' in row ? integer(row.orderWithinTimestamp, 0, 2147483647) : null,
     quantity: parseDecimal(row.quantity, true),
     feeInstrumentId,
     feeQuantity,

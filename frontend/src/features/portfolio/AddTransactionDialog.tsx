@@ -1,6 +1,8 @@
 import { accountingApi } from '@api/accounting.api';
+import { assetRewardsApi } from '@api/asset-rewards.api';
 import { fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
+import { ownedTransfersApi } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
@@ -10,11 +12,16 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import {
+  addDecimal,
   bankRate,
   compareDecimal,
+  decimal,
+  type EntryKind,
   type EntryProblem,
   entryFromOperation,
+  entryKind,
   isCashOf,
+  isPurposeKind,
   MAX_COMMENT_LENGTH,
   needsRate,
   occurredAt,
@@ -22,10 +29,17 @@ import {
   paidIn,
   positive,
   problems,
+  purposeTradeFromEntry,
+  rewardFromEntry,
+  spends,
+  subtractDecimal,
   type TransactionEntry,
   tradeFromEntry,
+  transferFromEntry,
   trimmed,
   usdTotal,
+  valued,
+  valueOptional,
 } from './add-transaction';
 import { money, price, quantity } from './format';
 
@@ -106,9 +120,40 @@ export async function journalAccounts(): Promise<Account[]> {
 interface Props {
   onClose: () => void;
   onSaved: () => void;
-  /** A recorded buy or sell to correct (OPS-EDIT); without it the window adds one. */
+  /** A recorded operation to correct (OPS-EDIT); without it the window adds one. */
   editing?: Operation;
 }
+
+/** The window's types: five in view and four under More (accepted prototype). */
+const mainKinds = [
+  ['buy', 'Buy'],
+  ['sell', 'Sell'],
+  ['transfer', 'Transfer'],
+  ['income', 'Income'],
+  ['expense', 'Expense'],
+] as const satisfies readonly (readonly [EntryKind, string])[];
+const moreKinds = [
+  ['reward', 'Reward'],
+  ['airdrop', 'Airdrop'],
+  ['gift-received', 'Gift'],
+  ['fee', 'Fee'],
+] as const satisfies readonly (readonly [EntryKind, string])[];
+const isMoreKind = (kind: EntryKind) =>
+  kind === 'reward' || kind === 'airdrop' || kind === 'fee' || kind.startsWith('gift');
+/** Which records a type is saved as: an edit keeps to the same kind of record. */
+const family = (kind: EntryKind) =>
+  kind === 'transfer' ? 'transfer' : kind === 'reward' || kind === 'airdrop' ? 'reward' : 'trade';
+
+/** What a value means for the capital, under the Value field. */
+const valueHints: Partial<Record<EntryKind, string>> = {
+  income: 'Counts as money added and becomes the cost of these coins.',
+  'gift-received': 'Counts as money added and becomes the cost of these coins.',
+  expense: 'Counts as money taken out of your capital.',
+  'gift-sent': 'Counts as money taken out of your capital.',
+  fee: 'Counts as a cost: the coins leave without money coming back.',
+  reward: 'Becomes the cost of these coins and counts as a gain. Leave it empty if unknown.',
+  airdrop: 'Becomes the cost of these coins and counts as a gain. Leave it empty if unknown.',
+};
 
 const blankEntry = (): TransactionEntry => ({
   side: 'buy',
@@ -127,11 +172,15 @@ const blankEntry = (): TransactionEntry => ({
 type Availability = { key: string; quantity: string | null };
 /** A coin not yet among the assets, added with the trade (prototype "Other asset"). */
 type OtherAsset = { ticker: string; name: string };
-const tickerPattern = /^[A-Za-z0-9.\-]{1,32}$/;
+const tickerPattern = /^[A-Za-z0-9.-]{1,32}$/;
 
 // "Add transaction" from the accepted prototype: buy or sell, paid in USD, USDT, USDC, EUR or RUB.
 export default function AddTransactionDialog({ onClose, onSaved, editing }: Props) {
   const [initial] = useState(() => (editing ? entryFromOperation(editing) : blankEntry()));
+  const [kind, setKind] = useState<EntryKind>(() => (editing && entryKind(editing)) || 'buy');
+  const [moreShown, setMoreShown] = useState(() => isMoreKind(kind));
+  // A transfer's receiving account; the sending one is the account below.
+  const [toAccountId, setToAccountId] = useState(editing?.counterAccount?.id ?? '');
   const [assets, setAssets] = useState<PortfolioAsset[] | null>(null);
   // Every asset, cash included: the account's cash in the paid currency is one of them.
   const [allAssets, setAllAssets] = useState<PortfolioAsset[]>([]);
@@ -197,6 +246,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
         setAccounts(withJournal);
         if (!editing) {
           setAccountId(withJournal[0]?.id ?? '');
+          setToAccountId(withJournal[1]?.id ?? '');
           setEntry((current) => ({ ...current, instrumentId: tradable[0]?.id ?? '' }));
         }
       })
@@ -244,8 +294,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const rateLoading = rateKey !== null && bank?.key !== rateKey;
   const shown: TransactionEntry = entry.rateEdited ? entry : { ...entry, rate: prefill ?? '' };
 
-  // A sale cannot take more than the account holds on its date or later (OPS-OVERSPEND).
-  const sell = entry.side === 'sell';
+  // A sale cannot take more than the account holds on its date or later (OPS-OVERSPEND), nor
+  // can an expense, a gift sent, a fee or a transfer with its fee.
+  const sell = spends(kind);
+  const buy = kind === 'buy';
+  const transfer = kind === 'transfer';
   const at = occurredAt(entry);
   const availableKey =
     sell &&
@@ -263,7 +316,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       .available(account, {
         instrumentId,
         at: instant,
-        ...(editing ? { excludeTradeId: editing.id.replace(/^trade:/, '') } : {}),
+        ...(editing ? { exclude: editing.id } : {}),
       })
       .then((result) => live && setAvailability({ key: availableKey, quantity: result.quantity }))
       .catch(() => live && setAvailability({ key: availableKey, quantity: null }));
@@ -279,7 +332,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     (item) => isCashOf(item, entry.currency) && item.id !== entry.instrumentId,
   );
   const cashKey =
-    !sell &&
+    buy &&
     // A new asset typed as the cash itself buys it, not with it.
     other?.ticker.trim().toUpperCase() !== entry.currency &&
     cashAsset &&
@@ -296,7 +349,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       .available(account, {
         instrumentId,
         at: instant,
-        ...(editing ? { excludeTradeId: editing.id.replace(/^trade:/, '') } : {}),
+        ...(editing ? { exclude: editing.id } : {}),
       })
       .then((result) => live && setCashAvailability({ key: cashKey, quantity: result.quantity }))
       .catch(() => live && setCashAvailability({ key: cashKey, quantity: null }));
@@ -306,8 +359,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   }, [cashKey, editing]);
   const cash = cashKey && cashAvailability?.key === cashKey ? cashAvailability.quantity : null;
   const typedAmount = positive(entry.amount);
-  const overspent =
-    available !== null && typedAmount !== null && compareDecimal(typedAmount, available) > 0;
+  // A transfer's fee leaves the sending account in the same coin.
+  const typedFee = transfer && entry.fee ? decimal(entry.fee) : null;
+  const spent = typedAmount && typedFee ? addDecimal(typedAmount, typedFee) : typedAmount;
+  const overspent = available !== null && spent !== null && compareDecimal(spent, available) > 0;
 
   const update = (value: Partial<TransactionEntry>) =>
     setEntry((current) => ({ ...current, ...value }));
@@ -320,11 +375,29 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const checked: TransactionEntry = other
     ? { ...shown, instrumentId: otherValid ? 'other' : '' }
     : shown;
-  const found = tried ? problems(checked, today()) : new Set<EntryProblem>();
-  const usd = usdTotal(shown);
-  const buy = entry.side === 'buy';
+  const found = tried ? problems(checked, today(), kind) : new Set<EntryProblem>();
+  const priced = kind === 'buy' || kind === 'sell';
+  const usd = priced ? usdTotal(shown) : null;
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
-  const useAll = () => available !== null && setAmount(available);
+  const sameAccount = transfer && toAccountId === accountId;
+  const fewAccounts = transfer && (accounts?.length ?? 0) < 2;
+  // Use all leaves room for a transfer's fee.
+  const useAll = () => {
+    if (available === null) return;
+    setAmount(typedFee ? subtractDecimal(available, typedFee) : available);
+  };
+
+  /** Switching type keeps the asset, amount and date; a value is always in USD. */
+  const choose = (next: EntryKind) => {
+    setKind(next);
+    update({
+      side: spends(next) ? 'sell' : 'buy',
+      ...(next === 'buy' || next === 'sell'
+        ? {}
+        : { currency: 'USD', rate: '', rateEdited: false }),
+    });
+    if (spends(next)) setOther(null);
+  };
 
   // Price per unit and total follow each other: the field typed last decides.
   const setAmount = (amount: string) => {
@@ -353,6 +426,9 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const rateShown = needsRate(entry.currency) ? positive(shown.rate) : '1';
   const marketPrice =
     marketUsd && rateShown ? trimmed(Number(marketUsd) * Number(rateShown), 2) : null;
+  // What the amount is worth at today's market price, for the Value field.
+  const marketValue =
+    marketUsd && typedAmount ? trimmed(Number(marketUsd) * Number(typedAmount), 2) : null;
 
   // How much of the buy the account's cash pays; the rest is money from outside.
   const totalTyped = positive(shown.total);
@@ -386,26 +462,80 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     event.preventDefault();
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
-    if (problems(checked, today()).size || !account || overspent) return;
+    const receiver = accounts?.find((item) => item.id === toAccountId);
+    if (problems(checked, today(), kind).size || !account || overspent) return;
+    if (transfer && (!receiver || sameAccount)) return;
     setSaving(true);
     setError(null);
     try {
       const instrumentId = other ? await otherAssetId() : shown.instrumentId;
       const traded = allAssets.find((item) => item.id === instrumentId);
-      // An edit at the same date and time keeps the trade's exact instant and place in it.
+      const record = { ...shown, instrumentId };
+      // An edit at the same date and time keeps the operation's exact instant and place in it.
       const sameMoment = editing && occurredAt(shown) === occurredAt(initial);
-      const command = tradeFromEntry(
-        { ...shown, instrumentId },
-        { requestId: '', expectedJournalRevision: account.journalRevision },
-        sameMoment ? editing.orderWithinTimestamp : undefined,
-        !(traded && isCashOf(traded, entry.currency)),
-      );
-      if (sameMoment) command.occurredAt = editing.occurredAt;
-      const key = JSON.stringify({ accountId, ...command });
-      if (attempt.current?.body !== key) attempt.current = { body: key, requestId: newRequestId() };
-      const saved = { ...command, requestId: attempt.current.requestId };
-      if (editing) await tradesApi.correct(accountId, editing.id.replace(/^trade:/, ''), saved);
-      else await tradesApi.create(accountId, saved);
+      const order = sameMoment ? editing.orderWithinTimestamp : undefined;
+      const instant = sameMoment ? { occurredAt: editing.occurredAt } : {};
+      // The same typed request keeps its request id, so a retry never saves it twice.
+      const requestId = (body: object) => {
+        const key = JSON.stringify({ accountId, toAccountId, kind, ...body });
+        if (attempt.current?.body !== key)
+          attempt.current = { body: key, requestId: newRequestId() };
+        return attempt.current.requestId;
+      };
+      if (transfer && receiver) {
+        const command = {
+          ...transferFromEntry(
+            record,
+            {
+              requestId: '',
+              expectedFromJournalRevision: account.journalRevision,
+              expectedToJournalRevision: receiver.journalRevision,
+            },
+            order,
+          ),
+          ...instant,
+        };
+        const saved = { ...command, requestId: requestId(command) };
+        if (editing)
+          await ownedTransfersApi.correct(editing.id.replace(/^transfer:/, ''), {
+            ...saved,
+            expectedVersion: editing.version ?? 0,
+          });
+        else await ownedTransfersApi.create({ ...saved, fromAccountId: accountId, toAccountId });
+      } else if (kind === 'reward' || kind === 'airdrop') {
+        const command = {
+          ...rewardFromEntry(
+            record,
+            kind,
+            { requestId: '', expectedJournalRevision: account.journalRevision },
+            order,
+          ),
+          ...instant,
+        };
+        const saved = { ...command, requestId: requestId(command) };
+        if (editing)
+          await assetRewardsApi.correct(accountId, editing.id.replace(/^reward:/, ''), {
+            ...saved,
+            expectedVersion: editing.version ?? 0,
+          });
+        else await assetRewardsApi.create(accountId, saved);
+      } else {
+        const identity = { requestId: '', expectedJournalRevision: account.journalRevision };
+        const command = {
+          ...(isPurposeKind(kind)
+            ? purposeTradeFromEntry(record, kind, identity, order)
+            : tradeFromEntry(
+                record,
+                identity,
+                order,
+                !(traded && isCashOf(traded, entry.currency)),
+              )),
+          ...instant,
+        };
+        const saved = { ...command, requestId: requestId(command) };
+        if (editing) await tradesApi.correct(accountId, editing.id.replace(/^trade:/, ''), saved);
+        else await tradesApi.create(accountId, saved);
+      }
       onSaved();
     } catch (caught) {
       setError(failure(caught));
@@ -443,28 +573,77 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               <span id={`${id}-type`} className="portfolio-field__label">
                 Type
               </span>
-              <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
-                {(
-                  [
-                    ['buy', 'Buy'],
-                    ['sell', 'Sell'],
-                  ] as const
-                ).map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="radio"
-                      name={`${id}-side`}
-                      value={value}
-                      checked={entry.side === value}
-                      onChange={() => {
-                        update({ side: value });
-                        if (value === 'sell') setOther(null);
-                      }}
-                    />
-                    {label}
-                  </label>
-                ))}
+              <div className="portfolio-types">
+                <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-type`}>
+                  {mainKinds.map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="radio"
+                        name={`${id}-kind`}
+                        value={value}
+                        checked={kind === value}
+                        disabled={Boolean(editing) && family(value) !== family(kind)}
+                        onChange={() => choose(value)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  className="portfolio-types__more"
+                  aria-expanded={moreShown}
+                  aria-controls={`${id}-more-types`}
+                  onClick={() => setMoreShown(!moreShown)}
+                >
+                  More {moreShown ? '▴' : '▾'}
+                </button>
               </div>
+              {moreShown && (
+                <div
+                  id={`${id}-more-types`}
+                  className="shell-seg"
+                  role="radiogroup"
+                  aria-label="More types"
+                >
+                  {moreKinds.map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="radio"
+                        name={`${id}-kind`}
+                        value={value}
+                        checked={
+                          value === 'gift-received' ? kind.startsWith('gift') : kind === value
+                        }
+                        disabled={Boolean(editing) && family(value) !== family(kind)}
+                        onChange={() => choose(value)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {kind.startsWith('gift') && (
+                <div className="shell-seg" role="radiogroup" aria-label="Gift">
+                  {(
+                    [
+                      ['gift-received', 'Received'],
+                      ['gift-sent', 'Sent'],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="radio"
+                        name={`${id}-gift`}
+                        value={value}
+                        checked={kind === value}
+                        onChange={() => choose(value)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
             {loadFailed ? (
               <p className="portfolio-dialog__error" role="alert">
@@ -512,7 +691,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {item.symbol ?? item.name}
                       </button>
                     ))}
-                    {buy && !editing && (
+                    {!sell && !editing && (
                       <button
                         type="button"
                         className="portfolio-chip portfolio-chip--asset"
@@ -607,154 +786,264 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     {fieldError('date')}
                   </div>
                 </div>
-                <div className="portfolio-row">
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-unit`}>
-                      Price per {unitSymbol}
-                    </label>
-                    <span className="portfolio-affix">
-                      <input
-                        id={`${id}-unit`}
-                        className="portfolio-input"
-                        inputMode="decimal"
-                        placeholder="0.00"
-                        value={unit}
-                        onChange={(event) => setUnitPrice(event.target.value)}
-                      />
-                      <span className="portfolio-affix__suffix">{entry.currency}</span>
-                    </span>
-                    {marketPrice && (
-                      <span className="portfolio-field__hint">
-                        Market today{' '}
-                        {needsRate(entry.currency)
-                          ? `${quantity(marketPrice)} ${entry.currency}`
-                          : price(marketUsd ?? null, 'USD')}{' '}
-                        ·{' '}
-                        <button
-                          type="button"
-                          className="portfolio-link"
-                          onClick={() => setUnitPrice(marketPrice)}
-                        >
-                          Use
-                        </button>
+                {priced && (
+                  <>
+                    <div className="portfolio-row">
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-unit`}>
+                          Price per {unitSymbol}
+                        </label>
+                        <span className="portfolio-affix">
+                          <input
+                            id={`${id}-unit`}
+                            className="portfolio-input"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={unit}
+                            onChange={(event) => setUnitPrice(event.target.value)}
+                          />
+                          <span className="portfolio-affix__suffix">{entry.currency}</span>
+                        </span>
+                        {marketPrice && (
+                          <span className="portfolio-field__hint">
+                            Market today{' '}
+                            {needsRate(entry.currency)
+                              ? `${quantity(marketPrice)} ${entry.currency}`
+                              : price(marketUsd ?? null, 'USD')}{' '}
+                            ·{' '}
+                            <button
+                              type="button"
+                              className="portfolio-link"
+                              onClick={() => setUnitPrice(marketPrice)}
+                            >
+                              Use
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-total`}>
+                          {buy ? 'Total paid' : 'Total received'}
+                        </label>
+                        <span className="portfolio-affix">
+                          <input
+                            id={`${id}-total`}
+                            className="portfolio-input"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={entry.total}
+                            onChange={(event) => setTotal(event.target.value)}
+                            {...invalid('total')}
+                          />
+                          <span className="portfolio-affix__suffix">{entry.currency}</span>
+                        </span>
+                        {fieldError(
+                          'total',
+                          buy ? 'Enter what you paid' : 'Enter what you received',
+                        )}
+                      </div>
+                    </div>
+                    <div className="portfolio-field">
+                      <span id={`${id}-currency`} className="portfolio-field__label">
+                        {buy ? 'Paid in' : 'Received in'}
                       </span>
+                      <div
+                        className="shell-seg"
+                        role="radiogroup"
+                        aria-labelledby={`${id}-currency`}
+                      >
+                        {paidIn.map((code: PaidIn) => (
+                          <label key={code}>
+                            <input
+                              type="radio"
+                              name={`${id}-currency`}
+                              value={code}
+                              checked={entry.currency === code}
+                              onChange={() =>
+                                update({ currency: code, rate: '', rateEdited: false })
+                              }
+                            />
+                            {code}
+                          </label>
+                        ))}
+                      </div>
+                      {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
+                        <span className="portfolio-field__hint">
+                          {entry.currency} is counted 1:1 with USD.
+                        </span>
+                      )}
+                      {sell
+                        ? !(asset && isCashOf(asset, entry.currency)) && (
+                            <span className="portfolio-field__hint">
+                              The {entry.currency} received stays in {accountName} as cash.
+                            </span>
+                          )
+                        : fromCash !== null &&
+                          totalTyped !== null && (
+                            <span className="portfolio-field__hint">
+                              {compareDecimal(fromCash, totalTyped) === 0
+                                ? `Paid from the ${entry.currency} cash in ${accountName}.`
+                                : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
+                            </span>
+                          )}
+                    </div>
+                    {needsRate(entry.currency) && (
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-rate`}>
+                          Exchange rate
+                        </label>
+                        <span className="portfolio-affix portfolio-affix--wide">
+                          <input
+                            id={`${id}-rate`}
+                            className="portfolio-input"
+                            inputMode="decimal"
+                            placeholder={rateLoading ? 'Loading…' : ''}
+                            value={shown.rate}
+                            onChange={(event) =>
+                              update({ rate: event.target.value, rateEdited: true })
+                            }
+                            aria-describedby={`${id}-rate-hint`}
+                            {...invalid('rate')}
+                          />
+                          <span className="portfolio-affix__suffix">
+                            {entry.currency} per 1 USD
+                          </span>
+                        </span>
+                        {fieldError('rate')}
+                        <span className="portfolio-field__hint" id={`${id}-rate-hint`}>
+                          {entry.rateEdited
+                            ? 'Your rate is used for this transaction. '
+                            : prefill
+                              ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
+                              : rateLoading
+                                ? ''
+                                : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
+                          {entry.rateEdited && prefill && (
+                            <button
+                              type="button"
+                              className="portfolio-link"
+                              onClick={() => update({ rate: '', rateEdited: false })}
+                            >
+                              Use Bank of Russia rate {prefill}
+                            </button>
+                          )}
+                          {!entry.rateEdited && 'Totals are kept in USD.'}
+                        </span>
+                      </div>
                     )}
-                  </div>
+                  </>
+                )}
+                {valued(kind) && (
                   <div className="portfolio-field">
                     <label className="portfolio-field__label" htmlFor={`${id}-total`}>
-                      {buy ? 'Total paid' : 'Total received'}
+                      Value{valueOptional(kind) ? ' (optional)' : ''}
                     </label>
                     <span className="portfolio-affix">
                       <input
                         id={`${id}-total`}
                         className="portfolio-input"
                         inputMode="decimal"
-                        placeholder="0.00"
+                        placeholder={marketValue ?? '0.00'}
                         value={entry.total}
-                        onChange={(event) => setTotal(event.target.value)}
+                        onChange={(event) => update({ total: event.target.value })}
+                        aria-describedby={`${id}-value-hint`}
                         {...invalid('total')}
                       />
-                      <span className="portfolio-affix__suffix">{entry.currency}</span>
+                      <span className="portfolio-affix__suffix">USD</span>
                     </span>
-                    {fieldError('total', buy ? 'Enter what you paid' : 'Enter what you received')}
-                  </div>
-                </div>
-                <div className="portfolio-field">
-                  <span id={`${id}-currency`} className="portfolio-field__label">
-                    {buy ? 'Paid in' : 'Received in'}
-                  </span>
-                  <div className="shell-seg" role="radiogroup" aria-labelledby={`${id}-currency`}>
-                    {paidIn.map((code: PaidIn) => (
-                      <label key={code}>
-                        <input
-                          type="radio"
-                          name={`${id}-currency`}
-                          value={code}
-                          checked={entry.currency === code}
-                          onChange={() => update({ currency: code, rate: '', rateEdited: false })}
-                        />
-                        {code}
-                      </label>
-                    ))}
-                  </div>
-                  {(entry.currency === 'USDT' || entry.currency === 'USDC') && (
-                    <span className="portfolio-field__hint">
-                      {entry.currency} is counted 1:1 with USD.
-                    </span>
-                  )}
-                  {sell
-                    ? !(asset && isCashOf(asset, entry.currency)) && (
-                        <span className="portfolio-field__hint">
-                          The {entry.currency} received stays in {accountName} as cash.
-                        </span>
-                      )
-                    : fromCash !== null &&
-                      totalTyped !== null && (
-                        <span className="portfolio-field__hint">
-                          {compareDecimal(fromCash, totalTyped) === 0
-                            ? `Paid from the ${entry.currency} cash in ${accountName}.`
-                            : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
-                        </span>
+                    {fieldError('total', 'Enter what it was worth on that date')}
+                    <span className="portfolio-field__hint" id={`${id}-value-hint`}>
+                      What it was worth on that date. {valueHints[kind]}
+                      {marketValue && (
+                        <>
+                          {' '}
+                          Market today {money(marketValue, 'USD')} ·{' '}
+                          <button
+                            type="button"
+                            className="portfolio-link"
+                            onClick={() => update({ total: marketValue })}
+                          >
+                            Use
+                          </button>
+                        </>
                       )}
-                </div>
-                {needsRate(entry.currency) && (
-                  <div className="portfolio-field">
-                    <label className="portfolio-field__label" htmlFor={`${id}-rate`}>
-                      Exchange rate
-                    </label>
-                    <span className="portfolio-affix portfolio-affix--wide">
-                      <input
-                        id={`${id}-rate`}
-                        className="portfolio-input"
-                        inputMode="decimal"
-                        placeholder={rateLoading ? 'Loading…' : ''}
-                        value={shown.rate}
-                        onChange={(event) => update({ rate: event.target.value, rateEdited: true })}
-                        aria-describedby={`${id}-rate-hint`}
-                        {...invalid('rate')}
-                      />
-                      <span className="portfolio-affix__suffix">{entry.currency} per 1 USD</span>
-                    </span>
-                    {fieldError('rate')}
-                    <span className="portfolio-field__hint" id={`${id}-rate-hint`}>
-                      {entry.rateEdited
-                        ? 'Your rate is used for this transaction. '
-                        : prefill
-                          ? 'Bank of Russia rate on the selected date, filled in automatically. Change it if you paid a different rate. '
-                          : rateLoading
-                            ? ''
-                            : 'No Bank of Russia rate is stored for this date; enter the rate you paid. '}
-                      {entry.rateEdited && prefill && (
-                        <button
-                          type="button"
-                          className="portfolio-link"
-                          onClick={() => update({ rate: '', rateEdited: false })}
-                        >
-                          Use Bank of Russia rate {prefill}
-                        </button>
-                      )}
-                      {!entry.rateEdited && 'Totals are kept in USD.'}
                     </span>
                   </div>
                 )}
-                <div className="portfolio-field">
-                  <label className="portfolio-field__label" htmlFor={`${id}-account`}>
-                    Wallet or account
-                  </label>
-                  <select
-                    id={`${id}-account`}
-                    className="portfolio-input"
-                    value={accountId}
-                    disabled={Boolean(editing)}
-                    onChange={(event) => setAccountId(event.target.value)}
-                  >
-                    {accounts.map((account) => (
-                      <option key={account.id} value={account.id}>
-                        {account.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {transfer ? (
+                  <>
+                    <div className="portfolio-row">
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+                          From
+                        </label>
+                        <select
+                          id={`${id}-account`}
+                          className="portfolio-input"
+                          value={accountId}
+                          disabled={Boolean(editing)}
+                          onChange={(event) => setAccountId(event.target.value)}
+                        >
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-to`}>
+                          To
+                        </label>
+                        <select
+                          id={`${id}-to`}
+                          className="portfolio-input"
+                          value={toAccountId}
+                          disabled={Boolean(editing)}
+                          onChange={(event) => setToAccountId(event.target.value)}
+                          {...(tried && sameAccount
+                            ? { 'aria-invalid': true, 'aria-describedby': `${id}-to-error` }
+                            : {})}
+                        >
+                          {accounts.map((account) => (
+                            <option key={account.id} value={account.id}>
+                              {account.name}
+                            </option>
+                          ))}
+                        </select>
+                        {tried && sameAccount && (
+                          <span className="portfolio-field__error" id={`${id}-to-error`}>
+                            Choose a different wallet
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <p className="portfolio-field__hint">
+                      {fewAccounts
+                        ? 'Add a second wallet or account to move coins between them.'
+                        : 'Transfers move coins between your wallets and keep their purchase price. No price needed.'}
+                    </p>
+                  </>
+                ) : (
+                  <div className="portfolio-field">
+                    <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+                      Wallet or account
+                    </label>
+                    <select
+                      id={`${id}-account`}
+                      className="portfolio-input"
+                      value={accountId}
+                      disabled={Boolean(editing)}
+                      onChange={(event) => setAccountId(event.target.value)}
+                    >
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 <details
                   className="portfolio-more"
                   open={
@@ -764,7 +1053,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     found.has('comment')
                   }
                 >
-                  <summary>More options: time, fee, comment</summary>
+                  <summary>
+                    {priced || transfer
+                      ? 'More options: time, fee, comment'
+                      : 'More options: time, comment'}
+                  </summary>
                   <div className="portfolio-row">
                     <div className="portfolio-field">
                       <label className="portfolio-field__label" htmlFor={`${id}-time`}>
@@ -780,24 +1073,28 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                       {fieldError('time')}
                     </div>
-                    <div className="portfolio-field">
-                      <label className="portfolio-field__label" htmlFor={`${id}-fee`}>
-                        Fee (optional)
-                      </label>
-                      <span className="portfolio-affix">
-                        <input
-                          id={`${id}-fee`}
-                          className="portfolio-input"
-                          inputMode="decimal"
-                          placeholder="0.00"
-                          value={entry.fee}
-                          onChange={(event) => update({ fee: event.target.value })}
-                          {...invalid('fee')}
-                        />
-                        <span className="portfolio-affix__suffix">{entry.currency}</span>
-                      </span>
-                      {fieldError('fee')}
-                    </div>
+                    {(priced || transfer) && (
+                      <div className="portfolio-field">
+                        <label className="portfolio-field__label" htmlFor={`${id}-fee`}>
+                          Fee (optional)
+                        </label>
+                        <span className="portfolio-affix">
+                          <input
+                            id={`${id}-fee`}
+                            className="portfolio-input"
+                            inputMode="decimal"
+                            placeholder="0.00"
+                            value={entry.fee}
+                            onChange={(event) => update({ fee: event.target.value })}
+                            {...invalid('fee')}
+                          />
+                          <span className="portfolio-affix__suffix">
+                            {transfer ? symbol : entry.currency}
+                          </span>
+                        </span>
+                        {fieldError('fee')}
+                      </div>
+                    )}
                   </div>
                   <div className="portfolio-field">
                     <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
@@ -825,6 +1122,9 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           <div className="portfolio-dialog__foot">
             <span className="portfolio-dialog__summary">
               {usd !== null && `${buy ? 'Cost' : 'Proceeds'} ${money(String(usd), 'USD')}`}
+              {valued(kind) &&
+                positive(entry.total) !== null &&
+                `Value ${money(positive(entry.total), 'USD')}`}
             </span>
             <button
               type="button"
@@ -837,7 +1137,14 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
             <button
               type="submit"
               className="shell-button shell-button--primary"
-              disabled={saving || rateLoading || !ready || !accounts?.length || !assets?.length}
+              disabled={
+                saving ||
+                (priced && rateLoading) ||
+                !ready ||
+                !accounts?.length ||
+                !assets?.length ||
+                fewAccounts
+              }
             >
               {editing ? 'Save changes' : 'Save transaction'}
             </button>

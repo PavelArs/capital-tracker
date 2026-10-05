@@ -39,7 +39,9 @@ const signed = (value: string) =>
  * is no flow (OPS-SELL-CASH), and a buy spends that cash first, so only the rest of its cost
  * is a deposit (OPS-BUY-CASH). A trade without a cash side, like every trade before M9, is
  * settled with money from outside the app: a buy deposits its gross plus fee and a sell
- * withdraws its proceeds net of fee. Holdings carried into a
+ * withdraws its proceeds net of fee. Income and a gift received are such a buy, an expense and
+ * a gift sent such a sale, each at its value; a fee spends the asset for nothing and is no
+ * flow (PR-OPS-2). Holdings carried into a
  * journal enter at its start with their carried cost, stated at their acquisition date's
  * rate like their cost basis. Own transfers, swaps and rewards move no money in or out, so
  * their effect (a transfer fee, a reward) is market effect. The legacy owner-declared USD
@@ -61,7 +63,8 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
           rateDate: moscowDate(lot.acquiredAt),
         });
       for (const trade of account.trades) {
-        if (trade.settlement && trade.side === 'sell') continue;
+        // A sale kept as cash moves no money; a fee only lowers the return (PR-OPS-2).
+        if ((trade.settlement && trade.side === 'sell') || trade.purpose === 'fee') continue;
         // The part of a buy's cost the account's cash paid, in USD and as paid.
         const cash = settlementLeg(trade);
         const flow = (gross: bigint, fee: bigint, spent: bigint) =>

@@ -13,7 +13,11 @@ export type OperationType =
   | 'airdrop'
   | 'opening-balance'
   | 'deposit'
-  | 'withdrawal';
+  | 'withdrawal'
+  | 'income'
+  | 'expense'
+  | 'gift'
+  | 'fee';
 
 export interface OperationAsset {
   instrumentId: string | null;

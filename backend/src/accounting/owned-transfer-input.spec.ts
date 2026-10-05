@@ -59,7 +59,10 @@ describe('TRANSFER-002 strict canonical command boundary', () => {
       for (const key of Object.keys(valid)) {
         const input: Record<string, unknown> = { ...valid };
         delete input[key];
-        expect(() => parse(input)).toThrow(BadRequestException);
+        // M9: without an order the transfer goes after every event at its instant.
+        if (key === 'orderWithinTimestamp')
+          expect(parse(input)).toMatchObject({ orderWithinTimestamp: null });
+        else expect(() => parse(input)).toThrow(BadRequestException);
       }
       for (const raw of [null, false, '1', 1, [], Object.create(valid)])
         expect(() => parse(raw)).toThrow(BadRequestException);

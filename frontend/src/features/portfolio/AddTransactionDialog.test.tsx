@@ -1,6 +1,8 @@
 import { accountingApi } from '@api/accounting.api';
+import { assetRewardsApi, type RewardReceipt } from '@api/asset-rewards.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
+import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
@@ -10,7 +12,18 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AddTransactionDialog from './AddTransactionDialog';
-import { bankRate, decimal, type TransactionEntry, tradeFromEntry } from './add-transaction';
+import {
+  addDecimal,
+  bankRate,
+  decimal,
+  problems,
+  purposeTradeFromEntry,
+  rewardFromEntry,
+  subtractDecimal,
+  type TransactionEntry,
+  tradeFromEntry,
+  transferFromEntry,
+} from './add-transaction';
 
 // Synthetic accounts, assets, dates and rates only (CUR-PAID-RUB).
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -119,6 +132,50 @@ describe('PAID-ENTRY the transaction entry becomes a trade in the currency paid'
       expect(trade).toMatchObject({ grossUsd: '1000', feeUsd: '1.5' });
       expect(trade).not.toHaveProperty('paid');
     }
+  });
+  it('PR-OPS-2 builds income, a fee, a reward and a transfer from the entry', () => {
+    const usd = { ...entry, currency: 'USD' as const, total: '850', amount: '0.01' };
+    expect(purposeTradeFromEntry(usd, 'income', identity)).toEqual({
+      instrumentId: id(1),
+      side: 'buy',
+      occurredAt: '2025-06-02T00:00:00.000Z',
+      quantity: '0.01',
+      grossUsd: '850',
+      feeUsd: '0',
+      purpose: 'income',
+      ...identity,
+    });
+    expect(purposeTradeFromEntry(usd, 'fee', identity, 1)).toMatchObject({
+      side: 'sell',
+      grossUsd: '850',
+      feeUsd: '850',
+      purpose: 'fee',
+      orderWithinTimestamp: 1,
+    });
+    expect(rewardFromEntry({ ...usd, total: '' }, 'reward', identity)).toMatchObject({
+      category: 'other',
+      acquisitionBasisUsd: null,
+      incomeValueUsd: null,
+    });
+    const moved = transferFromEntry(
+      { ...usd, fee: '0,0001' },
+      { requestId: id(9), expectedFromJournalRevision: 4, expectedToJournalRevision: 0 },
+    );
+    expect(moved).toMatchObject({ feeInstrumentId: id(1), feeQuantity: '0.0001' });
+    expect(moved).not.toHaveProperty('orderWithinTimestamp');
+    expect(
+      transferFromEntry(usd, {
+        requestId: id(9),
+        expectedFromJournalRevision: 4,
+        expectedToJournalRevision: 0,
+      }),
+    ).toMatchObject({ feeInstrumentId: null, feeQuantity: '0' });
+    expect(addDecimal('0.4999', '0.0001')).toBe('0.5');
+    expect(subtractDecimal('0.5', '0.0001')).toBe('0.4999');
+    expect(subtractDecimal('0.0001', '0.5')).toBe('0');
+    expect(problems({ ...usd, total: '' }, '2026-01-01', 'airdrop').has('total')).toBe(false);
+    expect(problems({ ...usd, total: '' }, '2026-01-01', 'expense').has('total')).toBe(true);
+    expect(problems({ ...usd, total: '' }, '2026-01-01', 'transfer').size).toBe(0);
   });
 });
 
@@ -316,6 +373,137 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     );
   });
 
+  it('PR-OPS-2 records income at its value as money added, without a settlement', async () => {
+    const user = userEvent.setup();
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Income' }));
+    expect(view.queryByLabelText('Price per BTC')).not.toBeInTheDocument();
+    expect(view.queryByRole('radiogroup', { name: 'Paid in' })).not.toBeInTheDocument();
+    await user.type(view.getByLabelText('Amount'), '0.01');
+    expect(view.getByText(/Counts as money added/)).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(view.getByText('Enter what it was worth on that date')).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    // Market today: 0.01 BTC at the latest price.
+    await user.click(view.getByRole('button', { name: 'Use' }));
+    expect(view.getByLabelText('Value')).toHaveValue('850.53');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create).toHaveBeenCalledWith(id(11), {
+      instrumentId: id(1),
+      side: 'buy',
+      occurredAt: expect.stringMatching(/T00:00:00\.000Z$/),
+      quantity: '0.01',
+      grossUsd: '850.53',
+      feeUsd: '0',
+      purpose: 'income',
+      requestId: expect.any(String),
+      expectedJournalRevision: 4,
+    });
+  });
+
+  it('PR-OPS-2 limits a gift sent and a fee to what the account holds', async () => {
+    const user = userEvent.setup();
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '0.2',
+    }));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('button', { name: 'More ▾' }));
+    await user.click(view.getByRole('radio', { name: 'Gift' }));
+    await user.click(view.getByRole('radio', { name: 'Sent' }));
+    expect(view.queryByRole('button', { name: '+ Other asset' })).not.toBeInTheDocument();
+    expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
+    await user.type(view.getByLabelText('Amount'), '0.3');
+    expect(view.getByRole('alert')).toHaveTextContent(/Only 0\.2 BTC is available/);
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '0.1');
+    await user.type(view.getByLabelText('Value'), '8000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create.mock.calls[0][1]).toMatchObject({
+      side: 'sell',
+      quantity: '0.1',
+      grossUsd: '8000',
+      feeUsd: '0',
+      purpose: 'gift-sent',
+    });
+    expect(create.mock.calls[0][1]).not.toHaveProperty('settlementCurrency');
+  });
+
+  it('PR-OPS-2 moves coins between two accounts with the fee in the same coin', async () => {
+    const user = userEvent.setup();
+    const transferCreate = vi
+      .spyOn(ownedTransfersApi, 'create')
+      .mockResolvedValue({} as TransferReceipt);
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '0.5',
+    }));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    expect(view.queryByLabelText('Wallet or account')).not.toBeInTheDocument();
+    expect(view.getByLabelText('From')).toHaveValue(id(11));
+    expect(view.getByLabelText('To')).toHaveValue(id(12));
+    await user.click(view.getByText('More options: time, fee, comment'));
+    await user.type(view.getByLabelText('Fee (optional)'), '0.0001');
+    await user.click(await view.findByRole('button', { name: 'Use all' }));
+    expect(view.getByLabelText('Amount')).toHaveValue('0.4999');
+    await user.selectOptions(view.getByLabelText('To'), 'Hardware wallet');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(view.getByText('Choose a different wallet')).toBeInTheDocument();
+    await user.selectOptions(view.getByLabelText('To'), 'Exchange');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(transferCreate).toHaveBeenCalledWith({
+      requestId: expect.any(String),
+      expectedFromJournalRevision: 4,
+      expectedToJournalRevision: 7,
+      assertInternal: true,
+      instrumentId: id(1),
+      occurredAt: expect.any(String),
+      quantity: '0.4999',
+      feeInstrumentId: id(1),
+      feeQuantity: '0.0001',
+      fromAccountId: id(11),
+      toAccountId: id(13),
+    });
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('PR-OPS-2 saves an airdrop of unknown value as a reward without a cost', async () => {
+    const user = userEvent.setup();
+    const rewardCreate = vi.spyOn(assetRewardsApi, 'create').mockResolvedValue({} as RewardReceipt);
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('button', { name: 'More ▾' }));
+    await user.click(view.getByRole('radio', { name: 'Airdrop' }));
+    await user.click(view.getByRole('button', { name: /ETH$/ }));
+    await user.type(view.getByLabelText('Amount'), '5');
+    expect(view.getByLabelText('Value (optional)')).toHaveValue('');
+    await user.selectOptions(view.getByLabelText('Wallet or account'), 'No journal');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(rewardCreate).toHaveBeenCalledWith(id(12), {
+      requestId: expect.any(String),
+      expectedJournalRevision: 0,
+      assertReward: true,
+      instrumentId: id(2),
+      category: 'airdrop',
+      occurredAt: expect.any(String),
+      quantity: '5',
+      acquisitionBasisUsd: null,
+      incomeValueUsd: null,
+    });
+  });
+
   it('OPS-OVERSPEND shows what the account holds on the date, refuses more and fills Use all', async () => {
     const user = userEvent.setup();
     available.mockImplementation(async (accountId, query) => ({
@@ -412,6 +600,53 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       requestId: expect.any(String),
       expectedJournalRevision: 4,
     });
+  });
+
+  it('PR-OPS-2 corrects a transfer in place; other kinds of record stay unavailable', async () => {
+    const user = userEvent.setup();
+    const correctTransfer = vi
+      .spyOn(ownedTransfersApi, 'correct')
+      .mockResolvedValue({} as TransferReceipt);
+    const { dialog, onSaved } = await open({
+      ...recorded,
+      id: `transfer:${id(40)}`,
+      kind: 'transfer',
+      type: 'transfer',
+      direction: 'internal',
+      valueUsd: null,
+      feeUsd: null,
+      fee: { asset: recorded.asset, quantity: '0.0001' },
+      comment: null,
+      counterAccount: { id: id(13), name: 'Exchange' },
+      version: 3,
+    });
+    const view = within(dialog);
+    expect(view.getByRole('radio', { name: 'Transfer' })).toBeChecked();
+    expect(view.getByRole('radio', { name: 'Buy' })).toBeDisabled();
+    expect(view.getByLabelText('From')).toBeDisabled();
+    expect(view.getByLabelText('To')).toHaveValue(id(13));
+    expect(view.getByLabelText('Fee (optional)')).toHaveValue('0.0001');
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '0.02');
+    await user.click(view.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(correctTransfer).toHaveBeenCalledWith(id(40), {
+      requestId: expect.any(String),
+      expectedFromJournalRevision: 4,
+      expectedToJournalRevision: 7,
+      expectedVersion: 3,
+      assertInternal: true,
+      instrumentId: id(1),
+      occurredAt: '2025-06-13T00:00:00.000Z',
+      orderWithinTimestamp: 2,
+      quantity: '0.02',
+      feeInstrumentId: id(1),
+      feeQuantity: '0.0001',
+    });
+    expect(available).toHaveBeenCalledWith(
+      id(11),
+      expect.objectContaining({ exclude: `transfer:${id(40)}` }),
+    );
   });
 
   it('OPS-EDIT moved to another date lets the server place it and names what it would break', async () => {

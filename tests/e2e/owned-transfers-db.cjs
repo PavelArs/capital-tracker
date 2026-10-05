@@ -142,9 +142,9 @@ async function populatedUpgrade() {
     await prior.query(`INSERT INTO assets("userId",name,category,amount,"currencyId",date)
       SELECT $1,'Preserved unrelated fixture','savings',123.45,id,'2025-01-01' FROM currencies WHERE code='USD'`, [owner]);
     const old = await fingerprint(prior, ['migrations'], true);
-    assert.match(migrate(previousDatabase), /Migrations applied: 11/);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 30);
-    assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements'], true), old);
+    assert.match(migrate(previousDatabase), /Migrations applied: 12/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
+    assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes'], true), old);
     assert.deepEqual(await prior.query('SELECT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
     for (const table of [...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']) assert.equal((await prior.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
@@ -233,10 +233,11 @@ async function correctionVoidAndPrivacy(db, s, f) {
   stage = 'TRANSFER-002/003-D coverage, privacy, correction and graph split';
   const { a, b, input } = await setup(s, f, 'Lifecycle');
   const later = await account(s, f.owner, 'Later origin', '2025-01-04T00:00:00.000Z');
+  // Expecting revision 0 starts an empty journal (PR-OPS-2); any other revision is stale.
   const uninitialized = await account(s, f.owner, 'Uninitialized', null);
   const foreign = await account(s, f.other, 'Foreign account');
   for (const [patch, code] of [[{ toAccountId: later }, 409], [{ toAccountId: a }, 409],
-    [{ toAccountId: uninitialized }, 409], [{ toAccountId: foreign }, 404],
+    [{ toAccountId: uninitialized, expectedToJournalRevision: 1 }, 409], [{ toAccountId: foreign }, 404],
     [{ instrumentId: f.foreignToken }, 404], [{ feeInstrumentId: f.foreignToken }, 404],
     [{ assertInternal: false }, 400], [{ quantity: 1.5 }, 400], [{ feeQuantity: '0' }, 400]]) {
     await unchanged(db, () => s.transfer.create(f.owner, { ...input, ...patch }), code);
@@ -630,13 +631,13 @@ async function main() {
   assert.ok(existsSync('/app/backend/dist/accounting/owned-transfer.service.js'),
     'Missing module is prerequisite failure, not behavioral RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 30/);
+  assert.match(migrate(database), /Migrations applied: 31/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 30);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
     for (const table of [...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const [owner, other, activeCap, versionCap] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),

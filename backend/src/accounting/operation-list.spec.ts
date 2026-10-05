@@ -66,6 +66,7 @@ describe('list-all-operations projection', () => {
             paid: null,
             comment: 'First buy from the spreadsheet',
             settlement: null,
+            purpose: null,
           },
           {
             tradeId: id(31),
@@ -92,6 +93,7 @@ describe('list-all-operations projection', () => {
               asset: { instrumentId: id(40), symbol: 'RUB', name: 'Russian ruble' },
               quantity: '0',
             },
+            purpose: null,
           },
         ],
         chain: [chain(1)],
