@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
+import { isPaidCurrency, type TradePaymentInput } from './paid-currency';
 
 export interface JournalInitializationInput {
   requestId: string;
@@ -9,10 +10,16 @@ export interface JournalInitializationInput {
   assertEmpty: true;
 }
 
-export interface TradeCreateInput extends Execution {
+type TradeFields = Omit<Execution, 'grossUsd' | 'feeUsd' | 'paid'> & {
   requestId: string;
   expectedJournalRevision: number;
-}
+};
+/** USD amounts, or the amounts as paid in RUB or EUR (CUR-PAID-RUB), never both. */
+export type TradeCreateInput = TradeFields &
+  (
+    | { grossUsd: string; feeUsd: string; paid?: undefined }
+    | { paid: TradePaymentInput; grossUsd?: undefined; feeUsd?: undefined }
+  );
 
 export type TradeCorrectionInput = TradeCreateInput;
 
@@ -79,14 +86,20 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     'quantity',
     'grossUsd',
     'feeUsd',
+    'paid',
   ]);
   if (row.side !== 'buy' && row.side !== 'sell') return bad();
   const quantity = parseDecimal(row.quantity, true);
-  const grossUsd = parseDecimal(row.grossUsd, true);
-  const feeUsd = parseDecimal(row.feeUsd, false);
+  const amounts =
+    row.paid === undefined
+      ? { grossUsd: parseDecimal(row.grossUsd, true), feeUsd: parseDecimal(row.feeUsd, false) }
+      : { paid: parsePaid(row.paid, row.grossUsd, row.feeUsd) };
+  const [gross, fee] = amounts.paid
+    ? [amounts.paid.gross, amounts.paid.fee]
+    : [amounts.grossUsd, amounts.feeUsd];
   if (
     row.side === 'buy' &&
-    canonicalDecimalToAtoms(grossUsd) + canonicalDecimalToAtoms(feeUsd) > MAX_INPUT_ATOMS
+    canonicalDecimalToAtoms(gross) + canonicalDecimalToAtoms(fee) > MAX_INPUT_ATOMS
   )
     return bad();
   return {
@@ -97,8 +110,18 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     occurredAt: parseAsOf(row.occurredAt),
     orderWithinTimestamp: integer(row.orderWithinTimestamp, 2147483647),
     quantity,
-    grossUsd,
-    feeUsd,
+    ...amounts,
+  };
+}
+
+function parsePaid(value: unknown, grossUsd: unknown, feeUsd: unknown): TradePaymentInput {
+  if (grossUsd !== undefined || feeUsd !== undefined) return bad();
+  const paid = object(value, ['currency', 'gross', 'fee']);
+  if (!isPaidCurrency(paid.currency)) return bad();
+  return {
+    currency: paid.currency,
+    gross: parseDecimal(paid.gross, true),
+    fee: parseDecimal(paid.fee, false),
   };
 }
 

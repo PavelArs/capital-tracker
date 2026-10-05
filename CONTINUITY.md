@@ -1,5 +1,20 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — trades paid in RUB or EUR (CUR-PAID-RUB, 2026-10-05)
+
+A trade create or correction may send `paid: {currency: 'RUB'|'EUR', gross, fee}` instead
+of `grossUsd`/`feeUsd` (never both). The server derives the USD amounts once from the
+stored Bank of Russia rates of the trade's Moscow date (latest on or before it), rounded
+half away from zero at scale 30, and stores the amounts as paid with that date,
+`rubPerUsd` and `rubPerUnit` in `account_trade_version_payments` (one row per trade
+version; no row means USD; a void copies the row). No stored rate is 409, never a guess.
+The canonical request payload keeps the amounts as sent, so a replay never depends on
+rates stored later. FIFO stays in USD; Portfolio states a paid fragment's cost, and a
+paid sale's proceeds, from the paid amount (shared by quantity): exact in its own
+currency, converted at the trade date otherwise, and the stored USD amounts in USD. The
+legacy trade form has a "Валюта оплаты" select. Migration 27
+`PaidCurrencyTrades1791100000000` (probes count 27); stage CUR-PAID-RUB in `fx-rates-db`.
+
 ## Current product slice — three accounting currencies (M5, 2026-10-04)
 
 Adds Bank of Russia USD and EUR rates and USD/EUR/RUB accounting. The `fx-rates` module
@@ -16,7 +31,7 @@ realization its own date, so RUB/EUR P&L includes currency movement. A missing r
 never zero: the figure is null with `missingRateQuantity`. Fixed EUR/RUB cash is now
 valued. Migration 26 `AccountInThreeCurrencies1790900000000` (probes count 26); probe
 `fx-rates-db` in shard probes-1; browser case `CURRENCY-UI` is the 23rd critical case
-and stores the only acceptance rates. Buys paid in RUB/EUR (CUR-PAID-RUB) follow in a
+and stores the only acceptance rates. Buys paid in RUB/EUR (CUR-PAID-RUB) followed in a
 separate change.
 
 ## Current product slice — whole-portfolio valuation (M4, 2026-10-04)

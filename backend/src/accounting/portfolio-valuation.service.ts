@@ -131,7 +131,10 @@ export class PortfolioValuationService {
             portfolioAccount(
               identity,
               projection.accounts.get(row.accountId)!,
-              ledger.accounts.get(row.accountId)!,
+              {
+                ...ledger.accounts.get(row.accountId)!,
+                linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+              },
               projection.swapAllocations,
             ),
           );

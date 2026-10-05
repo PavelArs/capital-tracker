@@ -9,6 +9,7 @@ import {
   type FifoTrade,
 } from './fifo';
 import { parseDecimal } from './input';
+import { isPaidCurrency, type TradePayment } from './paid-currency';
 
 export type TradeKind = 'create' | 'correct' | 'void';
 export interface AccountRow {
@@ -45,6 +46,12 @@ export interface VersionRow {
   quantity: string;
   grossUsd: string;
   feeUsd: string;
+  paidCurrency: string | null;
+  paidGross: string | null;
+  paidFee: string | null;
+  paidRateDate: string | null;
+  paidRubPerUsd: string | null;
+  paidRubPerUnit: string | null;
 }
 export interface TradeVersion extends FifoTrade {
   journalRevision: number;
@@ -52,11 +59,31 @@ export interface TradeVersion extends FifoTrade {
   kind: TradeKind;
   createdAt: string;
 }
-export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol"
+export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol",
+  p.currency AS "paidCurrency", p.gross AS "paidGross", p.fee AS "paidFee",
+  p."rateDate"::text AS "paidRateDate", p."rubPerUsd" AS "paidRubPerUsd",
+  p."rubPerUnit" AS "paidRubPerUnit"
   FROM account_trade_versions v JOIN accounting_instruments i
-  ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"`;
+  ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
+  LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
+  AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version`;
+
+/** No payment row means the trade was stated in USD. */
+function projectPayment(row: VersionRow): TradePayment | undefined {
+  if (row.paidCurrency === null || row.paidCurrency === undefined) return undefined;
+  if (!isPaidCurrency(row.paidCurrency) || !row.paidRateDate) throw new FifoHistoryError();
+  return {
+    currency: row.paidCurrency,
+    gross: parseDecimal(row.paidGross, true),
+    fee: parseDecimal(row.paidFee, false),
+    rateDate: row.paidRateDate,
+    rubPerUsd: parseDecimal(row.paidRubPerUsd, true),
+    rubPerUnit: parseDecimal(row.paidRubPerUnit, true),
+  };
+}
 
 export function projectTradeVersion(row: VersionRow): TradeVersion {
+  const paid = projectPayment(row);
   return {
     tradeId: row.tradeId,
     version: row.version,
@@ -73,6 +100,7 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     quantity: parseDecimal(row.quantity, true),
     grossUsd: parseDecimal(row.grossUsd, true),
     feeUsd: parseDecimal(row.feeUsd, false),
+    ...(paid ? { paid } : {}),
   };
 }
 export async function readOwnedAccount(
@@ -203,6 +231,25 @@ export async function appendTradeVersion(
       next.feeUsd,
     ],
   );
+  if (next.paid) {
+    await manager.query(
+      `INSERT INTO account_trade_version_payments
+      ("ownerId","accountId","tradeId",version,currency,gross,fee,"rateDate","rubPerUsd","rubPerUnit")
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        owner,
+        id,
+        next.tradeId,
+        next.version,
+        next.paid.currency,
+        next.paid.gross,
+        next.paid.fee,
+        next.paid.rateDate,
+        next.paid.rubPerUsd,
+        next.paid.rubPerUnit,
+      ],
+    );
+  }
   await manager.query(
     'UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
     [owner, id, next.tradeId, next.version],
@@ -211,6 +258,12 @@ export async function appendTradeVersion(
     ...saved,
     instrumentName: next.instrumentName,
     instrumentSymbol: next.instrumentSymbol,
+    paidCurrency: next.paid?.currency ?? null,
+    paidGross: next.paid?.gross ?? null,
+    paidFee: next.paid?.fee ?? null,
+    paidRateDate: next.paid?.rateDate ?? null,
+    paidRubPerUsd: next.paid?.rubPerUsd ?? null,
+    paidRubPerUnit: next.paid?.rubPerUnit ?? null,
   });
 }
 export async function advanceJournal(

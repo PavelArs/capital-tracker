@@ -15,7 +15,8 @@ import {
   formatProduct,
   formatSignedProduct,
 } from './money';
-import type { AccountFifoResult } from './owned-transfer-types';
+import type { AccountFifoResult, LotOrigin } from './owned-transfer-types';
+import type { PaidCurrency } from './paid-currency';
 
 const ATOM_SCALE = 10n ** 30n;
 
@@ -27,22 +28,30 @@ export interface PortfolioInstrument {
   valuationCurrency: ValuationCurrency;
   priceSource: PriceSource;
 }
+/** A share of an amount in the currency it was paid in (CUR-PAID-RUB). */
+export interface NativeAmount {
+  currency: PaidCurrency;
+  amount: string;
+}
 /** A held FIFO fragment with its original acquisition instant (Q1: cost at that date). */
 export interface PortfolioLot {
   instrumentId: string;
   quantity: string;
   costUsd: string | null;
   acquiredAt: string;
+  native?: NativeAmount;
 }
 export interface ConsumedCost {
   costUsd: string | null;
   acquiredAt: string;
+  native?: NativeAmount;
 }
 /** A sale or swap: proceeds at its date minus the FIFO cost of what it consumed. */
 export interface PortfolioRealization {
   instrumentId: string;
   occurredAt: string;
   proceedsUsd: string | null;
+  nativeProceeds?: NativeAmount;
   consumed: readonly ConsumedCost[];
 }
 export interface PortfolioAccountInput {
@@ -141,9 +150,23 @@ const tradeKey = (tradeId: string, version: number) => `${tradeId}:${version}`;
 const lotKey = (lotId: string, revision: number, ordinal: number) =>
   `${lotId}:${revision}:${ordinal}`;
 
+/** A buy's amount as paid, shared by quantity, half away from zero. */
+function nativeShare(trade: FifoTrade | undefined, quantity: string): NativeAmount | undefined {
+  if (!trade?.paid || trade.side !== 'buy') return undefined;
+  const total = canonicalDecimalToAtoms(trade.paid.gross) + canonicalDecimalToAtoms(trade.paid.fee);
+  const whole = canonicalDecimalToAtoms(trade.quantity);
+  const part = canonicalDecimalToAtoms(quantity);
+  return {
+    currency: trade.paid.currency,
+    amount: formatAtoms((total * part * 2n + whole) / (whole * 2n)),
+  };
+}
+
 /**
  * One covered account's FIFO result as dated lots and realizations. A transferred, rewarded
- * or swapped fragment keeps its original acquisition instant.
+ * or swapped fragment keeps its original acquisition instant, and a fragment of a buy paid in
+ * RUB or EUR its share of the amount paid. `linkedTrades` are the other connected accounts'
+ * trades, where transferred fragments were bought.
  */
 export function portfolioAccount(
   identity: { accountId: string; name: string },
@@ -152,12 +175,23 @@ export function portfolioAccount(
     trades: readonly FifoTrade[];
     initialLots: readonly FifoCarryInInput[];
     swaps?: readonly { swapId: string; outgoingInstrumentId: string; occurredAt: string }[];
+    linkedTrades?: readonly FifoTrade[];
   },
   swapAllocations: ReadonlyMap<string, SwapAllocation> = new Map(),
 ): PortfolioAccountInput {
   const trades = new Map(
     journal.trades.map((trade) => [tradeKey(trade.tradeId, trade.version), trade.occurredAt]),
   );
+  const paid = new Map(
+    [...(journal.linkedTrades ?? []), ...journal.trades]
+      .filter((trade) => trade.paid)
+      .map((trade) => [tradeKey(trade.tradeId, trade.version), trade]),
+  );
+  const fromOrigin = (origin: LotOrigin, quantity: string) =>
+    origin.kind === 'trade'
+      ? nativeShare(paid.get(tradeKey(origin.tradeId, origin.version)), quantity)
+      : undefined;
+  const native = (value: NativeAmount | undefined) => (value ? { native: value } : {});
   const carried = new Map(
     journal.initialLots.map((lot) => [
       lotKey(lot.lotId, lot.openingRevision, lot.ordinal),
@@ -180,6 +214,13 @@ export function portfolioAccount(
       quantity: lot.remainingQuantity,
       costUsd: lot.remainingCostUsd,
       acquiredAt,
+      ...native(
+        'origin' in lot
+          ? fromOrigin(lot.origin, lot.remainingQuantity)
+          : 'buyTradeId' in lot
+            ? nativeShare(paid.get(tradeKey(lot.buyTradeId, lot.buyVersion)), lot.remainingQuantity)
+            : undefined,
+      ),
     };
   });
   const consumed = new Map<string, ConsumedCost[]>();
@@ -192,15 +233,38 @@ export function portfolioAccount(
           : known(carried.get(lotKey(match.lotId, match.openingRevision, match.ordinal)));
     const key = tradeKey(match.sellTradeId, match.sellVersion);
     const list = consumed.get(key) ?? [];
-    list.push({ costUsd: match.costUsd, acquiredAt });
+    list.push({
+      costUsd: match.costUsd,
+      acquiredAt,
+      ...native(
+        'origin' in match
+          ? fromOrigin(match.origin, match.quantity)
+          : 'buyTradeId' in match
+            ? nativeShare(paid.get(tradeKey(match.buyTradeId, match.buyVersion)), match.quantity)
+            : undefined,
+      ),
+    });
     consumed.set(key, list);
   }
-  const realizations: PortfolioRealization[] = fifo.realizations.map((sale) => ({
-    instrumentId: sale.instrumentId,
-    occurredAt: sale.occurredAt,
-    proceedsUsd: sale.netUsd,
-    consumed: consumed.get(tradeKey(sale.sellTradeId, sale.sellVersion)) ?? [],
-  }));
+  const realizations: PortfolioRealization[] = fifo.realizations.map((sale) => {
+    const sold = paid.get(tradeKey(sale.sellTradeId, sale.sellVersion))?.paid;
+    return {
+      instrumentId: sale.instrumentId,
+      occurredAt: sale.occurredAt,
+      proceedsUsd: sale.netUsd,
+      ...(sold
+        ? {
+            nativeProceeds: {
+              currency: sold.currency,
+              amount: formatAtoms(
+                canonicalDecimalToAtoms(sold.gross) - canonicalDecimalToAtoms(sold.fee),
+              ),
+            },
+          }
+        : {}),
+      consumed: consumed.get(tradeKey(sale.sellTradeId, sale.sellVersion)) ?? [],
+    };
+  });
   // A swap realizes its outgoing asset: consideration minus principal and fee basis.
   for (const swap of journal.swaps ?? []) {
     const allocation = swapAllocations.get(swap.swapId);
@@ -212,6 +276,7 @@ export function portfolioAccount(
       consumed: allocation.items.map((item) => ({
         costUsd: item.costUsd,
         acquiredAt: item.origin.acquiredAt,
+        ...native(fromOrigin(item.origin, item.quantity)),
       })),
     });
   }
@@ -273,8 +338,12 @@ export function projectPortfolio(
   fx: FxConverter = usdOnly(),
 ) {
   const today = moscowDate(at);
-  const toCurrency = (usd: string, instant: string) =>
-    fx.convert(signedAtoms(usd), 'USD', moscowDate(instant));
+  // An amount paid in RUB or EUR is exact in its own currency and converts from it; USD
+  // figures stay the USD amounts derived at the trade's date (CUR-PAID-RUB).
+  const toCurrency = (usd: string, instant: string, native?: NativeAmount) =>
+    native && fx.currency !== 'USD'
+      ? fx.convert(signedAtoms(native.amount), native.currency, moscowDate(instant))
+      : fx.convert(signedAtoms(usd), 'USD', moscowDate(instant));
   const unavailableAccountCount = accounts.filter(
     (account) => account.coverage === 'before-coverage',
   ).length;
@@ -310,7 +379,7 @@ export function projectPortfolio(
       total.quantity += quantity;
       if (lot.costUsd === null) total.unknownQuantity += quantity;
       else {
-        const cost = toCurrency(lot.costUsd, lot.acquiredAt);
+        const cost = toCurrency(lot.costUsd, lot.acquiredAt, lot.native);
         if (cost === null) total.missingRateQuantity += quantity;
         else total.knownCost += cost;
       }
@@ -346,15 +415,22 @@ export function projectPortfolio(
       const amounts = [
         realization.proceedsUsd === null
           ? null
-          : { usd: realization.proceedsUsd, at: realization.occurredAt, sign: 1n },
+          : {
+              usd: realization.proceedsUsd,
+              at: realization.occurredAt,
+              native: realization.nativeProceeds,
+              sign: 1n,
+            },
         ...realization.consumed.map((item) =>
-          item.costUsd === null ? null : { usd: item.costUsd, at: item.acquiredAt, sign: -1n },
+          item.costUsd === null
+            ? null
+            : { usd: item.costUsd, at: item.acquiredAt, native: item.native, sign: -1n },
         ),
       ];
       if (amounts.every((amount) => amount !== null)) {
         result = 0n;
         for (const amount of amounts) {
-          const converted = toCurrency(amount!.usd, amount!.at);
+          const converted = toCurrency(amount!.usd, amount!.at, amount!.native);
           if (converted === null) {
             missingRate = true;
             result = null;
