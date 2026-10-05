@@ -24,6 +24,7 @@ import { HealthModule } from './health/health.module';
 import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { OwnerSettingsModule } from './owner-settings/owner-settings.module';
+import { PortfolioSnapshotsModule } from './portfolio-snapshots/portfolio-snapshots.module';
 import { PricesModule } from './prices/prices.module';
 import { GlobalExceptionFilter } from './shared/filters';
 import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.module';
@@ -108,6 +109,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     MetricsModule,
     OwnerSettingsModule,
     HealthModule,
+    PortfolioSnapshotsModule,
     PricesModule,
     WalletAddressesModule,
   ],

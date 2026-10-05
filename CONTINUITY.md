@@ -2,18 +2,42 @@
 
 ## Current product slice — trades paid in RUB or EUR (CUR-PAID-RUB, 2026-10-05)
 
-A trade create or correction may send `paid: {currency: 'RUB'|'EUR', gross, fee}` instead
-of `grossUsd`/`feeUsd` (never both). The server derives the USD amounts once from the
-stored Bank of Russia rates of the trade's Moscow date (latest on or before it), rounded
-half away from zero at scale 30, and stores the amounts as paid with that date,
-`rubPerUsd` and `rubPerUnit` in `account_trade_version_payments` (one row per trade
-version; no row means USD; a void copies the row). No stored rate is 409, never a guess.
-The canonical request payload keeps the amounts as sent, so a replay never depends on
-rates stored later. FIFO stays in USD; Portfolio states a paid fragment's cost, and a
-paid sale's proceeds, from the paid amount (shared by quantity): exact in its own
-currency, converted at the trade date otherwise, and the stored USD amounts in USD. The
-legacy trade form has a "Валюта оплаты" select. Migration 27
-`PaidCurrencyTrades1791100000000` (probes count 27); stage CUR-PAID-RUB in `fx-rates-db`.
+A trade create or correction may send `paid: {currency: 'RUB'|'EUR', gross, fee, perUsd?}`
+instead of `grossUsd`/`feeUsd` (never both). Without `perUsd` the server derives the USD
+amounts once from the stored Bank of Russia rates of the trade's Moscow date (latest on or
+before it), rounded half away from zero at scale 30; no stored rate is 409, never a guess.
+With `perUsd` (paid units per 1 USD, the rate the owner actually paid) USD = paid / perUsd
+and no stored rate is needed. `account_trade_version_payments` keeps the amounts as paid,
+the date, `perUsd` and `rateSource` ('bank-of-russia' with the cross rate rounded at 30
+places, or 'owner'); one row per trade version, no row means USD, a void copies the row.
+The canonical request payload keeps the amounts as sent. FIFO stays in USD; Portfolio
+states a paid fragment's cost, and a paid sale's proceeds, from the paid amount (shared by
+quantity): exact in its own currency, converted at the trade date otherwise, and the stored
+USD amounts in USD. `GET /fx-rates?date=YYYY-MM-DD` gives the rates effective on a date.
+The prototype's "Add transaction" window (Portfolio page) records buys and sells paid in
+USD, USDT, USDC (1:1 USD), EUR or RUB with the Bank of Russia rate prefilled and editable;
+transfers, income/expense, wallet-balance limits and cash proceeds stay for M9. The legacy
+trade form also has a "Валюта оплаты" select and keeps an owner rate on corrections.
+Migration 28 `PaidCurrencyTrades1791100000000` (after M6's 27; probes count 28); stage
+CUR-PAID-RUB in `fx-rates-db`.
+
+## Current product slice — portfolio snapshots (M6, 2026-10-04)
+
+The `portfolio-snapshots` module stores `portfolio_snapshots` (owner, whole-hour
+`takenAt`, currency USD/EUR/RUB, nullable `value`, `complete`) as a cache that is a pure
+function of operations, stored prices and stored Bank of Russia rates: daily UTC
+midnights from 2025-01-01 and hourly rows for the last 8 days (from the first refresh
+hour). `portfolio_snapshot_state` keeps an md5 `inputsRevision` over the owner's 16
+input tables plus price/rate `fetchedAt` watermarks; any change rebuilds from the
+earliest affected instant (a full recompute that rewrites only changed rows), never
+calling a provider. Days before an account's coverage count as empty, so they are 0.
+The job runs every 5 minutes under `PRICE_COLLECTION_ENABLED`; `GET
+/accounting/portfolio/history?period=24H|7D|1M|3M|1Y|ALL&currency=` (default 1M, main
+currency) refreshes first, then returns stored points plus a live "now" point with
+change and percent from the first known point (percent null from 0). The Dashboard
+shows net worth, change and the chart. Migration 27
+`RecordPortfolioSnapshots1791000000000` (probe counts 27); probe `portfolio-snapshots-db`
+in shard probes-2; browser case `CHART-PERIODS` is the 24th critical case.
 
 ## Current product slice — three accounting currencies (M5, 2026-10-04)
 

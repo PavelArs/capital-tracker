@@ -90,5 +90,9 @@
   {
     "file": "tests/e2e/three-currency.spec.ts",
     "title": "CURRENCY-UI: main currency EUR persists after logout and values come from Bank of Russia rates"
+  },
+  {
+    "file": "tests/e2e/portfolio-history.spec.ts",
+    "title": "CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuilt after a backdated buy"
   }
 ]
