@@ -174,13 +174,15 @@ export default function AssetPage() {
   }, [load]);
 
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
+  // The asked currency shows as chosen while its values load.
+  const shownCurrency = asked ?? portfolio?.currency;
   return (
     <div className="shell-page">
       <div className="portfolio-crumbs">
         <Link className="portfolio-crumb" to={withCurrency('/portfolio', asked)}>
           ← Portfolio
         </Link>
-        {portfolio && <CurrencySwitch value={portfolio.currency} onChange={setAsked} />}
+        {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
       </div>
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
