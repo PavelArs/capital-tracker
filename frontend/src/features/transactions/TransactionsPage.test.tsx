@@ -23,7 +23,21 @@ const wallet = {
 };
 const txid = (n: number) => String(n).padStart(64, 'a');
 
-const operation = (changes: Partial<Operation> & Pick<Operation, 'id'>): Operation => ({
+const operation = (changes: Partial<Operation> & Pick<Operation, 'id'>): Operation => {
+  const recorded = { ...recordedDefaults, ...changes };
+  // In USD the list's quote-currency amounts are the recorded USD amounts.
+  return {
+    value: recorded.valueUsd,
+    estimatedValue: recorded.estimatedValueUsd,
+    costBasis: recorded.costBasisUsd,
+    feeValue: recorded.feeUsd,
+    ...recorded,
+  };
+};
+const recordedDefaults: Omit<
+  Operation,
+  'id' | 'value' | 'estimatedValue' | 'costBasis' | 'feeValue'
+> = {
   kind: 'trade',
   type: 'buy',
   direction: 'in',
@@ -48,8 +62,7 @@ const operation = (changes: Partial<Operation> & Pick<Operation, 'id'>): Operati
   status: 'recorded',
   source: 'manual',
   version: 1,
-  ...changes,
-});
+};
 const chainOperation = (n: number, changes: Partial<Operation>): Operation =>
   operation({
     id: `chain:${wallet.id}:${txid(n)}`,
@@ -128,7 +141,16 @@ function renderPage(path = '/transactions') {
   );
 }
 const table = () => screen.getByRole('table', { name: 'Transactions' });
-const bodyRows = () => within(table()).getAllByRole('row').slice(1);
+// Day headings are rows of their own; operations are the rows with cells.
+const bodyRows = () =>
+  within(table())
+    .getAllByRole('row')
+    .filter((row) => within(row).queryAllByRole('cell').length > 0);
+const dayHeadings = () =>
+  within(table())
+    .getAllByRole('rowheader')
+    .map((cell) => cell.textContent);
+const typeOf = (row: HTMLElement) => within(row).getByRole('button').textContent;
 const cellTexts = (row: HTMLElement) =>
   within(row)
     .getAllByRole('cell')
@@ -149,53 +171,50 @@ describe('TransactionsPage (list-all-operations)', () => {
       within(table())
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent),
-    ).toEqual(['Date', 'Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
+    // Grouped under day headings as in the prototype; the time sits under the type.
+    expect(dayHeadings()).toEqual([
+      'Jun 21, 2025',
+      'Jun 20, 2025',
+      'Jun 18, 2025',
+      'Jun 16, 2025',
+      'Jun 14, 2025',
+      'Jun 13, 2025',
+    ]);
     const rows = bodyRows().map(cellTexts);
     expect(rows[1]).toEqual([
-      'Jun 20, 202508:05 UTC',
-      'Incoming',
-      'BTCBitcoin',
-      '+0.00918359 BTC',
-      '≈ $780.10at latest price',
+      'Incoming08:05',
+      'BTC',
+      '+0.00918359',
+      '≈ $780.10',
       'Bitcoin wallet bc1qsy…f3t4',
       'Needs classification',
       'Blockchain',
     ]);
     expect(rows[0]).toEqual([
-      'Jun 21, 202508:00 UTC',
-      'Outgoing',
-      'BTCBitcoin',
-      '-0.0005 BTC',
+      'Outgoing08:00',
+      'BTC',
+      '-0.0005',
       '—',
       'Bitcoin wallet bc1qsy…f3t4',
       'Needs classification',
       'Blockchain',
     ]);
+    // A transaction entered without a time says so instead of showing midnight.
     expect(rows[2]).toEqual([
-      'Jun 18, 202500:00 UTC',
-      'Transfer',
-      'BTCBitcoin',
-      '0.005 BTC',
+      'TransferNo time',
+      'BTC',
+      '0.005',
       '—',
       'Bybit → Cold storage',
       'Recorded',
       'Manual',
     ]);
-    expect(rows[4]).toEqual([
-      'Jun 14, 202510:30 UTC',
-      'Buy',
-      'BTCBitcoin',
-      '+0.01 BTC',
-      '$1,050.50',
-      'Bybit',
-      'Recorded',
-      'CSV',
-    ]);
+    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'Recorded', 'CSV']);
     expect(rows[5]).toEqual([
-      'Jun 13, 202500:00 UTC',
-      'Buy',
-      'BTCBitcoin',
-      '+0.00918359 BTC',
+      'BuyNo time',
+      'BTC',
+      '+0.00918359',
       '$1,000.00',
       'Bybit',
       'Recorded',
@@ -216,7 +235,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       'aria-pressed',
       'true',
     );
-    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['Outgoing', 'Incoming']);
+    expect(bodyRows().map(typeOf)).toEqual(['Outgoing', 'Incoming']);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Asset' }), 'USDT');
     expect(screen.queryByRole('table', { name: 'Transactions' })).toBeNull();
     expect(screen.getByText('No transactions match')).toBeInTheDocument();
@@ -230,14 +249,14 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     await user.click(screen.getByRole('button', { name: /^CSV/ }));
-    expect(bodyRows().map((row) => cellTexts(row)[7])).toEqual(['CSV']);
+    expect(bodyRows().map((row) => cellTexts(row)[6])).toEqual(['CSV']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     // A transfer belongs to both of its accounts.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), cold.id);
-    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['Transfer']);
+    expect(bodyRows().map(typeOf)).toEqual(['Transfer']);
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), '');
     await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'tether');
-    expect(bodyRows().map((row) => cellTexts(row)[2])).toEqual(['USDTTether']);
+    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['USDT']);
   });
 
   it('keeps every filter change when a second one comes before the address updates', async () => {
@@ -255,7 +274,150 @@ describe('TransactionsPage (list-all-operations)', () => {
       });
     });
     expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
-    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['Transfer']);
+    expect(bodyRows().map(typeOf)).toEqual(['Transfer']);
+  });
+
+  it('OPS-DAYS: names today and yesterday and keeps one heading per day', async () => {
+    const at = (iso: string, n: number) =>
+      operation({ id: `trade:${id(70 + n)}`, occurredAt: iso, valueUsd: '10', feeUsd: '0' });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        at('2026-10-04T09:15:00.000Z', 1),
+        at('2026-10-04T08:00:00.000Z', 2),
+        at('2026-10-03T23:59:00.000Z', 3),
+        at('2026-09-30T00:00:00.000Z', 4),
+      ]),
+    );
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(4));
+    expect(dayHeadings()).toEqual(['Today', 'Yesterday', 'Sep 30, 2026']);
+  });
+
+  it('OPS-PAID: a purchase paid in RUB shows what was paid under its value', async () => {
+    const paid = operation({
+      ...imported,
+      paid: {
+        currency: 'RUB',
+        gross: '83000',
+        fee: '0',
+        rateDate: '2025-06-14',
+        perUsd: '79.0076',
+        rateSource: 'bank-of-russia',
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([paid, manual]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(cellTexts(bodyRows()[0])[3]).toBe('$1,050.50paid 83,000 RUB');
+    expect(cellTexts(bodyRows()[1])[3]).toBe('$1,000.00');
+  });
+
+  it('OPS-CURRENCY: switches the list to EUR or RUB and keeps the filters', async () => {
+    const user = userEvent.setup();
+    const paid = operation({
+      ...imported,
+      paid: {
+        currency: 'RUB',
+        gross: '83000',
+        fee: '98.76',
+        rateDate: '2025-06-14',
+        perUsd: '79.0076',
+        rateSource: 'bank-of-russia',
+      },
+    });
+    const inRub: OperationList = {
+      ...list([
+        { ...receipt, estimatedValue: '74109.50499225' },
+        // No Bank of Russia rate stored for that date: unknown, never zero.
+        { ...tether, value: null, feeValue: null },
+        { ...paid, value: '83000', feeValue: '98.76' },
+        { ...manual, value: '80000', feeValue: '0' },
+      ]),
+      quoteCurrency: 'RUB',
+    };
+    const read = vi
+      .spyOn(operationsApi, 'list')
+      .mockImplementation(async (currency) =>
+        currency === 'RUB' ? inRub : list([receipt, tether, paid, manual]),
+      );
+    renderPage('/transactions?source=manual');
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(read).toHaveBeenLastCalledWith(undefined);
+    expect(screen.getByRole('radio', { name: 'USD' })).toBeChecked();
+    await user.click(screen.getByRole('radio', { name: 'RUB' }));
+    await waitFor(() => expect(read).toHaveBeenLastCalledWith('RUB'));
+    await waitFor(() => expect(cellTexts(bodyRows()[0])[3]).toBe('—No rate'));
+    expect(screen.getByRole('radio', { name: 'RUB' })).toBeChecked();
+    // The Manual filter stays; the paid line is not repeated in its own currency.
+    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual(['—No rate', '₽80,000.00']);
+    await user.click(screen.getByRole('button', { name: /^All/ }));
+    expect(bodyRows().map((row) => cellTexts(row)[3])).toEqual([
+      '≈ ₽74,109.50',
+      '—No rate',
+      '₽83,000.00',
+      '₽80,000.00',
+    ]);
+    await user.click(within(bodyRows()[2]).getByRole('button', { name: 'Buy' }));
+    const drawer = screen.getByRole('dialog', { name: 'Buy · BTC' });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Value')).toBe('₽83,000.00');
+    expect(fact('Price')).toBe('₽8,300,000.00 per BTC');
+    expect(fact('Fee')).toBe('₽98.76');
+  });
+
+  it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      const paid = operation({
+        ...imported,
+        paid: {
+          currency: 'RUB',
+          gross: '83000',
+          fee: '0',
+          rateDate: '2025-06-14',
+          perUsd: '79.0076',
+          rateSource: 'bank-of-russia',
+        },
+      });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(
+        list([outgoing, receipt, transfer, paid, manual]),
+      );
+      renderPage();
+      const rows = await screen.findByRole('list', { name: 'Transactions' });
+      expect(screen.queryByRole('table')).toBeNull();
+      expect(
+        within(rows)
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Jun 21, 2025', 'Jun 20, 2025', 'Jun 18, 2025', 'Jun 14, 2025', 'Jun 13, 2025']);
+      // Type and ticker / place and time, or "To classify"; amount / value, paid amount.
+      const items = within(rows).getAllByRole('button');
+      expect(items.map((item) => item.textContent)).toEqual([
+        'Outgoing BTCTo classify-0.0005—',
+        'Incoming BTCTo classify+0.00918359≈ $780.10',
+        'Transfer BTCBybit → Cold storage0.005—',
+        'Buy BTCBybit · 10:30+0.01$1,050.50 · 83,000 RUB',
+        'Buy BTCBybit+0.00918359$1,000.00',
+      ]);
+      // The whole row opens the same drawer as on a wide screen.
+      await user.click(items[1]);
+      expect(
+        screen.getByRole('dialog', { name: 'Incoming transaction · BTC' }),
+      ).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(items[1]).toHaveFocus();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('reads the status filter from the address so other screens can link to it', async () => {

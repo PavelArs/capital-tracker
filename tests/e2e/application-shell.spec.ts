@@ -65,8 +65,26 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(
     page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
   ).toBeVisible();
-  // record-portfolio-snapshots: the dashboard shows net worth instead of a placeholder.
-  await expect(page.getByRole('region', { name: 'Net worth' })).toBeVisible();
+  // record-portfolio-snapshots: the dashboard shows net worth instead of a placeholder, or
+  // the empty state while the owner has recorded nothing (other cases share the database).
+  const start = (await (await page.request.get('/api/accounting/portfolio/history')).json()) as {
+    value: string | null;
+    invested: string | null;
+    complete: boolean;
+    points: { value: string | null }[];
+  };
+  const zero = (value: string | null) => value !== null && Number(value) === 0;
+  const nothing =
+    start.complete &&
+    zero(start.value) &&
+    zero(start.invested) &&
+    start.points.every((point) => point.value === null || zero(point.value));
+  await expect(
+    page.getByRole('region', { name: nothing ? 'Your portfolio is empty' : 'Net worth' }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole('region', { name: nothing ? 'Net worth' : 'Your portfolio is empty' }),
+  ).toHaveCount(0);
   await expect(page.getByRole('main').getByText(/not built yet/i)).toHaveCount(0);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(200);
 

@@ -1,11 +1,12 @@
 import type { Operation } from '@api/operations.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
-import { DASH, price, quantity } from '../portfolio/format';
+import { DASH, money, price, quantity } from '../portfolio/format';
 import {
   amount,
   day,
@@ -17,7 +18,6 @@ import {
   statusLabels,
   ticker,
   typeLabel,
-  usd,
 } from './operation-format';
 
 const sourceDetails: Record<Operation['source'], string> = {
@@ -46,7 +46,18 @@ function title(operation: Operation): string {
   return `${label} · ${ticker(operation.asset)}`;
 }
 
-function facts(operation: Operation): [string, ReactNode][] {
+/** An amount in the list's currency; a recorded one without that date's rate says so. */
+function shown(
+  value: string | null,
+  usd: string | null,
+  currency: AccountingCurrency,
+  missing: string,
+): string {
+  if (value !== null) return money(value, currency);
+  return usd === null ? missing : 'No Bank of Russia rate for this date';
+}
+
+function facts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
   const { wallet, chain } = operation;
   if (wallet && chain) {
@@ -71,9 +82,11 @@ function facts(operation: Operation): [string, ReactNode][] {
       ],
       [
         'Estimated value',
-        operation.estimatedValueUsd !== null && chain.priceObservedAt
-          ? `≈ ${usd(operation.estimatedValueUsd)} at the price stored ${moment(chain.priceObservedAt)}`
-          : 'No stored price',
+        operation.estimatedValue !== null && chain.priceObservedAt
+          ? `≈ ${money(operation.estimatedValue, currency)} at the price stored ${moment(chain.priceObservedAt)}`
+          : operation.estimatedValueUsd !== null
+            ? 'No Bank of Russia rate for today'
+            : 'No stored price',
       ],
     );
   } else {
@@ -82,11 +95,11 @@ function facts(operation: Operation): [string, ReactNode][] {
     else rows.push(['Account', operation.account?.name ?? 'Whole portfolio']);
     if (operation.counterAsset && operation.counterQuantity)
       rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
-    rows.push(['Value', operation.valueUsd === null ? 'Not recorded' : usd(operation.valueUsd)]);
-    if ((operation.type === 'buy' || operation.type === 'sell') && operation.valueUsd !== null)
+    rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+    if ((operation.type === 'buy' || operation.type === 'sell') && operation.value !== null)
       rows.push([
         'Price',
-        `${price(String(Number(operation.valueUsd) / Number(operation.quantity)), 'USD')} per ${ticker(operation.asset)}`,
+        `${price(String(Number(operation.value) / Number(operation.quantity)), currency)} per ${ticker(operation.asset)}`,
       ]);
     if (operation.paid)
       rows.push([
@@ -101,11 +114,12 @@ function facts(operation: Operation): [string, ReactNode][] {
           ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
           : ['Paid from cash', amount(cash.quantity, cash.asset)],
       );
-    if (operation.costBasisUsd !== null) rows.push(['Cost basis', usd(operation.costBasisUsd)]);
+    if (operation.costBasisUsd !== null)
+      rows.push(['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, DASH)]);
     rows.push([
       'Fee',
       operation.feeUsd !== null && Number(operation.feeUsd) !== 0
-        ? usd(operation.feeUsd)
+        ? shown(operation.feeValue, operation.feeUsd, currency, DASH)
         : operation.fee
           ? amount(operation.fee.quantity, operation.fee.asset)
           : 'None',
@@ -139,6 +153,8 @@ type Confirm =
 
 interface Props {
   operation: Operation;
+  /** The list's quote currency, which the operation's amounts are in. */
+  currency?: AccountingCurrency;
   /** The whole list, to name the operation that depends on this one. */
   operations?: Operation[];
   onClose: () => void;
@@ -149,6 +165,7 @@ interface Props {
 // Side drawer of the accepted prototype: details, history, and Edit and Delete for trades.
 export default function OperationDrawer({
   operation,
+  currency = 'USD',
   operations = [],
   onClose,
   onEdit,
@@ -250,10 +267,10 @@ export default function OperationDrawer({
   const link = editLink(operation);
   const needs = operation.status === 'needs-classification';
   const value =
-    operation.valueUsd !== null
-      ? usd(operation.valueUsd)
-      : operation.estimatedValueUsd !== null
-        ? `≈ ${usd(operation.estimatedValueUsd)} at the latest stored price`
+    operation.value !== null
+      ? money(operation.value, currency)
+      : operation.estimatedValue !== null
+        ? `≈ ${money(operation.estimatedValue, currency)} at the latest stored price`
         : null;
   const purchase = operation.type === 'buy';
   return (
@@ -295,7 +312,7 @@ export default function OperationDrawer({
           </div>
           <section aria-label="Details">
             <dl className="transactions-facts">
-              {facts(operation).map(([label, content]) => (
+              {facts(operation, currency).map(([label, content]) => (
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd>{content}</dd>
@@ -319,7 +336,7 @@ export default function OperationDrawer({
                       {version.instrumentSymbol ?? version.instrumentName} for{' '}
                       {version.paid
                         ? `${quantity(version.paid.gross)} ${version.paid.currency}`
-                        : usd(version.grossUsd)}
+                        : money(version.grossUsd, 'USD')}
                       {version.comment ? ` · ${version.comment}` : ''}
                     </span>
                   </li>

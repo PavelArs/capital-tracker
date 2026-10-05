@@ -236,6 +236,9 @@ async function rates(db, s, f) {
   // Another owner sees no flows of this one.
   const foreign = await s.snapshots.history(other, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(foreign.points.every((entry) => entry.invested === '0'));
+  // What the Dashboard reads as an empty portfolio (DASH-EMPTY): nothing held or put in.
+  assert.deepEqual([foreign.value, foreign.invested, foreign.complete], ['0', '0', true]);
+  assert.ok(foreign.points.every((entry) => entry.value === '0' || entry.value === null));
   assert.deepEqual([foreign.deposits, foreign.withdrawals, foreign.netFlow, foreign.marketEffect,
     foreign.marketReturnPercent, foreign.profit, foreign.profitPercent], ['0', '0', '0', '0', null, '0', null]);
   const fingerprintBefore = await fingerprint(db, ['portfolio_snapshots', 'portfolio_snapshot_state']);
