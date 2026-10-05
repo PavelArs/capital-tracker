@@ -106,5 +106,9 @@
   {
     "file": "tests/e2e/manual-operations.spec.ts",
     "title": "MANUAL-OPS-UI: add a buy without a journal, sell only what is available, delete with a guard"
+  },
+  {
+    "file": "tests/e2e/wallet-addresses.spec.ts",
+    "title": "WAL-UI / WAL-NO-SECRETS: owner adds a Bitcoin address to a new wallet and sees its chain balance against recorded transactions"
   }
 ]
