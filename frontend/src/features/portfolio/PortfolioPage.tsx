@@ -10,10 +10,10 @@ import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
 import PageHeader from '../shell/PageHeader';
+import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
-import { usePhone } from './use-phone';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -410,7 +410,7 @@ export default function PortfolioPage() {
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('value');
-  const phone = usePhone();
+  const phone = useNarrowScreen();
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked] = useAskedCurrency();

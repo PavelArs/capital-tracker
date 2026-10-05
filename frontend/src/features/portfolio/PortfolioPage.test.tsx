@@ -901,6 +901,10 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     comment: null,
     orderWithinTimestamp: 0,
     settlement: null,
+    value: '800',
+    estimatedValue: null,
+    costBasis: null,
+    feeValue: '0',
     ...changes,
   });
   const point = (at: string, value: string | null, cost: string, quantity = '1') => ({
@@ -1001,6 +1005,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       asset: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
       quantity: '0.0087',
       valueUsd: null,
+      value: null,
       account: null,
       wallet: { id: id(301), network: 'bitcoin', address: 'bc1qsyntheticaddress000000000000' },
       status: 'needs-classification',
@@ -1239,6 +1244,8 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
     renderAt(`/portfolio/${bitcoin.instrumentId}?currency=EUR`);
     const position = await screen.findByRole('region', { name: 'Position' });
     expect(get).toHaveBeenCalledWith('EUR');
+    // The transactions card is valued in the same currency as the page.
+    expect(operationsApi.list).toHaveBeenCalledWith('EUR');
     expect(position).toHaveTextContent('Current value€920.00');
     expect(position).toHaveTextContent('Cost basis€828.00');
     expect(screen.getByRole('link', { name: '← Portfolio' })).toHaveAttribute(

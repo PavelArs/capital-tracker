@@ -762,7 +762,7 @@ a.portfolio-asset__name:hover {
 }
 
 .portfolio-list__name {
-  font-weight: 500;
+  font-size: var(--fs-md);
 }
 
 .portfolio-list__value,
@@ -773,6 +773,7 @@ a.portfolio-asset__name:hover {
 }
 
 .portfolio-list__value {
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 

@@ -1,5 +1,5 @@
 import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
-import { type Operation, operationsApi } from '@api/operations.api';
+import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import { type HistoryPeriod, historyPeriods } from '@api/portfolio-history.api';
 import {
   type AccountingCurrency,
@@ -19,7 +19,6 @@ import {
   signedAmount,
   statusLabels,
   typeLabel,
-  usd,
 } from '../transactions/operation-format';
 import AssetChart, { type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
@@ -102,7 +101,7 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-type OperationsState = Operation[] | 'loading' | 'failed';
+type OperationsState = OperationList | 'loading' | 'failed';
 
 // Position value against cost basis over a period, with purchase dots (ASSET-CHART).
 function ValueChart({
@@ -136,7 +135,8 @@ function ValueChart({
   useEffect(() => {
     void load();
   }, [load]);
-  const purchases = Array.isArray(operations) ? purchasesOf(operations, instrumentId) : [];
+  const purchases =
+    typeof operations === 'object' ? purchasesOf(operations.operations, instrumentId) : [];
   const unit = asset.symbol ?? asset.name;
   return (
     <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
@@ -221,13 +221,13 @@ function AssetTransactions({
   onRetry: () => void;
 }) {
   const key = keyOf(asset);
-  const own = Array.isArray(operations) ? assetOperations(operations, key) : [];
+  const own = typeof operations === 'object' ? assetOperations(operations.operations, key) : [];
   const all = `/transactions?asset=${encodeURIComponent(key)}`;
   return (
     <section className="shell-card" aria-labelledby="asset-transactions">
       <div className="portfolio-toolbar">
         <h2 id="asset-transactions">Transactions</h2>
-        {Array.isArray(operations) && <span className="portfolio-sub">{own.length}</span>}
+        {typeof operations === 'object' && <span className="portfolio-sub">{own.length}</span>}
       </div>
       {operations === 'failed' ? (
         <div className="portfolio-state" role="alert">
@@ -259,8 +259,10 @@ function AssetTransactions({
                 </span>
                 <span className="portfolio-num">
                   {movedAmount(operation, key)}
-                  {operation.valueUsd !== null && (
-                    <span className="portfolio-sub">{usd(operation.valueUsd)}</span>
+                  {operation.value !== null && typeof operations === 'object' && (
+                    <span className="portfolio-sub">
+                      {money(operation.value, operations.quoteCurrency)}
+                    </span>
                   )}
                 </span>
               </li>
@@ -412,14 +414,18 @@ export default function AssetPage() {
 
   // The asset's operations feed both the chart's purchases and its transactions card.
   const [operations, setOperations] = useState<OperationsState>('loading');
+  const latestOperations = useRef(0);
   const loadOperations = useCallback(async () => {
+    const request = ++latestOperations.current;
     setOperations('loading');
     try {
-      setOperations((await operationsApi.list()).operations);
+      // The same currency as the page, so the values match its other amounts.
+      const list = await operationsApi.list(asked);
+      if (request === latestOperations.current) setOperations(list);
     } catch {
-      setOperations('failed');
+      if (request === latestOperations.current) setOperations('failed');
     }
-  }, []);
+  }, [asked]);
   useEffect(() => {
     void loadOperations();
   }, [loadOperations]);
