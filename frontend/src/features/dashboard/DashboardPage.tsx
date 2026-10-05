@@ -21,6 +21,30 @@ const periodLabels: Record<HistoryPeriod, string> = {
   ALL: 'since Jan 1, 2025',
 };
 
+// The change split into market movement and money added or taken out (split-market-and-flows).
+function ChangeSplit({ history }: { history: PortfolioHistory }) {
+  const { currency, marketEffect, marketReturnPercent, netFlow } = history;
+  // Only the market part is a gain or a loss; money added is neither.
+  const market = tone(marketEffect);
+  return (
+    <div className="dashboard-split" aria-label="What changed">
+      <span className="dashboard-split__item">
+        <i className="dashboard-split__key dashboard-split__key--market" aria-hidden="true" />
+        <span className="dashboard-split__label">Market</span>
+        <span className={market ? `portfolio-${market}` : undefined}>
+          {money(marketEffect, currency, true)}
+        </span>
+        {marketReturnPercent !== null && <span>{percent(marketReturnPercent)}</span>}
+      </span>
+      <span className="dashboard-split__item">
+        <i className="dashboard-split__key dashboard-split__key--flows" aria-hidden="true" />
+        <span className="dashboard-split__label">Net deposits</span>
+        <span>{money(netFlow, currency, true)}</span>
+      </span>
+    </div>
+  );
+}
+
 function NetWorth({ history }: { history: PortfolioHistory }) {
   const { currency, change } = history;
   const direction = tone(change);
@@ -41,6 +65,7 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
         {history.changePercent !== null && <span>{percent(history.changePercent)}</span>}
         <span className="dashboard-hero__period">{periodLabels[history.period]}</span>
       </div>
+      <ChangeSplit history={history} />
       {!history.complete && (
         <p className="portfolio-warn" role="note">
           Incomplete: some assets had no price or rate in this period, so their value is not
@@ -108,7 +133,26 @@ export default function DashboardPage() {
             aria-label="Portfolio value over time"
           >
             <div className="portfolio-toolbar">
-              <h2>Capital</h2>
+              <div className="dashboard-chart-card__title">
+                <h2>Capital</h2>
+                <div className="dashboard-legend" aria-label="Chart legend">
+                  <span>
+                    <i className="dashboard-legend__line" aria-hidden="true" />
+                    Portfolio value
+                  </span>
+                  <span>
+                    <i
+                      className="dashboard-legend__line dashboard-legend__line--invested"
+                      aria-hidden="true"
+                    />
+                    Net invested
+                  </span>
+                  <span>
+                    <i className="dashboard-legend__deposit" aria-hidden="true" />
+                    Deposit
+                  </span>
+                </div>
+              </div>
               <div className="dashboard-periods" role="tablist" aria-label="Chart period">
                 {historyPeriods.map((value) => (
                   <button
@@ -132,7 +176,9 @@ export default function DashboardPage() {
             />
             <p className="shell-note dashboard-note">
               Values come from snapshots of your holdings at stored prices and Bank of Russia rates:
-              hourly for the last week, daily since Jan 1, 2025. Times are UTC.
+              hourly for the last week, daily since Jan 1, 2025. Times are UTC. Net invested is the
+              money you put in minus the money you took out, each at its day&apos;s rate; the gap
+              between the two lines is your profit or loss.
             </p>
           </section>
         </>

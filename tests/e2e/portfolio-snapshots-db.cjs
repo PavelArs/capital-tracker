@@ -132,13 +132,14 @@ async function backfill(db, s, f) {
   check('2026-10-04T00:00:00.000Z', btcClose(midnight('2026-10-04T00:00:00.000Z')) + 1200, true);
   check('2026-10-04T12:00:00.000Z', btcClose(midnight('2026-10-04T00:00:00.000Z')) + 1200, true);
   const all = await s.snapshots.history(owner, { period: 'ALL', currency: 'USD' }, now);
-  assert.deepEqual(Object.keys(all).sort(), ['at', 'change', 'changePercent', 'complete', 'currency', 'from',
-    'mainCurrency', 'period', 'points', 'value'].sort());
+  assert.deepEqual(Object.keys(all).sort(), ['at', 'change', 'changePercent', 'complete', 'currency', 'deposits',
+    'from', 'invested', 'mainCurrency', 'marketEffect', 'marketReturnPercent', 'netFlow', 'period', 'points', 'value',
+    'withdrawals'].sort());
   assert.deepEqual([all.period, all.currency, all.mainCurrency, all.at, all.from],
     ['ALL', 'USD', 'USD', now.toISOString(), '2025-01-01T00:00:00.000Z']);
   assert.equal(all.points[0].at, '2025-01-01T00:00:00.000Z', "The chart's ALL period starts on 01.01.2025 (Q4)");
   assert.equal(all.points.length, 643, 'Every daily point and the current value');
-  assert.deepEqual(all.points.at(-1), { at: now.toISOString(), value: all.value, complete: true });
+  assert.deepEqual(all.points.at(-1), { at: now.toISOString(), value: all.value, complete: true, invested: '51000' });
   assert.equal(all.value, String(btcClose(midnight('2026-10-04T00:00:00.000Z')) + 1200));
   assert.deepEqual([all.change, all.changePercent], [all.value, null], 'From zero: an amount, no percentage');
   assert.equal(all.complete, false, 'A period with an incomplete point is marked incomplete');
