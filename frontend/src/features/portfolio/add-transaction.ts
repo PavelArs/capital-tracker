@@ -3,11 +3,25 @@ import type { Operation } from '@api/operations.api';
 import type { TradeCommand } from '@api/trades.api';
 
 // "Add transaction" from the accepted prototype: buys and sells, the currency they were paid in
-// (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8).
+// (CUR-PAID-RUB), a comment, and a sale limited to what the account holds (M9, PR-OPS-8). The
+// currency is also the account's cash: a sale's proceeds stay as it and a buy spends it first
+// (PR-OPS-9).
 export const paidIn = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'] as const;
 export type PaidIn = (typeof paidIn)[number];
 export const needsRate = (currency: PaidIn): currency is 'EUR' | 'RUB' =>
   currency === 'EUR' || currency === 'RUB';
+
+/** Whether an asset is the cash a currency is kept as: a cash asset or the stablecoin itself. */
+export function isCashOf(
+  asset: { assetType: string; symbol: string | null; priceSource?: string },
+  currency: PaidIn,
+): boolean {
+  const symbol = asset.symbol?.toUpperCase();
+  if (symbol !== currency) return false;
+  return needsRate(currency) || currency === 'USD'
+    ? asset.assetType === 'fiat'
+    : asset.assetType === 'crypto' && (asset.priceSource ?? 'market') === 'market';
+}
 
 export interface TransactionEntry {
   side: 'buy' | 'sell';
@@ -105,6 +119,9 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
   const time = at.slice(11, 16);
   const paid = operation.paid;
   const fee = paid ? paid.fee : (operation.feeUsd ?? '0');
+  // A trade settled in USDT or USDC keeps that choice; otherwise the amounts tell it.
+  const kept = operation.settlement?.asset.symbol?.toUpperCase();
+  const stable = kept === 'USDT' || kept === 'USDC' ? kept : null;
   return {
     side: operation.type === 'sell' ? 'sell' : 'buy',
     instrumentId: operation.asset.instrumentId ?? '',
@@ -112,7 +129,7 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
     date: at.slice(0, 10),
     time: time === '00:00' && at.slice(16, 23) === ':00.000' ? '' : time,
     total: paid ? paid.gross : (operation.valueUsd ?? ''),
-    currency: paid ? paid.currency : 'USD',
+    currency: paid ? paid.currency : (stable ?? 'USD'),
     rate: paid?.rateSource === 'owner' ? paid.perUsd : '',
     rateEdited: paid?.rateSource === 'owner',
     fee: Number(fee) === 0 ? '' : fee,
@@ -123,12 +140,14 @@ export function entryFromOperation(operation: Operation): TransactionEntry {
 /**
  * The trade as the server takes it. RUB and EUR amounts go as paid; the server converts them
  * at the Bank of Russia rate of the date unless the owner changed the rate. USDT and USDC count
- * one to one with USD.
+ * one to one with USD. The currency settles the trade in the account's cash unless the asset
+ * traded is that cash itself.
  */
 export function tradeFromEntry(
   entry: TransactionEntry,
   identity: { requestId: string; expectedJournalRevision: number },
   orderWithinTimestamp?: number,
+  settle = true,
 ): TradeCommand {
   const gross = decimal(entry.total)!;
   const fee = entry.fee ? decimal(entry.fee)! : '0';
@@ -141,6 +160,7 @@ export function tradeFromEntry(
     ...(orderWithinTimestamp === undefined ? {} : { orderWithinTimestamp }),
     quantity: decimal(entry.amount)!,
     ...(comment ? { comment } : {}),
+    ...(settle ? { settlementCurrency: entry.currency } : {}),
     ...identity,
   };
   if (!needsRate(entry.currency)) return { ...trade, grossUsd: gross, feeUsd: fee };

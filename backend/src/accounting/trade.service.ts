@@ -1,13 +1,21 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { lockAccountingOwner } from './accounting-lock';
+import { classifyAsset, instrumentPayload } from './asset-classification';
 import type { RewardSummary } from './asset-reward-types';
 import type { SwapSummary } from './asset-swap-types';
 import {
   availableQuantity,
   firstShortfall,
+  type LedgerView,
   type Shortfall,
   withoutTrade,
 } from './available-quantity';
@@ -23,6 +31,7 @@ import {
 } from './connected-accounting.store';
 import { type Execution, FifoHistoryError } from './fifo';
 import { parseUuid } from './input';
+import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
 import { derivePaidAmounts } from './paid-currency';
 import {
@@ -52,6 +61,12 @@ import {
   versionSelect,
 } from './trade-journal.store';
 import { automaticOrder } from './trade-order';
+import {
+  cashAsset,
+  type SettlementCurrency,
+  settlementTotal,
+  type TradeSettlement,
+} from './trade-settlement';
 
 export type { TradeVersion } from './trade-journal.store';
 
@@ -116,6 +131,7 @@ function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
     grossUsd: value.grossUsd,
     feeUsd: value.feeUsd,
     ...(value.paid ? { paid: value.paid } : {}),
+    ...(value.settlement ? { settlement: value.settlement } : {}),
   };
 }
 /** The request as sent: amounts paid in RUB or EUR stay unconverted, so a replay never
@@ -129,6 +145,9 @@ function requested(value: TradeCreateInput) {
     quantity: value.quantity,
     ...(value.paid ? { paid: value.paid } : { grossUsd: value.grossUsd, feeUsd: value.feeUsd }),
     ...(value.comment === undefined ? {} : { comment: value.comment }),
+    ...(value.settlementCurrency === undefined
+      ? {}
+      : { settlementCurrency: value.settlementCurrency }),
   };
 }
 function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): JournalOrigin {
@@ -292,6 +311,17 @@ export class TradeService {
         )
           throw conflict();
         if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
+        if (input?.settlementCurrency) {
+          const settlement = await this.settle(
+            manager,
+            owner,
+            input.settlementCurrency,
+            nextExecution,
+            target === undefined ? ledger : withoutTrade(ledger, id, target),
+            id,
+          );
+          if (settlement) nextExecution = { ...nextExecution, settlement };
+        }
         const tradeId = target ?? randomUUID();
         const next = {
           ...nextExecution,
@@ -334,6 +364,76 @@ export class TradeService {
         return { created: true, value: receipt(id, saved) };
       })
       .catch(rethrowAccountingHistory);
+  }
+
+  /**
+   * The cash side of a trade (OPS-SELL-CASH, OPS-BUY-CASH). A sale keeps its proceeds net of
+   * fee as this cash in the same account, creating the cash asset when the owner has none. A
+   * buy spends what the account can spend of it at that instant, up to the buy's cost; the
+   * rest is money from outside. Without the asset there is no cash to spend.
+   */
+  private async settle(
+    manager: EntityManager,
+    owner: string,
+    currency: SettlementCurrency,
+    trade: Execution,
+    others: LedgerView,
+    accountId: string,
+  ): Promise<TradeSettlement | null> {
+    const asset = cashAsset[currency];
+    const [found]: { id: string; name: string; symbol: string | null }[] = await manager.query(
+      `SELECT id,name,symbol FROM accounting_instruments
+        WHERE "ownerId"=$1 AND "assetType"=$2 AND upper(symbol)=$3
+          AND ("assetType"<>'crypto' OR "priceSource"='market')
+        ORDER BY "createdAt",id LIMIT 1`,
+      [owner, asset.assetType, asset.symbol],
+    );
+    let instrument = found;
+    if (!instrument) {
+      if (trade.side === 'buy') return null;
+      const value = { requestId: randomUUID(), ...asset };
+      const classification = classifyAsset(value);
+      [instrument] = await manager.query(
+        `INSERT INTO accounting_instruments
+        (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,name,symbol`,
+        [
+          randomUUID(),
+          owner,
+          value.requestId,
+          instrumentPayload(value, classification),
+          value.name,
+          value.symbol,
+          classification.assetType,
+          classification.valuationCurrency,
+          classification.priceSource,
+        ],
+      );
+    }
+    // Not a BadRequestException: the history rethrow would turn that into a 409.
+    if (instrument.id === trade.instrumentId)
+      throw new HttpException(
+        'A trade cannot be settled in the asset it trades',
+        HttpStatus.BAD_REQUEST,
+      );
+    const total = settlementTotal(trade);
+    const quantity =
+      trade.side === 'sell'
+        ? total > 0n
+          ? total
+          : 0n
+        : (() => {
+            const held = canonicalDecimalToAtoms(
+              availableQuantity(others, accountId, instrument.id, trade.occurredAt),
+            );
+            return held < total ? held : total;
+          })();
+    return {
+      instrumentId: instrument.id,
+      instrumentName: instrument.name,
+      instrumentSymbol: instrument.symbol,
+      quantity: formatAtoms(quantity),
+    };
   }
 
   /**

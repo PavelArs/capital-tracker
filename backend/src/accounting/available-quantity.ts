@@ -1,6 +1,7 @@
 import { swapAtoms } from './asset-swap-fifo';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { ActiveTransferInput, OwnedAccountInput } from './owned-transfer-types';
+import { settlementLeg } from './trade-settlement';
 
 /** The accounts of one connected component and the transfers between them. */
 export interface LedgerView {
@@ -44,13 +45,24 @@ function movements(ledger: LedgerView): Movement[] {
       });
     for (const [index, trade] of account.trades.entries()) {
       const quantity = canonicalDecimalToAtoms(trade.quantity);
+      const deltas: Movement['deltas'] = [
+        [id, trade.instrumentId, trade.side === 'buy' ? quantity : -quantity],
+      ];
+      // A sale's proceeds stay as cash; a buy spends the account's cash first (M9).
+      const cash = settlementLeg(trade);
+      if (cash && trade.settlement)
+        deltas.push([
+          id,
+          trade.settlement.instrumentId,
+          trade.side === 'buy' ? -cash.quantity : cash.quantity,
+        ]);
       found.push({
         operationId: `trade:${trade.tradeId}`,
         occurredAt: trade.occurredAt,
         orderWithinTimestamp: trade.orderWithinTimestamp,
         rank: rank.trade,
         index,
-        deltas: [[id, trade.instrumentId, trade.side === 'buy' ? quantity : -quantity]],
+        deltas,
       });
     }
     for (const [index, reward] of (account.rewards ?? []).entries())
