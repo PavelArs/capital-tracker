@@ -46,20 +46,24 @@ const tickHour = new Intl.DateTimeFormat('en-US', {
 });
 
 /** "Oct 4, 13:00 UTC" for hourly periods, "Oct 4, 2026" otherwise; the last point is "Now". */
-export function pointLabel(point: HistoryPoint, period: HistoryPeriod, last: boolean): string {
+export function pointLabel(
+  point: Pick<HistoryPoint, 'at'>,
+  period: HistoryPeriod,
+  last: boolean,
+): string {
   if (last) return 'Now';
   const at = new Date(point.at);
   return hourly(period) ? `${hourFormat.format(at)} UTC` : dayFormat.format(at);
 }
 
-function tickLabel(time: number, period: HistoryPeriod): string {
+export function tickLabel(time: number, period: HistoryPeriod): string {
   const at = new Date(time);
   if (period === '24H') return tickHour.format(at);
   if (period === '1Y' || period === 'ALL') return tickMonth.format(at);
   return tickDay.format(at);
 }
 
-function niceStep(raw: number): number {
+export function niceStep(raw: number): number {
   if (!(raw > 0)) return 1;
   const power = 10 ** Math.floor(Math.log10(raw));
   const fraction = raw / power;
@@ -67,7 +71,7 @@ function niceStep(raw: number): number {
 }
 
 /** Axis amounts: $1.2M, ₽850K, €900. */
-function compact(value: number, currency: AccountingCurrency): string {
+export function compact(value: number, currency: AccountingCurrency): string {
   const formatted = new Intl.NumberFormat('en-US', {
     notation: 'compact',
     maximumFractionDigits: 1,

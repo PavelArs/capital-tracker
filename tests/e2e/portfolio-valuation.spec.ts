@@ -93,6 +93,15 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await expect(cells.nth(3)).toHaveText('$96,000.00');
   await expect(cells.nth(5)).toHaveText('$55,000.00');
   await expect(cells.nth(6)).toHaveText('+$30,000.00+45.45%');
+  // The manual price is the same as 24 hours ago (PV-24H).
+  await expect(cells.nth(7)).toHaveText('0.00%');
+  // SEARCH: the box next to the type filter finds the asset by its ticker.
+  const search = main.getByRole('searchbox', { name: 'Search assets' });
+  await search.fill('pvui');
+  await expect(main.getByRole('row', { name: new RegExp(`^${assetName}`) })).toHaveCount(1);
+  // Only the header row lacks the ticker while the search is on.
+  await expect(main.getByRole('row').filter({ hasNotText: 'PVUI' })).toHaveCount(1);
+  await search.fill('');
 
   const allocation = main.getByRole('region', { name: 'Allocation' });
   const grouping = allocation.getByRole('radiogroup', { name: 'Group allocation by' });
@@ -124,6 +133,30 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
     ).toHaveText(value);
   }
   await expect(main.getByText('Manual price set for Jan 4, 2025')).toBeVisible();
+  await expect(main.locator('.portfolio-head__change')).toHaveText('0.00% today');
+  // ASSET-CHART: value against cost basis from stored prices, with the asset's purchases.
+  const chart = main.getByRole('region', { name: 'Position value over time' });
+  await expect(
+    chart.getByRole('img', {
+      name: `${assetName} position value and cost basis, past month, in USD`,
+    }),
+  ).toBeVisible();
+  await chart.getByRole('tab', { name: 'ALL', exact: true }).click();
+  await expect(
+    chart.getByRole('img', {
+      name: `${assetName} position value and cost basis, since Jan 1, 2025, in USD`,
+    }),
+  ).toBeVisible();
+  await expect(chart.locator('.dashboard-chart__deposit')).toHaveCount(2);
+  const transactions = main.getByRole('region', { name: 'Transactions' });
+  await expect(transactions.getByRole('listitem').filter({ hasText: accountName })).toHaveText([
+    `BuyJan 3, 2025 · ${accountName}+0.2 PVUI$16,000.00`,
+    `BuyJan 2, 2025 · ${accountName}+1 PVUI$50,000.00`,
+  ]);
+  await expect(transactions.getByRole('link', { name: 'Open in Transactions' })).toHaveAttribute(
+    'href',
+    '/transactions?asset=PVUI',
+  );
   const holdings = main.getByRole('region', { name: 'Holdings' });
   await expect(holdings.getByRole('listitem')).toHaveText([`${accountName}1.2 PVUI$96,000.00`]);
   await expect(holdings.getByRole('link', { name: accountName })).toHaveAttribute(
@@ -133,5 +166,40 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await page.screenshot({ path: testInfo.outputPath('asset-1440-dark.png'), fullPage: true });
   await main.getByRole('link', { name: '← Portfolio' }).click();
   await expect(page).toHaveURL(`${origin}/portfolio`);
+
+  // ADD-ASSET-BALANCE: a deposit added with an amount and value holds that balance at once.
+  const depositName = `PORTFOLIO-UI deposit ${suffix}`;
+  await main.getByRole('button', { name: 'Add asset', exact: true }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Add asset' });
+  await dialog.getByRole('radio', { name: 'Deposit', exact: true }).check();
+  await dialog.getByLabel('Name', { exact: true }).fill(depositName);
+  await dialog.getByLabel('Amount', { exact: true }).fill('2500');
+  await dialog.getByLabel('Current value', { exact: true }).fill('3000');
+  await dialog.getByLabel('Wallet or account').selectOption({ label: accountName });
+  await dialog.getByLabel('Notes (optional)').fill('Synthetic opening balance');
+  const saved = (path: RegExp) =>
+    page.waitForResponse(
+      (response) => path.test(new URL(response.url()).pathname) && response.request().method() === 'POST',
+    );
+  const [assetSaved, trade, priced] = await Promise.all([
+    saved(/^\/api\/accounting\/instruments$/),
+    saved(/^\/api\/accounting\/accounts\/[^/]+\/trades$/),
+    saved(/^\/api\/accounting\/instruments\/[^/]+\/usd-prices$/),
+    dialog.getByRole('button', { name: 'Add asset', exact: true }).click(),
+  ]);
+  expect([assetSaved.status(), trade.status(), priced.status()]).toEqual([201, 201, 201]);
+  expect(await trade.json()).toMatchObject({
+    accountId: account.id,
+    trade: { side: 'buy', quantity: '2500', grossUsd: '3000', comment: 'Synthetic opening balance' },
+  });
+  expect(await priced.json()).toMatchObject({ kind: 'set', priceUsd: '1.2' });
+  await expect(dialog).toHaveCount(0);
+  const depositCells = main.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell');
+  await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · USD`);
+  await expect(depositCells.nth(1)).toHaveText('2,500');
+  await expect(depositCells.nth(2)).toHaveText('$1.20Manual');
+  await expect(depositCells.nth(3)).toHaveText('$3,000.00');
+  await expect(depositCells.nth(5)).toHaveText('$1.20');
+  await page.screenshot({ path: testInfo.outputPath('portfolio-added-1440-dark.png'), fullPage: true });
   expect(errors).toEqual([]);
 });

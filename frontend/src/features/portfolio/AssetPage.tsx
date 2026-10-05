@@ -1,3 +1,6 @@
+import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
+import { type Operation, operationsApi } from '@api/operations.api';
+import { type HistoryPeriod, historyPeriods } from '@api/portfolio-history.api';
 import {
   type AccountingCurrency,
   type AssetValuation,
@@ -6,9 +9,20 @@ import {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import {
+  assetKey,
+  day,
+  amount as operationAmount,
+  placeLabel,
+  signedAmount,
+  statusLabels,
+  typeLabel,
+  usd,
+} from '../transactions/operation-format';
+import AssetChart, { type Purchase } from './AssetChart';
 import { CurrencySwitch, ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
-import { assetCaption, Signed } from './PortfolioPage';
+import { assetCaption, Change, Signed } from './PortfolioPage';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -39,6 +53,44 @@ function priceDetail(asset: AssetValuation, currency: AccountingCurrency, now: D
   return `${sourceName(current.source)} · ${current.status === 'stale' ? 'stale, ' : ''}updated ${when}`;
 }
 
+const SHOWN_OPERATIONS = 10;
+const periodNames: Record<HistoryPeriod, string> = {
+  '24H': 'past 24 hours',
+  '7D': 'past 7 days',
+  '1M': 'past month',
+  '3M': 'past 3 months',
+  '1Y': 'past year',
+  ALL: 'since Jan 1, 2025',
+};
+
+/** The Transactions filter key of an asset, as the operations list writes it. */
+const keyOf = (asset: AssetValuation) =>
+  assetKey({ instrumentId: asset.instrumentId, symbol: asset.symbol, name: asset.name });
+
+/** Operations that move this asset, newest first (as the Transactions page filters them). */
+export function assetOperations(operations: readonly Operation[], key: string): Operation[] {
+  return operations
+    .filter((operation) =>
+      [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
+    )
+    .sort(
+      (left, right) =>
+        right.occurredAt.localeCompare(left.occurredAt) ||
+        right.orderWithinTimestamp - left.orderWithinTimestamp,
+    );
+}
+
+/** Recorded buys of the asset, drawn as dots on the chart. */
+export function purchasesOf(operations: readonly Operation[], instrumentId: string): Purchase[] {
+  return operations.flatMap((operation) =>
+    operation.type === 'buy' &&
+    operation.status === 'recorded' &&
+    operation.asset.instrumentId === instrumentId
+      ? [{ at: operation.occurredAt, quantity: operation.quantity }]
+      : [],
+  );
+}
+
 function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="portfolio-stat">
@@ -48,13 +100,188 @@ function Stat({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
+type OperationsState = Operation[] | 'loading' | 'failed';
+
+// Position value against cost basis over a period, with purchase dots (ASSET-CHART).
+function ValueChart({
+  asset,
+  currency,
+  asked,
+  operations,
+}: {
+  asset: AssetValuation;
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+  operations: OperationsState;
+}) {
+  const [period, setPeriod] = useState<HistoryPeriod>('1M');
+  const [history, setHistory] = useState<AssetHistory | null>(null);
+  const [failed, setFailed] = useState(false);
+  const instrumentId = asset.instrumentId;
+  const load = useCallback(async () => {
+    setFailed(false);
+    setHistory(null);
+    try {
+      setHistory(await assetHistoryApi.get(instrumentId, period, asked));
+    } catch {
+      setFailed(true);
+    }
+  }, [instrumentId, period, asked]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const purchases = Array.isArray(operations) ? purchasesOf(operations, instrumentId) : [];
+  const unit = asset.symbol ?? asset.name;
+  return (
+    <section className="shell-card dashboard-chart-card" aria-label="Position value over time">
+      <div className="portfolio-toolbar">
+        <div className="dashboard-legend" aria-label="Chart legend">
+          <span>
+            <i className="dashboard-legend__line" aria-hidden="true" />
+            Position value
+          </span>
+          <span>
+            <i
+              className="dashboard-legend__line dashboard-legend__line--invested"
+              aria-hidden="true"
+            />
+            Cost basis
+          </span>
+          <span>
+            <i className="dashboard-legend__deposit" aria-hidden="true" />
+            Purchase
+          </span>
+        </div>
+        <div className="dashboard-periods" role="tablist" aria-label="Chart period">
+          {historyPeriods.map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={period === value}
+              onClick={() => setPeriod(value)}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+      {failed ? (
+        <div className="portfolio-state" role="alert">
+          <p>Could not load the chart. Your data is safe; try again.</p>
+          <button type="button" className="shell-button" onClick={() => void load()}>
+            Try again
+          </button>
+        </div>
+      ) : history === null ? (
+        <p className="dashboard-chart__empty" role="status">
+          Loading the chart…
+        </p>
+      ) : (
+        <AssetChart
+          key={`${history.period}:${history.currency}:${history.at}`}
+          points={history.points}
+          period={history.period}
+          currency={history.currency}
+          symbol={unit}
+          purchases={purchases}
+          label={`${asset.name} position value and cost basis, ${periodNames[history.period]}, in ${history.currency}`}
+        />
+      )}
+      <p className="shell-note dashboard-note">
+        Value of what you held at stored prices and Bank of Russia rates in{' '}
+        {history?.currency ?? currency}: hourly for the last week, daily since Jan 1, 2025. Times
+        are UTC. Cost basis counts the coins with a known purchase price.
+      </p>
+    </section>
+  );
+}
+
+/** The amount of this asset an operation moves: a swap into it shows what arrived. */
+function movedAmount(operation: Operation, key: string): string {
+  if (assetKey(operation.asset) === key || !operation.counterAsset || !operation.counterQuantity)
+    return signedAmount(operation);
+  return operationAmount(operation.counterQuantity, operation.counterAsset, '+');
+}
+
+// The asset's own operations: the latest ten, then a link to all of them (prototype).
+function AssetTransactions({
+  asset,
+  operations,
+  onRetry,
+}: {
+  asset: AssetValuation;
+  operations: OperationsState;
+  onRetry: () => void;
+}) {
+  const key = keyOf(asset);
+  const own = Array.isArray(operations) ? assetOperations(operations, key) : [];
+  const all = `/transactions?asset=${encodeURIComponent(key)}`;
+  return (
+    <section className="shell-card" aria-labelledby="asset-transactions">
+      <div className="portfolio-toolbar">
+        <h2 id="asset-transactions">Transactions</h2>
+        {Array.isArray(operations) && <span className="portfolio-sub">{own.length}</span>}
+      </div>
+      {operations === 'failed' ? (
+        <div className="portfolio-state" role="alert">
+          <p>Could not load this asset's transactions.</p>
+          <button type="button" className="shell-button" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      ) : operations === 'loading' ? (
+        <p className="portfolio-none" role="status">
+          Loading transactions…
+        </p>
+      ) : own.length === 0 ? (
+        <p className="portfolio-none">No transactions yet.</p>
+      ) : (
+        <>
+          <ul className="portfolio-holdings portfolio-operations">
+            {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
+              <li key={operation.id}>
+                <span>
+                  {operation.status === 'needs-classification' ? (
+                    <span className="portfolio-pill">{statusLabels[operation.status]}</span>
+                  ) : (
+                    typeLabel(operation)
+                  )}
+                  <span className="portfolio-sub">
+                    {day(operation.occurredAt)} · {placeLabel(operation)}
+                  </span>
+                </span>
+                <span className="portfolio-num">
+                  {movedAmount(operation, key)}
+                  {operation.valueUsd !== null && (
+                    <span className="portfolio-sub">{usd(operation.valueUsd)}</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <Link className="portfolio-link portfolio-operations__all" to={all}>
+            {own.length > SHOWN_OPERATIONS ? `Show all ${own.length}` : 'Open in Transactions'}
+          </Link>
+        </>
+      )}
+    </section>
+  );
+}
+
 function AssetDetails({
   asset,
   portfolio,
+  asked,
+  operations,
+  onRetryOperations,
   now,
 }: {
   asset: AssetValuation;
   portfolio: PortfolioValuation;
+  asked: AccountingCurrency | undefined;
+  operations: OperationsState;
+  onRetryOperations: () => void;
   now: Date;
 }) {
   const unit = asset.symbol ?? '';
@@ -76,6 +303,11 @@ function AssetDetails({
         </div>
         <div className="portfolio-head__price">
           <b>{asset.price ? price(asset.price.value, currency) : missingLabel(asset)}</b>
+          {asset.priceChange24hPercent !== null && (
+            <span className="portfolio-head__change">
+              <Change value={asset.priceChange24hPercent} /> today
+            </span>
+          )}
           <span
             className={asset.price?.status === 'stale' ? 'portfolio-warn-text' : 'portfolio-sub'}
           >
@@ -124,31 +356,34 @@ function AssetDetails({
           </p>
         )}
       </section>
-      <section className="shell-card" aria-labelledby="asset-holdings">
-        <div className="portfolio-toolbar">
-          <h2 id="asset-holdings">Holdings</h2>
-          <span className="portfolio-sub">Where this balance sits</span>
-        </div>
-        {asset.holdings.length === 0 ? (
-          <p className="portfolio-none">Nothing held right now.</p>
-        ) : (
-          <ul className="portfolio-holdings">
-            {asset.holdings.map((holding) => (
-              <li key={holding.accountId}>
-                <Link to={`/manual-accounts/${holding.accountId}`}>{holding.accountName}</Link>
-                <span className="portfolio-num">
-                  {quantity(holding.quantity)} {unit}
-                  <span className="portfolio-sub">{amount(holding.value)}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="shell-note portfolio-note">
-          Price source: {sourceLabels[asset.priceSource]}. {ratesNote(portfolio)} The price chart
-          and this asset's transactions are not built yet.
-        </p>
-      </section>
+      <ValueChart asset={asset} currency={currency} asked={asked} operations={operations} />
+      <div className="portfolio-split">
+        <section className="shell-card" aria-labelledby="asset-holdings">
+          <div className="portfolio-toolbar">
+            <h2 id="asset-holdings">Holdings</h2>
+            <span className="portfolio-sub">Where this balance sits</span>
+          </div>
+          {asset.holdings.length === 0 ? (
+            <p className="portfolio-none">Nothing held right now.</p>
+          ) : (
+            <ul className="portfolio-holdings">
+              {asset.holdings.map((holding) => (
+                <li key={holding.accountId}>
+                  <Link to={`/manual-accounts/${holding.accountId}`}>{holding.accountName}</Link>
+                  <span className="portfolio-num">
+                    {quantity(holding.quantity)} {unit}
+                    <span className="portfolio-sub">{amount(holding.value)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="shell-note portfolio-note">
+            Price source: {sourceLabels[asset.priceSource]}. {ratesNote(portfolio)}
+          </p>
+        </section>
+        <AssetTransactions asset={asset} operations={operations} onRetry={onRetryOperations} />
+      </div>
     </>
   );
 }
@@ -173,6 +408,20 @@ export default function AssetPage() {
     void load();
   }, [load]);
 
+  // The asset's operations feed both the chart's purchases and its transactions card.
+  const [operations, setOperations] = useState<OperationsState>('loading');
+  const loadOperations = useCallback(async () => {
+    setOperations('loading');
+    try {
+      setOperations((await operationsApi.list()).operations);
+    } catch {
+      setOperations('failed');
+    }
+  }, []);
+  useEffect(() => {
+    void loadOperations();
+  }, [loadOperations]);
+
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   // The asked currency shows as chosen while its values load.
   const shownCurrency = asked ?? portfolio?.currency;
@@ -196,7 +445,14 @@ export default function AssetPage() {
           Loading asset…
         </section>
       ) : asset ? (
-        <AssetDetails asset={asset} portfolio={portfolio} now={new Date()} />
+        <AssetDetails
+          asset={asset}
+          portfolio={portfolio}
+          asked={asked}
+          operations={operations}
+          onRetryOperations={() => void loadOperations()}
+          now={new Date()}
+        />
       ) : (
         <section className="shell-card shell-empty" aria-labelledby="asset-missing">
           <h1 id="asset-missing">Asset not found</h1>

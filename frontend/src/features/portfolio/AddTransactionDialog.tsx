@@ -26,7 +26,7 @@ import {
 } from './add-transaction';
 import { money, quantity } from './format';
 
-interface Account {
+export interface Account {
   id: string;
   name: string;
   /** 0 for an account without a journal yet: its first trade starts one (OPS-ADD-BUY). */
@@ -83,7 +83,7 @@ function failure(error: unknown): string {
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-async function journalAccounts(): Promise<Account[]> {
+export async function journalAccounts(): Promise<Account[]> {
   const accounts = [];
   let cursor: string | undefined;
   do {

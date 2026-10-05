@@ -1,9 +1,14 @@
+import { accountingApi } from '@api/accounting.api';
+import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
+import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
+import { type Operation, operationsApi } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import {
   type AssetValuation,
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
+import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -28,6 +33,7 @@ const valued = (
   quantity: '0',
   price: null,
   missingPrice: 'no-price',
+  priceChange24hPercent: null,
   value: '0',
   allocationPercent: null,
   costBasis: '0',
@@ -49,6 +55,7 @@ const bitcoin = valued(1, 'Bitcoin', 'BTC', crypto, {
   quantity: '1.2',
   price: { value: '80000', observedAt: minutesAgo(30), source: 'kraken', status: 'fresh' },
   missingPrice: null,
+  priceChange24hPercent: '-1.40',
   value: '96000',
   allocationPercent: '96.00',
   costBasis: '66000',
@@ -70,6 +77,7 @@ const cash = valued(
     quantity: '4000',
     price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
     missingPrice: null,
+    priceChange24hPercent: '0.00',
     value: '4000',
     allocationPercent: '4.00',
     costBasis: '4000',
@@ -176,8 +184,56 @@ const httpError = (status: number) =>
     config: { headers: new AxiosHeaders() },
   });
 
+// One manual account without a journal yet: its first trade starts one (OPS-ADD-BUY).
+const createTrade = vi.fn();
+const setPrice = vi.fn();
+const receiptFor = (quantity: string, grossUsd: string): TradeReceipt =>
+  ({
+    accountId: id(101),
+    journalRevision: 1,
+    trade: { quantity, grossUsd, feeUsd: '0', occurredAt: '2026-10-05T10:15:00.000Z' },
+  }) as TradeReceipt;
+const emptyHistory = (instrumentId: string): AssetHistory => ({
+  instrumentId,
+  period: '1M',
+  currency: 'USD',
+  mainCurrency: 'USD',
+  from: '2026-09-05T00:00:00.000Z',
+  at: '2026-10-05T12:00:00.000Z',
+  points: [],
+});
+
 beforeEach(() => {
   vi.restoreAllMocks();
+  createTrade.mockReset();
+  setPrice.mockReset();
+  vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+    items: [
+      { id: id(101), name: 'Trust Wallet', currentRevision: 0, createdAt: '2025-01-01T00:00:00Z' },
+    ],
+    nextCursor: null,
+  });
+  vi.spyOn(tradesApi, 'state').mockResolvedValue({
+    accountId: id(101),
+    eligible: true,
+    ineligibilityReason: null,
+    journal: null,
+  } as JournalState);
+  createTrade.mockImplementation(async (_account, command) =>
+    receiptFor(command.quantity, command.grossUsd ?? '1500'),
+  );
+  vi.spyOn(tradesApi, 'create').mockImplementation(createTrade);
+  setPrice.mockResolvedValue({} as PriceReceipt);
+  vi.spyOn(manualPricesApi, 'set').mockImplementation(setPrice);
+  vi.spyOn(operationsApi, 'list').mockResolvedValue({
+    at: '2026-10-05T12:00:00.000Z',
+    quoteCurrency: 'USD',
+    needsClassificationCount: 0,
+    operations: [],
+  });
+  vi.spyOn(assetHistoryApi, 'get').mockImplementation(async (instrumentId) =>
+    emptyHistory(instrumentId),
+  );
 });
 afterEach(cleanup);
 
@@ -213,6 +269,7 @@ describe('PV-UI Portfolio values every asset', () => {
       '96.00%',
       '$55,000.00',
       '+$30,000.00+45.45%',
+      '-1.40%',
     ]);
     expect(cells(rowOf('US dollar'))).toEqual([
       'US dollarUSD · Cash · USD',
@@ -222,11 +279,13 @@ describe('PV-UI Portfolio values every asset', () => {
       '4.00%',
       '$1.00',
       '$0.000.00%',
+      '0.00%',
     ]);
     expect(cells(rowOf('Rubles'))).toEqual([
       'RublesRUB · Cash · RUB',
       '100,000',
       'No rateFixed',
+      '—',
       '—',
       '—',
       '—',
@@ -237,6 +296,7 @@ describe('PV-UI Portfolio values every asset', () => {
       '0',
       'No priceManual',
       '$0.00',
+      '—',
       '—',
       '—',
       '—',
@@ -337,8 +397,9 @@ describe('PV-UI Portfolio values every asset', () => {
     const add = async () => {
       await user.click(screen.getByRole('button', { name: 'Add asset' }));
       const dialog = screen.getByRole('dialog', { name: 'Add asset' });
-      await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
-      await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+      await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
+      await user.type(within(dialog).getByLabelText('Name'), 'Toncoin');
+      await user.type(within(dialog).getByLabelText('Ticker'), 'TON');
       await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     };
@@ -411,26 +472,47 @@ describe('PV-UI Portfolio values every asset', () => {
 });
 
 describe('AST-UI Portfolio lists assets with their classification', () => {
-  it('adds a manual deposit in rubles and filters by type', async () => {
+  const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: 'Add asset' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add asset' });
+    // The wallet list is loaded before a balance can be added.
+    await within(dialog).findByLabelText('Wallet or account');
+    return dialog;
+  };
+
+  it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
     let assets = [bitcoin, toncoin];
     const get = vi
       .spyOn(portfolioValuationApi, 'get')
       .mockImplementation(async () => portfolio(assets));
     const create = vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
-      assets = [...assets, deposit];
+      assets = [...assets, { ...deposit, quantity: '150000' }];
       return depositAsset;
     });
+    createTrade.mockResolvedValue(receiptFor('150000', '1500'));
     const user = userEvent.setup();
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     expect(cells(rowOf('Toncoin'))[0]).toBe('ToncoinTON · Crypto · USD');
     expect(cells(rowOf('Toncoin'))[2]).toBe('No priceManual');
 
-    await user.click(screen.getByRole('button', { name: 'Add asset' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add asset' });
-    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
+    const dialog = await openDialog(user);
+    expect(within(dialog).getByRole('radiogroup', { name: 'Type' }).textContent).toBe(
+      'CashDepositCryptocurrencyOther',
+    );
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
     await user.type(within(dialog).getByLabelText('Name'), '  Deposit ');
+    await user.type(within(dialog).getByLabelText('Amount'), '150000');
+    expect(within(dialog).getByLabelText('Current value')).toHaveAttribute(
+      'placeholder',
+      'Same as amount',
+    );
     await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    expect(within(dialog).getByLabelText('Wallet or account')).toHaveDisplayValue('Trust Wallet');
+    await user.type(within(dialog).getByLabelText('Notes (optional)'), 'Savings account');
+    expect(within(dialog).getByRole('note')).toHaveTextContent(
+      'Adding it counts as a deposit. Later price changes count as market movement.',
+    );
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -441,19 +523,180 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       assetType: 'manual',
       valuationCurrency: 'RUB',
     });
+    // The balance is a buy of the amount for its value, paid in rubles.
+    expect(createTrade).toHaveBeenCalledWith(id(101), {
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      expectedJournalRevision: 0,
+      instrumentId: deposit.instrumentId,
+      side: 'buy',
+      occurredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/),
+      quantity: '150000',
+      comment: 'Savings account',
+      paid: { currency: 'RUB', gross: '150000', fee: '0' },
+    });
+    // A hand-valued asset starts at the USD price its value implies at that moment.
+    expect(setPrice).toHaveBeenCalledWith(deposit.instrumentId, {
+      requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      expectedRevision: 0,
+      observedAt: '2026-10-05T10:15:00.000Z',
+      priceUsd: '0.01',
+      assertReviewed: true,
+    });
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
     expect(get).toHaveBeenCalledTimes(2);
-    expect(cells(rowOf('Deposit')).slice(0, 3)).toEqual([
-      'DepositManual · RUB',
-      '0',
-      'No priceManual',
-    ]);
+    expect(cells(rowOf('Deposit')).slice(0, 2)).toEqual(['DepositManual · RUB', '150,000']);
 
     await user.click(screen.getByRole('button', { name: /^Manual/ }));
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
     expect(rowOf('Deposit')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
+  });
+
+  it('adds cash at its amount and a coin at its cost, with no price for either', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const create = vi
+      .spyOn(portfolioAssetsApi, 'create')
+      .mockResolvedValueOnce({
+        ...depositAsset,
+        id: cash.instrumentId,
+        name: 'Cash at home',
+        symbol: 'USD',
+        assetType: 'fiat',
+        valuationCurrency: 'USD',
+        priceSource: 'fixed',
+      })
+      .mockResolvedValueOnce({
+        ...depositAsset,
+        id: id(7),
+        name: 'Ether',
+        symbol: 'ETH',
+        assetType: 'crypto',
+        valuationCurrency: 'USD',
+        priceSource: 'market',
+      });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    let dialog = await openDialog(user);
+    // Cash is worth its amount: no separate value field and no ticker.
+    expect(within(dialog).queryByLabelText('Current value')).toBeNull();
+    expect(within(dialog).queryByLabelText(/Ticker/)).toBeNull();
+    await user.type(within(dialog).getByLabelText('Name'), 'Cash at home');
+    await user.type(within(dialog).getByLabelText('Amount'), '1 000,50');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create.mock.calls[0][0]).toMatchObject({
+      name: 'Cash at home',
+      assetType: 'fiat',
+      symbol: 'USD',
+    });
+    expect(createTrade.mock.calls[0][1]).toMatchObject({
+      instrumentId: cash.instrumentId,
+      quantity: '1000.50',
+      grossUsd: '1000.50',
+      feeUsd: '0',
+    });
+
+    dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
+    expect(within(dialog).getByLabelText('Amount (optional)')).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('Name'), 'Ether');
+    await user.type(within(dialog).getByLabelText('Ticker'), 'eth');
+    await user.type(within(dialog).getByLabelText('Amount (optional)'), '0.5');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(within(dialog).getByText('Enter what it cost')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('radio', { name: 'EUR' }));
+    await user.type(within(dialog).getByLabelText('Total cost'), '1200');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create.mock.calls[1][0]).toMatchObject({ assetType: 'crypto', symbol: 'ETH' });
+    expect(createTrade.mock.calls[1][1]).toMatchObject({
+      instrumentId: id(7),
+      quantity: '0.5',
+      paid: { currency: 'EUR', gross: '1200', fee: '0' },
+    });
+    expect(setPrice).not.toHaveBeenCalled();
+  });
+
+  it('asks for the amount and keeps a saved asset when its balance is refused', async () => {
+    let assets = [bitcoin];
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockImplementation(async () => portfolio(assets));
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
+      assets = [...assets, deposit];
+      return depositAsset;
+    });
+    createTrade
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockRejectedValueOnce(httpError(409))
+      .mockResolvedValueOnce(receiptFor('100', '1'));
+    setPrice.mockRejectedValueOnce(new AxiosError('offline'));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Other' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(within(dialog).getByText('Enter an amount greater than 0')).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The asset was added, but its balance was not saved. Could not reach the server; try again.',
+    );
+    // The saved asset is not asked for again and cannot change.
+    expect(within(dialog).getByLabelText('Name')).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The account was changed elsewhere; try again.',
+    );
+    expect(createTrade.mock.calls[1][1].requestId).toBe(createTrade.mock.calls[0][1].requestId);
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'The asset and its balance were saved, but its price was not. Try again.',
+    );
+    // A refused request saved nothing, so the next one has its own id.
+    expect(createTrade.mock.calls[2][1].requestId).not.toBe(createTrade.mock.calls[1][1].requestId);
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createTrade).toHaveBeenCalledTimes(3);
+    expect(setPrice).toHaveBeenCalledTimes(2);
+    expect(setPrice.mock.calls[1][1].requestId).toBe(setPrice.mock.calls[0][1].requestId);
+    expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  it('closing after a saved asset still shows it, and no account means no balance', async () => {
+    let assets = [bitcoin];
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio(assets));
+    vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
+      assets = [...assets, deposit];
+      return depositAsset;
+    });
+    createTrade.mockRejectedValue(httpError(500));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await within(dialog).findByRole('alert');
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
+
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    await user.click(screen.getByRole('button', { name: 'Add asset' }));
+    const empty = screen.getByRole('dialog', { name: 'Add asset' });
+    expect(
+      await within(empty).findByText(/To give it a balance, add a wallet or account first/),
+    ).toBeInTheDocument();
+    expect(within(empty).getByRole('link', { name: 'manual accounts' })).toHaveAttribute(
+      'href',
+      '/manual-accounts',
+    );
   });
 
   it('keeps the dialog and request id on a refusal, then retries the same request', async () => {
@@ -465,22 +708,23 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       .mockResolvedValueOnce(depositAsset);
     const user = userEvent.setup();
     renderAt('/portfolio');
-    await user.click(await screen.findByRole('button', { name: 'Add asset' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add asset' });
-    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
-    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Toncoin');
+    await user.type(within(dialog).getByLabelText('Ticker'), 'TON');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(/could not reach/i);
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(/check the fields/i);
     expect(create.mock.calls[1][0].requestId).toBe(create.mock.calls[0][0].requestId);
-    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await user.type(within(dialog).getByLabelText('Ticker'), 'C');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(create.mock.calls[2][0].requestId).not.toBe(create.mock.calls[0][0].requestId);
+    expect(createTrade).not.toHaveBeenCalled();
   });
 
-  it('shows a new asset even when a filter would hide it', async () => {
+  it('shows a new asset even when a filter or search would hide it', async () => {
     let assets = [bitcoin];
     vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio(assets));
     vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
@@ -491,14 +735,16 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     await user.click(screen.getByRole('button', { name: /^Crypto/ }));
-    await user.click(screen.getByRole('button', { name: 'Add asset' }));
-    const dialog = screen.getByRole('dialog', { name: 'Add asset' });
-    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search assets' }), 'bit');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
     await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('searchbox', { name: 'Search assets' })).toHaveValue('');
   });
 
   it('keeps focus inside the dialog, returns it on close and cannot close mid-save', async () => {
@@ -514,8 +760,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     renderAt('/portfolio');
     await screen.findByRole('row', { name: /^Bitcoin/ });
     const opener = screen.getByRole('button', { name: 'Add asset' });
-    await user.click(opener);
-    let dialog = screen.getByRole('dialog', { name: 'Add asset' });
+    let dialog = await openDialog(user);
     expect(within(dialog).getByLabelText('Name')).toHaveFocus();
     const submit = within(dialog).getByRole('button', { name: 'Add asset' });
     submit.focus();
@@ -527,16 +772,41 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
 
-    await user.click(opener);
-    dialog = screen.getByRole('dialog', { name: 'Add asset' });
-    await user.click(within(dialog).getByRole('radio', { name: 'Manual' }));
-    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Cryptocurrency' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Toncoin');
+    await user.type(within(dialog).getByLabelText('Ticker'), 'TON');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await user.keyboard('{Escape}');
     expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
     expect(screen.getByRole('dialog', { name: 'Add asset' })).toBeInTheDocument();
     finish(depositAsset);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('SEARCH finds assets by name or ticker next to the type filter', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash, toncoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    const search = screen.getByRole('searchbox', { name: 'Search assets' });
+    expect(search).toHaveAttribute('placeholder', 'Search assets');
+    const names = () =>
+      screen
+        .getAllByRole('row')
+        .slice(1)
+        .map((row) => row.textContent?.split(' ')[0]);
+    await user.type(search, 'BIT');
+    expect(screen.getAllByRole('row').slice(1)).toHaveLength(1);
+    expect(rowOf('Bitcoin')).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, 'usd');
+    expect(names()).toHaveLength(1);
+    expect(rowOf('US dollar')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Crypto/ }));
+    expect(screen.getByText('No assets match "usd".')).toBeInTheDocument();
+    await user.clear(search);
+    expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
   });
 
   it('shows the empty, loading and error states honestly', async () => {
@@ -554,6 +824,160 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('ASSET-UI the asset page shows its chart, transactions and daily change', () => {
+  const operation = (n: number, changes: Partial<Operation> = {}): Operation => ({
+    id: `trade:${id(500 + n)}`,
+    kind: 'trade',
+    type: 'buy',
+    direction: 'in',
+    occurredAt: `2026-09-${String(n).padStart(2, '0')}T10:00:00.000Z`,
+    asset: { instrumentId: bitcoin.instrumentId, symbol: 'BTC', name: 'Bitcoin' },
+    quantity: '0.01',
+    counterAsset: null,
+    counterQuantity: null,
+    valueUsd: '800',
+    estimatedValueUsd: null,
+    costBasisUsd: null,
+    feeUsd: '0',
+    fee: null,
+    account: { id: id(101), name: 'Trust Wallet' },
+    counterAccount: null,
+    wallet: null,
+    chain: null,
+    status: 'recorded',
+    source: 'manual',
+    version: 1,
+    paid: null,
+    comment: null,
+    orderWithinTimestamp: 0,
+    ...changes,
+  });
+  const point = (at: string, value: string | null, cost: string, quantity = '1') => ({
+    at,
+    quantity,
+    value,
+    complete: value !== null,
+    cost,
+    costComplete: true,
+  });
+
+  it('shows the price change today, the value against cost chart and its periods', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      operations: [operation(20, { quantity: '0.2', occurredAt: '2026-09-20T09:00:00.000Z' })],
+    });
+    const history = vi
+      .mocked(assetHistoryApi.get)
+      .mockImplementation(async (instrumentId, period) => ({
+        ...emptyHistory(instrumentId),
+        period,
+        points: [
+          point('2026-09-19T00:00:00.000Z', '50000', '50000'),
+          point('2026-09-20T00:00:00.000Z', '52000', '50000'),
+          point('2026-09-21T00:00:00.000Z', '62400', '66000', '1.2'),
+          point('2026-10-05T12:00:00.000Z', '96000', '66000', '1.2'),
+        ],
+      }));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    expect(await screen.findByText('today')).toHaveTextContent('-1.40% today');
+    const chart = await screen.findByRole('region', { name: 'Position value over time' });
+    expect(within(chart).getByLabelText('Chart legend')).toHaveTextContent(
+      'Position valueCost basisPurchase',
+    );
+    expect(
+      within(chart).getByRole('img', {
+        name: 'Bitcoin position value and cost basis, past month, in USD',
+      }),
+    ).toBeInTheDocument();
+    expect(history).toHaveBeenLastCalledWith(bitcoin.instrumentId, '1M', undefined);
+    // The buy on 20 September 09:00 is drawn on the first point after it.
+    expect(chart.querySelectorAll('.dashboard-chart__deposit')).toHaveLength(1);
+    await user.click(within(chart).getByRole('tab', { name: '7D' }));
+    expect(within(chart).getByRole('tab', { name: '7D' })).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() =>
+      expect(history).toHaveBeenLastCalledWith(bitcoin.instrumentId, '7D', undefined),
+    );
+    expect(
+      await within(chart).findByRole('img', {
+        name: 'Bitcoin position value and cost basis, past 7 days, in USD',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('lists the latest ten operations of the asset and links to all of them', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const buys = Array.from({ length: 11 }, (_, index) => operation(index + 1));
+    const unclassified = operation(28, {
+      id: 'chain:abc',
+      kind: 'chain',
+      type: null,
+      asset: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
+      quantity: '0.0087',
+      valueUsd: null,
+      account: null,
+      wallet: { id: id(301), network: 'bitcoin', address: 'bc1qsyntheticaddress000000000000' },
+      status: 'needs-classification',
+      source: 'chain',
+    });
+    const ether = operation(29, {
+      asset: { instrumentId: id(9), symbol: 'ETH', name: 'Ethereum' },
+    });
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 1,
+      operations: [...buys, unclassified, ether],
+    });
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const card = await screen.findByRole('region', { name: 'Transactions' });
+    const rows = await within(card).findAllByRole('listitem');
+    expect(rows).toHaveLength(10);
+    expect(rows[0]).toHaveTextContent(
+      'Needs classificationSep 28, 2026 · Bitcoin wallet bc1qsy…0000+0.0087 BTC',
+    );
+    expect(rows[1]).toHaveTextContent('BuySep 11, 2026 · Trust Wallet+0.01 BTC$800.00');
+    expect(card).toHaveTextContent('12');
+    expect(within(card).getByRole('link', { name: 'Show all 12' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC',
+    );
+  });
+
+  it('reports a chart or transactions failure and recovers on retry', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    vi.mocked(operationsApi.list)
+      .mockRejectedValueOnce(httpError(500))
+      .mockResolvedValue({
+        at: '2026-10-05T12:00:00.000Z',
+        quoteCurrency: 'USD',
+        needsClassificationCount: 0,
+        operations: [operation(3)],
+      });
+    vi.mocked(assetHistoryApi.get).mockRejectedValueOnce(httpError(500));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const card = await screen.findByRole('region', { name: 'Transactions' });
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      "Could not load this asset's transactions.",
+    );
+    await user.click(within(card).getByRole('button', { name: 'Try again' }));
+    expect(
+      await within(card).findByRole('link', { name: 'Open in Transactions' }),
+    ).toBeInTheDocument();
+    const chart = screen.getByRole('region', { name: 'Position value over time' });
+    expect(await within(chart).findByRole('alert')).toHaveTextContent('Could not load the chart.');
+    await user.click(within(chart).getByRole('button', { name: 'Try again' }));
+    expect(
+      await within(chart).findByText('No value can be shown for this period in USD.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Holdings' })).not.toHaveTextContent('not built');
   });
 });
 

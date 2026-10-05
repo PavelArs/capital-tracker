@@ -135,10 +135,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(portfolio.getByText(/not built yet/i)).toHaveCount(0);
   await portfolio.getByRole('button', { name: 'Add asset', exact: true }).first().click();
   const addAsset = page.getByRole('dialog', { name: 'Add asset' });
-  const depositName = `SHELL-UI deposit ${randomUUID()}`;
-  await addAsset.getByRole('radio', { name: 'Manual', exact: true }).check();
+  // A coin may start without a balance whatever accounts the shared database holds.
+  const depositName = `SHELL-UI coin ${randomUUID()}`;
+  await addAsset.getByRole('radio', { name: 'Cryptocurrency', exact: true }).check();
   await addAsset.getByLabel('Name', { exact: true }).fill(depositName);
-  await addAsset.getByRole('radio', { name: 'RUB', exact: true }).check();
+  await addAsset.getByLabel('Ticker', { exact: true }).fill('shui');
   const assetCreated = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/accounting/instruments' &&
@@ -149,31 +150,31 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect(assetResponse.status()).toBe(201);
   expect(await assetResponse.json()).toMatchObject({
     name: depositName,
-    symbol: null,
-    assetType: 'manual',
-    valuationCurrency: 'RUB',
+    symbol: 'SHUI',
+    assetType: 'crypto',
+    valuationCurrency: 'USD',
     priceSource: 'manual',
   });
   await expect(addAsset).toHaveCount(0);
-  // The asset cell carries the type and value currency; a manual asset never bought shows
-  // amount 0 and no price yet (portfolio-valuation PV-5).
+  // The asset cell carries the type and value currency; a coin outside the market catalog
+  // never bought shows amount 0 and no price yet (portfolio-valuation PV-5).
   const depositCells = portfolio
     .getByRole('row', { name: new RegExp(`^${depositName}`) })
     .getByRole('cell');
-  await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · RUB`);
+  await expect(depositCells.nth(0)).toHaveText(`${depositName}SHUI · Crypto · USD`);
   await expect(depositCells.nth(1)).toHaveText('0');
   await expect(depositCells.nth(2)).toHaveText('No priceManual');
   await page.reload();
-  await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · RUB`);
+  await expect(depositCells.nth(0)).toHaveText(`${depositName}SHUI · Crypto · USD`);
   await expect(depositCells.nth(2)).toHaveText('No priceManual');
   const chips = portfolio.getByRole('group', { name: 'Filter assets' });
-  await chips.getByRole('button', { name: /^Manual/ }).click();
-  await expect(chips.getByRole('button', { name: /^Manual/ })).toHaveAttribute(
+  await chips.getByRole('button', { name: /^Crypto/ }).click();
+  await expect(chips.getByRole('button', { name: /^Crypto/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
   await expect(portfolio.getByRole('row', { name: new RegExp(`^${depositName}`) })).toBeVisible();
-  for (const other of ['Crypto', 'Cash']) {
+  for (const other of ['Manual', 'Cash']) {
     await expect(
       portfolio
         .locator('.portfolio-asset__ticker')

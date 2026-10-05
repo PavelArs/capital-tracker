@@ -59,6 +59,23 @@ export function Signed({
   );
 }
 
+/** A signed percentage in the gain or loss colour: "+2.10%", "-1.40%", or a dash. */
+export function Change({ value }: { value: string | null }) {
+  return (
+    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>{percent(value)}</span>
+  );
+}
+
+/** Whether the asset's name or ticker contains the search text, ignoring case. */
+export function matchesSearch(asset: AssetValuation, search: string): boolean {
+  const text = search.trim().toLowerCase();
+  return (
+    !text ||
+    asset.name.toLowerCase().includes(text) ||
+    (asset.symbol ?? '').toLowerCase().includes(text)
+  );
+}
+
 function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const unpriced = portfolio.missingPriceCount;
   const currency = portfolio.currency;
@@ -233,6 +250,9 @@ function AssetsTable({
             <th scope="col" className="portfolio-num">
               Unrealized P&amp;L
             </th>
+            <th scope="col" className="portfolio-num">
+              24h
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -273,6 +293,9 @@ function AssetsTable({
                   ratio={asset.unrealizedReturnPercent}
                 />
               </td>
+              <td className="portfolio-num">
+                <Change value={asset.priceChange24hPercent} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -286,6 +309,7 @@ export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
   const [adding, setAdding] = useState(false);
   const [recording, setRecording] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -315,10 +339,13 @@ export default function PortfolioPage() {
   }, [load]);
 
   const assets = portfolio?.assets ?? [];
-  const visible = assets.filter((asset) => filter === 'all' || asset.assetType === filter);
+  const visible = assets.filter(
+    (asset) => (filter === 'all' || asset.assetType === filter) && matchesSearch(asset, search),
+  );
   const added = (asset: PortfolioAsset) => {
-    // The new row must be visible, so a filter that would hide it is cleared.
+    // The new row must be visible, so a filter or search that would hide it is cleared.
     setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
+    setSearch('');
     setAdding(false);
     void load(true);
   };
@@ -408,9 +435,21 @@ export default function PortfolioPage() {
                   </button>
                 ))}
               </div>
+              <input
+                type="search"
+                className="portfolio-search"
+                placeholder="Search assets"
+                aria-label="Search assets"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
             </div>
             <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
-            {visible.length === 0 && <p className="portfolio-none">No assets of this type.</p>}
+            {visible.length === 0 && (
+              <p className="portfolio-none">
+                {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this type.'}
+              </p>
+            )}
             <p className="shell-note portfolio-note">
               {ratesNote(portfolio)} Holdings come from your{' '}
               <Link to="/manual-accounts">manual accounts</Link>.
