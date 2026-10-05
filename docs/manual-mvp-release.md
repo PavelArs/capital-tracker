@@ -279,7 +279,12 @@ collection stays disabled. Do not permit another DB writer during that maintenan
 Backups use `pg_dump -Fc` piped directly into OpenSSL AES256-CBC with PBKDF2/200000
 iterations; no plaintext dump is persisted. A SHA256 checksum records encrypted bytes.
 Decryption streams into a network-disconnected PostgreSQL container with tmpfs storage;
-normalized logical schema/data dumps must match before migration. The encryption key
+normalized logical schema/data dumps must match before migration. PostgreSQL re-parses a
+`varchar` column `IN (...)` CHECK into a different but equivalent text, so each such
+constraint needs an exact reviewed pair in `scripts/normalize-release-snapshot.awk`; the
+`migrations` acceptance check (REL-RESTORE-001) fails when a migration adds one without it.
+Production release 37301907294 stopped at this comparison, before migrating, on
+`owner_settings_mainCurrency_check` (migration 26). The encryption key
 is separate from the backup directory and independently generated from the MFA key.
 Copy both keys into access-controlled encrypted operator storage through a trusted
 channel; losing the MFA key breaks factor decryption, losing the backup key prevents DB
