@@ -324,6 +324,25 @@ isolated(
     await expect(
       main.getByRole('heading', { level: 2, name: walletName, exact: true }),
     ).toBeVisible();
+    // The chain check spans the summary under its figures; Last sync starts under its label.
+    const summary = main.getByRole('region', { name: 'Summary', exact: true });
+    await expect(summary.getByRole('note')).toContainText('Balance differs by 46.88647965 BTC.');
+    const misplaced = await summary.evaluate((card) => {
+      const box = (element: Element | null) => element?.getBoundingClientRect();
+      const grid = box(card.querySelector('dl'));
+      const note = box(card.querySelector('[role="note"]'));
+      const last = [...card.querySelectorAll('dt')].find((dt) => dt.textContent === 'Last sync');
+      const label = box(last ?? null);
+      const status = box(last?.nextElementSibling?.querySelector('.wallets-badge') ?? null);
+      if (!grid || !note || !label || !status) return ['missing summary parts'];
+      return [
+        Math.abs(note.left - grid.left) > 1 && `note left ${note.left} vs ${grid.left}`,
+        Math.abs(note.right - grid.right) > 1 && `note right ${note.right} vs ${grid.right}`,
+        note.top - grid.bottom < 12 && `note gap ${note.top - grid.bottom}px`,
+        Math.abs(status.left - label.left) > 1 && `status left ${status.left} vs ${label.left}`,
+      ].filter(Boolean);
+    });
+    expect(misplaced).toEqual([]);
     const walletAddresses = main.getByRole('region', {
       name: 'Addresses',
       exact: true,

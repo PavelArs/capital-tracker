@@ -98,8 +98,14 @@
   gap: 8px;
 }
 
-.wallets-status--start {
+/* A wallet's summary card: the status sits left like the other figures. */
+.wallet-overview .wallets-status {
   justify-content: flex-start;
+  min-height: 1.5em;
+}
+
+.wallet-overview > .wallets-message {
+  margin: 18px 0 0;
 }
 
 a.wallets-asset {
