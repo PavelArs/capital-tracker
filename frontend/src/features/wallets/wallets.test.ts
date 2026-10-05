@@ -17,7 +17,15 @@ const address = (n: number, changes: Partial<WalletAddress>): WalletAddress => (
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
-  sync: { state: 'complete', completedAt: '2026-10-05T10:00:00.000Z' },
+  sync: {
+    state: 'complete',
+    completedAt: '2026-10-05T10:00:00.000Z',
+    status: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextRunAt: null,
+    errorMessage: null,
+  },
   ...changes,
 });
 
@@ -84,7 +92,18 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       reconcile(
         [
           address(1, {}),
-          address(2, { chainBalance: null, sync: { state: 'partial', completedAt: null } }),
+          address(2, {
+            chainBalance: null,
+            sync: {
+              state: 'partial',
+              completedAt: null,
+              status: null,
+              lastAttemptAt: null,
+              lastSuccessAt: null,
+              nextRunAt: null,
+              errorMessage: null,
+            },
+          }),
         ],
         portfolio([]),
         trust,

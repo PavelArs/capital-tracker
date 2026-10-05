@@ -109,7 +109,11 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
     await expect(nav.getByRole('link').nth(index)).toHaveAttribute('href', path);
     await expect(nav.getByRole('link').nth(index)).toHaveText(name);
   }
-  await expect(nav.getByText('Sync not set up', { exact: true })).toBeVisible();
+  // SYNC-STATUS: the sidebar reads the background sync state and opens Wallets.
+  const syncStatus = nav.locator('[data-sync-status]');
+  await expect(syncStatus).toHaveAttribute('href', '/wallets');
+  await expect(syncStatus).not.toContainText('Checking sync');
+  await expect(syncStatus).not.toContainText('Sync status unavailable');
   await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
 
   // WAL-LIST: Wallets is a real page that reads the owner's wallets, no longer a placeholder.
