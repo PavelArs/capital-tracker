@@ -11,6 +11,23 @@ export interface TradeExecution {
   grossUsd: string;
   feeUsd: string;
 }
+/** Amounts as paid in RUB or EUR; the trade's USD amounts are derived from them at the
+ * Bank of Russia rate of its date, or at `perUsd` (units per 1 USD) when the owner gives it. */
+export interface TradePaymentInput {
+  currency: 'RUB' | 'EUR';
+  gross: string;
+  fee: string;
+  perUsd?: string;
+}
+export interface TradePayment {
+  currency: 'RUB' | 'EUR';
+  gross: string;
+  fee: string;
+  rateDate: string;
+  /** Units of the paid currency per 1 USD that gave the stored USD amounts. */
+  perUsd: string;
+  rateSource: 'bank-of-russia' | 'owner';
+}
 export interface JournalOrigin {
   accountId: string;
   requestId: string;
@@ -85,6 +102,7 @@ export interface JournalState {
   journal: Journal | null;
 }
 export interface TradeVersion extends TradeExecution {
+  paid?: TradePayment;
   tradeId: string;
   version: number;
   journalRevision: number;
@@ -267,10 +285,11 @@ export interface TradeVersions {
   items: TradeVersion[];
   nextBeforeVersion: number | null;
 }
-export interface TradeCommand extends TradeExecution {
-  requestId: string;
-  expectedJournalRevision: number;
-}
+export type TradeCommand = Omit<TradeExecution, 'grossUsd' | 'feeUsd'> &
+  ({ grossUsd: string; feeUsd: string } | { paid: TradePaymentInput }) & {
+    requestId: string;
+    expectedJournalRevision: number;
+  };
 export interface VoidCommand {
   requestId: string;
   expectedJournalRevision: number;

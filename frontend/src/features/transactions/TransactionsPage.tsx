@@ -166,6 +166,9 @@ export default function TransactionsPage() {
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [params, setParams] = useSearchParams();
+  // The router commits an address change later, in a transition; a second filter change
+  // before that builds on the first one, not on the address it replaces.
+  const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
 
   const load = useCallback(async () => {
@@ -191,13 +194,18 @@ export default function TransactionsPage() {
   ) as View;
   const asset = params.get('asset') ?? '';
   const place = params.get('account') ?? '';
+  const replaceParams = (next: URLSearchParams) => {
+    pending.current = { from: params, next };
+    setParams(next, { replace: true });
+  };
   const update = (changes: Record<string, string>) => {
-    const next = new URLSearchParams(params);
+    const base = pending.current?.from === params ? pending.current.next : params;
+    const next = new URLSearchParams(base);
     for (const [key, value] of Object.entries(changes)) {
       if (value) next.set(key, value);
       else next.delete(key);
     }
-    setParams(next, { replace: true });
+    replaceParams(next);
   };
   const setView = (next: View) =>
     update({
@@ -240,7 +248,7 @@ export default function TransactionsPage() {
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
     setSearch('');
-    setParams(new URLSearchParams(), { replace: true });
+    replaceParams(new URLSearchParams());
   };
 
   return (

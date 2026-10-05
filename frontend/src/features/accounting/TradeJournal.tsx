@@ -21,7 +21,7 @@ import type { InstrumentCatalogControls } from './CsvMapping';
 import { accountingError, newRequestId } from './feedback';
 import { HistoricalAccounting } from './HistoricalAccounting';
 import { HistoricalValuation } from './HistoricalValuation';
-import { emptyTradeDraft, type TradeDraft, TradeForm } from './TradeForm';
+import { emptyTradeDraft, type TradeDraft, TradeForm, tradeCommand, tradeDraft } from './TradeForm';
 import { TradeResults } from './TradeResults';
 import { ValuationHistory } from './ValuationHistory';
 import './TradeJournal.css';
@@ -37,6 +37,12 @@ type Operation =
   | { kind: 'void'; tradeId: string; input: VoidCommand };
 type Retry = { signature: string; operation: Operation; ambiguous: boolean };
 function errorMessage(error: unknown) {
+  if (
+    isAxiosError(error) &&
+    error.response?.status === 409 &&
+    /Bank of Russia rate/.test(String(error.response.data?.message))
+  )
+    return 'Нет курса ЦБ РФ на дату сделки. Дождитесь загрузки курсов или укажите суммы в USD. Черновик сохранён.';
   if (isAxiosError(error) && error.response?.status === 409)
     return 'Операция не согласуется с журналом. Проверьте актуальную ревизию, границу покрытия, порядок сделок, доступное количество на дату продажи и лимиты. Черновик сохранён.';
   return accountingError(error, 'сохранить журнал');
@@ -195,15 +201,7 @@ export function TradeJournal({
     setTarget(trade);
     setMode(kind);
     setError(null);
-    setDraft({
-      instrumentId: trade.instrumentId,
-      side: trade.side,
-      occurredAt: trade.occurredAt,
-      orderWithinTimestamp: String(trade.orderWithinTimestamp),
-      quantity: trade.quantity,
-      grossUsd: trade.grossUsd,
-      feeUsd: trade.feeUsd,
-    });
+    setDraft(tradeDraft(trade));
     setReviewTarget(null);
     if (needsReview) {
       setReviewed(false);
@@ -365,11 +363,7 @@ export function TradeJournal({
         requestId: newRequestId(),
         expectedJournalRevision: state.journal.journalRevision,
       };
-      const input: TradeCommand = {
-        ...draft,
-        orderWithinTimestamp: Number(draft.orderWithinTimestamp),
-        ...identity,
-      };
+      const input = tradeCommand(draft, identity);
       retry.current = {
         signature,
         ambiguous: false,
@@ -466,6 +460,9 @@ export function TradeJournal({
               {reviewTarget.instrumentSymbol ? ` (${reviewTarget.instrumentSymbol})` : ''}, UUID{' '}
               {reviewTarget.instrumentId}; количество {reviewTarget.quantity}; валовая сумма{' '}
               {reviewTarget.grossUsd} USD; комиссия {reviewTarget.feeUsd} USD;{' '}
+              {reviewTarget.paid
+                ? `оплачено ${reviewTarget.paid.gross} ${reviewTarget.paid.currency}, комиссия ${reviewTarget.paid.fee} ${reviewTarget.paid.currency}; `
+                : ''}
               {reviewTarget.occurredAt}, порядок {reviewTarget.orderWithinTimestamp}.
             </p>
           )}

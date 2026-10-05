@@ -1,6 +1,7 @@
 import apiClient from './client';
 
-// GET /fx-rates: Bank of Russia rates effective today (Moscow date) and the collector state.
+// GET /fx-rates: Bank of Russia rates effective today (Moscow date), or on `?date=`, and the
+// collector state.
 export interface FxRatesReport {
   date: string;
   source: 'cbr';
@@ -17,8 +18,11 @@ export interface FxRatesReport {
 }
 
 export const fxRatesApi = {
-  get: async (): Promise<FxRatesReport> => {
-    const response = await apiClient.get<FxRatesReport>('/fx-rates');
+  get: async (date?: string): Promise<FxRatesReport> => {
+    const response = await apiClient.get<FxRatesReport>(
+      '/fx-rates',
+      date ? { params: { date } } : undefined,
+    );
     return response.data;
   },
 };

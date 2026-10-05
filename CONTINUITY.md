@@ -1,5 +1,26 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — trades paid in RUB or EUR (CUR-PAID-RUB, 2026-10-05)
+
+A trade create or correction may send `paid: {currency: 'RUB'|'EUR', gross, fee, perUsd?}`
+instead of `grossUsd`/`feeUsd` (never both). Without `perUsd` the server derives the USD
+amounts once from the stored Bank of Russia rates of the trade's Moscow date (latest on or
+before it), rounded half away from zero at scale 30; no stored rate is 409, never a guess.
+With `perUsd` (paid units per 1 USD, the rate the owner actually paid) USD = paid / perUsd
+and no stored rate is needed. `account_trade_version_payments` keeps the amounts as paid,
+the date, `perUsd` and `rateSource` ('bank-of-russia' with the cross rate rounded at 30
+places, or 'owner'); one row per trade version, no row means USD, a void copies the row.
+The canonical request payload keeps the amounts as sent. FIFO stays in USD; Portfolio
+states a paid fragment's cost, and a paid sale's proceeds, from the paid amount (shared by
+quantity): exact in its own currency, converted at the trade date otherwise, and the stored
+USD amounts in USD. `GET /fx-rates?date=YYYY-MM-DD` gives the rates effective on a date.
+The prototype's "Add transaction" window (Portfolio page) records buys and sells paid in
+USD, USDT, USDC (1:1 USD), EUR or RUB with the Bank of Russia rate prefilled and editable;
+transfers, income/expense, wallet-balance limits and cash proceeds stay for M9. The legacy
+trade form also has a "Валюта оплаты" select and keeps an owner rate on corrections.
+Migration 28 `PaidCurrencyTrades1791100000000` (after M6's 27; probes count 28); stage
+CUR-PAID-RUB in `fx-rates-db`.
+
 ## Current product slice — list all operations (M8, 2026-10-04)
 
 Change `list-all-operations` (OPS-LIST, OPS-FILTER) adds `GET /accounting/operations`:
@@ -49,7 +70,7 @@ realization its own date, so RUB/EUR P&L includes currency movement. A missing r
 never zero: the figure is null with `missingRateQuantity`. Fixed EUR/RUB cash is now
 valued. Migration 26 `AccountInThreeCurrencies1790900000000` (probes count 26); probe
 `fx-rates-db` in shard probes-1; browser case `CURRENCY-UI` is the 23rd critical case
-and stores the only acceptance rates. Buys paid in RUB/EUR (CUR-PAID-RUB) follow in a
+and stores the only acceptance rates. Buys paid in RUB/EUR (CUR-PAID-RUB) followed in a
 separate change.
 
 ## Current product slice — whole-portfolio valuation (M4, 2026-10-04)
