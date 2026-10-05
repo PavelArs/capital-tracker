@@ -1,5 +1,5 @@
 import type { Operation, OperationAsset, OperationType } from '@api/operations.api';
-import { DASH, money, quantity } from '../portfolio/format';
+import { DASH, quantity } from '../portfolio/format';
 
 // Display only: the list keeps exact decimal strings; rounding happens here (OPS-4).
 export const typeLabels: Record<OperationType, string> = {
@@ -46,19 +46,23 @@ export function assetKey(asset: OperationAsset): string {
   return asset.symbol ? asset.symbol.toUpperCase() : `id:${asset.instrumentId ?? asset.name}`;
 }
 
-/** The list keeps the USD recorded on each operation; other currencies are a follow-up. */
-export function usd(value: string | null): string {
-  return money(value, 'USD');
-}
-
 export function amount(value: string, asset: OperationAsset, sign: '+' | '-' | '' = ''): string {
   return `${sign}${quantity(value)} ${ticker(asset)}`;
 }
 
+function sign(operation: Operation): '+' | '-' | '' {
+  if (operation.type === 'swap') return '-';
+  return operation.direction === 'in' ? '+' : operation.direction === 'out' ? '-' : '';
+}
+
 /** "+0.5 BTC" for what arrives, "-0.5 BTC" for what leaves, unsigned when it stays yours. */
 export function signedAmount(operation: Operation): string {
-  const sign = operation.direction === 'in' ? '+' : operation.direction === 'out' ? '-' : '';
-  return amount(operation.quantity, operation.asset, operation.type === 'swap' ? '-' : sign);
+  return amount(operation.quantity, operation.asset, sign(operation));
+}
+
+/** The list's amount column: the asset column already names the coin. */
+export function signedQuantity(operation: Operation): string {
+  return `${sign(operation)}${quantity(operation.quantity)}`;
 }
 
 export function shortAddress(address: string): string {
@@ -100,6 +104,23 @@ export function day(iso: string): string {
 
 export function time(iso: string): string {
   return `${timeFormat.format(new Date(iso))} UTC`;
+}
+
+/** The time under a row's type; a transaction entered without one says so (M9 stores 00:00). */
+export function rowTime(operation: Operation): string {
+  const at = operation.occurredAt;
+  if (operation.kind !== 'chain' && at.endsWith('T00:00:00.000Z')) return 'No time';
+  return timeFormat.format(new Date(at));
+}
+
+/** The UTC day a row is listed under: Today, Yesterday or "Oct 2, 2026". */
+export function dayHeading(iso: string, now: string): string {
+  const days = Math.round(
+    (Date.parse(now.slice(0, 10)) - Date.parse(iso.slice(0, 10))) / 86_400_000,
+  );
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  return day(iso);
 }
 
 export function moment(iso: string): string {
