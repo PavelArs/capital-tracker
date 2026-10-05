@@ -192,7 +192,15 @@ async function allTime(db, s, f) {
   assert.deepEqual([all.deposits, all.withdrawals, all.netFlow], ['95010', '2995', '92015']);
   assert.equal(all.marketEffect, minus(all.value, all.invested), 'From zero: market = value − net invested');
   assert.equal(all.marketReturnPercent, percent(all.marketEffect, all.deposits));
-  console.log('PASS FLOW-SPLIT all time from zero: market effect is value minus net invested');
+  // PROFIT-ALL-TIME: profit or loss to date is value − all-time net invested in every period.
+  assert.deepEqual([all.profit, all.profitPercent], [minus(all.value, all.invested),
+    percent(minus(all.value, all.invested), all.invested)]);
+  for (const period of ['24H', '7D', '1M', '1Y']) {
+    const other = await s.snapshots.history(f.owner, { period, currency: 'USD' }, now);
+    assert.deepEqual([other.invested, other.profit, other.profitPercent], [all.invested, all.profit,
+      all.profitPercent], period);
+  }
+  console.log('PASS FLOW-SPLIT/PROFIT-ALL-TIME market from zero and profit to date are value minus net invested');
 }
 
 async function legacy(db, s, f) {
@@ -221,6 +229,7 @@ async function rates(db, s, f) {
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
   assert.ok(rub.points.every((entry) => entry.invested === null), 'No rate: net invested is unknown');
   assert.equal(rub.invested, null);
+  assert.deepEqual([rub.profit, rub.profitPercent], [null, null], 'No rate: profit is unknown, never zero');
   assert.equal(rub.netFlow, '0', 'The flow before the period does not enter its split');
   const recent = await s.snapshots.history(early, { period: '1M', currency: 'RUB' }, now);
   assert.equal(recent.netFlow, '0');
@@ -228,7 +237,7 @@ async function rates(db, s, f) {
   const foreign = await s.snapshots.history(other, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(foreign.points.every((entry) => entry.invested === '0'));
   assert.deepEqual([foreign.deposits, foreign.withdrawals, foreign.netFlow, foreign.marketEffect,
-    foreign.marketReturnPercent], ['0', '0', '0', '0', null]);
+    foreign.marketReturnPercent, foreign.profit, foreign.profitPercent], ['0', '0', '0', '0', null, '0', null]);
   const fingerprintBefore = await fingerprint(db, ['portfolio_snapshots', 'portfolio_snapshot_state']);
   await s.snapshots.history(f.owner, { period: '3M', currency: 'EUR' }, now);
   assert.equal(await fingerprint(db, ['portfolio_snapshots', 'portfolio_snapshot_state']), fingerprintBefore,

@@ -26,6 +26,10 @@ export interface PortfolioHistory {
   change: string | null;
   changePercent: string | null;
   invested: string | null;
+  // Profit or loss to date, whatever the period: value − invested, and its share of invested
+  // (null when invested is not above zero).
+  profit: string | null;
+  profitPercent: string | null;
   // The period's change split into money added or taken out and the market:
   // marketEffect = change − netFlow; marketReturnPercent = marketEffect / (start + deposits).
   deposits: string | null;

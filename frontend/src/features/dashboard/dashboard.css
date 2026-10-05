@@ -43,6 +43,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.dashboard-split__period {
+  color: var(--ink-3);
+}
+
 .dashboard-split__item {
   display: inline-flex;
   align-items: center;
