@@ -1,5 +1,5 @@
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -230,6 +230,24 @@ describe('TransactionsPage (list-all-operations)', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), '');
     await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'tether');
     expect(bodyRows().map((row) => cellTexts(row)[2])).toEqual(['USDTTether']);
+  });
+
+  it('keeps every filter change when a second one comes before the address updates', async () => {
+    // The router applies an address change later, in a transition (OPS-UI on a fast runner).
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    await user.click(screen.getByRole('button', { name: /^CSV/ }));
+    expect(bodyRows()).toHaveLength(1);
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: /^All/ }));
+      fireEvent.change(screen.getByRole('combobox', { name: 'Account' }), {
+        target: { value: cold.id },
+      });
+    });
+    expect(screen.getByRole('button', { name: /^All/ })).toHaveAttribute('aria-pressed', 'true');
+    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual(['Transfer']);
   });
 
   it('reads the status filter from the address so other screens can link to it', async () => {
