@@ -74,7 +74,7 @@ function migrate() {
     timeout: 60000,
   });
   assert.equal(result.status, 0, 'Actual guarded production migration CLI');
-  assert.match(result.stdout, /Migrations applied: 31/);
+  assert.match(result.stdout, /Migrations applied: 32/);
 }
 async function account(s, owner, name, initialize = true) {
   const id = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name })).value.id;
@@ -475,7 +475,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 32);
     const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified")
       VALUES('transfer-bounds@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);

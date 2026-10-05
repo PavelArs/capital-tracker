@@ -12,11 +12,12 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 27 manifest entries: the original 19 browser cases,
+The reviewed selection contains 28 manifest entries: the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and,
 since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
 and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
-list, FLOW-SPLIT-UI market versus flows and MANUAL-OPS-UI manual operations. Each entry may cover more than one scenario ID; these are
+list, FLOW-SPLIT-UI market versus flows and MANUAL-OPS-UI manual operations, and WAL-UI wallets
+bound to accounts. Each entry may cover more than one scenario ID; these are
 browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
@@ -48,6 +49,7 @@ using synthetic owner data and provider fixtures.
 | OPS-UI | A manual buy, a CSV-imported buy and an Esplora-fixture chain receipt appear in one Transactions list with date, type, asset, amount, value, account, status and source; asset and status filters leave only matching rows; the drawer shows the raw chain facts; anonymous and query-carrying reads are refused. |
 | FLOW-SPLIT-UI / FLOW-SPLIT-DEPOSIT / FLOW-SPLIT-MIXED / PROFIT-ALL-TIME | A buy paid from outside adds its gross plus fee to the month's deposits and a sale its net proceeds to withdrawals; market effect is the change minus net flow; net invested steps by exactly those amounts; profit to date is net worth minus all-time net invested in every period; the dashboard shows that profit line, the period's market and net-deposit split and the net invested line the backend returned. |
 | MANUAL-OPS-UI / OPS-ADD-BUY / OPS-OVERSPEND / OPS-DELETE-GUARD / OPS-DELETE | A buy saved in the Add transaction window starts the journal of an account that had none; a sale shows what the account holds on its date, refuses more and fills it with Use all; deleting the purchase later sales spend is refused naming the sale and changes nothing; a confirmed deletion removes the sale from the list and its history keeps the void. |
+| WAL-UI / WAL-NO-SECRETS / WAL-DUP / WAL-ACCOUNT / SYNC-RECONCILE | Add wallet clears a pasted seed phrase without sending it and refuses an Ethereum address; a Bitcoin address joins a new wallet with a name, its whole Esplora-fixture history loads, the chain balance shows and differs from the wallet's recorded transactions; adding it again opens the wallet that tracks it; renaming it in the drawer is stored; at 390 px the rows fit without horizontal scroll. |
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout

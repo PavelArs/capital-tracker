@@ -44,6 +44,7 @@ const asset = (changes: Partial<AssetValuation>): AssetValuation => ({
   priceSource: 'market',
   quantity: '0.0098',
   price: { value: '80000', observedAt: null, source: 'kraken', status: 'fresh' },
+  priceChange24hPercent: null,
   missingPrice: null,
   value: '784',
   allocationPercent: null,

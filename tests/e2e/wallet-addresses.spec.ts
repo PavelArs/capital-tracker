@@ -1,39 +1,36 @@
-import { createHash, randomUUID } from "node:crypto";
-import { expect, type Page } from "@playwright/test";
-import { providerRequests } from "./manual-opening-fixtures";
-import { compose, loginWithMfa, origin, query, test } from "./mfa-fixtures";
+import { createHash, randomUUID } from 'node:crypto';
+import { expect, type Page } from '@playwright/test';
+import { providerRequests } from './manual-opening-fixtures';
+import { compose, loginWithMfa, origin, query, test } from './mfa-fixtures';
 
-const address = "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq";
-const foreignAddressId = "44444444-4444-4444-8444-444444444444";
-const txid = (i: number) =>
-	createHash("sha256").update(`ct-e2e-tx:${address}:${i}`).digest("hex");
+const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
+const foreignAddressId = '44444444-4444-4444-8444-444444444444';
+const txid = (i: number) => createHash('sha256').update(`ct-e2e-tx:${address}:${i}`).digest('hex');
 // The shared stub keeps requests from earlier acceptance steps, so count only this test's requests.
 let requestBaseline = 0;
 const chainRequests = () =>
-	providerRequests()
-		.slice(requestBaseline)
-		.filter(({ url }) =>
-			url.startsWith("https://blockstream.info/api/address/"),
-		);
+  providerRequests()
+    .slice(requestBaseline)
+    .filter(({ url }) => url.startsWith('https://blockstream.info/api/address/'));
 
 function bitcoinHistory(body: Record<string, unknown>): void {
-	compose([
-		"exec",
-		"-T",
-		"providers",
-		"node",
-		"-e",
-		`fetch('http://127.0.0.1:8080/__control/bitcoin-history', { method: 'POST',
+  compose([
+    'exec',
+    '-T',
+    'providers',
+    'node',
+    '-e',
+    `fetch('http://127.0.0.1:8080/__control/bitcoin-history', { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: ${JSON.stringify(JSON.stringify(body))} })
       .then((response) => { if (!response.ok) process.exitCode = 1; }).catch(() => { process.exitCode = 1; });`,
-	]);
+  ]);
 }
 
 const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
-	isolatedWalletAddresses: [
-		async ({ mfa }, use) => {
-			expect(mfa).toBeDefined();
-			query(`DO $$ BEGIN
+  isolatedWalletAddresses: [
+    async ({ mfa }, use) => {
+      expect(mfa).toBeDefined();
+      query(`DO $$ BEGIN
         IF current_database() <> 'capital_tracker_e2e' OR current_user <> 'capital_e2e' THEN
           RAISE EXCEPTION 'Refuse wallet-address fixture outside synthetic acceptance';
         END IF;
@@ -41,299 +38,232 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
         INSERT INTO wallet_addresses(id, "ownerId", network, address)
           VALUES ('${foreignAddressId}', '22222222-2222-4222-8222-222222222222', 'bitcoin', '${address}');
       END $$`);
-			requestBaseline = providerRequests().length;
-			await use(undefined);
-		},
-		{ auto: true },
-	],
+      requestBaseline = providerRequests().length;
+      await use(undefined);
+    },
+    { auto: true },
+  ],
 });
 
 isolated(
-	"ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing",
-	async ({ page, playwright }) => {
-		const anonymous = await playwright.request.newContext({
-			baseURL: origin,
-			ignoreHTTPSErrors: true,
-		});
-		try {
-			expect((await anonymous.get("/api/wallet-addresses")).status()).toBe(401);
-			expect(
-				(
-					await anonymous.post("/api/wallet-addresses", {
-						data: { address },
-						headers: { Origin: origin },
-					})
-				).status(),
-			).toBe(401);
-		} finally {
-			await anonymous.dispose();
-		}
+  'ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing',
+  async ({ page, playwright }) => {
+    const anonymous = await playwright.request.newContext({
+      baseURL: origin,
+      ignoreHTTPSErrors: true,
+    });
+    try {
+      expect((await anonymous.get('/api/wallet-addresses')).status()).toBe(401);
+      expect(
+        (
+          await anonymous.post('/api/wallet-addresses', {
+            data: { address },
+            headers: { Origin: origin },
+          })
+        ).status(),
+      ).toBe(401);
+    } finally {
+      await anonymous.dispose();
+    }
 
-		const { csrfToken } = await loginWithMfa(page);
-		const api = page.context().request;
-		const missingCsrf = await api.post("/api/wallet-addresses", {
-			data: { address },
-			headers: { Origin: origin },
-		});
-		expect(missingCsrf.status()).toBe(403);
-		const foreign = await api.post(
-			`/api/wallet-addresses/${foreignAddressId}/sync`,
-			{
-				headers: { Origin: origin, "X-CSRF-Token": csrfToken },
-			},
-		);
-		expect(foreign.status()).toBe(404);
-		expect(
-			(
-				await api.get(`/api/wallet-addresses/${foreignAddressId}/transactions`)
-			).status(),
-		).toBe(404);
-		expect(
-			(
-				await api.get(`/api/wallet-addresses/${randomUUID()}/transactions`)
-			).status(),
-		).toBe(404);
-		expect(query("SELECT count(*) FROM wallet_addresses")).toBe("1");
-		expect(chainRequests()).toEqual([]);
+    const { csrfToken } = await loginWithMfa(page);
+    const api = page.context().request;
+    const missingCsrf = await api.post('/api/wallet-addresses', {
+      data: { address },
+      headers: { Origin: origin },
+    });
+    expect(missingCsrf.status()).toBe(403);
+    const foreign = await api.post(`/api/wallet-addresses/${foreignAddressId}/sync`, {
+      headers: { Origin: origin, 'X-CSRF-Token': csrfToken },
+    });
+    expect(foreign.status()).toBe(404);
+    expect((await api.get(`/api/wallet-addresses/${foreignAddressId}/transactions`)).status()).toBe(404);
+    expect((await api.get(`/api/wallet-addresses/${randomUUID()}/transactions`)).status()).toBe(404);
+    expect(query('SELECT count(*) FROM wallet_addresses')).toBe('1');
+    expect(chainRequests()).toEqual([]);
 
-		bitcoinHistory({ address, count: 60 });
-		await page.goto("/wallet-addresses");
-		await expect(
-			page.getByRole("heading", { name: "Адреса кошельков", exact: true }),
-		).toBeVisible();
-		await expect(
-			page.getByText("Адресов пока нет.", { exact: true }),
-		).toBeVisible();
+    bitcoinHistory({ address, count: 60 });
+    await page.goto('/wallet-addresses');
+    await expect(page.getByRole('heading', { name: 'Адреса кошельков', exact: true })).toBeVisible();
+    await expect(page.getByText('Адресов пока нет.', { exact: true })).toBeVisible();
 
-		await page
-			.getByLabel("Адрес Bitcoin", { exact: true })
-			.fill(address.toUpperCase());
-		await page
-			.getByRole("button", { name: "Добавить адрес", exact: true })
-			.click();
-		const card = page.getByRole("region", {
-			name: `Адрес ${address}`,
-			exact: true,
-		});
-		await expect(card.getByText("Не загружено", { exact: true })).toBeVisible();
-		expect(chainRequests()).toEqual([]);
+    await page.getByLabel('Адрес Bitcoin', { exact: true }).fill(address.toUpperCase());
+    await page.getByRole('button', { name: 'Добавить адрес', exact: true }).click();
+    const card = page.getByRole('region', { name: `Адрес ${address}`, exact: true });
+    await expect(card.getByText('Не загружено', { exact: true })).toBeVisible();
+    expect(chainRequests()).toEqual([]);
 
-		await card
-			.getByRole("button", { name: "Загрузить транзакции", exact: true })
-			.click();
-		await expect(
-			card.getByText("Загружено полностью", { exact: true }),
-		).toBeVisible();
-		await expect(
-			card.getByText("Транзакций: 60", { exact: true }),
-		).toBeVisible();
-		expect(chainRequests().map(({ url }) => url)).toEqual([
-			`https://blockstream.info/api/address/${address}/txs/chain`,
-			`https://blockstream.info/api/address/${address}/txs/chain/${txid(35)}`,
-			`https://blockstream.info/api/address/${address}/txs/chain/${txid(10)}`,
-		]);
+    await card.getByRole('button', { name: 'Загрузить транзакции', exact: true }).click();
+    await expect(card.getByText('Загружено полностью', { exact: true })).toBeVisible();
+    await expect(card.getByText('Транзакций: 60', { exact: true })).toBeVisible();
+    expect(chainRequests().map(({ url }) => url)).toEqual([
+      `https://blockstream.info/api/address/${address}/txs/chain`,
+      `https://blockstream.info/api/address/${address}/txs/chain/${txid(35)}`,
+      `https://blockstream.info/api/address/${address}/txs/chain/${txid(10)}`,
+    ]);
 
-		const table = page.getByRole("table", {
-			name: `Транзакции ${address}`,
-			exact: true,
-		});
-		const assertHistory = async () => {
-			await expect(
-				page.getByText("Без стоимости в USD: 60 из 60", { exact: true }),
-			).toBeVisible();
-			const rows = table.getByRole("row");
-			await expect(rows).toHaveCount(51);
-			await expect(rows.nth(1)).toContainText("3.12500059");
-			await expect(rows.nth(1)).toContainText("Поступление");
-			await expect(rows.nth(1)).toContainText("2023-11-15");
-			await expect(rows.nth(2)).toContainText("-0.00000200");
-			await expect(rows.nth(2)).toContainText("Перевод себе");
-			await expect(rows.nth(3)).toContainText("-0.00051300");
-			await expect(rows.nth(3)).toContainText("Списание");
-			await expect(rows.nth(4)).toContainText("0.00156000");
-			for (let index = 1; index <= 4; index++) {
-				await expect(rows.nth(index).getByRole("cell").last()).toHaveText(
-					"не указана",
-				);
-			}
-			await expect(
-				table.getByRole("cell", { name: "0", exact: true }),
-			).toHaveCount(0);
-			await expect(table.getByText("$0", { exact: false })).toHaveCount(0);
-		};
-		await assertHistory();
-		await page
-			.getByRole("button", { name: "Показать ещё", exact: true })
-			.click();
-		await expect(table.getByRole("row")).toHaveCount(61);
-		await expect(
-			page.getByRole("button", { name: "Показать ещё", exact: true }),
-		).toHaveCount(0);
+    const table = page.getByRole('table', { name: `Транзакции ${address}`, exact: true });
+    const assertHistory = async () => {
+      await expect(page.getByText('Без стоимости в USD: 60 из 60', { exact: true })).toBeVisible();
+      const rows = table.getByRole('row');
+      await expect(rows).toHaveCount(51);
+      await expect(rows.nth(1)).toContainText('3.12500059');
+      await expect(rows.nth(1)).toContainText('Поступление');
+      await expect(rows.nth(1)).toContainText('2023-11-15');
+      await expect(rows.nth(2)).toContainText('-0.00000200');
+      await expect(rows.nth(2)).toContainText('Перевод себе');
+      await expect(rows.nth(3)).toContainText('-0.00051300');
+      await expect(rows.nth(3)).toContainText('Списание');
+      await expect(rows.nth(4)).toContainText('0.00156000');
+      for (let index = 1; index <= 4; index++) {
+        await expect(rows.nth(index).getByRole('cell').last()).toHaveText('не указана');
+      }
+      await expect(table.getByRole('cell', { name: '0', exact: true })).toHaveCount(0);
+      await expect(table.getByText('$0', { exact: false })).toHaveCount(0);
+    };
+    await assertHistory();
+    await page.getByRole('button', { name: 'Показать ещё', exact: true }).click();
+    await expect(table.getByRole('row')).toHaveCount(61);
+    await expect(page.getByRole('button', { name: 'Показать ещё', exact: true })).toHaveCount(0);
 
-		const before = chainRequests().length;
-		await page.reload();
-		await expect(
-			card.getByText("Загружено полностью", { exact: true }),
-		).toBeVisible();
-		await assertHistory();
-		expect(chainRequests()).toHaveLength(before);
-		expect(
-			query(`SELECT count(*) FROM wallet_address_transactions t JOIN wallet_addresses a ON a.id = t."addressId"
+    const before = chainRequests().length;
+    await page.reload();
+    await expect(card.getByText('Загружено полностью', { exact: true })).toBeVisible();
+    await assertHistory();
+    expect(chainRequests()).toHaveLength(before);
+    expect(
+      query(`SELECT count(*) FROM wallet_address_transactions t JOIN wallet_addresses a ON a.id = t."addressId"
         WHERE a."ownerId" = '11111111-1111-4111-8111-111111111111'`),
-		).toBe("60");
-		expect(
-			query(
-				`SELECT count(*) FROM wallet_address_transactions WHERE "addressId" = '${foreignAddressId}'`,
-			),
-		).toBe("0");
-	},
+    ).toBe('60');
+    expect(
+      query(`SELECT count(*) FROM wallet_address_transactions WHERE "addressId" = '${foreignAddressId}'`),
+    ).toBe('0');
+  },
 );
 
-const ownerId = "11111111-1111-4111-8111-111111111111";
-const seedPhrase = `${"abandon ".repeat(11)}about`;
+const ownerId = '11111111-1111-4111-8111-111111111111';
+const seedPhrase = `${'abandon '.repeat(11)}about`;
 
 async function fitsViewport(page: Page) {
-	await expect
-		.poll(() =>
-			page.evaluate(
-				() =>
-					document.documentElement.scrollWidth -
-					document.documentElement.clientWidth,
-			),
-		)
-		.toBeLessThanOrEqual(1);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      ),
+    )
+    .toBeLessThanOrEqual(1);
 }
 
 isolated(
-	"WAL-UI / WAL-NO-SECRETS: owner adds a Bitcoin address to a new wallet and sees its chain balance against recorded transactions",
-	async ({ page }, testInfo) => {
-		await loginWithMfa(page);
-		const walletName = `WAL-UI ${randomUUID().slice(0, 8)}`;
-		// Every request body the page sends, to prove a pasted seed phrase never leaves the browser.
-		const bodies: string[] = [];
-		page.on("request", (request) => {
-			if (new URL(request.url()).pathname.startsWith("/api/"))
-				bodies.push(request.postData() ?? "");
-		});
-		bitcoinHistory({ address, count: 60 });
-		await page.setViewportSize({ width: 1440, height: 1000 });
-		await page.goto("/wallets");
-		const main = page.getByRole("main");
-		await expect(
-			main.getByRole("heading", { level: 1, name: "Wallets", exact: true }),
-		).toBeVisible();
-		await expect(main.getByText(/not built yet/i)).toHaveCount(0);
+  'WAL-UI / WAL-NO-SECRETS: owner adds a Bitcoin address to a new wallet and sees its chain balance against recorded transactions',
+  async ({ page }, testInfo) => {
+    await loginWithMfa(page);
+    const walletName = `WAL-UI ${randomUUID().slice(0, 8)}`;
+    // Every request body the page sends, to prove a pasted seed phrase never leaves the browser.
+    const bodies: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname.startsWith('/api/'))
+        bodies.push(request.postData() ?? '');
+    });
+    bitcoinHistory({ address, count: 60 });
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/wallets');
+    const main = page.getByRole('main');
+    await expect(
+      main.getByRole('heading', { level: 1, name: 'Wallets', exact: true }),
+    ).toBeVisible();
+    await expect(main.getByText(/not built yet/i)).toHaveCount(0);
 
-		await main
-			.getByRole("button", { name: "Add wallet", exact: true })
-			.first()
-			.click();
-		const dialog = page.getByRole("dialog", { name: "Add wallet" });
-		await dialog.getByRole("button", { name: /^Bitcoin/ }).click();
-		await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-		const field = dialog.getByLabel("Bitcoin wallet address", { exact: true });
-		await field.fill(seedPhrase);
-		await expect(dialog.getByRole("alert")).toContainText(
-			"This looks like a seed phrase",
-		);
-		await expect(field).toHaveValue("");
-		await field.fill("0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31");
-		await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-		await expect(
-			dialog.getByText(/This looks like an Ethereum address/),
-		).toBeVisible();
-		await expect(
-			dialog.getByText("Step 2 of 3", { exact: true }),
-		).toBeVisible();
+    await main.getByRole('button', { name: 'Add wallet', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Add wallet' });
+    await dialog.getByRole('button', { name: /^Bitcoin/ }).click();
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    const field = dialog.getByLabel('Bitcoin wallet address', { exact: true });
+    await field.fill(seedPhrase);
+    await expect(dialog.getByRole('alert')).toContainText('This looks like a seed phrase');
+    await expect(field).toHaveValue('');
+    await field.fill('0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31');
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await expect(dialog.getByText(/This looks like an Ethereum address/)).toBeVisible();
+    await expect(dialog.getByText('Step 2 of 3', { exact: true })).toBeVisible();
 
-		await field.fill(address);
-		await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-		await dialog.getByLabel(/^Wallet/).fill(walletName);
-		await expect(
-			dialog.getByText(`A new wallet named ${walletName} is created.`, {
-				exact: false,
-			}),
-		).toBeVisible();
-		await dialog.getByLabel(/^Address name/).fill("Savings");
-		await dialog
-			.getByRole("button", { name: "Add wallet", exact: true })
-			.click();
-		await expect(dialog).toHaveCount(0);
+    await field.fill(address);
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await dialog.getByLabel(/^Wallet/).fill(walletName);
+    await expect(
+      dialog.getByText(`A new wallet named ${walletName} is created.`, {
+        exact: false,
+      }),
+    ).toBeVisible();
+    await dialog.getByLabel(/^Address name/).fill('Savings');
+    await dialog.getByRole('button', { name: 'Add wallet', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
 
-		// The page loads the whole history, then compares it with the wallet's transactions.
-		const card = main.getByRole("region", { name: walletName, exact: true });
-		const row = card.getByRole("button", {
-			name: `Savings ${address}`,
-			exact: true,
-		});
-		await expect(row).toContainText("Synced");
-		await expect(row).toContainText("46.88647965 BTC");
-		await expect(
-			card.getByText("Bitcoin · 1 address", { exact: true }),
-		).toBeVisible();
-		await expect(card.getByRole("note")).toContainText(
-			"Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.",
-		);
-		expect(
-			query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
+    // The page loads the whole history, then compares it with the wallet's transactions.
+    const card = main.getByRole('region', { name: walletName, exact: true });
+    const row = card.getByRole('button', {
+      name: `Savings ${address}`,
+      exact: true,
+    });
+    await expect(row).toContainText('Synced');
+    await expect(row).toContainText('46.88647965 BTC');
+    await expect(card.getByText('Bitcoin · 1 address', { exact: true })).toBeVisible();
+    await expect(card.getByRole('note')).toContainText(
+      'Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.',
+    );
+    expect(
+      query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
         JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
         WHERE w."ownerId" = '${ownerId}' AND w.address = '${address}'`),
-		).toBe(`${walletName}|Savings`);
-		expect(
-			query(`SELECT count(*) FROM wallet_address_transactions t JOIN wallet_addresses a ON a.id = t."addressId"
+    ).toBe(`${walletName}|Savings`);
+    expect(
+      query(`SELECT count(*) FROM wallet_address_transactions t JOIN wallet_addresses a ON a.id = t."addressId"
         WHERE a."ownerId" = '${ownerId}'`),
-		).toBe("60");
-		await fitsViewport(page);
-		await page.screenshot({
-			path: testInfo.outputPath("wallets-1440.png"),
-			fullPage: true,
-		});
+    ).toBe('60');
+    await fitsViewport(page);
+    await page.screenshot({
+      path: testInfo.outputPath('wallets-1440.png'),
+      fullPage: true,
+    });
 
-		// WAL-DUP: the same address again opens the wallet that already tracks it.
-		await main
-			.getByRole("button", { name: "Add wallet", exact: true })
-			.first()
-			.click();
-		await dialog.getByRole("button", { name: /^Bitcoin/ }).click();
-		await dialog.getByRole("button", { name: "Continue", exact: true }).click();
-		await field.fill(address);
-		await expect(
-			dialog.getByText(`This address is already tracked in ${walletName}.`),
-		).toBeVisible();
-		await dialog.getByRole("button", { name: "Open it", exact: true }).click();
-		const drawer = page.getByRole("dialog", {
-			name: `${walletName} · Bitcoin`,
-			exact: true,
-		});
-		await expect(drawer).toContainText("46.88647965 BTC");
-		await expect(drawer).toContainText("Blockstream Esplora");
-		await expect(
-			drawer.getByRole("link", { name: "All in Transactions" }),
-		).toBeVisible();
-		await drawer.getByLabel(/^Address name/).fill("Cold");
-		await drawer.getByRole("button", { name: "Save", exact: true }).click();
-		await expect(drawer.getByRole("status")).toHaveText("Saved.");
-		await drawer.getByRole("button", { name: "Close", exact: true }).click();
-		await expect(
-			card.getByRole("button", { name: `Cold ${address}`, exact: true }),
-		).toBeVisible();
-		expect(
-			query(
-				`SELECT label FROM wallet_addresses WHERE "ownerId" = '${ownerId}' AND address = '${address}'`,
-			),
-		).toBe("Cold");
-		expect(query("SELECT count(*) FROM wallet_addresses")).toBe("2");
+    // WAL-DUP: the same address again opens the wallet that already tracks it.
+    await main.getByRole('button', { name: 'Add wallet', exact: true }).first().click();
+    await dialog.getByRole('button', { name: /^Bitcoin/ }).click();
+    await dialog.getByRole('button', { name: 'Continue', exact: true }).click();
+    await field.fill(address);
+    await expect(
+      dialog.getByText(`This address is already tracked in ${walletName}.`),
+    ).toBeVisible();
+    await dialog.getByRole('button', { name: 'Open it', exact: true }).click();
+    const drawer = page.getByRole('dialog', {
+      name: `${walletName} · Bitcoin`,
+      exact: true,
+    });
+    await expect(drawer).toContainText('46.88647965 BTC');
+    await expect(drawer).toContainText('Blockstream Esplora');
+    await expect(drawer.getByRole('link', { name: 'All in Transactions' })).toBeVisible();
+    await drawer.getByLabel(/^Address name/).fill('Cold');
+    await drawer.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(drawer.getByRole('status')).toHaveText('Saved.');
+    await drawer.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(card.getByRole('button', { name: `Cold ${address}`, exact: true })).toBeVisible();
+    expect(
+      query(
+        `SELECT label FROM wallet_addresses WHERE "ownerId" = '${ownerId}' AND address = '${address}'`,
+      ),
+    ).toBe('Cold');
+    expect(query('SELECT count(*) FROM wallet_addresses')).toBe('2');
 
-		// Phones get two-line rows and no horizontal scroll.
-		await page.setViewportSize({ width: 390, height: 844 });
-		await expect(
-			card.getByRole("button", { name: `Cold ${address}`, exact: true }),
-		).toContainText("46.88647965 BTC");
-		await fitsViewport(page);
-		await page.screenshot({
-			path: testInfo.outputPath("wallets-390.png"),
-			fullPage: true,
-		});
-		expect(bodies.join("\n")).not.toContain("abandon");
-	},
+    // Phones get two-line rows and no horizontal scroll.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(card.getByRole('button', { name: `Cold ${address}`, exact: true })).toContainText(
+      '46.88647965 BTC',
+    );
+    await fitsViewport(page);
+    await page.screenshot({
+      path: testInfo.outputPath('wallets-390.png'),
+      fullPage: true,
+    });
+    expect(bodies.join('\n')).not.toContain('abandon');
+  },
 );
