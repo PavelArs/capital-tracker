@@ -71,7 +71,7 @@ function LastSync({
   if (!worst) return <span className="wallets-muted">Tracked by hand</span>;
   const when = syncAge(worst, runs[worst.id]);
   return (
-    <span className="wallets-status wallets-status--start">
+    <span className="wallets-status">
       <SyncBadge address={worst} run={runs[worst.id]} />
       {when && <span className="wallets-muted">{when}</span>}
     </span>
@@ -257,7 +257,7 @@ export default function WalletPage() {
               )}
             </div>
           </div>
-          <section className="shell-card" aria-label="Summary">
+          <section className="shell-card wallet-overview" aria-label="Summary">
             <dl className="portfolio-stats">
               <Stat label="Total value">{money(total, currency)}</Stat>
               <Stat label="Assets">{holdings.length}</Stat>
