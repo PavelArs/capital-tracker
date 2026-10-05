@@ -1,6 +1,6 @@
 # Capital Tracker contributor pointers
 
-Read [AGENTS.md](AGENTS.md), [CONTINUITY.md](CONTINUITY.md), the full
+Read [AGENTS.md](AGENTS.md), the full
 [refactor brief](capital-tracker-openspec-prompt.md), the active OpenSpec change and
 Git diff before continuing. The full refactor is incomplete; the current slice's
 verification record is the authority for checks actually run.
@@ -14,12 +14,13 @@ pnpm test:e2e
 OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive
 ```
 
-The `openspec/` folder is local-only and ignored by Git; never commit it. Run
+The `openspec/` folder and `CONTINUITY.md` are local-only and ignored by Git;
+never commit them. Run
 the validate command only where the folder exists; CI no longer runs it.
 
 Focused checks: `pnpm --dir backend test --runInBand`, `pnpm --dir frontend test`,
 and each package's `lint` and `build` scripts. Coverage limitations and existing
-warnings are recorded in continuity; do not assume a configured threshold passed.
+warnings are recorded in verification records; do not assume a configured threshold passed.
 Use the OpenSpec propose/apply/review/verify/archive sequence with actual acceptance
 RED before behavior changes. Repository mocks do not establish database/browser safety.
 
