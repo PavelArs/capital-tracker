@@ -1,9 +1,13 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { parseDecimal, parseUuid } from '../accounting/input';
-import type { PortfolioPrices, StoredPrice } from '../accounting/portfolio-valuation';
+import type {
+  PortfolioInstrument,
+  PortfolioPrices,
+  StoredPrice,
+} from '../accounting/portfolio-valuation';
 import { projectPortfolio } from '../accounting/portfolio-valuation';
 import {
   accountsAt,
@@ -27,6 +31,7 @@ import {
   DEFAULT_PERIOD,
   HISTORY_FROM_MS,
   type HistoryPeriod,
+  HOURLY_WINDOW_MS,
   historyPeriods,
   hourStart,
   latestAtOrBefore,
@@ -144,6 +149,95 @@ function valuesAt(
   });
 }
 
+/**
+ * Valuation inputs and every stored price series they use. With `instrumentId`, only that
+ * instrument's prices are read.
+ */
+async function readSeriesInputs(
+  manager: EntityManager,
+  owner: string,
+  instrumentId?: string,
+): Promise<SeriesInputs> {
+  const valuation = await readValuationInputs(manager, owner);
+  const priced = valuation.instruments.filter(
+    (instrument) => instrumentId === undefined || instrument.id === instrumentId,
+  );
+  const market: {
+    asset: string;
+    observedAt: Date;
+    price: string;
+    source: string;
+    kind: string;
+  }[] = await manager.query(
+    `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
+        WHERE asset = ANY($1) AND "quoteCurrency" = $2`,
+    [marketCodes(priced), QUOTE_CURRENCY],
+  );
+  const manual: {
+    instrumentId: string;
+    observedAt: Date;
+    revision: number;
+    kind: 'set' | 'void';
+    priceUsd: string | null;
+  }[] = await manager.query(
+    `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd"
+      FROM manual_usd_price_versions WHERE "ownerId"=$1 AND "instrumentId" = ANY($2)`,
+    [owner, priced.map((instrument) => instrument.id)],
+  );
+  return {
+    valuation,
+    market: marketSeries(
+      market.map((row) => ({
+        ...row,
+        observedAt: row.observedAt.getTime(),
+        price: parseDecimal(row.price, false),
+      })),
+    ),
+    manual: manualSeries(
+      manual.map((row) => ({
+        ...row,
+        observedAt: row.observedAt.getTime(),
+        priceUsd: row.priceUsd === null ? null : parseDecimal(row.priceUsd, false),
+      })),
+    ),
+  };
+}
+
+/** One asset's value and the known cost of what is held at one instant (ASSET-CHART). */
+function assetAt(
+  valuation: ValuationInputs,
+  instrument: PortfolioInstrument,
+  at: number,
+  prices: PortfolioPrices,
+  fx: FxConverter,
+) {
+  const instant = new Date(at);
+  const accounts = accountsAt(valuation, instant.toISOString(), {
+    emptyBeforeCoverage: true,
+  }).map((account) => ({
+    ...account,
+    lots: account.lots.filter((lot) => lot.instrumentId === instrument.id),
+    realizations: account.realizations.filter(
+      (realization) => realization.instrumentId === instrument.id,
+    ),
+  }));
+  const report = projectPortfolio(instant, [instrument], accounts, prices, fx);
+  const [asset] = report.assets;
+  return {
+    at: instant.toISOString(),
+    quantity: asset.quantity,
+    // Null when the asset had no price or rate then; nothing held is a known zero.
+    value: asset.value,
+    complete: asset.value !== null && report.unavailableAccountCount === 0,
+    // Cost of the held lots whose purchase price and rate are known.
+    cost: asset.knownCostSubtotal,
+    costComplete:
+      asset.unknownCostQuantity === '0' &&
+      asset.missingRateQuantity === '0' &&
+      report.unavailableAccountCount === 0,
+  };
+}
+
 @Injectable()
 export class PortfolioSnapshotsService {
   private readonly logger = new Logger(PortfolioSnapshotsService.name);
@@ -259,6 +353,48 @@ export class PortfolioSnapshotsService {
     });
   }
 
+  /**
+   * One asset's value and cost basis over a chart period (ASSET-CHART), computed from stored
+   * prices and rates at the same instants as the portfolio snapshots, then the current value.
+   */
+  async assetHistory(ownerId: string, instrumentId: string, rawQuery: unknown, now = new Date()) {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(instrumentId);
+    const query = parseQuery(rawQuery);
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const inputs = await readSeriesInputs(manager, owner, id);
+      const instrument = inputs.valuation.instruments.find((item) => item.id === id);
+      if (!instrument) throw new NotFoundException();
+      const mainCurrency = await readMainCurrency(manager, owner);
+      const currency = query.currency ?? mainCurrency;
+      const fx = new FxConverter(await readFxRates(manager), currency);
+      const at = now.getTime();
+      const { from } = periodStart(query.period, at);
+      const instants = periodPoints(
+        seriesInstants(at, at - HOURLY_WINDOW_MS).map((instant) => ({ at: instant })),
+        query.period,
+        at,
+      ).filter((point) => point.at < at);
+      const latest = await latestPortfolioPrices(manager, owner, [instrument], now);
+      return {
+        instrumentId: id,
+        period: query.period,
+        currency,
+        mainCurrency,
+        from: iso(Math.max(from, HISTORY_FROM_MS)),
+        at: now.toISOString(),
+        points: [
+          ...instants.map((point) =>
+            assetAt(inputs.valuation, instrument, point.at, pricesAt(inputs, point.at), fx),
+          ),
+          // The current value closes the period with the live valuation's prices.
+          assetAt(inputs.valuation, instrument, at, latest, fx),
+        ],
+      };
+    });
+  }
+
   /** One rebuild per owner at a time; the snapshot of inputs is taken after the lock. */
   private async locked<T>(owner: string, work: (manager: EntityManager) => Promise<T>): Promise<T> {
     const runner = this.source.createQueryRunner();
@@ -330,7 +466,7 @@ export class PortfolioSnapshotsService {
 
     let written = 0;
     if (from !== null) {
-      const inputs = await this.seriesInputs(manager, owner);
+      const inputs = await readSeriesInputs(manager, owner);
       const rates = await readFxRates(manager);
       const converters = accountingCurrencies.map((currency) => new FxConverter(rates, currency));
       const computed = instants
@@ -393,49 +529,6 @@ export class PortfolioSnapshotsService {
       if (row.date) candidates.push(rateDateStart(row.date));
     }
     return candidates.length > 0 ? Math.max(HISTORY_FROM_MS, Math.min(...candidates)) : null;
-  }
-
-  private async seriesInputs(manager: EntityManager, owner: string): Promise<SeriesInputs> {
-    const valuation = await readValuationInputs(manager, owner);
-    const market: {
-      asset: string;
-      observedAt: Date;
-      price: string;
-      source: string;
-      kind: string;
-    }[] = await manager.query(
-      `SELECT asset, "observedAt", price::text AS price, source, kind FROM price_observations
-          WHERE asset = ANY($1) AND "quoteCurrency" = $2`,
-      [marketCodes(valuation.instruments), QUOTE_CURRENCY],
-    );
-    const manual: {
-      instrumentId: string;
-      observedAt: Date;
-      revision: number;
-      kind: 'set' | 'void';
-      priceUsd: string | null;
-    }[] = await manager.query(
-      `SELECT "instrumentId","observedAt",revision,kind,"priceUsd"::text AS "priceUsd"
-        FROM manual_usd_price_versions WHERE "ownerId"=$1`,
-      [owner],
-    );
-    return {
-      valuation,
-      market: marketSeries(
-        market.map((row) => ({
-          ...row,
-          observedAt: row.observedAt.getTime(),
-          price: parseDecimal(row.price, false),
-        })),
-      ),
-      manual: manualSeries(
-        manual.map((row) => ({
-          ...row,
-          observedAt: row.observedAt.getTime(),
-          priceUsd: row.priceUsd === null ? null : parseDecimal(row.priceUsd, false),
-        })),
-      ),
-    };
   }
 
   private async write(manager: EntityManager, owner: string, rows: readonly SnapshotValue[]) {

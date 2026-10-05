@@ -222,6 +222,51 @@ async function rebuild(db, s, f) {
   console.log('PASS SNAP-REBUILD backdated buy, late price and manual price rebuild from their instant, no provider call');
 }
 
+async function assetHistory(db, s, f) {
+  stage = 'ASSET-CHART one asset value and cost basis over a period, from stored prices only';
+  const { owner, other } = f;
+  const at = later(48 * 60_000);
+  const deposit = (await db.query(`SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND name='Deposit'`, [owner]))[0].id;
+  const before = await fingerprint(db);
+  const providers = await providerRequests();
+  const month = await s.snapshots.assetHistory(owner, f.btc, { period: '1M', currency: 'USD' }, at);
+  assert.deepEqual(Object.keys(month).sort(), ['at', 'currency', 'from', 'instrumentId', 'mainCurrency', 'period', 'points']);
+  assert.deepEqual([month.instrumentId, month.period, month.currency, month.at], [f.btc, '1M', 'USD', at.toISOString()]);
+  assert.equal(month.points.length, 31, 'Thirty daily points and the current value');
+  assert.equal(month.points[0].at, '2026-09-05T00:00:00.000Z');
+  const point = (iso) => month.points.find((entry) => entry.at === iso);
+  assert.deepEqual(point('2026-09-30T00:00:00.000Z'), { at: '2026-09-30T00:00:00.000Z', quantity: '1',
+    value: String(btcClose(Date.parse('2026-09-30T00:00:00.000Z'))), complete: true, cost: '50000', costComplete: true });
+  assert.deepEqual(point('2026-10-02T00:00:00.000Z'), { at: '2026-10-02T00:00:00.000Z', quantity: '1.5',
+    value: String(btcClose(Date.parse('2026-10-02T00:00:00.000Z')) * 1.5), complete: true, cost: '80000', costComplete: true });
+  assert.deepEqual(month.points.at(-1), { at: at.toISOString(), quantity: '1.5', value: '105000', complete: true,
+    cost: '80000', costComplete: true }, 'The current value uses the latest stored price');
+  const week = await s.snapshots.assetHistory(owner, f.btc, { period: '7D', currency: 'USD' }, at);
+  assert.equal(week.points.length, 7 * 24 + 1, 'Hourly points and the current value');
+  assert.equal(week.points.find((entry) => entry.at === '2026-10-04T13:00:00.000Z').value, '105000');
+  // A manual asset in rubles: value at that day's rate, cost at the purchase date's rate.
+  const rub = await s.snapshots.assetHistory(owner, deposit, { period: '1M', currency: 'RUB' }, at);
+  assert.deepEqual([rub.points[0].value, rub.points[0].cost], ['108000', '90000']);
+  assert.equal(rub.points.find((entry) => entry.at === '2026-09-30T00:00:00.000Z').value, '117000');
+  const all = await s.snapshots.assetHistory(owner, deposit, { period: 'ALL' }, at);
+  assert.equal(all.points[0].at, '2025-01-01T00:00:00.000Z');
+  assert.deepEqual([all.points[0].quantity, all.points[0].value, all.points[0].cost], ['0', '0', '0'],
+    'Nothing held before the first buy is a known zero');
+  assert.deepEqual(all.points.find((entry) => entry.at === '2025-08-15T00:00:00.000Z'),
+    { at: '2025-08-15T00:00:00.000Z', quantity: '1', value: null, complete: false, cost: '1000', costComplete: true },
+    'Held without a price is unknown, never zero');
+  // Another owner's instrument is not found; invalid input is refused; nothing is written.
+  const foreign = (await db.query(`SELECT id FROM accounting_instruments WHERE "ownerId"=$1`, [other]))[0].id;
+  await rejected(() => s.snapshots.assetHistory(owner, foreign, {}, at), 404);
+  await rejected(() => s.snapshots.assetHistory(owner, randomUUID(), {}, at), 404);
+  await rejected(() => s.snapshots.assetHistory(owner, 'not-a-uuid', {}, at), 400);
+  for (const query of [{ period: '2W' }, { currency: 'GBP' }, { at: now.toISOString() }, []])
+    await rejected(() => s.snapshots.assetHistory(owner, f.btc, query, at), 400);
+  assert.equal(await fingerprint(db), before, 'Asset history reads and refusals write nothing');
+  assert.deepEqual(await providerRequests(), providers, 'Asset history never calls a provider');
+  console.log('PASS ASSET-CHART asset value and known cost per period and currency, privacy and refusals');
+}
+
 async function reads(db, s, f) {
   stage = 'history periods, currencies, privacy and refusals';
   const { owner, other } = f;
@@ -300,7 +345,7 @@ async function main() {
     const f = { owner: owner.id, other: other.id };
     await storedHistory(db);
     await instrument(s, other.id, { name: 'Foreign bitcoin', symbol: 'BTC', assetType: 'crypto' });
-    for (const check of [backfill, hourly, rebuild, reads]) await check(db, s, f);
+    for (const check of [backfill, hourly, rebuild, assetHistory, reads]) await check(db, s, f);
     await schedule(db, f);
   } finally { if (db.isInitialized) await db.destroy(); }
 }

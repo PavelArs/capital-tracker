@@ -75,6 +75,25 @@
   gap: 6px;
 }
 
+.portfolio-search {
+  width: 240px;
+  max-width: 100%;
+  height: 36px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.portfolio-search:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
+}
+
 .portfolio-chip {
   display: inline-flex;
   align-items: center;
@@ -368,6 +387,58 @@ a.portfolio-asset__name:hover {
   font-variant-numeric: tabular-nums;
 }
 
+.portfolio-head__change {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Asset page: holdings and the asset's transactions side by side (prototype). */
+.portfolio-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  align-items: start;
+  gap: var(--sp-4);
+}
+
+.portfolio-split > .shell-card {
+  margin: 0;
+}
+
+.portfolio-operations li > span:first-child {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.portfolio-operations__all {
+  display: inline-block;
+  margin-top: var(--sp-3);
+  text-decoration: none;
+}
+
+.portfolio-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+.portfolio-pill::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+
 .portfolio-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -449,6 +520,19 @@ a.portfolio-asset__name:hover {
   margin: 0;
   font-size: var(--fs-xl);
   font-weight: 600;
+}
+
+.portfolio-dialog__head .shell-note {
+  margin-top: 8px;
+}
+
+.portfolio-dialog__info {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: var(--fs-sm);
 }
 
 .portfolio-dialog__body {
@@ -612,4 +696,110 @@ a.portfolio-asset__name:hover {
 
 .portfolio-link:hover {
   text-decoration: underline;
+}
+
+.portfolio-operations .portfolio-num {
+  white-space: nowrap;
+}
+
+/* Phones: two-line asset rows instead of the table, no sideways scrolling
+   (design: tables on phones). */
+.portfolio-sort {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}
+
+.portfolio-sort .portfolio-input {
+  width: auto;
+  min-width: 160px;
+}
+
+.portfolio-list {
+  margin: 0 -8px;
+  padding: 0;
+  list-style: none;
+}
+
+.portfolio-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.portfolio-list__row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 2px;
+  min-height: 60px;
+  padding: 10px 8px;
+  border-radius: var(--r-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.portfolio-list__row:hover {
+  background: var(--sunken);
+}
+
+.portfolio-list__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.portfolio-list__row .asset-icon {
+  grid-row: span 2;
+}
+
+.portfolio-list__name,
+.portfolio-list__detail {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portfolio-list__name {
+  font-size: var(--fs-md);
+}
+
+.portfolio-list__value,
+.portfolio-list__pnl {
+  justify-self: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.portfolio-list__value {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.portfolio-list__detail,
+.portfolio-list__pnl {
+  font-size: var(--fs-xs);
+}
+
+.portfolio-list__detail {
+  grid-column: 2;
+  color: var(--ink-3);
+}
+
+@media (max-width: 639.98px) {
+  .portfolio-summary dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+  }
+
+  .portfolio-summary dd {
+    font-size: 20px;
+  }
+
+  .portfolio-search {
+    width: 100%;
+    margin-left: 0;
+  }
 }

@@ -92,6 +92,8 @@ async function wholePortfolio(db, s, f) {
   await observe(db, 'BTC', '70000', ago(30), 'coingecko');
   await observe(db, 'BTC', '99999', new Date(now.getTime() + 3_600_000));
   await observe(db, 'ETH', '2000', ago(180));
+  // The price a day earlier gives the 24-hour change; ETH has none from then.
+  await observe(db, 'BTC', '56000', ago(24 * 60 + 30));
   // Manual: the later point is voided and the future one is not yet effective.
   const point = (revision, observedAt, priceUsd) => ({ requestId: randomUUID(), expectedRevision: revision,
     observedAt, priceUsd, assertReviewed: true });
@@ -143,6 +145,8 @@ async function wholePortfolio(db, s, f) {
     source: 'manual', status: 'manual' });
   assert.deepEqual(asset(report, usd).price, { value: '1', observedAt: null, source: 'fixed', status: 'fixed' });
   assert.equal(asset(report, usd).value, '1500');
+  assert.deepEqual(report.assets.map((entry) => [entry.name, entry.priceChange24hPercent]), [['Bitcoin', '25.00'],
+    ['Deposit', '0.00'], ['Ethereum', null], ['US dollar', '0.00'], ['Toncoin', null]], 'PV-24H daily price change');
   assert.equal(asset(report, ton).quantity, '0');
   assert.equal(asset(report, ton).value, '0');
   assert.equal(asset(report, ton).missingPrice, 'no-price');
@@ -163,7 +167,7 @@ async function wholePortfolio(db, s, f) {
   await rejected(() => s.portfolio.read('not-a-uuid', {}, now), 400);
   assert.equal(await fingerprint(db), before, 'Every read and refusal preserves all rows');
   assert.deepEqual(await providerRequests(), providers, 'Reads never call any provider');
-  console.log('PASS PV-TOTAL/MARKET/STALE/MANUAL/FIXED/REALIZED/ALLOC/PRIVATE');
+  console.log('PASS PV-TOTAL/MARKET/STALE/MANUAL/FIXED/REALIZED/ALLOC/PRIVATE/24H');
 }
 
 async function gapsAndInvalidHistory(db, s, f) {

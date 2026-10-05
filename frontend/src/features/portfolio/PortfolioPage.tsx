@@ -10,6 +10,7 @@ import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
 import PageHeader from '../shell/PageHeader';
+import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
@@ -58,6 +59,48 @@ export function Signed({
         <span className="portfolio-sub">{percent(ratio)}</span>
       )}
     </span>
+  );
+}
+
+/** A signed percentage in the gain or loss colour: "+2.10%", "-1.40%", or a dash. */
+export function Change({ value }: { value: string | null }) {
+  return (
+    <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>{percent(value)}</span>
+  );
+}
+
+export type SortKey = 'value' | 'pnl' | 'change' | 'name';
+const sortKeys: [SortKey, string][] = [
+  ['value', 'Value'],
+  ['pnl', 'Unrealized P&L'],
+  ['change', '24h change'],
+  ['name', 'Name'],
+];
+
+/** Assets in the phone list's order: numbers largest first with unknowns last, names A to Z. */
+export function sortAssets(assets: readonly AssetValuation[], key: SortKey): AssetValuation[] {
+  if (key === 'name')
+    return [...assets].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  const field = (asset: AssetValuation) =>
+    key === 'value'
+      ? asset.value
+      : key === 'pnl'
+        ? asset.unrealizedPnl
+        : asset.priceChange24hPercent;
+  const number = (asset: AssetValuation) => {
+    const value = field(asset);
+    return value === null ? Number.NEGATIVE_INFINITY : Number(value);
+  };
+  return [...assets].sort((a, b) => number(b) - number(a) || a.name.localeCompare(b.name));
+}
+
+/** Whether the asset's name or ticker contains the search text, ignoring case. */
+export function matchesSearch(asset: AssetValuation, search: string): boolean {
+  const text = search.trim().toLowerCase();
+  return (
+    !text ||
+    asset.name.toLowerCase().includes(text) ||
+    (asset.symbol ?? '').toLowerCase().includes(text)
   );
 }
 
@@ -266,6 +309,9 @@ function AssetsTable({
             <th scope="col" className="portfolio-num">
               Unrealized P&amp;L
             </th>
+            <th scope="col" className="portfolio-num">
+              24h
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -302,6 +348,9 @@ function AssetsTable({
                   ratio={asset.unrealizedReturnPercent}
                 />
               </td>
+              <td className="portfolio-num">
+                <Change value={asset.priceChange24hPercent} />
+              </td>
             </tr>
           ))}
         </tbody>
@@ -310,11 +359,58 @@ function AssetsTable({
   );
 }
 
+// Phones get two-line rows instead of the table: the whole row opens the asset, and the
+// columns that do not fit are on the asset page (design: tables on phones).
+function AssetsList({
+  assets,
+  currency,
+  asked,
+}: {
+  assets: AssetValuation[];
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+}) {
+  return (
+    <ul className="portfolio-list">
+      {assets.map((asset) => (
+        <li key={asset.instrumentId}>
+          <Link
+            className="portfolio-list__row"
+            to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+          >
+            <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+            <span className="portfolio-list__name">{asset.name}</span>
+            <span className="portfolio-list__value">{money(asset.value, currency)}</span>
+            <span className="portfolio-list__detail">
+              {quantity(asset.quantity)}
+              {asset.symbol && ` ${asset.symbol}`}
+            </span>
+            <span
+              className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
+            >
+              {asset.unrealizedPnl === null
+                ? DASH
+                : `${money(asset.unrealizedPnl, currency, true)}${
+                    asset.unrealizedReturnPercent === null
+                      ? ''
+                      : ` · ${percent(asset.unrealizedReturnPercent)}`
+                  }`}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('value');
+  const phone = useNarrowScreen();
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked] = useAskedCurrency();
@@ -343,10 +439,13 @@ export default function PortfolioPage() {
   }, [load]);
 
   const assets = portfolio?.assets ?? [];
-  const visible = assets.filter((asset) => filter === 'all' || asset.assetType === filter);
+  const visible = assets.filter(
+    (asset) => (filter === 'all' || asset.assetType === filter) && matchesSearch(asset, search),
+  );
   const added = (asset: PortfolioAsset) => {
-    // The new row must be visible, so a filter that would hide it is cleared.
+    // The new row must be visible, so a filter or search that would hide it is cleared.
     setFilter((current) => (current === 'all' || current === asset.assetType ? current : 'all'));
+    setSearch('');
     setAdding(false);
     void load(true);
   };
@@ -420,9 +519,45 @@ export default function PortfolioPage() {
                   </button>
                 ))}
               </div>
+              <input
+                type="search"
+                className="portfolio-search"
+                placeholder="Search assets"
+                aria-label="Search assets"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
             </div>
-            <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
-            {visible.length === 0 && <p className="portfolio-none">No assets of this type.</p>}
+            {phone ? (
+              <>
+                <label className="portfolio-sort">
+                  <span>Sort by</span>
+                  <select
+                    className="portfolio-input"
+                    value={sortKey}
+                    onChange={(event) => setSortKey(event.target.value as SortKey)}
+                  >
+                    {sortKeys.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <AssetsList
+                  assets={sortAssets(visible, sortKey)}
+                  currency={portfolio.currency}
+                  asked={asked}
+                />
+              </>
+            ) : (
+              <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
+            )}
+            {visible.length === 0 && (
+              <p className="portfolio-none">
+                {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this type.'}
+              </p>
+            )}
             <p className="shell-note portfolio-note">
               {ratesNote(portfolio)} Holdings come from your{' '}
               <Link to="/manual-accounts">manual accounts</Link>.

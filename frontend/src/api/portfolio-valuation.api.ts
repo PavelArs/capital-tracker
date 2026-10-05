@@ -30,6 +30,8 @@ export interface AssetValuation {
   quantity: string;
   price: AssetPrice | null;
   missingPrice: 'no-price' | 'no-rate' | null;
+  /** The price's change since the same moment a day earlier; null when either is unknown. */
+  priceChange24hPercent: string | null;
   value: string | null;
   allocationPercent: string | null;
   costBasis: string | null;
