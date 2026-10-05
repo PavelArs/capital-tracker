@@ -1,4 +1,5 @@
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
+import type { TradePayment } from './paid-currency';
 
 // One read model over every journal and the raw chain history (list-all-operations).
 const SAT_TO_ATOMS = 10n ** 22n;
@@ -39,6 +40,8 @@ export interface TradeOperationInput {
   grossUsd: string;
   feeUsd: string;
   csv: boolean;
+  paid: TradePayment | null;
+  comment: string | null;
 }
 export interface TransferOperationInput {
   transferId: string;
@@ -151,6 +154,12 @@ export interface Operation {
   status: 'recorded' | 'needs-classification';
   source: 'manual' | 'csv' | 'chain';
   version: number | null;
+  /** Trades only: the amounts as paid in RUB or EUR (CUR-PAID-RUB). */
+  paid: TradePayment | null;
+  /** The owner's note (OPS-COMMENT). */
+  comment: string | null;
+  /** Position among operations at the same instant; an edit at the same time keeps it. */
+  orderWithinTimestamp: number;
 }
 
 export interface OperationList {
@@ -183,6 +192,8 @@ const blank = {
   counterAccount: null,
   wallet: null,
   chain: null,
+  paid: null,
+  comment: null,
 } satisfies Partial<Operation>;
 const recorded = { status: 'recorded', source: 'manual' } as const;
 
@@ -222,6 +233,7 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
     status: 'needs-classification',
     source: 'chain',
     version: null,
+    orderWithinTimestamp: 0,
   };
   return operation;
 }
@@ -229,7 +241,8 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
 export function projectOperations(at: Date, sources: OperationSources): OperationList {
   const entries: { operation: Operation; order: number }[] = [];
-  const push = (operation: Operation, order: number) => entries.push({ operation, order });
+  const push = (operation: Omit<Operation, 'orderWithinTimestamp'>, order: number) =>
+    entries.push({ operation: { ...operation, orderWithinTimestamp: order }, order });
 
   for (const row of sources.trades) {
     push(
@@ -248,6 +261,8 @@ export function projectOperations(at: Date, sources: OperationSources): Operatio
         status: 'recorded',
         source: row.csv ? 'csv' : 'manual',
         version: row.version,
+        paid: row.paid,
+        comment: row.comment,
       },
       row.orderWithinTimestamp,
     );
@@ -352,7 +367,8 @@ export function projectOperations(at: Date, sources: OperationSources): Operatio
       0,
     );
   }
-  for (const row of sources.chain) push(chainOperation(row, sources.marketPrices), 0);
+  for (const row of sources.chain)
+    entries.push({ operation: chainOperation(row, sources.marketPrices), order: 0 });
 
   entries.sort(
     (left, right) =>

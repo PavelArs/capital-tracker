@@ -435,7 +435,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 28/);
+    assert.match(migrate(name), /Migrations applied: 29/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -445,7 +445,7 @@ async function main() {
   await upgrade.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 28);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 29);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);

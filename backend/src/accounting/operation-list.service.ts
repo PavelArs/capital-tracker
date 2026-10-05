@@ -12,6 +12,7 @@ import {
   projectOperations,
   type RewardOperationInput,
 } from './operation-list';
+import { isPaidCurrency, isRateSource, type TradePayment } from './paid-currency';
 
 interface Named {
   accountId: string;
@@ -38,6 +39,13 @@ interface TradeRow extends Versioned {
   grossUsd: string;
   feeUsd: string;
   csv: boolean;
+  paidCurrency: string | null;
+  paidGross: string | null;
+  paidFee: string | null;
+  paidRateDate: string | null;
+  paidPerUsd: string | null;
+  paidRateSource: string | null;
+  comment: string | null;
 }
 interface TransferRow extends Versioned, FeeColumns {
   transferId: string;
@@ -113,6 +121,20 @@ function fee(row: FeeColumns): OperationFee | null {
   };
 }
 
+function payment(row: TradeRow): TradePayment | null {
+  if (row.paidCurrency === null) return null;
+  if (!isPaidCurrency(row.paidCurrency) || !isRateSource(row.paidRateSource) || !row.paidRateDate)
+    throw new Error('Invalid stored trade payment');
+  return {
+    currency: row.paidCurrency,
+    gross: parseDecimal(row.paidGross, true),
+    fee: decimal(row.paidFee ?? ''),
+    rateDate: row.paidRateDate,
+    perUsd: parseDecimal(row.paidPerUsd, true),
+    rateSource: row.paidRateSource,
+  };
+}
+
 function parseEmptyQuery(query: unknown): void {
   if (
     !query ||
@@ -135,11 +157,18 @@ export class OperationListService {
       const trades: TradeRow[] = await manager.query(
         `SELECT t.id AS "tradeId", ${named}, v.side, v.quantity::text AS quantity,
             v."grossUsd"::text AS "grossUsd", v."feeUsd"::text AS "feeUsd",
-            (r."tradeId" IS NOT NULL) AS csv
+            (r."tradeId" IS NOT NULL) AS csv, p.currency AS "paidCurrency",
+            p.gross::text AS "paidGross", p.fee::text AS "paidFee",
+            p."rateDate"::text AS "paidRateDate", p."perUsd"::text AS "paidPerUsd",
+            p."rateSource" AS "paidRateSource", c.comment
           FROM account_trades t
           JOIN account_trade_versions v ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId"
             AND v."tradeId"=t.id AND v.version=t."currentVersion"
           ${instrumentJoin} ${accountJoin}
+          LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
+            AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version
+          LEFT JOIN account_trade_version_comments c ON c."ownerId"=v."ownerId"
+            AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version
           LEFT JOIN account_csv_import_rows r ON r."ownerId"=t."ownerId"
             AND r."accountId"=t."accountId" AND r."tradeId"=t.id
           WHERE t."ownerId"=$1 AND v.kind<>'void'`,
@@ -235,6 +264,8 @@ export class OperationListService {
           grossUsd: decimal(row.grossUsd),
           feeUsd: decimal(row.feeUsd),
           csv: row.csv,
+          paid: payment(row),
+          comment: row.comment,
         })),
         transfers: transfers.map((row) => ({
           transferId: row.transferId,
