@@ -159,9 +159,10 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   );
   const holdings = main.getByRole('region', { name: 'Holdings' });
   await expect(holdings.getByRole('listitem')).toHaveText([`${accountName}1.2 PVUI$96,000.00`]);
+  // WAL-PAGE: a holding opens its wallet's page.
   await expect(holdings.getByRole('link', { name: accountName })).toHaveAttribute(
     'href',
-    `/manual-accounts/${account.id}`,
+    `/wallets/${account.id}`,
   );
   await page.screenshot({ path: testInfo.outputPath('asset-1440-dark.png'), fullPage: true });
   await main.getByRole('link', { name: '← Portfolio' }).click();
