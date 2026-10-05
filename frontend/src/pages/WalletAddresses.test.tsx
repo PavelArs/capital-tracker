@@ -19,13 +19,29 @@ const fresh: WalletAddress = {
   createdAt: '2026-10-03T00:00:00.000Z',
   transactionCount: 0,
   chainBalance: null,
-  sync: { state: 'never', completedAt: null },
+  sync: {
+    state: 'never',
+    completedAt: null,
+    status: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextRunAt: null,
+    errorMessage: null,
+  },
 };
 const synced: WalletAddress = {
   ...fresh,
   transactionCount: 2,
   chainBalance: '0.00100000',
-  sync: { state: 'complete', completedAt: '2026-10-03T12:00:00.000Z' },
+  sync: {
+    state: 'complete',
+    completedAt: '2026-10-03T12:00:00.000Z',
+    status: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextRunAt: null,
+    errorMessage: null,
+  },
 };
 const transactions: TransactionPage = {
   total: 2,
@@ -130,7 +146,19 @@ describe('ADDR-UI wallet address page', () => {
       outcome: 'provider_error',
       reason: 'rate_limited',
       imported: 25,
-      address: { ...synced, transactionCount: 25, sync: { state: 'partial', completedAt: null } },
+      address: {
+        ...synced,
+        transactionCount: 25,
+        sync: {
+          state: 'partial',
+          completedAt: null,
+          status: null,
+          lastAttemptAt: null,
+          lastSuccessAt: null,
+          nextRunAt: null,
+          errorMessage: null,
+        },
+      },
     });
     renderPage();
     const card = await screen.findByRole('region', { name: `Адрес ${address}` });

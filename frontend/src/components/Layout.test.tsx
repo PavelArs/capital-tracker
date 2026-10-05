@@ -110,11 +110,14 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
   });
 });
 
-describe('SHELL-007 sync indicator slot', () => {
-  it('says sync is not set up and claims nothing is synced', async () => {
+describe('SHELL-007 sync indicator', () => {
+  it('opens Wallets and claims nothing before the status arrives', async () => {
     const document = await markup();
     const slot = document.querySelector('[data-sync-status]');
-    expect(slot?.textContent).toContain('Sync not set up');
+    expect(slot?.tagName).toBe('A');
+    expect(slot?.getAttribute('href')).toBe('/wallets');
+    expect(slot?.getAttribute('aria-current')).toBeNull();
+    expect(slot?.textContent).toContain('Checking sync');
     expect(slot?.textContent).not.toMatch(/\bsynced\b/i);
   });
 });

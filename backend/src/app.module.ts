@@ -27,6 +27,7 @@ import { OwnerSettingsModule } from './owner-settings/owner-settings.module';
 import { PortfolioSnapshotsModule } from './portfolio-snapshots/portfolio-snapshots.module';
 import { PricesModule } from './prices/prices.module';
 import { GlobalExceptionFilter } from './shared/filters';
+import { SyncStatusModule } from './sync-status/sync-status.module';
 import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.module';
 
 @Module({
@@ -111,6 +112,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     HealthModule,
     PortfolioSnapshotsModule,
     PricesModule,
+    SyncStatusModule,
     WalletAddressesModule,
   ],
   controllers: [AppController],

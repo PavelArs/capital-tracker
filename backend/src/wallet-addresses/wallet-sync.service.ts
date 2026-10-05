@@ -1,0 +1,146 @@
+import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { Interval } from '@nestjs/schedule';
+import { DataSource } from 'typeorm';
+import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
+import {
+  CHAIN_SYNC_ADAPTERS,
+  type ChainSyncAdapter,
+  outcomeOf,
+  type SourceOutcome,
+  type StepResult,
+  walletSourceKey,
+} from './chain-sync';
+
+export type WalletTickResult =
+  | { outcome: 'ran'; wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] }
+  | { outcome: 'busy' | 'disabled' };
+
+// Arbitrary constant identifying the wallet scheduler's session advisory lock.
+const LOCK_KEY = 7_340_600_011;
+// Wallets per tick; the rest wait for the next minute.
+const WALLETS_PER_TICK = 20;
+const NETWORK_NAMES: Record<string, string> = { bitcoin: 'Bitcoin' };
+
+interface DueWallet {
+  id: string;
+  ownerId: string;
+  network: string;
+}
+
+@Injectable()
+export class WalletSyncService {
+  private readonly logger = new Logger(WalletSyncService.name);
+  private readonly adapters: Map<string, ChainSyncAdapter>;
+
+  constructor(
+    private readonly source: DataSource,
+    private readonly config: ConfigService,
+    @Inject(CHAIN_SYNC_ADAPTERS) adapters: ChainSyncAdapter[],
+  ) {
+    this.adapters = new Map(adapters.map((adapter) => [adapter.network, adapter]));
+  }
+
+  // Background collection is one owner switch: wallets follow the hourly prices (M3).
+  private get enabled(): boolean {
+    return this.config.get('PRICE_COLLECTION_ENABLED') === 'true';
+  }
+
+  // Interval jobs stay registered when BACKGROUND_JOBS_ENABLED=false disables cron jobs;
+  // this one follows the collection switch above.
+  @Interval(60_000)
+  async scheduledTick(): Promise<void> {
+    try {
+      await this.tick();
+    } catch {
+      this.logger.warn('Background wallet sync could not finish');
+    }
+  }
+
+  async tick(now = new Date()): Promise<WalletTickResult> {
+    if (!this.enabled) return { outcome: 'disabled' };
+    return this.runDue(now);
+  }
+
+  // SYNC-BG, SYNC-ISOLATION: every due wallet gets one pass; a wallet whose provider fails
+  // or whose adapter throws records its own failure and the next wallet still runs.
+  async runDue(now = new Date()): Promise<WalletTickResult> {
+    // A transaction-scoped advisory lock on a dedicated connection: one scheduler at a time,
+    // released by the rollback below or by the connection ending, never left behind.
+    const runner = this.source.createQueryRunner();
+    await runner.connect();
+    try {
+      await runner.startTransaction();
+      try {
+        const [lock]: { locked: boolean }[] = await runner.query(
+          'SELECT pg_try_advisory_xact_lock($1) AS locked',
+          [LOCK_KEY],
+        );
+        if (!lock.locked) return { outcome: 'busy' };
+        const due: DueWallet[] = await this.source.query(
+          `SELECT a.id, a."ownerId", a.network FROM wallet_addresses a
+            LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
+            WHERE s.key IS NULL OR s."nextRunAt" IS NULL OR s."nextRunAt" <= $1
+            ORDER BY s."nextRunAt" ASC NULLS FIRST, a."createdAt", a.id LIMIT $2`,
+          [now, WALLETS_PER_TICK],
+        );
+        const wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] = [];
+        for (const wallet of due) {
+          const result = await this.run(wallet, now);
+          wallets.push({ id: wallet.id, state: result === 'busy' ? 'busy' : result.state });
+        }
+        return { outcome: 'ran', wallets };
+      } finally {
+        await runner.rollbackTransaction();
+      }
+    } finally {
+      await runner.release();
+    }
+  }
+
+  /**
+   * One pass for one wallet, its state recorded before and after. "busy" means another
+   * pass of the same wallet is committing; that pass records the state.
+   */
+  async run(
+    wallet: DueWallet,
+    now = new Date(),
+  ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
+    const key = walletSourceKey(wallet.id);
+    const adapter = this.adapters.get(wallet.network);
+    const name = adapter?.name ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
+    if (!adapter) {
+      const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
+      await this.record(key, outcome, now);
+      return { ...outcome, step: null };
+    }
+    // Leased while it runs: the scheduler leaves it alone until the pass ends or dies.
+    await this.record(
+      key,
+      {
+        state: 'syncing',
+        errorCode: null,
+        errorMessage: null,
+        nextRunAt: new Date(now.getTime() + INTERRUPTED_AFTER_MS),
+      },
+      now,
+    );
+    let step: StepResult;
+    try {
+      step = await adapter.step(wallet.ownerId, wallet.id);
+    } catch (error) {
+      if (error instanceof ConflictException) return 'busy';
+      this.logger.warn(`${name} wallet sync stopped unexpectedly`);
+      const outcome = outcomeOf(name, { failure: 'error' }, now);
+      await this.record(key, outcome, now);
+      return { ...outcome, step: null };
+    }
+    const outcome = outcomeOf(name, step, now);
+    await this.record(key, outcome, now);
+    return { ...outcome, step };
+  }
+
+  private record(key: string, outcome: SourceOutcome, now: Date): Promise<void> {
+    return recordSource(this.source, key, outcome, now);
+  }
+}

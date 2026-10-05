@@ -31,7 +31,15 @@ const wallet = (n: number, changes: Partial<WalletAddress>): WalletAddress => ({
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
-  sync: { state: 'complete', completedAt: new Date(Date.now() - 8 * 60_000).toISOString() },
+  sync: {
+    state: 'complete',
+    completedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
+    status: null,
+    lastAttemptAt: null,
+    lastSuccessAt: null,
+    nextRunAt: null,
+    errorMessage: null,
+  },
   ...changes,
 });
 
@@ -195,7 +203,20 @@ describe('WAL-LIST: wallets grouped by account', () => {
     const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
     expect(within(trustCard).queryByRole('note')).toBeNull();
     cleanup();
-    setup([wallet(1, { chainBalance: null, sync: { state: 'partial', completedAt: null } })]);
+    setup([
+      wallet(1, {
+        chainBalance: null,
+        sync: {
+          state: 'partial',
+          completedAt: null,
+          status: null,
+          lastAttemptAt: null,
+          lastSuccessAt: null,
+          nextRunAt: null,
+          errorMessage: null,
+        },
+      }),
+    ]);
     const partial = await screen.findByRole('region', { name: 'Trust Wallet' });
     expect(within(partial).queryByRole('note')).toBeNull();
     expect(partial).toHaveTextContent('Partly loaded');
@@ -234,7 +255,15 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
       label: 'Savings BTC',
       transactionCount: 0,
       chainBalance: null,
-      sync: { state: 'never', completedAt: null },
+      sync: {
+        state: 'never',
+        completedAt: null,
+        status: null,
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+        nextRunAt: null,
+        errorMessage: null,
+      },
     });
     const create = vi.spyOn(accountingApi, 'createAccount');
     const add = vi.spyOn(walletAddressesApi, 'add').mockImplementation(async () => {
@@ -276,7 +305,15 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
       ...added,
       transactionCount: 3,
       chainBalance: '0.00500000',
-      sync: { state: 'complete', completedAt: new Date().toISOString() },
+      sync: {
+        state: 'complete',
+        completedAt: new Date().toISOString(),
+        status: null,
+        lastAttemptAt: null,
+        lastSuccessAt: null,
+        nextRunAt: null,
+        errorMessage: null,
+      },
     });
     vi.mocked(walletAddressesApi.list).mockResolvedValue([done.address]);
     finish(done);
@@ -408,5 +445,111 @@ describe('WAL-ACCOUNT: an address drawer', () => {
     await user.click(within(card('Trust Wallet')).getByRole('button', { name: 'Retry now' }));
     await waitFor(() => expect(card('Trust Wallet')).not.toHaveTextContent('Sync failed'));
     expect(sync).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('M11: wallets sync in the background', () => {
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+  it('SYNC-STATUS shows a wallet whose background sync failed, with the reason and Retry', async () => {
+    const failed = wallet(1, {
+      sync: {
+        state: 'complete',
+        completedAt: minutesAgo(130),
+        status: 'failed',
+        lastAttemptAt: minutesAgo(3),
+        lastSuccessAt: minutesAgo(130),
+        nextRunAt: minutesAgo(-12),
+        errorMessage: 'Bitcoin data is temporarily unavailable.',
+      },
+    });
+    setup([failed]);
+    const recovered: WalletAddress = {
+      ...failed,
+      sync: { ...failed.sync, status: 'synced', lastSuccessAt: minutesAgo(0), errorMessage: null },
+    };
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(recovered));
+    const row = await screen.findByRole('button', { name: `Trust Wallet BTC ${addresses.trust}` });
+    expect(row).toHaveTextContent('Sync failed');
+    expect(row).not.toHaveTextContent('ago');
+    const trustCard = card('Trust Wallet');
+    expect(
+      within(trustCard).getByText(
+        'Bitcoin data is temporarily unavailable. Balances shown are from 2 h ago.',
+      ),
+    ).toBeInTheDocument();
+    const user = userEvent.setup();
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([recovered]);
+    await user.click(within(trustCard).getByRole('button', { name: 'Retry now' }));
+    expect(sync).toHaveBeenCalledWith(failed.id);
+    await waitFor(() => expect(row).toHaveTextContent('Synced'));
+    expect(within(trustCard).queryByText(/temporarily unavailable/)).toBeNull();
+  });
+
+  it('shows a delayed source in the drawer with its reason', async () => {
+    const delayed = wallet(1, {
+      sync: {
+        state: 'complete',
+        completedAt: minutesAgo(70),
+        status: 'delayed',
+        lastAttemptAt: minutesAgo(1),
+        lastSuccessAt: minutesAgo(70),
+        nextRunAt: minutesAgo(-14),
+        errorMessage: 'The Bitcoin data source is busy. The app tries again in a few minutes.',
+      },
+    });
+    setup([delayed]);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: `Trust Wallet BTC ${addresses.trust}` }),
+    );
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
+    expect(within(drawer).getByText('Delayed')).toBeInTheDocument();
+    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+      'The Bitcoin data source is busy. The app tries again in a few minutes. Balances shown are from 1 h ago.',
+    );
+    expect(drawer).toHaveTextContent('Every hour in the background');
+  });
+
+  it('follows a history the background job is loading without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const loading = wallet(1, {
+        chainBalance: null,
+        sync: {
+          state: 'partial',
+          completedAt: null,
+          status: 'syncing',
+          lastAttemptAt: minutesAgo(0),
+          lastSuccessAt: null,
+          nextRunAt: minutesAgo(0),
+          errorMessage: null,
+        },
+      });
+      const done = wallet(1, {
+        sync: {
+          ...loading.sync,
+          state: 'complete',
+          completedAt: minutesAgo(0),
+          status: 'synced',
+          lastSuccessAt: minutesAgo(0),
+        },
+      });
+      setup([loading]);
+      const sync = vi.spyOn(walletAddressesApi, 'sync');
+      const row = await screen.findByRole('button', {
+        name: `Trust Wallet BTC ${addresses.trust}`,
+      });
+      // The background job finishes before the page looks again.
+      vi.mocked(walletAddressesApi.list).mockResolvedValue([done]);
+      expect(row).toHaveTextContent('Syncing');
+      expect(screen.getByText(/keeps loading in the background/)).toBeInTheDocument();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await waitFor(() => expect(row).toHaveTextContent('Synced'));
+      expect(row).toHaveTextContent('0.01 BTC');
+      expect(sync).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

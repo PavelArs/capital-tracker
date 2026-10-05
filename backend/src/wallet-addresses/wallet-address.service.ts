@@ -2,18 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { parseUuid } from '../accounting/input';
-import {
-  type ChainObservation,
-  EsploraClient,
-  formatSats,
-  PAGE_SIZE,
-  type ProviderFailure,
-} from './esplora-client';
+import { presentSource, type SourceRow } from '../sync-status/sync-source';
+import { formatSats } from './esplora-client';
 import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
-
-// Bounds for one sync request; the next request continues from the committed cursor.
-export const MAX_PAGES_PER_SYNC = 10;
-const SYNC_TIME_BUDGET_MS = 25_000;
+import { WalletSyncService } from './wallet-sync.service';
 
 interface AddressRow {
   id: string;
@@ -29,6 +21,11 @@ interface AddressRow {
   createdAt: Date;
   transactionCount: number;
   balanceUnits: string;
+  // json_build_object turns timestamps into text.
+  source:
+    | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
+        Record<'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt', string | null>)
+    | null;
 }
 interface TransactionRow {
   txid: string;
@@ -39,17 +36,35 @@ interface TransactionRow {
   sentUnits: string;
   feeUnits: string;
 }
-type SyncOutcome = 'complete' | 'partial' | 'provider_error';
-
 // Each stored transaction's received minus sent units is its whole effect on the address,
 // the network fee included, so their sum over the complete history is the chain balance.
-const selectAddress = `SELECT a.*, t."transactionCount", t."balanceUnits" FROM wallet_addresses a
+// The wallet's background source (PR-SYN-1) comes along; null until its first pass.
+const selectAddress = `SELECT a.*, t."transactionCount", t."balanceUnits",
+    CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
+      'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
+      'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
+    END AS source
+  FROM wallet_addresses a
   CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount",
     coalesce(sum(x."receivedUnits" - x."sentUnits"), 0)::text AS "balanceUnits"
-    FROM wallet_address_transactions x WHERE x."addressId" = a.id) t`;
+    FROM wallet_address_transactions x WHERE x."addressId" = a.id) t
+  LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
-function summary(row: AddressRow) {
+function sourceRow(raw: AddressRow['source']): SourceRow | null {
+  if (!raw) return null;
+  const date = (value: string | null) => (value === null ? null : new Date(value));
+  return {
+    ...raw,
+    lastAttemptAt: date(raw.lastAttemptAt),
+    lastSuccessAt: date(raw.lastSuccessAt),
+    nextRunAt: date(raw.nextRunAt),
+  };
+}
+
+function summary(row: AddressRow, now = new Date()) {
   const state = row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
+  const source = sourceRow(row.source);
+  const status = source ? presentSource(source, now) : null;
   return {
     id: row.id,
     network: row.network,
@@ -63,6 +78,11 @@ function summary(row: AddressRow) {
     sync: {
       state,
       completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,
+      status: status?.state ?? null,
+      lastAttemptAt: status?.lastAttemptAt ?? null,
+      lastSuccessAt: status?.lastSuccessAt ?? null,
+      nextRunAt: status?.nextRunAt ?? null,
+      errorMessage: status?.errorMessage ?? null,
     },
   };
 }
@@ -89,7 +109,7 @@ function transaction(row: TransactionRow) {
 export class WalletAddressService {
   constructor(
     private readonly source: DataSource,
-    private readonly esplora: EsploraClient,
+    private readonly walletSync: WalletSyncService,
   ) {}
 
   // WAL-DUP: an address already tracked is returned as it is, whatever account or name the
@@ -147,37 +167,23 @@ export class WalletAddressService {
         `${selectAddress} WHERE a."ownerId" = $1 ORDER BY a."createdAt", a.id`,
         [owner],
       );
-      return rows.map(summary);
+      return rows.map((row) => summary(row));
     });
   }
 
+  // "Sync now": the same pass the scheduler runs, recorded the same way.
   async sync(ownerId: string, id: string) {
     const owner = parseUuid(ownerId);
     const addressId = parseUuid(id);
-    let state = await this.read((manager) => this.address(manager, owner, addressId));
-    const started = Date.now();
-    let imported = 0;
-    const finish = async (outcome: SyncOutcome, reason: ProviderFailure | null) => ({
-      outcome,
-      reason,
-      imported,
+    const { network } = await this.read((manager) => this.address(manager, owner, addressId));
+    const result = await this.walletSync.run({ id: addressId, ownerId: owner, network });
+    if (result === 'busy') throw new ConflictException('Another sync advanced this address');
+    return {
+      outcome: result.step?.outcome ?? 'provider_error',
+      reason: result.step?.reason ?? null,
+      imported: result.step?.imported ?? 0,
       address: summary(await this.read((manager) => this.address(manager, owner, addressId))),
-    });
-    for (let pages = 0; ; pages++) {
-      if (pages >= MAX_PAGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS) {
-        return finish('partial', null);
-      }
-      const page = await this.esplora.page(state.address, state.walkCursorTxid);
-      if (!page.ok) return finish('provider_error', page.reason);
-      if (page.transactions.length === 0) {
-        const failure = await this.confirmEnd(state);
-        if (failure) return finish('provider_error', failure);
-      }
-      const committed = await this.commit(state, page.transactions);
-      imported += committed.inserted;
-      if (committed.finished) return finish('complete', null);
-      state = committed.state;
-    }
+    };
   }
 
   async transactions(ownerId: string, id: string, raw: unknown) {
@@ -203,98 +209,6 @@ export class WalletAddressService {
         items: rows.map(transaction),
       };
     });
-  }
-
-  // Esplora answers [] both at the end of history and when a lagging backend does not
-  // know the cursor or the address yet. Accept [] as the end only when the address's
-  // confirmed transaction count matches what is stored plus what arrived above the walk.
-  private async confirmEnd(state: AddressRow): Promise<ProviderFailure | null> {
-    if (state.walkCursorTxid === null) {
-      return state.completedTopTxid === null ? null : 'unavailable';
-    }
-    const total = await this.esplora.transactionCount(state.address);
-    if (!total.ok) return total.reason;
-    const [{ stored }]: { stored: number }[] = await this.source.query(
-      'SELECT count(*)::int AS stored FROM wallet_address_transactions WHERE "addressId" = $1',
-      [state.id],
-    );
-    if (stored === total.count) return null;
-    if (stored > total.count) return 'unavailable';
-    const top = await this.esplora.page(state.address, null);
-    if (!top.ok) return top.reason;
-    const newer = top.transactions.findIndex(({ txid }) => txid === state.walkTopTxid);
-    return newer >= 0 && stored + newer === total.count ? null : 'unavailable';
-  }
-
-  // Stores one page and advances the walk atomically. A walk starts at the newest
-  // transaction and ends at the previous walk's newest transaction or the end of
-  // history, so an interrupted walk resumes from its cursor without gaps.
-  private commit(expected: AddressRow, page: ChainObservation[]) {
-    return this.source.transaction('READ COMMITTED', async (manager) => {
-      const [current]: AddressRow[] = await manager.query(
-        `SELECT * FROM wallet_addresses WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
-        [expected.ownerId, expected.id],
-      );
-      if (
-        !current ||
-        current.walkTopTxid !== expected.walkTopTxid ||
-        current.walkCursorTxid !== expected.walkCursorTxid ||
-        current.completedTopTxid !== expected.completedTopTxid
-      ) {
-        throw new ConflictException('Another sync advanced this address');
-      }
-      const known = current.completedTopTxid
-        ? page.findIndex(({ txid }) => txid === current.completedTopTxid)
-        : -1;
-      const fresh = known >= 0 ? page.slice(0, known) : page;
-      const finished = known >= 0 || page.length < PAGE_SIZE;
-      const inserted = await this.insert(manager, current, fresh);
-      const walkTop = current.walkTopTxid ?? page[0]?.txid ?? null;
-      // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
-      const [[next]]: [AddressRow[], number] = finished
-        ? await manager.query(
-            `UPDATE wallet_addresses SET "completedTopTxid" = $3, "completedAt" = clock_timestamp(),
-              "walkTopTxid" = NULL, "walkCursorTxid" = NULL
-              WHERE "ownerId" = $1 AND id = $2 RETURNING *`,
-            [current.ownerId, current.id, walkTop],
-          )
-        : await manager.query(
-            `UPDATE wallet_addresses SET "walkTopTxid" = $3, "walkCursorTxid" = $4
-              WHERE "ownerId" = $1 AND id = $2 RETURNING *`,
-            [current.ownerId, current.id, walkTop, page[page.length - 1].txid],
-          );
-      return { inserted, finished, state: { ...expected, ...next } };
-    });
-  }
-
-  private async insert(manager: EntityManager, address: AddressRow, page: ChainObservation[]) {
-    if (page.length === 0) return 0;
-    const values: unknown[] = [];
-    const rows = page.map((tx) => {
-      const base = values.length;
-      values.push(
-        address.ownerId,
-        address.id,
-        tx.txid,
-        tx.blockHeight,
-        tx.blockHash,
-        tx.blockTime,
-        tx.receivedSats.toString(),
-        tx.sentSats.toString(),
-        tx.feeSats.toString(),
-        tx.direction,
-        JSON.stringify(tx.raw),
-      );
-      const slot = (offset: number) => `$${base + offset}`;
-      return `(${slot(1)},${slot(2)},${slot(3)},${slot(4)},${slot(5)},${slot(6)},${slot(7)}::numeric,${slot(8)}::numeric,${slot(9)}::numeric,${slot(10)},${slot(11)}::jsonb)`;
-    });
-    const inserted: { txid: string }[] = await manager.query(
-      `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight", "blockHash",
-        "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw)
-        VALUES ${rows.join(',')} ON CONFLICT ("addressId", txid) DO NOTHING RETURNING txid`,
-      values,
-    );
-    return inserted.length;
   }
 
   private async address(manager: EntityManager, owner: string, id: string) {

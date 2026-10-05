@@ -6,7 +6,7 @@ export type SyncRun = { state: 'running' } | { state: 'failed'; message: string 
 
 export const failureMessages: Record<ProviderFailure | 'server' | 'busy', string> = {
   rate_limited: 'The Bitcoin data source is busy. Try again in a few minutes.',
-  unavailable: 'Bitcoin data is temporarily unavailable. Balances shown are from the last sync.',
+  unavailable: 'Bitcoin data is temporarily unavailable.',
   invalid_response: 'The Bitcoin data source sent an answer the app cannot read. Try again later.',
   server: 'Could not reach the server. Try again.',
   busy: 'Another sync of this address is running. Try again in a moment.',
@@ -14,11 +14,16 @@ export const failureMessages: Record<ProviderFailure | 'server' | 'busy', string
 
 type Badge = { label: string; tone: 'pos' | 'info' | 'warn' | 'neg' | 'neutral' };
 
+/** The background job's view first (M11), then what the page itself is doing. */
 export function syncBadge(address: WalletAddress, run: SyncRun | undefined): Badge {
   if (run?.state === 'running') return { label: 'Syncing', tone: 'info' };
   if (run?.state === 'failed') return { label: 'Sync failed', tone: 'neg' };
-  if (address.sync.state === 'complete') return { label: 'Synced', tone: 'pos' };
-  if (address.sync.state === 'partial') return { label: 'Partly loaded', tone: 'warn' };
+  const { status, state } = address.sync;
+  if (status === 'syncing') return { label: 'Syncing', tone: 'info' };
+  if (status === 'failed') return { label: 'Sync failed', tone: 'neg' };
+  if (status === 'delayed') return { label: 'Delayed', tone: 'warn' };
+  if (state === 'complete') return { label: 'Synced', tone: 'pos' };
+  if (state === 'partial') return { label: 'Partly loaded', tone: 'warn' };
   return { label: 'Not synced', tone: 'neutral' };
 }
 
@@ -27,8 +32,43 @@ export function SyncBadge({ address, run }: { address: WalletAddress; run?: Sync
   return <span className={`wallets-badge wallets-badge--${tone}`}>{label}</span>;
 }
 
-/** "8 min ago" for a complete history; nothing while running or never finished. */
+/** The last time the whole history was up to date, if ever. */
+function lastSynced(address: WalletAddress): string | null {
+  return address.sync.lastSuccessAt ?? address.sync.completedAt;
+}
+
+/**
+ * "8 min ago" next to "Synced"; nothing while running, never finished or failing, where the
+ * message says how old the shown balance is.
+ */
 export function syncAge(address: WalletAddress, run: SyncRun | undefined, now = new Date()) {
-  if (run?.state === 'running' || !address.sync.completedAt) return '';
-  return age(address.sync.completedAt, now);
+  const last = lastSynced(address);
+  const { status } = address.sync;
+  if (run || status === 'syncing' || status === 'failed' || status === 'delayed' || !last) {
+    return '';
+  }
+  return age(last, now);
+}
+
+/**
+ * SYNC-STATUS: why the wallet is not up to date, in plain words, with how old the shown
+ * balance is. The page's own failed attempt wins over the stored one it just replaced.
+ */
+export function syncProblem(
+  address: WalletAddress,
+  run: SyncRun | undefined,
+  now = new Date(),
+): string | null {
+  if (run?.state === 'running') return null;
+  const reason =
+    run?.state === 'failed'
+      ? run.message
+      : address.sync.status === 'failed' || address.sync.status === 'delayed'
+        ? (address.sync.errorMessage ?? failureMessages.unavailable)
+        : null;
+  if (reason === null) return null;
+  const last = lastSynced(address);
+  return last && address.chainBalance !== null
+    ? `${reason} Balances shown are from ${age(last, now)}.`
+    : reason;
 }

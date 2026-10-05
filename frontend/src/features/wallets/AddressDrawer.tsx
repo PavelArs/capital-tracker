@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import type { WalletAccount } from './AddWalletDialog';
-import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
+import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
 
 const NEW = '__new';
 const NONE = '';
@@ -217,10 +217,14 @@ export default function AddressDrawer({
               <dt>Data source</dt>
               <dd>Blockstream Esplora</dd>
             </div>
+            <div>
+              <dt>Updates</dt>
+              <dd>Every hour in the background</dd>
+            </div>
           </dl>
-          {run?.state === 'failed' && (
+          {syncProblem(address, run) && (
             <p className="wallets-message wallets-message--error" role="alert">
-              {run.message}
+              {syncProblem(address, run)}
             </p>
           )}
           <form className="wallets-edit" onSubmit={save} aria-labelledby="address-wallet">
