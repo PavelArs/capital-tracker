@@ -19,6 +19,7 @@ import type { AccountFifoResult, LotOrigin } from './owned-transfer-types';
 import type { PaidCurrency } from './paid-currency';
 
 const ATOM_SCALE = 10n ** 30n;
+export const DAY_MS = 24 * 3_600_000;
 
 export interface PortfolioInstrument {
   id: string;
@@ -144,6 +145,32 @@ export function resolvePrice(
     },
     missingPrice: null,
   };
+}
+
+/**
+ * The price's change since the same moment a day earlier, in the report's currency at each
+ * day's rate. A market price older than 2 hours at that moment is not that day's price.
+ */
+function priceChange24h(
+  instrument: PortfolioInstrument,
+  current: AssetPrice | null,
+  previous: PortfolioPrices | undefined,
+  at: Date,
+  fx: FxConverter,
+): string | null {
+  if (!current || !previous) return null;
+  const dayBefore = new Date(at.getTime() - DAY_MS);
+  if (instrument.priceSource === 'market') {
+    const stored = instrument.symbol
+      ? previous.market.get(instrument.symbol.toUpperCase())
+      : undefined;
+    if (!stored || freshness(stored.observedAt, dayBefore) !== 'fresh') return null;
+  }
+  const before = resolvePrice(instrument, previous, dayBefore, fx).price;
+  if (!before) return null;
+  const then = canonicalDecimalToAtoms(before.value);
+  if (then === 0n) return null;
+  return formatPercent(canonicalDecimalToAtoms(current.value) - then, then);
 }
 
 const tradeKey = (tradeId: string, version: number) => `${tradeId}:${version}`;
@@ -336,6 +363,8 @@ export function projectPortfolio(
   accounts: readonly PortfolioAccountInput[],
   prices: PortfolioPrices,
   fx: FxConverter = usdOnly(),
+  /** Prices stored at or before 24 hours ago, for each price's daily change. */
+  previous?: PortfolioPrices,
 ) {
   const today = moscowDate(at);
   // An amount paid in RUB or EUR is exact in its own currency and converts from it; USD
@@ -500,6 +529,7 @@ export function projectPortfolio(
       quantity: formatAtoms(total.quantity),
       price,
       missingPrice: price ? null : missingPrice,
+      priceChange24hPercent: priceChange24h(instrument, price, previous, at, fx),
       // Nothing held is a known zero whatever the price.
       value: !held ? '0' : value === null ? null : formatProduct(value),
       sortValue: value,

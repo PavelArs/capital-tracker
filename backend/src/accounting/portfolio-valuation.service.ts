@@ -19,6 +19,7 @@ import {
 import { parseDecimal, parseUuid } from './input';
 import type { OwnedProjection } from './owned-transfer-fifo';
 import {
+  DAY_MS,
   type PortfolioAccountInput,
   type PortfolioInstrument,
   type PortfolioPrices,
@@ -230,7 +231,14 @@ export class PortfolioValuationService {
       const prices = await latestPortfolioPrices(manager, owner, inputs.instruments, now);
       const mainCurrency = await readMainCurrency(manager, owner);
       const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
-      const report = projectPortfolio(now, inputs.instruments, accounts, prices, fx);
+      // The prices stored a day earlier give each price's 24-hour change.
+      const previous = await latestPortfolioPrices(
+        manager,
+        owner,
+        inputs.instruments,
+        new Date(now.getTime() - DAY_MS),
+      );
+      const report = projectPortfolio(now, inputs.instruments, accounts, prices, fx, previous);
       return { ...report, mainCurrency };
     });
   }
