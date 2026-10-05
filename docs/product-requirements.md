@@ -188,7 +188,7 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-OPS-9 | Sale proceeds stay in the account as cash; a Buy spends that cash before counting outside money as a deposit. | 10, 11 | 13, 22 |
 | PR-VAL-1 | Portfolio value now, in the selected main currency (USD, EUR, RUB), over all accounts. | 3.1 | 5, 6, 9 |
 | PR-VAL-4 | Cost basis, realized and unrealized P&L are kept in USD, EUR and RUB, each with the FX rate of the operation's date; adding another currency needs only its rate series (Q1). | 3.1, 11 | 9, 21, 22 |
-| PR-FX-1 | Daily Bank of Russia rates for USD and EUR are collected and stored with their date and source, backfilled from 01.01.2025. | 5.3, 16 | 9, 11 |
+| PR-FX-1 | Daily Bank of Russia rates for USD and EUR are collected and stored with their date and source, backfilled from 01.01.2009, so carry-in lots and other operations older than the 2025 chart history have the rate of their own date. | 5.3, 16 | 9, 11 |
 | PR-VAL-2 | Per asset: quantity, price, value, allocation, average buy price, cost basis, unrealized and realized P&L. | 11 | 21, 22 |
 | PR-VAL-3 | Allocation by asset, asset type and account. | 3.3 | 8 |
 | PR-HIS-1 | An hourly portfolio snapshot is stored; backdated operation changes rebuild later snapshots. | 3.2, 12 | 7, 24 |
@@ -321,7 +321,7 @@ Buys and Sells from M9 on (existing trades keep their meaning: paid from outside
 |---|---|---|
 | Manual price | `manual_usd_price_versions` | keep |
 | Price observation | none (legacy `crypto-prices.service` keeps CoinGecko prices in memory only) | new `price_observations`: assetId, price, quoteCurrency, observedAt, source, fetchedAt; unique per asset, source, observedAt |
-| FX rate | `display_fx_observations` (daily USD→EUR, RUB from open.er-api.com, opt-in, current day only, display only) | new `fx_rates`: currency, rate per RUB, date, source (Bank of Russia), fetchedAt; daily job and one backfill from 01.01.2025. The open.er-api.com display panel is retired with the old Settings screen |
+| FX rate | `display_fx_observations` (daily USD→EUR, RUB from open.er-api.com, opt-in, current day only, display only) | new `fx_rates`: currency, rate per RUB, date, source (Bank of Russia), fetchedAt; daily job and one backfill from 01.01.2009. The open.er-api.com display panel is retired with the old Settings screen |
 
 Valuation rule: for asset A at instant t, use the latest automatic observation at or
 before t when A's source is a provider, else the latest manual price at or before t.

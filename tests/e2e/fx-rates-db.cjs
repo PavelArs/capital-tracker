@@ -15,11 +15,14 @@ const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner
 const { AccountInThreeCurrencies1790900000000 } = require('/app/backend/dist/migrations/1790900000000-AccountInThreeCurrencies.js');
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
-const databases = { rates: 'capital_tracker_fx_rates_e2e', accounting: 'capital_tracker_three_currency_e2e' };
+const databases = { rates: 'capital_tracker_fx_rates_e2e', upgrade: 'capital_tracker_fx_history_e2e', accounting: 'capital_tracker_three_currency_e2e' };
 const control = 'http://providers:8080/__control';
 const HOUR = 3600000;
 const DAY = 86400000;
 const backfillStart = Date.parse('2025-01-01T00:00:00Z');
+// History is read from a month before 1 January 2009, four years (1460 days) per request.
+const historyStart = Date.parse('2008-12-01T00:00:00Z');
+const REQUEST = 1460 * 86400000;
 const codes = { USD: 'R01235', EUR: 'R01239' };
 const base = { R01235: 80, R01239: 90 };
 let stage = 'synthetic configuration';
@@ -27,7 +30,7 @@ let stage = 'synthetic configuration';
 const moscowDay = (ms) => Math.floor((ms + 3 * HOUR) / DAY) * DAY;
 const isoDate = (ms) => new Date(ms).toISOString().slice(0, 10);
 const cbrDate = (ms) => isoDate(ms).split('-').reverse().join('/');
-// The fixture's formula restated: Tuesday..Saturday from 2025-01-01 to tomorrow (Moscow),
+// The fixture's formula restated: Tuesday..Saturday in the range up to tomorrow (Moscow),
 // base + 0.01 per day since 2025-01-01.
 function expectedRates(currency, from, to) {
   const rows = [];
@@ -39,6 +42,14 @@ function expectedRates(currency, from, to) {
   }
   return rows;
 }
+// The requests the collector makes for one series: four-year ranges from `from` to `to`.
+function ranges(code, from, to) {
+  const urls = [];
+  for (let start = from; start <= to; start += REQUEST)
+    urls.push(['/scripts/XML_dynamic.asp', code, cbrDate(start), cbrDate(Math.min(start + REQUEST - DAY, to))]);
+  return urls;
+}
+const requested = (urls) => urls.map((url) => [url.pathname, url.searchParams.get('VAL_NM_RQ'), url.searchParams.get('date_req1'), url.searchParams.get('date_req2')]);
 // A recent instant five minutes into a UTC hour.
 const at = (hoursBack = 0) => new Date(Math.floor(Date.now() / HOUR) * HOUR - hoursBack * HOUR + 5 * 60000);
 
@@ -67,7 +78,7 @@ async function createDatabase(name) {
   await client.connect();
   try {
     assert.equal((await client.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount, 0, 'Never overwrite/reuse an existing database');
-    assert.match(name, /^capital_tracker_(fx_rates|three_currency)_e2e$/);
+    assert.match(name, /^capital_tracker_(fx_rates|fx_history|three_currency)_e2e$/);
     await client.query(`CREATE DATABASE "${name}"`);
   } finally { await client.end(); }
 }
@@ -121,13 +132,13 @@ async function disabled(db) {
 }
 
 async function backfill(db) {
-  stage = 'PR-FX-1 backfill from 2025-01-01';
+  stage = 'PR-FX-1 backfill from December 2008';
   const now = at();
   const tomorrow = moscowDay(now.getTime()) + DAY;
   const { result, urls } = await newRequests(() => collector(db).tick(now));
-  assert.deepEqual(urls.map((url) => [url.pathname, url.searchParams.get('VAL_NM_RQ'), url.searchParams.get('date_req1'), url.searchParams.get('date_req2')]),
-    [['/scripts/XML_dynamic.asp', 'R01235', '01/01/2025', cbrDate(tomorrow)], ['/scripts/XML_dynamic.asp', 'R01239', '01/01/2025', cbrDate(tomorrow)]]);
-  const expected = [...expectedRates('USD', backfillStart, tomorrow), ...expectedRates('EUR', backfillStart, tomorrow)];
+  assert.deepEqual(requested(urls), [...ranges('R01235', historyStart, tomorrow), ...ranges('R01239', historyStart, tomorrow)],
+    'The first run reads the whole history in four-year requests');
+  const expected = [...expectedRates('USD', historyStart, tomorrow), ...expectedRates('EUR', historyStart, tomorrow)];
   assert.deepEqual(result, { outcome: 'collected', stored: expected.length });
   assert.deepEqual((await stored(db)).map(({ source, ...row }) => { assert.equal(source, 'cbr'); return row; }), expected);
   const sync = await state(db);
@@ -136,11 +147,42 @@ async function backfill(db) {
   assert.equal(sync.errorCode, null);
   const view = await collector(db).read(now);
   const today = moscowDay(now.getTime());
-  const latest = (currency) => expectedRates(currency, backfillStart, today).at(-1);
+  const latest = (currency) => expectedRates(currency, historyStart, today).at(-1);
   assert.deepEqual(view.rates, ['USD', 'EUR'].map((currency) => ({ currency, rubPerUnit: latest(currency).rubPerUnit, date: latest(currency).rateDate })),
     "Today's rate is the latest effective on or before the Moscow date, never tomorrow's");
-  console.log(`PASS PR-FX-1 backfilled ${expected.length} Bank of Russia rates from 2025-01-01 to tomorrow; weekends keep gaps`);
+  const early = await collector(db).read(now, '2009-01-04');
+  assert.deepEqual(early.rates.map(({ currency, date }) => [currency, date]), [['USD', '2009-01-03'], ['EUR', '2009-01-03']],
+    'A Sunday in 2009 has the latest rate on or before it');
+  console.log(`PASS PR-FX-1 backfilled ${expected.length} Bank of Russia rates from December 2008 to tomorrow; weekends keep gaps`);
   return now;
+}
+
+async function history(db) {
+  stage = 'FX-HISTORY rates stored only from 2025 gain the years before';
+  // A database collected before the history change: rates from 11 January 2025 only.
+  const first = Date.parse('2025-01-11T00:00:00Z');
+  const now = at();
+  const tomorrow = moscowDay(now.getTime()) + DAY;
+  const kept = [...expectedRates('USD', first, tomorrow), ...expectedRates('EUR', first, tomorrow)];
+  await db.query(`INSERT INTO fx_rates (currency, source, "rateDate", "rubPerUnit")
+    SELECT currency, 'cbr', "rateDate", "rubPerUnit" FROM unnest($1::text[], $2::date[], $3::numeric[]) AS r(currency, "rateDate", "rubPerUnit")`,
+  [kept.map((row) => row.currency), kept.map((row) => row.rateDate), kept.map((row) => row.rubPerUnit)]);
+  const before = await stored(db);
+  const pastWeek = Date.parse(`${kept.filter((row) => row.currency === 'USD').at(-1).rateDate}T00:00:00Z`) - 7 * DAY;
+  const missing = (code) => [...ranges(code, historyStart, first - DAY), ...ranges(code, pastWeek, tomorrow)];
+  const { result, urls } = await newRequests(() => collector(db).collect(now));
+  assert.deepEqual(requested(urls), [...missing('R01235'), ...missing('R01239')],
+    'The years before the earliest stored rate are read once, then the last week');
+  const expected = [...expectedRates('USD', historyStart, tomorrow), ...expectedRates('EUR', historyStart, tomorrow)];
+  assert.deepEqual(result, { outcome: 'collected', stored: expected.length - before.length });
+  assert.deepEqual((await stored(db)).map(({ source, ...row }) => row), expected);
+  const after = new Set((await stored(db)).map((row) => JSON.stringify(row)));
+  for (const row of before) assert.ok(after.has(JSON.stringify(row)), 'Stored rates never change');
+  const last = Date.parse(`${(await stored(db)).filter((row) => row.currency === 'USD').at(-1).rateDate}T00:00:00Z`);
+  const again = await newRequests(() => collector(db).collect(new Date(now.getTime() + HOUR)));
+  assert.deepEqual(requested(again.urls).map(([, code, from]) => [code, from]), [['R01235', cbrDate(last - 7 * DAY)], ['R01239', cbrDate(last - 7 * DAY)]],
+    'Once the history reaches 2009 only the last week is read');
+  console.log('PASS FX-HISTORY a database with rates from 2025 reads the years from December 2008 once and keeps every stored rate');
 }
 
 async function incremental(db, first) {
@@ -157,7 +199,8 @@ async function incremental(db, first) {
   const added = (await stored(db)).length - before.length;
   assert.deepEqual(result, { outcome: 'collected', stored: added });
   assert.deepEqual((await stored(db)).slice(0, 0), []);
-  for (const row of before) assert.ok((await stored(db)).some((item) => JSON.stringify(item) === JSON.stringify(row)), 'Stored rates never change');
+  const after = new Set((await stored(db)).map((row) => JSON.stringify(row)));
+  for (const row of before) assert.ok(after.has(JSON.stringify(row)), 'Stored rates never change');
   console.log('PASS FX-INCREMENTAL not due within the hour; re-read adds nothing twice and keeps every stored rate');
 }
 
@@ -396,8 +439,10 @@ async function main() {
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
+  const upgrade = sourceFor(databases.upgrade);
   const accounting = sourceFor(databases.accounting);
   await rates.initialize();
+  await upgrade.initialize();
   await accounting.initialize();
   try {
     assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 28);
@@ -407,11 +452,13 @@ async function main() {
     await incremental(rates, first);
     await failures(rates);
     await appendOnly(rates);
+    await history(upgrade);
     const owners = await ownerSettings(accounting);
     await threeCurrencyPortfolio(accounting, owners);
     await paidInRublesAndEuros(accounting, owners);
   } finally {
     await rates.destroy();
+    await upgrade.destroy();
     await accounting.destroy();
   }
 }

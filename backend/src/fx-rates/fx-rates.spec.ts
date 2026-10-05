@@ -5,6 +5,7 @@ import { BadRequestException } from '@nestjs/common';
 import { CbrClient, parseCbrDynamic } from './cbr-client';
 import { FxConverter, type FxRates, moscowDate, rateOn } from './fx-conversion';
 import { parseRateDate } from './fx-rates.controller';
+import { FX_HISTORY_FROM, fxRequestRanges } from './fx-rates.service';
 
 const ATOMS = 10n ** 30n;
 const atoms = (value: string) => {
@@ -33,6 +34,36 @@ describe('FX-QUERY rates on a chosen date', () => {
       { date: '2025-06-08', currency: 'EUR' },
     ])
       expect(() => parseRateDate(query)).toThrow(BadRequestException);
+  });
+});
+
+describe('FX-HISTORY rates for early operations', () => {
+  it('reads the history from December 2008 in four-year requests on the first run', () => {
+    expect(FX_HISTORY_FROM).toBe('2009-01-01');
+    expect(fxRequestRanges(undefined, '2025-06-11')).toEqual([
+      ['2008-12-01', '2012-11-29'],
+      ['2012-11-30', '2016-11-28'],
+      ['2016-11-29', '2020-11-27'],
+      ['2020-11-28', '2024-11-26'],
+      ['2024-11-27', '2025-06-11'],
+    ]);
+  });
+
+  it('fills the missing years before rates stored from 2025, then re-reads the last week', () => {
+    expect(fxRequestRanges({ first: '2025-01-11', last: '2025-06-10' }, '2025-06-11')).toEqual([
+      ['2008-12-01', '2012-11-29'],
+      ['2012-11-30', '2016-11-28'],
+      ['2016-11-29', '2020-11-27'],
+      ['2020-11-28', '2024-11-26'],
+      ['2024-11-27', '2025-01-10'],
+      ['2025-06-03', '2025-06-11'],
+    ]);
+  });
+
+  it('only re-reads the last week once the history reaches back to 2009', () => {
+    expect(fxRequestRanges({ first: '2008-12-02', last: '2025-06-10' }, '2025-06-11')).toEqual([
+      ['2025-06-03', '2025-06-11'],
+    ]);
   });
 });
 
