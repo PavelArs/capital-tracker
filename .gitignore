@@ -54,3 +54,6 @@ tests/e2e/.runtime/
 
 # OpenSpec workspace stays local only (owner decision 2026-10-04)
 openspec/
+
+# Local agent continuity notes stay out of Git (owner decision 2026-10-05)
+CONTINUITY.md
