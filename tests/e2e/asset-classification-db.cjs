@@ -45,13 +45,13 @@ async function createDatabase() {
   } finally { await client.end(); }
 }
 // Every migration except this change (later ones such as AddHourlyPrices1790800000000 and
-// AccountInThreeCurrencies1790900000000 do not touch instruments), run as a release without the classification did.
+// AccountInThreeCurrencies1790900000000 and RecordPortfolioSnapshots1791000000000 do not touch instruments), run as a release without the classification did.
 async function createPreviousSchema() {
   const classes = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
     .flatMap((file) => Object.values(require(`/app/backend/dist/migrations/${file}`)))
     .filter((entry) => typeof entry === 'function' && /^[A-Za-z]+\d{13}$/.test(entry.name) && entry.name !== migration);
-  assert.equal(classes.length, 25, 'Every migration but the classification: exactly twenty-five');
+  assert.equal(classes.length, 26, 'Every migration but the classification: exactly twenty-six');
   const prior = new DataSource({ type: 'postgres', host: settings.DB_HOST, port: Number(settings.DB_PORT),
     username: settings.DB_USERNAME, password: settings.DB_PASSWORD, database,
     synchronize: false, migrationsRun: false, installExtensions: false, migrations: classes });
