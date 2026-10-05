@@ -19,12 +19,13 @@ const {
 } = require('./validate-manual-mvp-release.cjs');
 
 const PROBE_SHARDS = ['probes-1', 'probes-2'];
-const BROWSER_SHARDS = ['browser-1', 'browser-2', 'browser-3'];
+const BROWSER_SHARDS = ['browser-1', 'browser-2', 'browser-3', 'browser-4'];
 const SHARDS = [...PROBE_SHARDS, ...BROWSER_SHARDS];
 const RECEIPT_PROFILE = 'critical-shard';
 
 // Canonical order of the real pre-browser checks of the serial `critical` runner. Each has
-// exactly one probe shard, balanced by the durations measured in CI run 37220925062 (s).
+// exactly one probe shard, balanced by the durations measured in CI runs 37220925062 and
+// 37329645150 (s; there probes-1 took 169 s and probes-2 318 s before the last rebalance).
 const CHECKS = [
   { name: 'restore-readiness', shard: 'probes-1' }, // 13
   { name: 'provider-proxy', shard: 'probes-1' },
@@ -51,7 +52,7 @@ const CHECKS = [
   { name: 'asset-rewards-bounds-db', shard: 'probes-2' },
   { name: 'asset-swaps-db', shard: 'probes-2' },
   { name: 'asset-swaps-bounds-db', shard: 'probes-2' },
-  { name: 'wallet-addresses-db', shard: 'probes-2' },
+  { name: 'wallet-addresses-db', shard: 'probes-1' }, // 15
   { name: 'asset-classification-db', shard: 'probes-1' },
   { name: 'prices-db', shard: 'probes-1' },
   { name: 'portfolio-valuation-db', shard: 'probes-2' },
@@ -60,8 +61,8 @@ const CHECKS = [
   { name: 'operation-list-db', shard: 'probes-1' },
   { name: 'capital-flows-db', shard: 'probes-1' },
   { name: 'manual-operations-db', shard: 'probes-2' },
-  { name: 'owner-cli', shard: 'probes-2' }, // 27
-  { name: 'sessions-db', shard: 'probes-2' }, // 34
+  { name: 'owner-cli', shard: 'probes-1' }, // 25
+  { name: 'sessions-db', shard: 'probes-1' }, // 34
   { name: 'mfa-db', shard: 'probes-2' }, // 42
   { name: 'mfa-expiry', shard: 'probes-2' }, // 20
   // Needs the migrated and seeded main database, so its shard migrates and seeds first.

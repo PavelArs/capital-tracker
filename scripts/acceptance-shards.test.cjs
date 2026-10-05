@@ -151,12 +151,19 @@ function receipts() {
 }
 
 test('ENG-007-A shard names are explicit and validated', () => {
-  assert.deepEqual(shards.SHARDS, ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3']);
+  assert.deepEqual(shards.SHARDS, [
+    'probes-1',
+    'probes-2',
+    'browser-1',
+    'browser-2',
+    'browser-3',
+    'browser-4',
+  ]);
   assert.deepEqual(shards.parseShard('browser-2'), {
     name: 'browser-2',
     kind: 'browser',
     index: 1,
-    count: 3,
+    count: 4,
   });
   assert.deepEqual(shards.parseShard('probes-1'), {
     name: 'probes-1',
@@ -170,7 +177,7 @@ test('ENG-007-A shard names are explicit and validated', () => {
     'probes-0',
     'probes-3',
     'browser-0',
-    'browser-4',
+    'browser-5',
     'Browser-1',
     'browser-1 ',
     'browser-01',
@@ -306,12 +313,12 @@ test('ENG-007-C browser cases are a deterministic modulo split of the manifest',
   const split = shards.BROWSER_SHARDS.map((shard) => shards.browserCases(manifest, shard));
   assert.deepEqual(
     split.map((cases) => cases.length),
-    [9, 9, 9],
+    [7, 7, 7, 6],
   );
   split.forEach((cases, index) => {
     assert.deepEqual(
       cases,
-      manifest.filter((_item, position) => position % 3 === index),
+      manifest.filter((_item, position) => position % 4 === index),
     );
   });
   const union = split.flat();
@@ -550,11 +557,11 @@ test('ENG-007-D merge CLI accepts exactly one receipt file per shard and never l
     assert.notEqual(merge().status, 0);
     assert.equal(existsSync(output), false);
     rmSync(join(received, 'unexpected.json'));
-    rmSync(join(received, 'critical-shard-browser-3.json'));
+    rmSync(join(received, 'critical-shard-browser-4.json'));
     assert.notEqual(merge().status, 0);
     assert.equal(existsSync(output), false);
     const last = receipts().at(-1);
-    writeFileSync(join(received, 'critical-shard-browser-3.json'), JSON.stringify(last));
+    writeFileSync(join(received, 'critical-shard-browser-4.json'), JSON.stringify(last));
     const result = merge();
     assert.equal(result.status, 0, result.stderr);
     const verified = spawnSync(

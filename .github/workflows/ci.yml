@@ -267,12 +267,14 @@ jobs:
           done
       - name: Build the backend and frontend acceptance images once
         run: node scripts/acceptance.mjs images --manifest release-images/manifest.json
+      # The raw tar is about 700 MB and every shard and the scan job download it: zstd
+      # shrinks it a few times for a couple of seconds of compression here.
       - name: Save the exact images for the acceptance shards
         if: github.event_name != 'push'
         run: |
           set -euo pipefail
-          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 -o release-images/images.tar
-          (cd release-images && sha256sum images.tar > images.tar.sha256)
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
+          (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
         if: github.event_name != 'push'
@@ -283,6 +285,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      # The receipt job needs only the manifest, not the images themselves.
+      - name: Upload the image manifest for the acceptance receipt
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-images-manifest
+          path: release-images/manifest.json
+          if-no-files-found: error
+          retention-days: 1
       # The deploy promotes exactly these images; their pull request passed the full suite.
       - name: Export the release candidate images
         if: github.event_name == 'push'
@@ -335,7 +346,7 @@ jobs:
       # Every shard reports its own result; the final job still requires all of them.
       fail-fast: false
       matrix:
-        shard: [probes-1, probes-2, browser-1, browser-2, browser-3]
+        shard: [probes-1, probes-2, browser-1, browser-2, browser-3, browser-4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -343,6 +354,18 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: pnpm install --frozen-lockfile
+      - name: Read the Playwright version
+        id: playwright
+        if: startsWith(matrix.shard, 'browser-')
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      # A cached browser of the same Playwright version skips the download; the install
+      # below still checks it and installs the system packages Chromium needs.
+      - name: Restore the Playwright browser
+        if: startsWith(matrix.shard, 'browser-')
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Install the Playwright browser
         if: startsWith(matrix.shard, 'browser-')
         run: pnpm exec playwright install --with-deps chromium
@@ -354,9 +377,9 @@ jobs:
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
-          (cd release-images && sha256sum -c images.tar.sha256)
-          docker load -i release-images/images.tar
-          rm release-images/images.tar
+          (cd release-images && sha256sum -c images.tar.zst.sha256)
+          zstd -dc release-images/images.tar.zst | docker load
+          rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Run critical real release acceptance
         id: critical-release-acceptance
@@ -381,14 +404,15 @@ jobs:
           # Diagnostics only: a re-run of a failed shard may replace its earlier report.
           overwrite: true
 
-  docker-build:
-    name: Acceptance Receipt and Image Security
+  # The scans need only the built images, so they run beside the shards rather than after them.
+  image-security:
+    name: Image Security Scan
     runs-on: ubuntu-latest
-    timeout-minutes: 180
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
-    needs: [release-images, critical-acceptance]
+    needs: [release-images]
     if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -400,32 +424,13 @@ jobs:
         with:
           name: release-images
           path: release-images
-      - name: Download the critical acceptance shard receipts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          pattern: critical-shard-receipt-*
-          path: shard-receipts
-          merge-multiple: true
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
-          (cd release-images && sha256sum -c images.tar.sha256)
-          docker load -i release-images/images.tar
-          rm release-images/images.tar
+          (cd release-images && sha256sum -c images.tar.zst.sha256)
+          zstd -dc release-images/images.tar.zst | docker load
+          rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
-      - name: Merge verified critical acceptance shards
-        id: critical-release-acceptance
-        run: node scripts/acceptance-shards.cjs merge release-images/manifest.json shard-receipts "$GITHUB_SHA" "$GITHUB_RUN_ID" test-results/critical-release-acceptance.json
-      - name: Verify critical acceptance receipt
-        id: verify-critical-receipt
-        run: node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always() && steps.verify-critical-receipt.conclusion == 'success'
-        with:
-          name: critical-release-acceptance
-          path: test-results/critical-release-acceptance.json
-          if-no-files-found: error
-          retention-days: 7
       - name: Scan the backend image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -489,6 +494,46 @@ jobs:
           name: release-image-security
           path: '*-image-security.json'
           retention-days: 7
+
+  # Passes only when every shard passed on the built images and the scan job passed on them.
+  docker-build:
+    name: Acceptance Receipt and Image Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    needs: [release-images, critical-acceptance, image-security]
+    if: github.event_name != 'push'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Download the built image manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-images-manifest
+          path: release-images
+      - name: Download the critical acceptance shard receipts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: critical-shard-receipt-*
+          path: shard-receipts
+          merge-multiple: true
+      - name: Merge verified critical acceptance shards
+        id: critical-release-acceptance
+        run: node scripts/acceptance-shards.cjs merge release-images/manifest.json shard-receipts "$GITHUB_SHA" "$GITHUB_RUN_ID" test-results/critical-release-acceptance.json
+      - name: Verify critical acceptance receipt
+        id: verify-critical-receipt
+        run: node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.verify-critical-receipt.conclusion == 'success'
+        with:
+          name: critical-release-acceptance
+          path: test-results/critical-release-acceptance.json
+          if-no-files-found: error
+          retention-days: 7
+
   spec-check:
     name: Specification and Engineering Gates
     runs-on: ubuntu-latest
@@ -518,6 +563,35 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit:production
+
+  # Pull requests may read caches saved on main, but main runs no browser tests: download the
+  # browser here, beside the image build, so the next pull requests' shards find it cached.
+  # It gates nothing, so a cache outage cannot hold back a release.
+  playwright-cache:
+    name: Warm Playwright Browser Cache
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - run: pnpm install --frozen-lockfile
+      - name: Read the Playwright version
+        id: playwright
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - name: Restore the Playwright browser
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      - name: Download the Playwright browser
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install chromium
 
   # A push to main runs no tests of its own: it may release only a commit whose merged pull
   # request passed every job above, critical acceptance shards included, on its last head.
@@ -552,6 +626,7 @@ jobs:
       - frontend-build
       - release-images
       - critical-acceptance
+      - image-security
       - docker-build
       - spec-check
       - dependency-audit
@@ -575,5 +650,5 @@ jobs:
               backend-check backend-test backend-build \
               frontend-check frontend-test frontend-build \
               spec-check dependency-audit \
-              release-images critical-acceptance docker-build
+              release-images critical-acceptance image-security docker-build
           fi

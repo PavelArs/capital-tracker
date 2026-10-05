@@ -71,6 +71,8 @@ test('requires every acceptance shard, the receipt and scan job and the aggregat
     'Critical acceptance (browser-1)',
     'Critical acceptance (browser-2)',
     'Critical acceptance (browser-3)',
+    'Critical acceptance (browser-4)',
+    'Image Security Scan',
     'Acceptance Receipt and Image Security',
     'CI Status',
   ]);
@@ -92,6 +94,17 @@ test('refuses a pull request CI run from before E2E moved to pull requests', asy
     job.name === 'CI Status' ? job : { ...job, conclusion: 'skipped' },
   );
   await assert.rejects(check(options(api({ jobs }))), /lacks successful full-suite jobs/);
+});
+
+test('refuses a pull request CI run from the five-shard layout without the parallel scan', async () => {
+  // Before the fourth browser shard and the separate scan job a green run had neither.
+  const jobs = fullSuite().filter(
+    (job) => !['Critical acceptance (browser-4)', 'Image Security Scan'].includes(job.name),
+  );
+  await assert.rejects(
+    check(options(api({ jobs }))),
+    /lacks successful full-suite jobs: Critical acceptance \(browser-4\), Image Security Scan/,
+  );
 });
 
 for (const conclusion of ['failure', 'cancelled', 'timed_out', 'action_required']) {
