@@ -4,7 +4,16 @@
   min-height: 100vh;
   background: var(--bg);
   color: var(--ink);
+  font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
+}
+
+/* Controls do not inherit the font by default; inside the shell they use Onest too. */
+.shell button,
+.shell input,
+.shell select,
+.shell textarea {
+  font-family: inherit;
 }
 
 .skip-link {
