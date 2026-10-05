@@ -678,6 +678,58 @@ describe('CUR-UI values in the main currency with a switch to the other two', ()
     );
   });
 
+  it('marks the chosen currency at once while its values load', async () => {
+    let answer: (value: PortfolioValuation) => void = () => {};
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockImplementation((currency) =>
+      currency === 'RUB'
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve(inEur),
+    );
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    );
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    ).toBeChecked();
+    answer({ ...inEur, currency: 'RUB' });
+    await screen.findByRole('row', { name: /^Bitcoin/ });
+
+    cleanup();
+    let assetAnswer: (value: PortfolioValuation) => void = () => {};
+    get.mockImplementation((currency) =>
+      currency === 'RUB'
+        ? new Promise((resolve) => {
+            assetAnswer = resolve;
+          })
+        : Promise.resolve(inEur),
+    );
+    renderAt(`/portfolio/${bitcoin.instrumentId}?currency=EUR`);
+    await screen.findByRole('region', { name: 'Position' });
+    await user.click(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    );
+    await waitFor(() => expect(get).toHaveBeenLastCalledWith('RUB'));
+    expect(
+      within(screen.getByRole('radiogroup', { name: 'Currency' })).getByRole('radio', {
+        name: 'RUB',
+      }),
+    ).toBeChecked();
+    assetAnswer({ ...inEur, currency: 'RUB' });
+    await screen.findByRole('region', { name: 'Position' });
+  });
+
   it('shows one asset in the asked currency', async () => {
     const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(inEur);
     renderAt(`/portfolio/${bitcoin.instrumentId}?currency=EUR`);

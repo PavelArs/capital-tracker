@@ -330,13 +330,15 @@ export default function PortfolioPage() {
     </button>
   );
   const now = new Date();
+  // The asked currency shows as chosen while its values load.
+  const shownCurrency = asked ?? portfolio?.currency;
 
   return (
     <div className="shell-page">
       <div className="shell-page__head">
         <h1>Portfolio</h1>
         <div className="portfolio-actions">
-          {portfolio && <CurrencySwitch value={portfolio.currency} onChange={setAsked} />}
+          {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
           {assets.length > 0 && addButton}
         </div>
       </div>
