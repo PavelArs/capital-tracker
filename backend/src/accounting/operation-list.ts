@@ -19,6 +19,8 @@ export interface OperationWallet {
   id: string;
   network: 'bitcoin';
   address: string;
+  /** The owner's name for the address (M10), or null. */
+  label: string | null;
 }
 export interface OperationFee {
   asset: OperationAsset;
@@ -110,6 +112,8 @@ export interface FlowOperationInput {
 }
 export interface ChainOperationInput {
   wallet: OperationWallet;
+  /** The account the address belongs to (WAL-ACCOUNT), or null until the owner picks one. */
+  account: OperationPlace | null;
   txid: string;
   blockHeight: number;
   blockTime: string;
@@ -291,6 +295,7 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
       row.direction === 'in' || BigInt(row.feeUnits) === 0n
         ? null
         : { asset, quantity: sats(row.feeUnits) },
+    account: row.account,
     wallet: row.wallet,
     chain: {
       txid: row.txid,

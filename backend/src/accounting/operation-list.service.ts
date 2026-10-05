@@ -99,6 +99,9 @@ interface ChainRow {
   addressId: string;
   network: 'bitcoin';
   address: string;
+  label: string | null;
+  accountId: string | null;
+  accountName: string | null;
   txid: string;
   blockHeight: number;
   blockTime: Date;
@@ -263,11 +266,13 @@ export class OperationListService {
         [owner],
       );
       const chain: ChainRow[] = await manager.query(
-        `SELECT w.id AS "addressId", w.network, w.address, t.txid, t."blockHeight", t."blockTime",
+        `SELECT w.id AS "addressId", w.network, w.address, w.label, a.id AS "accountId",
+            a.name AS "accountName", t.txid, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits"
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+          LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
           WHERE w."ownerId"=$1`,
         [owner],
       );
@@ -365,7 +370,16 @@ export class OperationListService {
             amountUsd: decimal(row.amountUsd),
           })),
           chain: chain.map((row) => ({
-            wallet: { id: row.addressId, network: row.network, address: row.address },
+            wallet: {
+              id: row.addressId,
+              network: row.network,
+              address: row.address,
+              label: row.label,
+            },
+            account:
+              row.accountId && row.accountName
+                ? { id: row.accountId, name: row.accountName }
+                : null,
             txid: row.txid,
             blockHeight: row.blockHeight,
             blockTime: row.blockTime.toISOString(),

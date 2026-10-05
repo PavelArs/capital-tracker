@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { AccountingService } from './accounting.service';
@@ -46,6 +46,14 @@ export class AccountingController {
   @Get('instruments')
   listInstruments(@CurrentUser() owner: OwnerIdentity, @Query() query: unknown) {
     return this.accounting.listInstruments(owner.userId, parseListQuery(query));
+  }
+  @Patch('accounts/:id')
+  renameAccount(
+    @CurrentUser() owner: OwnerIdentity,
+    @Param('id') id: string,
+    @Body() input: unknown,
+  ) {
+    return this.accounting.renameAccount(owner.userId, id, input);
   }
   @Get('accounts/:id')
   getAccount(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {

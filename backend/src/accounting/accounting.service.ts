@@ -17,6 +17,7 @@ import {
 } from './asset-classification';
 import {
   parseAccount,
+  parseAccountRename,
   parseHistoryQuery,
   parseInstrument,
   parseListQuery,
@@ -257,6 +258,19 @@ export class AccountingService {
     );
     const items = rows.slice(0, query.limit).map(instrumentView);
     return { items, nextCursor: rows.length > query.limit ? items[items.length - 1].id : null };
+  }
+
+  /** WAL-RENAME: a new name for the owner's account; everything recorded in it is unchanged. */
+  async renameAccount(ownerId: string, accountId: string, input: unknown): Promise<AccountSummary> {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const { name } = parseAccountRename(input);
+    const [rows]: [AccountRow[], number] = await this.source.query(
+      'UPDATE manual_accounts SET name=$3 WHERE "ownerId"=$1 AND id=$2 RETURNING *',
+      [owner, id, name],
+    );
+    if (!rows[0]) throw new NotFoundException();
+    return accountView(rows[0]);
   }
 
   async getAccount(

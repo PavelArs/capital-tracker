@@ -257,7 +257,9 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   for (const [label, value] of [
     ['Date', 'Nov 14, 2023, 22:13 UTC'],
     ['Network', 'Bitcoin'],
-    ['Wallet', address],
+    // WAL-ACCOUNT: the address is in no wallet yet; the address has its own line.
+    ['Wallet', 'Not in a wallet yet'],
+    ['Address', address],
     ['Transaction', txid],
     ['Network fee', 'Paid by sender'],
     ['Status', 'Needs classification'],

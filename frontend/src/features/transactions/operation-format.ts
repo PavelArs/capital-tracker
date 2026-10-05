@@ -83,6 +83,9 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
 
 /** Where the operation happened: an account, two for a transfer, or a wallet. */
 export function placeLabel(operation: Operation): string {
+  // A chain row of an address in a wallet shows the wallet, then the address's own name.
+  if (operation.wallet && operation.account)
+    return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;
   if (operation.wallet) return walletLabel(operation.wallet);
   if (operation.account && operation.counterAccount)
     return `${operation.account.name} → ${operation.counterAccount.name}`;

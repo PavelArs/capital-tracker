@@ -45,6 +45,8 @@ interface Props {
   onAdded: (address: WalletAddress, created: boolean) => void;
   /** Opens a wallet the owner tried to add again (WAL-DUP). */
   onOpenExisting: (address: WalletAddress) => void;
+  /** The wallet the address joins unless the owner picks another (from a wallet's own page). */
+  wallet?: string;
 }
 
 // "Add wallet" from the accepted prototype: network, address, then which wallet holds it.
@@ -54,13 +56,14 @@ export default function AddWalletDialog({
   onClose,
   onAdded,
   onOpenExisting,
+  wallet,
 }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [network, setNetwork] = useState<'bitcoin' | null>(null);
   const [input, setInput] = useState('');
   const [tried, setTried] = useState(false);
   const [secretMessage, setSecretMessage] = useState<string | null>(null);
-  const [walletName, setWalletName] = useState('');
+  const [walletName, setWalletName] = useState(wallet ?? '');
   const [label, setLabel] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

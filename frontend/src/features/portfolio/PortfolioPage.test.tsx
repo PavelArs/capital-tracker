@@ -455,7 +455,7 @@ describe('PV-UI Portfolio values every asset', () => {
     ).toEqual(['Trust Wallet1 BTC$80,000.00', 'Bybit0.2 BTC$16,000.00']);
     expect(within(holdings).getByRole('link', { name: 'Trust Wallet' })).toHaveAttribute(
       'href',
-      `/manual-accounts/${id(101)}`,
+      `/wallets/${id(101)}`,
     );
     await user.click(screen.getByRole('link', { name: '← Portfolio' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
@@ -1007,7 +1007,12 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       valueUsd: null,
       value: null,
       account: null,
-      wallet: { id: id(301), network: 'bitcoin', address: 'bc1qsyntheticaddress000000000000' },
+      wallet: {
+        id: id(301),
+        network: 'bitcoin',
+        address: 'bc1qsyntheticaddress000000000000',
+        label: null,
+      },
       status: 'needs-classification',
       source: 'chain',
     });

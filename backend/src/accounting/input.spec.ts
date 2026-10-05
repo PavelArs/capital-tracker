@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   parseAccount,
+  parseAccountRename,
   parseAsOf,
   parseDecimal,
   parseHistoryQuery,
@@ -275,5 +276,26 @@ describe('OPEN-001/003 strict bounded query input', () => {
     rejects(() => parseHistoryQuery({ beforeRevision: '0' }));
     rejects(() => parseListQuery({ cursor: [] }));
     rejects(() => parseListQuery({ ownerId: requestId }));
+  });
+});
+
+describe('WAL-RENAME account rename input', () => {
+  it('trims the new name and accepts nothing else', () => {
+    expect(parseAccountRename({ name: '  Cold storage  ' })).toEqual({ name: 'Cold storage' });
+    expect(parseAccountRename({ name: 'x'.repeat(120) })).toEqual({ name: 'x'.repeat(120) });
+  });
+  it.each([
+    undefined,
+    null,
+    [],
+    {},
+    { name: '' },
+    { name: '   ' },
+    { name: 'x'.repeat(121) },
+    { name: 'Line\nbreak' },
+    { name: 7 },
+    { name: 'Ledger', requestId },
+  ])('refuses %p', (input) => {
+    expect(() => parseAccountRename(input)).toThrow(BadRequestException);
   });
 });

@@ -333,7 +333,13 @@ async function everyJournal(db, s, f) {
     ['opening-balance', 'BTC', '0.3', null, 'Trust Wallet', 'recorded', 'manual'],
   ]);
   const [out, receipt, , transfer, swap, , imported] = list.operations;
-  assert.deepEqual(receipt.wallet, { id: wallet, network: 'bitcoin', address: walletAddress });
+  assert.deepEqual(receipt.wallet, {
+    id: wallet,
+    network: 'bitcoin',
+    address: walletAddress,
+    label: null,
+  });
+  assert.equal(receipt.account, null, 'An address in no wallet yet has no account');
   assert.equal(receipt.direction, 'in');
   assert.equal(receipt.estimatedValueUsd, '780.10005255');
   assert.equal(receipt.fee, null);
@@ -375,6 +381,38 @@ async function everyJournal(db, s, f) {
   assert.equal(await fingerprint(db), before, 'Every read and refusal preserves all rows');
   assert.deepEqual(await providerRequests(), providers, 'Reads never call any provider');
   console.log('PASS OPS-LIST/OPS-KINDS/OPS-PRIVATE');
+
+  // WAL-ACCOUNT / WAL-RENAME: chain rows show the wallet their address belongs to, under its
+  // current name; a rename changes only the name.
+  stage = 'WAL-ACCOUNT chain rows carry their account; WAL-RENAME renames only the name';
+  await db.query(
+    `UPDATE wallet_addresses SET "accountId"=$3, label='Savings' WHERE "ownerId"=$1 AND id=$2`,
+    [owner, wallet, trust],
+  );
+  const journalBefore = await fingerprint(db);
+  const renamed = await s.accounting.renameAccount(owner, trust, { name: '  Ledger  ' });
+  assert.deepEqual([renamed.id, renamed.name], [trust, 'Ledger']);
+  const bound = await read(s, owner);
+  const chainRowsBound = bound.operations.filter((operation) => operation.kind === 'chain');
+  assert.equal(chainRowsBound.length, 2);
+  for (const operation of chainRowsBound) {
+    assert.deepEqual(operation.account, { id: trust, name: 'Ledger' });
+    assert.equal(operation.wallet.label, 'Savings');
+    assert.equal(operation.status, 'needs-classification');
+  }
+  assert.equal(bound.operations.at(-1).account.name, 'Ledger', 'Recorded rows show the new name');
+  assert.equal(bound.needsClassificationCount, 2);
+  await rejected(() => s.accounting.renameAccount(other, trust, { name: 'Taken' }), 404);
+  await rejected(() => s.accounting.renameAccount(owner, randomUUID(), { name: 'Absent' }), 404);
+  for (const body of [{}, { name: '' }, { name: 'x'.repeat(121) }, { name: 'a\nb' }, { name: 'A', requestId: randomUUID() }])
+    await rejected(() => s.accounting.renameAccount(owner, trust, body), 400);
+  await s.accounting.renameAccount(owner, trust, { name: 'Trust Wallet' });
+  assert.equal(await fingerprint(db), journalBefore, 'Renaming back restores every row exactly');
+  await db.query(
+    `UPDATE wallet_addresses SET "accountId"=NULL, label=NULL WHERE "ownerId"=$1 AND id=$2`,
+    [owner, wallet],
+  );
+  console.log('PASS WAL-ACCOUNT/WAL-RENAME chain rows show their wallet; rename keeps every journal row');
 }
 
 async function emptyOwner(db, s, f) {

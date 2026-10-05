@@ -115,6 +115,11 @@ export function parseAccount(input: unknown): AccountInput {
   const row = object(input, ['requestId', 'name']);
   return { requestId: parseUuid(row.requestId), name: label(row.name, 120) };
 }
+/** WAL-RENAME: only the name of an account changes; its id and history stay. */
+export function parseAccountRename(input: unknown): { name: string } {
+  const row = object(input, ['name']);
+  return { name: label(row.name, 120) };
+}
 function member<T extends string>(value: unknown, allowed: readonly T[]): T {
   return allowed.find((item) => item === value) ?? bad();
 }
