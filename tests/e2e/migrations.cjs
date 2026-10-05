@@ -205,6 +205,54 @@ async function verifyFresh() {
   }
 }
 
+// The release compares normalized pg_dump output of production and its restored backup.
+// PostgreSQL re-parses some CHECK expressions into an equivalent different text; each such
+// constraint needs an exact reviewed pair in scripts/normalize-release-snapshot.awk, else
+// every release fails "Isolated backup restore fingerprint mismatch" before migrating.
+const reparsedChecks = [
+  'account_csv_imports.account_csv_imports_check',
+  'account_csv_imports.account_csv_imports_filename_check',
+  'account_trade_version_payments.account_trade_version_payments_currency_check',
+  'account_trade_version_payments.account_trade_version_payments_rateSource_check',
+  'auth_sessions.auth_sessions_state_check',
+  'owner_settings.owner_settings_mainCurrency_check',
+];
+
+async function verifyRestoredCheckForms() {
+  const client = new Client(connection(freshName));
+  await client.connect();
+  try {
+    const { rows } = await client.query(`SELECT c.relname, k.conname, pg_get_constraintdef(k.oid) AS definition
+      FROM pg_constraint k JOIN pg_class c ON c.oid = k.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND k.contype = 'c' ORDER BY c.relname, k.conname`);
+    assert.ok(rows.length > 100, 'Current schema must expose its CHECK constraints');
+    const reparsed = [];
+    await client.query('BEGIN');
+    try {
+      for (const { relname, conname, definition } of rows) {
+        // What pg_restore does with the dumped text, rolled back with everything else.
+        await client.query(`ALTER TABLE public.${quoteIdentifier(relname)}
+          ADD CONSTRAINT restore_form_probe ${definition} NOT VALID`);
+        const restored = (await client.query(
+          `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+           WHERE conrelid = $1::regclass AND conname = 'restore_form_probe'`,
+          [`public.${quoteIdentifier(relname)}`],
+        )).rows[0].definition;
+        await client.query(`ALTER TABLE public.${quoteIdentifier(relname)} DROP CONSTRAINT restore_form_probe`);
+        assert.ok(restored.endsWith(' NOT VALID'));
+        if (restored.slice(0, -' NOT VALID'.length) !== definition) reparsed.push(`${relname}.${conname}`);
+      }
+    } finally {
+      await client.query('ROLLBACK');
+    }
+    assert.deepEqual(reparsed.sort(), reparsedChecks, 'Reparsed CHECK forms must match the reviewed normalizer pairs');
+    console.log('PASS REL-RESTORE-001 restored CHECK forms are covered by the release normalizer');
+  } finally {
+    await client.end();
+  }
+}
+
 async function verifyLockContention() {
   const client = new Client(connection(freshName));
   await client.connect();
@@ -1108,6 +1156,7 @@ async function main() {
   assert.equal(process.argv.length, 2, 'Unknown fixture selection');
   stage = 'MIG-002 migration lock contention'; await verifyLockContention();
   stage = 'ISO-001 fresh schema and replay'; await verifyFresh();
+  stage = 'REL-RESTORE-001 reparsed CHECK forms need reviewed normalizer pairs'; await verifyRestoredCheckForms();
   stage = 'ISO-002 populated destructive legacy refusal'; await verifyLegacy(legacyName);
   stage = 'ISO-002 empty destructive legacy refusal'; await verifyLegacy(emptyLegacyName, true);
   stage = 'OWN-MIG-001 previous8 upgrade'; await verifyAdditiveOwnerUpgrade();

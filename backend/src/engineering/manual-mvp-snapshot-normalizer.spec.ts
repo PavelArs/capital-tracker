@@ -17,6 +17,18 @@ const pairs = [
     "    CONSTRAINT auth_sessions_state_check CHECK (((state)::text = ANY ((ARRAY['anonymous'::character varying, 'pending_mfa'::character varying, 'authenticated'::character varying])::text[]))),",
     "    CONSTRAINT auth_sessions_state_check CHECK (((state)::text = ANY (ARRAY[('anonymous'::character varying)::text, ('pending_mfa'::character varying)::text, ('authenticated'::character varying)::text]))),",
   ],
+  [
+    "    CONSTRAINT \"owner_settings_mainCurrency_check\" CHECK (((\"mainCurrency\")::text = ANY ((ARRAY['USD'::character varying, 'EUR'::character varying, 'RUB'::character varying])::text[]))),",
+    "    CONSTRAINT \"owner_settings_mainCurrency_check\" CHECK (((\"mainCurrency\")::text = ANY (ARRAY[('USD'::character varying)::text, ('EUR'::character varying)::text, ('RUB'::character varying)::text]))),",
+  ],
+  [
+    "    CONSTRAINT account_trade_version_payments_currency_check CHECK (((currency)::text = ANY ((ARRAY['RUB'::character varying, 'EUR'::character varying])::text[]))),",
+    "    CONSTRAINT account_trade_version_payments_currency_check CHECK (((currency)::text = ANY (ARRAY[('RUB'::character varying)::text, ('EUR'::character varying)::text]))),",
+  ],
+  [
+    '    CONSTRAINT "account_trade_version_payments_rateSource_check" CHECK ((("rateSource")::text = ANY ((ARRAY[\'bank-of-russia\'::character varying, \'owner\'::character varying])::text[])))',
+    '    CONSTRAINT "account_trade_version_payments_rateSource_check" CHECK ((("rateSource")::text = ANY (ARRAY[(\'bank-of-russia\'::character varying)::text, (\'owner\'::character varying)::text])))',
+  ],
 ];
 function normalize(input: string) {
   const result = spawnSync('awk', ['-f', normalizer], { input, encoding: 'utf8', timeout: 5000 });
@@ -25,7 +37,7 @@ function normalize(input: string) {
   expect(result.status).toBe(0);
   return result.stdout;
 }
-describe('exact PostgreSQL16.10 snapshot normalization', () => {
+describe('exact PostgreSQL snapshot normalization', () => {
   it.each(pairs)('normalizes only the reviewed equivalent line %s', (source, restored) => {
     expect(normalize(`${source}\n`)).toBe(`${restored}\n`);
     expect(normalize(`${source}\n`)).toBe(normalize(`${restored}\n`));
@@ -34,6 +46,9 @@ describe('exact PostgreSQL16.10 snapshot normalization', () => {
     [0, '262144', '262143'],
     [1, '<= 120', '<= 119'],
     [2, 'authenticated', 'different_state'],
+    [3, "'RUB'", "'GBP'"],
+    [4, "'EUR'", "'USD'"],
+    [5, "'owner'", "'manual'"],
   ] as const)('retains different bound/state operand in pair %i', (index, before, after) => {
     const changed = pairs[index][0].replace(before, after);
     expect(normalize(`${changed}\n`)).toBe(`${changed}\n`);
