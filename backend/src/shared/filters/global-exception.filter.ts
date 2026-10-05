@@ -16,6 +16,16 @@ interface ErrorResponse {
   error: string;
   timestamp: string;
   path: string;
+  // The operation a refused accounting change would leave short (409 only).
+  dependent?: Record<string, unknown>;
+}
+
+// A 409 may name the later operation it protects so the client can say which one.
+// Only that plain object passes through; every other response field stays dropped.
+function conflictDependent(status: number, value: unknown) {
+  if (status !== HttpStatus.CONFLICT) return undefined;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
 }
 
 @Injectable()
@@ -35,7 +45,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       response.setHeader('Cache-Control', 'no-store');
     }
 
-    const { status, message, error } = this.getErrorDetails(exception);
+    const { status, message, error, dependent } = this.getErrorDetails(exception);
 
     const errorResponse: ErrorResponse = {
       statusCode: status,
@@ -43,6 +53,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error,
       timestamp: new Date().toISOString(),
       path: request.url.split('?')[0],
+      ...(dependent ? { dependent } : {}),
     };
 
     // Log error with context
@@ -55,6 +66,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     status: number;
     message: string;
     error: string;
+    dependent?: Record<string, unknown>;
   } {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
@@ -62,6 +74,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
       let message: string;
       let error: string;
+      let dependent: Record<string, unknown> | undefined;
 
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;
@@ -72,13 +85,14 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? responseObj.message.join(', ')
           : (responseObj.message as string) || exception.message;
         error = (responseObj.error as string) || exception.name;
+        dependent = conflictDependent(status, responseObj.dependent);
       } else {
         message = exception.message;
         error = exception.name;
       }
 
       // Nest's default unmatched-route message includes the complete request URL.
-      return { status, message: status === 404 ? 'Not Found' : message, error };
+      return { status, message: status === 404 ? 'Not Found' : message, error, dependent };
     }
 
     // Express's body parser reports this before Nest can create an HttpException.

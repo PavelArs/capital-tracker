@@ -223,7 +223,12 @@ async function edit(db, s, f) {
   assert.equal(state.journal.summary.grossBuysUsd, '2060');
   const versions = await s.trades.listVersions(owner, bybit, first.tradeId);
   assert.deepEqual(
-    versions.items.map(({ version, kind, grossUsd, comment }) => [version, kind, grossUsd, comment]),
+    versions.items.map(({ version, kind, grossUsd, comment }) => [
+      version,
+      kind,
+      grossUsd,
+      comment,
+    ]),
     [
       [2, 'correct', '1010', 'Corrected amount'],
       [1, 'create', '1000', undefined],
@@ -269,8 +274,7 @@ async function overspend(db, s, f) {
   );
   const empty = await account(s, owner, 'Empty');
   assert.equal(
-    (await s.trades.available(owner, empty, { instrumentId: btc, at: day('2025-04-01') }))
-      .quantity,
+    (await s.trades.available(owner, empty, { instrumentId: btc, at: day('2025-04-01') })).quantity,
     '0',
   );
   await rejected(
@@ -325,6 +329,31 @@ async function remove(db, s, f) {
       body.dependent.occurredAt === day('2025-04-01'),
   );
   assert.equal(await fingerprint(db), before, 'A refused deletion changes nothing');
+  // The HTTP body the browser reads comes from the global filter, which must keep `dependent`.
+  const refusal = await voidTrade(buy.tradeId).then(
+    () => assert.fail('The deletion was not refused'),
+    (error) => error,
+  );
+  const {
+    GlobalExceptionFilter,
+  } = require('/app/backend/dist/shared/filters/global-exception.filter.js');
+  let body;
+  new GlobalExceptionFilter({ setContext() {}, warn() {}, error() {} }).catch(refusal, {
+    switchToHttp: () => ({
+      getResponse: () => ({
+        status() {
+          return this;
+        },
+        json(value) {
+          body = value;
+        },
+      }),
+      getRequest: () => ({ method: 'POST', url: '/api/accounting/void', ip: '192.0.2.1' }),
+    }),
+  });
+  assert.equal(body.statusCode, 409);
+  assert.equal(body.dependent?.operationId, `trade:${fits.tradeId}`);
+  assert.equal(await fingerprint(db), before);
 
   for (const later of [fits, sale]) assert.equal((await voidTrade(later.tradeId)).created, true);
   const deleted = await voidTrade(buy.tradeId);
@@ -342,8 +371,13 @@ async function remove(db, s, f) {
   assert.equal(state.journal.summary.remainingCostUsd, '0');
   const rows = await listed(s, owner);
   for (const gone of [buy, sale, fits])
-    assert.ok(!rows.some(({ id }) => id === `trade:${gone.tradeId}`), 'Deleted trade left the list');
-  console.log('PASS OPS-DELETE-GUARD names the dependent sale; OPS-DELETE keeps the void in history');
+    assert.ok(
+      !rows.some(({ id }) => id === `trade:${gone.tradeId}`),
+      'Deleted trade left the list',
+    );
+  console.log(
+    'PASS OPS-DELETE-GUARD names the dependent sale; OPS-DELETE keeps the void in history',
+  );
 }
 
 async function main() {
@@ -390,7 +424,8 @@ async function main() {
     const f = { owner: owner.id, other: other.id };
     f.btc = await instrument(s, f.owner, 'Bitcoin', 'BTC');
     f.eth = await instrument(s, f.owner, 'Ether', 'ETH');
-    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove]) await check(db, s, f);
+    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove])
+      await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }
