@@ -81,7 +81,7 @@ for (const name of REQUIRED_JOBS) {
     test(`refuses a pull request run whose ${name} is ${conclusion ?? 'missing'}`, async () => {
       const jobs = fullSuite().filter((job) => job.name !== name);
       if (conclusion) jobs.push({ name, conclusion });
-      await assert.rejects(check(options(api({ jobs }))), new RegExp(name.replace(/[()]/g, '\\$&')));
+      await assert.rejects(check(options(api({ jobs }))), (error) => error.message.includes(name));
     });
   }
 }
