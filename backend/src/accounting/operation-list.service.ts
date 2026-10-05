@@ -8,6 +8,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
 import {
@@ -109,6 +110,13 @@ interface ChainRow {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  classificationVersion: number | null;
+  classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
+  classificationType: ChainType | null;
+  classificationDetails: Classification | null;
+  classificationComment: string | null;
+  producedTradeId: string | null;
+  producedRewardId: string | null;
 }
 
 // Current versions only: a voided operation has left the books (its history keeps it).
@@ -269,10 +277,18 @@ export class OperationListService {
         `SELECT w.id AS "addressId", w.network, w.address, w.label, a.id AS "accountId",
             a.name AS "accountName", t.txid, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
-            t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits"
+            t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
+            c.version AS "classificationVersion", c.status AS "classificationStatus",
+            c.type AS "classificationType", c.details AS "classificationDetails",
+            c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
+            c."rewardId" AS "producedRewardId"
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
           LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
+          LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
+            AND h.txid=t.txid
+          LEFT JOIN chain_transaction_classification_versions c ON c."addressId"=h."addressId"
+            AND c.txid=h.txid AND c.version=h."currentVersion"
           WHERE w."ownerId"=$1`,
         [owner],
       );
@@ -387,6 +403,21 @@ export class OperationListService {
             receivedUnits: row.receivedUnits,
             sentUnits: row.sentUnits,
             feeUnits: row.feeUnits,
+            classification:
+              row.classificationVersion === null || row.classificationStatus === null
+                ? null
+                : {
+                    version: row.classificationVersion,
+                    status: row.classificationStatus,
+                    type: row.classificationType,
+                    details: row.classificationDetails,
+                    comment: row.classificationComment,
+                    produced: row.producedTradeId
+                      ? { kind: 'trade', id: row.producedTradeId }
+                      : row.producedRewardId
+                        ? { kind: 'reward', id: row.producedRewardId }
+                        : null,
+                  },
           })),
           marketPrices: new Map(
             market.map((row) => [

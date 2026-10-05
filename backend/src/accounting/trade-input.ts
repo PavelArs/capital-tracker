@@ -174,7 +174,7 @@ const control = (character: string) => {
 };
 
 /** A note of at most 500 characters; tabs and line breaks are its only control characters. */
-function parseComment(value: unknown): { comment?: string } {
+export function parseComment(value: unknown): { comment?: string } {
   if (value === undefined) return {};
   if (typeof value !== 'string') return bad();
   const comment = value.trim();
