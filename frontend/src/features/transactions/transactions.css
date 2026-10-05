@@ -93,6 +93,9 @@
 }
 
 .transactions-asset {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 600;
 }
 
@@ -259,7 +262,7 @@
 }
 
 .transactions-mono {
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 

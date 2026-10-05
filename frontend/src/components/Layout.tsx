@@ -1,11 +1,15 @@
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
+import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
+import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import '@fontsource-variable/jetbrains-mono';
+import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
 import './Layout.css';
 
@@ -14,6 +18,8 @@ export default function Layout() {
   const { showError } = useError();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  // The header's display currency follows the owner from page to page.
+  const [asked] = useAskedCurrency();
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -86,7 +92,7 @@ export default function Layout() {
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections.map((section) => (
               <li key={section.path}>
-                <NavLink to={section.path} onClick={followLink}>
+                <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
                   <Icon name={section.icon} />
                   {section.label}
                 </NavLink>
@@ -140,7 +146,9 @@ export default function Layout() {
         </div>
       </nav>
       <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
-        <Outlet />
+        <MainCurrencyProvider>
+          <Outlet />
+        </MainCurrencyProvider>
       </main>
     </div>
   );

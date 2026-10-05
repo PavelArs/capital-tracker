@@ -252,9 +252,19 @@ describe('PV-UI Portfolio values every asset', () => {
       within(allocation)
         .getAllByRole('listitem')
         .map((item) => item.textContent);
-    expect(slices()).toEqual(['Bitcoin$96,000.0096.00%', 'US dollar$4,000.004.00%']);
+    // Each asset keeps its own colour, whatever its place in the list (asset identity).
+    const swatches = () =>
+      within(allocation)
+        .getAllByRole('listitem')
+        .map((item) => (item.querySelector('.portfolio-swatch') as HTMLElement).style.background);
+    expect(slices()).toEqual(['Bitcoin BTC$96,000.0096.00%', 'US dollar USD$4,000.004.00%']);
+    expect(swatches()).toEqual(['var(--c-btc)', 'var(--c-cash)']);
+    expect(
+      within(rowOf('Bitcoin')).getAllByRole('cell')[0].querySelector('.asset-icon'),
+    ).toHaveAttribute('data-glyph', '₿');
     await user.click(within(grouping).getByRole('radio', { name: 'Type' }));
     expect(slices()).toEqual(['Crypto$96,000.0096.00%', 'Cash$4,000.004.00%']);
+    expect(swatches()).toEqual(['var(--c-eth)', 'var(--c-cash)']);
     await user.click(within(grouping).getByRole('radio', { name: 'Account' }));
     expect(slices()).toEqual(['Trust Wallet$80,000.0080.00%', 'Bybit$20,000.0020.00%']);
     expect(allocation).toHaveTextContent('Assets without a price are not included.');

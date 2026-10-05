@@ -8,6 +8,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
+import AssetIcon from '../shell/AssetIcon';
 import {
   bankRate,
   compareDecimal,
@@ -502,10 +503,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           update({ instrumentId: item.id });
                         }}
                       >
-                        <span
-                          className="portfolio-asset__icon portfolio-asset__icon--sm"
-                          data-letter={(item.symbol ?? item.name).slice(0, 1).toUpperCase()}
-                          aria-hidden="true"
+                        <AssetIcon
+                          symbol={item.symbol}
+                          name={item.name}
+                          assetType={item.assetType}
+                          size="sm"
                         />
                         {item.symbol ?? item.name}
                       </button>

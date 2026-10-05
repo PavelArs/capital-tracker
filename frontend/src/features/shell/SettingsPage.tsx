@@ -5,6 +5,8 @@ import { useTheme } from '@contexts/ThemeContext';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { rateText } from '../portfolio/format';
+import { useMainCurrency } from './main-currency';
+import PageHeader from './PageHeader';
 import './shell-page.css';
 
 const themeChoices = [
@@ -43,6 +45,7 @@ function MainCurrency() {
     'loading',
   );
   const [rates, setRates] = useState<FxRatesReport | null | 'failed'>(null);
+  const { setMain } = useMainCurrency();
   const latest = useRef(0);
   useEffect(() => {
     let active = true;
@@ -71,6 +74,7 @@ function MainCurrency() {
       const settings = await ownerSettingsApi.update({ mainCurrency: currency });
       if (request !== latest.current) return;
       setSaved(settings.mainCurrency);
+      setMain(settings.mainCurrency);
       setState('ready');
     } catch {
       if (request !== latest.current) return;
@@ -129,7 +133,7 @@ export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   return (
     <div className="shell-page">
-      <h1>Settings</h1>
+      <PageHeader title="Settings" />
       <div className="shell-settings">
         <section className="shell-card" aria-labelledby="settings-display">
           <h2 id="settings-display">Display</h2>

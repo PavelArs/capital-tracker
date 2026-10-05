@@ -42,12 +42,13 @@ function expectedRates(currency, from, to) {
   }
   return rows;
 }
-// The requests the collector makes for one series: four-year ranges from `from` to `to`.
+// The requests the collector makes for one series: four-year ranges from `from` to `to`,
+// newest first.
 function ranges(code, from, to) {
   const urls = [];
   for (let start = from; start <= to; start += REQUEST)
     urls.push(['/scripts/XML_dynamic.asp', code, cbrDate(start), cbrDate(Math.min(start + REQUEST - DAY, to))]);
-  return urls;
+  return urls.reverse();
 }
 const requested = (urls) => urls.map((url) => [url.pathname, url.searchParams.get('VAL_NM_RQ'), url.searchParams.get('date_req1'), url.searchParams.get('date_req2')]);
 // A recent instant five minutes into a UTC hour.
@@ -88,7 +89,8 @@ function migrate(name) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
-const collector = (db, enabled = true) => new FxRatesService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: String(enabled) }), new CbrClient());
+// A short pause before the one repeated request keeps the failure stages quick.
+const collector = (db, enabled = true) => new FxRatesService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: String(enabled) }), new CbrClient({ retryPauseMs: 50 }));
 async function stored(db) {
   return db.query(`SELECT currency, to_char("rateDate", 'YYYY-MM-DD') AS "rateDate",
     regexp_replace(regexp_replace("rubPerUnit"::text, '0+$', ''), '\\.$', '') AS "rubPerUnit", source
@@ -137,7 +139,7 @@ async function backfill(db) {
   const tomorrow = moscowDay(now.getTime()) + DAY;
   const { result, urls } = await newRequests(() => collector(db).tick(now));
   assert.deepEqual(requested(urls), [...ranges('R01235', historyStart, tomorrow), ...ranges('R01239', historyStart, tomorrow)],
-    'The first run reads the whole history in four-year requests');
+    'The first run reads the whole history in four-year requests, newest first');
   const expected = [...expectedRates('USD', historyStart, tomorrow), ...expectedRates('EUR', historyStart, tomorrow)];
   assert.deepEqual(result, { outcome: 'collected', stored: expected.length });
   assert.deepEqual((await stored(db)).map(({ source, ...row }) => { assert.equal(source, 'cbr'); return row; }), expected);
@@ -158,21 +160,27 @@ async function backfill(db) {
 }
 
 async function history(db) {
-  stage = 'FX-HISTORY rates stored only from 2025 gain the years before';
-  // A database collected before the history change: rates from 11 January 2025 only.
+  stage = 'FX-HISTORY rates stored only from 2025 gain the years before and a lost month';
+  // A database collected before the history change: rates from 11 January 2025 only, and
+  // USD without February and March 2025, as a request that failed would leave it.
   const first = Date.parse('2025-01-11T00:00:00Z');
+  const hole = [Date.parse('2025-02-01T00:00:00Z'), Date.parse('2025-03-31T00:00:00Z')];
   const now = at();
   const tomorrow = moscowDay(now.getTime()) + DAY;
-  const kept = [...expectedRates('USD', first, tomorrow), ...expectedRates('EUR', first, tomorrow)];
+  const kept = [...expectedRates('USD', first, tomorrow), ...expectedRates('EUR', first, tomorrow)]
+    .filter((row) => row.currency === 'EUR' || row.rateDate < isoDate(hole[0]) || row.rateDate > isoDate(hole[1]));
   await db.query(`INSERT INTO fx_rates (currency, source, "rateDate", "rubPerUnit")
     SELECT currency, 'cbr', "rateDate", "rubPerUnit" FROM unnest($1::text[], $2::date[], $3::numeric[]) AS r(currency, "rateDate", "rubPerUnit")`,
   [kept.map((row) => row.currency), kept.map((row) => row.rateDate), kept.map((row) => row.rubPerUnit)]);
   const before = await stored(db);
   const pastWeek = Date.parse(`${kept.filter((row) => row.currency === 'USD').at(-1).rateDate}T00:00:00Z`) - 7 * DAY;
-  const missing = (code) => [...ranges(code, historyStart, first - DAY), ...ranges(code, pastWeek, tomorrow)];
+  // The stored rates around the hole: the Friday before it and the Tuesday after it.
+  const around = [Date.parse('2025-01-31T00:00:00Z'), Date.parse('2025-04-01T00:00:00Z')];
+  const lost = ranges('R01235', around[0] + DAY, around[1] - DAY);
+  const missing = (code) => [...ranges(code, pastWeek, tomorrow), ...(code === 'R01235' ? lost : []), ...ranges(code, historyStart, first - DAY)];
   const { result, urls } = await newRequests(() => collector(db).collect(now));
   assert.deepEqual(requested(urls), [...missing('R01235'), ...missing('R01239')],
-    'The years before the earliest stored rate are read once, then the last week');
+    'The last week first, then the lost months and the years before the earliest stored rate, newest first');
   const expected = [...expectedRates('USD', historyStart, tomorrow), ...expectedRates('EUR', historyStart, tomorrow)];
   assert.deepEqual(result, { outcome: 'collected', stored: expected.length - before.length });
   assert.deepEqual((await stored(db)).map(({ source, ...row }) => row), expected);
@@ -182,7 +190,7 @@ async function history(db) {
   const again = await newRequests(() => collector(db).collect(new Date(now.getTime() + HOUR)));
   assert.deepEqual(requested(again.urls).map(([, code, from]) => [code, from]), [['R01235', cbrDate(last - 7 * DAY)], ['R01239', cbrDate(last - 7 * DAY)]],
     'Once the history reaches 2009 only the last week is read');
-  console.log('PASS FX-HISTORY a database with rates from 2025 reads the years from December 2008 once and keeps every stored rate');
+  console.log('PASS FX-HISTORY a database with rates from 2025 and a lost month reads the missing ranges once and keeps every stored rate');
 }
 
 async function incremental(db, first) {
@@ -208,8 +216,10 @@ async function failures(db) {
   stage = 'FX-FAIL one or both series unavailable';
   const before = await stored(db);
   await post('cbr', { base, fail: { R01239: 503 } });
-  const one = await collector(db).collect(at());
+  const { result: one, urls } = await newRequests(() => collector(db).collect(at()));
   assert.equal(one.outcome, 'collected');
+  assert.deepEqual(requested(urls).map(([, code]) => code), ['R01235', 'R01239', 'R01239'],
+    'A failed answer is asked for once more');
   let sync = await state(db);
   assert.equal(sync.state, 'delayed');
   assert.equal(sync.errorCode, 'unavailable');
