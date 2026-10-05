@@ -160,6 +160,33 @@ const record = (date: string, value: string, nominal = '1', code = 'R01235') =>
   `<Record Date="${date}" Id="${code}"><Nominal>${nominal}</Nominal><Value>${value}</Value><VunitRate>${value}</VunitRate></Record>`;
 
 describe('FX-PARSE Bank of Russia XML_dynamic answers', () => {
+  it('reads records whose elements differ in order, extras or decimal mark', () => {
+    const at = (date: string, inner: string) =>
+      `<Record Date="${date}" Id="R01235">${inner}</Record>`;
+    expect(
+      parseCbrDynamic(
+        xml(
+          'R01235',
+          at('03.06.2025', '<Value>78.9</Value><Nominal>1</Nominal>') +
+            at('04.06.2025', '\n  <Nominal> 1 </Nominal>\n  <Value> 79 </Value>\n') +
+            at(
+              '05.06.2025',
+              '<Nominal>1</Nominal><Value>79,1</Value><VunitRate>79,1000000000000000000000000000000000001</VunitRate>',
+            ) +
+            at('06.06.2025', '<Nominal>1</Nominal><Value>79,2</Value><Unknown></Unknown>'),
+        ),
+        'R01235',
+        '2025-06-01',
+        '2025-06-10',
+      ),
+    ).toEqual([
+      { date: '2025-06-03', rubPerUnit: '78.9' },
+      { date: '2025-06-04', rubPerUnit: '79' },
+      { date: '2025-06-05', rubPerUnit: '79.1' },
+      { date: '2025-06-06', rubPerUnit: '79.2' },
+    ]);
+  });
+
   it('reads every record of the asked series as rubles per unit', () => {
     expect(
       parseCbrDynamic(
@@ -231,9 +258,25 @@ describe('FX-PARSE Bank of Russia XML_dynamic answers', () => {
       'unexpected content after 2025-06-06: "<Error/><Record Date=\\"07.06.2025\\" Id=\\"R01235\\"><Nominal>1</No"',
     ],
     [
-      'a record of another shape',
+      'a record without a nominal',
       xml('R01235', '<Record Date="06.06.2025" Id="R01235"><Value>78,9</Value></Record>'),
-      'unexpected content: "<Record Date=\\"06.06.2025\\" Id=\\"R01235\\"><Value>78,9</Value></R"',
+      'record on 2025-06-06: "<Value>78,9</Value>"',
+    ],
+    [
+      'a record with a repeated value',
+      xml(
+        'R01235',
+        '<Record Date="06.06.2025" Id="R01235"><Nominal>1</Nominal><Value>78,9</Value><Value>79</Value></Record>',
+      ),
+      'record on 2025-06-06: "<Nominal>1</Nominal><Value>78,9</Value><Value>79</Value>"',
+    ],
+    [
+      'a value that is not a number',
+      xml(
+        'R01235',
+        '<Record Date="06.06.2025" Id="R01235"><Nominal>1</Nominal><Value>-</Value></Record>',
+      ),
+      'record on 2025-06-06: "<Nominal>1</Nominal><Value>-</Value>"',
     ],
     [
       'an error page',

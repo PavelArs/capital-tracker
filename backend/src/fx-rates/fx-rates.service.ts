@@ -214,8 +214,10 @@ export class FxRatesService {
       ]),
     );
     const rows: { currency: RatedCurrency; rate: FxRate }[] = [];
-    // A currency, or the range of it an unreadable answer kept out, with what was refused.
+    // A currency, or the range of it an unreadable answer kept out.
     const failed: string[] = [];
+    // What the first refused answer held; the state has room for one.
+    let detail: string | undefined;
     let reason: FxFailure | null = null;
     for (const currency of ratedCurrencies) {
       const queue = fxRequestRanges(bounds.get(currency), to);
@@ -234,7 +236,11 @@ export class FxRatesService {
           if (halves) queue.unshift(...halves);
           else {
             reason ??= result.reason;
-            failed.push(`${currency} ${from}..${until} (${result.detail})`);
+            this.logger.warn(
+              `Bank of Russia unreadable for ${currency} ${from}..${until}: ${result.detail}`,
+            );
+            failed.push(`${currency} ${from}..${until}`);
+            detail ??= result.detail;
           }
           continue;
         }
@@ -270,7 +276,7 @@ export class FxRatesService {
                 : 'delayed',
               errorCode: reason,
               errorMessage:
-                `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}`.slice(
+                `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`.slice(
                   0,
                   300,
                 ),
