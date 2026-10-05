@@ -372,3 +372,118 @@
   color: var(--ink-2);
   line-height: 1.45;
 }
+
+/* Phones (below 640 px): two-line rows instead of the table, no sideways scrolling. */
+.transactions-list,
+.transactions-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transactions-list__heading {
+  margin: 0;
+  padding: 18px 0 6px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.transactions-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.transactions-item:focus-visible {
+  border-radius: var(--r-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.transactions-item--needs {
+  box-shadow: inset 3px 0 0 var(--warn);
+  padding-left: 10px;
+}
+
+.transactions-item__main,
+.transactions-item__side {
+  display: grid;
+  gap: 3px;
+}
+
+.transactions-item__main {
+  flex: 1;
+  min-width: 0;
+  justify-items: start;
+}
+
+.transactions-item__side {
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transactions-item__title,
+.transactions-item__detail {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transactions-item__title {
+  font-size: var(--fs-md);
+}
+
+.transactions-item__amount {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.transactions-item__detail,
+.transactions-item__value {
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.transactions-item__badge {
+  height: 20px;
+  font-size: var(--fs-xs);
+}
+
+@media (max-width: 639.98px) {
+  .transactions-filters {
+    align-items: stretch;
+  }
+
+  .transactions-filter {
+    flex: 1 1 100%;
+  }
+
+  .transactions-filter > span {
+    width: 56px;
+  }
+
+  .transactions-filter select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .transactions-search {
+    width: 100%;
+  }
+}

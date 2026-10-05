@@ -193,6 +193,31 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   await expect(cells(rows.nth(0)).nth(3)).toHaveText(/^(₽[\d,]+\.\d{2}|—No rate)$/);
   await main.getByRole('radio', { name: 'USD', exact: true }).check();
   await expect(cells(rows.nth(0)).nth(3)).toHaveText('$1,050.50');
+  // OPS-PHONE: at 390 px two-line rows replace the table and nothing scrolls sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
+  const phoneList = main.getByRole('list', { name: 'Transactions', exact: true });
+  await expect(phoneList).toBeVisible();
+  await expect(table).toHaveCount(0);
+  await expect(phoneList.getByRole('heading', { level: 2 })).toHaveText([
+    'Jun 14, 2025',
+    'Jun 13, 2025',
+  ]);
+  const items = phoneList.getByRole('button');
+  await expect(items).toHaveText([
+    `Buy BTC${accountName} · 10:30+0.01$1,050.50`,
+    `Buy BTC${accountName}+0.00918359$1,000.00`,
+  ]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0);
+  await page.screenshot({ path: testInfo.outputPath('transactions-390-dark.png') });
+  await items.nth(0).click();
+  await expect(page.getByRole('dialog', { name: 'Buy · BTC' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(rows).toHaveCount(2);
   await accountFilter.selectOption({ label: walletLabel });
   await expect(rows).toHaveCount(1);
   const receipt = cells(rows.nth(0));

@@ -24,6 +24,7 @@ import {
   walletLabel,
 } from './operation-format';
 import TypeIcon, { Glyph } from './TypeIcon';
+import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
@@ -209,6 +210,71 @@ function OperationRow({
   );
 }
 
+/** A row's value on one short line: "≈ $780.10", "$375.50 · 30,000 RUB", "No rate". */
+function phoneValue(operation: Operation, currency: AccountingCurrency): string {
+  if (operation.value !== null) {
+    const paid = operation.paid && operation.paid.currency !== currency && operation.paid;
+    const shown = money(operation.value, currency);
+    return paid ? `${shown} · ${quantity(paid.gross)} ${paid.currency}` : shown;
+  }
+  if (operation.estimatedValue !== null) return `≈ ${money(operation.estimatedValue, currency)}`;
+  if (operation.costBasis !== null) return `${money(operation.costBasis, currency)} cost basis`;
+  if (
+    operation.valueUsd !== null ||
+    operation.estimatedValueUsd !== null ||
+    operation.costBasisUsd !== null
+  )
+    return 'No rate';
+  return DASH;
+}
+
+// Phones: one tappable two-line row per operation; status and source stay in the drawer.
+function OperationItem({
+  operation,
+  currency,
+  onOpen,
+}: {
+  operation: Operation;
+  currency: AccountingCurrency;
+  onOpen: () => void;
+}) {
+  const needs = operation.status === 'needs-classification';
+  const at = rowTime(operation);
+  const title = [
+    typeLabel(operation),
+    ticker(operation.asset) +
+      (operation.counterAsset ? ` → ${ticker(operation.counterAsset)}` : ''),
+  ].join(' ');
+  return (
+    <li>
+      <button
+        type="button"
+        className={`transactions-item${needs ? ' transactions-item--needs' : ''}`}
+        onClick={onOpen}
+      >
+        <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} />
+        <span className="transactions-item__main">
+          <span className="transactions-item__title">{title}</span>
+          {needs ? (
+            <span className="transactions-badge transactions-badge--warn transactions-item__badge">
+              To classify
+            </span>
+          ) : (
+            <span className="transactions-item__detail">
+              {placeLabel(operation)}
+              {at !== 'No time' && ` · ${at}`}
+            </span>
+          )}
+        </span>
+        <span className="transactions-item__side">
+          <span className="transactions-item__amount">{signedQuantity(operation)}</span>
+          <span className="transactions-item__value">{phoneValue(operation, currency)}</span>
+        </span>
+      </button>
+    </li>
+  );
+}
+
 // Every operation the app knows in one list (list-all-operations, OPS-4).
 export default function TransactionsPage() {
   const [list, setList] = useState<OperationList | null>(null);
@@ -225,6 +291,7 @@ export default function TransactionsPage() {
 
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
+  const narrow = useNarrowScreen();
 
   // A switched currency keeps the rows on screen until its values arrive.
   const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
@@ -422,6 +489,24 @@ export default function TransactionsPage() {
                 Clear filters
               </button>
             </div>
+          ) : narrow ? (
+            <ol className="transactions-list" aria-label="Transactions">
+              {days.map((group) => (
+                <li key={group.heading} className="transactions-list__day">
+                  <h2 className="transactions-list__heading">{group.heading}</h2>
+                  <ul>
+                    {group.operations.map((operation) => (
+                      <OperationItem
+                        key={operation.id}
+                        operation={operation}
+                        currency={currency}
+                        onOpen={() => setOpenId(operation.id)}
+                      />
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
           ) : (
             <div className="portfolio-table-wrap">
               <table className="portfolio-table transactions-table" aria-label="Transactions">

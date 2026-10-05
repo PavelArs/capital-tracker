@@ -366,6 +366,59 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Fee')).toBe('₽98.76');
   });
 
+  it('OPS-PHONE: below 640 px shows two-line rows under day headings instead of the table', async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(max-width: 639.98px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      const paid = operation({
+        ...imported,
+        paid: {
+          currency: 'RUB',
+          gross: '83000',
+          fee: '0',
+          rateDate: '2025-06-14',
+          perUsd: '79.0076',
+          rateSource: 'bank-of-russia',
+        },
+      });
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(
+        list([outgoing, receipt, transfer, paid, manual]),
+      );
+      renderPage();
+      const rows = await screen.findByRole('list', { name: 'Transactions' });
+      expect(screen.queryByRole('table')).toBeNull();
+      expect(
+        within(rows)
+          .getAllByRole('heading', { level: 2 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Jun 21, 2025', 'Jun 20, 2025', 'Jun 18, 2025', 'Jun 14, 2025', 'Jun 13, 2025']);
+      // Type and ticker / place and time, or "To classify"; amount / value, paid amount.
+      const items = within(rows).getAllByRole('button');
+      expect(items.map((item) => item.textContent)).toEqual([
+        'Outgoing BTCTo classify-0.0005—',
+        'Incoming BTCTo classify+0.00918359≈ $780.10',
+        'Transfer BTCBybit → Cold storage0.005—',
+        'Buy BTCBybit · 10:30+0.01$1,050.50 · 83,000 RUB',
+        'Buy BTCBybit+0.00918359$1,000.00',
+      ]);
+      // The whole row opens the same drawer as on a wide screen.
+      await user.click(items[1]);
+      expect(
+        screen.getByRole('dialog', { name: 'Incoming transaction · BTC' }),
+      ).toBeInTheDocument();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(items[1]).toHaveFocus();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('reads the status filter from the address so other screens can link to it', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage('/transactions?status=needs-classification');
