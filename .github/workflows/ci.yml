@@ -7,7 +7,7 @@ on:
     branches:
       - main
     types: [opened, synchronize, reopened]
-  # Runs every gate, including release acceptance, for a chosen branch before merge.
+  # Runs the full pull request suite, including release acceptance, for a chosen branch.
   workflow_dispatch:
 
 permissions:
@@ -27,6 +27,7 @@ jobs:
   # ============================================
   backend-check:
     name: Backend Lint & Format
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -52,6 +53,7 @@ jobs:
 
   backend-test:
     name: Backend Tests
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -87,6 +89,7 @@ jobs:
 
   backend-build:
     name: Backend Build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     needs: [backend-check]
     defaults:
@@ -119,6 +122,7 @@ jobs:
   # ============================================
   frontend-check:
     name: Frontend Lint & Format
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -144,6 +148,7 @@ jobs:
 
   frontend-test:
     name: Frontend Tests
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -179,6 +184,7 @@ jobs:
 
   frontend-build:
     name: Frontend Build
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     needs: [frontend-check]
     defaults:
@@ -211,10 +217,11 @@ jobs:
   # ============================================
   # Release Images, Critical Acceptance and Security
   # ============================================
-  # Owner decisions 2026-10-04: release work runs for pushes to main and manual dispatch,
-  # never for pull requests; deployment still requires a push run on main. The images are
-  # built once, critical acceptance runs in parallel isolated shards and the final job
-  # merges their receipts before scanning and exporting the same images.
+  # Owner decision 2026-10-05: every check runs for pull requests (and manual dispatch); a
+  # push to main only builds the release images, confirms the merged pull request passed
+  # the full suite and exports the candidate the deploy promotes. The images are built
+  # once, critical acceptance runs in parallel isolated shards and the final job merges
+  # their receipts before scanning the same images.
   release-images:
     name: Build Release Images
     runs-on: ubuntu-latest
@@ -222,8 +229,6 @@ jobs:
     permissions:
       contents: read
       packages: read
-    needs: [backend-build, frontend-build, backend-test, frontend-test, dependency-audit, spec-check]
-    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -263,18 +268,59 @@ jobs:
       - name: Build the backend and frontend acceptance images once
         run: node scripts/acceptance.mjs images --manifest release-images/manifest.json
       - name: Save the exact images for the acceptance shards
+        if: github.event_name != 'push'
         run: |
           set -euo pipefail
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 -o release-images/images.tar
           (cd release-images && sha256sum images.tar > images.tar.sha256)
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-images
           path: release-images/
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
+      # The deploy promotes exactly these images; their pull request passed the full suite.
+      - name: Export the release candidate images
+        if: github.event_name == 'push'
+        env:
+          CANDIDATE_COMMIT: ${{ github.sha }}
+          CANDIDATE_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const { execFileSync } = require('node:child_process');
+          const pins = require('./deploy/manual-mvp-infrastructure-pins.json');
+          const manifest = { schemaVersion: 3, commit: process.env.CANDIDATE_COMMIT, runId: process.env.CANDIDATE_RUN_ID };
+          for (const name of ['backend', 'frontend']) {
+            const tag = `capital-tracker-${name}:acceptance`;
+            manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
+          }
+          manifest.infrastructure = {};
+          for (const name of ['postgres', 'redis']) {
+            const pin = pins[name];
+            manifest.infrastructure[name] = { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
+          }
+          const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
+          validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
+          fs.writeFileSync('candidate/manifest.json', JSON.stringify(manifest));
+          NODE
+          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
+          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
+          sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
+      - name: Upload the release candidate
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: manual-mvp-candidate
+          path: candidate/
+          if-no-files-found: error
+          retention-days: 7
           compression-level: 0
 
   critical-acceptance:
@@ -284,7 +330,7 @@ jobs:
     permissions:
       contents: read
     needs: [release-images]
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'push'
     strategy:
       # Every shard reports its own result; the final job still requires all of them.
       fail-fast: false
@@ -336,14 +382,14 @@ jobs:
           overwrite: true
 
   docker-build:
-    name: Release Images and Security
+    name: Acceptance Receipt and Image Security
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       contents: read
       packages: read
     needs: [release-images, critical-acceptance]
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -443,46 +489,10 @@ jobs:
           name: release-image-security
           path: '*-image-security.json'
           retention-days: 7
-      - name: Export the actual tested candidate images
-        if: success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'
-        env:
-          CANDIDATE_COMMIT: ${{ github.sha }}
-          CANDIDATE_RUN_ID: ${{ github.run_id }}
-        run: |
-          node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID"
-          mkdir -p candidate
-          node - <<'NODE'
-          const fs = require('node:fs');
-          const { execFileSync } = require('node:child_process');
-          const pins = require('./deploy/manual-mvp-infrastructure-pins.json');
-          const manifest = { schemaVersion: 3, commit: process.env.CANDIDATE_COMMIT, runId: process.env.CANDIDATE_RUN_ID };
-          for (const name of ['backend', 'frontend']) {
-            const tag = `capital-tracker-${name}:acceptance`;
-            manifest[name] = { tag, imageId: execFileSync('docker', ['image', 'inspect', tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
-          }
-          manifest.infrastructure = {};
-          for (const name of ['postgres', 'redis']) {
-            const pin = pins[name];
-            manifest.infrastructure[name] = { ...pin, imageId: execFileSync('docker', ['image', 'inspect', pin.tag, '--format', '{{.Id}}'], { encoding: 'utf8' }).trim() };
-          }
-          const { validateLoadedImages } = require('./scripts/validate-manual-mvp-release.cjs');
-          validateLoadedImages(manifest, tag => JSON.parse(execFileSync('docker', ['image', 'inspect', tag], { encoding: 'utf8' }))[0]);
-          fs.writeFileSync('candidate/manifest.json', JSON.stringify(manifest));
-          NODE
-          node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
-          docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
-          sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: success() && steps.critical-release-acceptance.conclusion == 'success' && steps.verify-critical-receipt.conclusion == 'success'
-        with:
-          name: manual-mvp-candidate
-          path: candidate/
-          retention-days: 7
-          compression-level: 0
-
   spec-check:
     name: Specification and Engineering Gates
     runs-on: ubuntu-latest
+    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -498,6 +508,7 @@ jobs:
   dependency-audit:
     name: Production Dependency Audit
     runs-on: ubuntu-latest
+    if: github.event_name != 'push'
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -507,6 +518,27 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - run: pnpm install --frozen-lockfile
       - run: pnpm audit:production
+
+  # A push to main runs no tests of its own: it may release only a commit whose merged pull
+  # request passed every job above, critical acceptance shards included, on its last head.
+  merged-pr-ci:
+    name: Merged Pull Request CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Require a successful full pull request CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/check-merged-pr-ci.cjs
 
   ci-status:
     name: CI Status
@@ -523,6 +555,7 @@ jobs:
       - docker-build
       - spec-check
       - dependency-audit
+      - merged-pr-ci
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -534,10 +567,13 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           CI_EVENT: ${{ github.event_name }}
         run: |
-          # Only pull requests may omit the release jobs; any other event requires them.
-          release="release-images critical-acceptance docker-build"
-          if [[ "$CI_EVENT" == pull_request ]]; then release=; fi
-          node scripts/check-ci-results.cjs "$NEEDS_JSON" \
-            backend-check backend-test backend-build \
-            frontend-check frontend-test frontend-build \
-            spec-check dependency-audit $release
+          # A push to main only builds the release; every other event must pass the full suite.
+          if [[ "$CI_EVENT" == push ]]; then
+            node scripts/check-ci-results.cjs "$NEEDS_JSON" release-images merged-pr-ci
+          else
+            node scripts/check-ci-results.cjs "$NEEDS_JSON" \
+              backend-check backend-test backend-build \
+              frontend-check frontend-test frontend-build \
+              spec-check dependency-audit \
+              release-images critical-acceptance docker-build
+          fi
