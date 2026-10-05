@@ -11,7 +11,13 @@ import {
   ownerCount,
   subjectHash,
 } from './admission-fixtures';
-import { loginWithMfa, recoveryFactor, test } from './mfa-fixtures';
+import {
+  derivedCacheTables,
+  loginWithMfa,
+  orderedFingerprintSql,
+  recoveryFactor,
+  test,
+} from './mfa-fixtures';
 import { restartBackends } from './replicas';
 
 // All credentials and database rows belong to the disposable HTTPS acceptance project.
@@ -97,7 +103,8 @@ function fingerprint(includeSessions = false, excludeAdmissions = false): string
     .split('\n')
     .filter(
       (name) =>
-        includeSessions || !['auth_sessions', 'owner_mfa', 'owner_mfa_recovery'].includes(name),
+        (includeSessions || !['auth_sessions', 'owner_mfa', 'owner_mfa_recovery'].includes(name)) &&
+        !derivedCacheTables.includes(name),
     );
   if (excludeAdmissions) {
     expect(tables).toContain('auth_request_limits');
@@ -107,13 +114,13 @@ function fingerprint(includeSessions = false, excludeAdmissions = false): string
   expect(tables).toContain('owner_auth');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(
-    tables
-      .map(
+    orderedFingerprintSql(
+      tables.map(
         (table) => `SELECT '${table}',
     md5(COALESCE(jsonb_agg(row_data ORDER BY row_data::text)::text, '[]'))
     FROM (SELECT to_jsonb(t) AS row_data FROM public."${table}" t) rows`,
-      )
-      .join(' UNION ALL '),
+      ),
+    ),
   );
 }
 

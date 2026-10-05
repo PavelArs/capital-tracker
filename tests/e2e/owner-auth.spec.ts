@@ -3,7 +3,7 @@ import { createHmac } from 'node:crypto';
 import { resolve } from 'node:path';
 import { type APIRequestContext, type Page, expect } from '@playwright/test';
 import { expectHostAdmissions, ledgerState, ownerCount } from './admission-fixtures';
-import { loginWithMfa, test } from './mfa-fixtures';
+import { derivedCacheTables, loginWithMfa, orderedFingerprintSql, test } from './mfa-fixtures';
 
 const repositoryRoot = resolve(__dirname, '../..');
 const composeFile = resolve(repositoryRoot, 'tests/e2e/compose.yml');
@@ -60,20 +60,22 @@ function databaseFingerprint(excludedTables: string[] = []): string {
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",
   )
     .split('\n')
-    .filter((table) => table && !excludedTables.includes(table));
+    .filter(
+      (table) => table && !excludedTables.includes(table) && !derivedCacheTables.includes(table),
+    );
   if (!excludedTables.includes('users')) expect(tables).toContain('users');
   expect(tables).toContain('crypto_wallets');
   for (const table of tables) expect(table).toMatch(/^[A-Za-z_][A-Za-z0-9_]*$/);
   return query(
-    tables
-      .map(
+    orderedFingerprintSql(
+      tables.map(
         (table) => `
     SELECT '${table}' AS table_name,
       md5(COALESCE(jsonb_agg(row_data ORDER BY row_data::text)::text, '[]')) AS checksum
     FROM (SELECT to_jsonb(t) AS row_data FROM public."${table}" t) rows
   `,
-      )
-      .join(' UNION ALL '),
+      ),
+    ),
   );
 }
 
