@@ -102,5 +102,9 @@
   {
     "file": "tests/e2e/capital-flows.spec.ts",
     "title": "FLOW-SPLIT-UI: dashboard splits the change into market and net deposits with a net invested line"
+  },
+  {
+    "file": "tests/e2e/manual-operations.spec.ts",
+    "title": "MANUAL-OPS-UI: add a buy without a journal, sell only what is available, delete with a guard"
   }
 ]

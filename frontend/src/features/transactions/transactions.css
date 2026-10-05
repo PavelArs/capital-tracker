@@ -271,3 +271,43 @@
   font-size: var(--fs-sm);
   line-height: 1.4;
 }
+
+.transactions-grow {
+  flex: 1;
+}
+
+.transactions-delete {
+  color: var(--neg);
+}
+
+.transactions-section {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.transactions-history {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.transactions-history li {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.transactions-confirm {
+  z-index: 90;
+}
+
+.transactions-confirm__text {
+  margin: 0;
+  color: var(--ink-2);
+  line-height: 1.45;
+}

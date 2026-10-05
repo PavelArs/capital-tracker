@@ -5,6 +5,12 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { lockAccountingOwner } from './accounting-lock';
 import type { RewardSummary } from './asset-reward-types';
 import type { SwapSummary } from './asset-swap-types';
+import {
+  availableQuantity,
+  firstShortfall,
+  type Shortfall,
+  withoutTrade,
+} from './available-quantity';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
 import {
   advanceConnectedJournals,
@@ -15,11 +21,12 @@ import {
   readTradeVersionCount,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
-import type { Execution } from './fifo';
+import { type Execution, FifoHistoryError } from './fifo';
 import { parseUuid } from './input';
 import type { AccountFifoResult, TransferSummary } from './owned-transfer-fifo';
 import { derivePaidAmounts } from './paid-currency';
 import {
+  parseAvailableQuery,
   parseDerivedTradePageQuery,
   parseJournalInitialization,
   parseTradeCorrection,
@@ -44,6 +51,7 @@ import {
   type VersionRow,
   versionSelect,
 } from './trade-journal.store';
+import { automaticOrder } from './trade-order';
 
 export type { TradeVersion } from './trade-journal.store';
 
@@ -83,9 +91,22 @@ interface CurrentSnapshot {
   fifo: AccountFifoResult;
 }
 const conflict = () => new ConflictException('Trade request conflicts with saved state');
+/** A change that would leave a later operation spending more than its account holds. */
+const dependent = (shortfall: Shortfall) =>
+  new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: 'A later operation depends on this trade',
+    dependent: shortfall,
+  });
+/** A journal started without asking holds nothing before its first operation (M9). */
+export const AUTOMATIC_COVERAGE_FROM = '1970-01-01T00:00:00.000Z';
+
 const noRate = () => new ConflictException('No Bank of Russia rate is stored for the trade date');
 
-function execution(value: Execution): Execution {
+type Ordered<O> = Omit<Execution, 'orderWithinTimestamp'> & { orderWithinTimestamp: O };
+/** The execution fields; an automatic order stays null in the request as sent. */
+function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
   return {
     instrumentId: value.instrumentId,
     side: value.side,
@@ -107,6 +128,7 @@ function requested(value: TradeCreateInput) {
     orderWithinTimestamp: value.orderWithinTimestamp,
     quantity: value.quantity,
     ...(value.paid ? { paid: value.paid } : { grossUsd: value.grossUsd, feeUsd: value.feeUsd }),
+    ...(value.comment === undefined ? {} : { comment: value.comment }),
   };
 }
 function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): JournalOrigin {
@@ -210,8 +232,12 @@ export class TradeService {
     return this.source
       .transaction(async (manager) => {
         await lockAccountingOwner(manager, owner);
-        await readOwnedAccount(manager, owner, id);
-        const journal = await readJournal(manager, owner, id);
+        const account = await readOwnedAccount(manager, owner, id);
+        const journal =
+          (await readJournal(manager, owner, id)) ??
+          (kind === 'create' && value.expectedJournalRevision === 0
+            ? await this.startJournal(manager, owner, account, value.requestId)
+            : undefined);
         if (!journal) throw conflict();
         const [previous]: VersionRow[] = await manager.query(
           `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
@@ -228,6 +254,13 @@ export class TradeService {
         if (target !== undefined && !current) throw new NotFoundException();
         let nextExecution: Execution;
         let labels: { instrumentName: string; instrumentSymbol: string | null };
+        const place = (fields: Ordered<number | null>): Execution => {
+          const orderWithinTimestamp =
+            fields.orderWithinTimestamp ??
+            automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
+          if (orderWithinTimestamp === null) throw conflict();
+          return { ...fields, orderWithinTimestamp };
+        };
         if (input) {
           const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
             'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
@@ -241,8 +274,8 @@ export class TradeService {
               input.occurredAt,
             );
             if (!derived) throw noRate();
-            nextExecution = execution({ ...input, ...derived });
-          } else nextExecution = execution(input);
+            nextExecution = place(execution({ ...input, ...derived }));
+          } else nextExecution = place(execution(input));
           labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
         } else {
           if (!current) throw new NotFoundException();
@@ -268,15 +301,31 @@ export class TradeService {
           journalRevision: journal.currentRevision + 1,
           requestId: value.requestId,
           kind,
+          ...(input?.comment === undefined ? {} : { comment: input.comment }),
         };
         assertRevisionCapacity(ledger);
         projectConnectedLedger(ledger);
-        projectConnectedLedger(ledger, {
-          accountId: id,
-          trades: [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
-            (head) => head.kind !== 'void',
-          ),
-        });
+        const trades = [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
+          (head) => head.kind !== 'void',
+        );
+        try {
+          projectConnectedLedger(ledger, { accountId: id, trades });
+        } catch (error) {
+          // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
+          const shortfall =
+            error instanceof FifoHistoryError &&
+            firstShortfall({
+              accounts: new Map(
+                [...ledger.accounts].map(([key, item]) => [
+                  key,
+                  key === id ? { ...item, trades } : item,
+                ]),
+              ),
+              transfers: ledger.transfers,
+            });
+          if (shortfall) throw dependent(shortfall);
+          throw error;
+        }
         const saved = await appendTradeVersion(manager, owner, id, {
           ...next,
           canonicalPayload: payload,
@@ -285,6 +334,62 @@ export class TradeService {
         return { created: true, value: receipt(id, saved) };
       })
       .catch(rethrowAccountingHistory);
+  }
+
+  /**
+   * The first operation of an account without a journal starts one (M9, OPS-ADD-BUY): an
+   * account that held nothing before, from the earliest instant the journal admits. An
+   * account with an opening snapshot still needs its carry-in first.
+   */
+  private async startJournal(
+    manager: EntityManager,
+    owner: string,
+    account: { id: string; currentRevision: number | null },
+    requestId: string,
+  ): Promise<JournalRow> {
+    if (account.currentRevision !== null || (await this.hasOpening(manager, owner, account.id)))
+      throw conflict();
+    const [row]: JournalRow[] = await manager.query(
+      `INSERT INTO account_trade_journals
+      ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","createdAt","currentRevision")
+      VALUES ($1,$2,$3,$4,'declared-empty',$5,clock_timestamp(),0) RETURNING *`,
+      [
+        owner,
+        account.id,
+        requestId,
+        JSON.stringify({ coverageFrom: AUTOMATIC_COVERAGE_FROM, assertEmpty: true }),
+        AUTOMATIC_COVERAGE_FROM,
+      ],
+    );
+    return row;
+  }
+
+  /**
+   * How much of an instrument the account can sell or send at an instant (PR-OPS-8): its
+   * lowest balance from then on, with the trade being edited left out. An account without
+   * a journal holds nothing.
+   */
+  async available(ownerId: string, accountId: string, rawQuery: unknown) {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    const query = parseAvailableQuery(rawQuery);
+    return this.read(async (manager) => {
+      await readOwnedAccount(manager, owner, id);
+      const journal = await readJournal(manager, owner, id);
+      let quantity = '0';
+      if (journal) {
+        const ledger = await readConnectedLedger(manager, owner, [id]);
+        const view = query.excludeTradeId ? withoutTrade(ledger, id, query.excludeTradeId) : ledger;
+        quantity = availableQuantity(view, id, query.instrumentId, query.at);
+      }
+      return {
+        accountId: id,
+        instrumentId: query.instrumentId,
+        at: query.at,
+        journalRevision: journal?.currentRevision ?? null,
+        quantity,
+      };
+    });
   }
 
   async getJournal(ownerId: string, accountId: string): Promise<JournalState> {

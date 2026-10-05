@@ -75,6 +75,11 @@ export class TradeController {
     return this.history.getSnapshot(owner.userId, id, query);
   }
 
+  @Get('available')
+  available(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Query() query: unknown) {
+    return this.trades.available(owner.userId, id, query);
+  }
+
   @Get('trades')
   listTrades(
     @CurrentUser() owner: OwnerIdentity,

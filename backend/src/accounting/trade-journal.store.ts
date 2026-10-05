@@ -52,21 +52,26 @@ export interface VersionRow {
   paidRateDate: string | null;
   paidPerUsd: string | null;
   paidRateSource: string | null;
+  comment: string | null;
 }
 export interface TradeVersion extends FifoTrade {
   journalRevision: number;
   requestId: string;
   kind: TradeKind;
   createdAt: string;
+  /** The owner's note on this version (OPS-COMMENT). */
+  comment?: string;
 }
 export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol",
   p.currency AS "paidCurrency", p.gross AS "paidGross", p.fee AS "paidFee",
   p."rateDate"::text AS "paidRateDate", p."perUsd" AS "paidPerUsd",
-  p."rateSource" AS "paidRateSource"
+  p."rateSource" AS "paidRateSource", c.comment
   FROM account_trade_versions v JOIN accounting_instruments i
   ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
   LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
-  AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version`;
+  AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version
+  LEFT JOIN account_trade_version_comments c ON c."ownerId"=v."ownerId"
+  AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version`;
 
 /** No payment row means the trade was stated in USD. */
 function projectPayment(row: VersionRow): TradePayment | undefined {
@@ -102,6 +107,7 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     grossUsd: parseDecimal(row.grossUsd, true),
     feeUsd: parseDecimal(row.feeUsd, false),
     ...(paid ? { paid } : {}),
+    ...(row.comment ? { comment: row.comment } : {}),
   };
 }
 export async function readOwnedAccount(
@@ -190,6 +196,7 @@ export interface PreparedTrade extends Execution {
   kind: TradeKind;
   instrumentName: string;
   instrumentSymbol: string | null;
+  comment?: string;
 }
 function requireTransaction(manager: EntityManager) {
   if (!manager.queryRunner?.isTransactionActive)
@@ -251,6 +258,12 @@ export async function appendTradeVersion(
       ],
     );
   }
+  if (next.comment)
+    await manager.query(
+      `INSERT INTO account_trade_version_comments ("ownerId","accountId","tradeId",version,comment)
+      VALUES ($1,$2,$3,$4,$5)`,
+      [owner, id, next.tradeId, next.version, next.comment],
+    );
   await manager.query(
     'UPDATE account_trades SET "currentVersion"=$4 WHERE "ownerId"=$1 AND "accountId"=$2 AND id=$3',
     [owner, id, next.tradeId, next.version],
@@ -265,6 +278,7 @@ export async function appendTradeVersion(
     paidRateDate: next.paid?.rateDate ?? null,
     paidPerUsd: next.paid?.perUsd ?? null,
     paidRateSource: next.paid?.rateSource ?? null,
+    comment: next.comment ?? null,
   });
 }
 export async function advanceJournal(

@@ -69,7 +69,8 @@ describe('TRADE-001-A literal empty-origin attestation', () => {
 
 describe('TRADE-002-B command shape and raw identity boundaries', () => {
   it.each(parsers)('%s rejects all absent mandatory fields', (_name, parse, valid) => {
-    for (const field of Object.keys(valid)) {
+    // OPS-SAME-DAY: an absent same-instant order asks the server to place the trade.
+    for (const field of Object.keys(valid).filter((key) => key !== 'orderWithinTimestamp')) {
       const incomplete: Record<string, unknown> = { ...valid };
       delete incomplete[field];
       rejects(() => parse(incomplete));
@@ -447,5 +448,37 @@ describe('TRADE-005-A bounded revision-pinned page and immutable-history query s
     rejects(() => parseDerivedTradePageQuery({ offset: '99999' }));
     rejects(() => parseDerivedTradePageQuery({ journalRevision: '1', offset: '100000' }));
     rejects(() => parseTradePageQuery({ journalRevision: '1', offset: '10000' }));
+  });
+});
+
+describe('OPS-SAME-DAY optional same-instant order', () => {
+  it.each(executionParsers)('%s marks an absent order as automatic', (_name, parse) => {
+    const { orderWithinTimestamp: _omitted, ...automatic } = execution;
+    expect(parse(automatic)).toEqual({ ...execution, orderWithinTimestamp: null });
+  });
+
+  it.each(executionParsers)('%s still refuses a null or raw-typed order', (_name, parse) => {
+    for (const orderWithinTimestamp of [null, '0', -1, 1.5, 2147483648, undefined])
+      rejects(() => parse({ ...execution, orderWithinTimestamp }));
+  });
+});
+
+describe('OPS-COMMENT optional comment', () => {
+  it.each(executionParsers)('%s keeps a trimmed comment', (_name, parse) => {
+    expect(parse({ ...execution, comment: '  Bybit P2P, card ending 12  ' })).toEqual({
+      ...execution,
+      comment: 'Bybit P2P, card ending 12',
+    });
+    expect(parse({ ...execution, comment: 'й'.repeat(500) }).comment).toBe('й'.repeat(500));
+  });
+
+  it.each(executionParsers)('%s drops an empty comment', (_name, parse) => {
+    for (const comment of ['', '   ', '\n\t'])
+      expect(parse({ ...execution, comment })).toEqual(execution);
+  });
+
+  it.each(executionParsers)('%s refuses a non-text or overlong comment', (_name, parse) => {
+    for (const comment of [null, 1, true, [], {}, 'x'.repeat(501), 'a\u0000b'])
+      rejects(() => parse({ ...execution, comment }));
   });
 });

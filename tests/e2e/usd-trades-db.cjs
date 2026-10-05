@@ -150,7 +150,9 @@ async function originsAndOwnership(source, accounting, trade, fixture) {
   for (const invalid of [false, 'true', 1, null, {}, []]) {
     await status(() => trade.initialize(owner, account, origin({ assertEmpty: invalid })), 400);
   }
-  await status(() => trade.create(owner, account, command(instrument, 0)), 409);
+  // Since M9 a first trade at revision 0 starts the journal itself (manual-operations-db);
+  // any other revision still finds no journal and writes nothing.
+  await status(() => trade.create(owner, account, command(instrument, 1)), 409);
   for (const method of ['listTrades', 'listLots', 'listRealizations']) {
     await status(() => trade[method](owner, account), 409);
   }
@@ -909,7 +911,7 @@ async function main() {
   try {
     assert.equal((await source.query('SELECT current_database() AS name'))[0].name, database);
     const migrations = await source.query('SELECT name FROM migrations ORDER BY timestamp');
-    assert.equal(migrations.length, 28); assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
+    assert.equal(migrations.length, 29); assert.equal(migrations[13].name, 'AddUsdTradeJournal1790040000000');
     assert.equal(migrations[14].name, 'AddUsdCsvImports1790050000000');
     assert.equal(migrations[15].name, 'AddKnownCostCarryIn1790060000000');
     assert.equal(migrations[16].name, 'AddExternalUsdFlows1790070000000');

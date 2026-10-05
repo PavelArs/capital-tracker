@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { TradePayment } from './trades.api';
 
 // Exact decimal strings from GET /accounting/operations (list-all-operations, OPS-1..3).
 export type OperationType =
@@ -47,6 +48,10 @@ export interface Operation {
   status: 'recorded' | 'needs-classification';
   source: 'manual' | 'csv' | 'chain';
   version: number | null;
+  /** Trades paid in RUB or EUR keep the amounts as paid. */
+  paid: TradePayment | null;
+  comment: string | null;
+  orderWithinTimestamp: number;
 }
 
 export interface OperationList {

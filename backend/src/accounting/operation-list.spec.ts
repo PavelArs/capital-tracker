@@ -62,6 +62,8 @@ describe('list-all-operations projection', () => {
             grossUsd: '1000',
             feeUsd: '0',
             csv: false,
+            paid: null,
+            comment: 'First buy from the spreadsheet',
           },
           {
             tradeId: id(31),
@@ -75,6 +77,15 @@ describe('list-all-operations projection', () => {
             grossUsd: '1050.5',
             feeUsd: '1.25',
             csv: true,
+            paid: {
+              currency: 'RUB',
+              gross: '83000',
+              fee: '0',
+              rateDate: '2025-06-14',
+              perUsd: '79',
+              rateSource: 'bank-of-russia',
+            },
+            comment: null,
           },
         ],
         chain: [chain(1)],
@@ -115,6 +126,9 @@ describe('list-all-operations projection', () => {
       status: 'recorded',
       source: 'manual',
       version: 1,
+      paid: null,
+      comment: 'First buy from the spreadsheet',
+      orderWithinTimestamp: 0,
     });
     expect(imported).toMatchObject({
       id: `trade:${id(31)}`,
@@ -125,6 +139,8 @@ describe('list-all-operations projection', () => {
       account: bybit,
       status: 'recorded',
       source: 'csv',
+      paid: { currency: 'RUB', gross: '83000', perUsd: '79', rateSource: 'bank-of-russia' },
+      comment: null,
     });
     expect(receipt).toEqual({
       id: `chain:${wallet.id}:${txid(1)}`,
@@ -150,6 +166,9 @@ describe('list-all-operations projection', () => {
       status: 'needs-classification',
       source: 'chain',
       version: null,
+      paid: null,
+      comment: null,
+      orderWithinTimestamp: 0,
     });
   });
 

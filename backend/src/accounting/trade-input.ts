@@ -10,9 +10,13 @@ export interface JournalInitializationInput {
   assertEmpty: true;
 }
 
-type TradeFields = Omit<Execution, 'grossUsd' | 'feeUsd' | 'paid'> & {
+type TradeFields = Omit<Execution, 'grossUsd' | 'feeUsd' | 'paid' | 'orderWithinTimestamp'> & {
   requestId: string;
   expectedJournalRevision: number;
+  /** null: place after every event already at this instant (OPS-SAME-DAY). */
+  orderWithinTimestamp: number | null;
+  /** The owner's note, trimmed; absent when none was given (OPS-COMMENT). */
+  comment?: string;
 };
 /** USD amounts, or the amounts as paid in RUB or EUR (CUR-PAID-RUB), never both. */
 export type TradeCreateInput = TradeFields &
@@ -87,6 +91,7 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     'grossUsd',
     'feeUsd',
     'paid',
+    'comment',
   ]);
   if (row.side !== 'buy' && row.side !== 'sell') return bad();
   const quantity = parseDecimal(row.quantity, true);
@@ -108,10 +113,31 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     instrumentId: parseUuid(row.instrumentId),
     side: row.side,
     occurredAt: parseAsOf(row.occurredAt),
-    orderWithinTimestamp: integer(row.orderWithinTimestamp, 2147483647),
+    orderWithinTimestamp:
+      'orderWithinTimestamp' in row ? integer(row.orderWithinTimestamp, 2147483647) : null,
     quantity,
     ...amounts,
+    ...parseComment(row.comment),
   };
+}
+
+export const MAX_COMMENT_LENGTH = 500;
+
+const allowedControls = new Set(['\t', '\n', '\r']);
+const control = (character: string) => {
+  const code = character.charCodeAt(0);
+  return (code < 0x20 || code === 0x7f) && !allowedControls.has(character);
+};
+
+/** A note of at most 500 characters; tabs and line breaks are its only control characters. */
+function parseComment(value: unknown): { comment?: string } {
+  if (value === undefined) return {};
+  if (typeof value !== 'string') return bad();
+  const comment = value.trim();
+  if (comment === '') return {};
+  const characters = [...comment];
+  if (characters.length > MAX_COMMENT_LENGTH || characters.some(control)) return bad();
+  return { comment };
 }
 
 function parsePaid(value: unknown, grossUsd: unknown, feeUsd: unknown): TradePaymentInput {
@@ -156,6 +182,21 @@ function parsePage(input: unknown, maxOffset: number): TradePageQuery {
     ...(journalRevision === undefined ? {} : { journalRevision }),
     offset,
     limit: row.limit === undefined ? 50 : queryInteger(row.limit, 1, 100),
+  };
+}
+
+export interface AvailableQuery {
+  instrumentId: string;
+  at: string;
+  excludeTradeId?: string;
+}
+
+export function parseAvailableQuery(input: unknown): AvailableQuery {
+  const row = object(input, ['instrumentId', 'at', 'excludeTradeId']);
+  return {
+    instrumentId: parseUuid(row.instrumentId),
+    at: parseAsOf(row.at),
+    ...(row.excludeTradeId === undefined ? {} : { excludeTradeId: parseUuid(row.excludeTradeId) }),
   };
 }
 

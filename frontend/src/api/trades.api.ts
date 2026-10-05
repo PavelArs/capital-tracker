@@ -103,6 +103,7 @@ export interface JournalState {
 }
 export interface TradeVersion extends TradeExecution {
   paid?: TradePayment;
+  comment?: string;
   tradeId: string;
   version: number;
   journalRevision: number;
@@ -285,11 +286,29 @@ export interface TradeVersions {
   items: TradeVersion[];
   nextBeforeVersion: number | null;
 }
-export type TradeCommand = Omit<TradeExecution, 'grossUsd' | 'feeUsd'> &
+/** Without an order the server places the trade after every operation at its instant. */
+export type TradeCommand = Omit<TradeExecution, 'grossUsd' | 'feeUsd' | 'orderWithinTimestamp'> &
   ({ grossUsd: string; feeUsd: string } | { paid: TradePaymentInput }) & {
+    orderWithinTimestamp?: number;
+    comment?: string;
     requestId: string;
     expectedJournalRevision: number;
   };
+/** What an account can sell or send at an instant: its lowest balance from then on. */
+export interface AvailableQuantity {
+  accountId: string;
+  instrumentId: string;
+  at: string;
+  journalRevision: number | null;
+  quantity: string;
+}
+/** A 409 that names the later operation a change would leave short (OPS-DELETE-GUARD). */
+export interface DependentOperation {
+  operationId: string;
+  accountId: string;
+  instrumentId: string;
+  occurredAt: string;
+}
 export interface VoidCommand {
   requestId: string;
   expectedJournalRevision: number;
@@ -351,6 +370,12 @@ export const tradesApi = {
         params: pageParams(revision, offset),
       })
     ).data,
+  available: async (
+    id: string,
+    query: { instrumentId: string; at: string; excludeTradeId?: string },
+  ): Promise<AvailableQuantity> =>
+    (await apiClient.get<AvailableQuantity>(`${accountPath(id)}/available`, { params: query }))
+      .data,
   versions: async (id: string, tradeId: string, beforeVersion?: number): Promise<TradeVersions> =>
     (
       await apiClient.get<TradeVersions>(`${tradePath(id, tradeId)}/versions`, {
