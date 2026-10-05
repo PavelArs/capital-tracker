@@ -10,6 +10,7 @@ import {
 } from './fifo';
 import { parseDecimal } from './input';
 import { isPaidCurrency, isRateSource, type TradePayment } from './paid-currency';
+import type { TradeSettlement } from './trade-settlement';
 
 export type TradeKind = 'create' | 'correct' | 'void';
 export interface AccountRow {
@@ -53,6 +54,10 @@ export interface VersionRow {
   paidPerUsd: string | null;
   paidRateSource: string | null;
   comment: string | null;
+  settlementInstrumentId: string | null;
+  settlementName: string | null;
+  settlementSymbol: string | null;
+  settlementQuantity: string | null;
 }
 export interface TradeVersion extends FifoTrade {
   journalRevision: number;
@@ -65,13 +70,18 @@ export interface TradeVersion extends FifoTrade {
 export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol AS "instrumentSymbol",
   p.currency AS "paidCurrency", p.gross AS "paidGross", p.fee AS "paidFee",
   p."rateDate"::text AS "paidRateDate", p."perUsd" AS "paidPerUsd",
-  p."rateSource" AS "paidRateSource", c.comment
+  p."rateSource" AS "paidRateSource", c.comment,
+  s."instrumentId" AS "settlementInstrumentId", si.name AS "settlementName",
+  si.symbol AS "settlementSymbol", s.quantity AS "settlementQuantity"
   FROM account_trade_versions v JOIN accounting_instruments i
   ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
   LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
   AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version
   LEFT JOIN account_trade_version_comments c ON c."ownerId"=v."ownerId"
-  AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version`;
+  AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version
+  LEFT JOIN account_trade_version_settlements s ON s."ownerId"=v."ownerId"
+  AND s."accountId"=v."accountId" AND s."tradeId"=v."tradeId" AND s.version=v.version
+  LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId" AND si.id=s."instrumentId"`;
 
 /** No payment row means the trade was stated in USD. */
 function projectPayment(row: VersionRow): TradePayment | undefined {
@@ -88,8 +98,23 @@ function projectPayment(row: VersionRow): TradePayment | undefined {
   };
 }
 
+/** No settlement row means the trade was settled with money from outside (before M9). */
+function projectSettlement(row: VersionRow): TradeSettlement | undefined {
+  if (row.settlementInstrumentId === null || row.settlementInstrumentId === undefined)
+    return undefined;
+  if (!row.settlementName || row.settlementInstrumentId === row.instrumentId)
+    throw new FifoHistoryError();
+  return {
+    instrumentId: row.settlementInstrumentId,
+    instrumentName: row.settlementName,
+    instrumentSymbol: row.settlementSymbol,
+    quantity: parseDecimal(row.settlementQuantity, false),
+  };
+}
+
 export function projectTradeVersion(row: VersionRow): TradeVersion {
   const paid = projectPayment(row);
+  const settlement = projectSettlement(row);
   return {
     tradeId: row.tradeId,
     version: row.version,
@@ -107,6 +132,7 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     grossUsd: parseDecimal(row.grossUsd, true),
     feeUsd: parseDecimal(row.feeUsd, false),
     ...(paid ? { paid } : {}),
+    ...(settlement ? { settlement } : {}),
     ...(row.comment ? { comment: row.comment } : {}),
   };
 }
@@ -258,6 +284,20 @@ export async function appendTradeVersion(
       ],
     );
   }
+  if (next.settlement)
+    await manager.query(
+      `INSERT INTO account_trade_version_settlements
+      ("ownerId","accountId","tradeId",version,"instrumentId",quantity)
+      VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        owner,
+        id,
+        next.tradeId,
+        next.version,
+        next.settlement.instrumentId,
+        next.settlement.quantity,
+      ],
+    );
   if (next.comment)
     await manager.query(
       `INSERT INTO account_trade_version_comments ("ownerId","accountId","tradeId",version,comment)
@@ -279,6 +319,10 @@ export async function appendTradeVersion(
     paidPerUsd: next.paid?.perUsd ?? null,
     paidRateSource: next.paid?.rateSource ?? null,
     comment: next.comment ?? null,
+    settlementInstrumentId: next.settlement?.instrumentId ?? null,
+    settlementName: next.settlement?.instrumentName ?? null,
+    settlementSymbol: next.settlement?.instrumentSymbol ?? null,
+    settlementQuantity: next.settlement?.quantity ?? null,
   });
 }
 export async function advanceJournal(

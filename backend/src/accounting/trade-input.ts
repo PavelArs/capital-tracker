@@ -3,6 +3,7 @@ import type { Execution } from './fifo';
 import { parseAsOf, parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms, MAX_INPUT_ATOMS } from './money';
 import { isPaidCurrency, type TradePaymentInput } from './paid-currency';
+import { type SettlementCurrency, settlementCurrencies } from './trade-settlement';
 
 export interface JournalInitializationInput {
   requestId: string;
@@ -10,13 +11,21 @@ export interface JournalInitializationInput {
   assertEmpty: true;
 }
 
-type TradeFields = Omit<Execution, 'grossUsd' | 'feeUsd' | 'paid' | 'orderWithinTimestamp'> & {
+type TradeFields = Omit<
+  Execution,
+  'grossUsd' | 'feeUsd' | 'paid' | 'settlement' | 'orderWithinTimestamp'
+> & {
   requestId: string;
   expectedJournalRevision: number;
   /** null: place after every event already at this instant (OPS-SAME-DAY). */
   orderWithinTimestamp: number | null;
   /** The owner's note, trimmed; absent when none was given (OPS-COMMENT). */
   comment?: string;
+  /**
+   * The cash in the same account that settles the trade (M9): a sale keeps its proceeds as
+   * this cash, a buy spends it first. Absent: settled with money from outside, as before M9.
+   */
+  settlementCurrency?: SettlementCurrency;
 };
 /** USD amounts, or the amounts as paid in RUB or EUR (CUR-PAID-RUB), never both. */
 export type TradeCreateInput = TradeFields &
@@ -92,6 +101,7 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     'feeUsd',
     'paid',
     'comment',
+    'settlementCurrency',
   ]);
   if (row.side !== 'buy' && row.side !== 'sell') return bad();
   const quantity = parseDecimal(row.quantity, true);
@@ -118,7 +128,21 @@ export function parseTradeCreate(input: unknown): TradeCreateInput {
     quantity,
     ...amounts,
     ...parseComment(row.comment),
+    ...parseSettlement(row.settlementCurrency, amounts.paid?.currency ?? 'USD'),
   };
+}
+
+/** RUB and EUR cash settles a trade paid in that currency; USD and stablecoins one in USD. */
+function parseSettlement(
+  value: unknown,
+  paidIn: 'USD' | TradePaymentInput['currency'],
+): { settlementCurrency?: SettlementCurrency } {
+  if (value === undefined) return {};
+  const currency = settlementCurrencies.find((code) => code === value);
+  if (!currency) return bad();
+  const stated = currency === 'EUR' || currency === 'RUB' ? currency : 'USD';
+  if (stated !== paidIn) return bad();
+  return { settlementCurrency: currency };
 }
 
 export const MAX_COMMENT_LENGTH = 500;

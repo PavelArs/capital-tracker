@@ -7,6 +7,7 @@ import {
 } from '../accounting/money';
 import type { PaidCurrency } from '../accounting/paid-currency';
 import type { ValuationInputs } from '../accounting/portfolio-valuation.service';
+import { settlementLeg } from '../accounting/trade-settlement';
 import { type FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { valueAtoms } from './snapshot-series';
 
@@ -33,9 +34,12 @@ const signed = (value: string) =>
   value.startsWith('-') ? -canonicalDecimalToAtoms(value.slice(1)) : canonicalDecimalToAtoms(value);
 
 /**
- * Every deposit and withdrawal in the owner's operations. Until manual operations keep cash
- * positions (M9), a trade is settled with money from outside the app: a buy deposits its
- * gross plus fee and a sell withdraws its proceeds net of fee. Holdings carried into a
+ * Every deposit and withdrawal in the owner's operations (product model, Q9). A trade settled
+ * with cash in its own account (M9) keeps money inside: a sale's proceeds stay as cash, so it
+ * is no flow (OPS-SELL-CASH), and a buy spends that cash first, so only the rest of its cost
+ * is a deposit (OPS-BUY-CASH). A trade without a cash side, like every trade before M9, is
+ * settled with money from outside the app: a buy deposits its gross plus fee and a sell
+ * withdraws its proceeds net of fee. Holdings carried into a
  * journal enter at its start with their carried cost, stated at their acquisition date's
  * rate like their cost basis. Own transfers, swaps and rewards move no money in or out, so
  * their effect (a transfer fee, a reward) is market effect. The legacy owner-declared USD
@@ -57,17 +61,26 @@ export function capitalFlows(inputs: ValuationInputs): CapitalFlow[] {
           rateDate: moscowDate(lot.acquiredAt),
         });
       for (const trade of account.trades) {
-        const flow = (gross: bigint, fee: bigint) =>
-          trade.side === 'buy' ? gross + fee : fee - gross;
+        if (trade.settlement && trade.side === 'sell') continue;
+        // The part of a buy's cost the account's cash paid, in USD and as paid.
+        const cash = settlementLeg(trade);
+        const flow = (gross: bigint, fee: bigint, spent: bigint) =>
+          trade.side === 'buy' ? gross + fee - spent : fee - gross;
+        const usd = flow(signed(trade.grossUsd), signed(trade.feeUsd), cash?.usd ?? 0n);
+        if (trade.settlement && usd === 0n) continue;
         flows.push({
           at: Date.parse(trade.occurredAt),
-          usd: flow(signed(trade.grossUsd), signed(trade.feeUsd)),
+          usd,
           rateDate: moscowDate(trade.occurredAt),
           ...(trade.paid
             ? {
                 native: {
                   currency: trade.paid.currency,
-                  amount: flow(signed(trade.paid.gross), signed(trade.paid.fee)),
+                  amount: flow(
+                    signed(trade.paid.gross),
+                    signed(trade.paid.fee),
+                    cash?.quantity ?? 0n,
+                  ),
                 },
               }
             : {}),

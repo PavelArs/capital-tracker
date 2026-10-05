@@ -39,6 +39,7 @@ const operation = (changes: Partial<Operation> & Pick<Operation, 'id'>): Operati
   feeUsd: null,
   fee: null,
   paid: null,
+  settlement: null,
   comment: null,
   account: bybit,
   counterAccount: null,
@@ -289,7 +290,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(opener).toHaveFocus();
   });
 
-  it('shows a recorded trade with its fee, version and comment, and Edit and Delete', async () => {
+  it('shows a recorded trade with its fee and comment, and Edit and Delete', async () => {
     const user = userEvent.setup();
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     vi.spyOn(tradesApi, 'versions').mockResolvedValue({
@@ -310,7 +311,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Account')).toBe('Bybit');
     expect(fact('Comment')).toBe('None');
     expect(fact('Source')).toBe('Imported from CSV');
-    expect(fact('Version')).toBe('1');
+    // The version is an internal detail the prototype's card does not show (T4).
+    expect(within(drawer).queryByText('Version')).toBeNull();
     expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
     expect(within(drawer).getByRole('button', { name: 'Delete' })).toBeInTheDocument();
     expect(within(drawer).queryByRole('link')).toBeNull();
@@ -459,6 +461,32 @@ describe('TransactionsPage manual operations (M9)', () => {
       'Changed Jun 14, 2025, 09:00 UTCBuy 0.00918359 BTC for $1,000.00 · From savings',
       'Added Jun 13, 2025, 09:00 UTCBuy 0.00918359 BTC for $990.00',
     ]);
+  });
+
+  it('OPS-SELL-CASH and OPS-BUY-CASH show where the money stayed or came from', async () => {
+    const user = userEvent.setup();
+    const kept = operation({
+      ...later,
+      settlement: { asset: usdt, quantity: '600' },
+    });
+    const spent = operation({
+      ...manual,
+      settlement: { asset: usdt, quantity: '400' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([kept, spent]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Sell' }));
+    const sale = screen.getByRole('dialog', { name: 'Sell · BTC' });
+    const fact = (drawer: HTMLElement, label: string) =>
+      within(within(drawer).getByRole('region', { name: 'Details' })).getByText(label, {
+        exact: true,
+      }).nextElementSibling?.textContent;
+    expect(fact(sale, 'Kept as cash')).toBe('+600 USDT');
+    await user.keyboard('{Escape}');
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Buy' }));
+    const buy = screen.getByRole('dialog', { name: 'Buy · BTC' });
+    expect(fact(buy, 'Paid from cash')).toBe('400 USDT');
   });
 
   it('opens the one Add/Edit window from the drawer and from the page header', async () => {

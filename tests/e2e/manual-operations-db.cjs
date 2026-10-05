@@ -380,6 +380,166 @@ async function remove(db, s, f) {
   );
 }
 
+async function cash(db, s, f) {
+  stage = 'OPS-SELL-CASH and OPS-BUY-CASH proceeds stay as cash and a buy spends it first';
+  const { cashOwner: owner } = f;
+  const btc = await instrument(s, owner, 'Bitcoin', 'BTC');
+  const exchange = await account(s, owner, 'Exchange');
+  const flows = () =>
+    db.transaction('REPEATABLE READ', async (manager) => {
+      const {
+        readValuationInputs,
+      } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+      const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
+      return capitalFlows(await readValuationInputs(manager, owner)).map((flow) => [
+        new Date(flow.at).toISOString(),
+        String(flow.usd / 10n ** 30n),
+      ]);
+    });
+  const usdtRows = () =>
+    db.query(
+      `SELECT id,"assetType","priceSource" FROM accounting_instruments
+        WHERE "ownerId"=$1 AND upper(symbol)='USDT'`,
+      [owner],
+    );
+  const lots = async () =>
+    (await s.trades.listLots(owner, exchange, {})).items.map((lot) => [
+      lot.instrumentSymbol,
+      lot.remainingQuantity,
+      lot.remainingCostUsd,
+    ]);
+  await trade(s, owner, exchange, {
+    instrumentId: btc,
+    side: 'buy',
+    occurredAt: day('2026-03-01'),
+    quantity: '0.5',
+    grossUsd: '25000',
+    expectedJournalRevision: 0,
+  });
+  assert.deepEqual(await usdtRows(), [], 'No cash asset before a sale needs one');
+
+  // OPS-SELL-CASH: 0.5 BTC bought for 25000 USD sold for 30000 USDT with fee 0.
+  const saleRequest = {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(s, owner, exchange),
+    instrumentId: btc,
+    side: 'sell',
+    occurredAt: day('2026-04-01'),
+    quantity: '0.5',
+    grossUsd: '30000',
+    feeUsd: '0',
+    settlementCurrency: 'USDT',
+  };
+  const sold = await s.trades.create(owner, exchange, saleRequest);
+  assert.equal(sold.created, true);
+  const [usdt] = await usdtRows();
+  assert.deepEqual(
+    { assetType: usdt.assetType, priceSource: usdt.priceSource },
+    { assetType: 'crypto', priceSource: 'market' },
+    'The sale created the USDT cash asset, priced by the market',
+  );
+  assert.deepEqual(sold.value.trade.settlement, {
+    instrumentId: usdt.id,
+    instrumentName: 'Tether',
+    instrumentSymbol: 'USDT',
+    quantity: '30000',
+  });
+  const replay = await s.trades.create(owner, exchange, saleRequest);
+  assert.equal(replay.created, false);
+  assert.equal((await usdtRows()).length, 1, 'A replay creates no second cash asset');
+  let state = await s.trades.getJournal(owner, exchange);
+  assert.equal(state.journal.summary.realizedUsd, '5000');
+  assert.deepEqual(await lots(), [['USDT', '30000', '30000']]);
+  assert.equal(
+    (await s.trades.available(owner, exchange, { instrumentId: usdt.id, at: day('2026-04-02') }))
+      .quantity,
+    '30000',
+  );
+  assert.deepEqual(
+    await flows(),
+    [['2026-03-01T00:00:00.000Z', '25000']],
+    'Net flow of the sale is 0',
+  );
+  const sale = (await listed(s, owner)).find(({ type }) => type === 'sell');
+  assert.deepEqual(sale.settlement, {
+    asset: { instrumentId: usdt.id, symbol: 'USDT', name: 'Tether' },
+    quantity: '30000',
+  });
+  console.log('PASS OPS-SELL-CASH proceeds stay as 30000 USDT; realized +5000; no flow');
+
+  // OPS-BUY-CASH: with 30000 USDT held, a buy for 40000 USDT spends it; 10000 is a deposit.
+  const bought = await trade(s, owner, exchange, {
+    instrumentId: btc,
+    side: 'buy',
+    occurredAt: day('2026-05-01'),
+    quantity: '0.4',
+    grossUsd: '40000',
+    settlementCurrency: 'USDT',
+  });
+  assert.equal(bought.settlement.quantity, '30000');
+  assert.deepEqual(await lots(), [['BTC', '0.4', '40000']]);
+  state = await s.trades.getJournal(owner, exchange);
+  assert.equal(
+    state.journal.summary.realizedUsd,
+    '5000',
+    'Spending cash at its cost gains nothing',
+  );
+  assert.deepEqual(await flows(), [
+    ['2026-03-01T00:00:00.000Z', '25000'],
+    ['2026-05-01T00:00:00.000Z', '10000'],
+  ]);
+
+  // Deleting the sale would leave the buy spending cash the account never had.
+  const before = await fingerprint(db);
+  await rejected(
+    async () =>
+      s.trades.void(owner, exchange, sold.value.trade.tradeId, {
+        requestId: randomUUID(),
+        expectedJournalRevision: await revision(s, owner, exchange),
+      }),
+    409,
+    (body) =>
+      body?.dependent?.operationId === `trade:${bought.tradeId}` &&
+      body.dependent.instrumentId === usdt.id,
+  );
+  assert.equal(await fingerprint(db), before, 'A refused deletion changes nothing');
+
+  // A buy in a currency the owner keeps no cash in is all new money and creates nothing.
+  const rubles = await trade(s, owner, exchange, {
+    instrumentId: btc,
+    side: 'buy',
+    occurredAt: day('2026-05-02'),
+    quantity: '0.01',
+    feeUsd: undefined,
+    paid: { currency: 'RUB', gross: '80000', fee: '0', perUsd: '80' },
+    settlementCurrency: 'RUB',
+  });
+  assert.equal(rubles.settlement, undefined);
+  assert.deepEqual(
+    await db.query(`SELECT 1 FROM accounting_instruments WHERE "ownerId"=$1 AND symbol='RUB'`, [
+      owner,
+    ]),
+    [],
+  );
+  // Settling in the asset traded is refused.
+  await rejected(
+    async () =>
+      s.trades.create(owner, exchange, {
+        requestId: randomUUID(),
+        expectedJournalRevision: await revision(s, owner, exchange),
+        instrumentId: usdt.id,
+        side: 'buy',
+        occurredAt: day('2026-05-03'),
+        quantity: '10',
+        grossUsd: '10',
+        feeUsd: '0',
+        settlementCurrency: 'USDT',
+      }),
+    400,
+  );
+  console.log('PASS OPS-BUY-CASH spends 30000 USDT first; only 10000 is a deposit');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -412,19 +572,21 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 29/);
+  assert.match(migrated.stdout, /Migrations applied: 30/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 29);
-    const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 30);
+    const [owner, other, cashOwner] =
+      await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('manual-ops-owner@example.invalid','synthetic-not-a-hash',true),
-      ('manual-ops-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('manual-ops-other@example.invalid','synthetic-not-a-hash',true),
+      ('manual-ops-cash@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
-    const f = { owner: owner.id, other: other.id };
+    const f = { owner: owner.id, other: other.id, cashOwner: cashOwner.id };
     f.btc = await instrument(s, f.owner, 'Bitcoin', 'BTC');
     f.eth = await instrument(s, f.owner, 'Ether', 'ETH');
-    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove])
+    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove, cash])
       await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();
