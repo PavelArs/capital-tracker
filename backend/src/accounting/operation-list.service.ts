@@ -46,6 +46,10 @@ interface TradeRow extends Versioned {
   paidPerUsd: string | null;
   paidRateSource: string | null;
   comment: string | null;
+  settlementInstrumentId: string | null;
+  settlementName: string | null;
+  settlementSymbol: string | null;
+  settlementQuantity: string | null;
 }
 interface TransferRow extends Versioned, FeeColumns {
   transferId: string;
@@ -160,7 +164,9 @@ export class OperationListService {
             (r."tradeId" IS NOT NULL) AS csv, p.currency AS "paidCurrency",
             p.gross::text AS "paidGross", p.fee::text AS "paidFee",
             p."rateDate"::text AS "paidRateDate", p."perUsd"::text AS "paidPerUsd",
-            p."rateSource" AS "paidRateSource", c.comment
+            p."rateSource" AS "paidRateSource", c.comment,
+            s."instrumentId" AS "settlementInstrumentId", si.name AS "settlementName",
+            si.symbol AS "settlementSymbol", s.quantity::text AS "settlementQuantity"
           FROM account_trades t
           JOIN account_trade_versions v ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId"
             AND v."tradeId"=t.id AND v.version=t."currentVersion"
@@ -169,6 +175,9 @@ export class OperationListService {
             AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId" AND p.version=v.version
           LEFT JOIN account_trade_version_comments c ON c."ownerId"=v."ownerId"
             AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version
+          LEFT JOIN account_trade_version_settlements s ON s."ownerId"=v."ownerId"
+            AND s."accountId"=v."accountId" AND s."tradeId"=v."tradeId" AND s.version=v.version
+          LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId" AND si.id=s."instrumentId"
           LEFT JOIN account_csv_import_rows r ON r."ownerId"=t."ownerId"
             AND r."accountId"=t."accountId" AND r."tradeId"=t.id
           WHERE t."ownerId"=$1 AND v.kind<>'void'`,
@@ -266,6 +275,17 @@ export class OperationListService {
           csv: row.csv,
           paid: payment(row),
           comment: row.comment,
+          settlement:
+            row.settlementInstrumentId === null
+              ? null
+              : {
+                  asset: asset(
+                    row.settlementInstrumentId,
+                    row.settlementName ?? '',
+                    row.settlementSymbol,
+                  ),
+                  quantity: decimal(row.settlementQuantity ?? ''),
+                },
         })),
         transfers: transfers.map((row) => ({
           transferId: row.transferId,
