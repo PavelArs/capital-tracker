@@ -6,6 +6,7 @@ import {
   type CapitalFlow,
   capitalFlows,
   investedAt,
+  profitToDate,
   type StatedFlow,
   splitChange,
   stateFlows,
@@ -291,5 +292,23 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
       marketEffect: null,
       marketReturnPercent: null,
     });
+  });
+
+  it('PROFIT-ALL-TIME profit or loss is net worth minus all-time net invested', () => {
+    // 100000 put in over time, 20000 taken out, worth 95000 now: +15000, 18.75 % of 80000.
+    expect(profitToDate('95000', '80000')).toEqual({
+      profit: '15000',
+      profitPercent: '18.75',
+    });
+    expect(profitToDate('70000', '80000')).toEqual({
+      profit: '-10000',
+      profitPercent: '-12.50',
+    });
+    // More taken out than put in: the amount stays, a percentage of nothing does not.
+    expect(profitToDate('500', '-200')).toEqual({ profit: '700', profitPercent: null });
+    expect(profitToDate('0', '0')).toEqual({ profit: '0', profitPercent: null });
+    // Unknown value or net invested: unknown, never zero.
+    expect(profitToDate(null, '80000')).toEqual({ profit: null, profitPercent: null });
+    expect(profitToDate('95000', null)).toEqual({ profit: null, profitPercent: null });
   });
 });

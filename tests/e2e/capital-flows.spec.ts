@@ -14,6 +14,8 @@ type History = {
   value: string | null;
   change: string | null;
   invested: string | null;
+  profit: string | null;
+  profitPercent: string | null;
   deposits: string | null;
   withdrawals: string | null;
   netFlow: string | null;
@@ -120,6 +122,11 @@ test('FLOW-SPLIT-UI: dashboard splits the change into market and net deposits wi
   expect(decimal(scaled(after.marketEffect ?? '0') + scaled(after.netFlow ?? '0'))).toBe(
     after.change,
   );
+  // Profit or loss to date is net worth minus all-time net invested, the same in every period.
+  expect(after.profit).toBe(minus(after.value ?? '0', after.invested ?? '0'));
+  const year = await history('period=1Y&currency=USD');
+  expect(year.invested).toBe(after.invested);
+  expect(year.profit).toBe(minus(year.value ?? '0', year.invested ?? '0'));
   // Net invested steps up by the deposit after the buy and down by the sale after it.
   const invested = (body: History, at: number) =>
     body.points.find((point) => point.at === iso(at))?.invested ?? null;
@@ -146,7 +153,15 @@ test('FLOW-SPLIT-UI: dashboard splits the change into market and net deposits wi
   const shown = (await (await first).json()) as History;
   const main = page.getByRole('main');
   const hero = main.getByRole('region', { name: 'Net worth' });
+  const profit = hero.getByLabel('Profit or loss to date');
+  await expect(profit).toContainText(money(shown.profit, true));
+  if (shown.profitPercent !== null)
+    await expect(profit).toContainText(
+      `${Number(shown.profitPercent) > 0 ? '+' : ''}${shown.profitPercent}%`,
+    );
+  await expect(profit).toContainText(`on ${money(shown.invested)} net invested`);
   const split = hero.getByLabel('What changed');
+  await expect(split).toContainText('Past month');
   await expect(split).toContainText(`Market${money(shown.marketEffect, true)}`);
   if (shown.marketReturnPercent !== null)
     await expect(split).toContainText(

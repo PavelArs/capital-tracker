@@ -21,13 +21,17 @@ const periodLabels: Record<HistoryPeriod, string> = {
   ALL: 'since Jan 1, 2025',
 };
 
-// The change split into market movement and money added or taken out (split-market-and-flows).
+const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
+// The selected period's change split into market movement and money added or taken out
+// (split-market-and-flows).
 function ChangeSplit({ history }: { history: PortfolioHistory }) {
   const { currency, marketEffect, marketReturnPercent, netFlow } = history;
   // Only the market part is a gain or a loss; money added is neither.
   const market = tone(marketEffect);
   return (
     <div className="dashboard-split" aria-label="What changed">
+      <span className="dashboard-split__period">{sentence(periodLabels[history.period])}</span>
       <span className="dashboard-split__item">
         <i className="dashboard-split__key dashboard-split__key--market" aria-hidden="true" />
         <span className="dashboard-split__label">Market</span>
@@ -45,9 +49,11 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
   );
 }
 
+// Under the net worth: profit or loss to date against all the money put in, whatever the
+// period; the period itself only drives the chart and the split below.
 function NetWorth({ history }: { history: PortfolioHistory }) {
-  const { currency, change } = history;
-  const direction = tone(change);
+  const { currency, profit } = history;
+  const direction = tone(profit);
   return (
     <section className="dashboard-hero" aria-label="Net worth">
       <div className="dashboard-hero__label">Total net worth · {currency}</div>
@@ -56,14 +62,18 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
       </div>
       <div
         className={`dashboard-hero__delta${direction ? ` portfolio-${direction}` : ''}`}
-        aria-label={`Change for the ${periodLabels[history.period]}`}
+        aria-label="Profit or loss to date"
       >
         <span>
           {direction === 'neg' ? '▼ ' : direction === 'pos' ? '▲ ' : ''}
-          {money(change, currency, true)}
+          {money(profit, currency, true)}
         </span>
-        {history.changePercent !== null && <span>{percent(history.changePercent)}</span>}
-        <span className="dashboard-hero__period">{periodLabels[history.period]}</span>
+        {history.profitPercent !== null && <span>{percent(history.profitPercent)}</span>}
+        {history.invested !== null && (
+          <span className="dashboard-hero__period">
+            on {money(history.invested, currency)} net invested
+          </span>
+        )}
       </div>
       <ChangeSplit history={history} />
       {!history.complete && (
