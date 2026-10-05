@@ -187,17 +187,21 @@ uses `DEPLOY_USER`/`DEPLOY_SSH_KEY` (see MVP-007 above). The workflow's optional
 main-only production environment; no branch-policy relaxation is needed. Production
 promotion requires a successful main-push CI run, not a pull-request CI result.
 
-CI exports the actual release images that passed real acceptance, their image IDs and
+Since 2026-10-05 real acceptance and the image scans run on pull requests; a push to
+main builds the images, confirms that the pull request merged as that commit passed the
+full suite on its final head (`Merged Pull Request CI`) and exports the candidate. The
+main images come from the same pinned Dockerfiles and lockfile as the tested ones but
+are a new build of the merged commit. CI exports the release images, their image IDs and
 commit/run schema-v3 manifest. Reviewed PostgreSQL Dockerfile hash and official
 18.6 Alpine3.24 base digest, plus the official Redis8.10.2 platform digest, are in `deploy/manual-mvp-infrastructure-pins.json`, separate from
 the candidate manifest. CI verifies the Dockerfile hash, builds the derived PostgreSQL image with the exact
 commit revision label through acceptance, pulls the Redis digest, scans all four
-exact images and saves them in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
-current main commit, requires every named gate to have succeeded, validates the manifest,
+images on pull requests and saves the main build in one candidate archive. Manual deploy selects a successful main-push CI run for the exact
+current main commit, requires its build, merged pull request check and aggregate to have succeeded, validates the manifest,
 loads and verifies the image IDs, and publishes those same outputs to existing GHCR.
 No deployment rebuild or mutable latest promotion is used. Private server receipts record
-registry digests, schema ledgers, backup path and verified health. Pinned Trivy v0.74.0 scans exact tested images for vulnerabilities and secrets;
-unresolved high/critical findings block export. Complete finding identifiers and lower
+registry digests, schema ledgers, backup path and verified health. Pinned Trivy v0.74.0 scans the tested pull request images for vulnerabilities and secrets;
+unresolved high/critical findings block the pull request. Complete finding identifiers and lower
 severities remain in sanitized reports; raw secret matches/image environment details are
 removed before upload. Fresh bootstrap checks PostgreSQL’s actual promoted GHCR digest against a root-reviewed
 fresh receipt; its official base digest is only a source input. Redis stays official and
