@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -32,6 +33,7 @@ const asset = (
 const bitcoin = asset(1, 'Bitcoin', 'BTC', 'crypto');
 const ether = asset(2, 'Ether', 'ETH', 'crypto');
 const dollars = asset(3, 'US dollar', 'USD', 'fiat');
+const tether = asset(4, 'Tether', 'USDT', 'crypto');
 const report = (date: string, usd: string | null, eur: string | null): FxRatesReport => ({
   date,
   source: 'cbr',
@@ -81,8 +83,13 @@ describe('PAID-ENTRY the transaction entry becomes a trade in the currency paid'
       occurredAt: '2025-06-02T00:00:00.000Z',
       quantity: '0.01',
       paid: { currency: 'RUB', gross: '80000', fee: '0' },
+      settlementCurrency: 'RUB',
       ...identity,
     });
+    // Buying the cash itself is not settled in it.
+    expect(tradeFromEntry(entry, identity, undefined, false)).not.toHaveProperty(
+      'settlementCurrency',
+    );
     expect(
       tradeFromEntry(
         { ...entry, rate: '79,5', rateEdited: true, time: '14:30', fee: '50' },
@@ -165,6 +172,12 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       quantity: '100',
     }));
     vi.spyOn(tradesApi, 'available').mockImplementation(available);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [
+        { instrumentId: id(1), priceSource: 'market', price: { value: '85053.34' } },
+        { instrumentId: id(3), priceSource: 'fixed', price: { value: '1' } },
+      ],
+    } as PortfolioValuation);
   });
   afterEach(() => {
     cleanup();
@@ -221,6 +234,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       occurredAt: '2025-06-08T00:00:00.000Z',
       quantity: '0.01',
       paid: { currency: 'RUB', gross: '78500', fee: '0' },
+      settlementCurrency: 'RUB',
       requestId: expect.any(String),
       expectedJournalRevision: 7,
     });
@@ -353,6 +367,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     feeUsd: '0',
     fee: null,
     paid: null,
+    settlement: null,
     comment: 'First buy',
     account: { id: id(11), name: 'Hardware wallet' },
     counterAccount: null,
@@ -389,6 +404,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       grossUsd: '1010',
       feeUsd: '0',
       comment: 'Corrected amount',
+      settlementCurrency: 'USD',
       requestId: expect.any(String),
       expectedJournalRevision: 4,
     });
@@ -424,5 +440,105 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(onSaved).not.toHaveBeenCalled();
     expect(correct.mock.calls[0][2]).toMatchObject({ occurredAt: '2025-08-01T00:00:00.000Z' });
     expect(correct.mock.calls[0][2]).not.toHaveProperty('orderWithinTimestamp');
+  });
+
+  it('X2 offers the market price of today and fills it in', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '0.5');
+    const hint = await view.findByText(/Market today \$85,053\.34/);
+    await user.click(within(hint).getByRole('button', { name: 'Use' }));
+    expect(view.getByLabelText('Price per BTC')).toHaveValue('85053.34');
+    expect(view.getByLabelText('Total paid')).toHaveValue('42526.67');
+  });
+
+  it('X3 adds a coin that is not among the assets together with its first buy', async () => {
+    const user = userEvent.setup();
+    const created = { ...asset(5, 'Toncoin', 'TON', 'crypto'), priceSource: 'manual' as const };
+    const createAsset = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(created);
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('button', { name: '+ Other asset' }));
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(view.getByText('Enter the ticker: letters and digits, up to 32')).toBeInTheDocument();
+    await user.type(view.getByLabelText('Ticker'), 'ton');
+    await user.type(view.getByLabelText('Name (optional)'), 'Toncoin');
+    await user.type(view.getByLabelText('Amount'), '10');
+    await user.type(view.getByLabelText('Total paid'), '55');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(createAsset).toHaveBeenCalledWith({
+      requestId: expect.any(String),
+      name: 'Toncoin',
+      symbol: 'TON',
+      assetType: 'crypto',
+    });
+    expect(create.mock.calls[0][1]).toMatchObject({ instrumentId: id(5), quantity: '10' });
+  });
+
+  it('OPS-SELL-CASH says the proceeds stay in the account as cash', async () => {
+    const user = userEvent.setup();
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Sell' }));
+    await user.click(view.getByRole('radio', { name: 'USDT' }));
+    expect(
+      view.getByText('The USDT received stays in Hardware wallet as cash.'),
+    ).toBeInTheDocument();
+    await user.type(view.getByLabelText('Amount'), '0.5');
+    await user.type(view.getByLabelText('Total received'), '30000');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create.mock.calls[0][1]).toMatchObject({
+      side: 'sell',
+      grossUsd: '30000',
+      settlementCurrency: 'USDT',
+    });
+  });
+
+  it("OPS-BUY-CASH shows how much of a buy the account's cash pays", async () => {
+    const user = userEvent.setup();
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: query.instrumentId === id(4) ? '30000' : '0',
+    }));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    // The stablecoin is an asset to buy as well, but not with itself.
+    expect(view.getByRole('button', { name: 'USDT' })).toBeInTheDocument();
+    await user.click(view.getByRole('radio', { name: 'USDT' }));
+    await user.type(view.getByLabelText('Amount'), '0.4');
+    await user.type(view.getByLabelText('Total paid'), '40000');
+    expect(
+      await view.findByText(
+        '30,000 USDT comes from the cash in Hardware wallet; the other 10,000 USDT is new money.',
+      ),
+    ).toBeInTheDocument();
+    expect(available).toHaveBeenCalledWith(id(11), {
+      instrumentId: id(4),
+      at: expect.stringMatching(/T00:00:00\.000Z$/),
+    });
+    await user.clear(view.getByLabelText('Total paid'));
+    await user.type(view.getByLabelText('Total paid'), '20000');
+    expect(
+      await view.findByText('Paid from the USDT cash in Hardware wallet.'),
+    ).toBeInTheDocument();
+    // A new coin is paid from the cash too; a new asset typed as the cash itself is not.
+    await user.click(view.getByRole('button', { name: '+ Other asset' }));
+    await user.type(view.getByLabelText('Ticker'), 'usdt');
+    expect(view.queryByText('Paid from the USDT cash in Hardware wallet.')).not.toBeInTheDocument();
+    await user.clear(view.getByLabelText('Ticker'));
+    await user.type(view.getByLabelText('Ticker'), 'TON');
+    expect(
+      await view.findByText('Paid from the USDT cash in Hardware wallet.'),
+    ).toBeInTheDocument();
+    await user.click(view.getByRole('button', { name: 'BTC' }));
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
   });
 });

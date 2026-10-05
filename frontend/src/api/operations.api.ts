@@ -51,6 +51,11 @@ export interface Operation {
   /** Trades paid in RUB or EUR keep the amounts as paid. */
   paid: TradePayment | null;
   comment: string | null;
+  /**
+   * Trades only: the cash in the same account that settled it (M9). A sale kept this much as
+   * cash; a buy spent this much of it before money from outside. Null before M9.
+   */
+  settlement: { asset: OperationAsset; quantity: string } | null;
   orderWithinTimestamp: number;
 }
 

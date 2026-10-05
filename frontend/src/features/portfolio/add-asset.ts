@@ -83,7 +83,8 @@ export function balanceInstant(now: Date): string {
 
 /**
  * A buy of the amount for its value in the chosen currency: RUB and EUR go as paid and the
- * server converts them at the Bank of Russia rate of the day.
+ * server converts them at the Bank of Russia rate of the day. It carries no settlement
+ * currency, so it counts as a deposit rather than spending the wallet's cash.
  */
 export function balanceTrade(
   entry: AssetEntry,
@@ -108,6 +109,9 @@ export function balanceTrade(
       comment: entry.notes,
     },
     identity,
+    undefined,
+    // An opening balance is a deposit: it never spends the wallet's cash.
+    false,
   );
 }
 

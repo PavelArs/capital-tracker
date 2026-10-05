@@ -900,6 +900,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     paid: null,
     comment: null,
     orderWithinTimestamp: 0,
+    settlement: null,
     ...changes,
   });
   const point = (at: string, value: string | null, cost: string, quantity = '1') => ({

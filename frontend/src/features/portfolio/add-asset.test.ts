@@ -59,6 +59,9 @@ describe('ADD-ASSET-BALANCE the Add asset window rules', () => {
     expect(balanceTrade(cash, 'cash-id', at, identity)).toEqual(
       balanceTrade({ ...cash, value: '' }, 'cash-id', at, identity),
     );
+    // M9 part 2: without a settlement currency the opening balance stays a deposit.
+    expect(balanceTrade(cash, 'cash-id', at, identity)).not.toHaveProperty('settlementCurrency');
+    expect(balanceTrade(entry, 'id', at, identity)).not.toHaveProperty('settlementCurrency');
     expect(balanceTrade({ ...entry, value: '160000' }, 'id', at, identity)).not.toEqual(
       balanceTrade(entry, 'id', at, identity),
     );

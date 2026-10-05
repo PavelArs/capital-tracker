@@ -112,6 +112,72 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     ]);
   });
 
+  it('OPS-SELL-CASH a sale whose proceeds stay as cash moves no money in or out', () => {
+    const usdt = {
+      instrumentId: 'usdt',
+      instrumentName: 'Tether',
+      instrumentSymbol: 'USDT',
+    };
+    const flows = capitalFlows(
+      inputs([
+        {
+          id: 'bybit',
+          coverageFrom: '2025-06-01T00:00:00.000Z',
+          trades: [
+            trade('buy', '2025-06-13T10:00:00.000Z', '25000'),
+            {
+              ...trade('sell', '2025-09-10T12:00:00.000Z', '30000'),
+              settlement: { ...usdt, quantity: '30000' },
+            },
+          ],
+        },
+      ]),
+    );
+    expect(shown(flows)).toEqual([['2025-06-13T10:00:00.000Z', units(25000), '2025-06-13']]);
+  });
+
+  it('OPS-BUY-CASH a buy spends the cash first; only the rest of its cost is a deposit', () => {
+    const cash = { instrumentId: 'usdt', instrumentName: 'Tether', instrumentSymbol: 'USDT' };
+    const rub = { instrumentId: 'rub', instrumentName: 'Russian ruble', instrumentSymbol: 'RUB' };
+    const flows = capitalFlows(
+      inputs([
+        {
+          id: 'bybit',
+          coverageFrom: '2025-06-01T00:00:00.000Z',
+          trades: [
+            {
+              ...trade('buy', '2025-09-11T12:00:00.000Z', '39990', '10'),
+              settlement: { ...cash, quantity: '30000' },
+            },
+            // Fully paid from cash: no flow at all.
+            {
+              ...trade('buy', '2025-09-12T12:00:00.000Z', '500'),
+              settlement: { ...cash, quantity: '500' },
+            },
+            // Paid in rubles: the uncovered part as paid, and its USD share.
+            {
+              ...trade('buy', '2025-09-13T12:00:00.000Z', '1000'),
+              paid: {
+                currency: 'RUB',
+                gross: '80000',
+                fee: '0',
+                rateDate: '2025-09-13',
+                perUsd: '80',
+                rateSource: 'owner',
+              },
+              settlement: { ...rub, quantity: '20000' },
+            },
+          ],
+        },
+      ]),
+    );
+    expect(shown(flows)).toEqual([
+      ['2025-09-11T12:00:00.000Z', units(10000), '2025-09-11'],
+      ['2025-09-13T12:00:00.000Z', units(750), '2025-09-13'],
+    ]);
+    expect(flows[1].native).toEqual({ currency: 'RUB', amount: BigInt(units(60000)) });
+  });
+
   it('holdings carried into a journal enter at its start with their carried cost', () => {
     const flows = capitalFlows(
       inputs([
