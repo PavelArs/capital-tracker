@@ -259,7 +259,7 @@ async function unreadable(db) {
   let sync = await state(db);
   assert.equal(sync.state, 'delayed');
   assert.equal(sync.errorCode, 'invalid_response');
-  const reported = /^Bank of Russia sent an unreadable answer; no new rates for USD (\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2}) \(unexpected content after 2017-03-14: "<Record Date=\\"15\.03\.2017\\" Id=\\"R01235\\"><Value>/.exec(sync.errorMessage);
+  const reported = /^Bank of Russia sent an unreadable answer; no new rates for USD (\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2}) \(record on 2017-03-15: "<Value>51,5100<\/Value>"\)$/.exec(sync.errorMessage);
   assert.ok(reported, `The state names the range and the refused record: ${sync.errorMessage}`);
   assert.ok(reported[1] <= missing[0].rateDate && missing.at(-1).rateDate <= reported[2], 'The named range covers what is missing');
 

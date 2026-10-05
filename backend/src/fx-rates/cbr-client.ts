@@ -16,12 +16,13 @@ class InvalidResponse extends Error {}
 function invalid(what: string): never {
   throw new InvalidResponse(what);
 }
-// Up to 60 characters of the (public) answer, printable ASCII only.
-const excerpt = (text: string) => JSON.stringify(text.slice(0, 60).replace(/[^\x20-\x7e]/g, '?'));
+// The start of a piece of the (public) answer, printable ASCII only.
+const excerpt = (text: string, length = 60) =>
+  JSON.stringify(text.slice(0, length).replace(/[^\x20-\x7e]/g, '?'));
 
 const cbrDate = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
 
-/** "79,0246" per nominal 1 or 10, 100… as an exact canonical decimal per unit. */
+/** "79,0246" (or "79.0246") per nominal 1 or 10, 100… as an exact canonical decimal per unit. */
 function perUnit(whole: string, fraction: string, nominal: string): string {
   if (!/^10*$/.test(nominal)) invalid(`nominal ${nominal}`);
   const shift = nominal.length - 1;
@@ -36,7 +37,31 @@ function perUnit(whole: string, fraction: string, nominal: string): string {
 
 // Sticky: records are read one after another, so the first unexpected part is located.
 const RECORD =
-  /\s*<Record Date="(\d{2})\.(\d{2})\.(\d{4})" Id="(R\d{5}[A-Z]?)">\s*<Nominal>(\d{1,7})<\/Nominal>\s*<Value>(\d{1,10}),(\d{1,10})<\/Value>(?:\s*<VunitRate>\d{1,10},\d{1,30}<\/VunitRate>)?\s*<\/Record>/y;
+  /\s*<Record Date="(\d{2})\.(\d{2})\.(\d{4})" Id="(R\d{5}[A-Z]?)">([\s\S]{0,400}?)<\/Record>/y;
+// A record holds simple elements in any order; only Nominal and Value are read, others
+// (VunitRate since 2023) are skipped.
+const ELEMENT = /\s*<([A-Za-z]{1,20})>([^<]{0,100})<\/\1>/y;
+const NOMINAL = /^\s*(\d{1,7})\s*$/;
+const VALUE = /^\s*(\d{1,10})(?:[,.](\d{1,10}))?\s*$/;
+
+function readRecord(inner: string, date: string): string {
+  const fields = new Map<string, string>();
+  ELEMENT.lastIndex = 0;
+  while (inner.slice(ELEMENT.lastIndex).trim() !== '') {
+    const element = ELEMENT.exec(inner);
+    if (!element || fields.has(element[1])) invalid(`record on ${date}: ${excerpt(inner, 120)}`);
+    fields.set(element[1], element[2]);
+  }
+  const nominal = NOMINAL.exec(fields.get('Nominal') ?? '');
+  const value = VALUE.exec(fields.get('Value') ?? '');
+  if (!nominal || !value) invalid(`record on ${date}: ${excerpt(inner, 120)}`);
+  try {
+    return perUnit(value[1], value[2] ?? '', nominal[1]);
+  } catch (error) {
+    if (error instanceof InvalidResponse) invalid(`${error.message} on ${date}`);
+    throw error;
+  }
+}
 
 /**
  * XML_dynamic: <ValCurs ID="R01235" DateRange1=… DateRange2=… name=…><Record Date="11.01.2025"
@@ -60,7 +85,7 @@ export function parseCbrDynamic(body: string, code: string, from: string, to: st
       const after = rates.length ? ` after ${rates[rates.length - 1].date}` : '';
       invalid(`unexpected content${after}: ${excerpt(content.slice(start).trimStart())}`);
     }
-    const [, day, month, year, id, nominal, whole, fraction] = match;
+    const [, day, month, year, id, inner] = match;
     const date = `${year}-${month}-${day}`;
     if (id !== code) invalid(`series ${id} on ${date}`);
     const parsed = new Date(`${date}T00:00:00Z`);
@@ -69,12 +94,7 @@ export function parseCbrDynamic(body: string, code: string, from: string, to: st
     if (date < from || date > to) invalid(`${date} outside the range`);
     const last = rates[rates.length - 1]?.date;
     if (last && last >= date) invalid(`${date} after ${last}`);
-    try {
-      rates.push({ date, rubPerUnit: perUnit(whole, fraction, nominal) });
-    } catch (error) {
-      if (error instanceof InvalidResponse) invalid(`${error.message} on ${date}`);
-      throw error;
-    }
+    rates.push({ date, rubPerUnit: readRecord(inner, date) });
   }
   return rates;
 }
