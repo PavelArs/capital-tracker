@@ -150,9 +150,13 @@ const tradeKey = (tradeId: string, version: number) => `${tradeId}:${version}`;
 const lotKey = (lotId: string, revision: number, ordinal: number) =>
   `${lotId}:${revision}:${ordinal}`;
 
-/** A buy's amount as paid, shared by quantity, half away from zero. */
+/**
+ * A buy's amount as paid, shared by quantity, half away from zero. A sale's only fragment is
+ * the cash it kept (M9), which holds units of the paid currency itself.
+ */
 function nativeShare(trade: FifoTrade | undefined, quantity: string): NativeAmount | undefined {
-  if (!trade?.paid || trade.side !== 'buy') return undefined;
+  if (!trade?.paid) return undefined;
+  if (trade.side !== 'buy') return { currency: trade.paid.currency, amount: quantity };
   const total = canonicalDecimalToAtoms(trade.paid.gross) + canonicalDecimalToAtoms(trade.paid.fee);
   const whole = canonicalDecimalToAtoms(trade.quantity);
   const part = canonicalDecimalToAtoms(quantity);
@@ -247,7 +251,10 @@ export function portfolioAccount(
     consumed.set(key, list);
   }
   const realizations: PortfolioRealization[] = fifo.realizations.map((sale) => {
-    const sold = paid.get(tradeKey(sale.sellTradeId, sale.sellVersion))?.paid;
+    const trade = paid.get(tradeKey(sale.sellTradeId, sale.sellVersion));
+    const sold = trade?.paid;
+    // Cash a buy spent (M9) is realized at the units it paid, in the paid currency.
+    const spent = trade?.instrumentId !== sale.instrumentId;
     return {
       instrumentId: sale.instrumentId,
       occurredAt: sale.occurredAt,
@@ -256,9 +263,11 @@ export function portfolioAccount(
         ? {
             nativeProceeds: {
               currency: sold.currency,
-              amount: formatAtoms(
-                canonicalDecimalToAtoms(sold.gross) - canonicalDecimalToAtoms(sold.fee),
-              ),
+              amount: spent
+                ? sale.quantity
+                : formatAtoms(
+                    canonicalDecimalToAtoms(sold.gross) - canonicalDecimalToAtoms(sold.fee),
+                  ),
             },
           }
         : {}),

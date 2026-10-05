@@ -21,6 +21,7 @@ import type {
   TransferArrival,
   TransferFeeSummary,
 } from './owned-transfer-types';
+import { settlementLeg } from './trade-settlement';
 
 type Source =
   | { kind: 'trade'; trade: FifoTrade }
@@ -85,6 +86,29 @@ function compareFragments(left: BookFragment, right: BookFragment): number {
         ? 1
         : 0)
   );
+}
+
+/**
+ * A trade's cash side as a trade in the cash asset (M9): what a sale kept, bought at its net
+ * proceeds, or what a buy spent, sold at its share of the buy's cost. It shares the trade's
+ * identity and instant and never counts as a buy or sale of its own in the summary.
+ */
+function cashSide(trade: FifoTrade): FifoTrade | null {
+  const leg = settlementLeg(trade);
+  if (!leg || !trade.settlement) return null;
+  return {
+    tradeId: trade.tradeId,
+    version: trade.version,
+    instrumentId: trade.settlement.instrumentId,
+    instrumentName: trade.settlement.instrumentName,
+    instrumentSymbol: trade.settlement.instrumentSymbol,
+    side: trade.side === 'buy' ? 'sell' : 'buy',
+    occurredAt: trade.occurredAt,
+    orderWithinTimestamp: trade.orderWithinTimestamp,
+    quantity: formatAtoms(leg.quantity),
+    grossUsd: formatAtoms(leg.usd),
+    feeUsd: '0',
+  };
 }
 
 function swapItem(kind: 'principal' | 'fee', portion: BookPortion): TransferAllocationItem {
@@ -315,31 +339,47 @@ export class FifoBook {
     const gross = canonicalDecimalToAtoms(trade.grossUsd);
     const fee = canonicalDecimalToAtoms(trade.feeUsd);
     if (quantity <= 0n || gross <= 0n || fee < 0n) throw new FifoHistoryError();
+    const cash = cashSide(trade);
     if (trade.side === 'buy') {
-      const cost = gross + fee;
-      this.append({
-        source: { kind: 'trade', trade },
-        origin: {
-          accountId: this.accountId,
-          kind: 'trade',
-          tradeId: trade.tradeId,
-          version: trade.version,
-          acquiredAt: trade.occurredAt,
-          orderWithinTimestamp: trade.orderWithinTimestamp,
-          originalQuantity: trade.quantity,
-          originalCostUsd: formatAtoms(cost),
-        },
-        arrival: null,
-        instrumentId: trade.instrumentId,
-        instrumentName: trade.instrumentName,
-        instrumentSymbol: trade.instrumentSymbol,
-        interval: lotInterval(quantity, cost),
-      });
+      // The account's cash pays first (OPS-BUY-CASH).
+      if (cash) this.sell(cash);
+      this.buy(trade, gross + fee);
       this.grossBuys += gross;
       this.buyFees += fee;
       return;
     }
-    const portions = this.consume(trade.instrumentId, quantity);
+    this.sell(trade);
+    this.grossSales += gross;
+    this.sellFees += fee;
+    // The proceeds stay in the account as cash (OPS-SELL-CASH).
+    if (cash) this.buy(cash, canonicalDecimalToAtoms(cash.grossUsd));
+  }
+
+  private buy(trade: FifoTrade, cost: bigint): void {
+    this.append({
+      source: { kind: 'trade', trade },
+      origin: {
+        accountId: this.accountId,
+        kind: 'trade',
+        tradeId: trade.tradeId,
+        version: trade.version,
+        acquiredAt: trade.occurredAt,
+        orderWithinTimestamp: trade.orderWithinTimestamp,
+        originalQuantity: trade.quantity,
+        originalCostUsd: formatAtoms(cost),
+      },
+      arrival: null,
+      instrumentId: trade.instrumentId,
+      instrumentName: trade.instrumentName,
+      instrumentSymbol: trade.instrumentSymbol,
+      interval: lotInterval(canonicalDecimalToAtoms(trade.quantity), cost),
+    });
+  }
+
+  private sell(trade: FifoTrade): void {
+    const gross = canonicalDecimalToAtoms(trade.grossUsd);
+    const fee = canonicalDecimalToAtoms(trade.feeUsd);
+    const portions = this.consume(trade.instrumentId, canonicalDecimalToAtoms(trade.quantity));
     const saleCost = new CostTally();
     for (const portion of portions) {
       saleCost.add(portion.cost);
@@ -399,8 +439,6 @@ export class FifoBook {
         this.matches.push(match);
       }
     }
-    this.grossSales += gross;
-    this.sellFees += fee;
     if (saleCost.incomplete) this.unknownRealizedCount++;
     else this.knownRealized += gross - fee - saleCost.known;
     this.realizations.push({

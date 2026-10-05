@@ -43,6 +43,15 @@ export interface TradeOperationInput {
   csv: boolean;
   paid: TradePayment | null;
   comment: string | null;
+  settlement: OperationSettlement | null;
+}
+/**
+ * The cash in the trade's own account that settled it (M9): what a sale kept, or what a buy
+ * spent of it before money from outside.
+ */
+export interface OperationSettlement {
+  asset: OperationAsset;
+  quantity: string;
 }
 export interface TransferOperationInput {
   transferId: string;
@@ -159,6 +168,8 @@ export interface Operation {
   paid: TradePayment | null;
   /** The owner's note (OPS-COMMENT). */
   comment: string | null;
+  /** Trades only: the cash in the same account that settled it (OPS-SELL-CASH, OPS-BUY-CASH). */
+  settlement: OperationSettlement | null;
   /** Position among operations at the same instant; an edit at the same time keeps it. */
   orderWithinTimestamp: number;
   // The amounts above in the list's quote currency at the Bank of Russia rate of the
@@ -201,6 +212,7 @@ const blank = {
   chain: null,
   paid: null,
   comment: null,
+  settlement: null,
 } satisfies Partial<Operation>;
 type Projected = Omit<Operation, 'value' | 'estimatedValue' | 'costBasis' | 'feeValue'>;
 const inUsdOnly = () => new FxConverter({ USD: [], EUR: [] }, 'USD');
@@ -308,6 +320,7 @@ export function projectOperations(
         version: row.version,
         paid: row.paid,
         comment: row.comment,
+        settlement: row.settlement,
       },
       row.orderWithinTimestamp,
     );

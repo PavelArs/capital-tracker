@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import {
   compareDecimal,
   type EntryProblem,
   entryFromOperation,
+  isCashOf,
   MAX_COMMENT_LENGTH,
   needsRate,
   occurredAt,
@@ -25,7 +27,7 @@ import {
   trimmed,
   usdTotal,
 } from './add-transaction';
-import { money, quantity } from './format';
+import { money, price, quantity } from './format';
 
 interface Account {
   id: string;
@@ -123,11 +125,21 @@ const blankEntry = (): TransactionEntry => ({
 });
 
 type Availability = { key: string; quantity: string | null };
+/** A coin not yet among the assets, added with the trade (prototype "Other asset"). */
+type OtherAsset = { ticker: string; name: string };
+const tickerPattern = /^[A-Za-z0-9.\-]{1,32}$/;
 
 // "Add transaction" from the accepted prototype: buy or sell, paid in USD, USDT, USDC, EUR or RUB.
 export default function AddTransactionDialog({ onClose, onSaved, editing }: Props) {
   const [initial] = useState(() => (editing ? entryFromOperation(editing) : blankEntry()));
   const [assets, setAssets] = useState<PortfolioAsset[] | null>(null);
+  // Every asset, cash included: the account's cash in the paid currency is one of them.
+  const [allAssets, setAllAssets] = useState<PortfolioAsset[]>([]);
+  const [other, setOther] = useState<OtherAsset | null>(null);
+  const otherRequest = useRef<{ ticker: string; requestId: string } | null>(null);
+  // Latest market price in USD per asset, for the "Market today" hint.
+  const [market, setMarket] = useState<ReadonlyMap<string, string>>(new Map());
+  const [cashAvailability, setCashAvailability] = useState<Availability | null>(null);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [accountId, setAccountId] = useState(editing?.account?.id ?? '');
@@ -181,6 +193,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
           (asset) => asset.assetType !== 'fiat' || asset.id === initial.instrumentId,
         );
         setAssets(tradable);
+        setAllAssets(allAssets);
         setAccounts(withJournal);
         if (!editing) {
           setAccountId(withJournal[0]?.id ?? '');
@@ -192,6 +205,25 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       live = false;
     };
   }, [editing, initial.instrumentId]);
+
+  useEffect(() => {
+    let live = true;
+    portfolioValuationApi
+      .get('USD')
+      .then((valuation) => {
+        if (!live) return;
+        const prices = new Map<string, string>();
+        for (const item of valuation.assets)
+          if (item.priceSource === 'market' && item.price)
+            prices.set(item.instrumentId, item.price.value);
+        setMarket(prices);
+      })
+      // The hint is optional: without prices the window works as before.
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
   const rateKey = needsRate(entry.currency) ? `${entry.currency}:${entry.date}` : null;
@@ -241,16 +273,54 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   }, [availableKey, editing]);
   const available =
     availableKey && availability?.key === availableKey ? availability.quantity : null;
+
+  // A buy spends the account's cash in the paid currency first (OPS-BUY-CASH).
+  const cashAsset = allAssets.find(
+    (item) => isCashOf(item, entry.currency) && item.id !== entry.instrumentId,
+  );
+  const cashKey =
+    !sell &&
+    // A new asset typed as the cash itself buys it, not with it.
+    other?.ticker.trim().toUpperCase() !== entry.currency &&
+    cashAsset &&
+    accountId &&
+    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+    (!entry.time || /^\d{2}:\d{2}$/.test(entry.time))
+      ? `${accountId}|${cashAsset.id}|${at}`
+      : null;
+  useEffect(() => {
+    if (!cashKey) return;
+    const [account, instrumentId, instant] = cashKey.split('|');
+    let live = true;
+    tradesApi
+      .available(account, {
+        instrumentId,
+        at: instant,
+        ...(editing ? { excludeTradeId: editing.id.replace(/^trade:/, '') } : {}),
+      })
+      .then((result) => live && setCashAvailability({ key: cashKey, quantity: result.quantity }))
+      .catch(() => live && setCashAvailability({ key: cashKey, quantity: null }));
+    return () => {
+      live = false;
+    };
+  }, [cashKey, editing]);
+  const cash = cashKey && cashAvailability?.key === cashKey ? cashAvailability.quantity : null;
   const typedAmount = positive(entry.amount);
   const overspent =
     available !== null && typedAmount !== null && compareDecimal(typedAmount, available) > 0;
 
   const update = (value: Partial<TransactionEntry>) =>
     setEntry((current) => ({ ...current, ...value }));
-  const asset = assets?.find((item) => item.id === entry.instrumentId);
-  const symbol = asset?.symbol ?? 'units';
-  const unitSymbol = asset?.symbol ?? asset?.name ?? 'unit';
-  const found = tried ? problems(shown, today()) : new Set<EntryProblem>();
+  const asset = other ? undefined : assets?.find((item) => item.id === entry.instrumentId);
+  const otherTicker = other?.ticker.trim().toUpperCase() ?? '';
+  const otherValid = tickerPattern.test(otherTicker);
+  const symbol = other ? otherTicker || 'units' : (asset?.symbol ?? 'units');
+  const unitSymbol = other ? otherTicker || 'unit' : (asset?.symbol ?? asset?.name ?? 'unit');
+  // A new asset's ticker stands in for its id until it is saved with the trade.
+  const checked: TransactionEntry = other
+    ? { ...shown, instrumentId: otherValid ? 'other' : '' }
+    : shown;
+  const found = tried ? problems(checked, today()) : new Set<EntryProblem>();
   const usd = usdTotal(shown);
   const buy = entry.side === 'buy';
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
@@ -278,24 +348,61 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     if (units && sum) setUnit(trimmed(Number(sum) / Number(units), 2));
   };
 
+  // The asset's latest market price in the price field's currency (prototype "Market today").
+  const marketUsd = asset ? market.get(asset.id) : undefined;
+  const rateShown = needsRate(entry.currency) ? positive(shown.rate) : '1';
+  const marketPrice =
+    marketUsd && rateShown ? trimmed(Number(marketUsd) * Number(rateShown), 2) : null;
+
+  // How much of the buy the account's cash pays; the rest is money from outside.
+  const totalTyped = positive(shown.total);
+  const fromCash =
+    cash !== null && totalTyped !== null && Number(cash) > 0
+      ? compareDecimal(cash, totalTyped) < 0
+        ? cash
+        : totalTyped
+      : null;
+
+  /** The new asset for "Other asset": an existing one with that ticker, or one created now. */
+  const otherAssetId = async (): Promise<string> => {
+    const existing = allAssets.find(
+      (item) => item.assetType !== 'fiat' && item.symbol?.toUpperCase() === otherTicker,
+    );
+    if (existing) return existing.id;
+    if (otherRequest.current?.ticker !== otherTicker)
+      otherRequest.current = { ticker: otherTicker, requestId: newRequestId() };
+    const created = await portfolioAssetsApi.create({
+      requestId: otherRequest.current.requestId,
+      name: other?.name.trim() || otherTicker,
+      symbol: otherTicker,
+      assetType: 'crypto',
+    });
+    setAllAssets((current) => [...current, created]);
+    setAssets((current) => (current ? [...current, created] : [created]));
+    return created.id;
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
-    if (problems(shown, today()).size || !account || overspent) return;
-    // An edit at the same date and time keeps the trade's exact instant and place in it.
-    const sameMoment = editing && occurredAt(shown) === occurredAt(initial);
-    const command = tradeFromEntry(
-      shown,
-      { requestId: '', expectedJournalRevision: account.journalRevision },
-      sameMoment ? editing.orderWithinTimestamp : undefined,
-    );
-    if (sameMoment) command.occurredAt = editing.occurredAt;
-    const key = JSON.stringify({ accountId, ...command });
-    if (attempt.current?.body !== key) attempt.current = { body: key, requestId: newRequestId() };
+    if (problems(checked, today()).size || !account || overspent) return;
     setSaving(true);
     setError(null);
     try {
+      const instrumentId = other ? await otherAssetId() : shown.instrumentId;
+      const traded = allAssets.find((item) => item.id === instrumentId);
+      // An edit at the same date and time keeps the trade's exact instant and place in it.
+      const sameMoment = editing && occurredAt(shown) === occurredAt(initial);
+      const command = tradeFromEntry(
+        { ...shown, instrumentId },
+        { requestId: '', expectedJournalRevision: account.journalRevision },
+        sameMoment ? editing.orderWithinTimestamp : undefined,
+        !(traded && isCashOf(traded, entry.currency)),
+      );
+      if (sameMoment) command.occurredAt = editing.occurredAt;
+      const key = JSON.stringify({ accountId, ...command });
+      if (attempt.current?.body !== key) attempt.current = { body: key, requestId: newRequestId() };
       const saved = { ...command, requestId: attempt.current.requestId };
       if (editing) await tradesApi.correct(accountId, editing.id.replace(/^trade:/, ''), saved);
       else await tradesApi.create(accountId, saved);
@@ -349,7 +456,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       name={`${id}-side`}
                       value={value}
                       checked={entry.side === value}
-                      onChange={() => update({ side: value })}
+                      onChange={() => {
+                        update({ side: value });
+                        if (value === 'sell') setOther(null);
+                      }}
                     />
                     {label}
                   </label>
@@ -387,8 +497,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         key={item.id}
                         type="button"
                         className="portfolio-chip portfolio-chip--asset"
-                        aria-pressed={entry.instrumentId === item.id}
-                        onClick={() => update({ instrumentId: item.id })}
+                        aria-pressed={!other && entry.instrumentId === item.id}
+                        onClick={() => {
+                          setOther(null);
+                          update({ instrumentId: item.id });
+                        }}
                       >
                         <AssetIcon
                           symbol={item.symbol}
@@ -399,9 +512,52 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {item.symbol ?? item.name}
                       </button>
                     ))}
+                    {buy && !editing && (
+                      <button
+                        type="button"
+                        className="portfolio-chip portfolio-chip--asset"
+                        aria-pressed={other !== null}
+                        onClick={() => setOther(other ?? { ticker: '', name: '' })}
+                      >
+                        + Other asset
+                      </button>
+                    )}
                   </div>
-                  {fieldError('instrument')}
+                  {other ? null : fieldError('instrument')}
                 </div>
+                {other && (
+                  <div className="portfolio-row">
+                    <div className="portfolio-field">
+                      <label className="portfolio-field__label" htmlFor={`${id}-ticker`}>
+                        Ticker
+                      </label>
+                      <input
+                        id={`${id}-ticker`}
+                        className="portfolio-input"
+                        placeholder="e.g. TON"
+                        autoComplete="off"
+                        value={other.ticker}
+                        onChange={(event) => setOther({ ...other, ticker: event.target.value })}
+                        {...invalid('instrument')}
+                      />
+                      {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
+                    </div>
+                    <div className="portfolio-field">
+                      <label className="portfolio-field__label" htmlFor={`${id}-name`}>
+                        Name (optional)
+                      </label>
+                      <input
+                        id={`${id}-name`}
+                        className="portfolio-input"
+                        placeholder={otherTicker || 'Toncoin'}
+                        autoComplete="off"
+                        maxLength={120}
+                        value={other.name}
+                        onChange={(event) => setOther({ ...other, name: event.target.value })}
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="portfolio-row">
                   <div className="portfolio-field">
                     <label className="portfolio-field__label" htmlFor={`${id}-amount`}>
@@ -467,6 +623,22 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                       <span className="portfolio-affix__suffix">{entry.currency}</span>
                     </span>
+                    {marketPrice && (
+                      <span className="portfolio-field__hint">
+                        Market today{' '}
+                        {needsRate(entry.currency)
+                          ? `${quantity(marketPrice)} ${entry.currency}`
+                          : price(marketUsd ?? null, 'USD')}{' '}
+                        ·{' '}
+                        <button
+                          type="button"
+                          className="portfolio-link"
+                          onClick={() => setUnitPrice(marketPrice)}
+                        >
+                          Use
+                        </button>
+                      </span>
+                    )}
                   </div>
                   <div className="portfolio-field">
                     <label className="portfolio-field__label" htmlFor={`${id}-total`}>
@@ -510,6 +682,20 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       {entry.currency} is counted 1:1 with USD.
                     </span>
                   )}
+                  {sell
+                    ? !(asset && isCashOf(asset, entry.currency)) && (
+                        <span className="portfolio-field__hint">
+                          The {entry.currency} received stays in {accountName} as cash.
+                        </span>
+                      )
+                    : fromCash !== null &&
+                      totalTyped !== null && (
+                        <span className="portfolio-field__hint">
+                          {compareDecimal(fromCash, totalTyped) === 0
+                            ? `Paid from the ${entry.currency} cash in ${accountName}.`
+                            : `${quantity(fromCash)} ${entry.currency} comes from the cash in ${accountName}; the other ${quantity(trimmed(Number(totalTyped) - Number(fromCash), 8))} ${entry.currency} is new money.`}
+                        </span>
+                      )}
                 </div>
                 {needsRate(entry.currency) && (
                   <div className="portfolio-field">

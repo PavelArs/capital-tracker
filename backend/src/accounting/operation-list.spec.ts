@@ -65,6 +65,7 @@ describe('list-all-operations projection', () => {
             csv: false,
             paid: null,
             comment: 'First buy from the spreadsheet',
+            settlement: null,
           },
           {
             tradeId: id(31),
@@ -87,6 +88,10 @@ describe('list-all-operations projection', () => {
               rateSource: 'bank-of-russia',
             },
             comment: null,
+            settlement: {
+              asset: { instrumentId: id(40), symbol: 'RUB', name: 'Russian ruble' },
+              quantity: '0',
+            },
           },
         ],
         chain: [chain(1)],
@@ -129,6 +134,7 @@ describe('list-all-operations projection', () => {
       version: 1,
       paid: null,
       comment: 'First buy from the spreadsheet',
+      settlement: null,
       orderWithinTimestamp: 0,
       // Without asked rates the list is in USD, exactly as recorded.
       value: '1000',
@@ -147,6 +153,10 @@ describe('list-all-operations projection', () => {
       source: 'csv',
       paid: { currency: 'RUB', gross: '83000', perUsd: '79', rateSource: 'bank-of-russia' },
       comment: null,
+      settlement: {
+        asset: { instrumentId: id(40), symbol: 'RUB', name: 'Russian ruble' },
+        quantity: '0',
+      },
     });
     expect(receipt).toEqual({
       id: `chain:${wallet.id}:${txid(1)}`,
@@ -174,6 +184,7 @@ describe('list-all-operations projection', () => {
       version: null,
       paid: null,
       comment: null,
+      settlement: null,
       orderWithinTimestamp: 0,
       value: null,
       estimatedValue: '780.10005255',
@@ -407,6 +418,7 @@ describe('list-all-operations projection', () => {
           csv: false,
           paid: null,
           comment: null,
+          settlement: null,
         },
         {
           tradeId: id(31),
@@ -429,6 +441,7 @@ describe('list-all-operations projection', () => {
             rateSource: 'bank-of-russia',
           },
           comment: null,
+          settlement: null,
         },
       ],
       openings: [

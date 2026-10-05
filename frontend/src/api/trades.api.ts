@@ -291,6 +291,8 @@ export type TradeCommand = Omit<TradeExecution, 'grossUsd' | 'feeUsd' | 'orderWi
   ({ grossUsd: string; feeUsd: string } | { paid: TradePaymentInput }) & {
     orderWithinTimestamp?: number;
     comment?: string;
+    /** The cash in the same account that settles the trade (M9, OPS-SELL-CASH, OPS-BUY-CASH). */
+    settlementCurrency?: 'USD' | 'USDT' | 'USDC' | 'EUR' | 'RUB';
     requestId: string;
     expectedJournalRevision: number;
   };

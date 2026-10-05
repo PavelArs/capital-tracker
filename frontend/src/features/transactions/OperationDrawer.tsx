@@ -106,6 +106,14 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
         'Paid',
         `${quantity(operation.paid.gross)} ${operation.paid.currency} at ${operation.paid.perUsd} ${operation.paid.currency} per USD`,
       ]);
+    // M9: where the money stayed or came from in the trade's own account.
+    const cash = operation.settlement;
+    if (cash && Number(cash.quantity) > 0)
+      rows.push(
+        operation.type === 'sell'
+          ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
+          : ['Paid from cash', amount(cash.quantity, cash.asset)],
+      );
     if (operation.costBasisUsd !== null)
       rows.push(['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, DASH)]);
     rows.push([
@@ -122,7 +130,6 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     ['Status', statusLabels[operation.status]],
     ['Source', sourceDetails[operation.source]],
   );
-  if (operation.version !== null) rows.push(['Version', String(operation.version)]);
   return rows;
 }
 
