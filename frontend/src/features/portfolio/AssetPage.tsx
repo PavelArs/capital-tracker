@@ -7,7 +7,7 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   assetKey,
@@ -118,13 +118,17 @@ function ValueChart({
   const [history, setHistory] = useState<AssetHistory | null>(null);
   const [failed, setFailed] = useState(false);
   const instrumentId = asset.instrumentId;
+  // Only the latest request may fill the chart: an earlier period's answer can arrive later.
+  const latest = useRef(0);
   const load = useCallback(async () => {
+    const request = ++latest.current;
     setFailed(false);
     setHistory(null);
     try {
-      setHistory(await assetHistoryApi.get(instrumentId, period, asked));
+      const loaded = await assetHistoryApi.get(instrumentId, period, asked);
+      if (request === latest.current) setHistory(loaded);
     } catch {
-      setFailed(true);
+      if (request === latest.current) setFailed(true);
     }
   }, [instrumentId, period, asked]);
   useEffect(() => {

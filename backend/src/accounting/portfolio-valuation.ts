@@ -149,7 +149,7 @@ export function resolvePrice(
 
 /**
  * The price's change since the same moment a day earlier, in the report's currency at each
- * day's rate. A market price older than 2 hours at that moment is not that day's price.
+ * day's rate. A market price older than 2 hours at either moment is not that moment's price.
  */
 function priceChange24h(
   instrument: PortfolioInstrument,
@@ -161,6 +161,7 @@ function priceChange24h(
   if (!current || !previous) return null;
   const dayBefore = new Date(at.getTime() - DAY_MS);
   if (instrument.priceSource === 'market') {
+    if (current.status !== 'fresh') return null;
     const stored = instrument.symbol
       ? previous.market.get(instrument.symbol.toUpperCase())
       : undefined;

@@ -462,6 +462,20 @@ describe('PV-24H price change over the last 24 hours', () => {
     expect(assetOf(result, usd).priceChange24hPercent).toBe('25.00');
   });
 
+  it('is unknown while the current market price is stale', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      accounts,
+      prices({ BTC: ['80000', minutesAgo(20 * 60)] }),
+      undefined,
+      previous({ BTC: ['75000', dayAgo(30)] }),
+    );
+    // A price collected 20 hours ago against one from 24 hours ago is not a 24-hour change.
+    expect(assetOf(result, btc).price?.status).toBe('stale');
+    expect(assetOf(result, btc).priceChange24hPercent).toBeNull();
+  });
+
   it('is unknown without an earlier price', () => {
     const result = projectPortfolio(
       now,

@@ -42,7 +42,7 @@ const problemText: Record<AssetProblem, string> = {
   name: 'Enter a name',
   ticker: 'Enter a ticker',
   amount: 'Enter an amount greater than 0',
-  value: 'Enter the value as a number',
+  value: 'Enter a value greater than 0',
   account: 'Choose a wallet or account',
   notes: `Keep the notes within ${MAX_COMMENT_LENGTH} characters`,
   'no-accounts': '',
@@ -69,7 +69,7 @@ function balanceFailure(error: unknown): string {
   const saved = 'The asset was added, but its balance was not saved.';
   if (code === undefined) return `${saved} Could not reach the server; try again.`;
   if (code === 409 && message.includes('Bank of Russia rate'))
-    return `${saved} No Bank of Russia rate is stored for today; enter the value in USD.`;
+    return `${saved} No Bank of Russia rate is stored yet; try again later.`;
   if (code === 409 || code === 422) return `${saved} The account was changed elsewhere; try again.`;
   if (code === 401) return 'Your session has ended. Sign in again.';
   return `${saved} Check the amount and value and try again.`;
@@ -107,6 +107,9 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
   const tradeAttempt = useRef<{ body: string; requestId: string; at: string } | null>(null);
   const receipt = useRef<TradeReceipt | null>(null);
   const priceRequest = useRef<string | null>(null);
+  // After a lost answer or a server error the balance may have been saved: until a definite
+  // answer, the retry must send the same request, so its fields stay as they were.
+  const [balanceUnsure, setBalanceUnsure] = useState(false);
   const id = useId();
   const nameField = useRef<HTMLInputElement>(null);
 
@@ -214,12 +217,15 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
               expectedJournalRevision: account.journalRevision,
             }),
           );
+          setBalanceUnsure(false);
         } catch (caught) {
+          const code = status(caught);
           setError(balanceFailure(caught));
           setSaving(false);
+          setBalanceUnsure(code === undefined || code >= 500);
           // Nothing was saved under a refused request: the retry gets a new id and, when the
           // journal changed elsewhere, its new revision.
-          if (status(caught) === 409) {
+          if (code === 409) {
             tradeAttempt.current = null;
             await loadAccounts();
           }
@@ -339,6 +345,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   inputMode="decimal"
                   placeholder="e.g. 150000"
                   value={entry.amount}
+                  disabled={balanceUnsure}
                   onChange={(event) => update({ amount: event.target.value })}
                   {...invalid('amount')}
                 />
@@ -356,6 +363,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                       inputMode="decimal"
                       placeholder={crypto ? 'e.g. 5000' : 'Same as amount'}
                       value={entry.value}
+                      disabled={balanceUnsure}
                       onChange={(event) => update({ value: event.target.value })}
                       {...invalid('value')}
                     />
@@ -377,7 +385,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                       name={`${id}-currency`}
                       value={code}
                       checked={entry.currency === code}
-                      disabled={locked && !crypto}
+                      disabled={(locked && !crypto) || balanceUnsure}
                       onChange={() => update({ currency: code })}
                     />
                     {code}
@@ -419,6 +427,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   id={`${id}-account`}
                   className="portfolio-input"
                   value={entry.accountId}
+                  disabled={balanceUnsure}
                   onChange={(event) => update({ accountId: event.target.value })}
                   {...invalid('account')}
                 >
@@ -439,6 +448,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 id={`${id}-notes`}
                 className="portfolio-input portfolio-textarea"
                 value={entry.notes}
+                disabled={balanceUnsure}
                 onChange={(event) => update({ notes: event.target.value })}
                 {...invalid('notes')}
               />

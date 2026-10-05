@@ -647,10 +647,15 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     );
     // The saved asset is not asked for again and cannot change.
     expect(within(dialog).getByLabelText('Name')).toBeDisabled();
+    // The lost answer may have saved the balance: the retry must repeat the same request.
+    for (const label of ['Amount', 'Current value', 'Wallet or account', 'Notes (optional)'])
+      expect(within(dialog).getByLabelText(label)).toBeDisabled();
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'The account was changed elsewhere; try again.',
     );
+    // A refusal saved nothing, so the balance may be corrected again.
+    expect(within(dialog).getByLabelText('Amount')).toBeEnabled();
     expect(createTrade.mock.calls[1][1].requestId).toBe(createTrade.mock.calls[0][1].requestId);
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
@@ -909,6 +914,38 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
         name: 'Bitcoin position value and cost basis, past 7 days, in USD',
       }),
     ).toBeInTheDocument();
+  });
+
+  it('keeps the chosen period when an earlier period answers later', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    let answerMonth: (history: AssetHistory) => void = () => undefined;
+    vi.mocked(assetHistoryApi.get)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerMonth = resolve;
+          }),
+      )
+      .mockImplementationOnce(async (instrumentId, period) => ({
+        ...emptyHistory(instrumentId),
+        period,
+        points: [point('2026-10-05T12:00:00.000Z', '96000', '66000', '1.2')],
+      }));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const chart = await screen.findByRole('region', { name: 'Position value over time' });
+    await user.click(within(chart).getByRole('tab', { name: '7D' }));
+    const week = await within(chart).findByRole('img', {
+      name: 'Bitcoin position value and cost basis, past 7 days, in USD',
+    });
+    answerMonth({
+      ...emptyHistory(bitcoin.instrumentId),
+      period: '1M',
+      points: [point('2026-10-05T12:00:00.000Z', null, '66000', '1.2')],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(week).toBeInTheDocument();
+    expect(within(chart).queryByText(/No value can be shown/)).toBeNull();
   });
 
   it('lists the latest ten operations of the asset and links to all of them', async () => {

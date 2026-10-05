@@ -1,6 +1,6 @@
 import type { AssetType, NewPortfolioAsset, ValuationCurrency } from '@api/portfolio-assets.api';
 import type { TradeCommand } from '@api/trades.api';
-import { decimal, MAX_COMMENT_LENGTH, positive, tradeFromEntry } from './add-transaction';
+import { MAX_COMMENT_LENGTH, positive, tradeFromEntry } from './add-transaction';
 
 // "Add asset" from the accepted prototype: the kind of asset, its amount and what it is worth,
 // saved as the asset and a buy that gives it a balance (counted as a deposit).
@@ -23,7 +23,10 @@ export interface AssetEntry {
   name: string;
   ticker: string;
   amount: string;
-  /** What the amount is worth, or what the coins cost; empty means the same as the amount. */
+  /**
+   * What the amount is worth, or what the coins cost; empty means the same as the amount.
+   * Cash is always worth its amount, so a value typed under another kind is ignored.
+   */
   value: string;
   currency: ValuationCurrency;
   accountId: string;
@@ -49,8 +52,8 @@ export function assetProblems(entry: AssetEntry, accountCount: number): Set<Asse
   const amount = entry.amount.trim();
   if (amount || amountRequired(entry.kind)) {
     if (positive(amount) === null) found.add('amount');
-    const value = entry.value.trim();
-    if (entry.kind === 'crypto' ? positive(value) === null : value && decimal(value) === null)
+    const value = entryValue(entry);
+    if (entry.kind === 'crypto' ? positive(value) === null : value && positive(value) === null)
       found.add('value');
     if (accountCount === 0) found.add('no-accounts');
     else if (!entry.accountId) found.add('account');
@@ -58,6 +61,8 @@ export function assetProblems(entry: AssetEntry, accountCount: number): Set<Asse
   if (entry.notes.trim().length > MAX_COMMENT_LENGTH) found.add('notes');
   return found;
 }
+
+const entryValue = (entry: AssetEntry) => (entry.kind === 'cash' ? '' : entry.value.trim());
 
 /** The asset as the server stores it; cash takes its currency as the ticker. */
 export function assetBody(entry: AssetEntry): Omit<NewPortfolioAsset, 'requestId'> {
@@ -87,7 +92,7 @@ export function balanceTrade(
   identity: { requestId: string; expectedJournalRevision: number },
 ): TradeCommand {
   const amount = entry.amount.trim();
-  const value = entry.value.trim() || amount;
+  const value = entryValue(entry) || amount;
   return tradeFromEntry(
     {
       side: 'buy',
