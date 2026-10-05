@@ -1,9 +1,13 @@
 import apiClient from './client';
 import type { AssetType, PriceSource, ValuationCurrency } from './portfolio-assets.api';
 
-// Exact decimal strings from GET /accounting/portfolio (portfolio-valuation, PV-1..4).
+export type AccountingCurrency = 'USD' | 'EUR' | 'RUB';
+export const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
+
+// Exact decimal strings from GET /accounting/portfolio (portfolio-valuation, PV-1..4), stated
+// in one accounting currency at Bank of Russia rates (account-in-three-currencies, CUR-*).
 export interface AssetPrice {
-  priceUsd: string;
+  value: string;
   observedAt: string | null;
   source: string;
   status: 'fresh' | 'stale' | 'manual' | 'fixed';
@@ -13,7 +17,7 @@ export interface AssetHolding {
   accountId: string;
   accountName: string;
   quantity: string;
-  valueUsd: string | null;
+  value: string | null;
 }
 
 export interface AssetValuation {
@@ -26,16 +30,17 @@ export interface AssetValuation {
   quantity: string;
   price: AssetPrice | null;
   missingPrice: 'no-price' | 'no-rate' | null;
-  valueUsd: string | null;
+  value: string | null;
   allocationPercent: string | null;
-  costBasisUsd: string | null;
-  knownCostSubtotalUsd: string;
+  costBasis: string | null;
+  knownCostSubtotal: string;
   unknownCostQuantity: string;
-  averageBuyPriceUsd: string | null;
-  unrealizedPnlUsd: string | null;
+  missingRateQuantity: string;
+  averageBuyPrice: string | null;
+  unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
-  realizedPnlUsd: string | null;
-  knownRealizedSubtotalUsd: string;
+  realizedPnl: string | null;
+  knownRealizedSubtotal: string;
   unknownRealizedCount: number;
   holdings: AssetHolding[];
 }
@@ -43,26 +48,35 @@ export interface AssetValuation {
 export interface AllocationSlice {
   key: string;
   label: string;
-  valueUsd: string;
+  value: string;
   percent: string | null;
+}
+
+export interface FxRate {
+  currency: 'USD' | 'EUR';
+  date: string;
+  rubPerUnit: string;
 }
 
 export interface PortfolioValuation {
   at: string;
-  quoteCurrency: 'USD';
+  currency: AccountingCurrency;
+  mainCurrency: AccountingCurrency;
+  rates: FxRate[];
   completeness: 'complete' | 'incomplete';
-  totalValueUsd: string | null;
-  pricedSubtotalUsd: string;
+  totalValue: string | null;
+  pricedSubtotal: string;
   missingPriceCount: number;
   stalePriceCount: number;
   unavailableAccountCount: number;
-  costBasisUsd: string | null;
-  knownCostSubtotalUsd: string;
+  costBasis: string | null;
+  knownCostSubtotal: string;
   unknownCostCount: number;
-  unrealizedPnlUsd: string | null;
+  missingRateCount: number;
+  unrealizedPnl: string | null;
   unrealizedReturnPercent: string | null;
-  realizedPnlUsd: string | null;
-  knownRealizedSubtotalUsd: string;
+  realizedPnl: string | null;
+  knownRealizedSubtotal: string;
   unknownRealizedCount: number;
   assets: AssetValuation[];
   allocation: {
@@ -75,14 +89,17 @@ export interface PortfolioValuation {
     accountId: string;
     name: string;
     coverage: 'covered' | 'not-started' | 'before-coverage';
-    pricedValueUsd: string | null;
+    pricedValue: string | null;
     missingPriceCount: number;
   }[];
 }
 
 export const portfolioValuationApi = {
-  get: async (): Promise<PortfolioValuation> => {
-    const response = await apiClient.get<PortfolioValuation>('/accounting/portfolio');
+  /** Without a currency the owner's main currency is used. */
+  get: async (currency?: AccountingCurrency): Promise<PortfolioValuation> => {
+    const response = await apiClient.get<PortfolioValuation>('/accounting/portfolio', {
+      params: currency ? { currency } : undefined,
+    });
     return response.data;
   },
 };

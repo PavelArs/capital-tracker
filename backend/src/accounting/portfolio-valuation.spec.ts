@@ -1,9 +1,10 @@
 import { calculateFifo, type FifoTrade } from './fifo';
-import { type HistoricalPosition, projectHistoricalFifo } from './historical-accounting';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  type PortfolioLot,
   type PortfolioPrices,
+  portfolioAccount,
   projectPortfolio,
   type StoredPrice,
 } from './portfolio-valuation';
@@ -82,40 +83,22 @@ const trade = (
 };
 /** An account whose holdings and realizations come from the real FIFO calculation. */
 function account(n: number, name: string, trades: FifoTrade[]): PortfolioAccountInput {
-  const fifo = calculateFifo(trades, []);
-  return {
-    accountId: id(100 + n),
-    name,
-    coverage: 'covered',
-    positions: projectHistoricalFifo(fifo, []).positions,
-    realizations: fifo.realizations.map(({ instrumentId, realizedUsd }) => ({
-      instrumentId,
-      realizedUsd,
-    })),
-  };
+  return portfolioAccount({ accountId: id(100 + n), name }, calculateFifo(trades, []), {
+    trades,
+    initialLots: [],
+  });
 }
 const position = (
   asset: PortfolioInstrument,
   quantity: string,
   costUsd: string | null,
-  unknown?: Pick<HistoricalPosition, 'knownCostSubtotalUsd' | 'unknownCostQuantity'>,
-): HistoricalPosition => ({
-  instrumentId: asset.id,
-  instrumentName: asset.name,
-  instrumentSymbol: asset.symbol,
-  quantity,
-  costUsd,
-  ...unknown,
-});
-const holding = (
-  n: number,
-  name: string,
-  positions: HistoricalPosition[],
-): PortfolioAccountInput => ({
+  acquiredAt = '2025-06-01T00:00:00.000Z',
+): PortfolioLot => ({ instrumentId: asset.id, quantity, costUsd, acquiredAt });
+const holding = (n: number, name: string, lots: PortfolioLot[]): PortfolioAccountInput => ({
   accountId: id(100 + n),
   name,
   coverage: 'covered',
-  positions,
+  lots,
   realizations: [],
 });
 const assetOf = (result: ReturnType<typeof projectPortfolio>, asset: PortfolioInstrument) =>
@@ -136,22 +119,22 @@ describe('PV-BR11 two buys and a price', () => {
     );
     expect(assetOf(result, btc)).toMatchObject({
       quantity: '1.2',
-      averageBuyPriceUsd: '55000',
-      costBasisUsd: '66000',
-      valueUsd: '96000',
-      unrealizedPnlUsd: '30000',
+      averageBuyPrice: '55000',
+      costBasis: '66000',
+      value: '96000',
+      unrealizedPnl: '30000',
       unrealizedReturnPercent: '45.45',
-      realizedPnlUsd: '0',
+      realizedPnl: '0',
       allocationPercent: '100.00',
-      price: { priceUsd: '80000', source: 'kraken', status: 'fresh' },
+      price: { value: '80000', source: 'kraken', status: 'fresh' },
     });
     expect(result).toMatchObject({
       completeness: 'complete',
-      totalValueUsd: '96000',
-      costBasisUsd: '66000',
-      unrealizedPnlUsd: '30000',
+      totalValue: '96000',
+      costBasis: '66000',
+      unrealizedPnl: '30000',
       unrealizedReturnPercent: '45.45',
-      realizedPnlUsd: '0',
+      realizedPnl: '0',
     });
   });
 });
@@ -165,10 +148,10 @@ describe('PV-MARKET spreadsheet row at a market price', () => {
       prices({ BTC: ['84945', minutesAgo(30)] }),
     );
     expect(assetOf(result, btc)).toMatchObject({
-      valueUsd: '780.10005255',
-      unrealizedPnlUsd: '-219.89994745',
+      value: '780.10005255',
+      unrealizedPnl: '-219.89994745',
       unrealizedReturnPercent: '-21.99',
-      price: { priceUsd: '84945', observedAt: minutesAgo(30), status: 'fresh' },
+      price: { value: '84945', observedAt: minutesAgo(30), status: 'fresh' },
     });
   });
 });
@@ -182,13 +165,13 @@ describe('PV-STALE a three-hour-old price is used and marked', () => {
       prices({ BTC: ['50', minutesAgo(180)] }),
     );
     expect(assetOf(result, btc).price).toEqual({
-      priceUsd: '50',
+      value: '50',
       observedAt: minutesAgo(180),
       source: 'kraken',
       status: 'stale',
     });
-    expect(assetOf(result, btc).valueUsd).toBe('100');
-    expect(result).toMatchObject({ totalValueUsd: '100', stalePriceCount: 1 });
+    expect(assetOf(result, btc).value).toBe('100');
+    expect(result).toMatchObject({ totalValue: '100', stalePriceCount: 1 });
   });
 });
 
@@ -208,12 +191,12 @@ describe('PV-REALIZED FIFO realization', () => {
     );
     expect(assetOf(result, btc)).toMatchObject({
       quantity: '0.5',
-      costBasisUsd: '30000',
-      averageBuyPriceUsd: '60000',
-      realizedPnlUsd: '25000',
-      unrealizedPnlUsd: '5000',
+      costBasis: '30000',
+      averageBuyPrice: '60000',
+      realizedPnl: '25000',
+      unrealizedPnl: '5000',
     });
-    expect(result.realizedPnlUsd).toBe('25000');
+    expect(result.realizedPnl).toBe('25000');
   });
 
   it('keeps realized results of assets no longer held and marks unknown ones', () => {
@@ -224,28 +207,36 @@ describe('PV-REALIZED FIFO realization', () => {
     const result = projectPortfolio(now, [eth], [sold], prices({}));
     expect(assetOf(result, eth)).toMatchObject({
       quantity: '0',
-      valueUsd: '0',
-      realizedPnlUsd: '-1000',
+      value: '0',
+      realizedPnl: '-1000',
       missingPrice: 'no-price',
     });
-    expect(result).toMatchObject({ realizedPnlUsd: '-1000', missingPriceCount: 0 });
+    expect(result).toMatchObject({ realizedPnl: '-1000', missingPriceCount: 0 });
     const unknown = projectPortfolio(
       now,
       [eth],
       [
         {
           ...sold,
-          realizations: [...sold.realizations, { instrumentId: eth.id, realizedUsd: null }],
+          realizations: [
+            ...sold.realizations,
+            {
+              instrumentId: eth.id,
+              occurredAt: '2025-06-30T00:00:00.000Z',
+              proceedsUsd: '10',
+              consumed: [{ costUsd: null, acquiredAt: '2025-06-29T00:00:00.000Z' }],
+            },
+          ],
         },
       ],
       prices({}),
     );
     expect(assetOf(unknown, eth)).toMatchObject({
-      realizedPnlUsd: null,
-      knownRealizedSubtotalUsd: '-1000',
+      realizedPnl: null,
+      knownRealizedSubtotal: '-1000',
       unknownRealizedCount: 1,
     });
-    expect(unknown.realizedPnlUsd).toBeNull();
+    expect(unknown.realizedPnl).toBeNull();
   });
 });
 
@@ -254,29 +245,25 @@ describe('PV-UNKNOWN-COST partly unknown cost', () => {
     const result = projectPortfolio(
       now,
       [btc],
-      [
-        holding(1, 'Trezor', [
-          position(btc, '1.5', null, { knownCostSubtotalUsd: '50000', unknownCostQuantity: '0.5' }),
-        ]),
-      ],
+      [holding(1, 'Trezor', [position(btc, '1', '50000'), position(btc, '0.5', null)])],
       prices({ BTC: ['60000', minutesAgo(5)] }),
     );
     expect(assetOf(result, btc)).toMatchObject({
       quantity: '1.5',
-      valueUsd: '90000',
-      costBasisUsd: null,
-      knownCostSubtotalUsd: '50000',
+      value: '90000',
+      costBasis: null,
+      knownCostSubtotal: '50000',
       unknownCostQuantity: '0.5',
-      averageBuyPriceUsd: '50000',
-      unrealizedPnlUsd: null,
+      averageBuyPrice: '50000',
+      unrealizedPnl: null,
       unrealizedReturnPercent: null,
     });
     expect(result).toMatchObject({
-      totalValueUsd: '90000',
-      costBasisUsd: null,
-      knownCostSubtotalUsd: '50000',
+      totalValue: '90000',
+      costBasis: null,
+      knownCostSubtotal: '50000',
       unknownCostCount: 1,
-      unrealizedPnlUsd: null,
+      unrealizedPnl: null,
     });
   });
 });
@@ -299,31 +286,31 @@ describe('PV-NONE and PV-FIXED missing prices are not zero', () => {
     expect(assetOf(result, eth)).toMatchObject({
       price: null,
       missingPrice: 'no-price',
-      valueUsd: null,
+      value: null,
       allocationPercent: null,
-      unrealizedPnlUsd: null,
+      unrealizedPnl: null,
     });
     expect(assetOf(result, usd)).toMatchObject({
-      price: { priceUsd: '1', observedAt: null, source: 'fixed', status: 'fixed' },
-      valueUsd: '1500',
+      price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+      value: '1500',
     });
     expect(assetOf(result, rub)).toMatchObject({
       price: null,
       missingPrice: 'no-rate',
-      valueUsd: null,
+      value: null,
     });
     expect(assetOf(result, unheld)).toMatchObject({
       quantity: '0',
-      valueUsd: '0',
+      value: '0',
       missingPrice: 'no-price',
       holdings: [],
     });
     expect(result).toMatchObject({
       completeness: 'incomplete',
-      totalValueUsd: null,
-      pricedSubtotalUsd: '2500',
+      totalValue: null,
+      pricedSubtotal: '2500',
       missingPriceCount: 2,
-      unrealizedPnlUsd: null,
+      unrealizedPnl: null,
       allocation: { complete: false },
     });
     // Held and priced by value, held without a price, then the rest.
@@ -349,15 +336,15 @@ describe('PV-NONE and PV-FIXED missing prices are not zero', () => {
     );
     expect(result).toMatchObject({
       completeness: 'incomplete',
-      totalValueUsd: null,
-      pricedSubtotalUsd: '10',
+      totalValue: null,
+      pricedSubtotal: '10',
       unavailableAccountCount: 1,
-      costBasisUsd: null,
+      costBasis: null,
       unknownCostCount: 0,
       // Holdings of the later account are unknown, so the shares are not complete either.
       allocation: { complete: false },
     });
-    expect(result.accounts.map((item) => [item.name, item.coverage, item.pricedValueUsd])).toEqual([
+    expect(result.accounts.map((item) => [item.name, item.coverage, item.pricedValue])).toEqual([
       ['Cash', 'covered', '10'],
       ['Later', 'before-coverage', null],
       ['Not started', 'not-started', '0'],
@@ -383,14 +370,14 @@ describe('PV-ALLOC and PV-TOTAL allocation over every account', () => {
         { [deposit.id]: '2300' },
       ),
     );
-    expect(result.totalValueUsd).toBe('10000');
+    expect(result.totalValue).toBe('10000');
     expect(assetOf(result, btc)).toMatchObject({
       quantity: '0.06',
-      valueUsd: '4200',
-      costBasisUsd: '4100',
+      value: '4200',
+      costBasis: '4100',
       holdings: [
-        { accountId: id(102), accountName: 'Bybit', quantity: '0.03', valueUsd: '2100' },
-        { accountId: id(101), accountName: 'Trust Wallet', quantity: '0.03', valueUsd: '2100' },
+        { accountId: id(102), accountName: 'Bybit', quantity: '0.03', value: '2100' },
+        { accountId: id(101), accountName: 'Trust Wallet', quantity: '0.03', value: '2100' },
       ],
     });
     const share = (list: { label: string; percent: string | null }[]) =>
@@ -411,6 +398,6 @@ describe('PV-ALLOC and PV-TOTAL allocation over every account', () => {
       ['Trust Wallet', '41.00'],
     ]);
     expect(result.allocation.complete).toBe(true);
-    expect(assetOf(result, deposit).price).toMatchObject({ priceUsd: '2300', status: 'manual' });
+    expect(assetOf(result, deposit).price).toMatchObject({ value: '2300', status: 'manual' });
   });
 });

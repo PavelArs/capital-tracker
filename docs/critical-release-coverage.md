@@ -12,9 +12,9 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 22 manifest entries: the original 19 browser cases,
+The reviewed selection contains 23 manifest entries: the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and,
-since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation. Each entry may cover more than one scenario ID; these are
+since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation and CURRENCY-UI three-currency accounting. Each entry may cover more than one scenario ID; these are
 browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
@@ -41,6 +41,7 @@ using synthetic owner data and provider fixtures.
 | CSV-006-B | A committed CSV confirm survives session expiry, 401, MFA reauthentication and SPA return without duplicate posting. |
 | ADDR-UI / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every USD value is shown as missing, never zero. |
 | PORTFOLIO-UI | Whole-portfolio value, average buy price, cost basis, unrealized and realized P&L and allocation come from real accounts and a stored price; anonymous and query-carrying reads are refused. |
+| CURRENCY-UI | The main currency saved in Settings survives logout and MFA login; the Portfolio and Asset screens show value, cost and P&L in EUR and RUB from stored Bank of Russia rates, cost at the purchase date's rate; anonymous, missing-CSRF and unknown-currency requests are refused. |
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout

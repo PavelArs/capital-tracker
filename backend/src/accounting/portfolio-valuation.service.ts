@@ -1,5 +1,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import {
+  type AccountingCurrency,
+  FxConverter,
+  isAccountingCurrency,
+} from '../fx-rates/fx-conversion';
+import { readFxRates } from '../fx-rates/fx-rates.service';
+import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { PriceSource } from './asset-classification';
 import {
@@ -9,12 +16,12 @@ import {
   readConnectedLedger,
   rethrowAccountingHistory,
 } from './connected-accounting.store';
-import { projectHistoricalFifo } from './historical-accounting';
 import { parseDecimal, parseUuid } from './input';
 import type { OwnedProjection } from './owned-transfer-fifo';
 import {
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  portfolioAccount,
   projectPortfolio,
   type StoredPrice,
 } from './portfolio-valuation';
@@ -30,14 +37,16 @@ interface ManualPriceRow {
   priceUsd: string;
 }
 
-function parseEmptyQuery(query: unknown): void {
-  if (
-    !query ||
-    typeof query !== 'object' ||
-    Array.isArray(query) ||
-    Object.keys(query).length !== 0
-  )
+/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
+function parseQuery(query: unknown): AccountingCurrency | null {
+  if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
+  const keys = Object.keys(query);
+  if (keys.length === 0) return null;
+  const { currency } = query as Record<string, unknown>;
+  if (keys.length !== 1 || keys[0] !== 'currency' || !isAccountingCurrency(currency))
+    throw new BadRequestException('Invalid accounting input');
+  return currency;
 }
 
 /** Latest manual point at or before the instant whose current version is not void. */
@@ -80,7 +89,7 @@ export class PortfolioValuationService {
 
   async read(ownerId: string, rawQuery: unknown, now = new Date()) {
     const owner = parseUuid(ownerId);
-    parseEmptyQuery(rawQuery);
+    const asked = parseQuery(rawQuery);
     const at = now.toISOString();
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
@@ -106,7 +115,7 @@ export class PortfolioValuationService {
             accounts.push({
               ...identity,
               coverage: row.coverageFrom ? 'before-coverage' : 'not-started',
-              positions: [],
+              lots: [],
               realizations: [],
             });
             continue;
@@ -118,31 +127,14 @@ export class PortfolioValuationService {
           for (const id of ledger.accounts.keys()) ledgers.set(id, ledger);
           const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
           projections.set(ledger, projection);
-          const account = ledger.accounts.get(row.accountId)!;
-          const fifo = projection.accounts.get(row.accountId)!;
-          accounts.push({
-            ...identity,
-            coverage: 'covered',
-            positions: projectHistoricalFifo(fifo, account.initialLots).positions,
-            realizations: [
-              ...fifo.realizations.map(({ instrumentId, realizedUsd }) => ({
-                instrumentId,
-                realizedUsd,
-              })),
-              // A swap realizes its outgoing asset.
-              ...(account.swaps ?? []).flatMap((swap) => {
-                const allocation = projection.swapAllocations.get(swap.swapId);
-                return allocation
-                  ? [
-                      {
-                        instrumentId: swap.outgoingInstrumentId,
-                        realizedUsd: allocation.realizedUsd,
-                      },
-                    ]
-                  : [];
-              }),
-            ],
-          });
+          accounts.push(
+            portfolioAccount(
+              identity,
+              projection.accounts.get(row.accountId)!,
+              ledger.accounts.get(row.accountId)!,
+              projection.swapAllocations,
+            ),
+          );
         }
       } catch (error) {
         rethrowAccountingHistory(error);
@@ -163,15 +155,24 @@ export class PortfolioValuationService {
         bySource('manual').map((instrument) => instrument.id),
         now,
       );
-      return projectPortfolio(now, instruments, accounts, {
-        market: new Map(
-          market.map((row) => [
-            row.asset,
-            { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-          ]),
-        ),
-        manual,
-      });
+      const mainCurrency = await readMainCurrency(manager, owner);
+      const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
+      const report = projectPortfolio(
+        now,
+        instruments,
+        accounts,
+        {
+          market: new Map(
+            market.map((row) => [
+              row.asset,
+              { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
+            ]),
+          ),
+          manual,
+        },
+        fx,
+      );
+      return { ...report, mainCurrency };
     });
   }
 }

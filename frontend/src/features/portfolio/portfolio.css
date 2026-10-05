@@ -7,6 +7,23 @@
   gap: var(--sp-3);
 }
 
+.portfolio-actions,
+.portfolio-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.portfolio-crumbs {
+  justify-content: space-between;
+}
+
+.portfolio-actions .shell-seg,
+.portfolio-crumbs .shell-seg {
+  margin: 0;
+}
+
 .shell-button--primary {
   margin-top: 0;
   border-color: transparent;

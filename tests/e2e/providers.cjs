@@ -5,7 +5,7 @@ const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 
-const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com']);
+const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -33,6 +33,46 @@ let marketPrices = null;
 const krakenKeys = { XBTUSD: 'XXBTZUSD', ETHUSD: 'XETHZUSD', ZECUSD: 'XZECZUSD', XLMUSD: 'XXLMZUSD', USDTUSD: 'USDTZUSD' };
 const DAY = 86400;
 const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
+// Synthetic Bank of Russia rates (account-in-three-currencies): { base: { R01235: 80 }, fail: { R01239: 500 } }.
+// Every Tuesday..Saturday from 2025-01-01 to tomorrow (Moscow) has a record worth
+// base + 0.01 per day since 2025-01-01; Sundays and Mondays have none. Oracles restate this.
+let cbr = null;
+
+function cbrDynamic(response, url) {
+  const code = url.searchParams.get('VAL_NM_RQ') ?? '';
+  // Only a series code shape is ever echoed back, like the real service.
+  if (!/^R\d{5}$/.test(code)) {
+    response.writeHead(200, { 'content-type': 'text/html', connection: 'close' });
+    return response.end('Error in parameters');
+  }
+  const parse = (value) => {
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value ?? '');
+    return match ? Date.parse(`${match[3]}-${match[2]}-${match[1]}T00:00:00Z`) / 1000 : NaN;
+  };
+  const from = parse(url.searchParams.get('date_req1'));
+  const to = parse(url.searchParams.get('date_req2'));
+  const failure = cbr?.fail?.[code];
+  if (failure) {
+    response.writeHead(failure, { 'content-type': 'text/html', connection: 'close' });
+    return response.end('<html><body>Service unavailable</body></html>');
+  }
+  const base = cbr?.base?.[code];
+  if (base === undefined || !Number.isFinite(from) || !Number.isFinite(to) || from > to) {
+    response.writeHead(200, { 'content-type': 'text/html', connection: 'close' });
+    return response.end('Error in parameters');
+  }
+  const tomorrow = Math.floor((Date.now() / 1000 + 3 * 3600) / DAY) * DAY + DAY;
+  const date = (time) => new Date(time * 1000).toISOString().slice(0, 10).split('-').reverse().join('.');
+  let records = '';
+  for (let time = Math.max(from, backfillStart); time <= Math.min(to, tomorrow); time += DAY) {
+    if ([0, 1].includes(new Date(time * 1000).getUTCDay())) continue;
+    const cents = base * 100 + (time - backfillStart) / DAY;
+    const value = `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, '0')}00`;
+    records += `<Record Date="${date(time)}" Id="${code}"><Nominal>1</Nominal><Value>${value}</Value><VunitRate>${value}</VunitRate></Record>`;
+  }
+  response.writeHead(200, { 'content-type': 'application/xml; charset=windows-1251', connection: 'close' });
+  response.end(`<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`);
+}
 
 // Kraken OHLC: hourly candles end with the open candle three hours after `since`; daily
 // candles run from the day containing `since` to today. Oracles restate these formulas.
@@ -143,6 +183,7 @@ function provider(request, response, url) {
     return;
   }
   if (url.hostname === 'api.kraken.com' && url.pathname === '/0/public/OHLC') return krakenOhlc(response, url);
+  if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp') return cbrDynamic(response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -189,6 +230,7 @@ const server = http.createServer(async (request, response) => {
       fx = initialFx();
       bitcoinHistories = new Map();
       marketPrices = null;
+      cbr = null;
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/fx') {
@@ -218,6 +260,17 @@ const server = http.createServer(async (request, response) => {
         return respond(response, 400, { error: 'Invalid synthetic price fixture' });
       }
       marketPrices = { kraken, coingecko: data.coingecko ? coingecko : null };
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/cbr') {
+      const data = await readJson(request);
+      const table = (value, check) => value === undefined || (value && typeof value === 'object' && !Array.isArray(value)
+        && Object.entries(value).every(([key, item]) => /^R\d{5}$/.test(key) && check(item)));
+      if (!table(data.base, (item) => Number.isSafeInteger(item) && item > 0 && item < 10000)
+        || !table(data.fail, (item) => Number.isInteger(item) && item >= 400 && item <= 599)) {
+        return respond(response, 400, { error: 'Invalid synthetic Bank of Russia fixture' });
+      }
+      cbr = { base: data.base ?? {}, fail: data.fail ?? {} };
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
