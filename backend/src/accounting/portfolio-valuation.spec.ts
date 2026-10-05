@@ -1,3 +1,4 @@
+import { FxConverter } from '../fx-rates/fx-conversion';
 import { calculateFifo, type FifoTrade } from './fifo';
 import {
   type PortfolioAccountInput,
@@ -399,5 +400,99 @@ describe('PV-ALLOC and PV-TOTAL allocation over every account', () => {
     ]);
     expect(result.allocation.complete).toBe(true);
     expect(assetOf(result, deposit).price).toMatchObject({ value: '2300', status: 'manual' });
+  });
+});
+
+describe('PV-24H price change over the last 24 hours', () => {
+  const dayAgo = (minutes: number) =>
+    new Date(now.getTime() - 24 * 3_600_000 - minutes * 60_000).toISOString();
+  const previous = (
+    marketEntries: Record<string, [string, string]>,
+    manual: Record<string, string> = {},
+  ): PortfolioPrices => ({
+    market: market(marketEntries),
+    manual: new Map(
+      Object.entries(manual).map(([instrumentId, priceUsd]) => [
+        instrumentId,
+        { priceUsd, observedAt: dayAgo(600), source: 'manual' },
+      ]),
+    ),
+  });
+  const accounts = [
+    holding(1, 'Trust Wallet', [
+      position(btc, '1', '100'),
+      position(eth, '1', '100'),
+      position(usd, '10', '10'),
+      position(deposit, '1', '100'),
+    ]),
+  ];
+
+  it('compares each price with the one stored 24 hours earlier', () => {
+    const result = projectPortfolio(
+      now,
+      [btc, eth, usd, deposit],
+      accounts,
+      prices(
+        { BTC: ['80000', minutesAgo(30)], ETH: ['2000', minutesAgo(30)] },
+        { [deposit.id]: '110' },
+      ),
+      undefined,
+      previous({ BTC: ['75000', dayAgo(30)], ETH: ['2500', dayAgo(150)] }, { [deposit.id]: '100' }),
+    );
+    expect(assetOf(result, btc).priceChange24hPercent).toBe('6.67');
+    // A price more than 2 hours older than the moment 24 hours ago is not that day's price.
+    expect(assetOf(result, eth).priceChange24hPercent).toBeNull();
+    expect(assetOf(result, usd).priceChange24hPercent).toBe('0.00');
+    expect(assetOf(result, deposit).priceChange24hPercent).toBe('10.00');
+  });
+
+  it('follows the rate of each day for cash in another currency', () => {
+    const fx = new FxConverter(
+      {
+        USD: [
+          { date: '2026-10-03', rubPerUnit: '80' },
+          { date: '2026-10-04', rubPerUnit: '100' },
+        ],
+        EUR: [],
+      },
+      'RUB',
+    );
+    const result = projectPortfolio(now, [usd], accounts, prices({}), fx, previous({}));
+    // One dollar was 80 rubles on 3 October and 100 rubles on 4 October (Moscow dates).
+    expect(assetOf(result, usd).priceChange24hPercent).toBe('25.00');
+  });
+
+  it('is unknown while the current market price is stale', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      accounts,
+      prices({ BTC: ['80000', minutesAgo(20 * 60)] }),
+      undefined,
+      previous({ BTC: ['75000', dayAgo(30)] }),
+    );
+    // A price collected 20 hours ago against one from 24 hours ago is not a 24-hour change.
+    expect(assetOf(result, btc).price?.status).toBe('stale');
+    expect(assetOf(result, btc).priceChange24hPercent).toBeNull();
+  });
+
+  it('is unknown without an earlier price', () => {
+    const result = projectPortfolio(
+      now,
+      [btc, deposit],
+      accounts,
+      prices({ BTC: ['80000', minutesAgo(30)] }, { [deposit.id]: '110' }),
+      undefined,
+      previous({}),
+    );
+    expect(assetOf(result, btc).priceChange24hPercent).toBeNull();
+    expect(assetOf(result, deposit).priceChange24hPercent).toBeNull();
+    const without = projectPortfolio(
+      now,
+      [btc],
+      accounts,
+      prices({ BTC: ['80000', minutesAgo(30)] }),
+    );
+    expect(assetOf(without, btc).priceChange24hPercent).toBeNull();
   });
 });
