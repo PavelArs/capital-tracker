@@ -2,7 +2,10 @@
 'use strict';
 
 // Main runs no tests (owner decision 2026-10-05): a push to main may only release code whose
-// pull request passed the full CI suite, including every critical acceptance shard.
+// pull request passed the full CI suite, including every critical acceptance shard. When that
+// pull request run cannot prove it (it failed, or predates a job the suite now requires), a
+// green manual full run (workflow_dispatch) of this exact commit can (owner decision
+// 2026-10-05); re-running the failed push run then releases it without another merge.
 const { SHARDS } = require('./acceptance-shards.cjs');
 
 const WORKFLOW_PATH = '.github/workflows/ci.yml';
@@ -50,6 +53,22 @@ function latestPullRequestRun(response, repository, headSha) {
   return latest;
 }
 
+// The newest manual full run of the merged commit itself, if anyone started one.
+function latestDispatchedRun(response, repository, commit) {
+  const runs = (response?.workflow_runs ?? []).filter(
+    (run) =>
+      run.event === 'workflow_dispatch' &&
+      run.path === WORKFLOW_PATH &&
+      run.head_sha === commit &&
+      run.head_repository?.full_name === repository,
+  );
+  if (runs.length === 0) return undefined;
+  const latest = runs.reduce((a, b) => (b.run_number > a.run_number ? b : a));
+  if (latest.status !== 'completed') throw new PendingError('Manual full CI run still running');
+  if (latest.conclusion !== 'success') throw new Error('Manual full CI run did not succeed');
+  return latest;
+}
+
 function requireFullSuite(response) {
   const jobs = response?.jobs ?? [];
   const missing = REQUIRED_JOBS.filter(
@@ -65,12 +84,29 @@ async function check({ request, repository, commit }) {
     throw new Error('Expected a repository and a full commit SHA');
   }
   const pull = mergedPullRequest(await request(`repos/${repository}/commits/${commit}/pulls`), commit);
-  const runs = await request(
-    `repos/${repository}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${pull.head.sha}&per_page=100`,
-  );
-  const run = latestPullRequestRun(runs, repository, pull.head.sha);
-  requireFullSuite(await request(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`));
-  return { pull: pull.number, run: run.id, url: run.html_url };
+  try {
+    const runs = await request(
+      `repos/${repository}/actions/workflows/ci.yml/runs?event=pull_request&head_sha=${pull.head.sha}&per_page=100`,
+    );
+    const run = latestPullRequestRun(runs, repository, pull.head.sha);
+    requireFullSuite(await request(`repos/${repository}/actions/runs/${run.id}/jobs?per_page=100`));
+    return { pull: pull.number, run: run.id, url: run.html_url };
+  } catch (error) {
+    if (error instanceof PendingError) throw error;
+    const dispatched = latestDispatchedRun(
+      await request(
+        `repos/${repository}/actions/workflows/ci.yml/runs?event=workflow_dispatch&head_sha=${commit}&per_page=100`,
+      ),
+      repository,
+      commit,
+    );
+    // Without a manual run of this commit the pull request run's own failure stands.
+    if (!dispatched) throw error;
+    requireFullSuite(
+      await request(`repos/${repository}/actions/runs/${dispatched.id}/jobs?per_page=100`),
+    );
+    return { pull: pull.number, run: dispatched.id, url: dispatched.html_url, manual: true };
+  }
 }
 
 // Waits while the pull request is not yet linked or its CI still runs; failures end at once.
@@ -115,8 +151,10 @@ if (require.main === module) {
     },
     { log: (message) => console.log(message) },
   ).then(
-    ({ pull, run, url }) => {
-      const line = `Merged pull request #${pull} passed the full CI suite in run ${run} (${url})`;
+    ({ pull, run, url, manual }) => {
+      const line = manual
+        ? `Merged pull request #${pull}: this commit passed the full CI suite in manual run ${run} (${url})`
+        : `Merged pull request #${pull} passed the full CI suite in run ${run} (${url})`;
       console.log(line);
       if (GITHUB_STEP_SUMMARY) require('node:fs').appendFileSync(GITHUB_STEP_SUMMARY, `${line}\n`);
     },

@@ -36,8 +36,14 @@ push to main runs no tests: `Build Release Images` builds and exports the deploy
 candidate and `Merged Pull Request CI` (`scripts/check-merged-pr-ci.cjs`) requires that
 the pull request merged as that commit had a successful newest CI run on its final head
 with every shard, the scan job, the receipt job and `CI Status` green (it waits while that run is
-still going). Only a push run on main can be deployed; pull request and dispatched runs
-are review evidence only. A pull request tested while behind main proves its own merge
+still going). If that pull request run cannot prove it (it failed, or it predates a job
+the suite now requires, as when a pull request merged without merging main after a CI
+layout change), start a manual CI run on main while that commit is its head; once it is green with every
+required job, re-run the failed jobs of the push run and the gate accepts the manual run
+instead (owner decision 2026-10-05). The newest manual run of the commit decides, and a
+run missing any shard, the scan job, the receipt job or `CI Status` is refused like a
+pull request run. Only a push run on main can be deployed; pull request and dispatched
+runs are review evidence only. A pull request tested while behind main proves its own merge
 result, not the main tree after later merges; keep branches up to date before merging
 when that matters.
 

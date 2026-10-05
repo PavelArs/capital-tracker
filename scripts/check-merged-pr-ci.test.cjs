@@ -36,17 +36,44 @@ function fullSuite() {
   return REQUIRED_JOBS.map((name) => ({ name, conclusion: 'success' }));
 }
 
-// Synthetic GitHub API: answers only the three read-only calls the check makes.
-function api({ pulls = [pull()], runs = [run()], jobs = fullSuite() } = {}) {
+// A manual (workflow_dispatch) full run of the merged commit itself.
+function manualRun(overrides = {}) {
+  return run({
+    id: 31,
+    run_number: 5,
+    event: 'workflow_dispatch',
+    head_sha: commit,
+    html_url: 'https://github.com/pavelars/capital-tracker/actions/runs/31',
+    ...overrides,
+  });
+}
+
+// Synthetic GitHub API: answers only the read-only calls the check makes.
+function api({
+  pulls = [pull()],
+  runs = [run()],
+  jobs = fullSuite(),
+  manual = [],
+  manualJobs = fullSuite(),
+} = {}) {
   const calls = [];
   const request = async (path) => {
     calls.push(path);
     if (path === `repos/${repository}/commits/${commit}/pulls`) return pulls;
     if (path.startsWith(`repos/${repository}/actions/workflows/ci.yml/runs?`)) {
+      if (path.includes('event=workflow_dispatch')) {
+        assert.match(path, new RegExp(`event=workflow_dispatch&head_sha=${commit}&`));
+        return { workflow_runs: manual };
+      }
       assert.match(path, new RegExp(`event=pull_request&head_sha=${head}&`));
       return { workflow_runs: runs };
     }
-    if (path.startsWith(`repos/${repository}/actions/runs/`)) return { jobs };
+    if (path.startsWith(`repos/${repository}/actions/runs/`)) {
+      const isManual = manual.some((item) =>
+        path.startsWith(`repos/${repository}/actions/runs/${item.id}/`),
+      );
+      return { jobs: isManual ? manualJobs : jobs };
+    }
     throw new Error(`unexpected ${path}`);
   };
   return { request, calls };
@@ -175,9 +202,97 @@ test('does not retry a failed pull request CI run', async () => {
   let runsCalls = 0;
   const fake = api({ runs: [run({ conclusion: 'failure' })] });
   const request = async (path) => {
-    if (path.includes('/workflows/ci.yml/runs?')) runsCalls++;
+    if (path.includes('/workflows/ci.yml/runs?event=pull_request')) runsCalls++;
     return fake.request(path);
   };
-  await assert.rejects(waitForCheck({ request, repository, commit }, { delayMs: 0 }), /did not succeed/);
+  await assert.rejects(
+    waitForCheck({ request, repository, commit }, { delayMs: 0 }),
+    /did not succeed/,
+  );
   assert.equal(runsCalls, 1);
+});
+
+// Owner decision 2026-10-05: a stuck main is re-proven by a manual full run of its commit.
+const stale = () =>
+  fullSuite().filter(
+    (job) => !['Critical acceptance (browser-4)', 'Image Security Scan'].includes(job.name),
+  );
+
+test('uses the pull request run alone when it proves the full suite', async () => {
+  const fake = api({ manual: [manualRun({ conclusion: 'failure' })] });
+  assert.equal((await check(options(fake))).run, 11);
+  assert.ok(!fake.calls.some((path) => path.includes('event=workflow_dispatch')));
+});
+
+test('accepts a green manual full run of the merged commit when the pull request run is stale', async () => {
+  const fake = api({ jobs: stale(), manual: [manualRun()] });
+  assert.deepEqual(await check(options(fake)), {
+    pull: 7,
+    run: 31,
+    url: 'https://github.com/pavelars/capital-tracker/actions/runs/31',
+    manual: true,
+  });
+  assert.equal(fake.calls.at(-1), `repos/${repository}/actions/runs/31/jobs?per_page=100`);
+});
+
+test('accepts a green manual full run of the merged commit when the pull request run failed', async () => {
+  const fake = api({ runs: [run({ conclusion: 'failure' })], manual: [manualRun()] });
+  assert.equal((await check(options(fake))).run, 31);
+});
+
+for (const name of REQUIRED_JOBS) {
+  test(`refuses a manual run whose ${name} did not succeed`, async () => {
+    const manualJobs = fullSuite().map((job) =>
+      job.name === name ? { ...job, conclusion: 'skipped' } : job,
+    );
+    await assert.rejects(
+      check(options(api({ jobs: stale(), manual: [manualRun()], manualJobs }))),
+      (error) => error.message.includes(name),
+    );
+  });
+}
+
+test('the newest manual run decides: an older green one cannot outvote a failed one', async () => {
+  const manual = [manualRun(), manualRun({ id: 32, run_number: 6, conclusion: 'failure' })];
+  await assert.rejects(
+    check(options(api({ jobs: stale(), manual }))),
+    /Manual full CI run did not succeed/,
+  );
+});
+
+test('ignores manual runs of other commits, workflows, events and forks', async () => {
+  const manual = [
+    manualRun({ id: 41, head_sha: head }),
+    manualRun({ id: 42, head_sha: 'c'.repeat(40) }),
+    manualRun({ id: 43, path: '.github/workflows/cd.yml' }),
+    manualRun({ id: 44, event: 'push' }),
+    manualRun({ id: 45, head_repository: { full_name: 'someone/fork' } }),
+  ];
+  await assert.rejects(
+    check(options(api({ jobs: stale(), manual }))),
+    /lacks successful full-suite jobs: Critical acceptance \(browser-4\), Image Security Scan/,
+  );
+});
+
+test('still needs a pull request merged as this commit', async () => {
+  await assert.rejects(
+    check(options(api({ pulls: [], manual: [manualRun()] }))),
+    /No pull request merged as this commit/,
+  );
+});
+
+test('waits while the manual full run still runs, then accepts it', async () => {
+  let polls = 0;
+  const fake = api({ jobs: stale(), manual: [manualRun()] });
+  const request = async (path) => {
+    if (path.includes('event=workflow_dispatch')) {
+      polls++;
+      if (polls < 3)
+        return { workflow_runs: [manualRun({ status: 'in_progress', conclusion: null })] };
+    }
+    return fake.request(path);
+  };
+  const result = await waitForCheck({ request, repository, commit }, { delayMs: 0 });
+  assert.equal(result.run, 31);
+  assert.equal(polls, 3);
 });
