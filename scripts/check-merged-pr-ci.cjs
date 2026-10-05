@@ -8,6 +8,7 @@ const { SHARDS } = require('./acceptance-shards.cjs');
 const WORKFLOW_PATH = '.github/workflows/ci.yml';
 const REQUIRED_JOBS = [
   ...SHARDS.map((shard) => `Critical acceptance (${shard})`),
+  'Image Security Scan',
   'Acceptance Receipt and Image Security',
   'CI Status',
 ];

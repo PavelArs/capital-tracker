@@ -82,6 +82,9 @@ services:
       - ./.runtime/provider-tls:/tests/tls:ro
     networks: [isolated]
     read_only: true
+    # PID 1 is plain node without a SIGTERM handler: stopping it only ever ends in SIGKILL,
+    # so skip the default 10 s grace period at every teardown.
+    stop_grace_period: 1s
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/__control/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 2s
@@ -171,6 +174,8 @@ services:
   client-a:
     image: capital-tracker-backend:acceptance
     command: [node, -e, "setInterval(() => {}, 60000)"]
+    # Same as providers: the dormant client ignores SIGTERM, so do not wait 10 s for it.
+    stop_grace_period: 1s
     networks:
       clients:
         ipv4_address: 172.30.90.10
@@ -189,6 +194,7 @@ services:
   client-b:
     image: capital-tracker-backend:acceptance
     command: [node, -e, "setInterval(() => {}, 60000)"]
+    stop_grace_period: 1s
     networks:
       clients:
         ipv4_address: 172.30.90.11

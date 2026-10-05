@@ -17,6 +17,7 @@ const fullSuiteJobs = [
   'frontend-build',
   'release-images',
   'critical-acceptance',
+  'image-security',
   'docker-build',
   'spec-check',
   'dependency-audit',
@@ -117,7 +118,7 @@ function invokeWorkflowGate(step: WorkflowStep, needs: Needs, event = 'pull_requ
 }
 
 describe('ENG-001: fail-closed CI result CLI', () => {
-  it('ENG-001-A accepts exact success for all twelve required jobs', () => {
+  it('ENG-001-A accepts exact success for all thirteen required jobs', () => {
     const result = invokeGate([JSON.stringify(successfulNeeds()), ...requiredJobs]);
     expect(result.status).toBe(0);
   });
@@ -252,7 +253,7 @@ describe('ENG-001-D: repository CI workflow wiring', () => {
     expect(ci.on.push?.branches).toContain('main');
   });
 
-  it('aggregates all twelve real jobs, including release shards, specifications and dependency audit', () => {
+  it('aggregates all thirteen real jobs, including release shards, the image scan, specifications and dependency audit', () => {
     expect(dependencies(ci.jobs['ci-status']).sort()).toEqual([...requiredJobs].sort());
     for (const job of requiredJobs) {
       expect(ci.jobs[job]).toBeDefined();
@@ -347,16 +348,19 @@ describe('DEP-001: required production dependency audit', () => {
 
 describe('ENG-004: release work runs beside the early gates and the aggregate requires both', () => {
   const earlyGates = testJobs.filter(
-    (job) => !['critical-acceptance', 'docker-build'].includes(job),
+    (job) => !['critical-acceptance', 'image-security', 'docker-build'].includes(job),
   );
 
-  it('ENG-004-A builds the images at once; shards and the final job follow the build', () => {
+  it('ENG-004-A builds the images at once; shards and scans follow the build, the final job both', () => {
     const ci = workflow('ci');
     // Actions minutes are free (public repository): acceptance no longer waits for lint and unit.
     expect(dependencies(ci.jobs['release-images'])).toEqual([]);
     expect(dependencies(ci.jobs['critical-acceptance'])).toEqual(['release-images']);
+    // The scans need only the images, so they run beside the shards instead of after them.
+    expect(dependencies(ci.jobs['image-security'])).toEqual(['release-images']);
     expect(dependencies(ci.jobs['docker-build']).sort()).toEqual([
       'critical-acceptance',
+      'image-security',
       'release-images',
     ]);
     expect(dependencies(ci.jobs['merged-pr-ci'])).toEqual([]);
@@ -390,15 +394,15 @@ describe('ENG-004: release work runs beside the early gates and the aggregate re
   });
 });
 
-const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3'];
+const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3', 'browser-4'];
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
 const mergedPrStep = 'Require a successful full pull request CI run';
 const exportStepName = 'Export the release candidate images';
 const loadImages = [
   'set -euo pipefail',
-  '(cd release-images && sha256sum -c images.tar.sha256)',
-  'docker load -i release-images/images.tar',
-  'rm release-images/images.tar',
+  '(cd release-images && sha256sum -c images.tar.zst.sha256)',
+  'zstd -dc release-images/images.tar.zst | docker load',
+  'rm release-images/images.tar.zst',
   'node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
 ];
 const fourImages =
@@ -462,6 +466,22 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     expect(browser).toHaveLength(1);
     expect(browser[0].run?.trim()).toBe('pnpm exec playwright install --with-deps chromium');
     expect(expression(browser[0].if)).toBe("startsWith(matrix.shard, 'browser-')");
+    // The browser comes from a cache keyed on the installed Playwright version; the install
+    // still runs after it, so a stale or missing cache only costs the download.
+    const version = steps.find((step) => step.id === 'playwright');
+    expect(version?.run).toContain('pnpm exec playwright --version');
+    const cache = steps.filter((step) => step.uses?.startsWith('actions/cache@'));
+    expect(cache).toHaveLength(1);
+    expect(cache[0].uses).toMatch(/^actions\/cache@[a-f0-9]{40}$/);
+    expect(cache[0].with).toEqual({
+      path: '~/.cache/ms-playwright',
+      key: 'playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}',
+    });
+    for (const step of [version, cache[0]]) {
+      expect(expression(step?.if)).toBe("startsWith(matrix.shard, 'browser-')");
+    }
+    expect(steps.indexOf(version as WorkflowStep)).toBeLessThan(steps.indexOf(cache[0]));
+    expect(steps.indexOf(cache[0])).toBeLessThan(steps.indexOf(browser[0]));
     const acceptance = steps.filter((step) => step.run?.includes('scripts/acceptance.mjs'));
     expect(acceptance).toHaveLength(1);
     expect(acceptance[0].run?.trim()).toBe(
@@ -485,7 +505,9 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
   });
 
   it('ENG-005-A retains all four image scans and security enforcement without pause conditions', () => {
-    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
+    const job = workflow('ci').jobs['image-security'];
+    expect(job.name).toBe('Image Security Scan');
+    const steps = job.steps ?? [];
     const scans = steps.filter((step) => step.uses?.startsWith('aquasecurity/trivy-action@'));
     expect(scans.map((step) => step.with?.['image-ref'])).toEqual([
       'capital-tracker-backend:acceptance',
@@ -547,22 +569,25 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     );
     expect(exports[1].with).toMatchObject({ path: 'candidate/', 'if-no-files-found': 'error' });
     // Pull requests never produce a deployable candidate.
-    for (const name of ['critical-acceptance', 'docker-build']) {
+    for (const name of ['critical-acceptance', 'image-security', 'docker-build']) {
       for (const step of workflow('ci').jobs[name].steps ?? []) {
         expect(step.with?.name).not.toBe('manual-mvp-candidate');
       }
     }
   });
 
-  it('ENG-005-C merges and verifies the shard receipts on pull requests before the scans', () => {
-    const steps = workflow('ci').jobs['docker-build'].steps ?? [];
+  it('ENG-005-C merges and verifies the shard receipts on pull requests after the passed scans', () => {
+    const job = workflow('ci').jobs['docker-build'];
+    // The receipt job runs only once the scan job passed on the same images.
+    expect(dependencies(job)).toContain('image-security');
+    const steps = job.steps ?? [];
     const merge = steps.find((step) => step.id === 'critical-release-acceptance');
     const verify = steps.find((step) => step.id === 'verify-critical-receipt');
-    const scan = steps.find((step) => step.uses?.startsWith('aquasecurity/trivy-action@'));
+    expect(steps.some((step) => step.uses?.startsWith('aquasecurity/trivy-action@'))).toBe(false);
+    expect(merge).toBeDefined();
     expect(steps.indexOf(merge as WorkflowStep)).toBeLessThan(
       steps.indexOf(verify as WorkflowStep),
     );
-    expect(steps.indexOf(verify as WorkflowStep)).toBeLessThan(steps.indexOf(scan as WorkflowStep));
     expect(verify?.if).toBeUndefined();
     expect(verify?.run).toContain(
       'node scripts/critical-release-profile.cjs verify test-results/critical-release-acceptance.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
@@ -594,6 +619,7 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     // The merged pull request must have run every shard and the receipt/scan job by name.
     expect(REQUIRED_JOBS).toEqual([
       ...shardJobNames,
+      workflow('ci').jobs['image-security'].name,
       workflow('ci').jobs['docker-build'].name,
       workflow('ci').jobs['ci-status'].name,
     ]);
@@ -652,28 +678,45 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     expect(steps[order[1]].run?.trim()).toBe(
       'node scripts/acceptance.mjs images --manifest release-images/manifest.json',
     );
-    expect(steps[order[2]].run).toContain(`docker save ${fourImages} -o release-images/images.tar`);
-    expect(steps[order[2]].run).toContain('sha256sum images.tar > images.tar.sha256');
+    expect(steps[order[2]].run).toContain('set -euo pipefail');
+    expect(steps[order[2]].run).toContain(
+      `docker save ${fourImages} | zstd -T0 -3 -q -o release-images/images.tar.zst`,
+    );
+    expect(steps[order[2]].run).toContain('sha256sum images.tar.zst > images.tar.zst.sha256');
     expect(steps[order[3]].with).toMatchObject({
       name: 'release-images',
       path: 'release-images/',
       'if-no-files-found': 'error',
       'compression-level': 0,
     });
+    // The receipt job gets the same manifest file alone, without the images.
+    const manifest = steps.findIndex(
+      (step) =>
+        step.uses?.startsWith('actions/upload-artifact@') &&
+        step.with?.name === 'release-images-manifest',
+    );
+    expect(manifest).toBeGreaterThan(order[2]);
+    expect(steps[manifest].with).toMatchObject({
+      path: 'release-images/manifest.json',
+      'if-no-files-found': 'error',
+    });
     // Pull requests hand the images to the shards; a push to main exports them instead.
-    for (const position of [order[2], order[3]]) {
+    for (const position of [order[2], order[3], manifest]) {
       expect(expression(steps[position].if)).toBe(testCondition);
     }
     for (const step of steps) {
-      if (![steps[order[2]], steps[order[3]]].includes(step) && !step.if?.includes('push')) {
+      if (
+        ![steps[order[2]], steps[order[3]], steps[manifest]].includes(step) &&
+        !step.if?.includes('push')
+      ) {
         expect(step.if).toBeUndefined();
       }
       expect(step.run ?? '').not.toMatch(/playwright|test:e2e|--shard/);
     }
   });
 
-  it('ENG-007-A every shard and the final job load the build artifact and refuse other images', () => {
-    for (const name of ['critical-acceptance', 'docker-build']) {
+  it('ENG-007-A every shard and the scan job load the build artifact and refuse other images', () => {
+    for (const name of ['critical-acceptance', 'image-security']) {
       const steps = ci.jobs[name].steps ?? [];
       const download = steps.findIndex(
         (step) =>
@@ -683,20 +726,58 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       const load = steps.findIndex(
         (step) => step.name === 'Load and verify the exact built images',
       );
-      const acceptance = steps.findIndex((step) => step.id === 'critical-release-acceptance');
+      // Shards run acceptance on the loaded images, the scan job scans them.
+      const use = steps.findIndex(
+        (step) =>
+          step.id === 'critical-release-acceptance' ||
+          step.uses?.startsWith('aquasecurity/trivy-action@'),
+      );
       expect(steps[download]?.uses).toMatch(/^actions\/download-artifact@[a-f0-9]{40}$/);
       expect(steps[download]?.with?.path).toBe('release-images');
       expect(download).toBeGreaterThanOrEqual(0);
       expect(download).toBeLessThan(load);
-      expect(load).toBeLessThan(acceptance);
+      expect(load).toBeLessThan(use);
       expect(steps[load].if).toBeUndefined();
       expect(steps[load].run?.trim().split('\n')).toEqual(loadImages);
+    }
+    // The receipt job reads only the manifest the images were verified against.
+    const receiptSteps = ci.jobs['docker-build'].steps ?? [];
+    const manifest = receiptSteps.filter(
+      (step) =>
+        step.uses?.startsWith('actions/download-artifact@') && typeof step.with?.name === 'string',
+    );
+    expect(manifest).toHaveLength(1);
+    expect(manifest[0].uses).toMatch(/^actions\/download-artifact@[a-f0-9]{40}$/);
+    expect(manifest[0].with).toEqual({ name: 'release-images-manifest', path: 'release-images' });
+    for (const name of ['critical-acceptance', 'image-security', 'docker-build']) {
       // No release job after the build may produce or fetch its own images.
-      for (const step of steps) {
+      for (const step of ci.jobs[name].steps ?? []) {
         expect(step.run ?? '').not.toMatch(
           /compose\b[^\n]*\bbuild\b|docker (?:build|pull)|acceptance\.mjs images/,
         );
       }
+    }
+  });
+
+  it('ENG-007-A the main-only browser cache job gates nothing and builds no images', () => {
+    const job = ci.jobs['playwright-cache'] as WorkflowJob;
+    expect(job.name).toBe('Warm Playwright Browser Cache');
+    expect(expression(job.if)).toBe(pushCondition);
+    expect(job['continue-on-error']).toBe(true);
+    for (const [name, other] of Object.entries(ci.jobs)) {
+      expect(dependencies(other)).not.toContain('playwright-cache');
+      if (name !== 'playwright-cache') expect(other.name).not.toBe(job.name);
+    }
+    const steps = job.steps ?? [];
+    const cache = steps.find((step) => step.uses?.startsWith('actions/cache@'));
+    const shardCache = (ci.jobs['critical-acceptance'].steps ?? []).find((step) =>
+      step.uses?.startsWith('actions/cache@'),
+    );
+    expect(cache?.uses).toBe(shardCache?.uses);
+    expect(cache?.with).toEqual(shardCache?.with);
+    for (const step of steps) {
+      expect(step.run ?? '').not.toMatch(/docker|acceptance\.mjs|playwright test/);
+      expect(step.with?.name).not.toBe('manual-mvp-candidate');
     }
   });
 
