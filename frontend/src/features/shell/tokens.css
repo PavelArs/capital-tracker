@@ -1,5 +1,7 @@
 /* Design tokens of the accepted prototype (2026-10-04). Dark first; light follows
-   data-theme from ThemeContext. Names avoid the legacy tokens in index.css. */
+   data-theme from ThemeContext. Names avoid the legacy tokens in index.css.
+   Onest and JetBrains Mono are bundled from @fontsource-variable (Layout.tsx imports them),
+   so no font is fetched from another host. */
 :root {
   --bg: #0d1016;
   --surface: #141821;
@@ -20,8 +22,16 @@
   --warn: #f2b544;
   --warn-soft: rgba(242, 181, 68, 0.12);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  /* One colour per asset everywhere (asset-identity.ts); unknown tickers are "other". */
+  --c-btc: #d95926;
+  --c-eth: #3987e5;
+  --c-sol: #d55181;
+  --c-zec: #199e70;
+  --c-cash: #9085e9;
+  --c-other: #4a5161;
 
-  --font-ui: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-ui: "Onest Variable", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
   --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-md: 14px;
@@ -60,4 +70,10 @@
   --warn: #9a6200;
   --warn-soft: rgba(214, 150, 20, 0.14);
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
+  --c-btc: #eb6834;
+  --c-eth: #2a78d6;
+  --c-sol: #e87ba4;
+  --c-zec: #1baf7a;
+  --c-cash: #4a3aa7;
+  --c-other: #c4c8d2;
 }

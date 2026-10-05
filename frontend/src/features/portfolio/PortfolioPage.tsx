@@ -7,9 +7,11 @@ import {
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import AssetIcon from '../shell/AssetIcon';
+import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
+import PageHeader from '../shell/PageHeader';
 import AddAssetDialog from './AddAssetDialog';
-import AddTransactionDialog from './AddTransactionDialog';
-import { CurrencySwitch, ratesNote, useAskedCurrency, withCurrency } from './currency';
+import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
 import './portfolio.css';
@@ -134,9 +136,30 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   );
 }
 
+/** Slice colour: the asset's own or its type's; accounts keep the positional palette. */
+function sliceColor(
+  portfolio: PortfolioValuation,
+  grouping: Grouping,
+  key: string,
+): string | undefined {
+  if (grouping === 'byType') return assetTypeColors[key as AssetType];
+  if (grouping !== 'byAsset') return undefined;
+  const asset = portfolio.assets.find((item) => item.instrumentId === key);
+  return asset ? assetIdentity(asset).color : undefined;
+}
+
 function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
   const [grouping, setGrouping] = useState<Grouping>('byAsset');
-  const slices = portfolio.allocation[grouping];
+  const slices = portfolio.allocation[grouping].map((slice, index) => {
+    const color = sliceColor(portfolio, grouping, slice.key);
+    const asset =
+      grouping === 'byAsset'
+        ? portfolio.assets.find((item) => item.instrumentId === slice.key)
+        : undefined;
+    // An asset is shown as "Bitcoin BTC" when its ticker differs from its name.
+    const ticker = asset?.symbol && asset.symbol !== slice.label ? asset.symbol : undefined;
+    return { ...slice, ticker, color, tone: color ? undefined : index % 6 };
+  });
   return (
     <section className="shell-card" aria-labelledby="portfolio-allocation">
       <div className="portfolio-toolbar">
@@ -161,11 +184,11 @@ function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
       ) : (
         <>
           <div className="portfolio-bar" aria-hidden="true">
-            {slices.map((slice, index) => (
+            {slices.map((slice) => (
               <span
                 key={slice.key}
-                style={{ width: `${slice.percent ?? 0}%` }}
-                data-tone={index % 6}
+                style={{ width: `${slice.percent ?? 0}%`, background: slice.color }}
+                data-tone={slice.tone}
               />
             ))}
           </div>
@@ -173,10 +196,20 @@ function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
             className="portfolio-slices"
             aria-label={`Allocation by ${grouping.slice(2).toLowerCase()}`}
           >
-            {slices.map((slice, index) => (
+            {slices.map((slice) => (
               <li key={slice.key}>
-                <span className="portfolio-swatch" data-tone={index % 6} aria-hidden="true" />
-                <span className="portfolio-slices__label">{slice.label}</span>
+                <span
+                  className="portfolio-swatch"
+                  style={{ background: slice.color }}
+                  data-tone={slice.tone}
+                  aria-hidden="true"
+                />
+                <span className="portfolio-slices__label">
+                  {slice.label}
+                  {slice.ticker && (
+                    <span className="portfolio-slices__ticker"> {slice.ticker}</span>
+                  )}
+                </span>
                 <span className="portfolio-slices__value">
                   {money(slice.value, portfolio.currency)}
                 </span>
@@ -240,11 +273,7 @@ function AssetsTable({
             <tr key={asset.instrumentId}>
               <td>
                 <span className="portfolio-asset">
-                  <span
-                    className="portfolio-asset__icon"
-                    data-letter={(asset.symbol ?? asset.name).slice(0, 1).toUpperCase()}
-                    aria-hidden="true"
-                  />
+                  <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
                   <span>
                     <Link
                       className="portfolio-asset__name"
@@ -287,9 +316,8 @@ export default function PortfolioPage() {
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [adding, setAdding] = useState(false);
-  const [recording, setRecording] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [asked, setAsked] = useAskedCurrency();
+  const [asked] = useAskedCurrency();
   const latest = useRef(0);
 
   // Only the newest request may change the page; a quiet refresh keeps what is shown.
@@ -331,32 +359,16 @@ export default function PortfolioPage() {
       Add asset
     </button>
   );
-  const recorded = () => {
-    setRecording(false);
-    void load(true);
-  };
   const now = new Date();
-  // The asked currency shows as chosen while its values load.
-  const shownCurrency = asked ?? portfolio?.currency;
 
   return (
     <div className="shell-page">
-      <div className="shell-page__head">
-        <h1>Portfolio</h1>
-        <div className="portfolio-actions">
-          {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
-          {assets.length > 0 && addButton(false)}
-          {assets.length > 0 && (
-            <button
-              type="button"
-              className="shell-button shell-button--primary"
-              onClick={() => setRecording(true)}
-            >
-              Add transaction
-            </button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Portfolio"
+        currency={portfolio?.currency}
+        actions={assets.length > 0 && addButton(false)}
+        onTransactionSaved={() => void load(true)}
+      />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your portfolio. Your data is safe; try again.</p>
@@ -419,7 +431,6 @@ export default function PortfolioPage() {
         </>
       )}
       {adding && <AddAssetDialog onClose={() => setAdding(false)} onAdded={added} />}
-      {recording && <AddTransactionDialog onClose={() => setRecording(false)} onSaved={recorded} />}
     </div>
   );
 }

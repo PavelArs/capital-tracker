@@ -29,6 +29,10 @@ const INTERRUPTED_AFTER_MS = 15 * 60_000;
 const DAY_MS = 86_400_000;
 // One request per four years keeps an answer near 150 KB, well under the client's limit.
 const REQUEST_DAYS = 4 * 365;
+// The Bank of Russia sets a rate for every working day; its longest pause, the New Year
+// holidays, is under two weeks. A longer stretch without rates is a range a failed
+// request left out.
+const HOLE_DAYS = 20;
 const FAILURE_TEXT: Record<FxFailure, string> = {
   unavailable: 'did not answer',
   rate_limited: 'rate limit reached',
@@ -69,18 +73,28 @@ function split(from: string, to: string): [string, string][] {
 }
 
 /**
- * Inclusive date ranges to ask for one currency: the whole history on the first run, the
- * years before the earliest stored rate while it is later than 2009, and always the last
- * week before the latest stored rate up to `to`.
+ * Inclusive date ranges to ask for one currency: the last week before the latest stored
+ * rate up to `to` first, then, newest first, every hole of more than HOLE_DAYS between
+ * stored rates and the years before the earliest one while it is later than 2009. On the
+ * first run that is the whole history. A range that keeps failing never holds back the
+ * rates read before it.
  */
 export function fxRequestRanges(
-  stored: { first: string; last: string } | undefined,
+  stored: { first: string; last: string; gaps?: [string, string][] } | undefined,
   to: string,
 ): [string, string][] {
-  if (!stored) return split(HISTORY_REQUEST_FROM, to);
-  const missing =
-    stored.first > FX_HISTORY_FROM ? split(HISTORY_REQUEST_FROM, addDays(stored.first, -1)) : [];
-  return [...missing, ...split(addDays(stored.last, -OVERLAP_DAYS), to)];
+  if (!stored) return split(HISTORY_REQUEST_FROM, to).reverse();
+  const missing = (stored.gaps ?? [])
+    .filter(([before, after]) => Date.parse(after) - Date.parse(before) > HOLE_DAYS * DAY_MS)
+    .map(([before, after]): [string, string] => [addDays(before, 1), addDays(after, -1)]);
+  if (stored.first > FX_HISTORY_FROM)
+    missing.push([HISTORY_REQUEST_FROM, addDays(stored.first, -1)]);
+  return [
+    ...split(addDays(stored.last, -OVERLAP_DAYS), to),
+    ...missing
+      .sort(([a], [b]) => (a < b ? 1 : -1))
+      .flatMap(([from, until]) => split(from, until).reverse()),
+  ];
 }
 
 /** Every stored Bank of Russia rate, ascending per currency (a few hundred rows a year). */
@@ -163,7 +177,26 @@ export class FxRatesService {
          FROM fx_rates WHERE source = $1 GROUP BY currency`,
         [SOURCE],
       );
-    const bounds = new Map(stored.map(({ currency, ...row }) => [currency, row]));
+    const holes: { currency: RatedCurrency; before: string; after: string }[] =
+      await this.source.query(
+        `SELECT currency, to_char("rateDate", 'YYYY-MM-DD') AS before, to_char(next, 'YYYY-MM-DD') AS after
+         FROM (SELECT currency, "rateDate",
+                 lead("rateDate") OVER (PARTITION BY currency ORDER BY "rateDate") AS next
+               FROM fx_rates WHERE source = $1) AS r
+         WHERE next - "rateDate" > $2 ORDER BY currency, "rateDate"`,
+        [SOURCE, HOLE_DAYS],
+      );
+    const bounds = new Map(
+      stored.map(({ currency, ...row }) => [
+        currency,
+        {
+          ...row,
+          gaps: holes
+            .filter((hole) => hole.currency === currency)
+            .map(({ before, after }): [string, string] => [before, after]),
+        },
+      ]),
+    );
     const rows: { currency: RatedCurrency; rate: FxRate }[] = [];
     const failed: RatedCurrency[] = [];
     let reason: FxFailure | null = null;
@@ -172,7 +205,9 @@ export class FxRatesService {
         const result = await this.cbr.dynamic(currency, from, until);
         if (result.ok) rows.push(...result.rates.map((rate) => ({ currency, rate })));
         else {
-          // The next hourly run asks again; the ranges already read are kept.
+          // The next hourly run asks again for this and the older ranges; the ranges already
+          // read are kept.
+          this.logger.warn(`Bank of Russia ${result.reason} for ${currency} ${from}..${until}`);
           failed.push(currency);
           reason ??= result.reason;
           break;
