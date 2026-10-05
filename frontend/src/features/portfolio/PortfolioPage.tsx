@@ -8,6 +8,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddAssetDialog from './AddAssetDialog';
+import AddTransactionDialog from './AddTransactionDialog';
 import { CurrencySwitch, ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
@@ -286,6 +287,7 @@ export default function PortfolioPage() {
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [adding, setAdding] = useState(false);
+  const [recording, setRecording] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked, setAsked] = useAskedCurrency();
   const latest = useRef(0);
@@ -320,15 +322,19 @@ export default function PortfolioPage() {
     setAdding(false);
     void load(true);
   };
-  const addButton = (
+  const addButton = (primary: boolean) => (
     <button
       type="button"
-      className="shell-button shell-button--primary"
+      className={`shell-button${primary ? ' shell-button--primary' : ' shell-button--secondary'}`}
       onClick={() => setAdding(true)}
     >
       Add asset
     </button>
   );
+  const recorded = () => {
+    setRecording(false);
+    void load(true);
+  };
   const now = new Date();
   // The asked currency shows as chosen while its values load.
   const shownCurrency = asked ?? portfolio?.currency;
@@ -339,7 +345,16 @@ export default function PortfolioPage() {
         <h1>Portfolio</h1>
         <div className="portfolio-actions">
           {shownCurrency && <CurrencySwitch value={shownCurrency} onChange={setAsked} />}
-          {assets.length > 0 && addButton}
+          {assets.length > 0 && addButton(false)}
+          {assets.length > 0 && (
+            <button
+              type="button"
+              className="shell-button shell-button--primary"
+              onClick={() => setRecording(true)}
+            >
+              Add transaction
+            </button>
+          )}
         </div>
       </div>
       {failed ? (
@@ -357,7 +372,7 @@ export default function PortfolioPage() {
         <section className="shell-card shell-empty" aria-labelledby="portfolio-empty">
           <h2 id="portfolio-empty">No assets yet</h2>
           <p>Add a coin, cash or anything else you want to track.</p>
-          {addButton}
+          {addButton(true)}
         </section>
       ) : (
         <>
@@ -404,6 +419,7 @@ export default function PortfolioPage() {
         </>
       )}
       {adding && <AddAssetDialog onClose={() => setAdding(false)} onAdded={added} />}
+      {recording && <AddTransactionDialog onClose={() => setRecording(false)} onSaved={recorded} />}
     </div>
   );
 }

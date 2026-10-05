@@ -1,6 +1,7 @@
 import { FifoBook } from './fifo-book';
 import { FifoHistoryError, intervalCost, lotInterval } from './fifo-lot-interval';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
+import type { TradePayment } from './paid-currency';
 
 export { FifoHistoryError } from './fifo-lot-interval';
 
@@ -12,6 +13,8 @@ export interface Execution {
   quantity: string;
   grossUsd: string;
   feeUsd: string;
+  /** Amounts as paid in RUB or EUR; the USD amounts above were derived from them. */
+  paid?: TradePayment;
 }
 
 export interface FifoTrade extends Execution {

@@ -1,8 +1,10 @@
 import { once } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { BadRequestException } from '@nestjs/common';
 import { CbrClient, parseCbrDynamic } from './cbr-client';
 import { FxConverter, type FxRates, moscowDate, rateOn } from './fx-conversion';
+import { parseRateDate } from './fx-rates.controller';
 
 const ATOMS = 10n ** 30n;
 const atoms = (value: string) => {
@@ -17,6 +19,22 @@ const rates: FxRates = {
   ],
   EUR: [{ date: '2025-06-07', rubPerUnit: '90' }],
 };
+
+describe('FX-QUERY rates on a chosen date', () => {
+  it('reads an optional calendar date and refuses anything else', () => {
+    expect(parseRateDate({})).toBeUndefined();
+    expect(parseRateDate(undefined)).toBeUndefined();
+    expect(parseRateDate({ date: '2025-06-08' })).toBe('2025-06-08');
+    for (const query of [
+      { date: '2025-02-30' },
+      { date: '2025-6-8' },
+      { date: '1990-01-01' },
+      { date: ['2025-06-08'] },
+      { date: '2025-06-08', currency: 'EUR' },
+    ])
+      expect(() => parseRateDate(query)).toThrow(BadRequestException);
+  });
+});
 
 describe('FX-DATE Bank of Russia dates', () => {
   it('uses the Moscow calendar date of an instant (UTC+3)', () => {

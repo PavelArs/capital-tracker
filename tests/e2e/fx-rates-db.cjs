@@ -102,7 +102,7 @@ async function migration(db) {
   assert.deepEqual(await stored(db), []);
   assert.deepEqual(await db.query('SELECT * FROM owner_settings'), []);
   await assert.rejects(() => new AccountInThreeCurrencies1790900000000().down(), /recovery plan/);
-  console.log('PASS FX-MIGRATION fresh 26 applies once, replay applies none, new tables empty, down refuses');
+  console.log('PASS FX-MIGRATION fresh 27 applies once, replay applies none, new tables empty, down refuses');
 }
 
 async function disabled(db) {
@@ -297,12 +297,102 @@ async function threeCurrencyPortfolio(db, owners) {
   console.log('PASS CUR-PNL-RUB/CUR-RATE-GAP/CUR-NO-RATE costs at purchase-date rates, Sunday sale at the Saturday rate, missing rates never zero');
 }
 
+async function paidInRublesAndEuros(db, owners) {
+  stage = 'CUR-PAID-RUB trades paid in RUB or EUR';
+  const { other: owner } = owners;
+  const make = (file, name) => new (require(`/app/backend/dist/accounting/${file}.js`)[name])(db);
+  const s = { accounting: make('accounting.service', 'AccountingService'), trades: make('trade.service', 'TradeService'),
+    portfolio: make('portfolio-valuation.service', 'PortfolioValuationService') };
+  const btc = (await s.accounting.createInstrument(owner, { requestId: randomUUID(), name: 'Bitcoin', symbol: 'BTC', assetType: 'crypto' })).value.id;
+  const account = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Ledger' })).value.id;
+  await s.trades.initialize(owner, account, { requestId: randomUUID(), coverageFrom: '2025-01-01T00:00:00.000Z', assertEmpty: true });
+  const body = (revision, side, occurredAt, quantity, amounts) => ({ requestId: randomUUID(), expectedJournalRevision: revision,
+    instrumentId: btc, side, occurredAt, orderWithinTimestamp: 0, quantity, ...amounts });
+  const payments = () => db.query(`SELECT "tradeId",version,currency,gross::text,fee::text,"rateDate"::text,
+    "perUsd"::text,"rateSource" FROM account_trade_version_payments ORDER BY "createdAt","tradeId",version`);
+
+  // No stored rate for 1 May 2025: refused, nothing written.
+  const before = await fingerprint(db);
+  await rejected(() => s.trades.create(owner, account, body(0, 'buy', '2025-05-01T09:00:00.000Z', '0.01', { paid: { currency: 'RUB', gross: '80000', fee: '0' } })), 409);
+  await rejected(() => s.trades.create(owner, account, body(0, 'buy', '2025-06-02T09:00:00.000Z', '0.01', { paid: { currency: 'USD', gross: '1', fee: '0' } })), 400);
+  await rejected(() => s.trades.create(owner, account, body(0, 'buy', '2025-06-02T09:00:00.000Z', '0.01', { grossUsd: '1', feeUsd: '0', paid: { currency: 'RUB', gross: '1', fee: '0' } })), 400);
+  assert.equal(await fingerprint(db), before, 'A refused paid trade writes nothing');
+
+  // 80000 RUB at 80 RUB per USD on 2 June 2025.
+  const buyBody = body(0, 'buy', '2025-06-02T09:00:00.000Z', '0.01', { paid: { currency: 'RUB', gross: '80000.00', fee: '0' } });
+  const buy = await s.trades.create(owner, account, buyBody);
+  assert.equal(buy.created, true);
+  assert.deepEqual([buy.value.trade.grossUsd, buy.value.trade.feeUsd], ['1000', '0']);
+  const rubPaid = { currency: 'RUB', gross: '80000', fee: '0', rateDate: '2025-06-02', perUsd: '80', rateSource: 'bank-of-russia' };
+  assert.deepEqual(buy.value.trade.paid, rubPaid);
+  const replay = await s.trades.create(owner, account, buyBody);
+  assert.equal(replay.created, false);
+  assert.deepEqual(replay.value.trade, buy.value.trade, 'A replay returns the saved amounts as paid');
+  await rejected(() => s.trades.create(owner, account, { ...buyBody, paid: undefined, grossUsd: '1000', feeUsd: '0' }), 409);
+
+  // Sunday 8 June 2025: 400 EUR less 4 EUR fee at Saturday's 90 RUB per EUR and 78.5 RUB per USD.
+  const sale = await s.trades.create(owner, account, body(1, 'sell', '2025-06-08T12:00:00.000Z', '0.004', { paid: { currency: 'EUR', gross: '400', fee: '4' } }));
+  assert.deepEqual([sale.value.trade.grossUsd, sale.value.trade.feeUsd], ['458.598726114649681528662420382166', '4.585987261146496815286624203822']);
+  assert.deepEqual(sale.value.trade.paid, { currency: 'EUR', gross: '400', fee: '4', rateDate: '2025-06-08', perUsd: '0.872222222222222222222222222222', rateSource: 'bank-of-russia' });
+  // The rates on a chosen date, as the trade form prefills them: Sunday uses Saturday's.
+  assert.deepEqual((await collector(db).read(new Date(), '2025-06-08')).rates, [
+    { currency: 'USD', rubPerUnit: '78.5', date: '2025-06-07' }, { currency: 'EUR', rubPerUnit: '90', date: '2025-06-07' }]);
+
+  const now = new Date();
+  const assetOf = async (currency) => (await s.portfolio.read(owner, { currency }, now)).assets.find((item) => item.instrumentId === btc);
+  // CUR-PAID-RUB: rubles stay exact; the EUR proceeds convert at the sale date, the RUB cost at the buy date.
+  const inRub = await assetOf('RUB');
+  assert.deepEqual([inRub.costBasis, inRub.value, inRub.unrealizedPnl, inRub.realizedPnl], ['48000', '62700', '14700', '3640']);
+  const inEur = await assetOf('EUR');
+  assert.deepEqual([inEur.costBasis, inEur.realizedPnl], ['480', '76']);
+  const inUsd = await assetOf('USD');
+  assert.deepEqual([inUsd.costBasis, inUsd.realizedPnl], ['600', '54.012738853503184713375796178344']);
+
+  // A void keeps the sale's amounts as paid; a correction to USD amounts drops them.
+  const voided = await s.trades.void(owner, account, sale.value.trade.tradeId, { requestId: randomUUID(), expectedJournalRevision: 2 });
+  assert.deepEqual(voided.value.trade.paid, sale.value.trade.paid);
+  const corrected = await s.trades.correct(owner, account, buy.value.trade.tradeId, body(3, 'buy', '2025-06-02T09:00:00.000Z', '0.01', { grossUsd: '1000', feeUsd: '0' }));
+  assert.equal(corrected.value.trade.paid, undefined);
+  const history = await s.trades.listVersions(owner, account, buy.value.trade.tradeId);
+  assert.deepEqual(history.items.map((item) => item.paid ?? null), [null, rubPaid]);
+  assert.deepEqual((await payments()).map(({ tradeId, version, currency }) => [tradeId, version, currency]), [
+    [buy.value.trade.tradeId, 1, 'RUB'], [sale.value.trade.tradeId, 1, 'EUR'], [sale.value.trade.tradeId, 2, 'EUR']]);
+  assert.equal((await assetOf('RUB')).costBasis, '80000', 'The corrected buy costs 1000 USD at 80');
+
+  // The owner's own rate needs no stored rate: 75000 RUB at 75 RUB per USD on 1 May 2025.
+  const wallet = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Wallet' })).value.id;
+  await s.trades.initialize(owner, wallet, { requestId: randomUUID(), coverageFrom: '2025-01-01T00:00:00.000Z', assertEmpty: true });
+  const own = await s.trades.create(owner, wallet, body(0, 'buy', '2025-05-01T09:00:00.000Z', '0.01', { paid: { currency: 'RUB', gross: '75000', fee: '0', perUsd: '75' } }));
+  assert.deepEqual([own.value.trade.grossUsd, own.value.trade.paid], ['1000',
+    { currency: 'RUB', gross: '75000', fee: '0', rateDate: '2025-05-01', perUsd: '75', rateSource: 'owner' }]);
+  assert.equal((await assetOf('RUB')).costBasis, '155000', 'The ruble cost stays exactly what was paid');
+
+  // The table refuses what the service never writes.
+  const insert = (values) => db.query(`INSERT INTO account_trade_version_payments
+    ("ownerId","accountId","tradeId",version,currency,gross,fee,"rateDate","perUsd","rateSource")
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, values);
+  const key = [owner, account, buy.value.trade.tradeId, 2];
+  const atRest = await fingerprint(db);
+  for (const [values, pattern] of [
+    [[...key, 'USD', 1, 0, '2025-06-02', 80, 'owner'], /check/i],
+    [[...key, 'RUB', 1, 0, '2025-06-02', 0, 'owner'], /check/i],
+    [[...key, 'RUB', 1, 0, '2025-06-02', 80, 'guess'], /check/i],
+    [[...key, 'EUR', 0, 0, '2025-06-02', 0.9, 'owner'], /check/i],
+    [[...key, 'EUR', 1, -1, '2025-06-02', 0.9, 'owner'], /check/i],
+    [[owner, account, buy.value.trade.tradeId, 9, 'EUR', 1, 0, '2025-06-02', 0.9, 'owner'], /foreign key/i],
+  ]) await assert.rejects(() => insert(values), pattern);
+  assert.equal(await fingerprint(db), atRest);
+  const { PaidCurrencyTrades1791100000000 } = require('/app/backend/dist/migrations/1791100000000-PaidCurrencyTrades.js');
+  await assert.rejects(() => new PaidCurrencyTrades1791100000000().down(), /recovery plan/);
+  console.log('PASS CUR-PAID-RUB RUB/EUR trades keep amounts as paid at the Bank of Russia rate of their date or the owner\'s rate; exact ruble cost and P&L; no rate is a conflict');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 27/);
+    assert.match(migrate(name), /Migrations applied: 28/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -310,7 +400,7 @@ async function main() {
   await rates.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 27);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 28);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);
@@ -319,6 +409,7 @@ async function main() {
     await appendOnly(rates);
     const owners = await ownerSettings(accounting);
     await threeCurrencyPortfolio(accounting, owners);
+    await paidInRublesAndEuros(accounting, owners);
   } finally {
     await rates.destroy();
     await accounting.destroy();
