@@ -42,6 +42,7 @@ type WorkflowStep = {
 };
 type WorkflowJob = {
   name?: string;
+  'runs-on'?: string;
   needs?: string | string[];
   if?: string;
   steps?: WorkflowStep[];
@@ -464,7 +465,12 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const steps = shard.steps ?? [];
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
-    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install --with-deps chromium');
+    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install $PLAYWRIGHT_DEPS chromium');
+    // GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
+    // has them preinstalled by its owner and grants the job no sudo.
+    expect(expression(browser[0].env?.PLAYWRIGHT_DEPS)).toBe(
+      "runner.environment == 'github-hosted' && '--with-deps' || ''",
+    );
     expect(expression(browser[0].if)).toBe("startsWith(matrix.shard, 'browser-')");
     // The browser comes from a cache keyed on the installed Playwright version; the install
     // still runs after it, so a stale or missing cache only costs the download.
@@ -917,6 +923,108 @@ else process.exit(9);
     expect(step.run).toContain(
       'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"',
     );
+  });
+});
+
+// Owner decision 2026-10-05: the Docker-heavy jobs may run on the owner's self-hosted runner.
+describe('ENG-008: only trusted runs of the heavy jobs reach the self-hosted runner', () => {
+  const heavyJobs = ['release-images', 'critical-acceptance', 'image-security'];
+  const selfHosted = ['self-hosted', 'linux', 'x64'];
+  let ci: Workflow;
+
+  beforeAll(() => {
+    ci = workflow('ci');
+  });
+
+  // Evaluates a runs-on expression the way Actions does for these operators: a missing
+  // property is null, && and || return an operand, fromJSON parses its argument.
+  function runner(source: string | undefined, vars: Record<string, string>, github: unknown) {
+    if (!source?.trim().startsWith('${{')) return source;
+    const body = expression(source)
+      .replace(/\bfromJSON\(/g, 'JSON.parse(')
+      .replace(/([!=])=/g, '$1==')
+      .replace(/(\w)\.(?=[A-Za-z_])/g, '$1?.');
+    expect(body).not.toMatch(/[;`]|\$\{/);
+    return new Function('vars', 'github', `return (${body});`)(vars, github);
+  }
+
+  const repository = 'owner/capital-tracker';
+  const pullRequest = (headRepository: string, author: string) => ({
+    event_name: 'pull_request',
+    repository,
+    event: {
+      pull_request: { head: { repo: { full_name: headRepository } }, user: { login: author } },
+    },
+  });
+  const cases: [string, Record<string, string>, unknown, unknown][] = [
+    [
+      'switch off: same-repository pull request',
+      {},
+      pullRequest(repository, 'owner'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch off: push to main',
+      {},
+      { event_name: 'push', repository, event: {} },
+      'ubuntu-latest',
+    ],
+    [
+      'switch set to another value',
+      { CI_SELF_HOSTED: 'yes' },
+      pullRequest(repository, 'owner'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch on: same-repository pull request',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest(repository, 'owner'),
+      selfHosted,
+    ],
+    [
+      'switch on: push to main',
+      { CI_SELF_HOSTED: 'true' },
+      { event_name: 'push', repository, event: {} },
+      selfHosted,
+    ],
+    [
+      'switch on: manual dispatch',
+      { CI_SELF_HOSTED: 'true' },
+      { event_name: 'workflow_dispatch', repository, event: {} },
+      selfHosted,
+    ],
+    [
+      'switch on: pull request from a fork',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest('someone/capital-tracker', 'someone'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch on: Dependabot pull request',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest(repository, 'dependabot[bot]'),
+      'ubuntu-latest',
+    ],
+  ];
+
+  describe.each(heavyJobs)('ENG-008-A %s', (job) => {
+    it.each(cases)('%s', (_case, vars, github, expected) => {
+      expect(runner(ci.jobs[job]['runs-on'], vars, github)).toEqual(expected);
+    });
+  });
+
+  it('ENG-008-A every other job, the deploy included, stays on GitHub runners', () => {
+    for (const [name, job] of Object.entries(ci.jobs)) {
+      if (!heavyJobs.includes(name)) expect(job['runs-on']).toBe('ubuntu-latest');
+    }
+    for (const job of Object.values(workflow('cd').jobs))
+      expect(job['runs-on']).toBe('ubuntu-latest');
+  });
+
+  it('ENG-008-B pull requests never trigger with base-repository privileges', () => {
+    for (const name of ['ci', 'cd']) {
+      expect(Object.keys(workflow(name).on)).not.toContain('pull_request_target');
+    }
   });
 });
 

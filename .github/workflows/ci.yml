@@ -222,9 +222,14 @@ jobs:
   # the full suite and exports the candidate the deploy promotes. The images are built
   # once, critical acceptance runs in parallel isolated shards and the final job merges
   # their receipts before scanning the same images.
+  #
+  # Owner decision 2026-10-05: the three Docker-heavy jobs (image build, shards, scans) run
+  # on the owner's self-hosted runner once the repository variable CI_SELF_HOSTED is 'true';
+  # without it, or for a pull request from a fork or Dependabot, they stay on GitHub's
+  # runners, so untrusted code never reaches the owner's machine (docs/self-hosted-runner.md).
   release-images:
     name: Build Release Images
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -336,7 +341,7 @@ jobs:
 
   critical-acceptance:
     name: Critical acceptance (${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -366,9 +371,13 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      # GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
+      # has them preinstalled by its owner and gives the job no sudo.
       - name: Install the Playwright browser
         if: startsWith(matrix.shard, 'browser-')
-        run: pnpm exec playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_DEPS: ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }}
+        run: pnpm exec playwright install $PLAYWRIGHT_DEPS chromium
       - name: Download the built release images
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -407,7 +416,7 @@ jobs:
   # The scans need only the built images, so they run beside the shards rather than after them.
   image-security:
     name: Image Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
