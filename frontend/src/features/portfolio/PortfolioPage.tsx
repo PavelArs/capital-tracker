@@ -13,6 +13,7 @@ import PageHeader from '../shell/PageHeader';
 import AddAssetDialog from './AddAssetDialog';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
+import { usePhone } from './use-phone';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -66,6 +67,31 @@ export function Change({ value }: { value: string | null }) {
   return (
     <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>{percent(value)}</span>
   );
+}
+
+export type SortKey = 'value' | 'pnl' | 'change' | 'name';
+const sortKeys: [SortKey, string][] = [
+  ['value', 'Value'],
+  ['pnl', 'Unrealized P&L'],
+  ['change', '24h change'],
+  ['name', 'Name'],
+];
+
+/** Assets in the phone list's order: numbers largest first with unknowns last, names A to Z. */
+export function sortAssets(assets: readonly AssetValuation[], key: SortKey): AssetValuation[] {
+  if (key === 'name')
+    return [...assets].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+  const field = (asset: AssetValuation) =>
+    key === 'value'
+      ? asset.value
+      : key === 'pnl'
+        ? asset.unrealizedPnl
+        : asset.priceChange24hPercent;
+  const number = (asset: AssetValuation) => {
+    const value = field(asset);
+    return value === null ? Number.NEGATIVE_INFINITY : Number(value);
+  };
+  return [...assets].sort((a, b) => number(b) - number(a) || a.name.localeCompare(b.name));
 }
 
 /** Whether the asset's name or ticker contains the search text, ignoring case. */
@@ -333,12 +359,58 @@ function AssetsTable({
   );
 }
 
+// Phones get two-line rows instead of the table: the whole row opens the asset, and the
+// columns that do not fit are on the asset page (design: tables on phones).
+function AssetsList({
+  assets,
+  currency,
+  asked,
+}: {
+  assets: AssetValuation[];
+  currency: AccountingCurrency;
+  asked: AccountingCurrency | undefined;
+}) {
+  return (
+    <ul className="portfolio-list">
+      {assets.map((asset) => (
+        <li key={asset.instrumentId}>
+          <Link
+            className="portfolio-list__row"
+            to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
+          >
+            <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+            <span className="portfolio-list__name">{asset.name}</span>
+            <span className="portfolio-list__value">{money(asset.value, currency)}</span>
+            <span className="portfolio-list__detail">
+              {quantity(asset.quantity)}
+              {asset.symbol && ` ${asset.symbol}`}
+            </span>
+            <span
+              className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
+            >
+              {asset.unrealizedPnl === null
+                ? DASH
+                : `${money(asset.unrealizedPnl, currency, true)}${
+                    asset.unrealizedReturnPercent === null
+                      ? ''
+                      : ` · ${percent(asset.unrealizedReturnPercent)}`
+                  }`}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
 export default function PortfolioPage() {
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('value');
+  const phone = usePhone();
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked] = useAskedCurrency();
@@ -456,7 +528,31 @@ export default function PortfolioPage() {
                 onChange={(event) => setSearch(event.target.value)}
               />
             </div>
-            <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
+            {phone ? (
+              <>
+                <label className="portfolio-sort">
+                  <span>Sort by</span>
+                  <select
+                    className="portfolio-input"
+                    value={sortKey}
+                    onChange={(event) => setSortKey(event.target.value as SortKey)}
+                  >
+                    {sortKeys.map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <AssetsList
+                  assets={sortAssets(visible, sortKey)}
+                  currency={portfolio.currency}
+                  asked={asked}
+                />
+              </>
+            ) : (
+              <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
+            )}
             {visible.length === 0 && (
               <p className="portfolio-none">
                 {search.trim() ? `No assets match "${search.trim()}".` : 'No assets of this type.'}

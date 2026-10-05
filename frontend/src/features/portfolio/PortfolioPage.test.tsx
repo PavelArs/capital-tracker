@@ -824,6 +824,38 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(screen.getAllByRole('row').slice(1)).toHaveLength(2);
   });
 
+  it('PHONE-LIST shows two-line asset rows and a Sort by select instead of the table', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    try {
+      vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([toncoin, cash, bitcoin]));
+      const user = userEvent.setup();
+      renderAt('/portfolio');
+      const row = await screen.findByRole('link', { name: /^Bitcoin/ });
+      // The whole row opens the asset; price, allocation, average and 24h live on its page.
+      expect(row).toHaveAttribute('href', `/portfolio/${bitcoin.instrumentId}`);
+      expect(row).toHaveTextContent('Bitcoin$96,000.001.2 BTC+$30,000.00 · +45.45%');
+      expect(screen.queryByRole('table')).toBeNull();
+      const order = () =>
+        [...document.querySelectorAll('.portfolio-list__name')].map((name) => name.textContent);
+      expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
+      const sort = screen.getByRole('combobox', { name: 'Sort by' });
+      await user.selectOptions(sort, 'Name');
+      expect(order()).toEqual(['Bitcoin', 'Toncoin', 'US dollar']);
+      // An unknown change sorts last.
+      await user.selectOptions(sort, '24h change');
+      expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
+      await user.type(screen.getByRole('searchbox', { name: 'Search assets' }), 'coin');
+      expect(order()).toEqual(['Bitcoin', 'Toncoin']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('shows the empty, loading and error states honestly', async () => {
     let fail = true;
     vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => {

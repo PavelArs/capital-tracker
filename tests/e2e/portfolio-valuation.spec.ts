@@ -179,7 +179,8 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   await dialog.getByLabel('Notes (optional)').fill('Synthetic opening balance');
   const saved = (path: RegExp) =>
     page.waitForResponse(
-      (response) => path.test(new URL(response.url()).pathname) && response.request().method() === 'POST',
+      (response) =>
+        path.test(new URL(response.url()).pathname) && response.request().method() === 'POST',
     );
   const [assetSaved, trade, priced] = await Promise.all([
     saved(/^\/api\/accounting\/instruments$/),
@@ -190,16 +191,47 @@ test('PORTFOLIO-UI: whole-portfolio value, cost basis and P&L of one asset acros
   expect([assetSaved.status(), trade.status(), priced.status()]).toEqual([201, 201, 201]);
   expect(await trade.json()).toMatchObject({
     accountId: account.id,
-    trade: { side: 'buy', quantity: '2500', grossUsd: '3000', comment: 'Synthetic opening balance' },
+    trade: {
+      side: 'buy',
+      quantity: '2500',
+      grossUsd: '3000',
+      comment: 'Synthetic opening balance',
+    },
   });
   expect(await priced.json()).toMatchObject({ kind: 'set', priceUsd: '1.2' });
   await expect(dialog).toHaveCount(0);
-  const depositCells = main.getByRole('row', { name: new RegExp(`^${depositName}`) }).getByRole('cell');
+  const depositCells = main
+    .getByRole('row', { name: new RegExp(`^${depositName}`) })
+    .getByRole('cell');
   await expect(depositCells.nth(0)).toHaveText(`${depositName}Manual · USD`);
   await expect(depositCells.nth(1)).toHaveText('2,500');
   await expect(depositCells.nth(2)).toHaveText('$1.20Manual');
   await expect(depositCells.nth(3)).toHaveText('$3,000.00');
   await expect(depositCells.nth(5)).toHaveText('$1.20');
-  await page.screenshot({ path: testInfo.outputPath('portfolio-added-1440-dark.png'), fullPage: true });
+  await page.screenshot({
+    path: testInfo.outputPath('portfolio-added-1440-dark.png'),
+    fullPage: true,
+  });
+
+  // PHONE-LIST: on a phone the table becomes two-line rows and nothing scrolls sideways.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(main.getByRole('table')).toHaveCount(0);
+  await main.getByRole('searchbox', { name: 'Search assets' }).fill(suffix);
+  const phoneRow = main.getByRole('link', { name: new RegExp(`^${assetName}`) });
+  await expect(phoneRow).toHaveText(`${assetName}$96,000.001.2 PVUI+$30,000.00 · +45.45%`);
+  await main.getByRole('combobox', { name: 'Sort by' }).selectOption({ label: 'Name' });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
+  await page.screenshot({ path: testInfo.outputPath('portfolio-390-dark.png'), fullPage: true });
+  await phoneRow.click();
+  await expect(page).toHaveURL(`${origin}/portfolio/${created.id}`);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBeLessThanOrEqual(0);
   expect(errors).toEqual([]);
 });
