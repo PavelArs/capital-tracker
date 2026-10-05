@@ -22,6 +22,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
+import { capitalFlows, investedAt, splitChange, stateFlows } from './capital-flows';
 import {
   DEFAULT_PERIOD,
   HISTORY_FROM_MS,
@@ -222,15 +223,24 @@ export class PortfolioSnapshotsService {
       const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
       const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
-      const points = [
-        ...stored.map((point) => ({
-          at: iso(point.at),
-          value: point.value,
-          complete: point.complete,
-        })),
-        { at: now.toISOString(), value: current.value, complete: current.complete },
+      const series = [
+        ...stored,
+        { at: now.getTime(), value: current.value, complete: current.complete },
       ];
-      const start = points.find((point) => point.value !== null)?.value ?? null;
+      // Deposits and withdrawals come from the operations themselves, in this currency at the
+      // rate of each one's date (split-market-and-flows).
+      const flows = stateFlows(capitalFlows(valuation), fx);
+      const invested = investedAt(
+        flows,
+        series.map((point) => point.at),
+      );
+      const points = series.map((point, index) => ({
+        at: iso(point.at),
+        value: point.value,
+        complete: point.complete,
+        invested: invested[index],
+      }));
+      const start = series.find((point) => point.value !== null) ?? null;
       return {
         period: query.period,
         currency,
@@ -239,7 +249,9 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         value: current.value,
         complete: points.every((point) => point.complete),
-        ...periodChange(start, current.value),
+        ...periodChange(start?.value ?? null, current.value),
+        invested: invested.at(-1) ?? null,
+        ...splitChange(start, series.at(-1)!, flows),
         points,
       };
     });

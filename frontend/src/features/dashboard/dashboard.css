@@ -33,6 +33,34 @@
   font-weight: 400;
 }
 
+.dashboard-split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: var(--sp-2);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-split__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-split__key {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.dashboard-split__key--flows {
+  background: var(--ink-3);
+}
+
 .dashboard-hero .portfolio-warn {
   max-width: 70ch;
   margin-top: var(--sp-2);
@@ -44,6 +72,47 @@
 
 .dashboard-chart-card .portfolio-toolbar {
   margin-bottom: var(--sp-4);
+}
+
+.dashboard-chart-card__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 24px;
+}
+
+.dashboard-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+}
+
+.dashboard-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-legend__line {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.dashboard-legend__line--invested {
+  background: var(--ink-3);
+}
+
+.dashboard-legend__deposit {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-2);
 }
 
 .dashboard-periods {
@@ -123,6 +192,19 @@
   stroke-linecap: round;
 }
 
+.dashboard-chart__invested {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.dashboard-chart__deposit {
+  fill: var(--ink-2);
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
 .dashboard-chart__dot {
   fill: var(--accent);
   stroke: var(--surface);
@@ -171,6 +253,17 @@
   display: flex;
   justify-content: space-between;
   gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-tip__flow {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
 }
 

@@ -75,13 +75,24 @@ function compact(value: number, currency: AccountingCurrency): string {
   return `${currencySymbols[currency]}${formatted}`;
 }
 
+/** Net invested added (+) or taken out (−) since the previous point; null when unchanged. */
+function flowSince(points: HistoryPoint[], index: number): string | null {
+  const now = points[index]?.invested ?? null;
+  const before = index > 0 ? points[index - 1].invested : null;
+  if (now === null || before === null) return null;
+  // Display only, like the tooltip's change in period.
+  const flow = Number(now) - Number(before);
+  return flow === 0 ? null : flow.toFixed(2);
+}
+
 function signedDifference(value: string | null, start: string | null): string | null {
   if (value === null || start === null) return null;
   // Display only: the tooltip difference is rounded to cents like every shown amount.
   return (Number(value) - Number(start)).toFixed(2);
 }
 
-// Value of the portfolio over the period (record-portfolio-snapshots, CHART-PERIODS).
+// Value of the portfolio over the period (record-portfolio-snapshots, CHART-PERIODS) and the
+// net invested step line (split-market-and-flows).
 export default function HistoryChart({
   points,
   period,
@@ -126,11 +137,17 @@ export default function HistoryChart({
   const span = Math.max(1, last.time - first.time);
   const x = (time: number) =>
     PAD.left + (plotted.length === 1 ? innerWidth / 2 : ((time - first.time) / span) * innerWidth);
-  const values = plotted.map((entry) => entry.value);
-  let low = period === 'ALL' ? 0 : Math.min(...values);
+  // Net invested shares the scale; it can fall below zero after selling at a profit.
+  const invested = points.map((point) => (point.invested === null ? null : Number(point.invested)));
+  const values = [
+    ...plotted.map((entry) => entry.value),
+    ...invested.filter((value): value is number => value !== null),
+  ];
+  const lowest = Math.min(...values);
+  let low = period === 'ALL' ? Math.min(0, lowest) : lowest;
   let high = Math.max(...values);
   const pad = (high - low) * 0.08 || high * 0.02 || 1;
-  low = Math.max(0, low - pad);
+  low = lowest < 0 ? low - pad : Math.max(0, low - pad);
   high += pad;
   const step = niceStep((high - low) / 4);
   low = Math.floor(low / step) * step;
@@ -170,6 +187,28 @@ export default function HistoryChart({
           )}L${x(segment.at(-1)!.time).toFixed(1)} ${base}L${x(segment[0].time).toFixed(1)} ${base}Z`,
     )
     .join('');
+  // A step line: net invested changes only when money comes in or goes out.
+  const timeOf = points.map((point) => Date.parse(point.at));
+  const visible = (index: number) => timeOf[index] >= first.time && timeOf[index] <= last.time;
+  let investedLine = '';
+  let open = false;
+  points.forEach((_, index) => {
+    const amount = invested[index];
+    if (amount === null || !visible(index)) {
+      open = false;
+      return;
+    }
+    const px = x(timeOf[index]).toFixed(1);
+    const py = y(amount).toFixed(1);
+    investedLine += open ? `H${px}V${py}` : `M${px} ${py}`;
+    open = true;
+  });
+  const deposits = points.flatMap((_, index) => {
+    const flow = flowSince(points, index);
+    return flow !== null && Number(flow) > 0 && visible(index) && invested[index] !== null
+      ? [{ index, cx: x(timeOf[index]), cy: y(invested[index]!) }]
+      : [];
+  });
   const tickCount = Math.min(5, plotted.length);
   const xTicks = [
     ...new Set(
@@ -211,6 +250,7 @@ export default function HistoryChart({
     );
   };
   const difference = current ? signedDifference(current.point.value, startValue) : null;
+  const flow = current ? flowSince(points, current.index) : null;
   const tipLeft = current
     ? x(current.time) + 14 + 200 > width
       ? x(current.time) - 214
@@ -269,6 +309,16 @@ export default function HistoryChart({
           </text>
         ))}
         <path d={area} fill="url(#dashboard-area)" />
+        {investedLine && <path d={investedLine} className="dashboard-chart__invested" />}
+        {deposits.map((deposit) => (
+          <circle
+            key={deposit.index}
+            cx={deposit.cx}
+            cy={deposit.cy}
+            r={4}
+            className="dashboard-chart__deposit"
+          />
+        ))}
         <path d={line} className="dashboard-chart__line" />
         {plotted
           .filter((entry) => !entry.point.complete)
@@ -317,6 +367,16 @@ export default function HistoryChart({
               {money(difference, currency, true)}
             </span>
           </div>
+          <div className="dashboard-tip__row">
+            <span>Net invested</span>
+            <span>{money(current.point.invested, currency)}</span>
+          </div>
+          {flow !== null && (
+            <div className="dashboard-tip__flow">
+              <span>{Number(flow) > 0 ? 'Deposit' : 'Withdrawal'}</span>
+              <span>{money(flow, currency, true)}</span>
+            </div>
+          )}
           {!current.point.complete && (
             <div className="dashboard-tip__note">Incomplete: an asset had no price or rate</div>
           )}

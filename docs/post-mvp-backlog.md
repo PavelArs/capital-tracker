@@ -1,6 +1,6 @@
 # Post-MVP backlog and continuation guide
 
-This backlog preserves the complete target in [`capital-tracker-openspec-prompt.md`](../capital-tracker-openspec-prompt.md); it does not redefine it as a manual-only product. The 44 directories in `openspec/specs/` are the current implemented contracts, not future promises. Archived changes and linked owner guides contain evidence for completed slices. Start with `AGENTS.md`, `CONTINUITY.md`, this page, current Git status, active OpenSpec status, and latest release evidence.
+This backlog preserves the complete target in [`capital-tracker-openspec-prompt.md`](../capital-tracker-openspec-prompt.md); it does not redefine it as a manual-only product. The 44 directories in `openspec/specs/` are the current implemented contracts, not future promises. Archived changes and linked owner guides contain evidence for completed slices. Start with `AGENTS.md`, this page, current Git status, active OpenSpec status, and latest release evidence.
 
 ## Current release: manual + CSV MVP — IN PROGRESS
 
