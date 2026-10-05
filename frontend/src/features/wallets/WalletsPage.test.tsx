@@ -183,6 +183,8 @@ describe('WAL-LIST: wallets grouped by account', () => {
     expect(row).toHaveTextContent('8 min ago');
     expect(trustCard).toHaveTextContent('USDT tracked by hand');
     expect(trustCard).toHaveTextContent('1,000 USDT');
+    // Each coin is its own piece of a wrapping cell, so a long list never runs into the value.
+    expect(within(trustCard).getByText('1,000 USDT').parentElement).toHaveClass('wallets-amounts');
     // SYNC-RECONCILE: 0.01 BTC on the chain against 0.0098 BTC recorded.
     expect(within(trustCard).getByRole('note')).toHaveTextContent(
       'Balance differs by 0.0002 BTC. The blockchain shows 0.01 BTC; your transactions in this wallet give 0.0098 BTC.',

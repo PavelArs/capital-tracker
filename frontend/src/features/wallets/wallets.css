@@ -116,6 +116,19 @@
   text-align: left;
 }
 
+/* A cell never pushes its text into the next column; long content wraps inside it. */
+.wallets-source__open > * {
+  min-width: 0;
+}
+
+/* Coins wrap as whole pieces; one piece wider than the column breaks inside itself. */
+.wallets-amounts .wallets-num {
+  display: inline-block;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 button.wallets-source__open {
   cursor: pointer;
 }

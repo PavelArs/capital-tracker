@@ -164,9 +164,14 @@ function ManualRow({
   narrow: boolean;
 }) {
   const names = holdings.map((holding) => ticker(holding.asset)).join(', ');
-  const amounts = holdings
-    .map((holding) => `${quantity(holding.quantity)} ${ticker(holding.asset)}`)
-    .join(' · ');
+  // Each coin is one unbreakable piece, so a long list wraps between coins inside its column.
+  const amounts = holdings.flatMap((holding, index) => [
+    index ? ' ' : null,
+    <span key={holding.asset.instrumentId} className="wallets-num">
+      {quantity(holding.quantity)} {ticker(holding.asset)}
+      {index < holdings.length - 1 && ' ·'}
+    </span>,
+  ]);
   const known = holdings.flatMap((holding) => (holding.value === null ? [] : [holding.value]));
   const value = known.length ? money(sum(known), currency) : DASH;
   const icons = (
@@ -203,7 +208,7 @@ function ManualRow({
       <div className="wallets-source__open">
         {icons}
         <span>{names} tracked by hand</span>
-        <span className="wallets-num">{amounts}</span>
+        <span className="wallets-amounts">{amounts}</span>
         <span className="wallets-num wallets-right">{value}</span>
         <span className="wallets-right wallets-muted">From your transactions</span>
       </div>
