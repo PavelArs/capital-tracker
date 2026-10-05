@@ -14,13 +14,17 @@ const fresh: WalletAddress = {
   id: '00000000-0000-4000-8000-000000000001',
   network: 'bitcoin',
   address,
+  accountId: null,
+  label: null,
   createdAt: '2026-10-03T00:00:00.000Z',
   transactionCount: 0,
+  chainBalance: null,
   sync: { state: 'never', completedAt: null },
 };
 const synced: WalletAddress = {
   ...fresh,
   transactionCount: 2,
+  chainBalance: '0.00100000',
   sync: { state: 'complete', completedAt: '2026-10-03T12:00:00.000Z' },
 };
 const transactions: TransactionPage = {

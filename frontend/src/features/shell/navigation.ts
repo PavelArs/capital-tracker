@@ -1,7 +1,5 @@
 import type { IconName } from './icons';
 
-export type PlaceholderSection = 'wallets';
-
 export interface ShellSection {
   path: string;
   label: string;
@@ -35,21 +33,3 @@ export const legacyLinks = [
 export function isLegacyPath(pathname: string) {
   return legacyLinks.some(([path]) => pathname === path || pathname.startsWith(`${path}/`));
 }
-
-export interface PlaceholderContent {
-  title: string;
-  icon: IconName;
-  description: string;
-  legacyPath: string;
-  legacyLabel: string;
-}
-
-export const placeholderSections: Record<PlaceholderSection, PlaceholderContent> = {
-  wallets: {
-    title: 'Wallets',
-    icon: 'wallets',
-    description: 'Your wallets with addresses, balances and sync status will appear here.',
-    legacyPath: '/wallet-addresses',
-    legacyLabel: 'Open wallet addresses',
-  },
-};

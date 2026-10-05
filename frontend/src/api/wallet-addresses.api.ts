@@ -8,9 +8,26 @@ export interface WalletAddress {
   id: string;
   network: 'bitcoin';
   address: string;
+  /** The account (wallet) the address belongs to; null until the owner picks one. */
+  accountId: string | null;
+  label: string | null;
   createdAt: string;
   transactionCount: number;
+  /** BTC on the chain from the whole stored history; null until a sync completes. */
+  chainBalance: string | null;
   sync: { state: SyncState; completedAt: string | null };
+}
+
+export interface NewWalletAddress {
+  network: 'bitcoin';
+  address: string;
+  accountId?: string;
+  label?: string;
+}
+
+export interface WalletAddressChanges {
+  accountId?: string | null;
+  label?: string | null;
 }
 
 export interface SyncResult {
@@ -48,6 +65,13 @@ export const walletAddressesApi = {
   list: async (): Promise<WalletAddress[]> => (await apiClient.get<WalletAddress[]>(path)).data,
   register: async (address: string): Promise<WalletAddress> =>
     (await apiClient.post<WalletAddress>(path, { address })).data,
+  /** 201 adds the address; 200 returns the one already tracked, unchanged (WAL-DUP). */
+  add: async (input: NewWalletAddress): Promise<{ created: boolean; address: WalletAddress }> => {
+    const response = await apiClient.post<WalletAddress>(path, input);
+    return { created: response.status === 201, address: response.data };
+  },
+  update: async (id: string, changes: WalletAddressChanges): Promise<WalletAddress> =>
+    (await apiClient.patch<WalletAddress>(`${path}/${encodeURIComponent(id)}`, changes)).data,
   // A sync may read several provider pages; the backend stops itself after 25 s.
   sync: async (id: string): Promise<SyncResult> =>
     (

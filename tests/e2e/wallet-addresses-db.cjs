@@ -12,6 +12,7 @@ const { TypeOrmConfigService } = require('/app/backend/dist/config/typeorm.confi
 const { WalletAddressService } = require('/app/backend/dist/wallet-addresses/wallet-address.service.js');
 const { EsploraClient } = require('/app/backend/dist/wallet-addresses/esplora-client.js');
 const { AddWalletAddressImport1790400000000 } = require('/app/backend/dist/migrations/1790400000000-AddWalletAddressImport.js');
+const { BindWalletsToAccounts1791600000000 } = require('/app/backend/dist/migrations/1791600000000-BindWalletsToAccounts.js');
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_wallet_addresses_e2e';
@@ -26,8 +27,15 @@ const addresses = {
   foreign: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
   gap: 'bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0',
   limit: 'bc1qrp33g2q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q6vkm53',
+  trust: '1BoatSLRHtKNngkdXEeobR76b53LETtpyT',
+  cold: '3QJmV3qfvL9SuYo34YihAf3sRCW3qSinyC',
 };
+// Synthetic BIP-39 words of the standard test vector: never a real wallet's phrase.
+const seedPhrase = Array(11).fill('abandon').concat('about').join(' ');
 const txid = (address, i) => sha256(`ct-e2e-tx:${address}:${i}`);
+const accountRow = async (db, owner, name) => (await db.query(`INSERT INTO manual_accounts
+  (id,"ownerId","requestId","canonicalPayload",name) VALUES (gen_random_uuid(),$1,gen_random_uuid(),$2,$3) RETURNING id`,
+  [owner, JSON.stringify({ name }), name]))[0].id;
 
 // Independent oracle for providers.cjs transaction i (0 is oldest).
 function expected(address, i) {
@@ -44,6 +52,9 @@ function expected(address, i) {
     receivedSats: String(received), sentSats: String(sent), feeSats: String(fee), direction,
   };
 }
+// Chain balance of the newest `count` transactions of providers.cjs history: received - sent.
+const balance = (address, count) => btc(Array.from({ length: count }, (_value, i) => expected(address, i))
+  .reduce((sum, row) => sum + BigInt(row.receivedSats) - BigInt(row.sentSats), 0n));
 const btc = (sats) => {
   const value = BigInt(sats);
   const abs = value < 0n ? -value : value;
@@ -128,7 +139,7 @@ async function main() {
       const again = await service.register(owner, { address: addresses.pages });
       await refusal(() => service.register(owner, { address: 'bc1qAr0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' }), 400);
       await refusal(() => service.register(owner, { address: 'not-an-address' }), 400);
-      await refusal(() => service.register(owner, { address: addresses.pages, label: 'x' }), 400);
+      await refusal(() => service.register(owner, { address: addresses.pages, nickname: 'x' }), 400);
       return { first, again };
     });
     assert.equal(added.result.first.created, true);
@@ -136,12 +147,63 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      transactionCount: 0, sync: { state: 'never', completedAt: null },
+      accountId: null, label: null, transactionCount: 0, chainBalance: null, sync: { state: 'never', completedAt: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');
     assert.equal((await db.query('SELECT count(*)::int AS n FROM wallet_addresses'))[0].n, 1);
     const pages = added.result.first.value.id;
     console.log('PASS ADDR-ADD normalized bech32, idempotent duplicate, 400 for invalid input, no provider call');
+
+    // WAL-ADD, WAL-DUP, WAL-NO-SECRETS, WAL-ACCOUNT: an address belongs to one of the owner's accounts.
+    const trustAccount = await accountRow(db, owner, 'Trust Wallet');
+    const coldAccount = await accountRow(db, owner, 'Cold storage');
+    const strangerAccount = await accountRow(db, stranger, 'Stranger wallet');
+    const bound = await newRequests(async () => {
+      const created = await service.register(owner, { network: 'bitcoin', address: addresses.trust,
+        accountId: trustAccount, label: ' Trust Wallet BTC ' });
+      const repeated = await service.register(owner, { network: 'bitcoin', address: addresses.trust,
+        accountId: coldAccount, label: 'Elsewhere' });
+      for (const input of [
+        { address: seedPhrase },
+        { address: `${seedPhrase} ${seedPhrase}` },
+        { address: addresses.cold, seed: seedPhrase },
+        { network: 'ethereum', address: addresses.cold },
+        { address: addresses.cold, label: 'x'.repeat(41) },
+        { address: addresses.cold, label: 'Line\nbreak' },
+      ]) await refusal(() => service.register(owner, input), 400);
+      await refusal(() => service.register(owner, { address: addresses.cold, accountId: strangerAccount }), 404);
+      await refusal(() => service.register(owner, { address: addresses.cold, accountId: '00000000-0000-4000-8000-000000000000' }), 404);
+      return { created, repeated };
+    });
+    assert.equal(bound.result.created.created, true);
+    assert.deepEqual([bound.result.created.value.accountId, bound.result.created.value.label, bound.result.created.value.chainBalance],
+      [trustAccount, 'Trust Wallet BTC', null]);
+    assert.equal(bound.result.repeated.created, false);
+    assert.deepEqual(bound.result.repeated.value, bound.result.created.value, 'A repeated address keeps its account and name');
+    assert.deepEqual(bound.urls, [], 'Binding never calls the provider');
+    assert.deepEqual(await db.query('SELECT address FROM wallet_addresses ORDER BY address'),
+      [addresses.pages, addresses.trust].sort().map((address) => ({ address })), 'Refused requests store nothing');
+    assert.equal((await db.query(`SELECT count(*)::int AS n FROM wallet_addresses
+      WHERE address LIKE '%abandon%' OR label LIKE '%abandon%'`))[0].n, 0, 'A seed phrase is never stored');
+    const trust = bound.result.created.value.id;
+    const moved = await service.update(owner, trust, { accountId: coldAccount, label: null });
+    assert.deepEqual([moved.accountId, moved.label, moved.address], [coldAccount, null, addresses.trust]);
+    const renamed = await service.update(owner, trust, { label: 'Spare BTC' });
+    assert.deepEqual([renamed.accountId, renamed.label], [coldAccount, 'Spare BTC'], 'Only the sent field changes');
+    const assigned = await service.update(owner, pages, { accountId: trustAccount });
+    assert.deepEqual([assigned.accountId, assigned.label], [trustAccount, null], 'An existing address gets its account');
+    await refusal(() => service.update(owner, trust, { accountId: strangerAccount }), 404);
+    await refusal(() => service.update(owner, trust, {}), 400);
+    await refusal(() => service.update(owner, trust, { address: addresses.cold }), 400);
+    await refusal(() => service.update(stranger, trust, { label: 'Mine' }), 404);
+    const unbound = await service.update(owner, trust, { accountId: null });
+    assert.deepEqual([unbound.accountId, unbound.label], [null, 'Spare BTC']);
+    await assert.rejects(() => db.query('UPDATE wallet_addresses SET "accountId"=$1 WHERE id=$2', [strangerAccount, trust]),
+      (error) => error.code === '23503', "Another owner's account is refused by the database");
+    await assert.rejects(() => db.query('DELETE FROM manual_accounts WHERE id=$1', [trustAccount]),
+      (error) => error.code === '23001', 'An account with an address cannot disappear');
+    await service.update(owner, trust, { accountId: trustAccount, label: 'Trust Wallet BTC' });
+    console.log('PASS WAL-ADD/WAL-DUP/WAL-NO-SECRETS/WAL-ACCOUNT address bound with a name; repeat unchanged; seed phrase, foreign account and bad names refused and never stored; move, rename, unbind');
 
     // ADDR-SYNC-PAGES
     await post('bitcoin-history', { address: addresses.pages, count: 60 });
@@ -179,6 +241,13 @@ async function main() {
     assertStored(grown, addresses.pages, 63);
     assert.equal(JSON.stringify(grown.slice(3)), before, 'Earlier rows are untouched');
     console.log('PASS ADDR-SYNC-INCREMENTAL only three new rows added');
+
+    // SYNC-RECONCILE: the chain balance is the whole stored history's received minus sent.
+    const reconciled = (await service.list(owner)).find((item) => item.id === pages);
+    assert.deepEqual([reconciled.sync.state, reconciled.transactionCount, reconciled.chainBalance],
+      ['complete', 63, balance(addresses.pages, 63)]);
+    assert.notEqual(reconciled.chainBalance, '0.00000000');
+    console.log(`PASS SYNC-RECONCILE complete history of 63 gives chain balance ${reconciled.chainBalance}`);
 
     // ADDR-SYNC-RESUME
     const resume = (await service.register(owner, { address: addresses.resume })).value.id;
@@ -259,8 +328,10 @@ async function main() {
     assert.equal(firstCall.urls.length, 10);
     assert.deepEqual([firstCall.result.outcome, firstCall.result.reason, firstCall.result.imported, firstCall.result.address.sync.state],
       ['partial', null, 250, 'partial']);
+    assert.equal(firstCall.result.address.chainBalance, null, 'A partly loaded history has no chain balance');
     const secondCall = await service.sync(owner, limited);
     assert.deepEqual([secondCall.outcome, secondCall.imported, secondCall.address.transactionCount], ['complete', 50, 300]);
+    assert.equal(secondCall.address.chainBalance, balance(addresses.limit, 300));
     assertStored(await rows(db, limited), addresses.limit, 300);
     console.log('PASS ADDR-SYNC-LIMIT 10 pages per call, then partial; the next call completes 300');
 
@@ -296,7 +367,7 @@ async function main() {
     });
     assert.deepEqual(denied.urls, []);
     assert.deepEqual((await service.list(owner)).map((item) => item.address).sort(),
-      [addresses.pages, addresses.resume, addresses.invalid, addresses.race, addresses.gap, addresses.limit].sort());
+      [addresses.pages, addresses.trust, addresses.resume, addresses.invalid, addresses.race, addresses.gap, addresses.limit].sort());
     assert.deepEqual((await service.list(stranger)).map((item) => item.address), [addresses.foreign]);
     const page = await service.transactions(owner, pages, { limit: '2', offset: '1' });
     assert.deepEqual(page, {
@@ -318,8 +389,9 @@ async function main() {
     // ADDR-MIGRATION down refusal
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new AddWalletAddressImport1790400000000().down(), /recovery plan/);
+    await assert.rejects(() => new BindWalletsToAccounts1791600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS ADDR-MIGRATION fresh 27 applies once; down refuses');
+    console.log('PASS ADDR-MIGRATION fresh 31 applies once; both wallet migrations refuse down');
   } finally {
     await db.destroy();
   }

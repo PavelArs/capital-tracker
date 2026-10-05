@@ -9,7 +9,7 @@ import {
   PAGE_SIZE,
   type ProviderFailure,
 } from './esplora-client';
-import { parseRegistration, parseTransactionQuery } from './wallet-address-input';
+import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
 
 // Bounds for one sync request; the next request continues from the committed cursor.
 export const MAX_PAGES_PER_SYNC = 10;
@@ -20,12 +20,15 @@ interface AddressRow {
   ownerId: string;
   network: 'bitcoin';
   address: string;
+  accountId: string | null;
+  label: string | null;
   walkTopTxid: string | null;
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
   completedAt: Date | null;
   createdAt: Date;
   transactionCount: number;
+  balanceUnits: string;
 }
 interface TransactionRow {
   txid: string;
@@ -38,19 +41,28 @@ interface TransactionRow {
 }
 type SyncOutcome = 'complete' | 'partial' | 'provider_error';
 
-const selectAddress = `SELECT a.*, (SELECT count(*) FROM wallet_address_transactions t
-  WHERE t."addressId" = a.id)::int AS "transactionCount" FROM wallet_addresses a`;
+// Each stored transaction's received minus sent units is its whole effect on the address,
+// the network fee included, so their sum over the complete history is the chain balance.
+const selectAddress = `SELECT a.*, t."transactionCount", t."balanceUnits" FROM wallet_addresses a
+  CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount",
+    coalesce(sum(x."receivedUnits" - x."sentUnits"), 0)::text AS "balanceUnits"
+    FROM wallet_address_transactions x WHERE x."addressId" = a.id) t`;
 
 function summary(row: AddressRow) {
+  const state = row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
   return {
     id: row.id,
     network: row.network,
     address: row.address,
+    accountId: row.accountId,
+    label: row.label,
     createdAt: row.createdAt.toISOString(),
     transactionCount: row.transactionCount,
+    // SYNC-RECONCILE: known only once the whole history is stored; never a partial sum.
+    chainBalance: state === 'complete' ? formatSats(BigInt(row.balanceUnits)) : null,
     sync: {
-      state: row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never',
-      completedAt: row.walkTopTxid || !row.completedAt ? null : row.completedAt.toISOString(),
+      state,
+      completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,
     },
   };
 }
@@ -80,20 +92,51 @@ export class WalletAddressService {
     private readonly esplora: EsploraClient,
   ) {}
 
+  // WAL-DUP: an address already tracked is returned as it is, whatever account or name the
+  // repeated request names; moving or renaming it is an explicit update.
   async register(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const { address } = parseRegistration(raw);
+    const { address, accountId, label } = parseRegistration(raw);
     return this.source.transaction('READ COMMITTED', async (manager) => {
+      if (accountId) await this.account(manager, owner, accountId);
       const inserted: { id: string }[] = await manager.query(
-        `INSERT INTO wallet_addresses (id, "ownerId", network, address) VALUES ($1, $2, 'bitcoin', $3)
+        `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
+          VALUES ($1, $2, 'bitcoin', $3, $4, $5)
           ON CONFLICT ("ownerId", network, address) DO NOTHING RETURNING id`,
-        [randomUUID(), owner, address],
+        [randomUUID(), owner, address, accountId, label],
       );
       const [row]: AddressRow[] = await manager.query(
         `${selectAddress} WHERE a."ownerId" = $1 AND a.network = 'bitcoin' AND a.address = $2`,
         [owner, address],
       );
       return { created: inserted.length === 1, value: summary(row) };
+    });
+  }
+
+  // WAL-ACCOUNT: moves the address to another account (or none) and renames it.
+  async update(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    const changes = parseUpdate(raw);
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      if (changes.accountId) await this.account(manager, owner, changes.accountId);
+      // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
+      const [updated]: [unknown[], number] = await manager.query(
+        `UPDATE wallet_addresses SET
+          "accountId" = CASE WHEN $3 THEN $4::uuid ELSE "accountId" END,
+          label = CASE WHEN $5 THEN $6::varchar ELSE label END
+          WHERE "ownerId" = $1 AND id = $2 RETURNING id`,
+        [
+          owner,
+          addressId,
+          'accountId' in changes,
+          changes.accountId ?? null,
+          'label' in changes,
+          changes.label ?? null,
+        ],
+      );
+      if (updated.length !== 1) throw new NotFoundException();
+      return summary(await this.address(manager, owner, addressId));
     });
   }
 
@@ -261,6 +304,15 @@ export class WalletAddressService {
     );
     if (!row) throw new NotFoundException();
     return row;
+  }
+
+  // Another owner's account is as unknown as a missing one.
+  private async account(manager: EntityManager, owner: string, id: string) {
+    const rows: unknown[] = await manager.query(
+      'SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 FOR KEY SHARE',
+      [owner, id],
+    );
+    if (rows.length === 0) throw new NotFoundException();
   }
 
   private read<T>(action: (manager: EntityManager) => Promise<T>): Promise<T> {
