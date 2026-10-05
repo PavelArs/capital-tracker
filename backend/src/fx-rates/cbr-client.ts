@@ -3,22 +3,27 @@ import axios from 'axios';
 import type { FxRate, RatedCurrency } from './fx-conversion';
 
 export type FxFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
-export type RatesResult = { ok: true; rates: FxRate[] } | { ok: false; reason: FxFailure };
+// `detail` names the refused part of an unreadable answer.
+export type RatesResult =
+  | { ok: true; rates: FxRate[] }
+  | { ok: false; reason: FxFailure; detail?: string };
 
 // Bank of Russia currency codes for its XML_dynamic series.
 export const CBR_CODES: Readonly<Record<RatedCurrency, string>> = { USD: 'R01235', EUR: 'R01239' };
 const MAX_BODY_BYTES = 1024 * 1024;
 
 class InvalidResponse extends Error {}
-function invalid(): never {
-  throw new InvalidResponse();
+function invalid(what: string): never {
+  throw new InvalidResponse(what);
 }
+// Up to 60 characters of the (public) answer, printable ASCII only.
+const excerpt = (text: string) => JSON.stringify(text.slice(0, 60).replace(/[^\x20-\x7e]/g, '?'));
 
 const cbrDate = (date: string) => `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
 
 /** "79,0246" per nominal 1 or 10, 100… as an exact canonical decimal per unit. */
 function perUnit(whole: string, fraction: string, nominal: string): string {
-  if (!/^10*$/.test(nominal)) invalid();
+  if (!/^10*$/.test(nominal)) invalid(`nominal ${nominal}`);
   const shift = nominal.length - 1;
   const digits = `${whole}${fraction}`.replace(/^0+/, '') || '0';
   const scale = fraction.length + shift;
@@ -26,11 +31,12 @@ function perUnit(whole: string, fraction: string, nominal: string): string {
   const integer = padded.slice(0, padded.length - scale).replace(/^0+/, '') || '0';
   const tail = padded.slice(padded.length - scale).replace(/0+$/, '');
   const value = tail ? `${integer}.${tail}` : integer;
-  return value === '0' ? invalid() : value;
+  return value === '0' ? invalid('rate 0') : value;
 }
 
+// Sticky: records are read one after another, so the first unexpected part is located.
 const RECORD =
-  /<Record Date="(\d{2})\.(\d{2})\.(\d{4})" Id="(R\d{5}[A-Z]?)">\s*<Nominal>(\d{1,7})<\/Nominal>\s*<Value>(\d{1,10}),(\d{1,10})<\/Value>(?:\s*<VunitRate>\d{1,10},\d{1,30}<\/VunitRate>)?\s*<\/Record>/g;
+  /\s*<Record Date="(\d{2})\.(\d{2})\.(\d{4})" Id="(R\d{5}[A-Z]?)">\s*<Nominal>(\d{1,7})<\/Nominal>\s*<Value>(\d{1,10}),(\d{1,10})<\/Value>(?:\s*<VunitRate>\d{1,10},\d{1,30}<\/VunitRate>)?\s*<\/Record>/y;
 
 /**
  * XML_dynamic: <ValCurs ID="R01235" DateRange1=… DateRange2=… name=…><Record Date="11.01.2025"
@@ -42,20 +48,34 @@ export function parseCbrDynamic(body: string, code: string, from: string, to: st
     /^\s*(?:<\?xml[^>]*\?>\s*)?<ValCurs\s+ID="([^"]*)"[^>]*?(?:\/>\s*$|>([\s\S]*)<\/ValCurs>\s*$)/.exec(
       body,
     );
-  if (!root || root[1] !== code) invalid();
+  if (!root) invalid(`no rate list: ${excerpt(body.trimStart())}`);
+  if (root[1] !== code) invalid(`series ${excerpt(root[1])}`);
   const content = root[2] ?? '';
   const rates: FxRate[] = [];
-  for (const match of content.matchAll(RECORD)) {
+  RECORD.lastIndex = 0;
+  while (content.slice(RECORD.lastIndex).trim() !== '') {
+    const start = RECORD.lastIndex;
+    const match = RECORD.exec(content);
+    if (!match) {
+      const after = rates.length ? ` after ${rates[rates.length - 1].date}` : '';
+      invalid(`unexpected content${after}: ${excerpt(content.slice(start).trimStart())}`);
+    }
     const [, day, month, year, id, nominal, whole, fraction] = match;
-    if (id !== code) invalid();
     const date = `${year}-${month}-${day}`;
+    if (id !== code) invalid(`series ${id} on ${date}`);
     const parsed = new Date(`${date}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date) invalid();
-    if (date < from || date > to) invalid();
-    if (rates.length && rates[rates.length - 1].date >= date) invalid();
-    rates.push({ date, rubPerUnit: perUnit(whole, fraction, nominal) });
+    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== date)
+      invalid(`impossible date ${day}.${month}.${year}`);
+    if (date < from || date > to) invalid(`${date} outside the range`);
+    const last = rates[rates.length - 1]?.date;
+    if (last && last >= date) invalid(`${date} after ${last}`);
+    try {
+      rates.push({ date, rubPerUnit: perUnit(whole, fraction, nominal) });
+    } catch (error) {
+      if (error instanceof InvalidResponse) invalid(`${error.message} on ${date}`);
+      throw error;
+    }
   }
-  if (content.replace(RECORD, '').trim() !== '') invalid();
   return rates;
 }
 
@@ -107,15 +127,10 @@ export class CbrClient {
       return { ok: true, rates: parseCbrDynamic(text, code, from, to) };
     } catch (error) {
       if (error instanceof InvalidResponse) {
-        // The start of the answer, printable ASCII only, tells a service page from a format change.
-        const start = Buffer.from(response.data)
-          .subarray(0, 120)
-          .toString('latin1')
-          .replace(/[^\x20-\x7e]/g, '?');
         this.logger.warn(
-          `Unreadable Bank of Russia answer for ${code} ${from}..${to}: ${response.data.byteLength} bytes, "${start}"`,
+          `Unreadable Bank of Russia answer for ${code} ${from}..${to} (${response.data.byteLength} bytes): ${error.message}`,
         );
-        return { ok: false, reason: 'invalid_response' };
+        return { ok: false, reason: 'invalid_response', detail: error.message };
       }
       throw error;
     }
