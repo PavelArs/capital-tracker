@@ -15,7 +15,7 @@ const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner
 const { AccountInThreeCurrencies1790900000000 } = require('/app/backend/dist/migrations/1790900000000-AccountInThreeCurrencies.js');
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
-const databases = { rates: 'capital_tracker_fx_rates_e2e', upgrade: 'capital_tracker_fx_history_e2e', accounting: 'capital_tracker_three_currency_e2e' };
+const databases = { rates: 'capital_tracker_fx_rates_e2e', upgrade: 'capital_tracker_fx_history_e2e', broken: 'capital_tracker_fx_broken_e2e', accounting: 'capital_tracker_three_currency_e2e' };
 const control = 'http://providers:8080/__control';
 const HOUR = 3600000;
 const DAY = 86400000;
@@ -79,7 +79,7 @@ async function createDatabase(name) {
   await client.connect();
   try {
     assert.equal((await client.query('SELECT 1 FROM pg_database WHERE datname=$1', [name])).rowCount, 0, 'Never overwrite/reuse an existing database');
-    assert.match(name, /^capital_tracker_(fx_rates|fx_history|three_currency)_e2e$/);
+    assert.match(name, /^capital_tracker_(fx_rates|fx_history|fx_broken|three_currency)_e2e$/);
     await client.query(`CREATE DATABASE "${name}"`);
   } finally { await client.end(); }
 }
@@ -237,6 +237,53 @@ async function failures(db) {
   assert.ok(view.rates.every((rate) => rate.rubPerUnit !== null), 'Stored rates stay available while the provider is down');
   await post('cbr', { base });
   console.log('PASS FX-FAIL delayed and failed states name the missing series; stored rates stay usable');
+}
+
+async function unreadable(db) {
+  stage = 'FX-UNREADABLE an answer that is always unreadable leaves out only a short range';
+  // Every answer holding USD of 15 March 2017 (a Wednesday) carries a record of another shape.
+  const brokenDate = '2017-03-15';
+  await post('cbr', { base, broken: { R01235: brokenDate } });
+  const now = at();
+  const tomorrow = moscowDay(now.getTime()) + DAY;
+  const all = [...expectedRates('USD', historyStart, tomorrow), ...expectedRates('EUR', historyStart, tomorrow)];
+  const first = await newRequests(() => collector(db).collect(now));
+  assert.equal(first.result.outcome, 'collected');
+  const have = new Set((await stored(db)).map(({ currency, rateDate }) => `${currency} ${rateDate}`));
+  const missing = all.filter((row) => !have.has(`${row.currency} ${row.rateDate}`));
+  assert.ok(missing.every((row) => row.currency === 'USD'), 'EUR is read in full');
+  assert.ok(missing.some((row) => row.rateDate === brokenDate), 'The refused date stays missing');
+  const span = Date.parse(missing.at(-1).rateDate) - Date.parse(missing[0].rateDate);
+  assert.ok(span < 45 * DAY, `Only a short range around the refused record stays missing (${missing[0].rateDate}..${missing.at(-1).rateDate})`);
+  assert.ok(first.urls.length <= 10 + 2 * 16, 'Splitting asks a bounded number of times');
+  let sync = await state(db);
+  assert.equal(sync.state, 'delayed');
+  assert.equal(sync.errorCode, 'invalid_response');
+  const reported = /^Bank of Russia sent an unreadable answer; no new rates for USD (\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2}) \(unexpected content after 2017-03-14: "<Record Date=\\"15\.03\.2017\\" Id=\\"R01235\\"><Value>/.exec(sync.errorMessage);
+  assert.ok(reported, `The state names the range and the refused record: ${sync.errorMessage}`);
+  assert.ok(reported[1] <= missing[0].rateDate && missing.at(-1).rateDate <= reported[2], 'The named range covers what is missing');
+
+  stage = 'FX-UNREADABLE the next run asks again for the short hole only';
+  const before = await stored(db);
+  const again = await newRequests(() => collector(db).collect(new Date(now.getTime() + HOUR)));
+  const history = requested(again.urls).filter(([, code, from]) => code === 'R01235' && from !== cbrDate(Date.parse(`${before.filter((row) => row.currency === 'USD').at(-1).rateDate}T00:00:00Z`) - 7 * DAY));
+  // The hole runs from the day after the last stored rate before it, a Saturday at the latest.
+  const near = (date, days) => isoDate(Date.parse(`${date}T00:00:00Z`) + days * DAY);
+  const iso = (date) => date.split('/').reverse().join('-');
+  assert.ok(history.length > 0 && history.every(([, , from, to]) => iso(from) >= near(reported[1], -3) && iso(to) <= near(reported[2], 3)),
+    `Only the hole is asked for again: ${JSON.stringify(history)}`);
+  const after = await stored(db);
+  assert.ok(after.length >= before.length, 'Stored rates are kept; the hole can only shrink');
+  assert.ok(!after.some((row) => row.currency === 'USD' && row.rateDate === brokenDate), 'The refused date stays missing');
+
+  stage = 'FX-UNREADABLE a readable answer fills the hole';
+  await post('cbr', { base });
+  await collector(db).collect(new Date(now.getTime() + 2 * HOUR));
+  assert.deepEqual((await stored(db)).map(({ source, ...row }) => row), all);
+  sync = await state(db);
+  assert.equal(sync.state, 'synced');
+  assert.equal(sync.errorMessage, null);
+  console.log(`PASS FX-UNREADABLE an always unreadable answer splits down to ${missing[0].rateDate}..${missing.at(-1).rateDate}, the state names the refused record, the hole is asked for again and filled`);
 }
 
 async function appendOnly(db) {
@@ -450,9 +497,11 @@ async function main() {
   }
   const rates = sourceFor(databases.rates);
   const upgrade = sourceFor(databases.upgrade);
+  const broken = sourceFor(databases.broken);
   const accounting = sourceFor(databases.accounting);
   await rates.initialize();
   await upgrade.initialize();
+  await broken.initialize();
   await accounting.initialize();
   try {
     assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
@@ -463,12 +512,14 @@ async function main() {
     await failures(rates);
     await appendOnly(rates);
     await history(upgrade);
+    await unreadable(broken);
     const owners = await ownerSettings(accounting);
     await threeCurrencyPortfolio(accounting, owners);
     await paidInRublesAndEuros(accounting, owners);
   } finally {
     await rates.destroy();
     await upgrade.destroy();
+    await broken.destroy();
     await accounting.destroy();
   }
 }

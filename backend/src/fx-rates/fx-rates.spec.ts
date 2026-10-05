@@ -5,7 +5,7 @@ import { BadRequestException } from '@nestjs/common';
 import { CbrClient, parseCbrDynamic } from './cbr-client';
 import { FxConverter, type FxRates, moscowDate, rateOn } from './fx-conversion';
 import { parseRateDate } from './fx-rates.controller';
-import { FX_HISTORY_FROM, fxRequestRanges } from './fx-rates.service';
+import { FX_HISTORY_FROM, fxRequestRanges, fxSplitUnreadable } from './fx-rates.service';
 
 const ATOMS = 10n ** 30n;
 const atoms = (value: string) => {
@@ -81,6 +81,18 @@ describe('FX-HISTORY rates for early operations', () => {
       ['2020-11-26', '2024-11-24'],
       ['2016-11-27', '2020-11-25'],
     ]);
+  });
+
+  it('splits an unreadable range in a newer and an older half down to 45 days', () => {
+    expect(fxSplitUnreadable('2016-11-27', '2020-11-25')).toEqual([
+      ['2018-11-27', '2020-11-25'],
+      ['2016-11-27', '2018-11-26'],
+    ]);
+    expect(fxSplitUnreadable('2017-01-01', '2017-02-15')).toEqual([
+      ['2017-01-24', '2017-02-15'],
+      ['2017-01-01', '2017-01-23'],
+    ]);
+    expect(fxSplitUnreadable('2017-01-01', '2017-02-14')).toBeNull();
   });
 
   it('only re-reads the last week once the history reaches back to 2009 without holes', () => {
@@ -179,22 +191,59 @@ describe('FX-PARSE Bank of Russia XML_dynamic answers', () => {
     ).toEqual([{ date: '2025-06-06', rubPerUnit: '0.581234' }]);
   });
 
+  // The refusal names the part, so a production log tells what changed in the answer.
   it.each([
-    ['another series', xml('R01239', record('06.06.2025', '78,9'))],
-    ['a record of another series', xml('R01235', record('06.06.2025', '78,9', '1', 'R01239'))],
-    ['a date outside the range', xml('R01235', record('11.06.2025', '78,9'))],
-    ['an impossible date', xml('R01235', record('31.06.2025', '78,9'))],
+    ['another series', xml('R01239', record('06.06.2025', '78,9')), 'series "R01239"'],
+    [
+      'a record of another series',
+      xml('R01235', record('06.06.2025', '78,9', '1', 'R01239')),
+      'series R01239 on 2025-06-06',
+    ],
+    [
+      'a date outside the range',
+      xml('R01235', record('11.06.2025', '78,9')),
+      '2025-06-11 outside the range',
+    ],
+    [
+      'an impossible date',
+      xml('R01235', record('31.06.2025', '78,9')),
+      'impossible date 31.06.2025',
+    ],
     [
       'dates out of order',
       xml('R01235', record('07.06.2025', '78,9') + record('06.06.2025', '78,9')),
+      '2025-06-06 after 2025-06-07',
     ],
-    ['a repeated date', xml('R01235', record('06.06.2025', '78,9') + record('06.06.2025', '78,9'))],
-    ['a zero rate', xml('R01235', record('06.06.2025', '0,0000'))],
-    ['a nominal that is not a power of ten', xml('R01235', record('06.06.2025', '78,9', '3'))],
-    ['unknown content', xml('R01235', `${record('06.06.2025', '78,9')}<Error/>`)],
-    ['an error page', '<html><body>Error in parameters</body></html>'],
-  ])('refuses %s', (_label, body) => {
-    expect(() => parseCbrDynamic(body, 'R01235', '2025-06-01', '2025-06-10')).toThrow();
+    [
+      'a repeated date',
+      xml('R01235', record('06.06.2025', '78,9') + record('06.06.2025', '78,9')),
+      '2025-06-06 after 2025-06-06',
+    ],
+    ['a zero rate', xml('R01235', record('06.06.2025', '0,0000')), 'rate 0 on 2025-06-06'],
+    [
+      'a nominal that is not a power of ten',
+      xml('R01235', record('06.06.2025', '78,9', '3')),
+      'nominal 3 on 2025-06-06',
+    ],
+    [
+      'unknown content',
+      xml('R01235', `${record('06.06.2025', '78,9')}<Error/>${record('07.06.2025', '78,9')}`),
+      'unexpected content after 2025-06-06: "<Error/><Record Date=\\"07.06.2025\\" Id=\\"R01235\\"><Nominal>1</No"',
+    ],
+    [
+      'a record of another shape',
+      xml('R01235', '<Record Date="06.06.2025" Id="R01235"><Value>78,9</Value></Record>'),
+      'unexpected content: "<Record Date=\\"06.06.2025\\" Id=\\"R01235\\"><Value>78,9</Value></R"',
+    ],
+    [
+      'an error page',
+      '<html><body>Error in parameters</body></html>',
+      'no rate list: "<html><body>Error in parameters</body></html>"',
+    ],
+  ])('refuses %s', (_label, body, what) => {
+    expect(() => parseCbrDynamic(body, 'R01235', '2025-06-01', '2025-06-10')).toThrow(
+      expect.objectContaining({ message: what }),
+    );
   });
 });
 
@@ -246,7 +295,11 @@ describe('FX-CLIENT Bank of Russia client against a local HTTP server', () => {
   ] as const)('reports HTTP %i %j as %s after asking once more', async (status, body, reason) => {
     answers = [{ status, body }];
     const client = new CbrClient({ baseUrl, retryPauseMs: 0 });
-    expect(await client.dynamic('USD', '2025-06-01', '2025-06-10')).toEqual({ ok: false, reason });
+    expect(await client.dynamic('USD', '2025-06-01', '2025-06-10')).toEqual(
+      reason === 'invalid_response'
+        ? { ok: false, reason, detail: 'no rate list: "<html>maintenance</html>"' }
+        : { ok: false, reason },
+    );
     expect(requests).toHaveLength(2);
   });
 

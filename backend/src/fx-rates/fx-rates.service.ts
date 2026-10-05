@@ -33,6 +33,11 @@ const REQUEST_DAYS = 4 * 365;
 // holidays, is under two weeks. A longer stretch without rates is a range a failed
 // request left out.
 const HOLE_DAYS = 20;
+// An unreadable answer for a longer range is asked for again in two halves, so a refused
+// part leaves out at most this many days, still a hole the next runs ask for again.
+const SPLIT_ABOVE_DAYS = 45;
+// Unreadable answers one run accepts per currency before it stops asking.
+const MAX_UNREADABLE = 16;
 const FAILURE_TEXT: Record<FxFailure, string> = {
   unavailable: 'did not answer',
   rate_limited: 'rate limit reached',
@@ -94,6 +99,17 @@ export function fxRequestRanges(
     ...missing
       .sort(([a], [b]) => (a < b ? 1 : -1))
       .flatMap(([from, until]) => split(from, until).reverse()),
+  ];
+}
+
+/** The newer and the older half of an inclusive range longer than SPLIT_ABOVE_DAYS. */
+export function fxSplitUnreadable(from: string, until: string): [string, string][] | null {
+  const days = (Date.parse(until) - Date.parse(from)) / DAY_MS + 1;
+  if (days <= SPLIT_ABOVE_DAYS) return null;
+  const middle = addDays(from, Math.floor(days / 2) - 1);
+  return [
+    [addDays(middle, 1), until],
+    [from, middle],
   ];
 }
 
@@ -198,20 +214,36 @@ export class FxRatesService {
       ]),
     );
     const rows: { currency: RatedCurrency; rate: FxRate }[] = [];
-    const failed: RatedCurrency[] = [];
+    // A currency, or the range of it an unreadable answer kept out, with what was refused.
+    const failed: string[] = [];
     let reason: FxFailure | null = null;
     for (const currency of ratedCurrencies) {
-      for (const [from, until] of fxRequestRanges(bounds.get(currency), to)) {
+      const queue = fxRequestRanges(bounds.get(currency), to);
+      let unreadable = 0;
+      for (let range = queue.shift(); range; range = queue.shift()) {
+        const [from, until] = range;
         const result = await this.cbr.dynamic(currency, from, until);
-        if (result.ok) rows.push(...result.rates.map((rate) => ({ currency, rate })));
-        else {
-          // The next hourly run asks again for this and the older ranges; the ranges already
-          // read are kept.
-          this.logger.warn(`Bank of Russia ${result.reason} for ${currency} ${from}..${until}`);
-          failed.push(currency);
-          reason ??= result.reason;
-          break;
+        if (result.ok) {
+          rows.push(...result.rates.map((rate) => ({ currency, rate })));
+          continue;
         }
+        const halves = fxSplitUnreadable(from, until);
+        if (result.reason === 'invalid_response' && ++unreadable <= MAX_UNREADABLE) {
+          // The same answer every time: read the halves around the refused part, newer first,
+          // so only a short range stays missing; its hole is asked for again every hour.
+          if (halves) queue.unshift(...halves);
+          else {
+            reason ??= result.reason;
+            failed.push(`${currency} ${from}..${until} (${result.detail})`);
+          }
+          continue;
+        }
+        // The next hourly run asks again for this and the older ranges; the ranges already
+        // read are kept.
+        this.logger.warn(`Bank of Russia ${result.reason} for ${currency} ${from}..${until}`);
+        reason ??= result.reason;
+        failed.push(currency);
+        break;
       }
     }
     return this.source.transaction(async (manager) => {
@@ -233,9 +265,15 @@ export class FxRatesService {
         failed.length === 0
           ? { state: 'synced', errorCode: null, errorMessage: null }
           : {
-              state: failed.length === ratedCurrencies.length ? 'failed' : 'delayed',
+              state: ratedCurrencies.every((currency) => failed.includes(currency))
+                ? 'failed'
+                : 'delayed',
               errorCode: reason,
-              errorMessage: `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}`,
+              errorMessage:
+                `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}`.slice(
+                  0,
+                  300,
+                ),
             };
       await manager.query(
         `INSERT INTO sync_sources (key, state, "lastAttemptAt", "lastSuccessAt", "nextRunAt", "errorCode", "errorMessage")

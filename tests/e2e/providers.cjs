@@ -69,7 +69,10 @@ function cbrDynamic(response, url) {
     if ([0, 1].includes(new Date(time * 1000).getUTCDay())) continue;
     const cents = base * 100 + (time - backfillStart) / DAY;
     const value = `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, '0')}00`;
-    records += `<Record Date="${date(time)}" Id="${code}"><Nominal>1</Nominal><Value>${value}</Value><VunitRate>${value}</VunitRate></Record>`;
+    // A broken date's record has another shape, so every answer containing it is unreadable.
+    records += cbr.broken?.[code] === new Date(time * 1000).toISOString().slice(0, 10)
+      ? `<Record Date="${date(time)}" Id="${code}"><Value>${value}</Value></Record>`
+      : `<Record Date="${date(time)}" Id="${code}"><Nominal>1</Nominal><Value>${value}</Value><VunitRate>${value}</VunitRate></Record>`;
   }
   response.writeHead(200, { 'content-type': 'application/xml; charset=windows-1251', connection: 'close' });
   response.end(`<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`);
@@ -268,10 +271,11 @@ const server = http.createServer(async (request, response) => {
       const table = (value, check) => value === undefined || (value && typeof value === 'object' && !Array.isArray(value)
         && Object.entries(value).every(([key, item]) => /^R\d{5}$/.test(key) && check(item)));
       if (!table(data.base, (item) => Number.isSafeInteger(item) && item > 0 && item < 10000)
-        || !table(data.fail, (item) => Number.isInteger(item) && item >= 400 && item <= 599)) {
+        || !table(data.fail, (item) => Number.isInteger(item) && item >= 400 && item <= 599)
+        || !table(data.broken, (item) => typeof item === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item))) {
         return respond(response, 400, { error: 'Invalid synthetic Bank of Russia fixture' });
       }
-      cbr = { base: data.base ?? {}, fail: data.fail ?? {} };
+      cbr = { base: data.base ?? {}, fail: data.fail ?? {}, broken: data.broken ?? {} };
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
