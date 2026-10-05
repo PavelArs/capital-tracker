@@ -29,10 +29,11 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 
-type View = 'all' | 'needs-classification' | Operation['source'];
+type View = 'all' | 'needs-classification' | 'hidden' | Operation['source'];
 const views: [View, string][] = [
   ['all', 'All'],
   ['needs-classification', 'Needs classification'],
+  ['hidden', 'Hidden'],
   ['chain', 'Blockchain'],
   ['manual', 'Manual'],
   ['csv', 'CSV'],
@@ -40,7 +41,7 @@ const views: [View, string][] = [
 
 function inView(operation: Operation, view: View): boolean {
   if (view === 'all') return true;
-  if (view === 'needs-classification') return operation.status === view;
+  if (view === 'needs-classification' || view === 'hidden') return operation.status === view;
   return operation.source === view;
 }
 
@@ -140,7 +141,16 @@ function OperationRow({
 }) {
   const needs = operation.status === 'needs-classification';
   return (
-    <tr className={needs ? 'transactions-row--needs' : undefined} onClick={onOpen}>
+    <tr
+      className={
+        needs
+          ? 'transactions-row--needs'
+          : operation.status === 'hidden'
+            ? 'transactions-row--hidden'
+            : undefined
+      }
+      onClick={onOpen}
+    >
       <td className="transactions-wrap">
         <span className="transactions-type">
           <TypeIcon operation={operation} />
@@ -191,8 +201,10 @@ function OperationRow({
         )}
       </td>
       <td>
-        {needs ? (
-          <span className="transactions-badge transactions-badge--warn">
+        {needs || operation.status === 'hidden' ? (
+          <span
+            className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
+          >
             {statusLabels[operation.status]}
           </span>
         ) : (
@@ -263,6 +275,7 @@ function OperationItem({
             </span>
           ) : (
             <span className="transactions-item__detail">
+              {operation.status === 'hidden' && 'Hidden · '}
               {placeLabel(operation)}
               {at !== 'No time' && ` · ${at}`}
             </span>
@@ -302,9 +315,12 @@ export default function TransactionsPage() {
     if (fresh) setList(null);
     try {
       const next = await operationsApi.list(currency);
-      if (request === latest.current) setList(next);
+      if (request !== latest.current) return null;
+      setList(next);
+      return next;
     } catch {
       if (request === latest.current) setFailed(true);
+      return null;
     }
   }, []);
   useEffect(() => {
@@ -312,9 +328,10 @@ export default function TransactionsPage() {
   }, [load, asked]);
 
   // Filters live in the address, so other screens can link to "Needs classification".
+  const status = params.get('status');
   const view: View = (
-    params.get('status') === 'needs-classification'
-      ? 'needs-classification'
+    status === 'needs-classification' || status === 'hidden'
+      ? status
       : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all')
   ) as View;
   const asset = params.get('asset') ?? '';
@@ -334,8 +351,8 @@ export default function TransactionsPage() {
   };
   const setView = (next: View) =>
     update({
-      status: next === 'needs-classification' ? next : '',
-      source: next === 'all' || next === 'needs-classification' ? '' : next,
+      status: next === 'needs-classification' || next === 'hidden' ? next : '',
+      source: next === 'all' || next === 'needs-classification' || next === 'hidden' ? '' : next,
     });
 
   const operations = list?.operations ?? [];
@@ -363,13 +380,12 @@ export default function TransactionsPage() {
     [operations],
   );
   const query = search.trim().toLowerCase();
-  const visible = operations.filter(
-    (operation) =>
-      inView(operation, view) &&
-      (!asset || assetKeys(operation).includes(asset)) &&
-      (!place || placeKeys(operation).includes(place)) &&
-      (!query || searchable(operation).includes(query)),
-  );
+  // Asset, account and search; the chips choose the view on top of them.
+  const matches = (operation: Operation) =>
+    (!asset || assetKeys(operation).includes(asset)) &&
+    (!place || placeKeys(operation).includes(place)) &&
+    (!query || searchable(operation).includes(query));
+  const visible = operations.filter((operation) => inView(operation, view) && matches(operation));
   const filtered = view !== 'all' || asset || place || query;
   const opened = operations.find((operation) => operation.id === openId) ?? null;
   const clear = () => {
@@ -391,6 +407,45 @@ export default function TransactionsPage() {
     setOpenId(null);
     void load(asked, true);
   };
+  const [notice, setNotice] = useState<string | null>(null);
+  const open = (id: string) => {
+    setNotice(null);
+    setOpenId(id);
+  };
+  const toClassify = operations.filter((item) => item.status === 'needs-classification');
+  // CLS-BUY: after an answer the next transaction to classify opens, newest first, so a
+  // backlog is worked through without going back to the list.
+  const classified = async (label: string) => {
+    const was = opened;
+    const next = await load(asked, false);
+    if (!next || !was) return;
+    const said =
+      label === 'hidden'
+        ? 'Hidden from calculations.'
+        : label === 'included'
+          ? 'Included in calculations again.'
+          : `Saved as ${label}.`;
+    const waiting = next.operations.filter(
+      (item) => item.status === 'needs-classification' && item.id !== was.id,
+    );
+    // The next one comes from the rows the filters show, so a wallet is finished first.
+    const following = was.status === 'needs-classification' ? waiting.find(matches) : undefined;
+    if (following) {
+      setOpenId(following.id);
+      setNotice(`${said} Here is the next one.`);
+    } else if (was.status === 'needs-classification') {
+      // The last one: back to the list, which now says so.
+      setOpenId(null);
+      setNotice(
+        waiting.length > 0
+          ? `${said} Nothing else to classify here.`
+          : `All transactions classified. The last one was ${label === 'hidden' ? 'hidden' : `saved as ${label}`}.`,
+      );
+    } else {
+      setOpenId(was.id);
+      setNotice(said);
+    }
+  };
 
   return (
     <div className="shell-page">
@@ -400,6 +455,11 @@ export default function TransactionsPage() {
         currency={list?.quoteCurrency}
         onTransactionSaved={changed}
       />
+      {notice && !opened && (
+        <p className="transactions-notice" role="status">
+          {notice}
+        </p>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
@@ -503,7 +563,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
-                        onOpen={() => setOpenId(operation.id)}
+                        onOpen={() => open(operation.id)}
                       />
                     ))}
                   </ul>
@@ -540,7 +600,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
-                        onOpen={() => setOpenId(operation.id)}
+                        onOpen={() => open(operation.id)}
                       />
                     ))}
                   </tbody>
@@ -560,10 +620,17 @@ export default function TransactionsPage() {
       )}
       {opened && (
         <OperationDrawer
+          key={`${opened.id}:${opened.classification?.version ?? 0}`}
           operation={opened}
+          left={toClassify.length}
+          notice={notice}
+          onClassified={(label) => void classified(label)}
           currency={currency}
           operations={operations}
-          onClose={() => setOpenId(null)}
+          onClose={() => {
+            setOpenId(null);
+            setNotice(null);
+          }}
           onEdit={(operation) => {
             setOpenId(null);
             setDialog({ editing: operation });

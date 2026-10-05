@@ -430,3 +430,29 @@
     font-size: 38px;
   }
 }
+
+/* CLS-COUNT: blockchain transactions waiting for an answer (M12). */
+.dashboard-attention {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+  padding: 10px 12px 10px 16px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+
+.dashboard-attention__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--warn);
+}
+
+.dashboard-attention__text {
+  flex: 1;
+  min-width: 0;
+}

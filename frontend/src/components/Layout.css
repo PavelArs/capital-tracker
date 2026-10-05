@@ -131,6 +131,21 @@
   color: var(--accent);
 }
 
+.shell-nav__count {
+  min-width: 20px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .shell-nav__legacy {
   padding-top: var(--sp-3);
   border-top: 1px solid var(--line);

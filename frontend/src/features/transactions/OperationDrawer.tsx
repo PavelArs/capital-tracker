@@ -1,5 +1,5 @@
 import { assetRewardsApi } from '@api/asset-rewards.api';
-import type { Operation } from '@api/operations.api';
+import { announceClassificationChange, type Operation, operationsApi } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type TradeVersion, tradesApi } from '@api/trades.api';
@@ -10,6 +10,7 @@ import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
+import ClassifyForm from './ClassifyForm';
 import {
   amount,
   day,
@@ -40,13 +41,9 @@ export const editable = (operation: Operation) =>
     ((operation.kind === 'transfer' || operation.kind === 'reward') &&
       entryKind(operation) !== null));
 
-/** Where other operations can be changed today; their forms come with M9 and M12. */
+/** Where other operations can be changed today; blockchain rows are classified here (M12). */
 function editLink(operation: Operation): [string, string] | null {
-  if (editable(operation)) return null;
-  if (operation.kind === 'chain')
-    return operation.account
-      ? [`/wallets/${operation.account.id}`, `Open ${operation.account.name}`]
-      : ['/wallets', 'Open Wallets'];
+  if (editable(operation) || operation.kind === 'chain') return null;
   if (operation.kind === 'transfer') return ['/owned-transfers', 'Open transfers'];
   if (operation.kind === 'flow') return ['/capital-flows', 'Open deposits and withdrawals'];
   return operation.account
@@ -76,7 +73,16 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
   if (wallet && chain) {
     rows.push(
       ['Network', networkName(wallet)],
-      ['Wallet', operation.account?.name ?? 'Not in a wallet yet'],
+      [
+        'Wallet',
+        operation.account ? (
+          <Link key="wallet" to={`/wallets/${operation.account.id}`}>
+            {operation.account.name}
+          </Link>
+        ) : (
+          'Not in a wallet yet'
+        ),
+      ],
       [
         'Address',
         <span key="wallet" className="transactions-mono">
@@ -104,6 +110,29 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
             : 'No stored price',
       ],
     );
+    // CLS-BUY: what the owner answered, as the entry it produced reads.
+    if (operation.status === 'recorded') {
+      rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+      if (operation.paid)
+        rows.push([
+          'Paid',
+          `${quantity(operation.paid.gross)} ${operation.paid.currency} at ${operation.paid.perUsd} ${operation.paid.currency} per USD`,
+        ]);
+      const cash = operation.settlement;
+      if (cash && Number(cash.quantity) > 0)
+        rows.push(
+          operation.type === 'sell'
+            ? ['Kept as cash', amount(cash.quantity, cash.asset, '+')]
+            : ['Paid from cash', amount(cash.quantity, cash.asset)],
+        );
+      if (operation.costBasisUsd !== null)
+        rows.push([
+          'Cost basis',
+          shown(operation.costBasis, operation.costBasisUsd, currency, DASH),
+        ]);
+    }
+    if (operation.classification)
+      rows.push(['Comment', operation.classification.comment ?? 'None']);
   } else {
     if (operation.counterAccount && operation.account)
       rows.push(['From', operation.account.name], ['To', operation.counterAccount.name]);
@@ -175,6 +204,12 @@ interface Props {
   onClose: () => void;
   onEdit?: (operation: Operation) => void;
   onDeleted?: () => void;
+  /** Blockchain transactions still to classify, this one included. */
+  left?: number;
+  /** A blockchain transaction got its answer: "Buy", "hidden" or "included". */
+  onClassified?: (label: string) => void;
+  /** What the last answer did, shown at the top. */
+  notice?: string | null;
 }
 
 // Side drawer of the accepted prototype: details, history, and Edit and Delete for trades.
@@ -185,6 +220,9 @@ export default function OperationDrawer({
   onClose,
   onEdit,
   onDeleted,
+  left = 0,
+  onClassified,
+  notice = null,
 }: Props) {
   const drawer = useRef<HTMLDivElement>(null);
   const modal = useRef<HTMLDivElement>(null);
@@ -192,6 +230,14 @@ export default function OperationDrawer({
   const deleteButton = useRef<HTMLButtonElement>(null);
   const [confirm, setConfirm] = useState<Confirm | null>(null);
   const [history, setHistory] = useState<TradeVersion[] | null>(null);
+  const chain =
+    operation.kind === 'chain' && operation.wallet && operation.chain ? operation : null;
+  const needs = operation.status === 'needs-classification';
+  const [classifying, setClassifying] = useState(needs);
+  const [toggling, setToggling] = useState<{ busy: boolean; error: string | null }>({
+    busy: false,
+    error: null,
+  });
   const close = useRef(onClose);
   close.current = onClose;
   const dismiss = useRef<() => void>(() => undefined);
@@ -307,8 +353,39 @@ export default function OperationDrawer({
     }
   };
 
+  // CLS-HIDE: hiding keeps the answer, so including the row again restores it.
+  const toggleHidden = async () => {
+    if (!chain?.wallet || !chain.chain) return;
+    setToggling({ busy: true, error: null });
+    const saved = chain.classification;
+    try {
+      await operationsApi.classify(chain.wallet, chain.chain.txid, {
+        requestId: newRequestId(),
+        expectedVersion: saved?.version ?? 0,
+        hidden: chain.status !== 'hidden',
+        classification: saved?.value ?? null,
+        ...(saved?.comment ? { comment: saved.comment } : {}),
+      });
+      announceClassificationChange();
+      onClassified?.(chain.status === 'hidden' ? 'included' : 'hidden');
+    } catch (error) {
+      const status = isAxiosError(error) ? error.response?.status : undefined;
+      setToggling({
+        busy: false,
+        error:
+          dependentOf(error) !== null
+            ? 'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.'
+            : status === undefined
+              ? 'Could not reach the server. Nothing was saved; try again.'
+              : status === 409
+                ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
+                : 'Could not save. Try again.',
+      });
+    }
+  };
+
   const link = editLink(operation);
-  const needs = operation.status === 'needs-classification';
+  const hidden = operation.status === 'hidden';
   const value =
     operation.value !== null
       ? money(operation.value, currency)
@@ -316,6 +393,41 @@ export default function OperationDrawer({
         ? `≈ ${money(operation.estimatedValue, currency)} at the latest stored price`
         : null;
   const purchase = operation.type === 'buy';
+  const summary = (
+    <>
+      {notice && (
+        <p className="transactions-notice" role="status">
+          {notice}
+        </p>
+      )}
+      <div className="transactions-hero">
+        <span
+          className={`transactions-badge${needs ? ' transactions-badge--warn' : hidden ? ' transactions-badge--muted' : ''}`}
+        >
+          {needs || hidden
+            ? statusLabels[operation.status]
+            : `${sourceLabels[operation.source]} · ${typeLabel(operation)}`}
+        </span>
+        <span className="transactions-hero__amount">{signedAmount(operation)}</span>
+        {operation.counterAsset && operation.counterQuantity && (
+          <span className="transactions-hero__amount">
+            {amount(operation.counterQuantity, operation.counterAsset, '+')}
+          </span>
+        )}
+        <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
+      </div>
+      <section aria-label="Details">
+        <dl className="transactions-facts">
+          {facts(operation, currency).map(([label, content]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{content}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    </>
+  );
   return (
     <>
       <div className="transactions-scrim" aria-hidden="true" onClick={() => dismiss.current()} />
@@ -338,89 +450,104 @@ export default function OperationDrawer({
             Close
           </button>
         </div>
-        <div className="transactions-drawer__body">
-          <div className="transactions-hero">
-            <span className={`transactions-badge${needs ? ' transactions-badge--warn' : ''}`}>
-              {needs
-                ? statusLabels[operation.status]
-                : `${sourceLabels[operation.source]} · ${typeLabel(operation)}`}
-            </span>
-            <span className="transactions-hero__amount">{signedAmount(operation)}</span>
-            {operation.counterAsset && operation.counterQuantity && (
-              <span className="transactions-hero__amount">
-                {amount(operation.counterQuantity, operation.counterAsset, '+')}
-              </span>
-            )}
-            <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
-          </div>
-          <section aria-label="Details">
-            <dl className="transactions-facts">
-              {facts(operation, currency).map(([label, content]) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd>{content}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-          {trade && history && history.length > 1 && (
-            <section aria-labelledby="operation-history">
-              <h3 id="operation-history" className="transactions-section">
-                History
-              </h3>
-              <ol className="transactions-history">
-                {history.map((version) => (
-                  <li key={version.version}>
-                    <span>
-                      {versionLabels[version.kind]} {moment(version.createdAt)}
-                    </span>
-                    <span className="transactions-muted">
-                      {version.side === 'buy' ? 'Buy' : 'Sell'} {quantity(version.quantity)}{' '}
-                      {version.instrumentSymbol ?? version.instrumentName} for{' '}
-                      {version.paid
-                        ? `${quantity(version.paid.gross)} ${version.paid.currency}`
-                        : money(version.grossUsd, 'USD')}
-                      {version.comment ? ` · ${version.comment}` : ''}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </section>
-          )}
-          {operation.kind === 'chain' && (
-            <p className="transactions-info">
-              Blockchain data is stored as received and never edited. Classifying this transaction
-              as a buy, a transfer or another type is not available yet.
-            </p>
-          )}
-        </div>
-        {changeable ? (
-          <div className="transactions-drawer__foot">
-            <button
-              ref={deleteButton}
-              type="button"
-              className="shell-button shell-button--ghost transactions-delete"
-              onClick={() => setConfirm({ step: 'ask', error: null })}
-            >
-              Delete
-            </button>
-            <span className="transactions-grow" />
-            <button
-              type="button"
-              className="shell-button shell-button--secondary"
-              onClick={() => onEdit?.(operation)}
-            >
-              Edit
-            </button>
-          </div>
+        {chain && classifying ? (
+          <ClassifyForm
+            operation={chain}
+            left={Math.max(left - (needs ? 1 : 0), 0)}
+            onSaved={(label) => onClassified?.(label)}
+            onCancel={needs ? onClose : () => setClassifying(false)}
+          >
+            {summary}
+          </ClassifyForm>
         ) : (
-          link && (
-            <div className="transactions-drawer__foot">
-              <Link className="shell-button" to={link[0]}>
-                {link[1]}
-              </Link>
+          <>
+            <div className="transactions-drawer__body">
+              {summary}
+              {trade && history && history.length > 1 && (
+                <section aria-labelledby="operation-history">
+                  <h3 id="operation-history" className="transactions-section">
+                    History
+                  </h3>
+                  <ol className="transactions-history">
+                    {history.map((version) => (
+                      <li key={version.version}>
+                        <span>
+                          {versionLabels[version.kind]} {moment(version.createdAt)}
+                        </span>
+                        <span className="transactions-muted">
+                          {version.side === 'buy' ? 'Buy' : 'Sell'} {quantity(version.quantity)}{' '}
+                          {version.instrumentSymbol ?? version.instrumentName} for{' '}
+                          {version.paid
+                            ? `${quantity(version.paid.gross)} ${version.paid.currency}`
+                            : money(version.grossUsd, 'USD')}
+                          {version.comment ? ` · ${version.comment}` : ''}
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              )}
+              {chain && (
+                <p className="transactions-info">
+                  Blockchain transactions can't be deleted. You can change the classification, add a
+                  comment or hide it from calculations. Your changes survive the next sync.
+                </p>
+              )}
+              {toggling.error && (
+                <p className="portfolio-dialog__error" role="alert">
+                  {toggling.error}
+                </p>
+              )}
             </div>
-          )
+            {chain ? (
+              <div className="transactions-drawer__foot">
+                <button
+                  type="button"
+                  className="shell-button shell-button--secondary"
+                  disabled={toggling.busy}
+                  onClick={() => setClassifying(true)}
+                >
+                  {operation.classification?.value ? 'Change classification' : 'Classify'}
+                </button>
+                <span className="transactions-grow" />
+                <button
+                  type="button"
+                  className="shell-button shell-button--ghost"
+                  disabled={toggling.busy}
+                  onClick={() => void toggleHidden()}
+                >
+                  {hidden ? 'Include in calculations' : 'Hide from calculations'}
+                </button>
+              </div>
+            ) : changeable ? (
+              <div className="transactions-drawer__foot">
+                <button
+                  ref={deleteButton}
+                  type="button"
+                  className="shell-button shell-button--ghost transactions-delete"
+                  onClick={() => setConfirm({ step: 'ask', error: null })}
+                >
+                  Delete
+                </button>
+                <span className="transactions-grow" />
+                <button
+                  type="button"
+                  className="shell-button shell-button--secondary"
+                  onClick={() => onEdit?.(operation)}
+                >
+                  Edit
+                </button>
+              </div>
+            ) : (
+              link && (
+                <div className="transactions-drawer__foot">
+                  <Link className="shell-button" to={link[0]}>
+                    {link[1]}
+                  </Link>
+                </div>
+              )
+            )}
+          </>
         )}
       </div>
       {confirm && (

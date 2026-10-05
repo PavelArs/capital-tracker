@@ -557,6 +557,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     paid: null,
     settlement: null,
     comment: 'First buy',
+    classification: null,
     account: { id: id(11), name: 'Hardware wallet' },
     counterAccount: null,
     wallet: null,
@@ -617,6 +618,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       feeUsd: null,
       fee: { asset: recorded.asset, quantity: '0.0001' },
       comment: null,
+      classification: null,
       counterAccount: { id: id(13), name: 'Exchange' },
       version: 3,
     });
