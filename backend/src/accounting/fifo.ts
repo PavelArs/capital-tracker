@@ -2,6 +2,7 @@ import { FifoBook } from './fifo-book';
 import { FifoHistoryError, intervalCost, lotInterval } from './fifo-lot-interval';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import type { TradePayment } from './paid-currency';
+import type { TradePurpose } from './trade-purpose';
 import type { TradeSettlement } from './trade-settlement';
 
 export { FifoHistoryError } from './fifo-lot-interval';
@@ -18,6 +19,8 @@ export interface Execution {
   paid?: TradePayment;
   /** Cash in the same account that the trade's proceeds went to or its price came from (M9). */
   settlement?: TradeSettlement;
+  /** What the entry stands for when it is not a purchase or sale (M9, PR-OPS-2). */
+  purpose?: TradePurpose;
 }
 
 export interface FifoTrade extends Execution {

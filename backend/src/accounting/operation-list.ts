@@ -1,6 +1,7 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
+import type { TradePurpose } from './trade-purpose';
 
 // One read model over every journal and the raw chain history (list-all-operations).
 const SAT_TO_ATOMS = 10n ** 22n;
@@ -44,6 +45,8 @@ export interface TradeOperationInput {
   paid: TradePayment | null;
   comment: string | null;
   settlement: OperationSettlement | null;
+  /** Income, expense, gift or fee rather than a purchase or sale (PR-OPS-2). */
+  purpose?: TradePurpose | null;
 }
 /**
  * The cash in the trade's own account that settled it (M9): what a sale kept, or what a buy
@@ -137,7 +140,11 @@ export type OperationType =
   | 'airdrop'
   | 'opening-balance'
   | 'deposit'
-  | 'withdrawal';
+  | 'withdrawal'
+  | 'income'
+  | 'expense'
+  | 'gift'
+  | 'fee';
 
 export interface Operation {
   id: string;
@@ -191,6 +198,13 @@ const CHAIN_ASSETS: Record<OperationWallet['network'], OperationAsset> = {
   bitcoin: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
 };
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
+const purposeTypes: Record<TradePurpose, OperationType> = {
+  income: 'income',
+  expense: 'expense',
+  'gift-received': 'gift',
+  'gift-sent': 'gift',
+  fee: 'fee',
+};
 const rewardTypes: Record<RewardOperationInput['category'], OperationType> = {
   staking: 'staking-reward',
   airdrop: 'airdrop',
@@ -307,7 +321,7 @@ export function projectOperations(
         ...blank,
         id: `trade:${row.tradeId}`,
         kind: 'trade',
-        type: row.side,
+        type: row.purpose ? purposeTypes[row.purpose] : row.side,
         direction: row.side === 'buy' ? 'in' : 'out',
         occurredAt: row.occurredAt,
         asset: row.asset,

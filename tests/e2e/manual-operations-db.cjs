@@ -36,6 +36,8 @@ function services(db) {
     accounting: make('accounting.service', 'AccountingService'),
     trades: make('trade.service', 'TradeService'),
     operations: make('operation-list.service', 'OperationListService'),
+    transfers: make('owned-transfer.service', 'OwnedTransferService'),
+    rewards: make('asset-reward.service', 'AssetRewardService'),
   };
 }
 async function fingerprint(db) {
@@ -540,6 +542,186 @@ async function cash(db, s, f) {
   console.log('PASS OPS-BUY-CASH spends 30000 USDT first; only 10000 is a deposit');
 }
 
+async function kinds(db, s, f) {
+  stage = 'PR-OPS-2 income, expense, fee, transfer and reward without journal ceremony';
+  const { kindsOwner: owner } = f;
+  const btc = await instrument(s, owner, 'Bitcoin', 'BTC');
+  const wallet = await account(s, owner, 'Wallet');
+  const cold = await account(s, owner, 'Cold storage');
+  const staking = await account(s, owner, 'Staking');
+  const flows = () =>
+    db.transaction('REPEATABLE READ', async (manager) => {
+      const {
+        readValuationInputs,
+      } = require('/app/backend/dist/accounting/portfolio-valuation.service.js');
+      const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
+      return capitalFlows(await readValuationInputs(manager, owner)).map((flow) => [
+        new Date(flow.at).toISOString(),
+        String(flow.usd / 10n ** 30n),
+      ]);
+    });
+  const types = async () =>
+    (await s.operations.read(owner, {}, now)).operations
+      .map((operation) => [operation.type, operation.direction, operation.quantity])
+      .reverse();
+
+  // Income starts the journal like a first buy and is a deposit at its value.
+  const income = await trade(s, owner, wallet, {
+    instrumentId: btc,
+    side: 'buy',
+    purpose: 'income',
+    occurredAt: day('2026-01-10'),
+    quantity: '0.03',
+    grossUsd: '2400',
+    expectedJournalRevision: 0,
+  });
+  assert.equal(income.purpose, 'income');
+  const expense = await trade(s, owner, wallet, {
+    instrumentId: btc,
+    side: 'sell',
+    purpose: 'expense',
+    occurredAt: day('2026-02-01'),
+    quantity: '0.01',
+    grossUsd: '900',
+  });
+  assert.equal(expense.purpose, 'expense');
+  await trade(s, owner, wallet, {
+    instrumentId: btc,
+    side: 'sell',
+    purpose: 'fee',
+    occurredAt: day('2026-02-02'),
+    quantity: '0.001',
+    grossUsd: '85',
+    feeUsd: '85',
+  });
+  const summary = (await s.trades.getJournal(owner, wallet)).journal.summary;
+  assert.equal(summary.realizedUsd, '20', 'The expense gains 100; the fee loses its cost of 80');
+  // A fee needs its value as both gross and fee; a purpose never settles in cash.
+  await rejected(
+    async () =>
+      s.trades.create(owner, wallet, {
+        requestId: randomUUID(),
+        expectedJournalRevision: await revision(s, owner, wallet),
+        instrumentId: btc,
+        side: 'sell',
+        purpose: 'fee',
+        occurredAt: day('2026-02-03'),
+        quantity: '0.001',
+        grossUsd: '85',
+        feeUsd: '0',
+      }),
+    400,
+  );
+
+  // A transfer into an account without a journal starts it and places itself.
+  const transfer = async (fields) =>
+    (
+      await s.transfers.create(owner, {
+        requestId: randomUUID(),
+        expectedFromJournalRevision: await revision(s, owner, wallet),
+        expectedToJournalRevision: await revision(s, owner, cold),
+        fromAccountId: wallet,
+        toAccountId: cold,
+        assertInternal: true,
+        instrumentId: btc,
+        occurredAt: day('2026-03-01'),
+        quantity: '0.008',
+        feeInstrumentId: null,
+        feeQuantity: '0',
+        ...fields,
+      })
+    ).value;
+  assert.equal((await s.trades.getJournal(owner, cold)).journal, null);
+  const first = await transfer({});
+  const second = await transfer({ feeInstrumentId: btc, feeQuantity: '0.0001' });
+  assert.deepEqual(
+    [first.transfer.orderWithinTimestamp, second.transfer.orderWithinTimestamp],
+    [0, 1],
+    'Same-instant transfers keep entry order',
+  );
+  assert.equal((await s.trades.getJournal(owner, cold)).journal.originKind, 'declared-empty');
+
+  // A reward on an account without a journal starts it too; it is no flow.
+  const reward = await s.rewards.create(owner, staking, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    assertReward: true,
+    instrumentId: btc,
+    category: 'other',
+    occurredAt: day('2026-03-05'),
+    quantity: '0.0005',
+    acquisitionBasisUsd: '50',
+    incomeValueUsd: '50',
+  });
+  assert.equal(reward.created, true);
+  assert.equal(reward.value.reward.orderWithinTimestamp, 0);
+  // A correction without an order keeps the reward's place.
+  const corrected = await s.rewards.correct(owner, staking, reward.value.reward.rewardId, {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(s, owner, staking),
+    expectedVersion: 1,
+    assertReward: true,
+    instrumentId: btc,
+    category: 'other',
+    occurredAt: day('2026-03-05'),
+    quantity: '0.0005',
+    acquisitionBasisUsd: '45',
+    incomeValueUsd: '45',
+  });
+  assert.deepEqual(
+    [corrected.value.reward.version, corrected.value.reward.orderWithinTimestamp],
+    [2, 0],
+  );
+  // Editing a transfer may spend what it moved itself, fee included.
+  const walletHolds = async (extra) =>
+    (await s.trades.available(owner, wallet, { instrumentId: btc, at: day('2026-03-01'), ...extra }))
+      .quantity;
+  assert.equal(await walletHolds({}), '0.0029');
+  assert.equal(await walletHolds({ exclude: `transfer:${second.transfer.transferId}` }), '0.011');
+  await rejected(() => walletHolds({ exclude: `swap:${second.transfer.transferId}` }), 400);
+
+  // The cold storage spends both transfers; deleting the first would leave it short.
+  const spent = await trade(s, owner, cold, {
+    instrumentId: btc,
+    side: 'sell',
+    occurredAt: day('2026-04-01'),
+    quantity: '0.016',
+    grossUsd: '1600',
+  });
+  const before = await fingerprint(db);
+  await rejected(
+    async () =>
+      s.transfers.void(owner, first.transfer.transferId, {
+        requestId: randomUUID(),
+        expectedVersion: 1,
+        expectedFromJournalRevision: await revision(s, owner, wallet),
+        expectedToJournalRevision: await revision(s, owner, cold),
+      }),
+    409,
+    (body) =>
+      body?.dependent?.operationId === `trade:${spent.tradeId}` && body.dependent.accountId === cold,
+  );
+  assert.equal(await fingerprint(db), before, 'A refused deletion changes nothing');
+
+  assert.deepEqual(await types(), [
+    ['income', 'in', '0.03'],
+    ['expense', 'out', '0.01'],
+    ['fee', 'out', '0.001'],
+    ['transfer', 'internal', '0.008'],
+    ['transfer', 'internal', '0.008'],
+    ['reward', 'in', '0.0005'],
+    ['sell', 'out', '0.016'],
+  ]);
+  assert.deepEqual(await flows(), [
+    ['2026-01-10T00:00:00.000Z', '2400'],
+    ['2026-02-01T00:00:00.000Z', '-900'],
+    ['2026-04-01T00:00:00.000Z', '-1600'],
+  ]);
+  console.log(
+    'PASS PR-OPS-2 income and expense are flows at value, a fee and transfers are not; transfers and rewards start journals and keep entry order',
+  );
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -572,21 +754,27 @@ async function main() {
     timeout: 60000,
   });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 30/);
+  assert.match(migrated.stdout, /Migrations applied: 31/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 30);
-    const [owner, other, cashOwner] =
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
+    const [owner, other, cashOwner, kindsOwner] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('manual-ops-owner@example.invalid','synthetic-not-a-hash',true),
       ('manual-ops-other@example.invalid','synthetic-not-a-hash',true),
-      ('manual-ops-cash@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('manual-ops-cash@example.invalid','synthetic-not-a-hash',true),
+      ('manual-ops-kinds@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
-    const f = { owner: owner.id, other: other.id, cashOwner: cashOwner.id };
+    const f = {
+      owner: owner.id,
+      other: other.id,
+      cashOwner: cashOwner.id,
+      kindsOwner: kindsOwner.id,
+    };
     f.btc = await instrument(s, f.owner, 'Bitcoin', 'BTC');
     f.eth = await instrument(s, f.owner, 'Ether', 'ETH');
-    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove, cash])
+    for (const check of [addWithoutJournal, sameDay, edit, overspend, remove, cash, kinds])
       await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();

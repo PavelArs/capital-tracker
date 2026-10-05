@@ -448,7 +448,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 30);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 31);
     const fx = service(db);
     const first = await exact(db, fx);
     await concurrency(db, fx, first);

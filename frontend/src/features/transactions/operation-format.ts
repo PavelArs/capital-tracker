@@ -13,6 +13,10 @@ export const typeLabels: Record<OperationType, string> = {
   'opening-balance': 'Opening balance',
   deposit: 'Deposit',
   withdrawal: 'Withdrawal',
+  income: 'Income',
+  expense: 'Expense',
+  gift: 'Gift',
+  fee: 'Fee',
 };
 const directionLabels: Record<Operation['direction'], string> = {
   in: 'Incoming',

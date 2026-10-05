@@ -101,9 +101,12 @@ export interface JournalState {
   ineligibilityReason: 'opening-history' | 'already-initialized' | null;
   journal: Journal | null;
 }
+export const tradePurposes = ['income', 'expense', 'gift-received', 'gift-sent', 'fee'] as const;
+export type TradePurpose = (typeof tradePurposes)[number];
 export interface TradeVersion extends TradeExecution {
   paid?: TradePayment;
   comment?: string;
+  purpose?: TradePurpose;
   tradeId: string;
   version: number;
   journalRevision: number;
@@ -293,10 +296,22 @@ export type TradeCommand = Omit<TradeExecution, 'grossUsd' | 'feeUsd' | 'orderWi
     comment?: string;
     /** The cash in the same account that settles the trade (M9, OPS-SELL-CASH, OPS-BUY-CASH). */
     settlementCurrency?: 'USD' | 'USDT' | 'USDC' | 'EUR' | 'RUB';
+    /**
+     * What a buy or sale without a counterpart stands for (M9, PR-OPS-2): income or a gift
+     * received arrive, an expense, a gift sent or a fee leave. Never with a settlement.
+     */
+    purpose?: TradePurpose;
     requestId: string;
     expectedJournalRevision: number;
   };
 /** What an account can sell or send at an instant: its lowest balance from then on. */
+/** An operation being edited, as the operation list names it, is left out of the answer. */
+export interface AvailableQuery {
+  instrumentId: string;
+  at: string;
+  excludeTradeId?: string;
+  exclude?: string;
+}
 export interface AvailableQuantity {
   accountId: string;
   instrumentId: string;
@@ -372,10 +387,7 @@ export const tradesApi = {
         params: pageParams(revision, offset),
       })
     ).data,
-  available: async (
-    id: string,
-    query: { instrumentId: string; at: string; excludeTradeId?: string },
-  ): Promise<AvailableQuantity> =>
+  available: async (id: string, query: AvailableQuery): Promise<AvailableQuantity> =>
     (await apiClient.get<AvailableQuantity>(`${accountPath(id)}/available`, { params: query }))
       .data,
   versions: async (id: string, tradeId: string, beforeVersion?: number): Promise<TradeVersions> =>

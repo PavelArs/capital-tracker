@@ -35,13 +35,14 @@ import {
   rethrowAccountingHistory,
 } from './connected-accounting.store';
 import { parseUuid } from './input';
-import { readJournal, readOwnedAccount } from './trade-journal.store';
+import { readJournal, readOwnedAccount, startEmptyJournal } from './trade-journal.store';
+import { automaticOrder } from './trade-order';
 
 const conflict = () => new ConflictException('Reward request conflicts with saved state');
 type RewardFields = Omit<
   FifoReward,
-  'rewardId' | 'version' | 'instrumentName' | 'instrumentSymbol'
->;
+  'rewardId' | 'version' | 'instrumentName' | 'instrumentSymbol' | 'orderWithinTimestamp'
+> & { orderWithinTimestamp: number | null };
 function fields(value: RewardFields): RewardFields {
   return {
     instrumentId: value.instrumentId,
@@ -96,7 +97,10 @@ export class AssetRewardService {
           if (replay.canonicalPayload !== canonicalPayload) throw conflict();
           return { created: false, value: rewardReceipt(replay) };
         }
-        await readOwnedAccount(manager, owner, accountId);
+        const owned = await readOwnedAccount(manager, owner, accountId);
+        // The first operation of an account starts its journal (M9, OPS-ADD-BUY).
+        if (kind === 'create' && input.expectedJournalRevision === 0)
+          await startEmptyJournal(manager, owner, owned, input.requestId);
         const row =
           target === undefined
             ? undefined
@@ -129,8 +133,21 @@ export class AssetRewardService {
         if (account.journal.currentRevision !== input.expectedJournalRevision) throw conflict();
         assertRevisionCapacity(ledger);
         const rewardId = target ?? randomUUID();
+        const orderWithinTimestamp =
+          values.orderWithinTimestamp ??
+          automaticOrder(
+            {
+              ...account,
+              rewards: (account.rewards ?? []).filter((reward) => reward.rewardId !== rewardId),
+            },
+            ledger.transfers,
+            values.occurredAt,
+            undefined,
+          );
+        if (orderWithinTimestamp === null) throw conflict();
         const next = {
           ...values,
+          orderWithinTimestamp,
           rewardId,
           version: (current?.version ?? 0) + 1,
           instrumentName: instrument.name,

@@ -20,6 +20,7 @@ import {
   type RewardOperationInput,
 } from './operation-list';
 import { isPaidCurrency, isRateSource, type TradePayment } from './paid-currency';
+import { isTradePurpose } from './trade-purpose';
 
 interface Named {
   accountId: string;
@@ -57,6 +58,7 @@ interface TradeRow extends Versioned {
   settlementName: string | null;
   settlementSymbol: string | null;
   settlementQuantity: string | null;
+  purpose: string | null;
 }
 interface TransferRow extends Versioned, FeeColumns {
   transferId: string;
@@ -175,7 +177,7 @@ export class OperationListService {
             p."rateDate"::text AS "paidRateDate", p."perUsd"::text AS "paidPerUsd",
             p."rateSource" AS "paidRateSource", c.comment,
             s."instrumentId" AS "settlementInstrumentId", si.name AS "settlementName",
-            si.symbol AS "settlementSymbol", s.quantity::text AS "settlementQuantity"
+            si.symbol AS "settlementSymbol", s.quantity::text AS "settlementQuantity", u.purpose
           FROM account_trades t
           JOIN account_trade_versions v ON v."ownerId"=t."ownerId" AND v."accountId"=t."accountId"
             AND v."tradeId"=t.id AND v.version=t."currentVersion"
@@ -187,6 +189,8 @@ export class OperationListService {
           LEFT JOIN account_trade_version_settlements s ON s."ownerId"=v."ownerId"
             AND s."accountId"=v."accountId" AND s."tradeId"=v."tradeId" AND s.version=v.version
           LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId" AND si.id=s."instrumentId"
+          LEFT JOIN account_trade_version_purposes u ON u."ownerId"=v."ownerId"
+            AND u."accountId"=v."accountId" AND u."tradeId"=v."tradeId" AND u.version=v.version
           LEFT JOIN account_csv_import_rows r ON r."ownerId"=t."ownerId"
             AND r."accountId"=t."accountId" AND r."tradeId"=t.id
           WHERE t."ownerId"=$1 AND v.kind<>'void'`,
@@ -299,6 +303,7 @@ export class OperationListService {
                     ),
                     quantity: decimal(row.settlementQuantity ?? ''),
                   },
+            purpose: isTradePurpose(row.purpose) ? row.purpose : null,
           })),
           transfers: transfers.map((row) => ({
             transferId: row.transferId,

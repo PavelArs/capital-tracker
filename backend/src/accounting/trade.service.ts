@@ -17,6 +17,7 @@ import {
   firstShortfall,
   type LedgerView,
   type Shortfall,
+  withoutOperation,
   withoutTrade,
 } from './available-quantity';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
@@ -56,6 +57,7 @@ import {
   readJournal,
   readOwnedAccount,
   readTradeHeads,
+  startEmptyJournal,
   type TradeVersion,
   type VersionRow,
   versionSelect,
@@ -114,8 +116,8 @@ const dependent = (shortfall: Shortfall) =>
     message: 'A later operation depends on this trade',
     dependent: shortfall,
   });
-/** A journal started without asking holds nothing before its first operation (M9). */
-export const AUTOMATIC_COVERAGE_FROM = '1970-01-01T00:00:00.000Z';
+
+export { AUTOMATIC_COVERAGE_FROM } from './trade-journal.store';
 
 const noRate = () => new ConflictException('No Bank of Russia rate is stored for the trade date');
 
@@ -132,6 +134,7 @@ function execution<O extends number | null>(value: Ordered<O>): Ordered<O> {
     feeUsd: value.feeUsd,
     ...(value.paid ? { paid: value.paid } : {}),
     ...(value.settlement ? { settlement: value.settlement } : {}),
+    ...(value.purpose ? { purpose: value.purpose } : {}),
   };
 }
 /** The request as sent: amounts paid in RUB or EUR stay unconverted, so a replay never
@@ -148,6 +151,7 @@ function requested(value: TradeCreateInput) {
     ...(value.settlementCurrency === undefined
       ? {}
       : { settlementCurrency: value.settlementCurrency }),
+    ...(value.purpose === undefined ? {} : { purpose: value.purpose }),
   };
 }
 function origin(row: Extract<JournalRow, { originKind: 'declared-empty' }>): JournalOrigin {
@@ -255,7 +259,7 @@ export class TradeService {
         const journal =
           (await readJournal(manager, owner, id)) ??
           (kind === 'create' && value.expectedJournalRevision === 0
-            ? await this.startJournal(manager, owner, account, value.requestId)
+            ? await startEmptyJournal(manager, owner, account, value.requestId)
             : undefined);
         if (!journal) throw conflict();
         const [previous]: VersionRow[] = await manager.query(
@@ -437,34 +441,6 @@ export class TradeService {
   }
 
   /**
-   * The first operation of an account without a journal starts one (M9, OPS-ADD-BUY): an
-   * account that held nothing before, from the earliest instant the journal admits. An
-   * account with an opening snapshot still needs its carry-in first.
-   */
-  private async startJournal(
-    manager: EntityManager,
-    owner: string,
-    account: { id: string; currentRevision: number | null },
-    requestId: string,
-  ): Promise<JournalRow> {
-    if (account.currentRevision !== null || (await this.hasOpening(manager, owner, account.id)))
-      throw conflict();
-    const [row]: JournalRow[] = await manager.query(
-      `INSERT INTO account_trade_journals
-      ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","createdAt","currentRevision")
-      VALUES ($1,$2,$3,$4,'declared-empty',$5,clock_timestamp(),0) RETURNING *`,
-      [
-        owner,
-        account.id,
-        requestId,
-        JSON.stringify({ coverageFrom: AUTOMATIC_COVERAGE_FROM, assertEmpty: true }),
-        AUTOMATIC_COVERAGE_FROM,
-      ],
-    );
-    return row;
-  }
-
-  /**
    * How much of an instrument the account can sell or send at an instant (PR-OPS-8): its
    * lowest balance from then on, with the trade being edited left out. An account without
    * a journal holds nothing.
@@ -479,7 +455,10 @@ export class TradeService {
       let quantity = '0';
       if (journal) {
         const ledger = await readConnectedLedger(manager, owner, [id]);
-        const view = query.excludeTradeId ? withoutTrade(ledger, id, query.excludeTradeId) : ledger;
+        const withoutEdited = query.excludeTradeId
+          ? withoutTrade(ledger, id, query.excludeTradeId)
+          : ledger;
+        const view = query.exclude ? withoutOperation(withoutEdited, query.exclude) : withoutEdited;
         quantity = availableQuantity(view, id, query.instrumentId, query.at);
       }
       return {

@@ -1,4 +1,6 @@
+import { assetRewardsApi } from '@api/asset-rewards.api';
 import type { Operation } from '@api/operations.api';
+import { ownedTransfersApi } from '@api/owned-transfers.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type TradeVersion, tradesApi } from '@api/trades.api';
 import { isAxiosError } from 'axios';
@@ -6,6 +8,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
+import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
 import {
   amount,
@@ -26,9 +29,16 @@ const sourceDetails: Record<Operation['source'], string> = {
   chain: 'Blockchain',
 };
 
-/** A buy or sell recorded by hand or from CSV: edited and deleted right here (M9). */
+/**
+ * A trade, transfer, reward or airdrop recorded by hand or from CSV: edited and deleted right
+ * here (M9). Staking rewards, swaps and blockchain data keep their own screens.
+ */
 export const editable = (operation: Operation) =>
-  operation.kind === 'trade' && operation.account !== null;
+  operation.account !== null &&
+  operation.version !== null &&
+  (operation.kind === 'trade' ||
+    ((operation.kind === 'transfer' || operation.kind === 'reward') &&
+      entryKind(operation) !== null));
 
 /** Where other operations can be changed today; their forms come with M9 and M12. */
 function editLink(operation: Operation): [string, string] | null {
@@ -149,7 +159,7 @@ export function describe(operation: Operation): string {
 type Confirm =
   | { step: 'ask'; error: string | null }
   | { step: 'deleting' }
-  | { step: 'blocked'; dependent: string };
+  | { step: 'blocked'; dependent: string; account: string };
 
 interface Props {
   operation: Operation;
@@ -213,7 +223,8 @@ export default function OperationDrawer({
     if (step) modal.current?.querySelector<HTMLElement>('button:not([disabled])')?.focus();
   }, [step]);
 
-  const trade = editable(operation) && operation.account ? operation.account : null;
+  const changeable = editable(operation) && operation.account ? operation.account : null;
+  const trade = operation.kind === 'trade' ? changeable : null;
   const tradeId = operation.id.replace(/^trade:/, '');
   const tradeAccountId = trade?.id;
   useEffect(() => {
@@ -228,16 +239,38 @@ export default function OperationDrawer({
     };
   }, [tradeAccountId, tradeId]);
 
-  // Deleting voids the trade: its history keeps every version, the void included (OPS-DELETE).
+  // Deleting voids the operation: its history keeps every version, the void included
+  // (OPS-DELETE).
   const remove = async () => {
-    if (!trade) return;
+    if (!changeable) return;
     setConfirm({ step: 'deleting' });
+    const revision = async (accountId: string) =>
+      (await tradesApi.state(accountId)).journal?.journalRevision ?? 0;
+    const [kind, id] = [operation.kind, operation.id.slice(operation.id.indexOf(':') + 1)];
+    const expectedVersion = operation.version ?? 0;
     try {
-      const state = await tradesApi.state(trade.id);
-      await tradesApi.void(trade.id, tradeId, {
-        requestId: newRequestId(),
-        expectedJournalRevision: state.journal?.journalRevision ?? 0,
-      });
+      if (kind === 'transfer') {
+        const [from, to] = await Promise.all([
+          revision(changeable.id),
+          revision(operation.counterAccount?.id ?? changeable.id),
+        ]);
+        await ownedTransfersApi.void(id, {
+          requestId: newRequestId(),
+          expectedVersion,
+          expectedFromJournalRevision: from,
+          expectedToJournalRevision: to,
+        });
+      } else if (kind === 'reward')
+        await assetRewardsApi.void(changeable.id, id, {
+          requestId: newRequestId(),
+          expectedJournalRevision: await revision(changeable.id),
+          expectedVersion,
+        });
+      else
+        await tradesApi.void(changeable.id, tradeId, {
+          requestId: newRequestId(),
+          expectedJournalRevision: await revision(changeable.id),
+        });
       onDeleted?.();
     } catch (error) {
       const dependent = dependentOf(error);
@@ -248,6 +281,11 @@ export default function OperationDrawer({
           dependent: found
             ? describe(found)
             : `A later transaction on ${day(dependent.occurredAt)}`,
+          // A transfer's coins may be spent in the account they went to.
+          account:
+            operation.counterAccount?.id === dependent.accountId
+              ? operation.counterAccount.name
+              : (operation.account?.name ?? 'the account'),
         });
         return;
       }
@@ -351,7 +389,7 @@ export default function OperationDrawer({
             </p>
           )}
         </div>
-        {trade ? (
+        {changeable ? (
           <div className="transactions-drawer__foot">
             <button
               ref={deleteButton}
@@ -400,7 +438,7 @@ export default function OperationDrawer({
             <div className="portfolio-dialog__body">
               <p id="operation-confirm-text" className="transactions-confirm__text">
                 {confirm.step === 'blocked'
-                  ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${operation.account?.name ?? 'the account'} would not hold enough. Delete or change that transaction first.`
+                  ? `${confirm.dependent} spends these ${ticker(operation.asset)}. Without this ${purchase ? 'purchase' : 'transaction'} ${confirm.account} would not hold enough. Delete or change that transaction first.`
                   : `${describe(operation)} will be removed. Balances, cost basis and the portfolio history will be recalculated without it.`}
               </p>
               {confirm.step === 'ask' && confirm.error && (

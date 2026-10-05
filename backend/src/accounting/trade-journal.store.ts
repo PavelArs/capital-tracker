@@ -10,6 +10,7 @@ import {
 } from './fifo';
 import { parseDecimal } from './input';
 import { isPaidCurrency, isRateSource, type TradePayment } from './paid-currency';
+import { isTradePurpose, purposeSide } from './trade-purpose';
 import type { TradeSettlement } from './trade-settlement';
 
 export type TradeKind = 'create' | 'correct' | 'void';
@@ -58,6 +59,7 @@ export interface VersionRow {
   settlementName: string | null;
   settlementSymbol: string | null;
   settlementQuantity: string | null;
+  purpose: string | null;
 }
 export interface TradeVersion extends FifoTrade {
   journalRevision: number;
@@ -72,7 +74,7 @@ export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol A
   p."rateDate"::text AS "paidRateDate", p."perUsd" AS "paidPerUsd",
   p."rateSource" AS "paidRateSource", c.comment,
   s."instrumentId" AS "settlementInstrumentId", si.name AS "settlementName",
-  si.symbol AS "settlementSymbol", s.quantity AS "settlementQuantity"
+  si.symbol AS "settlementSymbol", s.quantity AS "settlementQuantity", u.purpose
   FROM account_trade_versions v JOIN accounting_instruments i
   ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
   LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
@@ -81,7 +83,9 @@ export const versionSelect = `SELECT v.*, i.name AS "instrumentName", i.symbol A
   AND c."accountId"=v."accountId" AND c."tradeId"=v."tradeId" AND c.version=v.version
   LEFT JOIN account_trade_version_settlements s ON s."ownerId"=v."ownerId"
   AND s."accountId"=v."accountId" AND s."tradeId"=v."tradeId" AND s.version=v.version
-  LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId" AND si.id=s."instrumentId"`;
+  LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId" AND si.id=s."instrumentId"
+  LEFT JOIN account_trade_version_purposes u ON u."ownerId"=v."ownerId"
+  AND u."accountId"=v."accountId" AND u."tradeId"=v."tradeId" AND u.version=v.version`;
 
 /** No payment row means the trade was stated in USD. */
 function projectPayment(row: VersionRow): TradePayment | undefined {
@@ -112,9 +116,22 @@ function projectSettlement(row: VersionRow): TradeSettlement | undefined {
   };
 }
 
+/** No purpose row means a purchase or sale. */
+function projectPurpose(row: VersionRow) {
+  if (row.purpose === null || row.purpose === undefined) return undefined;
+  if (
+    !isTradePurpose(row.purpose) ||
+    purposeSide[row.purpose] !== row.side ||
+    row.settlementInstrumentId
+  )
+    throw new FifoHistoryError();
+  return row.purpose;
+}
+
 export function projectTradeVersion(row: VersionRow): TradeVersion {
   const paid = projectPayment(row);
   const settlement = projectSettlement(row);
+  const purpose = projectPurpose(row);
   return {
     tradeId: row.tradeId,
     version: row.version,
@@ -133,6 +150,7 @@ export function projectTradeVersion(row: VersionRow): TradeVersion {
     feeUsd: parseDecimal(row.feeUsd, false),
     ...(paid ? { paid } : {}),
     ...(settlement ? { settlement } : {}),
+    ...(purpose ? { purpose } : {}),
     ...(row.comment ? { comment: row.comment } : {}),
   };
 }
@@ -160,6 +178,43 @@ export async function readJournal(
     [owner, id],
   );
   return journal;
+}
+
+/** The coverage start of a journal the first operation of an account starts (M9). */
+export const AUTOMATIC_COVERAGE_FROM = '1970-01-01T00:00:00.000Z';
+
+/**
+ * The journal of an account that held nothing before (M9, OPS-ADD-BUY), started by its first
+ * operation from the earliest instant a journal admits; `undefined` when the account already
+ * has one. An account with an opening snapshot still needs its carry-in first.
+ */
+export async function startEmptyJournal(
+  manager: EntityManager,
+  owner: string,
+  account: AccountRow,
+  requestId: string,
+): Promise<JournalRow | undefined> {
+  const accountId = account.id;
+  if (account.currentRevision !== null || (await readJournal(manager, owner, accountId)))
+    return undefined;
+  const [opening]: { present: boolean }[] = await manager.query(
+    'SELECT EXISTS(SELECT 1 FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2) AS present',
+    [owner, accountId],
+  );
+  if (opening.present) return undefined;
+  const [row]: JournalRow[] = await manager.query(
+    `INSERT INTO account_trade_journals
+    ("ownerId","accountId","requestId","canonicalPayload","originKind","coverageFrom","createdAt","currentRevision")
+    VALUES ($1,$2,$3,$4,'declared-empty',$5,clock_timestamp(),0) RETURNING *`,
+    [
+      owner,
+      accountId,
+      requestId,
+      JSON.stringify({ coverageFrom: AUTOMATIC_COVERAGE_FROM, assertEmpty: true }),
+      AUTOMATIC_COVERAGE_FROM,
+    ],
+  );
+  return row;
 }
 
 /** Load immutable initial inventory inside the caller's existing transaction. */
@@ -298,6 +353,12 @@ export async function appendTradeVersion(
         next.settlement.quantity,
       ],
     );
+  if (next.purpose)
+    await manager.query(
+      `INSERT INTO account_trade_version_purposes ("ownerId","accountId","tradeId",version,purpose)
+      VALUES ($1,$2,$3,$4,$5)`,
+      [owner, id, next.tradeId, next.version, next.purpose],
+    );
   if (next.comment)
     await manager.query(
       `INSERT INTO account_trade_version_comments ("ownerId","accountId","tradeId",version,comment)
@@ -323,6 +384,7 @@ export async function appendTradeVersion(
     settlementName: next.settlement?.instrumentName ?? null,
     settlementSymbol: next.settlement?.instrumentSymbol ?? null,
     settlementQuantity: next.settlement?.quantity ?? null,
+    purpose: next.purpose ?? null,
   });
 }
 export async function advanceJournal(

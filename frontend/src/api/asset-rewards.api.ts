@@ -33,7 +33,8 @@ export interface RewardCommand {
   instrumentId: string;
   category: RewardCategory;
   occurredAt: string;
-  orderWithinTimestamp: number;
+  /** Without an order the server places the reward after every operation at its instant. */
+  orderWithinTimestamp?: number;
   quantity: string;
   acquisitionBasisUsd: string | null;
   incomeValueUsd: string | null;

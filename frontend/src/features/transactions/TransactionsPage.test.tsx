@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -482,18 +483,51 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('links other recorded operations to the screen where they are changed today', async () => {
+  it('PR-OPS-2 edits and deletes a transfer here; staking rewards keep their screen', async () => {
     const user = userEvent.setup();
-    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    const staking = operation({
+      id: `reward:${id(41)}`,
+      kind: 'reward',
+      type: 'staking-reward',
+      quantity: '0.001',
+      version: 1,
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([transfer, staking]));
+    vi.spyOn(tradesApi, 'state').mockImplementation(
+      async (accountId) =>
+        ({
+          accountId,
+          journal: { journalRevision: accountId === cold.id ? 3 : 7 },
+        }) as JournalState,
+    );
+    const voidTransfer = vi
+      .spyOn(ownedTransfersApi, 'void')
+      .mockResolvedValue({} as TransferReceipt);
     renderPage();
-    await waitFor(() => expect(bodyRows()).toHaveLength(6));
-    await user.click(within(bodyRows()[2]).getByRole('button', { name: 'Transfer' }));
-    const drawer = screen.getByRole('dialog', { name: 'Transfer · BTC' });
-    expect(within(drawer).getByRole('link', { name: 'Open transfers' })).toHaveAttribute(
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Staking reward' }));
+    let drawer = screen.getByRole('dialog', { name: 'Staking reward · BTC' });
+    expect(within(drawer).getByRole('link', { name: 'Open in Bybit' })).toHaveAttribute(
       'href',
-      '/owned-transfers',
+      `/manual-accounts/${bybit.id}`,
     );
     expect(within(drawer).queryByRole('button', { name: 'Delete' })).toBeNull();
+    await user.click(within(drawer).getByRole('button', { name: 'Close' }));
+
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Transfer' }));
+    drawer = screen.getByRole('dialog', { name: 'Transfer · BTC' });
+    expect(within(drawer).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(within(drawer).queryByRole('link')).toBeNull();
+    await user.click(within(drawer).getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() =>
+      expect(voidTransfer).toHaveBeenCalledWith(id(40), {
+        requestId: expect.any(String),
+        expectedVersion: 2,
+        expectedFromJournalRevision: 7,
+        expectedToJournalRevision: 3,
+      }),
+    );
   });
 
   it('says so when there are no operations yet', async () => {

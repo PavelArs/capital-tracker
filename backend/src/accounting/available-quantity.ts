@@ -188,3 +188,32 @@ export function withoutTrade<T extends LedgerView>(
     transfers: ledger.transfers,
   };
 }
+
+/**
+ * The ledger without one trade, reward or transfer, named as GET /accounting/operations
+ * names it (`transfer:<id>`): what an edit of that operation may spend.
+ */
+export function withoutOperation(ledger: LedgerView, operationId: string): LedgerView {
+  const [kind, id] = operationId.split(':');
+  return {
+    accounts: new Map(
+      [...ledger.accounts].map(([accountId, account]) => [
+        accountId,
+        {
+          ...account,
+          trades:
+            kind === 'trade'
+              ? account.trades.filter((item) => item.tradeId !== id)
+              : account.trades,
+          ...(account.rewards && kind === 'reward'
+            ? { rewards: account.rewards.filter((item) => item.rewardId !== id) }
+            : {}),
+        },
+      ]),
+    ),
+    transfers:
+      kind === 'transfer'
+        ? ledger.transfers.filter((item) => item.transferId !== id)
+        : ledger.transfers,
+  };
+}

@@ -136,6 +136,34 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     expect(shown(flows)).toEqual([['2025-06-13T10:00:00.000Z', units(25000), '2025-06-13']]);
   });
 
+  it('PR-OPS-2 income is a deposit, an expense a withdrawal, a fee no flow', () => {
+    const flows = capitalFlows(
+      inputs([
+        {
+          id: 'trust',
+          coverageFrom: '2025-06-01T00:00:00.000Z',
+          trades: [
+            { ...trade('buy', '2025-06-13T10:00:00.000Z', '1000'), purpose: 'income' },
+            {
+              ...trade('sell', '2025-07-01T10:00:00.000Z', '300'),
+              quantity: '0.25',
+              purpose: 'expense',
+            },
+            {
+              ...trade('sell', '2025-08-01T10:00:00.000Z', '12', '12'),
+              quantity: '0.01',
+              purpose: 'fee',
+            },
+          ],
+        },
+      ]),
+    );
+    expect(shown(flows)).toEqual([
+      ['2025-06-13T10:00:00.000Z', units(1000), '2025-06-13'],
+      ['2025-07-01T10:00:00.000Z', units(-300), '2025-07-01'],
+    ]);
+  });
+
   it('OPS-BUY-CASH a buy spends the cash first; only the rest of its cost is a deposit', () => {
     const cash = { instrumentId: 'usdt', instrumentName: 'Tether', instrumentSymbol: 'USDT' };
     const rub = { instrumentId: 'rub', instrumentName: 'Russian ruble', instrumentSymbol: 'RUB' };
