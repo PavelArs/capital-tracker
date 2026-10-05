@@ -9,6 +9,7 @@ import AssetPage from '@features/portfolio/AssetPage';
 import PortfolioPage from '@features/portfolio/PortfolioPage';
 import SectionPlaceholder from '@features/shell/SectionPlaceholder';
 import SettingsPage from '@features/shell/SettingsPage';
+import TransactionsPage from '@features/transactions/TransactionsPage';
 import Assets from '@pages/Assets';
 import CapitalFlows from '@pages/CapitalFlows';
 import Crypto from '@pages/Crypto';
@@ -62,7 +63,7 @@ function AppRoutes() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="portfolio" element={<PortfolioPage />} />
         <Route path="portfolio/:assetId" element={<AssetPage />} />
-        <Route path="transactions" element={<SectionPlaceholder section="transactions" />} />
+        <Route path="transactions" element={<TransactionsPage />} />
         <Route path="wallets" element={<SectionPlaceholder section="wallets" />} />
         <Route path="preferences" element={<SettingsPage />} />
         <Route

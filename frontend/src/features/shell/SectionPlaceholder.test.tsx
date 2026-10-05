@@ -7,12 +7,11 @@ import SectionPlaceholder from './SectionPlaceholder';
 afterEach(cleanup);
 
 const expected: Record<PlaceholderSection, [string, string, string]> = {
-  transactions: ['Transactions', 'Open manual accounts', '/manual-accounts'],
   wallets: ['Wallets', 'Open wallet addresses', '/wallet-addresses'],
 };
 
 describe('SHELL-005 honest placeholders', () => {
-  it('covers exactly the two unbuilt sections', () => {
+  it('covers exactly the one unbuilt section', () => {
     expect(Object.keys(placeholderSections).sort()).toEqual(Object.keys(expected).sort());
   });
 
