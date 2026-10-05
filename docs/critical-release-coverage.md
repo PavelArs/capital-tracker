@@ -12,10 +12,11 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 25 manifest entries: the original 19 browser cases,
+The reviewed selection contains 26 manifest entries: the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and,
-since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting,
-CHART-PERIODS portfolio snapshots on the dashboard and OPS-UI operations list. Each entry may cover more than one scenario ID; these are
+since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
+and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
+list and FLOW-SPLIT-UI market versus flows. Each entry may cover more than one scenario ID; these are
 browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
@@ -45,6 +46,7 @@ using synthetic owner data and provider fixtures.
 | CURRENCY-UI | The main currency saved in Settings survives logout and MFA login; the Portfolio and Asset screens show value, cost and P&L in EUR and RUB from stored Bank of Russia rates, cost at the purchase date's rate; anonymous, missing-CSRF and unknown-currency requests are refused. |
 | CHART-PERIODS / SNAP-REBUILD / DASH-MAIN | The dashboard opens on one month and shows the net worth, change and chart the backend returned; each period 24H, 7D, 1M, 3M, 1Y and ALL asks once and stays inside its range; ALL starts on Jan 1, 2025; a backdated buy rebuilds later daily snapshots by exactly its value; anonymous and unknown-query reads are refused. |
 | OPS-UI | A manual buy, a CSV-imported buy and an Esplora-fixture chain receipt appear in one Transactions list with date, type, asset, amount, value, account, status and source; asset and status filters leave only matching rows; the drawer shows the raw chain facts; anonymous and query-carrying reads are refused. |
+| FLOW-SPLIT-UI / FLOW-SPLIT-DEPOSIT / FLOW-SPLIT-MIXED | A buy paid from outside adds its gross plus fee to the month's deposits and a sale its net proceeds to withdrawals; market effect is the change minus net flow; net invested steps by exactly those amounts; the dashboard shows the market and net-deposit split and the net invested line the backend returned. |
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout

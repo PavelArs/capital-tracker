@@ -98,5 +98,9 @@
   {
     "file": "tests/e2e/operation-list.spec.ts",
     "title": "OPS-UI: manual, CSV and blockchain operations in one Transactions list with filters and details"
+  },
+  {
+    "file": "tests/e2e/capital-flows.spec.ts",
+    "title": "FLOW-SPLIT-UI: dashboard splits the change into market and net deposits with a net invested line"
   }
 ]

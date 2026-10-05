@@ -164,7 +164,7 @@ export function snapshotChanges(
 
 const SCALE = 60;
 /** Nonnegative or signed decimal text as an exact scale-60 integer. */
-function atoms(value: string): bigint {
+export function valueAtoms(value: string): bigint {
   const negative = value.startsWith('-');
   const [whole, fraction = ''] = (negative ? value.slice(1) : value).split('.');
   const magnitude = BigInt(whole) * 10n ** BigInt(SCALE) + BigInt(fraction.padEnd(SCALE, '0'));
@@ -174,8 +174,8 @@ function atoms(value: string): bigint {
 /** Change between the period's first and last value; no percentage from a zero start. */
 export function periodChange(start: string | null, end: string | null) {
   if (start === null || end === null) return { change: null, changePercent: null };
-  const from = atoms(start);
-  const change = atoms(end) - from;
+  const from = valueAtoms(start);
+  const change = valueAtoms(end) - from;
   return {
     change: formatSignedProduct(change),
     changePercent: from > 0n ? formatPercent(change, from) : null,

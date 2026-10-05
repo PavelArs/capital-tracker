@@ -20,10 +20,16 @@ const history = (changes: Partial<PortfolioHistory> = {}): PortfolioHistory => (
   complete: true,
   change: '15000',
   changePercent: '15.00',
+  invested: '90000',
+  deposits: '10000',
+  withdrawals: '0',
+  netFlow: '10000',
+  marketEffect: '5000',
+  marketReturnPercent: '4.55',
   points: [
-    { at: '2026-09-05T00:00:00.000Z', value: '100000', complete: true },
-    { at: '2026-09-06T00:00:00.000Z', value: '104000.5', complete: true },
-    { at: '2026-10-04T12:30:00.000Z', value: '115000', complete: true },
+    { at: '2026-09-05T00:00:00.000Z', value: '100000', complete: true, invested: '80000' },
+    { at: '2026-09-06T00:00:00.000Z', value: '104000.5', complete: true, invested: '90000' },
+    { at: '2026-10-04T12:30:00.000Z', value: '115000', complete: true, invested: '90000' },
   ],
   ...changes,
 });
@@ -118,9 +124,9 @@ describe('record-portfolio-snapshots dashboard', () => {
         change: '-500',
         changePercent: '-0.50',
         points: [
-          { at: '2026-09-05T00:00:00.000Z', value: null, complete: false },
-          { at: '2026-09-06T00:00:00.000Z', value: '100000', complete: false },
-          { at: '2026-10-04T12:30:00.000Z', value: '99500', complete: true },
+          { at: '2026-09-05T00:00:00.000Z', value: null, complete: false, invested: null },
+          { at: '2026-09-06T00:00:00.000Z', value: '100000', complete: false, invested: null },
+          { at: '2026-10-04T12:30:00.000Z', value: '99500', complete: true, invested: null },
         ],
         value: '99500',
       }),
@@ -138,15 +144,81 @@ describe('record-portfolio-snapshots dashboard', () => {
         change: null,
         changePercent: null,
         complete: false,
-        points: [{ at: '2026-10-04T12:30:00.000Z', value: null, complete: false }],
+        invested: null,
+        deposits: null,
+        withdrawals: null,
+        netFlow: null,
+        marketEffect: null,
+        marketReturnPercent: null,
+        points: [{ at: '2026-10-04T12:30:00.000Z', value: null, complete: false, invested: null }],
       }),
     );
     renderPage('/dashboard?currency=RUB');
     const empty = await screen.findByRole('region', { name: 'Net worth' });
     expect(within(empty).getByText('No rate')).toBeInTheDocument();
     expect(within(empty).getByLabelText('Change for the past month')).toHaveTextContent('—');
+    expect(within(empty).getByLabelText('What changed')).toHaveTextContent('Market—Net deposits—');
     expect(screen.getByText(/No value can be shown for this period/)).toBeInTheDocument();
     expect(get).toHaveBeenLastCalledWith('1M', 'RUB');
+  });
+
+  it('FLOW-SPLIT splits the change into market and net deposits for the period', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    const split = within(hero).getByLabelText('What changed');
+    expect(split).toHaveTextContent('Market+$5,000.00+4.55%Net deposits+$10,000.00');
+    expect(within(split).getByText('+$5,000.00')).toHaveClass('portfolio-pos');
+    expect(within(split).getByText('+$10,000.00')).not.toHaveClass('portfolio-pos');
+    cleanup();
+    get.mockResolvedValue(
+      history({
+        value: '99994',
+        change: '-6',
+        changePercent: '-0.01',
+        deposits: '0',
+        withdrawals: '0',
+        netFlow: '0',
+        marketEffect: '-6',
+        marketReturnPercent: '-0.01',
+      }),
+    );
+    renderPage();
+    const transfer = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(transfer).getByLabelText('What changed')).toHaveTextContent(
+      'Market-$6.00-0.01%Net deposits$0.00',
+    );
+    cleanup();
+    get.mockResolvedValue(history({ withdrawals: '2500', netFlow: '-2500', deposits: '0' }));
+    renderPage();
+    const sold = await screen.findByRole('region', { name: 'Net worth' });
+    expect(within(sold).getByLabelText('What changed')).toHaveTextContent('Net deposits-$2,500.00');
+  });
+
+  it('draws the net invested line and reads it with each point', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Portfolio value over time' });
+    const legend = within(chart).getByLabelText('Chart legend');
+    expect(legend).toHaveTextContent('Portfolio valueNet investedDeposit');
+    expect(
+      within(chart).getByRole('img', {
+        name: 'Portfolio value, past month, from $100,000.00 to $115,000.00',
+      }),
+    ).toBeInTheDocument();
+    const plot = within(chart).getByRole('group');
+    plot.focus();
+    await user.keyboard('{Home}');
+    let tip = within(chart).getByRole('status');
+    expect(tip).toHaveTextContent('Net invested$80,000.00');
+    expect(tip).not.toHaveTextContent('Deposit');
+    await user.keyboard('{ArrowRight}');
+    tip = within(chart).getByRole('status');
+    expect(tip).toHaveTextContent('Net invested$90,000.00');
+    expect(tip).toHaveTextContent('Deposit+$10,000.00');
+    await user.keyboard('{End}');
+    tip = within(chart).getByRole('status');
+    expect(tip).toHaveTextContent('Net invested$90,000.00');
+    expect(tip).not.toHaveTextContent('Deposit');
   });
 
   it('says when the history cannot be loaded and retries', async () => {
