@@ -10,6 +10,20 @@ import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DashboardPage from './DashboardPage';
 
+// The window has its own tests; here it only has to open and report a saved trade.
+vi.mock('../portfolio/AddTransactionDialog', () => ({
+  default: ({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) => (
+    <div role="dialog" aria-label="Add transaction">
+      <button type="button" onClick={onSaved}>
+        Save
+      </button>
+      <button type="button" onClick={onClose}>
+        Cancel
+      </button>
+    </div>
+  ),
+}));
+
 const history = (changes: Partial<PortfolioHistory> = {}): PortfolioHistory => ({
   period: '1M',
   currency: 'USD',
@@ -38,6 +52,30 @@ const history = (changes: Partial<PortfolioHistory> = {}): PortfolioHistory => (
 
 const get = vi.spyOn(portfolioHistoryApi, 'get');
 
+// The big number dims its cents, so it is read from its element as a whole.
+const heroValue = (hero: HTMLElement) => hero.querySelector('.dashboard-hero__value');
+
+// An owner with nothing recorded yet: no holdings, nothing put in, nothing in the period.
+const nothing = (changes: Partial<PortfolioHistory> = {}) =>
+  history({
+    value: '0',
+    change: '0',
+    changePercent: null,
+    invested: '0',
+    profit: '0',
+    profitPercent: null,
+    deposits: '0',
+    withdrawals: '0',
+    netFlow: '0',
+    marketEffect: '0',
+    marketReturnPercent: null,
+    points: [
+      { at: '2026-09-05T00:00:00.000Z', value: '0', complete: true, invested: '0' },
+      { at: '2026-10-04T12:30:00.000Z', value: '0', complete: true, invested: '0' },
+    ],
+    ...changes,
+  });
+
 function renderPage(path = '/dashboard') {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -60,7 +98,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     const hero = await screen.findByRole('region', { name: 'Net worth' });
     expect(get).toHaveBeenCalledWith('1M', undefined);
     expect(within(hero).getByText('Total net worth · USD')).toBeInTheDocument();
-    expect(within(hero).getByText('$115,000.00')).toBeInTheDocument();
+    expect(heroValue(hero)).toHaveTextContent(/^\$115,000\.00$/);
     const profit = within(hero).getByLabelText('Profit or loss to date');
     expect(profit).toHaveTextContent('▲ +$25,000.00+27.78%on $90,000.00 net invested');
     expect(profit).toHaveClass('portfolio-pos');
@@ -120,7 +158,9 @@ describe('record-portfolio-snapshots dashboard', () => {
     await user.click(screen.getByRole('radio', { name: 'EUR' }));
     await waitFor(() => expect(get).toHaveBeenLastCalledWith('1M', 'EUR'));
     expect(await screen.findByText('Total net worth · EUR')).toBeInTheDocument();
-    expect(screen.getByText('€115,000.00')).toBeInTheDocument();
+    expect(heroValue(screen.getByRole('region', { name: 'Net worth' }))).toHaveTextContent(
+      /^€115,000\.00$/,
+    );
   });
 
   it('marks an incomplete period, a falling value and a missing rate honestly', async () => {
@@ -166,7 +206,7 @@ describe('record-portfolio-snapshots dashboard', () => {
     );
     renderPage('/dashboard?currency=RUB');
     const empty = await screen.findByRole('region', { name: 'Net worth' });
-    expect(within(empty).getByText('No rate')).toBeInTheDocument();
+    expect(heroValue(empty)).toHaveTextContent(/^No rate$/);
     expect(within(empty).getByLabelText('Profit or loss to date')).toHaveTextContent('—');
     expect(within(empty).getByLabelText('What changed')).toHaveTextContent(
       'Past monthMarket—Net deposits—',
@@ -277,6 +317,85 @@ describe('record-portfolio-snapshots dashboard', () => {
     tip = within(chart).getByRole('status');
     expect(tip).toHaveTextContent('Net invested$90,000.00');
     expect(tip).not.toHaveTextContent('Deposit');
+  });
+
+  it('DASH-CENTS dims the cents of the net worth', async () => {
+    renderPage();
+    const value = heroValue(await screen.findByRole('region', { name: 'Net worth' }));
+    expect(value).toHaveTextContent(/^\$115,000\.00$/);
+    expect(value?.querySelector('.dashboard-hero__cents')).toHaveTextContent(/^\.00$/);
+  });
+
+  it('DASH-LOADING shows skeleton blocks in the page layout, not a sentence', async () => {
+    get.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    const loading = screen.getByRole('status', { name: 'Loading your capital' });
+    expect(loading).toHaveAttribute('aria-busy', 'true');
+    expect(loading.querySelectorAll('.dashboard-loading__block').length).toBeGreaterThan(3);
+    expect(loading.querySelector('.dashboard-loading__chart')).not.toBeNull();
+    expect(loading.textContent).toBe('');
+    expect(screen.queryByRole('region', { name: 'Net worth' })).toBeNull();
+  });
+
+  it('DASH-EMPTY invites the first wallet or transaction when nothing is recorded', async () => {
+    const user = userEvent.setup();
+    get.mockResolvedValue(nothing());
+    renderPage();
+    const empty = await screen.findByRole('region', { name: 'Your portfolio is empty' });
+    expect(empty).toHaveTextContent(/Add your first wallet or asset/);
+    expect(within(empty).getByRole('link', { name: 'Add wallet' })).toHaveAttribute(
+      'href',
+      '/wallets',
+    );
+    expect(screen.queryByRole('region', { name: 'Net worth' })).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Portfolio value over time' })).toBeNull();
+    expect(screen.getByRole('radiogroup', { name: 'Currency' })).toBeInTheDocument();
+    // A saved first trade reloads the page with it.
+    get.mockResolvedValue(history());
+    await user.click(within(empty).getByRole('button', { name: 'Add transaction' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('region', { name: 'Net worth' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('DASH-EMPTY is not shown once money went in, a value is unknown or the period held something', async () => {
+    for (const changes of [
+      // Everything sold, but money went in and out: the history still matters.
+      { invested: '-150', profit: '150' },
+      // A holding without a price is not nothing.
+      { complete: false },
+      // Held something earlier in the period.
+      {
+        points: [
+          { at: '2026-09-05T00:00:00.000Z', value: '120', complete: true, invested: '0' },
+          { at: '2026-10-04T12:30:00.000Z', value: '0', complete: true, invested: '0' },
+        ],
+      },
+    ] satisfies Partial<PortfolioHistory>[]) {
+      get.mockResolvedValue(nothing(changes));
+      renderPage();
+      expect(await screen.findByRole('region', { name: 'Net worth' })).toBeInTheDocument();
+      expect(screen.queryByRole('region', { name: 'Your portfolio is empty' })).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('CHART-NOTE keeps the chart rules behind an info button instead of a paragraph', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    const chart = await screen.findByRole('region', { name: 'Portfolio value over time' });
+    expect(chart).not.toHaveTextContent(/snapshots/);
+    const about = within(chart).getByRole('button', { name: 'About this chart' });
+    expect(about).toHaveAttribute('aria-expanded', 'false');
+    await user.click(about);
+    expect(about).toHaveAttribute('aria-expanded', 'true');
+    const note = within(chart).getByRole('note');
+    expect(note).toHaveTextContent(/hourly for the last week, daily since Jan 1, 2025/);
+    expect(note).toHaveTextContent(/Net invested/);
+    await user.keyboard('{Escape}');
+    expect(about).toHaveAttribute('aria-expanded', 'false');
+    expect(within(chart).queryByRole('note')).toBeNull();
   });
 
   it('says when the history cannot be loaded and retries', async () => {

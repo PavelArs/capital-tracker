@@ -4,9 +4,12 @@ import {
   type PortfolioHistory,
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
+import { Icon } from '../shell/icons';
 import HistoryChart from './HistoryChart';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -49,6 +52,18 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
   );
 }
 
+// The prototype dims the cents of the big number: $42,738.84 with .84 muted.
+function Amount({ text }: { text: string }) {
+  const point = text.lastIndexOf('.');
+  if (point < 0) return text;
+  return (
+    <>
+      {text.slice(0, point)}
+      <span className="dashboard-hero__cents">{text.slice(point)}</span>
+    </>
+  );
+}
+
 // Under the net worth: profit or loss to date against all the money put in, whatever the
 // period; the period itself only drives the chart and the split below.
 function NetWorth({ history }: { history: PortfolioHistory }) {
@@ -58,7 +73,7 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
     <section className="dashboard-hero" aria-label="Net worth">
       <div className="dashboard-hero__label">Total net worth · {currency}</div>
       <div className="dashboard-hero__value">
-        {history.value === null ? 'No rate' : money(history.value, currency)}
+        {history.value === null ? 'No rate' : <Amount text={money(history.value, currency)} />}
       </div>
       <div
         className={`dashboard-hero__delta${direction ? ` portfolio-${direction}` : ''}`}
@@ -86,12 +101,108 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
   );
 }
 
+const isZero = (value: string | null) => value !== null && Number(value) === 0;
+
+// Nothing recorded yet: no value now or in the period, no unknown price and nothing put in.
+// An owner who sold everything still has money in and out, so keeps the history.
+export function isEmptyPortfolio(history: PortfolioHistory): boolean {
+  return (
+    history.complete &&
+    isZero(history.value) &&
+    isZero(history.invested) &&
+    history.points.every((point) => point.value === null || isZero(point.value))
+  );
+}
+
+// Grey blocks where the net worth and the chart will appear (prototype "Loading" state).
+function Loading() {
+  return (
+    <section
+      className="dashboard-loading"
+      role="status"
+      aria-busy="true"
+      aria-label="Loading your capital"
+    >
+      <div className="dashboard-loading__hero">
+        <i className="dashboard-loading__block dashboard-loading__label" />
+        <i className="dashboard-loading__block dashboard-loading__value" />
+        <i className="dashboard-loading__block dashboard-loading__delta" />
+      </div>
+      <div className="shell-card dashboard-loading__card">
+        <div className="dashboard-loading__toolbar">
+          <i className="dashboard-loading__block dashboard-loading__legend" />
+          <i className="dashboard-loading__block dashboard-loading__periods" />
+        </div>
+        <i className="dashboard-loading__block dashboard-loading__chart" />
+      </div>
+    </section>
+  );
+}
+
+function Empty({ onAdd }: { onAdd: () => void }) {
+  return (
+    <section className="shell-card shell-empty" aria-labelledby="dashboard-empty">
+      <span className="shell-empty__ill" aria-hidden="true">
+        <Icon name="wallets" />
+      </span>
+      <h2 id="dashboard-empty">Your portfolio is empty</h2>
+      <p>
+        Add your first wallet or asset to start tracking your capital. Wallet balances and history
+        load automatically.
+      </p>
+      <div className="dashboard-empty__actions">
+        <Link className="shell-button shell-button--primary" to="/wallets">
+          Add wallet
+        </Link>
+        <button type="button" className="shell-button" onClick={onAdd}>
+          Add transaction
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// How the chart is built, behind an info button instead of a paragraph under the chart.
+function AboutChart() {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  return (
+    <div className="dashboard-about">
+      <button
+        type="button"
+        className="dashboard-about__button"
+        aria-label="About this chart"
+        aria-expanded={open}
+        aria-controls={id}
+        onClick={() => setOpen((shown) => !shown)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') setOpen(false);
+        }}
+        onBlur={() => setOpen(false)}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v5M12 8h.01" />
+        </svg>
+      </button>
+      {open && (
+        <p id={id} className="dashboard-about__note" role="note">
+          Snapshots at stored prices and Bank of Russia rates: hourly for the last week, daily since
+          Jan 1, 2025, in UTC. Net invested is the money put in minus the money taken out; the gap
+          to the value line is your profit or loss.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Net worth, change for the period and the capital chart from portfolio snapshots
 // (record-portfolio-snapshots). Allocation and attention arrive with M16.
 export default function DashboardPage() {
   const [history, setHistory] = useState<PortfolioHistory | null>(null);
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
+  const [adding, setAdding] = useState(false);
   const [asked, setAsked] = useAskedCurrency();
   const latest = useRef(0);
 
@@ -132,9 +243,9 @@ export default function DashboardPage() {
           </button>
         </section>
       ) : shown === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading your capital…
-        </section>
+        <Loading />
+      ) : isEmptyPortfolio(shown) ? (
+        <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
           <NetWorth history={shown} />
@@ -144,7 +255,10 @@ export default function DashboardPage() {
           >
             <div className="portfolio-toolbar">
               <div className="dashboard-chart-card__title">
-                <h2>Capital</h2>
+                <div className="dashboard-chart-card__name">
+                  <h2>Capital</h2>
+                  <AboutChart />
+                </div>
                 <div className="dashboard-legend" aria-label="Chart legend">
                   <span>
                     <i className="dashboard-legend__line" aria-hidden="true" />
@@ -184,14 +298,17 @@ export default function DashboardPage() {
               currency={shown.currency}
               label={chartLabel}
             />
-            <p className="shell-note dashboard-note">
-              Values come from snapshots of your holdings at stored prices and Bank of Russia rates:
-              hourly for the last week, daily since Jan 1, 2025. Times are UTC. Net invested is the
-              money you put in minus the money you took out, each at its day&apos;s rate; the gap
-              between the two lines is your profit or loss.
-            </p>
           </section>
         </>
+      )}
+      {adding && (
+        <AddTransactionDialog
+          onClose={() => setAdding(false)}
+          onSaved={() => {
+            setAdding(false);
+            void load();
+          }}
+        />
       )}
     </div>
   );

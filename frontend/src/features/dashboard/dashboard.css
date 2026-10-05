@@ -278,8 +278,151 @@
   color: var(--warn);
 }
 
-.dashboard-note {
-  margin-top: var(--sp-3);
+.dashboard-hero__cents {
+  color: var(--ink-3);
+}
+
+.dashboard-chart-card__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-about {
+  position: relative;
+  display: inline-flex;
+}
+
+.dashboard-about__button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.dashboard-about__button:hover,
+.dashboard-about__button[aria-expanded="true"] {
+  color: var(--ink);
+}
+
+.dashboard-about__button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dashboard-about__button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.dashboard-about__note {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -8px;
+  z-index: 6;
+  width: min(340px, calc(100vw - 48px));
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.dashboard-empty__actions .shell-button {
+  font-family: inherit;
+}
+
+.dashboard-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* Loading: grey blocks in the place of the net worth and the chart. */
+.dashboard-loading {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.dashboard-loading__hero {
+  display: grid;
+  gap: 12px;
+}
+
+.dashboard-loading__block {
+  display: block;
+  border-radius: var(--r-sm);
+  background: var(--line);
+  animation: dashboard-pulse 1.4s ease-in-out infinite;
+}
+
+.dashboard-loading__label {
+  width: 140px;
+  height: 14px;
+}
+
+.dashboard-loading__value {
+  width: min(340px, 80%);
+  height: 52px;
+}
+
+.dashboard-loading__delta {
+  width: min(240px, 60%);
+  height: 18px;
+}
+
+.dashboard-loading__card {
+  display: grid;
+  gap: var(--sp-4);
+  padding: 18px 22px;
+}
+
+.dashboard-loading__toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.dashboard-loading__legend {
+  width: 220px;
+  height: 16px;
+}
+
+.dashboard-loading__periods {
+  width: min(260px, 45%);
+  height: 30px;
+}
+
+.dashboard-loading__chart {
+  height: 290px;
+  border-radius: var(--r-md);
+}
+
+@keyframes dashboard-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-loading__block {
+    animation: none;
+  }
 }
 
 @media (max-width: 560px) {
