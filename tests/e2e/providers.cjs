@@ -34,8 +34,9 @@ const krakenKeys = { XBTUSD: 'XXBTZUSD', ETHUSD: 'XETHZUSD', ZECUSD: 'XZECZUSD',
 const DAY = 86400;
 const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
 // Synthetic Bank of Russia rates (account-in-three-currencies): { base: { R01235: 80 }, fail: { R01239: 500 } }.
-// Every Tuesday..Saturday from 2025-01-01 to tomorrow (Moscow) has a record worth
-// base + 0.01 per day since 2025-01-01; Sundays and Mondays have none. Oracles restate this.
+// Every Tuesday..Saturday in the asked range up to tomorrow (Moscow) has a record worth
+// base + 0.01 per day since 2025-01-01 (less before it); Sundays and Mondays have none.
+// Oracles restate this.
 let cbr = null;
 
 function cbrDynamic(response, url) {
@@ -64,7 +65,7 @@ function cbrDynamic(response, url) {
   const tomorrow = Math.floor((Date.now() / 1000 + 3 * 3600) / DAY) * DAY + DAY;
   const date = (time) => new Date(time * 1000).toISOString().slice(0, 10).split('-').reverse().join('.');
   let records = '';
-  for (let time = Math.max(from, backfillStart); time <= Math.min(to, tomorrow); time += DAY) {
+  for (let time = from; time <= Math.min(to, tomorrow); time += DAY) {
     if ([0, 1].includes(new Date(time * 1000).getUTCDay())) continue;
     const cents = base * 100 + (time - backfillStart) / DAY;
     const value = `${Math.floor(cents / 100)},${String(cents % 100).padStart(2, '0')}00`;

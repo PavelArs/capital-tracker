@@ -58,7 +58,9 @@ in shard probes-2; browser case `CHART-PERIODS` is the 24th critical case.
 
 Adds Bank of Russia USD and EUR rates and USD/EUR/RUB accounting. The `fx-rates` module
 collects `XML_dynamic` series (R01235, R01239) into append-only `fx_rates`, backfilled
-from 2025-01-01 and re-read a week back up to tomorrow (Moscow), hourly at most, under
+from December 2008 in four-year requests (a database holding rates only from 2025 reads
+the earlier years once, so carry-in lots and other older operations have a rate) and
+re-read a week back up to tomorrow (Moscow), hourly at most, under
 the existing `PRICE_COLLECTION_ENABLED` switch (sync source `fx:cbr`, `GET /fx-rates`).
 `owner_settings.mainCurrency` (USD default, `GET/PUT /owner-settings`) picks the
 Portfolio currency; `GET /accounting/portfolio?currency=` asks for another one. The
