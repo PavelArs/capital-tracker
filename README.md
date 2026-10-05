@@ -65,8 +65,8 @@ changes ship.
 
 ## Tech Stack
 
-- **Backend:** NestJS 11, TypeScript, TypeORM, PostgreSQL 16, Redis 7
-- **Frontend:** React 18, Vite, TypeScript, Chart.js, i18next (EN/RU)
+- **Backend:** NestJS, TypeScript, TypeORM, PostgreSQL, Redis
+- **Frontend:** React, Vite, TypeScript, Chart.js, i18next (EN/RU)
 - **Tooling:** pnpm, Biome (lint + format), Jest/Vitest
 - **Infrastructure:** Docker Compose, GitHub Actions CI/CD, ghcr.io, nginx
 
@@ -84,7 +84,7 @@ changes ship.
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 26+
 - pnpm (`corepack enable`)
 - Docker and Docker Compose
 - PostgreSQL + Redis (or use Docker)
@@ -122,25 +122,25 @@ the isolated acceptance stack; never use legacy production Compose for tests.
 
 ### Backend (`cd backend`)
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start dev server with watch mode |
-| `pnpm build` | Build NestJS application |
-| `pnpm test` | Run tests with coverage |
-| `pnpm lint` | Biome lint + format check |
-| `pnpm check` | Auto-fix lint + format issues |
-| `pnpm migration:generate` | Generate TypeORM migration |
-| `pnpm migration:run` | Explicit preflight and migration; requires DB_* environment |
+| Command                   | Description                                                 |
+| ------------------------- | ----------------------------------------------------------- |
+| `pnpm dev`                | Start dev server with watch mode                            |
+| `pnpm build`              | Build NestJS application                                    |
+| `pnpm test`               | Run tests with coverage                                     |
+| `pnpm lint`               | Biome lint + format check                                   |
+| `pnpm check`              | Auto-fix lint + format issues                               |
+| `pnpm migration:generate` | Generate TypeORM migration                                  |
+| `pnpm migration:run`      | Explicit preflight and migration; requires DB_* environment |
 
 ### Frontend (`cd frontend`)
 
-| Command | Description |
-|---------|-------------|
-| `pnpm dev` | Start Vite dev server |
+| Command      | Description                         |
+| ------------ | ----------------------------------- |
+| `pnpm dev`   | Start Vite dev server               |
 | `pnpm build` | TypeScript check + production build |
-| `pnpm test` | Run tests with coverage |
-| `pnpm lint` | Biome lint + format check |
-| `pnpm check` | Auto-fix lint + format issues |
+| `pnpm test`  | Run tests with coverage             |
+| `pnpm lint`  | Biome lint + format check           |
+| `pnpm check` | Auto-fix lint + format issues       |
 
 ## Architecture
 
@@ -171,6 +171,7 @@ frontend/src/
 ### Infrastructure
 
 The app is designed to run on a personal server with:
+
 - **nginx** on the host for TLS termination and reverse proxy
 - **Docker Compose** for services (postgres, redis, backend, frontend)
 - **GitHub Actions** CI/CD with ghcr.io container registry
@@ -184,6 +185,7 @@ The app is designed to run on a personal server with:
    - (Optional) `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` for deploy notifications
 
 2. On the server:
+
    ```bash
    # Create app directory
    mkdir -p /opt/capital-tracker
@@ -199,6 +201,7 @@ The app is designed to run on a personal server with:
    ```
 
 3. Copy and configure nginx:
+
    ```bash
    cp deploy/nginx.conf /etc/nginx/sites-available/capital-tracker
    # Edit: replace <your-domain> with your actual domain
@@ -221,15 +224,15 @@ The app is designed to run on a personal server with:
 These are backend paths; the HTTPS proxy exposes them under `/api/`. No HTTP
 Swagger/documentation endpoint is mounted, including in development.
 
-| Group | Endpoints |
-|-------|-----------|
-| Auth | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout` |
-| Assets | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id` |
-| Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id` |
-| Crypto | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
-| Currencies | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show` |
-| Metrics | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD` |
-| Health | Public `GET /health` (minimal liveness); private `GET /health/details` |
+| Group       | Endpoints                                                                                                                           |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
+| Assets      | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id`                                                                                  |
+| Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id`                                                                        |
+| Crypto      | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
+| Currencies  | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show`                                 |
+| Metrics     | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD`                                                            |
+| Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
 All writes, including login/MFA/logout, require the exact configured Origin and
