@@ -94,5 +94,9 @@
   {
     "file": "tests/e2e/portfolio-history.spec.ts",
     "title": "CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuilt after a backdated buy"
+  },
+  {
+    "file": "tests/e2e/operation-list.spec.ts",
+    "title": "OPS-UI: manual, CSV and blockchain operations in one Transactions list with filters and details"
   }
 ]

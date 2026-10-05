@@ -1,5 +1,20 @@
 # Capital Tracker refactor continuity
 
+## Current product slice — list all operations (M8, 2026-10-04)
+
+Change `list-all-operations` (OPS-LIST, OPS-FILTER) adds `GET /accounting/operations`:
+one read-only, newest-first list of every current, non-void operation — trades (CSV
+when the trade came from an import row), owned transfers, swaps, rewards, carry-in
+opening balances, declared deposits/withdrawals and raw Bitcoin wallet transactions.
+Chain rows have no type, no account (M10) and status `needs-classification`; their
+value is an estimate at the latest stored BTC price, or null, never zero. Values are
+USD only (EUR/RUB see below). `/transactions` replaces its placeholder with the
+table (Date, Type, Asset, Amount, Value, Account, Status, Source), status/source chips,
+asset and account filters kept in the URL, search, and a read-only side drawer linking
+to the legacy screens for edits (forms come with M9/M12/M13). No migration. Probe
+`operation-list-db` runs in shard probes-1; browser case `OPS-UI` is the 25th critical
+case.
+
 ## Current product slice — portfolio snapshots (M6, 2026-10-04)
 
 The `portfolio-snapshots` module stores `portfolio_snapshots` (owner, whole-hour

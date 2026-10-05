@@ -96,7 +96,6 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
 
   // SHELL-005-A: honest placeholders, each linking to the legacy screen meanwhile.
   for (const [name, path, legacyLink, legacyPath] of [
-    ['Transactions', '/transactions', 'Open manual accounts', '/manual-accounts'],
     ['Wallets', '/wallets', 'Open wallet addresses', '/wallet-addresses'],
   ] as const) {
     await nav.getByRole('link', { name, exact: true }).click();
