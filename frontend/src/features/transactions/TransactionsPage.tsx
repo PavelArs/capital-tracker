@@ -1,27 +1,30 @@
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
-import { DASH } from '../portfolio/format';
+import { useAskedCurrency } from '../portfolio/currency';
+import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
   assetKey,
-  day,
+  dayHeading,
   networkName,
   placeLabel,
+  rowTime,
   shortAddress,
-  signedAmount,
+  signedQuantity,
   sourceLabels,
   statusLabels,
   ticker,
-  time,
   typeLabel,
-  usd,
   walletLabel,
 } from './operation-format';
+import TypeIcon, { Glyph } from './TypeIcon';
+import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
@@ -78,58 +81,94 @@ function options(operations: Operation[], entries: (operation: Operation) => [st
   return [...found].sort((left, right) => left[1].localeCompare(right[1], 'en'));
 }
 
-function ValueCell({ operation }: { operation: Operation }) {
-  if (operation.valueUsd !== null) return <>{usd(operation.valueUsd)}</>;
-  if (operation.estimatedValueUsd !== null)
-    return (
-      <span className="transactions-muted">
-        ≈ {usd(operation.estimatedValueUsd)}
-        <span className="portfolio-sub">at latest price</span>
-      </span>
-    );
-  if (operation.costBasisUsd !== null)
+function ValueCell({
+  operation,
+  currency,
+}: {
+  operation: Operation;
+  currency: AccountingCurrency;
+}) {
+  // What a purchase or sale paid in RUB or EUR actually cost, unless the list is in it.
+  const paid = operation.paid && operation.paid.currency !== currency && (
+    <span className="portfolio-sub">
+      paid {quantity(operation.paid.gross)} {operation.paid.currency}
+    </span>
+  );
+  if (operation.value !== null)
     return (
       <>
-        {usd(operation.costBasisUsd)}
+        {money(operation.value, currency)}
+        {paid}
+      </>
+    );
+  if (operation.estimatedValue !== null)
+    return (
+      <span className="transactions-muted">≈ {money(operation.estimatedValue, currency)}</span>
+    );
+  if (operation.costBasis !== null)
+    return (
+      <>
+        {money(operation.costBasis, currency)}
         <span className="portfolio-sub">cost basis</span>
       </>
+    );
+  // Recorded in USD, but no Bank of Russia rate is stored for that date.
+  if (
+    operation.valueUsd !== null ||
+    operation.estimatedValueUsd !== null ||
+    operation.costBasisUsd !== null
+  )
+    return (
+      <span className="transactions-muted">
+        {DASH}
+        <span className="portfolio-sub">No rate</span>
+      </span>
     );
   return <span className="transactions-muted">{DASH}</span>;
 }
 
-function OperationRow({ operation, onOpen }: { operation: Operation; onOpen: () => void }) {
+function OperationRow({
+  operation,
+  currency,
+  onOpen,
+}: {
+  operation: Operation;
+  currency: AccountingCurrency;
+  onOpen: () => void;
+}) {
   const needs = operation.status === 'needs-classification';
   return (
     <tr className={needs ? 'transactions-row--needs' : undefined} onClick={onOpen}>
-      <td>
-        {day(operation.occurredAt)}
-        <span className="portfolio-sub">{time(operation.occurredAt)}</span>
+      <td className="transactions-wrap">
+        <span className="transactions-type">
+          <TypeIcon operation={operation} />
+          <span>
+            <button
+              type="button"
+              className="transactions-open"
+              onClick={(event) => {
+                event.stopPropagation();
+                onOpen();
+              }}
+            >
+              {typeLabel(operation)}
+            </button>
+            <span className="portfolio-sub">{rowTime(operation)}</span>
+          </span>
+        </span>
       </td>
       <td className="transactions-wrap">
-        <button
-          type="button"
-          className="transactions-open"
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen();
-          }}
+        <span
+          className="transactions-asset"
+          title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
-          {typeLabel(operation)}
-        </button>
-      </td>
-      <td className="transactions-wrap">
-        <span className="transactions-asset">
           <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} size="sm" />
           {ticker(operation.asset)}
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
-        <span className="portfolio-sub">
-          {operation.asset.name}
-          {operation.counterAsset && ` → ${operation.counterAsset.name}`}
-        </span>
       </td>
       <td className="portfolio-num">
-        {signedAmount(operation)}
+        {signedQuantity(operation)}
         {operation.counterAsset && operation.counterQuantity && (
           <span className="portfolio-sub">
             {amount(operation.counterQuantity, operation.counterAsset, '+')}
@@ -137,7 +176,7 @@ function OperationRow({ operation, onOpen }: { operation: Operation; onOpen: () 
         )}
       </td>
       <td className="portfolio-num">
-        <ValueCell operation={operation} />
+        <ValueCell operation={operation} currency={currency} />
       </td>
       <td className="transactions-wrap transactions-place">
         {operation.wallet ? (
@@ -155,11 +194,84 @@ function OperationRow({ operation, onOpen }: { operation: Operation; onOpen: () 
             {statusLabels[operation.status]}
           </span>
         ) : (
-          <span className="transactions-status">{statusLabels[operation.status]}</span>
+          <span className="transactions-status">
+            <Glyph name="check" />
+            {statusLabels[operation.status]}
+          </span>
         )}
       </td>
-      <td>{sourceLabels[operation.source]}</td>
+      <td>
+        <span className="transactions-status">
+          {operation.source === 'chain' && <Glyph name="chain" />}
+          {sourceLabels[operation.source]}
+        </span>
+      </td>
     </tr>
+  );
+}
+
+/** A row's value on one short line: "≈ $780.10", "$375.50 · 30,000 RUB", "No rate". */
+function phoneValue(operation: Operation, currency: AccountingCurrency): string {
+  if (operation.value !== null) {
+    const paid = operation.paid && operation.paid.currency !== currency && operation.paid;
+    const shown = money(operation.value, currency);
+    return paid ? `${shown} · ${quantity(paid.gross)} ${paid.currency}` : shown;
+  }
+  if (operation.estimatedValue !== null) return `≈ ${money(operation.estimatedValue, currency)}`;
+  if (operation.costBasis !== null) return `${money(operation.costBasis, currency)} cost basis`;
+  if (
+    operation.valueUsd !== null ||
+    operation.estimatedValueUsd !== null ||
+    operation.costBasisUsd !== null
+  )
+    return 'No rate';
+  return DASH;
+}
+
+// Phones: one tappable two-line row per operation; status and source stay in the drawer.
+function OperationItem({
+  operation,
+  currency,
+  onOpen,
+}: {
+  operation: Operation;
+  currency: AccountingCurrency;
+  onOpen: () => void;
+}) {
+  const needs = operation.status === 'needs-classification';
+  const at = rowTime(operation);
+  const title = [
+    typeLabel(operation),
+    ticker(operation.asset) +
+      (operation.counterAsset ? ` → ${ticker(operation.counterAsset)}` : ''),
+  ].join(' ');
+  return (
+    <li>
+      <button
+        type="button"
+        className={`transactions-item${needs ? ' transactions-item--needs' : ''}`}
+        onClick={onOpen}
+      >
+        <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} />
+        <span className="transactions-item__main">
+          <span className="transactions-item__title">{title}</span>
+          {needs ? (
+            <span className="transactions-badge transactions-badge--warn transactions-item__badge">
+              To classify
+            </span>
+          ) : (
+            <span className="transactions-item__detail">
+              {placeLabel(operation)}
+              {at !== 'No time' && ` · ${at}`}
+            </span>
+          )}
+        </span>
+        <span className="transactions-item__side">
+          <span className="transactions-item__amount">{signedQuantity(operation)}</span>
+          <span className="transactions-item__value">{phoneValue(operation, currency)}</span>
+        </span>
+      </button>
+    </li>
   );
 }
 
@@ -177,20 +289,25 @@ export default function TransactionsPage() {
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
 
-  const load = useCallback(async () => {
+  // No currency in the address means the owner's main currency (Settings).
+  const [asked] = useAskedCurrency();
+  const narrow = useNarrowScreen();
+
+  // A switched currency keeps the rows on screen until its values arrive.
+  const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
     const request = ++latest.current;
     setFailed(false);
-    setList(null);
+    if (fresh) setList(null);
     try {
-      const next = await operationsApi.list();
+      const next = await operationsApi.list(currency);
       if (request === latest.current) setList(next);
     } catch {
       if (request === latest.current) setFailed(true);
     }
   }, []);
   useEffect(() => {
-    void load();
-  }, [load]);
+    void load(asked, false);
+  }, [load, asked]);
 
   // Filters live in the address, so other screens can link to "Needs classification".
   const view: View = (
@@ -255,22 +372,35 @@ export default function TransactionsPage() {
   const clear = () => {
     setSearch('');
     // The header's display currency is not a filter.
-    const currency = params.get('currency');
-    replaceParams(new URLSearchParams(currency ? { currency } : {}));
+    replaceParams(new URLSearchParams(asked ? { currency: asked } : {}));
   };
+  const currency = list?.quoteCurrency ?? 'USD';
+  // One group per UTC day, under a heading as in the prototype.
+  const days: { heading: string; operations: Operation[] }[] = [];
+  for (const operation of visible) {
+    const heading = dayHeading(operation.occurredAt, list?.at ?? operation.occurredAt);
+    const last = days.at(-1);
+    if (last?.heading === heading) last.operations.push(operation);
+    else days.push({ heading, operations: [operation] });
+  }
   const changed = () => {
     setDialog(null);
     setOpenId(null);
-    void load();
+    void load(asked, true);
   };
 
   return (
     <div className="shell-page">
-      <PageHeader title="Transactions" onTransactionSaved={changed} />
+      {/* The header's switch sets ?currency=; the list reloads in that currency. */}
+      <PageHeader
+        title="Transactions"
+        currency={list?.quoteCurrency}
+        onTransactionSaved={changed}
+      />
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your transactions. Your data is safe; try again.</p>
-          <button type="button" className="shell-button" onClick={() => void load()}>
+          <button type="button" className="shell-button" onClick={() => void load(asked, true)}>
             Try again
           </button>
         </section>
@@ -359,12 +489,29 @@ export default function TransactionsPage() {
                 Clear filters
               </button>
             </div>
+          ) : narrow ? (
+            <ol className="transactions-list" aria-label="Transactions">
+              {days.map((group) => (
+                <li key={group.heading} className="transactions-list__day">
+                  <h2 className="transactions-list__heading">{group.heading}</h2>
+                  <ul>
+                    {group.operations.map((operation) => (
+                      <OperationItem
+                        key={operation.id}
+                        operation={operation}
+                        currency={currency}
+                        onOpen={() => setOpenId(operation.id)}
+                      />
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ol>
           ) : (
             <div className="portfolio-table-wrap">
               <table className="portfolio-table transactions-table" aria-label="Transactions">
                 <thead>
                   <tr>
-                    <th scope="col">Date</th>
                     <th scope="col">Type</th>
                     <th scope="col">Asset</th>
                     <th scope="col" className="portfolio-num">
@@ -378,28 +525,40 @@ export default function TransactionsPage() {
                     <th scope="col">Source</th>
                   </tr>
                 </thead>
-                <tbody>
-                  {visible.map((operation) => (
-                    <OperationRow
-                      key={operation.id}
-                      operation={operation}
-                      onOpen={() => setOpenId(operation.id)}
-                    />
-                  ))}
-                </tbody>
+                {days.map((group) => (
+                  <tbody key={group.heading}>
+                    <tr className="transactions-day">
+                      <th scope="rowgroup" colSpan={7}>
+                        {group.heading}
+                      </th>
+                    </tr>
+                    {group.operations.map((operation) => (
+                      <OperationRow
+                        key={operation.id}
+                        operation={operation}
+                        currency={currency}
+                        onOpen={() => setOpenId(operation.id)}
+                      />
+                    ))}
+                  </tbody>
+                ))}
               </table>
             </div>
           )}
           <p className="shell-note portfolio-note">
             {filtered ? `${visible.length} of ${operations.length}` : operations.length}{' '}
-            {operations.length === 1 ? 'transaction' : 'transactions'}, newest first. Values are in
-            USD as recorded; ≈ marks an estimate at the latest stored price. Dates are in UTC.
+            {operations.length === 1 ? 'transaction' : 'transactions'}, newest first.{' '}
+            {currency === 'USD'
+              ? 'Values are in USD as recorded'
+              : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
+            ; ≈ marks an estimate at the latest stored price. Dates and times are in UTC.
           </p>
         </section>
       )}
       {opened && (
         <OperationDrawer
           operation={opened}
+          currency={currency}
           operations={operations}
           onClose={() => setOpenId(null)}
           onEdit={(operation) => {

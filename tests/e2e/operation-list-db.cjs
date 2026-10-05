@@ -389,6 +389,31 @@ async function emptyOwner(db, s, f) {
   console.log('PASS OPS-EMPTY');
 }
 
+async function threeCurrencies(db, s, f) {
+  stage = 'OPS-CURRENCY values in EUR or RUB at the Bank of Russia rate of the date';
+  await db.query(
+    `INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit") VALUES
+      ('USD','cbr','2025-06-13','80'),('EUR','cbr','2025-06-13','92')`,
+  );
+  const rub = await read(s, f.other, { currency: 'RUB' });
+  assert.equal(rub.quoteCurrency, 'RUB');
+  assert.deepEqual(
+    rub.operations.map((operation) => [operation.valueUsd, operation.value, operation.feeValue]),
+    [['1', '80', '0']],
+  );
+  // Without an asked currency the list uses the owner's main currency.
+  await db.query(`INSERT INTO owner_settings("ownerId","mainCurrency") VALUES ($1,'EUR')`, [
+    f.other,
+  ]);
+  const eur = await read(s, f.other);
+  assert.equal(eur.quoteCurrency, 'EUR');
+  assert.equal(eur.operations[0].value, '0.869565217391304347826086956522');
+  assert.equal((await read(s, f.owner)).quoteCurrency, 'USD');
+  await rejected(() => read(s, f.other, { currency: 'GBP' }), 400);
+  await rejected(() => read(s, f.other, { currency: 'RUB', asset: 'BTC' }), 400);
+  console.log('PASS OPS-CURRENCY');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -432,7 +457,7 @@ async function main() {
       ('operations-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
     const f = { owner: owner.id, other: other.id, third: third.id };
-    for (const check of [everyJournal, emptyOwner]) await check(db, s, f);
+    for (const check of [everyJournal, emptyOwner, threeCurrencies]) await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }
