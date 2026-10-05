@@ -38,29 +38,55 @@ describe('FX-QUERY rates on a chosen date', () => {
 });
 
 describe('FX-HISTORY rates for early operations', () => {
+  // Today's rates first and older years newest first: a request that keeps failing never
+  // holds back the rates read after it.
   it('reads the history from December 2008 in four-year requests on the first run', () => {
     expect(FX_HISTORY_FROM).toBe('2009-01-01');
     expect(fxRequestRanges(undefined, '2025-06-11')).toEqual([
-      ['2008-12-01', '2012-11-29'],
-      ['2012-11-30', '2016-11-28'],
-      ['2016-11-29', '2020-11-27'],
-      ['2020-11-28', '2024-11-26'],
       ['2024-11-27', '2025-06-11'],
-    ]);
-  });
-
-  it('fills the missing years before rates stored from 2025, then re-reads the last week', () => {
-    expect(fxRequestRanges({ first: '2025-01-11', last: '2025-06-10' }, '2025-06-11')).toEqual([
-      ['2008-12-01', '2012-11-29'],
-      ['2012-11-30', '2016-11-28'],
-      ['2016-11-29', '2020-11-27'],
       ['2020-11-28', '2024-11-26'],
-      ['2024-11-27', '2025-01-10'],
-      ['2025-06-03', '2025-06-11'],
+      ['2016-11-29', '2020-11-27'],
+      ['2012-11-30', '2016-11-28'],
+      ['2008-12-01', '2012-11-29'],
     ]);
   });
 
-  it('only re-reads the last week once the history reaches back to 2009', () => {
+  it('re-reads the last week, then fills the missing years before rates stored from 2025', () => {
+    expect(fxRequestRanges({ first: '2025-01-11', last: '2025-06-10' }, '2025-06-11')).toEqual([
+      ['2025-06-03', '2025-06-11'],
+      ['2024-11-27', '2025-01-10'],
+      ['2020-11-28', '2024-11-26'],
+      ['2016-11-29', '2020-11-27'],
+      ['2012-11-30', '2016-11-28'],
+      ['2008-12-01', '2012-11-29'],
+    ]);
+  });
+
+  it('asks again for a hole left by a failed request, but not for the New Year holidays', () => {
+    expect(
+      fxRequestRanges(
+        {
+          first: '2008-12-02',
+          last: '2025-06-10',
+          gaps: [
+            ['2008-12-30', '2009-01-11'],
+            ['2016-11-26', '2025-01-11'],
+          ],
+        },
+        '2025-06-11',
+      ),
+    ).toEqual([
+      ['2025-06-03', '2025-06-11'],
+      ['2024-11-25', '2025-01-10'],
+      ['2020-11-26', '2024-11-24'],
+      ['2016-11-27', '2020-11-25'],
+    ]);
+  });
+
+  it('only re-reads the last week once the history reaches back to 2009 without holes', () => {
+    expect(
+      fxRequestRanges({ first: '2008-12-02', last: '2025-06-10', gaps: [] }, '2025-06-11'),
+    ).toEqual([['2025-06-03', '2025-06-11']]);
     expect(fxRequestRanges({ first: '2008-12-02', last: '2025-06-10' }, '2025-06-11')).toEqual([
       ['2025-06-03', '2025-06-11'],
     ]);
@@ -175,12 +201,14 @@ describe('FX-PARSE Bank of Russia XML_dynamic answers', () => {
 describe('FX-CLIENT Bank of Russia client against a local HTTP server', () => {
   let server: Server;
   let baseUrl: string;
-  let answer: { status: number; body: string };
+  let answers: { status: number; body: string }[];
   let requests: URL[];
 
   beforeAll(async () => {
     server = createServer((request: IncomingMessage, response: ServerResponse) => {
       requests.push(new URL(request.url ?? '/', 'http://fixture.invalid'));
+      // The last answer repeats.
+      const answer = answers.length > 1 ? answers.shift()! : answers[0];
       response.writeHead(answer.status, {
         'content-type': 'application/xml; charset=windows-1251',
       });
@@ -197,7 +225,9 @@ describe('FX-CLIENT Bank of Russia client against a local HTTP server', () => {
   });
 
   it('asks the dynamic series for the currency and the inclusive date range', async () => {
-    answer = { status: 200, body: xml('R01239', record('07.06.2025', '90,0000', '1', 'R01239')) };
+    answers = [
+      { status: 200, body: xml('R01239', record('07.06.2025', '90,0000', '1', 'R01239')) },
+    ];
     const result = await new CbrClient({ baseUrl }).dynamic('EUR', '2025-06-01', '2025-06-10');
     expect(result).toEqual({ ok: true, rates: [{ date: '2025-06-07', rubPerUnit: '90' }] });
     expect(requests).toHaveLength(1);
@@ -213,20 +243,35 @@ describe('FX-CLIENT Bank of Russia client against a local HTTP server', () => {
     [429, '', 'rate_limited'],
     [500, '', 'unavailable'],
     [200, '<html>maintenance</html>', 'invalid_response'],
-  ] as const)('reports HTTP %i %j as %s', async (status, body, reason) => {
-    answer = { status, body };
-    expect(await new CbrClient({ baseUrl }).dynamic('USD', '2025-06-01', '2025-06-10')).toEqual({
-      ok: false,
-      reason,
-    });
+  ] as const)('reports HTTP %i %j as %s after asking once more', async (status, body, reason) => {
+    answers = [{ status, body }];
+    const client = new CbrClient({ baseUrl, retryPauseMs: 0 });
+    expect(await client.dynamic('USD', '2025-06-01', '2025-06-10')).toEqual({ ok: false, reason });
+    expect(requests).toHaveLength(2);
   });
 
-  it('reports an unreachable host as unavailable', async () => {
-    const result = await new CbrClient({ baseUrl: 'http://127.0.0.1:9', timeoutMs: 2000 }).dynamic(
+  it('asks once more after a pause when an answer is unreadable', async () => {
+    answers = [
+      { status: 200, body: '<html>Service unavailable</html>' },
+      { status: 200, body: xml('R01235', record('07.06.2025', '78,9')) },
+    ];
+    const started = Date.now();
+    const result = await new CbrClient({ baseUrl, retryPauseMs: 100 }).dynamic(
       'USD',
       '2025-06-01',
       '2025-06-10',
     );
+    expect(result).toEqual({ ok: true, rates: [{ date: '2025-06-07', rubPerUnit: '78.9' }] });
+    expect(requests).toHaveLength(2);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+  });
+
+  it('reports an unreachable host as unavailable', async () => {
+    const result = await new CbrClient({
+      baseUrl: 'http://127.0.0.1:9',
+      timeoutMs: 2000,
+      retryPauseMs: 0,
+    }).dynamic('USD', '2025-06-01', '2025-06-10');
     expect(result).toEqual({ ok: false, reason: 'unavailable' });
   });
 });

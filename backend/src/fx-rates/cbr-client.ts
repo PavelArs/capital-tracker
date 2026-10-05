@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { FxRate, RatedCurrency } from './fx-conversion';
 
@@ -59,16 +60,28 @@ export function parseCbrDynamic(body: string, code: string, from: string, to: st
 }
 
 export class CbrClient {
+  private readonly logger = new Logger(CbrClient.name);
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly retryPauseMs: number;
 
-  constructor(options: { baseUrl?: string; timeoutMs?: number } = {}) {
+  constructor(options: { baseUrl?: string; timeoutMs?: number; retryPauseMs?: number } = {}) {
     this.baseUrl = options.baseUrl ?? 'https://www.cbr.ru';
     this.timeoutMs = options.timeoutMs ?? 15_000;
+    // A failed answer, including a service page sent with HTTP 200, is asked for once more
+    // after this pause.
+    this.retryPauseMs = options.retryPauseMs ?? 5_000;
   }
 
   /** Official rates effective from `from` to `to` (inclusive Moscow dates). */
   async dynamic(currency: RatedCurrency, from: string, to: string): Promise<RatesResult> {
+    const first = await this.request(currency, from, to);
+    if (first.ok) return first;
+    await new Promise((resolve) => setTimeout(resolve, this.retryPauseMs));
+    return this.request(currency, from, to);
+  }
+
+  private async request(currency: RatedCurrency, from: string, to: string): Promise<RatesResult> {
     const code = CBR_CODES[currency];
     const url = `${this.baseUrl}/scripts/XML_dynamic.asp?date_req1=${cbrDate(from)}&date_req2=${cbrDate(to)}&VAL_NM_RQ=${code}`;
     let response: { status: number; data: ArrayBuffer };
@@ -93,7 +106,17 @@ export class CbrClient {
       const text = Buffer.from(response.data).toString('latin1');
       return { ok: true, rates: parseCbrDynamic(text, code, from, to) };
     } catch (error) {
-      if (error instanceof InvalidResponse) return { ok: false, reason: 'invalid_response' };
+      if (error instanceof InvalidResponse) {
+        // The start of the answer, printable ASCII only, tells a service page from a format change.
+        const start = Buffer.from(response.data)
+          .subarray(0, 120)
+          .toString('latin1')
+          .replace(/[^\x20-\x7e]/g, '?');
+        this.logger.warn(
+          `Unreadable Bank of Russia answer for ${code} ${from}..${to}: ${response.data.byteLength} bytes, "${start}"`,
+        );
+        return { ok: false, reason: 'invalid_response' };
+      }
       throw error;
     }
   }
