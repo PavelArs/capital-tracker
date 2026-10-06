@@ -29,6 +29,8 @@ x-backend: &backend
     HTTP_PROXY: http://providers:8080
     NO_PROXY: localhost,127.0.0.1,postgres,redis,backend,frontend,providers
     NODE_EXTRA_CA_CERTS: /run/acceptance/provider-ca.pem
+    # Synthetic key the providers fixture accepts for its Etherscan stub; never a real one.
+    ETHERSCAN_API_KEY: acceptance-etherscan-key
   # Keep the image health command and failure policy; observe readiness sooner.
   healthcheck:
     interval: 2s

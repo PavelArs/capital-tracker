@@ -35,6 +35,11 @@ export class EnvironmentVariables {
   @IsOptional()
   COINGECKO_DEMO_API_KEY?: string;
 
+  // Free Etherscan key for Ethereum wallet history (Q6); without it Ethereum wallets say so.
+  @IsString()
+  @IsOptional()
+  ETHERSCAN_API_KEY?: string;
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;

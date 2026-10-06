@@ -5,7 +5,7 @@ import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.ap
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
-import { failureMessages, type SyncRun } from './SyncStatus';
+import { failureMessage, type SyncRun } from './SyncStatus';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -89,7 +89,8 @@ export function useWallets() {
             setRun(id, {
               state: 'failed',
               message:
-                result.address.sync.errorMessage ?? failureMessages[result.reason ?? 'unavailable'],
+                result.address.sync.errorMessage ??
+                failureMessage(result.reason ?? 'unavailable', result.address),
             });
             return;
           }
@@ -104,7 +105,7 @@ export function useWallets() {
         const status = isAxiosError(error) ? error.response?.status : undefined;
         setRun(id, {
           state: 'failed',
-          message: failureMessages[status === 409 ? 'busy' : 'server'],
+          message: failureMessage(status === 409 ? 'busy' : 'server'),
         });
       } finally {
         announceSyncChange();

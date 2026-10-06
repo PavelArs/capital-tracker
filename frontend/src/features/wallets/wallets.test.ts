@@ -1,7 +1,14 @@
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { describe, expect, it } from 'vitest';
-import { accountNamed, checkBitcoinAddress, reconcile, shortAddress, sum } from './wallets';
+import {
+  accountNamed,
+  checkAddress,
+  checkBitcoinAddress,
+  reconcile,
+  shortAddress,
+  sum,
+} from './wallets';
 
 // Synthetic ids and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -17,6 +24,7 @@ const address = (n: number, changes: Partial<WalletAddress>): WalletAddress => (
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
+  balances: null,
   sync: {
     state: 'complete',
     completedAt: '2026-10-05T10:00:00.000Z',
@@ -55,9 +63,7 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       reconcile([address(1, {})], portfolio([{ accountId: trust, quantity: '0.0098' }]), trust),
     ).toEqual({
       state: 'differs',
-      chain: '0.01',
-      recorded: '0.0098',
-      difference: '0.0002',
+      assets: [{ symbol: 'BTC', chain: '0.01', recorded: '0.0098', difference: '0.0002' }],
     });
   });
 
@@ -75,7 +81,7 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
         ]),
         trust,
       ),
-    ).toEqual({ state: 'match', chain: '0.015' });
+    ).toEqual({ state: 'match' });
   });
 
   it('is negative when the records hold more than the chain', () => {
@@ -84,7 +90,10 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       portfolio([{ accountId: trust, quantity: '0.000000001' }]),
       trust,
     );
-    expect(result).toMatchObject({ state: 'differs', difference: '-0.000000001' });
+    expect(result).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'BTC', difference: '-0.000000001' }],
+    });
   });
 
   it('waits while any address has no complete history', () => {
@@ -114,6 +123,29 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
   it('has nothing to compare without an address', () => {
     expect(reconcile([address(1, { accountId: null })], portfolio([]), trust)).toEqual({
       state: 'none',
+    });
+  });
+
+  it('compares an Ethereum address asset by asset: ETH, USDT and USDC (M14)', () => {
+    const ethereum = address(4, {
+      network: 'ethereum',
+      address: `0x${'a1'.repeat(20)}`,
+      chainBalance: '1.500000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.500000000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '250.000000' },
+      ],
+    });
+    const held = {
+      assets: [
+        { symbol: 'ETH', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '1.5' }] },
+        { symbol: 'USDC', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '200' }] },
+      ],
+    } as unknown as PortfolioValuation;
+    expect(reconcile([ethereum], held, trust)).toEqual({
+      state: 'differs',
+      assets: [{ symbol: 'USDC', chain: '250', recorded: '200', difference: '50' }],
     });
   });
 
@@ -159,6 +191,33 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
     ['a private key', `5${'H'.repeat(50)}`],
   ])('marks %s as a secret', (_case, input) => {
     expect(checkBitcoinAddress(input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
+describe('WAL-INVALID, WAL-NO-SECRETS: the Ethereum address field (M14)', () => {
+  it('accepts an address in any case and keeps it in lower case', () => {
+    expect(checkAddress('ethereum', ' 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed ')).toEqual({
+      ok: true,
+      address: '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed',
+      kind: 'Ethereum address',
+    });
+  });
+
+  it.each([
+    ['bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'This is not an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'looks like a Bitcoin address'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeA', 'This is not a valid Ethereum address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('ethereum', input);
+    expect(result.ok === false && result.message).toContain(message);
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    ['a hex private key', `0x${'4c'.repeat(32)}`],
+    ['a bare hex private key', '4c'.repeat(32)],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('ethereum', input)).toMatchObject({ ok: false, secret: true });
   });
 });
 

@@ -61,6 +61,7 @@ const recordedDefaults: Omit<
   account: bybit,
   counterAccount: null,
   wallet: null,
+  counterWallet: null,
   chain: null,
   status: 'recorded',
   source: 'manual',
@@ -74,7 +75,12 @@ const chainOperation = (n: number, changes: Partial<Operation>): Operation =>
     asset: chainBtc,
     account: null,
     wallet,
-    chain: { txid: txid(n), blockHeight: 800000 + n, priceObservedAt: '2026-10-04T11:00:00.000Z' },
+    chain: {
+      txid: txid(n),
+      blockHeight: 800000 + n,
+      priceObservedAt: '2026-10-04T11:00:00.000Z',
+      direction: changes.direction ?? 'in',
+    },
     status: 'needs-classification',
     source: 'chain',
     version: null,
@@ -87,7 +93,7 @@ const outgoing = chainOperation(2, {
   occurredAt: '2025-06-21T08:00:00.000Z',
   quantity: '0.0005',
   fee: { asset: chainBtc, quantity: '0.000003' },
-  chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null },
+  chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null, direction: 'out' },
 });
 const receipt = chainOperation(1, {
   occurredAt: '2025-06-20T08:05:00.000Z',
@@ -812,7 +818,7 @@ describe('classify-chain-transactions (M12)', () => {
     direction: 'out',
     occurredAt: '2025-06-19T08:00:00.000Z',
     quantity: '0.0005',
-    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null },
+    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null, direction: 'out' },
   });
   const bought = chainOperation(1, {
     ...inCold,
@@ -829,6 +835,7 @@ describe('classify-chain-transactions (M12)', () => {
       hidden: false,
       value: { type: 'buy', currency: 'USDT', amount: '1000' },
       comment: 'From the exchange',
+      automatic: false,
     },
   });
   const httpError = (status: number, data: object) =>
@@ -858,7 +865,16 @@ describe('classify-chain-transactions (M12)', () => {
       within(question)
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Buy', 'Income', 'Reward', 'Staking reward', 'Airdrop', 'Gift received']);
+    ).toEqual([
+      'Transfer between my wallets',
+      'Buy',
+      'Income',
+      'Reward',
+      'Staking reward',
+      'Airdrop',
+      'Gift received',
+      'Other',
+    ]);
     expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
     const save = within(drawer).getByRole('button', { name: 'Save' });
     expect(save).toBeDisabled();
@@ -888,7 +904,7 @@ describe('classify-chain-transactions (M12)', () => {
       within(within(next).getByRole('group', { name: 'What was this transaction?' }))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Sell', 'Expense', 'Gift sent', 'Fee']);
+    ).toEqual(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee']);
     expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
     // The classified row reads as the buy it recorded.
     expect(cellTexts(bodyRows()[0])).toEqual([
@@ -918,6 +934,30 @@ describe('classify-chain-transactions (M12)', () => {
       currency: 'RUB',
       amount: '83000',
       perUsd: '79',
+    });
+  });
+
+  it('CLS-OTHER: a receipt nobody can name asks only for a comment and saves as Other', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Other' }));
+    expect(
+      within(drawer).getByText(
+        'The amount stays in your balance without a purchase price. Add a comment so you remember what it was.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/Value at the time/)).not.toBeInTheDocument();
+    // The comment is up front, not under "More options".
+    await user.type(within(drawer).getByLabelText('Comment'), 'Unknown origin');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'other' },
+      comment: 'Unknown origin',
     });
   });
 
@@ -987,5 +1027,169 @@ describe('classify-chain-transactions (M12)', () => {
     );
     // A retry of one answer reuses its request id, so it is recorded at most once.
     expect(classify.mock.calls[1][2].requestId).toBe(classify.mock.calls[0][2].requestId);
+  });
+});
+
+describe('link-own-transfers (M13)', () => {
+  // XFER-AUTO: Cold storage sends 0.5 BTC to the owner's Bybit address, fee 0.0001 BTC.
+  const other = {
+    ...wallet,
+    id: id(21),
+    address: 'bc1qsyntheticotheraddress0000000000x9k2',
+    label: null,
+  };
+  const linked = chainOperation(3, {
+    type: 'transfer',
+    direction: 'internal',
+    occurredAt: '2025-06-22T08:00:00.000Z',
+    quantity: '0.5',
+    estimatedValueUsd: '30000',
+    fee: { asset: chainBtc, quantity: '0.0001' },
+    account: cold,
+    counterAccount: bybit,
+    counterWallet: other,
+    chain: { txid: txid(3), blockHeight: 800003, priceObservedAt: null, direction: 'out' },
+    status: 'recorded',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'transfer', accountId: bybit.id },
+      comment: null,
+      automatic: true,
+    },
+  });
+  const sent = chainOperation(4, {
+    direction: 'out',
+    occurredAt: '2025-06-23T08:00:00.000Z',
+    quantity: '0.2001',
+    fee: { asset: chainBtc, quantity: '0.0001' },
+    account: cold,
+  });
+  const openRow = async (index: number, name: string) => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  beforeEach(() => {
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [cold, bybit].map((account) => ({
+        ...account,
+        currentRevision: 0,
+        createdAt: '2025-01-01T00:00:00.000Z',
+      })),
+      nextCursor: null,
+    });
+    vi.spyOn(tradesApi, 'state').mockResolvedValue({
+      accountId: bybit.id,
+      eligible: false,
+      ineligibilityReason: 'already-initialized',
+      journal: { journalRevision: 5 } as JournalState['journal'],
+    });
+  });
+
+  it('XFER-AUTO: a pair between own wallets is one transfer A → B, recognised automatically', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
+    const { drawer } = await openRow(0, 'Transfer · BTC');
+    expect(cellTexts(bodyRows()[0])).toEqual([
+      'Transfer08:00',
+      'BTC',
+      '0.5',
+      '≈ $30,000.00',
+      'Cold storage → Bybit',
+      'Auto: own wallets',
+      'Blockchain',
+    ]);
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      'Recognised automatically: both addresses belong to your wallets and Bybit received the same amount minus the network fee. Counts as a transfer, not a sale or a deposit.',
+    );
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('From')).toBe('Cold storage');
+    expect(fact('To')).toBe('Bybit');
+    expect(fact('Other address')).toBe(other.address);
+    expect(fact('Network fee')).toBe('0.0001 BTC');
+    expect(fact('Status')).toBe('Auto: own wallets');
+    expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
+  });
+
+  it('XFER-AUTO: the owner can still reclassify an automatic transfer', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
+    const { user, drawer } = await openRow(0, 'Transfer · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    const question = within(drawer).getByRole('group', { name: 'What was this transaction?' });
+    expect(
+      within(question).getByRole('button', { name: 'Transfer between my wallets' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    // The address's own direction decides the choices, not the internal transfer row.
+    expect(within(question).getByRole('button', { name: 'Sell' })).toBeInTheDocument();
+    expect(await within(drawer).findByRole('option', { name: 'Bybit' })).toBeInTheDocument();
+    expect(within(drawer).getByLabelText('Sent to')).toHaveValue(bybit.id);
+    expect(within(drawer).queryByRole('option', { name: 'Cold storage' })).toBeNull();
+  });
+
+  it('XFER-MANUAL: an outgoing transaction is linked by hand to another wallet', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+    expect(
+      within(drawer).getByText(
+        "Transfers between your wallets don't change your capital. Only the network fee of 0.0001 BTC is counted as a cost.",
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(within(drawer).getByText('Choose the other wallet')).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await within(drawer).findByRole('option', { name: 'Bybit' });
+    // Its own wallet is not a destination.
+    expect(within(drawer).queryByRole('option', { name: 'Cold storage' })).toBeNull();
+    await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'transfer', accountId: bybit.id },
+    });
+  });
+
+  it('XFER-AUTO: an unanswered leg with an own address on the other side suggests the transfer', async () => {
+    const suggested = { ...sent, counterAccount: bybit, counterWallet: other };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
+    const { drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    expect(
+      within(drawer).getByRole('button', { name: 'Transfer between my wallets' }),
+    ).toHaveAttribute('aria-pressed', 'true');
+    expect(within(drawer).getByLabelText('Sent to')).toHaveValue(bybit.id);
+    // The suggestion is not a place: the row stays in its own wallet.
+    expect(cellTexts(bodyRows()[0])).toContain('Cold storage · bc1qsy…f3t4');
+  });
+
+  it('XFER-MANUAL: explains a transfer the other wallet did not receive in full', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The other wallet did not receive what this one sent, less the network fee',
+        },
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+    await within(drawer).findByRole('option', { name: 'Bybit' });
+    await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'Choose another wallet or another type.',
+    );
   });
 });

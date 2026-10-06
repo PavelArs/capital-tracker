@@ -20,7 +20,7 @@
   margin-top: 0;
   border-color: transparent;
   background: var(--neg);
-  color: #fff;
+  color: var(--neg-ink);
 }
 
 .shell-button--danger:hover {
@@ -553,7 +553,7 @@ a.portfolio-asset__name:hover {
   margin: 0;
   padding: 10px 12px;
   border-radius: var(--r-md);
-  background: rgba(255, 107, 107, 0.12);
+  background: var(--neg-soft);
   color: var(--ink);
   font-size: var(--fs-sm);
 }

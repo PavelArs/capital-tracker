@@ -1,11 +1,11 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 import type { TradePurpose } from './trade-purpose';
 
 // One read model over every journal and the raw chain history (list-all-operations).
-const SAT_TO_ATOMS = 10n ** 22n;
 
 export interface OperationAsset {
   instrumentId: string | null;
@@ -18,7 +18,7 @@ export interface OperationPlace {
 }
 export interface OperationWallet {
   id: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   /** The owner's name for the address (M10), or null. */
   label: string | null;
@@ -118,13 +118,19 @@ export interface ChainClassificationInput {
   type: ChainType | null;
   details: Classification | null;
   comment: string | null;
-  produced: { kind: 'trade' | 'reward'; id: string } | null;
+  produced: { kind: 'trade' | 'reward' | 'transfer'; id: string } | null;
+  /** A transfer's other leg among the owner's addresses (M13), or null. */
+  linkedAddressId?: string | null;
+  /** Linked by the app without asking (D7). */
+  automatic?: boolean;
 }
 export interface ChainOperationInput {
   wallet: OperationWallet;
   /** The account the address belongs to (WAL-ACCOUNT), or null until the owner picks one. */
   account: OperationPlace | null;
   txid: string;
+  /** The token the leg moves (M14), or null for the network's own coin. */
+  asset: string | null;
   blockHeight: number;
   blockTime: string;
   direction: 'in' | 'out' | 'self';
@@ -159,7 +165,8 @@ export type OperationType =
   | 'income'
   | 'expense'
   | 'gift'
-  | 'fee';
+  | 'fee'
+  | 'other';
 
 export interface Operation {
   id: string;
@@ -180,9 +187,21 @@ export interface Operation {
   feeUsd: string | null;
   fee: OperationFee | null;
   account: OperationPlace | null;
+  /**
+   * A transfer's other account; for a chain transaction to classify, the account of the
+   * owner's other address in it (M13).
+   */
   counterAccount: OperationPlace | null;
   wallet: OperationWallet | null;
-  chain: { txid: string; blockHeight: number; priceObservedAt: string | null } | null;
+  /** Chain only: the owner's other address in the same transaction (M13), or null. */
+  counterWallet: OperationWallet | null;
+  /** `direction` is the leg's own, kept when a transfer between accounts reads as internal. */
+  chain: {
+    txid: string;
+    blockHeight: number;
+    priceObservedAt: string | null;
+    direction: 'in' | 'out' | 'internal';
+  } | null;
   /** Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). */
   status: 'recorded' | 'needs-classification' | 'hidden';
   source: 'manual' | 'csv' | 'chain';
@@ -192,6 +211,8 @@ export interface Operation {
     hidden: boolean;
     value: Classification | null;
     comment: string | null;
+    /** A transfer the app recognised between the owner's own wallets (D7). */
+    automatic: boolean;
   } | null;
   version: number | null;
   /** Trades only: the amounts as paid in RUB or EUR (CUR-PAID-RUB). */
@@ -217,9 +238,11 @@ export interface OperationList {
   operations: Operation[];
 }
 
-const CHAIN_ASSETS: Record<OperationWallet['network'], OperationAsset> = {
-  bitcoin: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
-};
+/** What a chain leg moves, as the list names assets; the fee is in the network's own coin. */
+function legAsset(network: Network, token: string | null): OperationAsset {
+  const { symbol, name } = chainAsset(network, token);
+  return { instrumentId: null, symbol, name };
+}
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
 const purposeTypes: Record<TradePurpose, OperationType> = {
   income: 'income',
@@ -246,6 +269,7 @@ const blank = {
   account: null,
   counterAccount: null,
   wallet: null,
+  counterWallet: null,
   chain: null,
   paid: null,
   comment: null,
@@ -288,44 +312,75 @@ function inCurrency(operation: Projected, fx: FxConverter, today: string): Opera
 }
 const recorded = { status: 'recorded', source: 'manual' } as const;
 
-function sats(units: string): string {
-  return formatAtoms(BigInt(units) * SAT_TO_ATOMS);
+function amount(units: bigint, network: Network, token: string | null): string {
+  return formatAtoms(unitsToAtoms(units, chainAsset(network, token)));
+}
+
+const netUnits = (row: ChainOperationInput) => BigInt(row.receivedUnits) - BigInt(row.sentUnits);
+
+/** Quantity at the latest stored price, an estimate. */
+function estimate(quantity: string, price: StoredMarketPrice | undefined): string | null {
+  return price
+    ? formatProduct(canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(price.priceUsd))
+    : null;
+}
+
+/**
+ * The owner's other address in the same transaction, moving the other way: the leg a transfer
+ * linked (M13), or for a transaction still to classify the one candidate, if there is one.
+ */
+function counterpart(
+  row: ChainOperationInput,
+  legs: readonly ChainOperationInput[],
+): ChainOperationInput | null {
+  const linked = row.classification?.linkedAddressId;
+  if (linked) return legs.find((leg) => leg.wallet.id === linked) ?? null;
+  const net = netUnits(row);
+  const opposite = legs.filter(
+    (leg) => leg.wallet.id !== row.wallet.id && netUnits(leg) * net < 0n,
+  );
+  return opposite.length === 1 ? opposite[0] : null;
 }
 
 function chainOperation(
   row: ChainOperationInput,
   prices: OperationSources['marketPrices'],
   produced: Projected | undefined,
+  other: ChainOperationInput | null,
 ): Projected {
-  const asset = CHAIN_ASSETS[row.wallet.network];
-  const net = BigInt(row.receivedUnits) - BigInt(row.sentUnits);
+  const { network } = row.wallet;
+  const asset = legAsset(network, row.asset);
+  const net = netUnits(row);
   const magnitude = net < 0n ? -net : net;
-  const quantity = formatAtoms(magnitude * SAT_TO_ATOMS);
+  const quantity = amount(magnitude, network, row.asset);
   const price = asset.symbol ? prices.get(asset.symbol) : undefined;
   const answer = row.classification ?? null;
+  const leg = row.direction === 'self' ? 'internal' : row.direction;
   const operation: Projected = {
     ...blank,
     id: `chain:${row.wallet.id}:${row.txid}`,
     kind: 'chain',
     type: null,
-    direction: row.direction === 'self' ? 'internal' : row.direction,
+    direction: leg,
     occurredAt: row.blockTime,
     asset,
     quantity,
-    estimatedValueUsd: price
-      ? formatProduct(canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(price.priceUsd))
-      : null,
+    estimatedValueUsd: estimate(quantity, price),
     // The sender pays an incoming transaction's fee.
     fee:
       row.direction === 'in' || BigInt(row.feeUnits) === 0n
         ? null
-        : { asset, quantity: sats(row.feeUnits) },
+        : {
+            asset: legAsset(network, null),
+            quantity: amount(BigInt(row.feeUnits), network, null),
+          },
     account: row.account,
     wallet: row.wallet,
     chain: {
       txid: row.txid,
       blockHeight: row.blockHeight,
       priceObservedAt: price?.observedAt ?? null,
+      direction: leg,
     },
     status: 'needs-classification',
     source: 'chain',
@@ -336,13 +391,32 @@ function chainOperation(
       hidden: answer.status === 'hidden',
       value: answer.details,
       comment: answer.comment,
+      automatic: answer.automatic === true,
     },
     orderWithinTimestamp: 0,
   };
   if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
-  // elsewhere leaves the transaction to classify again.
-  if (answer?.status !== 'classified' || !answer.type || !produced) return operation;
+  // elsewhere leaves the transaction to classify again, with the other side to suggest.
+  if (answer?.status !== 'classified' || !answer.type || !produced)
+    return other
+      ? { ...operation, counterAccount: other.account, counterWallet: other.wallet }
+      : operation;
+  // XFER-*: one transfer between the two accounts; the fee is the only cost.
+  if (produced.kind === 'transfer')
+    return {
+      ...operation,
+      type: 'transfer',
+      direction: 'internal',
+      status: 'recorded',
+      quantity: produced.quantity,
+      estimatedValueUsd: estimate(produced.quantity, price),
+      fee: produced.fee,
+      account: produced.account,
+      counterAccount: produced.counterAccount,
+      counterWallet: answer.linkedAddressId ? (other?.wallet ?? null) : null,
+      orderWithinTimestamp: produced.orderWithinTimestamp,
+    };
   return {
     ...operation,
     type: answer.type,
@@ -504,13 +578,22 @@ export function projectOperations(
       0,
     );
   }
+  const byTxid = new Map<string, ChainOperationInput[]>();
+  for (const row of sources.chain) byTxid.set(row.txid, [...(byTxid.get(row.txid) ?? []), row]);
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
-    const operation = chainOperation(
-      row,
-      sources.marketPrices,
-      ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined,
-    );
+    const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
+    const other = counterpart(row, byTxid.get(row.txid) ?? []);
+    // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
+    // sending leg; the receiving leg is part of it.
+    if (
+      entry?.kind === 'transfer' &&
+      other &&
+      row.classification?.linkedAddressId &&
+      netUnits(row) > 0n
+    )
+      continue;
+    const operation = chainOperation(row, sources.marketPrices, entry, other);
     entries.push({ operation, order: operation.orderWithinTimestamp });
   }
 

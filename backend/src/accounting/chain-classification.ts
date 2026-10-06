@@ -1,4 +1,5 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
+import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { RewardCategory } from './asset-reward-types';
 import { parseDecimal, parseUuid } from './input';
 import { formatAtoms } from './money';
@@ -11,10 +12,11 @@ import { type SettlementCurrency, settlementCurrencies } from './trade-settlemen
 // The raw row is never edited; a classification produces one journal entry in the wallet's
 // account, which then counts like any other operation.
 
-/** Types a chain transaction can be classified as here; transfers come with M13. */
+/** Types a chain transaction can be classified as; a transfer joins it with M13. */
 export const chainTypes = [
   'buy',
   'sell',
+  'transfer',
   'income',
   'expense',
   'gift',
@@ -22,18 +24,21 @@ export const chainTypes = [
   'reward',
   'staking-reward',
   'airdrop',
+  'other',
 ] as const;
 export type ChainType = (typeof chainTypes)[number];
 
 const incoming: readonly ChainType[] = [
   'buy',
+  'transfer',
   'income',
   'gift',
   'reward',
   'staking-reward',
   'airdrop',
+  'other',
 ];
-const outgoing: readonly ChainType[] = ['sell', 'expense', 'gift', 'fee'];
+const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee'];
 
 /** Buy or sell: what was paid or received, in the currency it was paid in. */
 export interface PricedClassification {
@@ -53,7 +58,21 @@ export interface RewardClassification {
   type: 'reward' | 'staking-reward' | 'airdrop';
   valueUsd: string | null;
 }
-export type Classification = PricedClassification | ValuedClassification | RewardClassification;
+/** A move between the owner's own accounts (M13): the account on the other side. */
+export interface TransferClassification {
+  type: 'transfer';
+  accountId: string;
+}
+/** Received, but nothing more is known: the coins count without a purchase price. */
+export interface OtherClassification {
+  type: 'other';
+}
+export type Classification =
+  | PricedClassification
+  | ValuedClassification
+  | RewardClassification
+  | TransferClassification
+  | OtherClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -93,6 +112,10 @@ function classification(raw: unknown): Classification | null {
       ...(row.perUsd === undefined ? {} : { perUsd: parseDecimal(row.perUsd, true) }),
     };
   }
+  if (type === 'transfer') {
+    const row = object(raw, ['type', 'accountId']);
+    return { type, accountId: parseUuid(row.accountId) };
+  }
   if (type === 'income' || type === 'expense' || type === 'gift' || type === 'fee') {
     const row = object(raw, ['type', 'valueUsd']);
     return { type, valueUsd: parseDecimal(row.valueUsd, true) };
@@ -103,6 +126,10 @@ function classification(raw: unknown): Classification | null {
       type,
       valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
     };
+  }
+  if (type === 'other') {
+    object(raw, ['type']);
+    return { type };
   }
   return bad();
 }
@@ -138,29 +165,41 @@ export function classificationPayload(
   });
 }
 
-/** One stored chain transaction of a wallet address, raw as the provider sent it. */
+/** One stored chain transaction leg of a wallet address, raw as the provider sent it. */
 export interface ChainLeg {
-  network: 'bitcoin';
+  network: Network;
+  /** The token the leg moves (M14), or null for the network's own coin. */
+  asset: string | null;
   blockTime: string;
   receivedUnits: string;
   sentUnits: string;
 }
 
-const SAT_TO_ATOMS = 10n ** 22n;
+/** Whether the type fits what the coins did: what arrives cannot be sold, and so on. */
+export function fitsDirection(leg: ChainLeg, type: ChainType): boolean {
+  const { inbound, quantity } = legMovement(leg);
+  return quantity !== '0' && (inbound ? incoming : outgoing).includes(type);
+}
 
-/** The coin and amount the leg moves: what arrived, or what left with the network fee. */
+/** The amount the leg moves in its asset: what arrived, or what left with the network fee. */
 export function legMovement(leg: ChainLeg): { inbound: boolean; quantity: string } {
   const net = BigInt(leg.receivedUnits) - BigInt(leg.sentUnits);
   const magnitude = net < 0n ? -net : net;
-  return { inbound: net > 0n, quantity: formatAtoms(magnitude * SAT_TO_ATOMS) };
+  const atoms = unitsToAtoms(magnitude, chainAsset(leg.network, leg.asset));
+  return { inbound: net > 0n, quantity: formatAtoms(atoms) };
 }
 
-export const chainCoins: Record<
-  ChainLeg['network'],
-  { assetType: 'crypto'; symbol: string; name: string }
-> = { bitcoin: { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' } };
+/** The portfolio asset a leg moves: BTC, ETH, or the USDT or USDC token. */
+export function chainCoin(leg: Pick<ChainLeg, 'network' | 'asset'>): {
+  assetType: 'crypto';
+  symbol: string;
+  name: string;
+} {
+  const { symbol, name } = chainAsset(leg.network, leg.asset);
+  return { assetType: 'crypto', symbol, name };
+}
 
-const unfit = () =>
+export const unfit = () =>
   new UnprocessableEntityException('This type does not fit the direction of the transaction');
 
 /** The journal entry a classification produces, before the journal pins are known. */
@@ -182,8 +221,9 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
 /**
  * The entry for the whole amount the leg moved, at the block time. A buy or sale settles in
  * the account's cash like one added by hand (PR-OPS-9); income, expense, gift and fee carry
- * their value; a reward's value is also its cost basis. Network fees stay inside the amount
- * until M13 records them as a Fee.
+ * their value; a reward's value is also its cost basis. Other adds the coins with an unknown
+ * cost and no deposit, like a reward nobody valued. The network fee stays inside the amount;
+ * only a transfer (chain-transfer.ts) records it apart.
  */
 export function planOperation(
   leg: ChainLeg,
@@ -191,7 +231,8 @@ export function planOperation(
   comment: string | undefined,
 ): PlannedOperation {
   const { inbound, quantity } = legMovement(leg);
-  if (quantity === '0' || !(inbound ? incoming : outgoing).includes(value.type)) throw unfit();
+  if (!fitsDirection(leg, value.type)) throw unfit();
+  if (value.type === 'transfer') throw new Error('A transfer records an owned transfer instead');
   const common = { occurredAt: leg.blockTime, quantity };
   const note = comment === undefined ? {} : { comment };
   switch (value.type) {
@@ -236,6 +277,17 @@ export function planOperation(
         },
       };
     }
+    case 'other':
+      return {
+        journal: 'reward',
+        fields: {
+          ...common,
+          assertReward: true,
+          category: 'unclassified',
+          acquisitionBasisUsd: null,
+          incomeValueUsd: null,
+        },
+      };
     default:
       return {
         journal: 'reward',

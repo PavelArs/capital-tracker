@@ -62,6 +62,8 @@ const CHECKS = [
   { name: 'capital-flows-db', shard: 'probes-1' },
   { name: 'manual-operations-db', shard: 'probes-2' },
   { name: 'chain-classification-db', shard: 'probes-1' },
+  { name: 'chain-transfers-db', shard: 'probes-1' },
+  { name: 'ethereum-wallets-db', shard: 'probes-1' },
   { name: 'owner-cli', shard: 'probes-1' }, // 25
   { name: 'sessions-db', shard: 'probes-1' }, // 34
   { name: 'mfa-db', shard: 'probes-2' }, // 42

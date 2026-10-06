@@ -17,6 +17,7 @@ export const typeLabels: Record<OperationType, string> = {
   expense: 'Expense',
   gift: 'Gift',
   fee: 'Fee',
+  other: 'Other',
 };
 const directionLabels: Record<Operation['direction'], string> = {
   in: 'Incoming',
@@ -35,7 +36,15 @@ export const statusLabels: Record<Operation['status'], string> = {
 };
 const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> = {
   bitcoin: 'Bitcoin',
+  ethereum: 'Ethereum',
 };
+
+/** "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO). */
+export function statusLabel(operation: Operation): string {
+  return operation.classification?.automatic && operation.status === 'recorded'
+    ? 'Auto: own wallets'
+    : statusLabels[operation.status];
+}
 
 /** "Buy", or "Incoming" for a blockchain transaction nobody has classified yet. */
 export function typeLabel(operation: Operation): string {
@@ -82,8 +91,21 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
   return networkNames[wallet.network];
 }
 
+/**
+ * The transaction hash as the network's explorers show it: Ethereum's with 0x. A token
+ * transfer's record adds its event index to the hash (M14), which is not part of it.
+ */
+export function transactionHash(operation: Operation): string | null {
+  if (!operation.chain) return null;
+  const [hash] = operation.chain.txid.split('-');
+  return operation.wallet?.network === 'ethereum' ? `0x${hash}` : hash;
+}
+
 /** Where the operation happened: an account, two for a transfer, or a wallet. */
 export function placeLabel(operation: Operation): string {
+  // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
+  if (operation.type === 'transfer' && operation.account && operation.counterAccount)
+    return `${operation.account.name} → ${operation.counterAccount.name}`;
   // A chain row of an address in a wallet shows the wallet, then the address's own name.
   if (operation.wallet && operation.account)
     return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;

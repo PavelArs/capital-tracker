@@ -17,10 +17,13 @@ import {
   moment,
   networkName,
   placeLabel,
+  shortAddress,
   signedAmount,
   sourceLabels,
+  statusLabel,
   statusLabels,
   ticker,
+  transactionHash,
   typeLabel,
 } from './operation-format';
 
@@ -70,30 +73,45 @@ function shown(
 function facts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
   const { wallet, chain } = operation;
+  const walletLink = (place: NonNullable<Operation['account']>) => (
+    <Link key={place.id} to={`/wallets/${place.id}`}>
+      {place.name}
+    </Link>
+  );
   if (wallet && chain) {
-    rows.push(
-      ['Network', networkName(wallet)],
-      [
+    // XFER-AUTO: a transfer names both wallets and, when it is one, the other address.
+    const moved =
+      operation.type === 'transfer' && operation.account && operation.counterAccount
+        ? { from: operation.account, to: operation.counterAccount }
+        : null;
+    rows.push(['Network', networkName(wallet)]);
+    if (moved) rows.push(['From', walletLink(moved.from)], ['To', walletLink(moved.to)]);
+    else
+      rows.push([
         'Wallet',
-        operation.account ? (
-          <Link key="wallet" to={`/wallets/${operation.account.id}`}>
-            {operation.account.name}
-          </Link>
-        ) : (
-          'Not in a wallet yet'
-        ),
-      ],
-      [
-        'Address',
-        <span key="wallet" className="transactions-mono">
-          {wallet.label ? `${wallet.label} · ` : ''}
-          {wallet.address}
+        operation.account ? walletLink(operation.account) : 'Not in a wallet yet',
+      ]);
+    rows.push([
+      'Address',
+      <span key="wallet" className="transactions-mono">
+        {wallet.label ? `${wallet.label} · ` : ''}
+        {wallet.address}
+      </span>,
+    ]);
+    const other = operation.counterWallet;
+    if (other)
+      rows.push([
+        moved ? 'Other address' : 'Your other address',
+        <span key="other" className="transactions-mono">
+          {other.label ? `${other.label} · ` : ''}
+          {moved ? other.address : shortAddress(other.address)}
         </span>,
-      ],
+      ]);
+    rows.push(
       [
         'Transaction',
         <span key="txid" className="transactions-mono">
-          {chain.txid}
+          {transactionHash(operation)}
         </span>,
       ],
       ['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)],
@@ -110,8 +128,9 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
             : 'No stored price',
       ],
     );
-    // CLS-BUY: what the owner answered, as the entry it produced reads.
-    if (operation.status === 'recorded') {
+    // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
+    // value of its own, only the network fee (XFER-CAPITAL).
+    if (operation.status === 'recorded' && !moved) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
       if (operation.paid)
         rows.push([
@@ -170,10 +189,7 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     ]);
     if (operation.kind === 'trade') rows.push(['Comment', operation.comment ?? 'None']);
   }
-  rows.push(
-    ['Status', statusLabels[operation.status]],
-    ['Source', sourceDetails[operation.source]],
-  );
+  rows.push(['Status', statusLabel(operation)], ['Source', sourceDetails[operation.source]]);
   return rows;
 }
 
@@ -416,6 +432,15 @@ export default function OperationDrawer({
         )}
         <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
       </div>
+      {operation.classification?.automatic &&
+        operation.status === 'recorded' &&
+        operation.counterAccount && (
+          <p className="transactions-notice" role="note">
+            Recognised automatically: both addresses belong to your wallets and{' '}
+            {operation.counterAccount.name} received the same amount minus the network fee. Counts
+            as a transfer, not a sale or a deposit.
+          </p>
+        )}
       <section aria-label="Details">
         <dl className="transactions-facts">
           {facts(operation, currency).map(([label, content]) => (

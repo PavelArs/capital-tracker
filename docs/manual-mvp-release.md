@@ -283,6 +283,9 @@ normalized logical schema/data dumps must match before migration. PostgreSQL re-
 `varchar` column `IN (...)` CHECK into a different but equivalent text, so each such
 constraint needs an exact reviewed pair in `scripts/normalize-release-snapshot.awk`; the
 `migrations` acceptance check (REL-RESTORE-001) fails when a migration adds one without it.
+The normalizer also emits each table's COPY rows in byte order, unchanged: a restored
+table need not keep the source's physical row order. Release 37503705425 stopped at this
+comparison on `portfolio_snapshots`, whose restored rows matched exactly but in another order.
 Production release 37301907294 stopped at this comparison, before migrating, on
 `owner_settings_mainCurrency_check` (migration 26). The encryption key
 is separate from the backup directory and independently generated from the MFA key.

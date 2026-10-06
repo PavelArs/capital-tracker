@@ -561,6 +561,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     account: { id: id(11), name: 'Hardware wallet' },
     counterAccount: null,
     wallet: null,
+    counterWallet: null,
     chain: null,
     status: 'recorded',
     source: 'manual',

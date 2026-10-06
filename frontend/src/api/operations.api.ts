@@ -17,7 +17,8 @@ export type OperationType =
   | 'income'
   | 'expense'
   | 'gift'
-  | 'fee';
+  | 'fee'
+  | 'other';
 
 export interface OperationAsset {
   instrumentId: string | null;
@@ -28,6 +29,13 @@ export interface OperationAsset {
 export interface OperationPlace {
   id: string;
   name: string;
+}
+
+export interface OperationWallet {
+  id: string;
+  network: 'bitcoin' | 'ethereum';
+  address: string;
+  label: string | null;
 }
 
 export interface Operation {
@@ -47,10 +55,22 @@ export interface Operation {
   feeUsd: string | null;
   fee: { asset: OperationAsset; quantity: string } | null;
   account: OperationPlace | null;
+  /**
+   * A transfer's other account; for a blockchain transaction to classify, the account of the
+   * owner's other address in it, as a suggestion (M13).
+   */
   counterAccount: OperationPlace | null;
   /** A blockchain row's address; its account is in `account` once the owner picked one (M10). */
-  wallet: { id: string; network: 'bitcoin'; address: string; label: string | null } | null;
-  chain: { txid: string; blockHeight: number; priceObservedAt: string | null } | null;
+  wallet: OperationWallet | null;
+  /** Blockchain only: the owner's other address in the same transaction (M13). */
+  counterWallet: OperationWallet | null;
+  /** `direction` is the address's own; a transfer between wallets is listed as internal. */
+  chain: {
+    txid: string;
+    blockHeight: number;
+    priceObservedAt: string | null;
+    direction: 'in' | 'out' | 'internal';
+  } | null;
   /** Hidden: a blockchain transaction left out of every calculation (M12). */
   status: 'recorded' | 'needs-classification' | 'hidden';
   source: 'manual' | 'csv' | 'chain';
@@ -60,6 +80,8 @@ export interface Operation {
     hidden: boolean;
     value: ChainClassification | null;
     comment: string | null;
+    /** A transfer the app recognised between the owner's own wallets (M13). */
+    automatic: boolean;
   } | null;
   version: number | null;
   /** Trades paid in RUB or EUR keep the amounts as paid. */
@@ -86,8 +108,10 @@ export interface OperationList {
   operations: Operation[];
 }
 
-/** What a blockchain transaction can be classified as (M12); transfers come with M13. */
+/** What a blockchain transaction can be classified as (M12, M13). */
 export type ChainClassification =
+  /** The other wallet of a transfer between the owner's own wallets. */
+  | { type: 'transfer'; accountId: string }
   | {
       type: 'buy' | 'sell';
       currency: 'USD' | 'USDT' | 'USDC' | 'EUR' | 'RUB';
@@ -96,7 +120,9 @@ export type ChainClassification =
       perUsd?: string;
     }
   | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
-  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null };
+  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null }
+  /** Received, nothing more known: counts without a purchase price and no deposit. */
+  | { type: 'other' };
 
 export interface ClassificationCommand {
   requestId: string;

@@ -38,6 +38,7 @@ const chain = (n: number, overrides: Partial<ChainOperationInput> = {}): ChainOp
   wallet,
   account: null,
   txid: txid(n),
+  asset: null,
   blockHeight: 800000 + n,
   blockTime: '2025-06-20T08:00:00.000Z',
   direction: 'in',
@@ -132,6 +133,7 @@ describe('list-all-operations projection', () => {
       account: bybit,
       counterAccount: null,
       wallet: null,
+      counterWallet: null,
       chain: null,
       status: 'recorded',
       source: 'manual',
@@ -183,7 +185,13 @@ describe('list-all-operations projection', () => {
       account: null,
       counterAccount: null,
       wallet,
-      chain: { txid: txid(1), blockHeight: 800001, priceObservedAt: '2026-10-04T11:00:00.000Z' },
+      counterWallet: null,
+      chain: {
+        txid: txid(1),
+        blockHeight: 800001,
+        priceObservedAt: '2026-10-04T11:00:00.000Z',
+        direction: 'in',
+      },
       status: 'needs-classification',
       source: 'chain',
       version: null,
@@ -196,6 +204,58 @@ describe('list-all-operations projection', () => {
       estimatedValue: '780.10005255',
       costBasis: null,
       feeValue: null,
+    });
+  });
+
+  it('ETH-IDENTITY: an Ethereum hash lists its ether fee and its USDC transfer apart (M14)', () => {
+    const ethereumWallet = {
+      id: id(21),
+      network: 'ethereum' as const,
+      address: `0x${'a1'.repeat(20)}`,
+      label: null,
+    };
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(3, {
+            wallet: ethereumWallet,
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '420000000000000',
+            feeUnits: '420000000000000',
+          }),
+          chain(3, {
+            wallet: ethereumWallet,
+            txid: `${txid(3)}-17`,
+            asset: 'USDC',
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '250000000',
+            feeUnits: '0',
+          }),
+        ],
+        marketPrices: new Map([
+          ['USDC', { priceUsd: '1', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+        ]),
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(2);
+    const [fee, usdc] = [...list.operations].sort((left, right) => left.id.localeCompare(right.id));
+    expect(fee).toMatchObject({
+      id: `chain:${id(21)}:${txid(3)}`,
+      asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+      quantity: '0.00042',
+      fee: { asset: { symbol: 'ETH' }, quantity: '0.00042' },
+      estimatedValueUsd: null,
+    });
+    expect(usdc).toMatchObject({
+      id: `chain:${id(21)}:${txid(3)}-17`,
+      asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin' },
+      quantity: '250',
+      fee: null,
+      estimatedValueUsd: '250',
+      chain: { txid: `${txid(3)}-17`, priceObservedAt: '2026-10-04T11:00:00.000Z' },
     });
   });
 
@@ -578,6 +638,7 @@ describe('list-all-operations projection', () => {
         hidden: false,
         value: { type: 'buy', currency: 'USDT', amount: '1000' },
         comment: 'From the exchange',
+        automatic: false,
       },
     });
   });
@@ -631,6 +692,101 @@ describe('list-all-operations projection', () => {
     );
     expect(list.needsClassificationCount).toBe(1);
     expect(list.operations[0]).toMatchObject({ type: null, status: 'needs-classification' });
+  });
+
+  // XFER-AUTO: wallet A sends 0.5 BTC to the owner's wallet B with a 0.0001 BTC fee.
+  const walletB = { ...wallet, id: id(21), address: 'bc1qsyntheticwalletaddressb00000000000000' };
+  const sending = (classification: ChainOperationInput['classification']) =>
+    chain(3, {
+      account: bybit,
+      direction: 'out',
+      receivedUnits: '0',
+      sentUnits: '50010000',
+      feeUnits: '10000',
+      classification,
+    });
+  const receiving = (classification: ChainOperationInput['classification']) =>
+    chain(3, {
+      wallet: walletB,
+      account: trust,
+      receivedUnits: '50000000',
+      feeUnits: '10000',
+      classification,
+    });
+  const transferId = id(60);
+  const linked = (linkedAddressId: string) => ({
+    version: 1,
+    status: 'classified' as const,
+    type: 'transfer' as const,
+    details: {
+      type: 'transfer' as const,
+      accountId: linkedAddressId === walletB.id ? trust.id : bybit.id,
+    },
+    comment: null,
+    produced: { kind: 'transfer' as const, id: transferId },
+    linkedAddressId,
+    automatic: true,
+  });
+
+  it('XFER-AUTO: a linked pair is one transfer A → B with the fee, listed once', () => {
+    const list = projectOperations(
+      now,
+      sources({
+        transfers: [
+          {
+            transferId,
+            version: 1,
+            from: bybit,
+            to: trust,
+            asset: btc,
+            occurredAt: '2025-06-20T08:00:00.000Z',
+            orderWithinTimestamp: 1,
+            quantity: '0.5',
+            fee: { asset: btc, quantity: '0.0001' },
+          },
+        ],
+        chain: [sending(linked(walletB.id)), receiving(linked(wallet.id))],
+        marketPrices: new Map([
+          ['BTC', { priceUsd: '60000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+        ]),
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(0);
+    expect(list.operations.map((operation) => operation.id)).toEqual([
+      `chain:${wallet.id}:${txid(3)}`,
+    ]);
+    expect(list.operations[0]).toMatchObject({
+      kind: 'chain',
+      type: 'transfer',
+      direction: 'internal',
+      status: 'recorded',
+      quantity: '0.5',
+      estimatedValueUsd: '30000',
+      fee: { asset: btc, quantity: '0.0001' },
+      account: bybit,
+      counterAccount: trust,
+      wallet,
+      counterWallet: walletB,
+      chain: { direction: 'out' },
+      classification: { automatic: true, value: { type: 'transfer', accountId: trust.id } },
+    });
+  });
+
+  it('XFER-UNKNOWN: a send with no own address on the other side stays to classify', () => {
+    const list = projectOperations(now, sources({ chain: [sending(null)] }));
+    expect(list.needsClassificationCount).toBe(1);
+    expect(list.operations[0]).toMatchObject({
+      status: 'needs-classification',
+      counterAccount: null,
+      counterWallet: null,
+    });
+  });
+
+  it('XFER-AUTO: an unanswered pair suggests the other wallet and its account', () => {
+    const list = projectOperations(now, sources({ chain: [sending(null), receiving(null)] }));
+    expect(list.needsClassificationCount).toBe(2);
+    const sent = list.operations.find((operation) => operation.wallet?.id === wallet.id);
+    expect(sent).toMatchObject({ counterAccount: trust, counterWallet: walletB });
   });
 
   it('OPS-EMPTY: no operations is an empty list', () => {

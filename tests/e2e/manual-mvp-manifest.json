@@ -114,5 +114,9 @@
   {
     "file": "tests/e2e/chain-classification.spec.ts",
     "title": "CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, and both survive a resync"
+  },
+  {
+    "file": "tests/e2e/chain-transfers.spec.ts",
+    "title": "XFER-UI: a send between two own wallets is one automatic transfer, and a send to the exchange is linked by hand"
   }
 ]

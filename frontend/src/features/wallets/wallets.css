@@ -512,3 +512,9 @@ button.wallets-source__open:focus-visible {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* On a phone a wallet holding several assets lists one per line above its value. */
+.wallets-stack {
+  display: grid;
+  justify-items: end;
+}

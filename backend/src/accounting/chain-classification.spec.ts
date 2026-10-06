@@ -1,7 +1,9 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
 import {
   type ChainLeg,
+  chainCoin,
   classificationPayload,
+  fitsDirection,
   legMovement,
   parseClassification,
   planOperation,
@@ -11,6 +13,7 @@ import {
 const requestId = '00000000-0000-4000-8000-000000000001';
 const receipt: ChainLeg = {
   network: 'bitcoin',
+  asset: null,
   blockTime: '2025-06-20T08:00:00.000Z',
   receivedUnits: '918359',
   sentUnits: '0',
@@ -69,6 +72,24 @@ describe('classify-chain-transactions input and plan', () => {
     );
   });
 
+  it('ETH-IDENTITY: an Ethereum leg moves its own asset at its own precision (M14)', () => {
+    const ethereum = { ...receipt, network: 'ethereum' as const };
+    expect(legMovement({ ...ethereum, receivedUnits: '1500000000000000000' })).toEqual({
+      inbound: true,
+      quantity: '1.5',
+    });
+    expect(
+      legMovement({ ...ethereum, asset: 'USDC', receivedUnits: '0', sentUnits: '250000001' }),
+    ).toEqual({ inbound: false, quantity: '250.000001' });
+    expect(chainCoin({ network: 'ethereum', asset: 'USDT' })).toEqual({
+      assetType: 'crypto',
+      symbol: 'USDT',
+      name: 'Tether',
+    });
+    expect(chainCoin(receipt)).toEqual({ assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' });
+    expect(() => legMovement({ ...ethereum, asset: 'DAI' })).toThrow('Unknown chain asset');
+  });
+
   it('income, gift and rewards carry their value; a reward may have none', () => {
     expect(planOperation(receipt, { type: 'income', valueUsd: '700' }, 'Salary').fields).toEqual({
       occurredAt: receipt.blockTime,
@@ -95,6 +116,26 @@ describe('classify-chain-transactions input and plan', () => {
     ).toMatchObject({ category: 'staking', acquisitionBasisUsd: '5', incomeValueUsd: '5' });
   });
 
+  it('CLS-OTHER: a receipt nobody can name counts without a purchase price and no deposit', () => {
+    const input = parse({ classification: { type: 'other' }, comment: 'Found on an old card' });
+    expect(input.classification).toEqual({ type: 'other' });
+    expect(planOperation(receipt, input.classification!, input.comment)).toEqual({
+      journal: 'reward',
+      fields: {
+        occurredAt: receipt.blockTime,
+        quantity: '0.00918359',
+        assertReward: true,
+        category: 'unclassified',
+        acquisitionBasisUsd: null,
+        incomeValueUsd: null,
+      },
+    });
+    // What left an address is spent, sold or given: Other only fits what arrived.
+    expect(() => planOperation(payment, { type: 'other' }, undefined)).toThrow(
+      UnprocessableEntityException,
+    );
+  });
+
   it('a type must fit the direction: nothing is guessed', () => {
     const misfit = (leg: ChainLeg, type: string) =>
       expect(() =>
@@ -115,6 +156,22 @@ describe('classify-chain-transactions input and plan', () => {
     expect(() => planOperation(nothing, { type: 'income', valueUsd: '1' }, undefined)).toThrow(
       UnprocessableEntityException,
     );
+  });
+
+  it('XFER-MANUAL: a transfer names the other account and fits either direction', () => {
+    const accountId = '00000000-0000-4000-8000-000000000010';
+    const value = parse({ classification: { type: 'transfer', accountId } }).classification!;
+    expect(value).toEqual({ type: 'transfer', accountId });
+    expect(fitsDirection(receipt, 'transfer')).toBe(true);
+    expect(fitsDirection(payment, 'transfer')).toBe(true);
+    expect(fitsDirection(receipt, 'sell')).toBe(false);
+    expect(() => planOperation(receipt, value, undefined)).toThrow(
+      'A transfer records an owned transfer instead',
+    );
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'transfer', accountId: 'bybit' });
+    refused({ type: 'transfer', accountId, valueUsd: '1' });
   });
 
   it('CLS-HIDE: hiding or resetting needs no type; the answer is kept while hidden', () => {
@@ -150,6 +207,7 @@ describe('classify-chain-transactions input and plan', () => {
     refused(body({ type: 'income', valueUsd: '0' }));
     refused(body({ type: 'income', valueUsd: null }));
     refused(body({ type: 'income', valueUsd: '1', currency: 'USD' }));
+    refused(body({ type: 'other', valueUsd: '1' }));
     refused({ ...body(null), comment: 'x'.repeat(501) });
   });
 

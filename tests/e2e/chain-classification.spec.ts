@@ -100,12 +100,14 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   const drawer = page.getByRole('dialog', { name: 'Incoming transaction · BTC' });
   const question = drawer.getByRole('group', { name: 'What was this transaction?' });
   await expect(question.getByRole('button')).toHaveText([
+    'Transfer between my wallets',
     'Buy',
     'Income',
     'Reward',
     'Staking reward',
     'Airdrop',
     'Gift received',
+    'Other',
   ]);
   await expect(drawer.getByText(`${before - 1} left to classify`)).toBeVisible();
   await expect(drawer.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -124,7 +126,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   await expect(next.getByRole('status')).toHaveText('Saved as Buy. Here is the next one.');
   await expect(
     next.getByRole('group', { name: 'What was this transaction?' }).getByRole('button'),
-  ).toHaveText(['Sell', 'Expense', 'Gift sent', 'Fee']);
+  ).toHaveText(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee']);
   await expect(nav.getByLabel(`${before - 1} to classify`, { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('classify-next-1440-dark.png') });
 

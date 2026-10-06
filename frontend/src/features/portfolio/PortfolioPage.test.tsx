@@ -893,6 +893,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     account: { id: id(101), name: 'Trust Wallet' },
     counterAccount: null,
     wallet: null,
+    counterWallet: null,
     chain: null,
     status: 'recorded',
     source: 'manual',

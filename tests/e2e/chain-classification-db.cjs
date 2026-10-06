@@ -46,6 +46,7 @@ function services(db) {
       'ChainClassificationService',
       trades,
       rewards,
+      make('owned-transfer.service', 'OwnedTransferService'),
     ),
   };
 }
@@ -228,7 +229,13 @@ async function hide(db, s, f, { address }) {
   assert.equal(await count(s, owner), 0);
   const row = await listed(s, owner, 4);
   assert.deepEqual([row.status, row.type, row.comment], ['hidden', null, 'Dust']);
-  assert.deepEqual(row.classification, { version: 1, hidden: true, value: null, comment: 'Dust' });
+  assert.deepEqual(row.classification, {
+    version: 1,
+    hidden: true,
+    value: null,
+    comment: 'Dust',
+    automatic: false,
+  });
 
   stage = 'CLS-HIDE hiding a classified receipt voids its entry; including restores it';
   const income = await classify(s, owner, address, 4, {
@@ -257,6 +264,42 @@ async function hide(db, s, f, { address }) {
   assert.notEqual(back.value.operation.id, rewardId);
   assert.equal((await listed(s, owner, 4)).type, 'reward');
   console.log('PASS CLS-HIDE');
+
+  stage = 'CLS-OTHER a receipt nobody can name counts without a purchase price or a deposit';
+  const other = await classify(s, owner, address, 4, {
+    expectedVersion: 4,
+    classification: { type: 'other' },
+    comment: 'Unknown origin',
+  });
+  assert.equal(other.value.operation.kind, 'reward');
+  const [entry] = await db.query(
+    `SELECT v.kind, v.category, v."acquisitionBasisUsd", v."incomeValueUsd"
+      FROM account_rewards r JOIN account_reward_versions v ON v."rewardId"=r.id
+        AND v.version=r."currentVersion" WHERE r.id=$1`,
+    [other.value.operation.id],
+  );
+  assert.deepEqual(entry, {
+    kind: 'create',
+    category: 'unclassified',
+    acquisitionBasisUsd: null,
+    incomeValueUsd: null,
+  });
+  const otherRow = await listed(s, owner, 4);
+  assert.deepEqual(
+    [otherRow.type, otherRow.status, otherRow.valueUsd, otherRow.costBasisUsd, otherRow.comment],
+    ['other', 'recorded', null, null, 'Unknown origin'],
+  );
+  assert.deepEqual(otherRow.classification.value, { type: 'other' });
+  assert.equal(await count(s, owner), 0);
+  await rejected(
+    () =>
+      classify(s, owner, address, 3, {
+        expectedVersion: 0,
+        classification: { type: 'other' },
+      }),
+    422,
+  );
+  console.log('PASS CLS-OTHER');
 }
 
 async function reclassify(db, s, f, { trust, address }) {
@@ -350,7 +393,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 33);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 35);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('classification-owner@example.invalid','synthetic-not-a-hash',true),
       ('classification-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);

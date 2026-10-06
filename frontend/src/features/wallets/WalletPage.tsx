@@ -15,7 +15,7 @@ import RenameWalletDialog from './RenameWalletDialog';
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
 import { AddressRow, holdingsOf, ReconcileNote, subtitle } from './WalletParts';
-import { isBitcoin, reconcile } from './wallets';
+import { pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -30,7 +30,9 @@ export function accountOperations(operations: readonly Operation[], accountId: s
   return operations
     .filter(
       (operation) =>
-        operation.account?.id === accountId || operation.counterAccount?.id === accountId,
+        operation.account?.id === accountId ||
+        // A blockchain row to classify only suggests its other side (M13).
+        (operation.type === 'transfer' && operation.counterAccount?.id === accountId),
     )
     .sort(
       (left, right) =>
@@ -121,7 +123,7 @@ function WalletTransactions({
                   )}
                   <span className="portfolio-sub">
                     {day(operation.occurredAt)}
-                    {operation.counterAccount
+                    {operation.type === 'transfer' && operation.counterAccount
                       ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
                       : ''}
                   </span>
@@ -182,7 +184,7 @@ export default function WalletPage() {
   const list = addresses ?? [];
   const own = list.filter((address) => address.accountId === accountId);
   const currency = portfolio?.currency ?? 'USD';
-  const btcPrice = portfolio?.assets.find(isBitcoin)?.price?.value ?? null;
+  const prices = pricesOf(portfolio);
   const holdings = portfolio ? holdingsOf(portfolio, accountId) : [];
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
@@ -288,7 +290,7 @@ export default function WalletPage() {
                     address={address}
                     run={runs[address.id]}
                     narrow={narrow}
-                    btcPrice={btcPrice}
+                    prices={prices}
                     currency={currency}
                     onOpen={() => setOpenId(address.id)}
                     onSync={() => void sync(address.id)}
@@ -349,7 +351,7 @@ export default function WalletPage() {
               <p className="wallets-soft">
                 {account.name} is tracked by hand: balances come from the transactions you add.{' '}
                 <button type="button" className="portfolio-link" onClick={() => setAdding(true)}>
-                  Add a Bitcoin address
+                  Add a wallet address
                 </button>{' '}
                 to compare them with the blockchain.
               </p>
@@ -393,7 +395,7 @@ export default function WalletPage() {
           address={open}
           accounts={accounts}
           currency={currency}
-          btcPrice={btcPrice}
+          prices={prices}
           run={runs[open.id]}
           onSync={() => void sync(open.id)}
           onSaved={(address, newAccount) => {
