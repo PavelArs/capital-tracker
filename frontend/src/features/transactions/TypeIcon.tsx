@@ -65,7 +65,6 @@ function glyph(operation: Operation): Glyph {
       return 'opening';
     case 'deposit':
     case 'income':
-    case 'other':
       return 'in';
     case 'withdrawal':
     case 'expense':
@@ -73,6 +72,7 @@ function glyph(operation: Operation): Glyph {
     case 'gift':
     case 'fee':
       return operation.type;
+    // Other: just the direction the coins went.
     default:
       return operation.direction === 'internal' ? 'move' : operation.direction;
   }

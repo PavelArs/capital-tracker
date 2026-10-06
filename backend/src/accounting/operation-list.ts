@@ -396,6 +396,9 @@ function chainOperation(
     orderWithinTimestamp: 0,
   };
   if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
+  // An outgoing Other records no entry: the coins left with no sale price (D1).
+  if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
+    return { ...operation, type: 'other', status: 'recorded' };
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
   // elsewhere leaves the transaction to classify again, with the other side to suggest.
   if (answer?.status !== 'classified' || !answer.type || !produced)

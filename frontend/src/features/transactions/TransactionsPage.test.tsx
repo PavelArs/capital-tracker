@@ -904,7 +904,7 @@ describe('classify-chain-transactions (M12)', () => {
       within(within(next).getByRole('group', { name: 'What was this transaction?' }))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee']);
+    ).toEqual(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee', 'Other']);
     expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
     // The classified row reads as the buy it recorded.
     expect(cellTexts(bodyRows()[0])).toEqual([
@@ -959,6 +959,21 @@ describe('classify-chain-transactions (M12)', () => {
       classification: { type: 'other' },
       comment: 'Unknown origin',
     });
+  });
+
+  it('CLS-OTHER: a payment nobody can name leaves the balance without a withdrawal', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([nextOne]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Other' }));
+    expect(
+      within(drawer).getByText(
+        'The amount leaves your balance without a sale price and is not a withdrawal. Add a comment so you remember what it was.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'other' });
   });
 
   it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {

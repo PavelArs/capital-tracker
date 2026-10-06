@@ -22,6 +22,13 @@ const payment: ChainLeg = { ...receipt, receivedUnits: '5700', sentUnits: '66000
 const parse = (body: Record<string, unknown>) =>
   parseClassification({ requestId, expectedVersion: 0, hidden: false, ...body });
 
+/** The entry a classification produces; every type but an outgoing Other has one. */
+const plan = (...args: Parameters<typeof planOperation>) => {
+  const planned = planOperation(...args);
+  if (planned.journal === 'none') throw new Error('No entry planned');
+  return planned;
+};
+
 describe('classify-chain-transactions input and plan', () => {
   it('CLS-BUY: a receipt bought for 1000 USDT is a buy of the whole amount settled in USDT', () => {
     const input = parse({
@@ -53,23 +60,29 @@ describe('classify-chain-transactions input and plan', () => {
     const value = parse({
       classification: { type: 'buy', currency: 'RUB', amount: '83000', perUsd: '79' },
     }).classification!;
-    expect(planOperation(receipt, value, undefined).fields).toMatchObject({
+    expect(plan(receipt, value, undefined).fields).toMatchObject({
       paid: { currency: 'RUB', gross: '83000', fee: '0', perUsd: '79' },
       settlementCurrency: 'RUB',
     });
-    expect(planOperation(receipt, value, undefined).fields).not.toHaveProperty('grossUsd');
+    expect(plan(receipt, value, undefined).fields).not.toHaveProperty('grossUsd');
   });
 
   it('a payment moves what left the address, the network fee included', () => {
     expect(legMovement(payment)).toEqual({ inbound: false, quantity: '0.000603' });
-    const sale = planOperation(payment, { type: 'sell', currency: 'USD', amount: '50' }, undefined);
+    const sale = plan(payment, { type: 'sell', currency: 'USD', amount: '50' }, undefined);
     expect(sale.fields).toMatchObject({ side: 'sell', quantity: '0.000603', grossUsd: '50' });
-    expect(
-      planOperation(payment, { type: 'gift', valueUsd: '40' }, undefined).fields,
-    ).toMatchObject({ side: 'sell', purpose: 'gift-sent', grossUsd: '40', feeUsd: '0' });
-    expect(planOperation(payment, { type: 'fee', valueUsd: '40' }, undefined).fields).toMatchObject(
-      { side: 'sell', purpose: 'fee', grossUsd: '40', feeUsd: '40' },
-    );
+    expect(plan(payment, { type: 'gift', valueUsd: '40' }, undefined).fields).toMatchObject({
+      side: 'sell',
+      purpose: 'gift-sent',
+      grossUsd: '40',
+      feeUsd: '0',
+    });
+    expect(plan(payment, { type: 'fee', valueUsd: '40' }, undefined).fields).toMatchObject({
+      side: 'sell',
+      purpose: 'fee',
+      grossUsd: '40',
+      feeUsd: '40',
+    });
   });
 
   it('ETH-IDENTITY: an Ethereum leg moves its own asset at its own precision (M14)', () => {
@@ -107,7 +120,7 @@ describe('classify-chain-transactions input and plan', () => {
   });
 
   it('income, gift and rewards carry their value; a reward may have none', () => {
-    expect(planOperation(receipt, { type: 'income', valueUsd: '700' }, 'Salary').fields).toEqual({
+    expect(plan(receipt, { type: 'income', valueUsd: '700' }, 'Salary').fields).toEqual({
       occurredAt: receipt.blockTime,
       quantity: '0.00918359',
       side: 'buy',
@@ -116,10 +129,10 @@ describe('classify-chain-transactions input and plan', () => {
       purpose: 'income',
       comment: 'Salary',
     });
-    expect(
-      planOperation(receipt, { type: 'gift', valueUsd: '700' }, undefined).fields,
-    ).toMatchObject({ purpose: 'gift-received' });
-    expect(planOperation(receipt, { type: 'airdrop', valueUsd: null }, 'Ignored').fields).toEqual({
+    expect(plan(receipt, { type: 'gift', valueUsd: '700' }, undefined).fields).toMatchObject({
+      purpose: 'gift-received',
+    });
+    expect(plan(receipt, { type: 'airdrop', valueUsd: null }, 'Ignored').fields).toEqual({
       occurredAt: receipt.blockTime,
       quantity: '0.00918359',
       assertReward: true,
@@ -128,7 +141,7 @@ describe('classify-chain-transactions input and plan', () => {
       incomeValueUsd: null,
     });
     expect(
-      planOperation(receipt, { type: 'staking-reward', valueUsd: '5' }, undefined).fields,
+      plan(receipt, { type: 'staking-reward', valueUsd: '5' }, undefined).fields,
     ).toMatchObject({ category: 'staking', acquisitionBasisUsd: '5', incomeValueUsd: '5' });
   });
 
@@ -146,20 +159,14 @@ describe('classify-chain-transactions input and plan', () => {
         incomeValueUsd: null,
       },
     });
-    // What left an address is spent, sold or given: Other only fits what arrived.
-    expect(() => planOperation(payment, { type: 'other' }, undefined)).toThrow(
-      UnprocessableEntityException,
-    );
+    // What left without a name produces no entry: it leaves as an unanswered payment does.
+    expect(planOperation(payment, { type: 'other' }, undefined)).toEqual({ journal: 'none' });
   });
 
   it('a type must fit the direction: nothing is guessed', () => {
     const misfit = (leg: ChainLeg, type: string) =>
       expect(() =>
-        planOperation(
-          leg,
-          parse({ classification: { type, valueUsd: '1' } }).classification!,
-          undefined,
-        ),
+        plan(leg, parse({ classification: { type, valueUsd: '1' } }).classification!, undefined),
       ).toThrow(UnprocessableEntityException);
     misfit(receipt, 'expense');
     misfit(receipt, 'fee');

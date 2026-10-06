@@ -9,6 +9,8 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { PriceSource } from './asset-classification';
+import type { Network } from '../wallet-addresses/chain-assets';
+import { chainCoin, legMovement } from './chain-classification';
 import {
   type ConnectedLedger,
   type ConnectedLedgerCache,
@@ -27,6 +29,8 @@ import {
   projectPortfolio,
   type StoredPrice,
 } from './portfolio-valuation';
+import { applyChainMoves, type ChainMove } from './provisional-chain';
+import { findOrCreateInstrument } from './trade.service';
 
 export interface AccountRow {
   accountId: string;
@@ -89,6 +93,79 @@ export interface ValuationInputs {
   instruments: PortfolioInstrument[];
   accounts: AccountRow[];
   ledgers: ConnectedLedgerCache;
+  /** D1: each account's unanswered chain movements and outgoing "Other" answers. */
+  chainMoves: ReadonlyMap<string, readonly ChainMove[]>;
+}
+
+interface ChainMoveRow {
+  accountId: string;
+  network: Network;
+  asset: string | null;
+  blockTime: Date;
+  receivedUnits: string;
+  sentUnits: string;
+}
+
+/**
+ * D1, CLS-PROVISIONAL: the chain movements that count before anyone answers them. Hidden ones
+ * and answers that produced an entry are out; an outgoing "Other" produced none and stays in.
+ * A coin the owner has no asset for yet is left out until one exists.
+ */
+export async function readChainMoves(
+  manager: EntityManager,
+  owner: string,
+): Promise<Map<string, ChainMove[]>> {
+  const rows: ChainMoveRow[] = await manager.query(
+    `SELECT w."accountId", w.network, t.asset, t."blockTime",
+        t."receivedUnits"::text AS "receivedUnits",
+        t."sentUnits"::text AS "sentUnits"
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
+        AND h.txid=t.txid
+      LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+        AND (v.status IS NULL OR v.status='unclassified' OR (v.status='classified'
+          AND v.type='other' AND v."tradeId" IS NULL AND v."rewardId" IS NULL
+          AND v."transferId" IS NULL))
+      ORDER BY t."blockTime", t.txid, w.id`,
+    [owner],
+  );
+  const coins = new Map<string, string | null>();
+  const moves = new Map<string, ChainMove[]>();
+  for (const row of rows) {
+    const key = `${row.network}:${row.asset ?? ''}`;
+    if (!coins.has(key))
+      coins.set(
+        key,
+        (await findOrCreateInstrument(manager, owner, chainCoin(row), false))?.id ?? null,
+      );
+    const instrumentId = coins.get(key);
+    const occurredAt = row.blockTime.toISOString();
+    const { inbound, quantity } = legMovement({ ...row, blockTime: occurredAt });
+    if (!instrumentId || quantity === '0') continue;
+    const list = moves.get(row.accountId) ?? [];
+    list.push({ instrumentId, occurredAt, inbound, quantity });
+    moves.set(row.accountId, list);
+  }
+  return moves;
+}
+
+/**
+ * D1: creates the asset of every coin or token a wallet in an account moved, so its unanswered
+ * movements count. The caller holds the owner's accounting lock.
+ */
+export async function ensureChainCoins(manager: EntityManager, owner: string): Promise<void> {
+  const rows: { network: Network; asset: string | null }[] = await manager.query(
+    `SELECT DISTINCT w.network, t.asset
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+      ORDER BY w.network, t.asset`,
+    [owner],
+  );
+  for (const row of rows) await findOrCreateInstrument(manager, owner, chainCoin(row), true);
 }
 
 /**
@@ -124,7 +201,7 @@ export async function readValuationInputs(
   } catch (error) {
     rethrowAccountingHistory(error);
   }
-  return { instruments, accounts, ledgers };
+  return { instruments, accounts, ledgers, chainMoves: await readChainMoves(manager, owner) };
 }
 
 /**
@@ -143,6 +220,17 @@ export function accountsAt(
     for (const row of inputs.accounts) {
       const identity = { accountId: row.accountId, name: row.name };
       const ledger = inputs.ledgers.get(row.accountId);
+      const moves = inputs.chainMoves.get(row.accountId) ?? [];
+      // D1: a wallet account with no operation of its own holds what the chain moved.
+      if (!row.coverageFrom && moves.length > 0) {
+        accounts.push({
+          ...identity,
+          coverage: 'covered',
+          lots: applyChainMoves([], moves, at),
+          realizations: [],
+        });
+        continue;
+      }
       const started = !!row.coverageFrom && row.coverageFrom.toISOString() <= at;
       const empty =
         options.emptyBeforeCoverage &&
@@ -158,17 +246,16 @@ export function accountsAt(
       }
       const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
       projections.set(ledger, projection);
-      accounts.push(
-        portfolioAccount(
-          identity,
-          projection.accounts.get(row.accountId)!,
-          {
-            ...ledger.accounts.get(row.accountId)!,
-            linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
-          },
-          projection.swapAllocations,
-        ),
+      const valued = portfolioAccount(
+        identity,
+        projection.accounts.get(row.accountId)!,
+        {
+          ...ledger.accounts.get(row.accountId)!,
+          linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+        },
+        projection.swapAllocations,
       );
+      accounts.push({ ...valued, lots: applyChainMoves(valued.lots, moves, at) });
     }
   } catch (error) {
     rethrowAccountingHistory(error);
