@@ -199,7 +199,8 @@ export default function WalletAddresses() {
     let active = true;
     walletAddressesApi
       .list()
-      .then((items) => active && setAddresses(items))
+      // The legacy screen stays Bitcoin-only; Ethereum addresses live under Wallets (M14).
+      .then((items) => active && setAddresses(items.filter((item) => item.network === 'bitcoin')))
       .catch((error) => active && setListError(accountingError(error, 'загрузить адреса')));
     return () => {
       active = false;

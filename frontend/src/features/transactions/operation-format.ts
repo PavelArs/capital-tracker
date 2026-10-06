@@ -35,6 +35,7 @@ export const statusLabels: Record<Operation['status'], string> = {
 };
 const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> = {
   bitcoin: 'Bitcoin',
+  ethereum: 'Ethereum',
 };
 
 /** "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO). */
@@ -87,6 +88,16 @@ export function walletLabel(wallet: NonNullable<Operation['wallet']>): string {
 
 export function networkName(wallet: NonNullable<Operation['wallet']>): string {
   return networkNames[wallet.network];
+}
+
+/**
+ * The transaction hash as the network's explorers show it: Ethereum's with 0x. A token
+ * transfer's record adds its event index to the hash (M14), which is not part of it.
+ */
+export function transactionHash(operation: Operation): string | null {
+  if (!operation.chain) return null;
+  const [hash] = operation.chain.txid.split('-');
+  return operation.wallet?.network === 'ethereum' ? `0x${hash}` : hash;
 }
 
 /** Where the operation happened: an account, two for a transfer, or a wallet. */

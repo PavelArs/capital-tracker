@@ -21,6 +21,7 @@ import {
   statusLabel,
   statusLabels,
   ticker,
+  transactionHash,
   typeLabel,
   walletLabel,
 } from './operation-format';
@@ -81,6 +82,7 @@ function searchable(operation: Operation): string {
     operation.wallet?.address,
     operation.type === 'transfer' ? operation.counterWallet?.address : undefined,
     operation.chain?.txid,
+    transactionHash(operation),
   ]
     .filter(Boolean)
     .join(' ')

@@ -3,19 +3,32 @@ import type { SourceState } from './sync-status.api';
 
 export type SyncState = 'never' | 'partial' | 'complete';
 export type SyncOutcome = 'complete' | 'partial' | 'provider_error';
-export type ProviderFailure = 'rate_limited' | 'unavailable' | 'invalid_response';
+export type ProviderFailure =
+  | 'rate_limited'
+  | 'unavailable'
+  | 'invalid_response'
+  | 'not_configured';
+export type Network = 'bitcoin' | 'ethereum';
+
+/** One asset's balance on the chain, an exact decimal. */
+export interface ChainBalance {
+  symbol: string;
+  quantity: string;
+}
 
 export interface WalletAddress {
   id: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   /** The account (wallet) the address belongs to; null until the owner picks one. */
   accountId: string | null;
   label: string | null;
   createdAt: string;
   transactionCount: number;
-  /** BTC on the chain from the whole stored history; null until a sync completes. */
+  /** The network's own coin on the chain from the whole stored history; null until a sync completes. */
   chainBalance: string | null;
+  /** Every asset the wallet can hold (ETH, USDT, USDC on Ethereum); null until a sync completes. */
+  balances: ChainBalance[] | null;
   sync: {
     /** How much of the history is stored. */
     state: SyncState;
@@ -31,7 +44,7 @@ export interface WalletAddress {
 }
 
 export interface NewWalletAddress {
-  network: 'bitcoin';
+  network: Network;
   address: string;
   accountId?: string;
   label?: string;
@@ -54,6 +67,13 @@ export interface AddressTransaction {
   blockHeight: number;
   blockTime: string;
   direction: 'in' | 'out' | 'self';
+  /** The asset the leg moves; the fee is in the network's own coin. */
+  symbol: string;
+  received: string;
+  sent: string;
+  net: string;
+  fee: string;
+  /** The Bitcoin-only screen's names for the same amounts. */
   receivedBtc: string;
   sentBtc: string;
   netBtc: string;

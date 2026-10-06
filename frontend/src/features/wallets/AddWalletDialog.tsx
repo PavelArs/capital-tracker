@@ -4,12 +4,15 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
-import { accountNamed, checkBitcoinAddress } from './wallets';
+import { networks as tracked } from './networks';
+import { accountNamed, checkAddress } from './wallets';
 
 export interface WalletAccount {
   accountId: string;
   name: string;
 }
+
+type Network = WalletAddress['network'];
 
 const networks = [
   {
@@ -18,21 +21,21 @@ const networks = [
     name: 'Bitcoin',
     detail: 'One public address. Account keys (xpub, zpub) come later',
   },
-  { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'Coming soon' },
+  { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH, USDT and USDC' },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'Coming soon' },
   { key: 'bybit', symbol: null, name: 'Bybit', detail: 'Read-only API key. Coming soon' },
 ] as const;
 const MAX_LABEL = 40;
-const DEFAULT_WALLET = 'Bitcoin wallet';
+const isTracked = (key: string): key is Network => key in tracked;
 // Tab order inside the modal: every enabled control.
 const focusable = 'button:not([disabled]), input:not([disabled])';
 
-function failure(error: unknown): string {
+function failure(error: unknown, network: Network): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   if (status === undefined)
     return 'Could not reach the server. Try again; the same request will not add the wallet twice.';
   if (status === 400)
-    return 'This is not a valid Bitcoin address. Check that it was copied in full.';
+    return `This is not a valid ${tracked[network].name} address. Check that it was copied in full.`;
   if (status === 404) return 'That wallet no longer exists. Close this window and reload the page.';
   if (status === 401) return 'Your session has ended. Sign in again.';
   return 'Could not add the wallet. Try again.';
@@ -59,7 +62,7 @@ export default function AddWalletDialog({
   wallet,
 }: Props) {
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [network, setNetwork] = useState<'bitcoin' | null>(null);
+  const [network, setNetwork] = useState<Network | null>(null);
   const [input, setInput] = useState('');
   const [tried, setTried] = useState(false);
   const [secretMessage, setSecretMessage] = useState<string | null>(null);
@@ -102,18 +105,21 @@ export default function AddWalletDialog({
       ?.focus();
   }, [step]);
 
-  const check = checkBitcoinAddress(input);
-  const existing = check.ok ? addresses.find((item) => item.address === check.address) : undefined;
+  const chosen = tracked[network ?? 'bitcoin'];
+  const check = checkAddress(network ?? 'bitcoin', input);
+  const existing = check.ok
+    ? addresses.find((item) => item.network === network && item.address === check.address)
+    : undefined;
   const existingWallet = existing?.accountId
     ? accounts.find((account) => account.accountId === existing.accountId)?.name
     : undefined;
   const showError = !check.ok && (tried || input.trim().length > 20);
-  const chosenName = walletName.trim() || DEFAULT_WALLET;
+  const chosenName = walletName.trim() || chosen.defaultWallet;
   const match = accountNamed(accounts, chosenName);
 
   const changeAddress = (value: string) => {
     // WAL-NO-SECRETS: a seed phrase or private key is dropped from the form at once.
-    const next = checkBitcoinAddress(value);
+    const next = checkAddress(network ?? 'bitcoin', value);
     if (!next.ok && next.secret) {
       setInput('');
       setSecretMessage(next.message);
@@ -139,7 +145,7 @@ export default function AddWalletDialog({
   };
 
   const save = async () => {
-    if (!check.ok) return;
+    if (!check.ok || !network) return;
     setSaving(true);
     setError(null);
     try {
@@ -155,14 +161,14 @@ export default function AddWalletDialog({
         ).id;
       }
       const result = await walletAddressesApi.add({
-        network: 'bitcoin',
+        network,
         address: check.address,
         accountId,
         ...(label.trim() ? { label: label.trim() } : {}),
       });
       onAdded(result.address, result.created);
     } catch (caught) {
-      setError(failure(caught));
+      setError(failure(caught, network));
       setSaving(false);
     }
   };
@@ -197,8 +203,8 @@ export default function AddWalletDialog({
                       type="button"
                       className="wallets-network"
                       aria-pressed={network === item.key}
-                      disabled={item.key !== 'bitcoin'}
-                      onClick={() => setNetwork('bitcoin')}
+                      disabled={!isTracked(item.key)}
+                      onClick={() => isTracked(item.key) && setNetwork(item.key)}
                     >
                       <AssetIcon
                         symbol={item.symbol}
@@ -220,14 +226,14 @@ export default function AddWalletDialog({
               <>
                 <div className="portfolio-field">
                   <label className="portfolio-field__label" htmlFor="wallet-address">
-                    Bitcoin wallet address
+                    {chosen.name} wallet address
                   </label>
                   <input
                     id="wallet-address"
                     className="portfolio-input wallets-mono"
                     autoComplete="off"
                     spellCheck={false}
-                    placeholder="bc1q…, 1… or 3…"
+                    placeholder={chosen.placeholder}
                     value={input}
                     aria-invalid={showError || existing ? true : undefined}
                     aria-describedby="wallet-address-help"
@@ -261,11 +267,18 @@ export default function AddWalletDialog({
                     )}
                   </span>
                 </div>
-                <p className="wallets-note">
-                  Hardware wallets like Trezor use a new address for every deposit. Tracking all of
-                  them through the account public key comes later; until then add each address you
-                  received coins on.
-                </p>
+                {network === 'ethereum' ? (
+                  <p className="wallets-note">
+                    One Ethereum address holds ETH and tokens. The app tracks ETH, USDT and USDC on
+                    Ethereum mainnet; other tokens and networks such as Arbitrum are not read.
+                  </p>
+                ) : (
+                  <p className="wallets-note">
+                    Hardware wallets like Trezor use a new address for every deposit. Tracking all
+                    of them through the account public key comes later; until then add each address
+                    you received coins on.
+                  </p>
+                )}
               </>
             )}
             {step === 3 && check.ok && (
@@ -278,7 +291,7 @@ export default function AddWalletDialog({
                     id="wallet-name"
                     className="portfolio-input"
                     maxLength={120}
-                    placeholder={DEFAULT_WALLET}
+                    placeholder={chosen.defaultWallet}
                     value={walletName}
                     onChange={(event) => setWalletName(event.target.value)}
                   />
@@ -312,7 +325,7 @@ export default function AddWalletDialog({
                     id="wallet-label"
                     className="portfolio-input"
                     maxLength={MAX_LABEL}
-                    placeholder="e.g. Savings BTC"
+                    placeholder={`e.g. ${chosen.labelExample}`}
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
                   />
@@ -320,7 +333,7 @@ export default function AddWalletDialog({
                 <dl className="wallets-summary">
                   <div>
                     <dt>Network</dt>
-                    <dd>Bitcoin</dd>
+                    <dd>{chosen.name}</dd>
                   </div>
                   <div>
                     <dt>Address</dt>

@@ -6,8 +6,9 @@ import type {
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
-import { type Reconciliation, shortAddress, sum } from './wallets';
+import { chainBalances, type Reconciliation, shortAddress, sum } from './wallets';
 
 // Rows shared by the Wallets list and a wallet's own page (prototype "wallets", srcRow).
 
@@ -27,21 +28,68 @@ export function holdingsOf(portfolio: PortfolioValuation, accountId: string): Ho
 
 const ticker = (asset: AssetValuation) => asset.symbol ?? asset.name;
 
+/** Latest price of each crypto ticker, in the shown currency. */
+export type Prices = ReadonlyMap<string, string>;
+
 export function addressValue(
   address: WalletAddress,
-  btcPrice: string | null,
+  prices: Prices,
   currency: AccountingCurrency,
 ): string {
-  // Display only: the exact chain balance is the BTC amount next to it.
-  if (address.chainBalance === null || btcPrice === null) return DASH;
-  return money(String(Number(address.chainBalance) * Number(btcPrice)), currency);
+  // Display only: the exact chain balances are the amounts next to it. A held asset without a
+  // price leaves the value unknown rather than too low.
+  const balances = chainBalances(address);
+  if (balances === null) return DASH;
+  const held = balances.filter((balance) => Number(balance.quantity) !== 0);
+  if (held.some((balance) => !prices.has(balance.symbol))) return DASH;
+  const total = held.reduce(
+    (value, balance) => value + Number(balance.quantity) * Number(prices.get(balance.symbol)),
+    0,
+  );
+  return money(String(total), currency);
+}
+
+/** ["1.5 ETH", "250 USDC"]: the network's coin always, a token when the wallet holds it. */
+function chainPieces(address: WalletAddress): string[] {
+  const balances = chainBalances(address);
+  if (balances === null) return [DASH];
+  return balances
+    .filter((balance, index) => index === 0 || Number(balance.quantity) !== 0)
+    .map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
+}
+
+/** "1.5 ETH · 250 USDC". */
+export const chainAmounts = (address: WalletAddress): string => chainPieces(address).join(' · ');
+
+// Each coin is one unbreakable piece: a row wraps between coins, a phone stacks them.
+function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
+  const pieces = chainPieces(address);
+  if (stacked)
+    return (
+      <span className="transactions-item__amount wallets-stack">
+        {pieces.map((piece) => (
+          <span key={piece}>{piece}</span>
+        ))}
+      </span>
+    );
+  return (
+    <span className="wallets-amounts">
+      {pieces.flatMap((piece, index) => [
+        index ? ' ' : null,
+        <span key={piece} className="wallets-num">
+          {piece}
+          {index < pieces.length - 1 && ' ·'}
+        </span>,
+      ])}
+    </span>
+  );
 }
 
 export function AddressRow({
   address,
   run,
   narrow,
-  btcPrice,
+  prices,
   currency,
   onOpen,
   onSync,
@@ -49,13 +97,13 @@ export function AddressRow({
   address: WalletAddress;
   run: SyncRun | undefined;
   narrow: boolean;
-  btcPrice: string | null;
+  prices: Prices;
   currency: AccountingCurrency;
   onOpen: () => void;
   onSync: () => void;
 }) {
-  const name = address.label ?? 'Bitcoin';
-  const amount = address.chainBalance === null ? DASH : `${quantity(address.chainBalance)} BTC`;
+  const network = networkOf(address);
+  const name = address.label ?? network.name;
   const when = syncAge(address, run);
   const problem = syncProblem(address, run);
   const loading =
@@ -90,7 +138,7 @@ export function AddressRow({
     return (
       <li className="wallets-source">
         <button type="button" className="transactions-item" aria-label={label} onClick={onOpen}>
-          <AssetIcon symbol="BTC" name="Bitcoin" assetType="crypto" />
+          <AssetIcon symbol={network.symbol} name={network.name} assetType="crypto" />
           <span className="transactions-item__main">
             <span className="transactions-item__title">{name}</span>
             <span className="transactions-item__detail">
@@ -98,9 +146,9 @@ export function AddressRow({
             </span>
           </span>
           <span className="transactions-item__side">
-            <span className="transactions-item__amount">{amount}</span>
+            <ChainAmounts address={address} stacked />
             <span className="transactions-item__value">
-              {addressValue(address, btcPrice, currency)}
+              {addressValue(address, prices, currency)}
             </span>
           </span>
         </button>
@@ -112,14 +160,12 @@ export function AddressRow({
     <li className="wallets-source">
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
-          <AssetIcon symbol="BTC" name="Bitcoin" assetType="crypto" size="sm" />
+          <AssetIcon symbol={network.symbol} name={network.name} assetType="crypto" size="sm" />
           <span className="wallets-asset__name">{name}</span>
         </span>
         <span className="wallets-mono wallets-soft">{shortAddress(address.address)}</span>
-        <span className="wallets-num">{amount}</span>
-        <span className="wallets-num wallets-right">
-          {addressValue(address, btcPrice, currency)}
-        </span>
+        <ChainAmounts address={address} stacked={false} />
+        <span className="wallets-num wallets-right">{addressValue(address, prices, currency)}</span>
         <span className="wallets-right wallets-status">
           <SyncBadge address={address} run={run} />
           {when && <span className="wallets-muted">{when}</span>}
@@ -194,17 +240,29 @@ export function ManualRow({
 
 export function ReconcileNote({ result }: { result: Reconciliation }) {
   if (result.state !== 'differs') return null;
-  const difference = result.difference.replace(/^-/, '');
+  const lines = result.assets.map(({ symbol, chain, recorded, difference }) => {
+    const by = quantity(difference.replace(/^-/, ''));
+    return `Balance differs by ${by} ${symbol}. The blockchain shows ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
+  });
   return (
     <p className="wallets-message wallets-message--warn" role="note">
-      Balance differs by {quantity(difference)} BTC. The blockchain shows {quantity(result.chain)}{' '}
-      BTC; your transactions in this wallet give {quantity(result.recorded)} BTC. Add the missing
-      transactions or check that every address belongs here.
+      {lines.join(' ')} Add the missing transactions or check that every address belongs here.
     </p>
   );
 }
 
 export function subtitle(addresses: WalletAddress[]): string {
   if (addresses.length === 0) return 'Tracked by hand';
-  return addresses.length === 1 ? 'Bitcoin · 1 address' : `Bitcoin · ${addresses.length} addresses`;
+  const names = (Object.keys(networks) as WalletAddress['network'][])
+    .filter((network) => addresses.some((address) => address.network === network))
+    .map((network) => networks[network].name)
+    .join(', ');
+  return addresses.length === 1
+    ? `${names} · 1 address`
+    : `${names} · ${addresses.length} addresses`;
+}
+
+/** Holdings the account's addresses already show from the chain are not listed again. */
+export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
+  return new Set(addresses.flatMap((address) => networkOf(address).assets));
 }

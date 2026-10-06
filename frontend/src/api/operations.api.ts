@@ -32,7 +32,7 @@ export interface OperationPlace {
 
 export interface OperationWallet {
   id: string;
-  network: 'bitcoin';
+  network: 'bitcoin' | 'ethereum';
   address: string;
   label: string | null;
 }
