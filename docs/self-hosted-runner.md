@@ -56,7 +56,7 @@ code. The layers below hold whether the repository is public or private:
 - Linux x86-64 (the images are `linux/amd64`). Ubuntu 24.04 LTS is recommended because
   Playwright installs Chromium's system packages for it.
 - At least 4 CPU, 8 GB RAM and 20 GB free disk per runner (an estimate, not a measurement).
-- Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`,
+- Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`, `libatomic1`,
   `tar` and `python3` (the security tests).
 - Chromium's system libraries, installed once as root by the setup script. Node.js, pnpm,
   the Chromium browser itself and Trivy are downloaded by the jobs.
@@ -107,7 +107,7 @@ lxc exec ghrunner-deploy -- bash /root/self-hosted-runner-setup.sh ghrunner-depl
 The script asks for a registration token from **Settings → Actions → Runners → New
 self-hosted runner** (valid for one hour and usable for both runners; never commit or
 paste it anywhere else). It installs Docker with the `buildx` and `compose` plugins,
-`git`, `jq`, `zstd` and `python3` (plus the SSH client and `gh` from GitHub's apt repository for the deploy role),
+`git`, `jq`, `zstd`, `python3` and `libatomic1` (Node.js 26 needs it) (plus the SSH client and `gh` from GitHub's apt repository for the deploy role),
 creates the `ci` user in the `docker` group, gives a CI runner one sudoers rule (below)
 and Chromium's system libraries for the pinned Playwright version, downloads the latest
 runner and checks it against the SHA-256 in its release notes, registers it under the

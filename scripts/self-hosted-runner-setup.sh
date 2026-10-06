@@ -20,7 +20,8 @@ playwright_version=1.63.0
 
 # 1. Packages and Docker Engine (buildx and compose plugins included).
 apt-get update
-apt-get install -y ca-certificates git jq zstd curl tar xz-utils python3
+# libatomic1: Node.js 26 (the setup script and every job's setup-node) links against it.
+apt-get install -y ca-certificates git jq zstd curl tar xz-utils python3 libatomic1
 # The deploy downloads the candidate and tags releases with gh, and dispatches over SSH.
 # gh comes from GitHub's own apt repository, as on GitHub's runners, so its version
 # does not depend on the Ubuntu release.
