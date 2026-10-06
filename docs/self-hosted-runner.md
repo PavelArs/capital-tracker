@@ -83,6 +83,17 @@ for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
 done
 ```
 
+`lxc list` must show an IPv4 address for each container. If the host runs `ufw`, it drops
+DHCP on the LXD bridge and the containers get none. Allow only DHCP, DNS to the host and
+forwarding out through the external interface, so the containers reach neither the host's
+other ports nor its Docker networks:
+
+```sh
+ufw allow in on lxdbr0 to any port 67 proto udp
+ufw allow in on lxdbr0 to any port 53
+ufw route allow in on lxdbr0 out on "$(ip route show default | awk '{print $5; exit}')"
+```
+
 Then, for each container, copy `scripts/self-hosted-runner-setup.sh` from this repository
 into it and run it with the runner's name and role (`ci` or `deploy`):
 
