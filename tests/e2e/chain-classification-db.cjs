@@ -46,6 +46,7 @@ function services(db) {
       'ChainClassificationService',
       trades,
       rewards,
+      make('owned-transfer.service', 'OwnedTransferService'),
     ),
   };
 }
@@ -228,7 +229,13 @@ async function hide(db, s, f, { address }) {
   assert.equal(await count(s, owner), 0);
   const row = await listed(s, owner, 4);
   assert.deepEqual([row.status, row.type, row.comment], ['hidden', null, 'Dust']);
-  assert.deepEqual(row.classification, { version: 1, hidden: true, value: null, comment: 'Dust' });
+  assert.deepEqual(row.classification, {
+    version: 1,
+    hidden: true,
+    value: null,
+    comment: 'Dust',
+    automatic: false,
+  });
 
   stage = 'CLS-HIDE hiding a classified receipt voids its entry; including restores it';
   const income = await classify(s, owner, address, 4, {
@@ -350,7 +357,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 33);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 34);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('classification-owner@example.invalid','synthetic-not-a-hash',true),
       ('classification-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);

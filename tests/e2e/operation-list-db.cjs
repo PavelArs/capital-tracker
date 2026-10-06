@@ -347,6 +347,7 @@ async function everyJournal(db, s, f) {
     txid: txid(1),
     blockHeight: 800001,
     priceObservedAt: new Date(now.getTime() - 30 * 60_000).toISOString(),
+    direction: 'in',
   });
   assert.equal(out.direction, 'out');
   assert.deepEqual(out.fee, {
@@ -487,7 +488,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 33);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 34);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('operations-owner@example.invalid','synthetic-not-a-hash',true),
