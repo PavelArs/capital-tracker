@@ -76,18 +76,26 @@ On the host, as root (Ubuntu with a kernel of 5.15 or newer). Unprivileged LXD c
 also keep the CI jobs away from the host: `docker` group membership inside a container is
 root only inside that container.
 
-Put the containers on a large data disk, never on the system disk of a host that also runs
-production: the runners' Docker images, build cache and browser fill tens of gigabytes, and
-a full system disk stops production too. The example uses a `dir` pool on a RAID mount.
+Put the containers on a filesystem of their own, never on the system filesystem of a host
+that also runs production: the runners' Docker images, build cache and browser fill tens of
+gigabytes, and a full system disk stops production too. A dedicated LVM volume works well:
+its size caps the runners (one CI runner keeps about 7.5 GB at rest, and a run adds its
+containers and database), and an SSD matters, since the acceptance shards restart
+containers and write to PostgreSQL all the time. On a shared HDD the same shards ran 1.5 to
+2.3 times slower than on GitHub's hosted runners. The example takes 45 GiB from free space
+in the volume group (`vgs` shows it as VFree) for three CI runners and the deploy runner.
 
 ```sh
 snap install lxd
 lxd init --auto
-pool_dir=/srv/lxd-pool   # any directory on the large disk; the LXD snap does not create it
-mkdir -p "$pool_dir"
-lxc storage create raid dir source="$pool_dir"
+lvcreate -L 45G -n lxd-ci ubuntu-vg   # a new volume; never format the root volume
+mkfs.ext4 /dev/ubuntu-vg/lxd-ci
+mkdir -p /srv/lxd-ci
+echo '/dev/ubuntu-vg/lxd-ci /srv/lxd-ci ext4 defaults 0 2' >> /etc/fstab
+mount /srv/lxd-ci && mkdir /srv/lxd-ci/pool
+lxc storage create ssd dir source=/srv/lxd-ci/pool
 for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
-  lxc launch ubuntu:24.04 "$name" --storage raid \
+  lxc launch ubuntu:24.04 "$name" --storage ssd \
     -c security.nesting=true \
     -c security.syscalls.intercept.mknod=true \
     -c security.syscalls.intercept.setxattr=true \
@@ -155,10 +163,10 @@ given name with the default labels `self-hosted`, `Linux` and `X64` plus its rol
 starts it as a service and adds a weekly Docker cleanup. The runners then show as
 **Idle** under **Settings → Actions → Runners**.
 
-A `dir` storage pool does not cap the containers' disk use; watch the data disk's free
-space, since images, build cache and the browser take several gigabytes per runner.
-Containers already on the system disk move with `lxc stop <name>`, then
-`lxc move <name> --storage raid` and `lxc start <name>`.
+A `dir` storage pool does not cap the containers' disk use, so the volume under it does;
+watch its free space with `df -h /srv/lxd-ci`, since images, build cache and the browser
+take several gigabytes per runner. A container moves to another pool with
+`lxc stop <name>`, then `lxc move <name> --storage ssd` and `lxc start <name>`.
 
 The sudoers rule allows exactly the one security test that must run as root
 (Specification and Engineering Gates; `ENG-008-C` keeps it the only `sudo` in CI):

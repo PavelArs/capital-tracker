@@ -32,15 +32,24 @@ SSH-ключ от прода. Задачи CI никогда не попадаю
 ```sh
 snap install lxd
 lxd init --auto
-pool_dir=/srv/lxd-pool   # любая папка на большом диске
-mkdir -p "$pool_dir"
-lxc storage create raid dir source="$pool_dir"
+lvcreate -L 45G -n lxd-ci ubuntu-vg   # новый том; корневой том не форматировать
+mkfs.ext4 /dev/ubuntu-vg/lxd-ci
+mkdir -p /srv/lxd-ci
+echo '/dev/ubuntu-vg/lxd-ci /srv/lxd-ci ext4 defaults 0 2' >> /etc/fstab
+mount /srv/lxd-ci && mkdir /srv/lxd-ci/pool
+lxc storage create ssd dir source=/srv/lxd-ci/pool
 ```
 
-Контейнеры раннеров держи только на большом диске (пул `raid`), не на системном SSD. Их
-образы Docker, кэш сборки и браузер занимают десятки гигабайт. Прод работает на этом же
-сервере, и переполненный системный диск остановит его. Контейнер, который уже стоит на
-SSD, переносится так: `lxc stop <имя>`, `lxc move <имя> --storage raid`, `lxc start <имя>`.
+Контейнеры раннеров держи на отдельной файловой системе, не на системной. Их образы Docker,
+кэш сборки и браузер занимают десятки гигабайт. Прод работает на этом же сервере, и
+переполненный системный диск остановит его. Удобнее всего отдельный том LVM: его размер
+ограничивает раннеры. Один раннер CI в покое занимает около 7.5 ГБ, во время прогона к этому
+добавляются его контейнеры и база. Том лучше делать на SSD: шарды приёмки постоянно
+перезапускают контейнеры и пишут в PostgreSQL. На общем HDD те же шарды шли в 1.5–2.3 раза
+медленнее, чем на раннерах GitHub. В примере том на 45 ГиБ взят из свободного места группы
+томов (`vgs`, столбец VFree): хватит на три раннера CI и раннер деплоя. Свободное место на
+томе: `df -h /srv/lxd-ci`. Контейнер переносится в другой пул так: `lxc stop <имя>`,
+`lxc move <имя> --storage ssd`, `lxc start <имя>`.
 
 Если на хосте включён ufw, он режет DHCP на мосту LXD, и контейнеры остаются без адреса.
 Следующие правила разрешают контейнерам только DHCP, DNS к хосту и выход в интернет. К
@@ -93,7 +102,7 @@ chmod 0755 /etc/cron.daily/ci-images-prune
 1. Создай контейнер:
 
    ```sh
-   lxc launch ubuntu:24.04 ghrunner-3 --storage raid \
+   lxc launch ubuntu:24.04 ghrunner-3 --storage ssd \
      -c security.nesting=true \
      -c security.syscalls.intercept.mknod=true \
      -c security.syscalls.intercept.setxattr=true \
@@ -158,7 +167,7 @@ lxc exec ghrunner-deploy -- bash -c 'timeout 5 bash -c "</dev/tcp/<адрес>/<
 ## Обслуживание
 
 - Скрипт ставит еженедельную чистку старых образов Docker и кэша сборки. За свободным
-  местом на диске хоста всё равно следи.
+  местом на томе раннеров (`df -h /srv/lxd-ci`) всё равно следи.
 - При обновлении `@playwright/test` поправь `playwright_version` в скрипте. Затем в каждом
   контейнере CI выполни `npx -y playwright@<версия> install-deps chromium` под root.
 - Пока репозиторий публичный, в **Settings → Actions → General** должно стоять **Require
