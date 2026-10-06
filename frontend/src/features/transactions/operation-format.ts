@@ -17,6 +17,7 @@ export const typeLabels: Record<OperationType, string> = {
   expense: 'Expense',
   gift: 'Gift',
   fee: 'Fee',
+  other: 'Other',
 };
 const directionLabels: Record<Operation['direction'], string> = {
   in: 'Incoming',

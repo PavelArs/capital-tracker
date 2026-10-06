@@ -116,6 +116,26 @@ describe('classify-chain-transactions input and plan', () => {
     ).toMatchObject({ category: 'staking', acquisitionBasisUsd: '5', incomeValueUsd: '5' });
   });
 
+  it('CLS-OTHER: a receipt nobody can name counts without a purchase price and no deposit', () => {
+    const input = parse({ classification: { type: 'other' }, comment: 'Found on an old card' });
+    expect(input.classification).toEqual({ type: 'other' });
+    expect(planOperation(receipt, input.classification!, input.comment)).toEqual({
+      journal: 'reward',
+      fields: {
+        occurredAt: receipt.blockTime,
+        quantity: '0.00918359',
+        assertReward: true,
+        category: 'unclassified',
+        acquisitionBasisUsd: null,
+        incomeValueUsd: null,
+      },
+    });
+    // What left an address is spent, sold or given: Other only fits what arrived.
+    expect(() => planOperation(payment, { type: 'other' }, undefined)).toThrow(
+      UnprocessableEntityException,
+    );
+  });
+
   it('a type must fit the direction: nothing is guessed', () => {
     const misfit = (leg: ChainLeg, type: string) =>
       expect(() =>
@@ -187,6 +207,7 @@ describe('classify-chain-transactions input and plan', () => {
     refused(body({ type: 'income', valueUsd: '0' }));
     refused(body({ type: 'income', valueUsd: null }));
     refused(body({ type: 'income', valueUsd: '1', currency: 'USD' }));
+    refused(body({ type: 'other', valueUsd: '1' }));
     refused({ ...body(null), comment: 'x'.repeat(501) });
   });
 

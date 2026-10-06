@@ -165,7 +165,8 @@ export type OperationType =
   | 'income'
   | 'expense'
   | 'gift'
-  | 'fee';
+  | 'fee'
+  | 'other';
 
 export interface Operation {
   id: string;

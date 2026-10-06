@@ -17,7 +17,8 @@ export type OperationType =
   | 'income'
   | 'expense'
   | 'gift'
-  | 'fee';
+  | 'fee'
+  | 'other';
 
 export interface OperationAsset {
   instrumentId: string | null;
@@ -119,7 +120,9 @@ export type ChainClassification =
       perUsd?: string;
     }
   | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
-  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null };
+  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null }
+  /** Received, nothing more known: counts without a purchase price and no deposit. */
+  | { type: 'other' };
 
 export interface ClassificationCommand {
   requestId: string;

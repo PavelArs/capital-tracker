@@ -107,6 +107,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     'Staking reward',
     'Airdrop',
     'Gift received',
+    'Other',
   ]);
   await expect(drawer.getByText(`${before - 1} left to classify`)).toBeVisible();
   await expect(drawer.getByRole('button', { name: 'Save' })).toBeDisabled();
