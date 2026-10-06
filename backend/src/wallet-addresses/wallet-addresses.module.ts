@@ -6,6 +6,8 @@ import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
 import { EsploraClient } from './esplora-client';
 import { EthereumSyncAdapter } from './ethereum-sync.adapter';
 import { EtherscanClient } from './etherscan-client';
+import { SolanaRpcClient } from './solana-rpc-client';
+import { SolanaSyncAdapter } from './solana-sync.adapter';
 import { WalletAddressController } from './wallet-address.controller';
 import { WalletAddressService } from './wallet-address.service';
 import { WalletSyncService } from './wallet-sync.service';
@@ -18,6 +20,7 @@ import { WalletSyncService } from './wallet-sync.service';
     WalletSyncService,
     BitcoinSyncAdapter,
     EthereumSyncAdapter,
+    SolanaSyncAdapter,
     { provide: EsploraClient, useFactory: () => new EsploraClient() },
     // The free Etherscan key (Q6) comes from the server's environment, never from the code.
     {
@@ -26,14 +29,17 @@ import { WalletSyncService } from './wallet-sync.service';
       useFactory: (config: ConfigService) =>
         new EtherscanClient({ apiKey: config.get<string>('ETHERSCAN_API_KEY') ?? null }),
     },
-    // One adapter per network; Solana (M15) joins this list.
+    // Solana's public endpoint needs no key (M15).
+    { provide: SolanaRpcClient, useFactory: () => new SolanaRpcClient() },
+    // One adapter per network.
     {
       provide: CHAIN_SYNC_ADAPTERS,
-      inject: [BitcoinSyncAdapter, EthereumSyncAdapter],
+      inject: [BitcoinSyncAdapter, EthereumSyncAdapter, SolanaSyncAdapter],
       useFactory: (
         bitcoin: BitcoinSyncAdapter,
         ethereum: EthereumSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum],
+        solana: SolanaSyncAdapter,
+      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana],
     },
   ],
 })

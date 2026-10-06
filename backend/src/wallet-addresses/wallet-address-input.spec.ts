@@ -5,6 +5,8 @@ const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
 // An EIP-55 test vector, not an owner's address.
 const ethereum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+// The System Program's id: a well-known public key, never an owner's wallet.
+const solana = '11111111111111111111111111111111';
 // Synthetic BIP-39 words in the order of the standard test vector, never a real wallet.
 const seedPhrase =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -24,6 +26,15 @@ describe('WAL-ADD: wallet registration input', () => {
       network: 'ethereum',
       address: ethereum.toLowerCase(),
       accountId,
+      label: null,
+    });
+  });
+
+  it('takes a Solana address exactly as given (M15)', () => {
+    expect(parseRegistration({ network: 'solana', address: solana })).toEqual({
+      network: 'solana',
+      address: solana,
+      accountId: null,
       label: null,
     });
   });
@@ -51,7 +62,10 @@ describe('WAL-ADD: wallet registration input', () => {
   it.each([
     ['WAL-INVALID: a Bitcoin address as Ethereum', { network: 'ethereum', address }],
     ['an Ethereum address as Bitcoin', { network: 'bitcoin', address: ethereum }],
-    ['a network not tracked yet', { network: 'solana', address }],
+    ['a Bitcoin address as Solana', { network: 'solana', address }],
+    ['an Ethereum address as Solana', { network: 'solana', address: ethereum }],
+    ['a Solana address as Ethereum', { network: 'ethereum', address: solana }],
+    ['a network not tracked', { network: 'tron', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],

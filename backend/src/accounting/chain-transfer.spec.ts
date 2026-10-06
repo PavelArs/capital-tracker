@@ -116,6 +116,34 @@ describe('link-own-transfers of Ethereum legs (M14)', () => {
   });
 });
 
+describe('link-own-transfers of Solana legs (M15)', () => {
+  // A Solana token leg is the signature and the token's number on both sides.
+  const signature = 'S'.repeat(87);
+  const usdc = { network: 'solana' as const, asset: 'USDC', feeUnits: '0' };
+
+  it('XFER-AUTO: an SPL USDC transfer between own wallets links by its shared leg id', () => {
+    const tokenSent = { ...sent, ...usdc, sentUnits: '25000000' };
+    const tokenReceived = { ...received, ...usdc, receivedUnits: '25000000' };
+    const outgoing = matchable(tokenSent, { txid: `${signature}-2` });
+    const incoming = matchable(tokenReceived, { txid: `${signature}-2` });
+    expect(ownTransferPairs([outgoing, incoming])).toEqual([{ outgoing, incoming }]);
+    expect(planTransfer(tokenSent, accountB, tokenReceived)).toMatchObject({
+      quantity: '25',
+      feeQuantity: '0',
+    });
+  });
+
+  it('a SOL transfer pays its fee in SOL at 9 decimals', () => {
+    const sol = { network: 'solana' as const, asset: null };
+    const plan = planTransfer(
+      { ...sent, ...sol, sentUnits: '500005000', feeUnits: '5000' },
+      accountB,
+      { ...received, ...sol, receivedUnits: '500000000', feeUnits: '0' },
+    );
+    expect(plan).toMatchObject({ quantity: '0.5', feeQuantity: '0.000005' });
+  });
+});
+
 describe('link-own-transfers automatic matching (D7)', () => {
   it('XFER-AUTO: one send and one receipt between two accounts of the owner are a pair', () => {
     const outgoing = matchable(sent);
