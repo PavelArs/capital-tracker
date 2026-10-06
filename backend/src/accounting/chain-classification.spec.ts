@@ -2,6 +2,7 @@ import { BadRequestException, UnprocessableEntityException } from '@nestjs/commo
 import {
   type ChainLeg,
   classificationPayload,
+  fitsDirection,
   legMovement,
   parseClassification,
   planOperation,
@@ -115,6 +116,22 @@ describe('classify-chain-transactions input and plan', () => {
     expect(() => planOperation(nothing, { type: 'income', valueUsd: '1' }, undefined)).toThrow(
       UnprocessableEntityException,
     );
+  });
+
+  it('XFER-MANUAL: a transfer names the other account and fits either direction', () => {
+    const accountId = '00000000-0000-4000-8000-000000000010';
+    const value = parse({ classification: { type: 'transfer', accountId } }).classification!;
+    expect(value).toEqual({ type: 'transfer', accountId });
+    expect(fitsDirection(receipt, 'transfer')).toBe(true);
+    expect(fitsDirection(payment, 'transfer')).toBe(true);
+    expect(fitsDirection(receipt, 'sell')).toBe(false);
+    expect(() => planOperation(receipt, value, undefined)).toThrow(
+      'A transfer records an owned transfer instead',
+    );
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'transfer', accountId: 'bybit' });
+    refused({ type: 'transfer', accountId, valueUsd: '1' });
   });
 
   it('CLS-HIDE: hiding or resetting needs no type; the answer is kept while hidden', () => {

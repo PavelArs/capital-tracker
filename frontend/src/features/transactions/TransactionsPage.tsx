@@ -18,6 +18,7 @@ import {
   shortAddress,
   signedQuantity,
   sourceLabels,
+  statusLabel,
   statusLabels,
   ticker,
   typeLabel,
@@ -45,12 +46,21 @@ function inView(operation: Operation, view: View): boolean {
   return operation.source === view;
 }
 
+/** Where a row happened; a blockchain row's suggested other side is not a place yet (M13). */
+function places(operation: Operation) {
+  const moved = operation.type === 'transfer';
+  return {
+    accounts: [operation.account, moved ? operation.counterAccount : null],
+    wallets: [operation.wallet, moved ? operation.counterWallet : null],
+  };
+}
+
 function placeKeys(operation: Operation): string[] {
   // A chain row is found by its address and, once it belongs to one, by its wallet (M10).
+  const { accounts, wallets } = places(operation);
   return [
-    operation.wallet ? `wallet:${operation.wallet.id}` : undefined,
-    operation.account?.id,
-    operation.counterAccount?.id,
+    ...wallets.map((wallet) => (wallet ? `wallet:${wallet.id}` : undefined)),
+    ...accounts.map((account) => account?.id),
   ].filter((key): key is string => key !== undefined);
 }
 
@@ -69,6 +79,7 @@ function searchable(operation: Operation): string {
     operation.counterAsset?.name,
     placeLabel(operation),
     operation.wallet?.address,
+    operation.type === 'transfer' ? operation.counterWallet?.address : undefined,
     operation.chain?.txid,
   ]
     .filter(Boolean)
@@ -210,7 +221,7 @@ function OperationRow({
         ) : (
           <span className="transactions-status">
             <Glyph name="check" />
-            {statusLabels[operation.status]}
+            {statusLabel(operation)}
           </span>
         )}
       </td>
@@ -370,12 +381,13 @@ export default function TransactionsPage() {
   const placeOptions = useMemo(
     () =>
       options(operations, (operation) => {
-        const accounts = [operation.account, operation.counterAccount].flatMap((item) =>
-          item ? [[item.id, item.name] as [string, string]] : [],
-        );
-        return operation.wallet
-          ? [...accounts, [`wallet:${operation.wallet.id}`, walletLabel(operation.wallet)]]
-          : accounts;
+        const { accounts, wallets } = places(operation);
+        return [
+          ...accounts.flatMap((item) => (item ? [[item.id, item.name] as [string, string]] : [])),
+          ...wallets.flatMap((item) =>
+            item ? [[`wallet:${item.id}`, walletLabel(item)] as [string, string]] : [],
+          ),
+        ];
       }),
     [operations],
   );

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AccountingModule } from '../accounting/accounting.module';
 import { BitcoinSyncAdapter } from './bitcoin-sync.adapter';
 import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
 import { EsploraClient } from './esplora-client';
@@ -7,6 +8,7 @@ import { WalletAddressService } from './wallet-address.service';
 import { WalletSyncService } from './wallet-sync.service';
 
 @Module({
+  imports: [AccountingModule],
   controllers: [WalletAddressController],
   providers: [
     WalletAddressService,

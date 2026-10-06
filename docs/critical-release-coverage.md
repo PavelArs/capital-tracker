@@ -12,12 +12,13 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 29 manifest entries: the original 19 browser cases,
+The reviewed selection contains 30 manifest entries: the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and,
 since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
 and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
 list, FLOW-SPLIT-UI market versus flows and MANUAL-OPS-UI manual operations, WAL-UI wallets
-bound to accounts and CLS-UI blockchain transaction classification. Each entry may cover more than one scenario ID; these are
+bound to accounts, CLS-UI blockchain transaction classification and, since 2026-10-06, XFER-UI
+transfers between own wallets. Each entry may cover more than one scenario ID; these are
 browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
@@ -51,6 +52,7 @@ using synthetic owner data and provider fixtures.
 | MANUAL-OPS-UI / OPS-ADD-BUY / OPS-OVERSPEND / OPS-DELETE-GUARD / OPS-DELETE | A buy saved in the Add transaction window starts the journal of an account that had none; a sale shows what the account holds on its date, refuses more and fills it with Use all; deleting the purchase later sales spend is refused naming the sale and changes nothing; a confirmed deletion removes the sale from the list and its history keeps the void. |
 | WAL-UI / WAL-NO-SECRETS / WAL-DUP / WAL-ACCOUNT / WAL-PAGE / WAL-RENAME / SYNC-RECONCILE / SYNC-STATUS | Add wallet clears a pasted seed phrase without sending it and refuses an Ethereum address; a Bitcoin address joins a new wallet with a name, its whole Esplora-fixture history loads, the chain balance shows and differs from the wallet's recorded transactions; adding it again opens the wallet that tracks it; renaming it in the drawer is stored; at 390 px the rows fit without horizontal scroll; with prices synced 12 minutes ago, a sync refused by the provider (503) is stored as failed, so after a reload the row says "Sync failed" with the reason and the age of the shown balance, and the sidebar says "1 source needs attention" and "Others synced 12 min ago"; the wallet's own page lists the address and its chain transactions, renaming the wallet keeps the address in it, and Transactions names the wallet and address on its chain rows. |
 | CLS-UI / CLS-COUNT / CLS-BUY / CLS-HIDE / CLS-RESYNC / CLS-RECLASSIFY | The sidebar and the Dashboard count blockchain transactions to classify and Review opens them; a receipt of a wallet bound to an account is classified as a buy paid in USDT with only the fields a buy needs, and the next one of that wallet opens with only outgoing types; a payment is hidden without a type; the list shows the buy's value and the Hidden status without a second row for the recorded buy; a resync keeps both answers; changing the buy to income starts from the saved answer; at 390 px the rows fit without horizontal scroll. |
+| XFER-UI / XFER-AUTO / XFER-CAPITAL / XFER-MANUAL | Two addresses in two wallets share one transaction: once the receipt that funded the sender is a buy, the send and the receipt are one transfer between the wallets that nobody had to classify, listed once as sender → receiver with "Auto: own wallets" and the drawer note; the receiver's coins keep the sender's cost basis and only the network fee leaves; a send to an unregistered address is linked by hand to a manual exchange wallet, which then holds the coins at their cost with no deposit; at 390 px the rows fit without horizontal scroll. |
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout
