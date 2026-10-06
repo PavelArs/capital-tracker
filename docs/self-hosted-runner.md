@@ -58,7 +58,9 @@ code. The layers below hold whether the repository is public or private:
 
 - Linux x86-64 (the images are `linux/amd64`). Ubuntu 24.04 LTS is recommended because
   Playwright installs Chromium's system packages for it.
-- At least 4 CPU, 8 GB RAM and 20 GB free disk per runner (an estimate, not a measurement).
+- At least 4 CPU, 8 GB RAM and 20 GB free disk per runner. With 2 CPU the acceptance shards
+  waited for CPU while the host's other cores were idle. `limits.cpu.priority=5` lets
+  production win when the host is busy.
 - Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`, `libatomic1`,
   `tar` and `python3` (the security tests).
 - Chromium's system libraries, installed once as root by the setup script. Node.js, pnpm,
@@ -81,14 +83,15 @@ a full system disk stops production too. The example uses a `dir` pool on a RAID
 ```sh
 snap install lxd
 lxd init --auto
-mkdir -p /mnt/raid1/lxd   # a directory on the large disk; the LXD snap does not create it
-lxc storage create raid dir source=/mnt/raid1/lxd
+pool_dir=/srv/lxd-pool   # any directory on the large disk; the LXD snap does not create it
+mkdir -p "$pool_dir"
+lxc storage create raid dir source="$pool_dir"
 for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
   lxc launch ubuntu:24.04 "$name" --storage raid \
     -c security.nesting=true \
     -c security.syscalls.intercept.mknod=true \
     -c security.syscalls.intercept.setxattr=true \
-    -c limits.cpu=4 -c limits.memory=8GiB
+    -c limits.cpu=4 -c limits.cpu.priority=5 -c limits.memory=8GiB
 done
 ```
 

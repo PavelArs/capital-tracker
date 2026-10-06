@@ -24,7 +24,7 @@ SSH-ключ от прода. Задачи CI никогда не попадаю
 
 | Раннер | CPU | RAM | Диск |
 | --- | --- | --- | --- |
-| CI | 2–4 | 8 ГБ | 10–20 ГБ |
+| CI | 4 | 8 ГБ | 10–20 ГБ |
 | деплой | 1 | 4 ГБ | пара гигабайт |
 
 ## Один раз на хосте (под root)
@@ -32,8 +32,9 @@ SSH-ключ от прода. Задачи CI никогда не попадаю
 ```sh
 snap install lxd
 lxd init --auto
-mkdir -p /mnt/raid1/lxd
-lxc storage create raid dir source=/mnt/raid1/lxd
+pool_dir=/srv/lxd-pool   # любая папка на большом диске
+mkdir -p "$pool_dir"
+lxc storage create raid dir source="$pool_dir"
 ```
 
 Контейнеры раннеров держи только на большом диске (пул `raid`), не на системном SSD. Их
@@ -96,7 +97,7 @@ chmod 0755 /etc/cron.daily/ci-images-prune
      -c security.nesting=true \
      -c security.syscalls.intercept.mknod=true \
      -c security.syscalls.intercept.setxattr=true \
-     -c limits.cpu=2 -c limits.memory=8GiB
+     -c limits.cpu=4 -c limits.cpu.priority=5 -c limits.memory=8GiB
    sleep 10; lxc list -c ns4   # у контейнера должен появиться IPv4-адрес
    ```
 
