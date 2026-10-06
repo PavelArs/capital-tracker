@@ -18,7 +18,7 @@ const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 
 // "What was this transaction?" from the accepted prototype, limited to what the coins did:
 // what arrives can be bought or received, what leaves can be sold, spent or given, and either
-// can move between the owner's own wallets (M13).
+// can move between the owner's own wallets (M13). Other is a receipt nobody can name yet.
 const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
 const incoming: [ChainType, string][] = [
   TRANSFER,
@@ -28,6 +28,7 @@ const incoming: [ChainType, string][] = [
   ['staking-reward', 'Staking reward'],
   ['airdrop', 'Airdrop'],
   ['gift', 'Gift received'],
+  ['other', 'Other'],
 ];
 const outgoing: [ChainType, string][] = [
   TRANSFER,
@@ -104,7 +105,7 @@ function problems(draft: Draft): Set<Problem> {
     draft.type === 'airdrop'
   ) {
     if (draft.value.trim() && !positive(draft.value)) found.add('value');
-  } else if (draft.type && !positive(draft.value)) found.add('value');
+  } else if (draft.type && draft.type !== 'other' && !positive(draft.value)) found.add('value');
   if ([...draft.comment.trim()].length > MAX_COMMENT_LENGTH) found.add('comment');
   return found;
 }
@@ -132,6 +133,8 @@ function answer(draft: Draft): ChainClassification | null {
     case 'staking-reward':
     case 'airdrop':
       return { type: draft.type, valueUsd: draft.value.trim() ? decimal(draft.value) : null };
+    case 'other':
+      return { type: 'other' };
     default:
       return { type: draft.type, valueUsd: decimal(draft.value)! };
   }
@@ -252,6 +255,24 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
   const rated = draft.currency === 'EUR' || draft.currency === 'RUB';
   const optional =
     draft.type === 'reward' || draft.type === 'staking-reward' || draft.type === 'airdrop';
+  const other = draft.type === 'other';
+  // Other asks only for a comment, so it shows up front rather than under "More options".
+  const commentField = (
+    <div className="portfolio-field">
+      <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
+        Comment
+      </label>
+      <textarea
+        id={`${id}-comment`}
+        className="portfolio-input portfolio-textarea"
+        placeholder="Optional"
+        value={draft.comment}
+        onChange={(event) => change({ comment: event.target.value })}
+        {...invalid('comment')}
+      />
+      {fieldError('comment', `At most ${MAX_COMMENT_LENGTH} characters`)}
+    </div>
+  );
   return (
     <form className="transactions-classify" onSubmit={(event) => void submit(event)} noValidate>
       <div className="transactions-drawer__body">
@@ -394,7 +415,16 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
             </span>
           </div>
         )}
-        {draft.type && !priced && !transfer && (
+        {other && (
+          <div className="transactions-subform">
+            <span className="portfolio-field__hint">
+              The amount stays in your balance without a purchase price. Add a comment so you
+              remember what it was.
+            </span>
+            {commentField}
+          </div>
+        )}
+        {draft.type && !priced && !transfer && !other && (
           <div className="transactions-subform">
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor={`${id}-value`}>
@@ -429,20 +459,7 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
         )}
         <details className="transactions-more">
           <summary>More options</summary>
-          <div className="portfolio-field">
-            <label className="portfolio-field__label" htmlFor={`${id}-comment`}>
-              Comment
-            </label>
-            <textarea
-              id={`${id}-comment`}
-              className="portfolio-input portfolio-textarea"
-              placeholder="Optional"
-              value={draft.comment}
-              onChange={(event) => change({ comment: event.target.value })}
-              {...invalid('comment')}
-            />
-            {fieldError('comment', `At most ${MAX_COMMENT_LENGTH} characters`)}
-          </div>
+          {!other && commentField}
           <label className="transactions-toggle">
             <input
               type="checkbox"
