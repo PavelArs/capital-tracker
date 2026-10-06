@@ -926,9 +926,9 @@ else process.exit(9);
   });
 });
 
-// Owner decision 2026-10-05: the Docker-heavy jobs may run on the owner's self-hosted runner.
-describe('ENG-008: only trusted runs of the heavy jobs reach the self-hosted runner', () => {
-  const heavyJobs = ['release-images', 'critical-acceptance', 'image-security'];
+// Owner decisions 2026-10-05/06: every CI job may run on the owner's self-hosted runner.
+describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
+  const ciJobs = Object.keys(workflow('ci').jobs);
   const selfHosted = ['self-hosted', 'linux', 'x64'];
   let ci: Workflow;
 
@@ -1007,18 +1007,30 @@ describe('ENG-008: only trusted runs of the heavy jobs reach the self-hosted run
     ],
   ];
 
-  describe.each(heavyJobs)('ENG-008-A %s', (job) => {
+  it('ENG-008-A covers every CI job, the aggregate and the main-only jobs included', () => {
+    expect([...ciJobs].sort()).toEqual([...requiredJobs, 'playwright-cache', 'ci-status'].sort());
+  });
+
+  describe.each(ciJobs)('ENG-008-A %s', (job) => {
     it.each(cases)('%s', (_case, vars, github, expected) => {
       expect(runner(ci.jobs[job]['runs-on'], vars, github)).toEqual(expected);
     });
   });
 
-  it('ENG-008-A every other job, the deploy included, stays on GitHub runners', () => {
-    for (const [name, job] of Object.entries(ci.jobs)) {
-      if (!heavyJobs.includes(name)) expect(job['runs-on']).toBe('ubuntu-latest');
-    }
+  it('ENG-008-A the deploy stays on GitHub runners', () => {
     for (const job of Object.values(workflow('cd').jobs))
       expect(job['runs-on']).toBe('ubuntu-latest');
+  });
+
+  // The runner user has no sudo except one sudoers rule for exactly this command
+  // (docs/self-hosted-runner.md); any other sudo would fail there.
+  it('ENG-008-C the only sudo in CI is the root ownership test the runner allows', () => {
+    const sudo = Object.values(ci.jobs).flatMap((job) =>
+      (job.steps ?? []).filter((step) => /\bsudo\b/.test(step.run ?? '')),
+    );
+    expect(sudo.map((step) => step.run?.trim())).toEqual([
+      'sudo python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths',
+    ]);
   });
 
   it('ENG-008-B pull requests never trigger with base-repository privileges', () => {

@@ -1,35 +1,32 @@
 # Self-hosted CI runner
 
 GitHub's hosted runners can be scarce: on 2026-10-05 jobs waited or were cancelled for
-lack of a runner, which held back pull requests and the main release build. The three
-Docker-heavy CI jobs can therefore run on a runner the owner hosts. Everything else stays
-on GitHub's runners.
+lack of a runner, which held back pull requests and the main release build. Every CI job
+can therefore run on a runner the owner hosts; only the deploy stays on GitHub.
 
 ## What runs where
 
-| Job (`.github/workflows/ci.yml`) | Runner when `CI_SELF_HOSTED` is `true` |
+| Workflow | Runner when `CI_SELF_HOSTED` is `true` |
 | --- | --- |
-| Build Release Images (also on every push to main) | self-hosted |
-| Critical acceptance (six shards) | self-hosted |
-| Image Security Scan | self-hosted |
-| Lint, unit tests, builds, specification gates, dependency audit, acceptance receipt, merged pull request check, CI Status, browser cache warm-up | GitHub |
+| Every job of `.github/workflows/ci.yml`: lint, unit tests, builds, specification gates, dependency audit, release image build, six acceptance shards, image scan, acceptance receipt, merged pull request check, browser cache warm-up, CI Status | self-hosted |
 | Deploy Manual MVP (`cd.yml`) | GitHub |
 
-These three jobs build and load about 700 MB of images, start the Compose stack and run
-the browser suite; they are the slowest and the ones a missing runner hurts most. The
-light jobs need no Docker, and the specification gates need `sudo`, which the self-hosted
-runner does not grant.
+The deploy keeps GitHub's runners: it holds the production environment's credentials
+and reaches the server, and a self-hosted runner must hold no secrets.
 
 The repository variable `CI_SELF_HOSTED` is the switch. Unset or anything other than
 `true`, every job runs on GitHub as before. Turn it off whenever the runner machine is
-down, otherwise the three jobs wait in the queue for it.
+down, otherwise the jobs wait in the queue for it.
+
+With one runner the jobs of a run execute one after another, so a full pull request run
+takes longer than on GitHub's parallel runners.
 
 ## Security on a public repository
 
 Anyone can open a pull request against a public repository, and a job runs whatever code
 the pull request contains. A self-hosted runner must never execute that code. The layers:
 
-1. **Workflow routing.** The three jobs pick the self-hosted runner only for a push, a manual
+1. **Workflow routing.** The jobs pick the self-hosted runner only for a push, a manual
    dispatch or a pull request whose branch lives in this repository and was not opened by
    Dependabot. A pull request from a fork, or a dependency update, runs on GitHub's
    runners. `ENG-008` in `backend/src/engineering/gates.spec.ts` checks this routing.
@@ -40,8 +37,9 @@ the pull request contains. A self-hosted runner must never execute that code. Th
    one that changes anything under `.github/`.
 3. **No `pull_request_target`.** No workflow runs pull request code with the base
    repository's privileges (`ENG-008-B`).
-4. **Read-only tokens.** The routed jobs get `contents: read` (and `packages: read` to pull
-   the pinned base images); the runner holds no deploy credentials or secrets.
+4. **Read-only tokens.** The CI jobs get read-only tokens (`contents: read`, plus
+   `packages: read` to pull the pinned base images and `actions: read`/`pull-requests: read`
+   for the merged pull request check); the runner holds no deploy credentials or secrets.
 5. **A dedicated machine.** Use a separate machine or VM, never the production server. The
    runner user must be in the `docker` group, which is equivalent to root on that machine,
    so the machine must hold nothing else of value.
@@ -51,8 +49,8 @@ the pull request contains. A self-hosted runner must never execute that code. Th
 - Linux x86-64 (the images are `linux/amd64`). Ubuntu 24.04 LTS is recommended because
   Playwright installs Chromium's system packages for it.
 - At least 4 CPU, 8 GB RAM and 40 GB free disk.
-- Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`
-  and `tar`.
+- Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`,
+  `tar` and `python3` (the security tests).
 - Chromium's system libraries, installed once as root (see below). Node.js, pnpm, the
   Chromium browser itself and Trivy are downloaded by the jobs.
 - Only **one** runner per Docker daemon. Acceptance uses a fixed Compose project name,
@@ -63,11 +61,18 @@ the pull request contains. A self-hosted runner must never execute that code. Th
 
 ```sh
 # Docker Engine with the buildx and compose plugins: https://docs.docker.com/engine/install/ubuntu/
-apt-get update && apt-get install -y git jq zstd curl tar xz-utils
+apt-get update && apt-get install -y git jq zstd curl tar xz-utils python3
 
-# A dedicated user without sudo, allowed to use Docker.
+# A dedicated user, allowed to use Docker.
 useradd --create-home --shell /bin/bash ci
 usermod -aG docker ci
+
+# The only sudo the user gets: the one security test that must run as root
+# (Specification and Engineering Gates; ENG-008-C keeps it the only sudo in CI).
+cat > /etc/sudoers.d/ci-runner <<'EOF'
+ci ALL=(root) NOPASSWD: /usr/bin/python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths
+EOF
+chmod 0440 /etc/sudoers.d/ci-runner && visudo -cf /etc/sudoers.d/ci-runner
 
 # Chromium's system libraries for the Playwright version in package.json.
 curl -fsSL https://nodejs.org/dist/v26.10.0/node-v26.10.0-linux-x64.tar.xz | tar -xJ -C /opt
@@ -75,6 +80,9 @@ PATH=/opt/node-v26.10.0-linux-x64/bin:$PATH npx -y playwright@1.63.0 install-dep
 ```
 
 When `@playwright/test` is upgraded, repeat the last line with the new version.
+
+The sudoers rule runs repository test code as root. That grants nothing the `docker`
+group does not already give the same user, which is why the machine must be dedicated.
 
 ## Register the runner
 
@@ -94,8 +102,8 @@ When `@playwright/test` is upgraded, repeat the last line with the new version.
 1. Set the fork approval policy from the security section above.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
    name `CI_SELF_HOSTED`, value `true`.
-3. Re-run CI on an open pull request or run the CI workflow manually. The three jobs list
-   the self-hosted runner's name under **Set up job**; the others list a GitHub runner.
+3. Re-run CI on an open pull request or run the CI workflow manually. Every job lists the
+   self-hosted runner's name under **Set up job**.
 
 To go back to GitHub's runners, set the variable to `false` or delete it.
 
