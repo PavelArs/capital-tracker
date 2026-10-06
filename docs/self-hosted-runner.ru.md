@@ -32,6 +32,7 @@ SSH-ключ от прода. Задачи CI никогда не попадаю
 ```sh
 snap install lxd
 lxd init --auto
+mkdir -p /mnt/raid1/lxd
 lxc storage create raid dir source=/mnt/raid1/lxd
 ```
 

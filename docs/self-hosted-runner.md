@@ -81,7 +81,8 @@ a full system disk stops production too. The example uses a `dir` pool on a RAID
 ```sh
 snap install lxd
 lxd init --auto
-lxc storage create raid dir source=/mnt/raid1/lxd   # a directory on the large disk
+mkdir -p /mnt/raid1/lxd   # a directory on the large disk; the LXD snap does not create it
+lxc storage create raid dir source=/mnt/raid1/lxd
 for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
   lxc launch ubuntu:24.04 "$name" --storage raid \
     -c security.nesting=true \
