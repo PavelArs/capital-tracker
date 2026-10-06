@@ -62,7 +62,10 @@ code. The layers below hold whether the repository is public or private:
 - Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`, `libatomic1`,
   `tar` and `python3` (the security tests).
 - Chromium's system libraries, installed once as root by the setup script. Node.js, pnpm,
-  the Chromium browser itself and Trivy are downloaded by the jobs.
+  the Chromium browser itself and Trivy are downloaded by the jobs. On these runners the
+  browser jobs fetch Chrome for Testing from Google's public bucket
+  (`scripts/playwright-cft-mirror.cjs`), because the Playwright CDN stalls from some networks;
+  the browser stays in `~/.cache/ms-playwright` between jobs.
 - Only **one** runner per Docker daemon. Acceptance uses a fixed Compose project name,
   fixed subnets and the fixed local port 8443 (also written into the tests), so two jobs on
   one daemon would collide. Several runners on one server therefore each get their own

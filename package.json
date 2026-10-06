@@ -15,7 +15,7 @@
   },
   "scripts": {
     "specs:validate": "OPENSPEC_TELEMETRY=0 openspec validate --all --strict --no-interactive",
-    "test:engineering": "NODE_OPTIONS=--experimental-vm-modules pnpm --dir backend exec jest engineering/gates --runInBand && node --test scripts/critical-release-profile.test.cjs scripts/acceptance-shards.test.cjs scripts/check-merged-pr-ci.test.cjs scripts/csv-import-admission-oracle.test.mjs",
+    "test:engineering": "NODE_OPTIONS=--experimental-vm-modules pnpm --dir backend exec jest engineering/gates --runInBand && node --test scripts/critical-release-profile.test.cjs scripts/acceptance-shards.test.cjs scripts/check-merged-pr-ci.test.cjs scripts/playwright-cft-mirror.test.cjs scripts/csv-import-admission-oracle.test.mjs",
     "test:security": "python3 -B -m unittest discover -s tests/security -p '*_test.py'",
     "audit:production": "pnpm audit --prod --audit-level high",
     "lint": "pnpm --dir backend lint && pnpm --dir frontend lint",
