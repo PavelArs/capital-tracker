@@ -31,6 +31,7 @@ const wallet = (n: number, changes: Partial<WalletAddress>): WalletAddress => ({
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
+  balances: null,
   sync: {
     state: 'complete',
     completedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
@@ -558,5 +559,172 @@ describe('M11: wallets sync in the background', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('M14: Ethereum wallets', () => {
+  const ethAddress = `0x${'5e'.repeat(20)}`;
+  const ethWallet = (changes: Partial<WalletAddress>) =>
+    wallet(5, {
+      network: 'ethereum',
+      address: ethAddress,
+      label: 'Main ETH',
+      chainBalance: '1.500000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.500000000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '250.000000' },
+      ],
+      ...changes,
+    });
+  const withEther = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: [
+        ...valuation.assets,
+        asset({
+          instrumentId: id(3),
+          name: 'Ethereum',
+          symbol: 'ETH',
+          price: { value: '2000', observedAt: null, source: 'kraken', status: 'fresh' },
+          quantity: '1.5',
+          value: '3000',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '1.5', value: '3000' },
+          ],
+        }),
+        asset({
+          instrumentId: id(4),
+          name: 'USD Coin',
+          symbol: 'USDC',
+          price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+          quantity: '250',
+          value: '250',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '250', value: '250' },
+          ],
+        }),
+      ],
+    };
+  };
+
+  it('WAL-ADD tracks an Ethereum address with ETH, USDT and USDC', async () => {
+    setup([]);
+    const added = ethWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const ethereum = within(dialog).getByRole('button', { name: /^Ethereum/ });
+    expect(ethereum).toBeEnabled();
+    expect(ethereum).toHaveTextContent('One address. ETH, USDT and USDC');
+    await user.click(ethereum);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Ethereum wallet address');
+    expect(field).toHaveAttribute('placeholder', '0x…');
+    expect(dialog).toHaveTextContent('tracks ETH, USDT and USDC on Ethereum mainnet');
+    await user.type(field, ethAddress.toUpperCase().replace('0X', '0x'));
+    expect(within(dialog).getByText('Ethereum address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(within(dialog).getByText(ethAddress)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({
+      network: 'ethereum',
+      address: ethAddress,
+      accountId: trust,
+    });
+  });
+
+  it('WAL-INVALID refuses a Bitcoin address picked as Ethereum and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Ethereum/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText('Ethereum wallet address'), addresses.trust);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(
+      within(dialog).getByText(/This is not an Ethereum address: it looks like a Bitcoin address/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('WAL-NO-SECRETS drops a private key pasted as an Ethereum address', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Ethereum/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Ethereum wallet address');
+    await user.click(field);
+    await user.paste(`0x${'4c'.repeat(32)}`);
+    expect(field).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('It was not saved.');
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('shows the coin and the held tokens, values them and checks each against the records', async () => {
+    setup([wallet(1, {}), ethWallet({})], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(within(trustCard).getByText('Bitcoin, Ethereum · 2 addresses')).toBeInTheDocument();
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC');
+    expect(row).not.toHaveTextContent('USDT');
+    // 1.5 ETH at $2,000 plus 250 USDC at $1.
+    expect(row).toHaveTextContent('$3,250.00');
+    // The tracked tokens are no longer listed as kept by hand.
+    expect(trustCard).not.toHaveTextContent('USDT tracked by hand');
+    expect(within(trustCard).getByRole('note')).toHaveTextContent(
+      'The blockchain shows 0 USDT; your transactions in this wallet give 1,000 USDT.',
+    );
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    expect(drawer).toHaveTextContent('1.5 ETH · 250 USDC');
+    expect(drawer).toHaveTextContent('Tracked assetsETH, USDT, USDC');
+    expect(drawer).toHaveTextContent('Etherscan');
+  });
+
+  it('stacks the assets of an Ethereum row on a phone', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    setup([ethWallet({})], withEther());
+    const row = await screen.findByRole('button', { name: `Main ETH ${ethAddress}` });
+    const amounts = within(row).getByText('1.5 ETH').parentElement;
+    expect(amounts).toHaveClass('wallets-stack');
+    expect([...(amounts?.children ?? [])].map((piece) => piece.textContent)).toEqual([
+      '1.5 ETH',
+      '250 USDC',
+    ]);
+  });
+
+  it('SYNC-STATUS names the missing Etherscan key', async () => {
+    const stale = ethWallet({});
+    setup([stale], withEther());
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue({
+      ...synced(stale, 'provider_error'),
+      reason: 'not_configured',
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    await user.click(within(drawer).getByRole('button', { name: 'Sync now' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Etherscan');
   });
 });

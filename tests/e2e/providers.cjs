@@ -5,7 +5,7 @@ const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 
-const allowedHosts = new Set(['blockstream.info', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -38,6 +38,11 @@ const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
 // base + 0.01 per day since 2025-01-01 (less before it); Sundays and Mondays have none.
 // Oracles restate this.
 let cbr = null;
+// Synthetic Etherscan V2 (track-ethereum-wallets): the newest block and raw list items exactly as
+// the probe posts them; each list answers the items of an address in a block range, oldest first.
+const etherscanKey = 'acceptance-etherscan-key';
+const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], fault: null, requests: 0 });
+let ethereum = initialEthereum();
 
 function cbrDynamic(response, url) {
   const code = url.searchParams.get('VAL_NM_RQ') ?? '';
@@ -76,6 +81,40 @@ function cbrDynamic(response, url) {
   }
   response.writeHead(200, { 'content-type': 'application/xml; charset=windows-1251', connection: 'close' });
   response.end(`<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`);
+}
+
+function etherscan(response, url) {
+  const query = url.searchParams;
+  const refuse = (result) => respond(response, 200, { status: '0', message: 'NOTOK', result });
+  if (url.pathname !== '/v2/api' || query.get('chainid') !== '1') return refuse('Missing or unsupported chainid parameter');
+  if (query.get('apikey') !== etherscanKey) return refuse('Invalid API Key (#err2)|synthetic');
+  ethereum.requests++;
+  const fault = ethereum.fault;
+  if (fault && fault.onRequest === ethereum.requests) {
+    ethereum.fault = null;
+    if (fault.rateLimited) return refuse('Max calls per sec rate limit reached (5/sec)');
+    return respond(response, fault.status, { error: 'Synthetic provider fault' });
+  }
+  const action = query.get('action');
+  if (query.get('module') === 'proxy' && action === 'eth_blockNumber') {
+    return respond(response, 200, { jsonrpc: '2.0', id: 83, result: `0x${ethereum.tip.toString(16)}` });
+  }
+  const list = { txlist: 'normal', txlistinternal: 'internal', tokentx: 'tokens' }[action];
+  const address = query.get('address') ?? '';
+  const from = Number(query.get('startblock'));
+  const to = Number(query.get('endblock'));
+  const offset = Number(query.get('offset'));
+  if (query.get('module') !== 'account' || !list || !/^0x[0-9a-f]{40}$/.test(address) || query.get('page') !== '1'
+    || query.get('sort') !== 'asc' || !Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to
+    || !Number.isSafeInteger(offset) || offset < 1 || offset > 10000) {
+    return refuse('Error! Invalid parameters');
+  }
+  const items = ethereum[list]
+    .filter((item) => [item.from, item.to].includes(address) && Number(item.blockNumber) >= from && Number(item.blockNumber) <= to)
+    .sort((left, right) => Number(left.blockNumber) - Number(right.blockNumber))
+    .slice(0, offset);
+  if (items.length === 0) return respond(response, 200, { status: '0', message: 'No transactions found', result: [] });
+  return respond(response, 200, { status: '1', message: 'OK', result: items });
 }
 
 // Kraken OHLC: hourly candles end with the open candle three hours after `since`; daily
@@ -188,6 +227,7 @@ function provider(request, response, url) {
   }
   if (url.hostname === 'api.kraken.com' && url.pathname === '/0/public/OHLC') return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp') return cbrDynamic(response, url);
+  if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -235,6 +275,7 @@ const server = http.createServer(async (request, response) => {
       bitcoinHistories = new Map();
       marketPrices = null;
       cbr = null;
+      ethereum = initialEthereum();
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/fx') {
@@ -277,6 +318,25 @@ const server = http.createServer(async (request, response) => {
       }
       cbr = { base: data.base ?? {}, fail: data.fail ?? {}, broken: data.broken ?? {} };
       return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/ethereum') {
+      const data = await readJson(request);
+      const items = (value) => value === undefined || (Array.isArray(value) && value.length <= 100
+        && value.every((item) => item && typeof item === 'object' && !Array.isArray(item)
+          && Object.entries(item).every(([key, field]) => /^[A-Za-z_]{1,24}$/.test(key)
+            && typeof field === 'string' && field.length <= 100)));
+      const fault = data.fault;
+      if ((data.tip !== undefined && (!Number.isSafeInteger(data.tip) || data.tip < 0 || data.tip >= 2 ** 31))
+        || !items(data.normal) || !items(data.internal) || !items(data.tokens)
+        || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || (fault.rateLimited !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+        return respond(response, 400, { error: 'Invalid synthetic Ethereum fixture' });
+      }
+      ethereum = { tip: data.tip ?? ethereum.tip, normal: data.normal ?? ethereum.normal,
+        internal: data.internal ?? ethereum.internal, tokens: data.tokens ?? ethereum.tokens,
+        fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
+        requests: 0 };
+      return respond(response, 200, { ok: true, tip: ethereum.tip });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
       const data = await readJson(request);

@@ -3,24 +3,26 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { DataSource, EntityManager } from 'typeorm';
 import { parseUuid } from '../accounting/input';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
-import { formatSats } from './esplora-client';
+import { chainAsset, formatUnits, type Network, networkAssets } from './chain-assets';
 import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
 import { WalletSyncService } from './wallet-sync.service';
 
 interface AddressRow {
   id: string;
   ownerId: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   accountId: string | null;
   label: string | null;
+  scannedBlock: number | null;
   walkTopTxid: string | null;
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
   completedAt: Date | null;
   createdAt: Date;
   transactionCount: number;
-  balanceUnits: string;
+  /** Received minus sent per asset; null names the network's own coin. */
+  balances: { asset: string | null; units: string }[];
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
@@ -29,6 +31,8 @@ interface AddressRow {
 }
 interface TransactionRow {
   txid: string;
+  network: Network;
+  asset: string | null;
   blockHeight: number;
   blockTime: Date;
   direction: 'in' | 'out' | 'self';
@@ -36,18 +40,21 @@ interface TransactionRow {
   sentUnits: string;
   feeUnits: string;
 }
-// Each stored transaction's received minus sent units is its whole effect on the address,
-// the network fee included, so their sum over the complete history is the chain balance.
-// The wallet's background source (PR-SYN-1) comes along; null until its first pass.
-const selectAddress = `SELECT a.*, t."transactionCount", t."balanceUnits",
+// Each stored leg's received minus sent units is its whole effect on the address in its asset,
+// the network fee included, so their sum per asset over the complete history is the chain
+// balance. The wallet's background source (PR-SYN-1) comes along; null until its first pass.
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
     END AS source
   FROM wallet_addresses a
-  CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount",
-    coalesce(sum(x."receivedUnits" - x."sentUnits"), 0)::text AS "balanceUnits"
+  CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount"
     FROM wallet_address_transactions x WHERE x."addressId" = a.id) t
+  CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
+      'units', y.units::text)), '[]'::json) AS balances
+    FROM (SELECT x.asset, sum(x."receivedUnits" - x."sentUnits") AS units
+      FROM wallet_address_transactions x WHERE x."addressId" = a.id GROUP BY x.asset) y) b
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -61,8 +68,24 @@ function sourceRow(raw: AddressRow['source']): SourceRow | null {
   };
 }
 
+/** How much of the history is stored: Bitcoin walks newest first, Ethereum oldest first. */
+function historyState(row: AddressRow): 'never' | 'partial' | 'complete' {
+  if (row.network === 'bitcoin')
+    return row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
+  return row.completedAt ? 'complete' : row.scannedBlock !== null ? 'partial' : 'never';
+}
+
+/** The balance of each asset the network's wallet can hold, its own coin first. */
+function balancesOf(row: AddressRow) {
+  return networkAssets(row.network).map((asset) => {
+    const units = row.balances.find((item) => item.asset === asset.token)?.units ?? '0';
+    return { symbol: asset.symbol, quantity: formatUnits(BigInt(units), asset) };
+  });
+}
+
 function summary(row: AddressRow, now = new Date()) {
-  const state = row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
+  const state = historyState(row);
+  const balances = state === 'complete' ? balancesOf(row) : null;
   const source = sourceRow(row.source);
   const status = source ? presentSource(source, now) : null;
   return {
@@ -74,7 +97,8 @@ function summary(row: AddressRow, now = new Date()) {
     createdAt: row.createdAt.toISOString(),
     transactionCount: row.transactionCount,
     // SYNC-RECONCILE: known only once the whole history is stored; never a partial sum.
-    chainBalance: state === 'complete' ? formatSats(BigInt(row.balanceUnits)) : null,
+    chainBalance: balances?.[0].quantity ?? null,
+    balances,
     sync: {
       state,
       completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,
@@ -88,17 +112,28 @@ function summary(row: AddressRow, now = new Date()) {
 }
 
 function transaction(row: TransactionRow) {
-  const received = BigInt(row.receivedUnits);
-  const sent = BigInt(row.sentUnits);
+  const asset = chainAsset(row.network, row.asset);
+  const amount = (units: bigint) => formatUnits(units, asset);
+  const received = amount(BigInt(row.receivedUnits));
+  const sent = amount(BigInt(row.sentUnits));
+  const net = amount(BigInt(row.receivedUnits) - BigInt(row.sentUnits));
+  // The network fee is paid in its own coin, whatever asset the leg moves.
+  const fee = formatUnits(BigInt(row.feeUnits), chainAsset(row.network, null));
   return {
     txid: row.txid,
     blockHeight: row.blockHeight,
     blockTime: row.blockTime.toISOString(),
     direction: row.direction,
-    receivedBtc: formatSats(received),
-    sentBtc: formatSats(sent),
-    netBtc: formatSats(received - sent),
-    feeBtc: formatSats(BigInt(row.feeUnits)),
+    symbol: asset.symbol,
+    received,
+    sent,
+    net,
+    fee,
+    // The Bitcoin-only screen's names for the same amounts.
+    receivedBtc: received,
+    sentBtc: sent,
+    netBtc: net,
+    feeBtc: fee,
     // No price source exists yet: the value is unknown, never zero.
     usdValue: null,
     usdValueStatus: 'missing' as const,
@@ -116,18 +151,18 @@ export class WalletAddressService {
   // repeated request names; moving or renaming it is an explicit update.
   async register(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const { address, accountId, label } = parseRegistration(raw);
+    const { network, address, accountId, label } = parseRegistration(raw);
     return this.source.transaction('READ COMMITTED', async (manager) => {
       if (accountId) await this.account(manager, owner, accountId);
       const inserted: { id: string }[] = await manager.query(
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
-          VALUES ($1, $2, 'bitcoin', $3, $4, $5)
+          VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT ("ownerId", network, address) DO NOTHING RETURNING id`,
-        [randomUUID(), owner, address, accountId, label],
+        [randomUUID(), owner, network, address, accountId, label],
       );
       const [row]: AddressRow[] = await manager.query(
-        `${selectAddress} WHERE a."ownerId" = $1 AND a.network = 'bitcoin' AND a.address = $2`,
-        [owner, address],
+        `${selectAddress} WHERE a."ownerId" = $1 AND a.network = $2 AND a.address = $3`,
+        [owner, network, address],
       );
       return { created: inserted.length === 1, value: summary(row) };
     });
@@ -196,11 +231,12 @@ export class WalletAddressService {
     return this.read(async (manager) => {
       const address = await this.address(manager, owner, addressId);
       const rows: TransactionRow[] = await manager.query(
-        `SELECT txid, "blockHeight", "blockTime", direction, "receivedUnits"::text AS "receivedUnits",
-          "sentUnits"::text AS "sentUnits", "feeUnits"::text AS "feeUnits"
+        `SELECT txid, $4::text AS network, asset, "blockHeight", "blockTime", direction,
+          "receivedUnits"::text AS "receivedUnits", "sentUnits"::text AS "sentUnits",
+          "feeUnits"::text AS "feeUnits"
           FROM wallet_address_transactions WHERE "addressId" = $1
           ORDER BY "blockHeight" DESC, txid LIMIT $2 OFFSET $3`,
-        [addressId, limit, offset],
+        [addressId, limit, offset, address.network],
       );
       const total = address.transactionCount;
       return {

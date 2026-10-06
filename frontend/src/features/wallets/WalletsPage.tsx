@@ -9,8 +9,15 @@ import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import { useWallets } from './useWallets';
-import { AddressRow, holdingsOf, ManualRow, ReconcileNote, subtitle } from './WalletParts';
-import { isBitcoin, reconcile } from './wallets';
+import {
+  AddressRow,
+  holdingsOf,
+  ManualRow,
+  ReconcileNote,
+  subtitle,
+  trackedSymbols,
+} from './WalletParts';
+import { isCoin, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -29,7 +36,7 @@ export default function WalletsPage() {
   }));
   const list = addresses ?? [];
   const currency = portfolio?.currency ?? 'USD';
-  const btcPrice = portfolio?.assets.find(isBitcoin)?.price?.value ?? null;
+  const prices = pricesOf(portfolio);
   const open = list.find((address) => address.id === openId);
   const unassigned = list.filter(
     (address) => !address.accountId || !accounts.some((a) => a.accountId === address.accountId),
@@ -67,7 +74,7 @@ export default function WalletsPage() {
         address={address}
         run={runs[address.id]}
         narrow={narrow}
-        btcPrice={btcPrice}
+        prices={prices}
         currency={currency}
         onOpen={() => setOpenId(address.id)}
         onSync={() => void sync(address.id)}
@@ -99,7 +106,8 @@ export default function WalletsPage() {
           </span>
           <h2 id="wallets-empty">No wallets connected</h2>
           <p>
-            Add a Bitcoin address. The app only reads public data and never asks for a seed phrase.
+            Add a Bitcoin or Ethereum address. The app only reads public data and never asks for a
+            seed phrase.
           </p>
           {addButton}
         </section>
@@ -127,9 +135,10 @@ export default function WalletsPage() {
             </section>
           )}
           {cards.map(({ account, addresses: own, holdings }) => {
-            const manual = own.length
-              ? holdings.filter((holding) => !isBitcoin(holding.asset))
-              : holdings;
+            const tracked = trackedSymbols(own);
+            const manual = holdings.filter(
+              (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),
+            );
             const headingId = `wallet-${account.accountId}`;
             return (
               <section
@@ -197,7 +206,7 @@ export default function WalletsPage() {
           address={open}
           accounts={accounts}
           currency={currency}
-          btcPrice={btcPrice}
+          prices={prices}
           run={runs[open.id]}
           onSync={() => void sync(open.id)}
           onSaved={(address, newAccount) => {

@@ -1,4 +1,5 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
+import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { RewardCategory } from './asset-reward-types';
 import { parseDecimal, parseUuid } from './input';
 import { formatAtoms } from './money';
@@ -164,9 +165,11 @@ export function classificationPayload(
   });
 }
 
-/** One stored chain transaction of a wallet address, raw as the provider sent it. */
+/** One stored chain transaction leg of a wallet address, raw as the provider sent it. */
 export interface ChainLeg {
-  network: 'bitcoin';
+  network: Network;
+  /** The token the leg moves (M14), or null for the network's own coin. */
+  asset: string | null;
   blockTime: string;
   receivedUnits: string;
   sentUnits: string;
@@ -178,19 +181,23 @@ export function fitsDirection(leg: ChainLeg, type: ChainType): boolean {
   return quantity !== '0' && (inbound ? incoming : outgoing).includes(type);
 }
 
-const SAT_TO_ATOMS = 10n ** 22n;
-
-/** The coin and amount the leg moves: what arrived, or what left with the network fee. */
+/** The amount the leg moves in its asset: what arrived, or what left with the network fee. */
 export function legMovement(leg: ChainLeg): { inbound: boolean; quantity: string } {
   const net = BigInt(leg.receivedUnits) - BigInt(leg.sentUnits);
   const magnitude = net < 0n ? -net : net;
-  return { inbound: net > 0n, quantity: formatAtoms(magnitude * SAT_TO_ATOMS) };
+  const atoms = unitsToAtoms(magnitude, chainAsset(leg.network, leg.asset));
+  return { inbound: net > 0n, quantity: formatAtoms(atoms) };
 }
 
-export const chainCoins: Record<
-  ChainLeg['network'],
-  { assetType: 'crypto'; symbol: string; name: string }
-> = { bitcoin: { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' } };
+/** The portfolio asset a leg moves: BTC, ETH, or the USDT or USDC token. */
+export function chainCoin(leg: Pick<ChainLeg, 'network' | 'asset'>): {
+  assetType: 'crypto';
+  symbol: string;
+  name: string;
+} {
+  const { symbol, name } = chainAsset(leg.network, leg.asset);
+  return { assetType: 'crypto', symbol, name };
+}
 
 export const unfit = () =>
   new UnprocessableEntityException('This type does not fit the direction of the transaction');

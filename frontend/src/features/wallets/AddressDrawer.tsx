@@ -9,9 +9,12 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
-import { DASH, money, quantity } from '../portfolio/format';
+import { DASH, quantity } from '../portfolio/format';
 import type { WalletAccount } from './AddWalletDialog';
+import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
+import { addressValue, chainAmounts, type Prices } from './WalletParts';
+import { chainBalances } from './wallets';
 
 const NEW = '__new';
 const NONE = '';
@@ -32,8 +35,8 @@ interface Props {
   address: WalletAddress;
   accounts: readonly WalletAccount[];
   currency: AccountingCurrency;
-  /** Price of one BTC in `currency`, when known. */
-  btcPrice: string | null;
+  /** Latest price of each crypto ticker in `currency`. */
+  prices: Prices;
   run: SyncRun | undefined;
   onSync: () => void;
   onSaved: (address: WalletAddress, newAccount: boolean) => void;
@@ -46,7 +49,7 @@ export default function AddressDrawer({
   address,
   accounts,
   currency,
-  btcPrice,
+  prices,
   run,
   onSync,
   onSaved,
@@ -104,11 +107,9 @@ export default function AddressDrawer({
   }, [address.id, count]);
 
   const wallet = accounts.find((account) => account.accountId === address.accountId);
-  const balance = address.chainBalance;
-  const value =
-    balance !== null && btcPrice !== null
-      ? money(String(Number(balance) * Number(btcPrice)), currency)
-      : null;
+  const network = networkOf(address);
+  const balances = chainBalances(address);
+  const value = addressValue(address, prices, currency);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -163,7 +164,9 @@ export default function AddressDrawer({
         aria-labelledby="address-title"
       >
         <div className="transactions-drawer__head">
-          <h2 id="address-title">{wallet ? `${wallet.name} · Bitcoin` : 'Bitcoin address'}</h2>
+          <h2 id="address-title">
+            {wallet ? `${wallet.name} · ${network.name}` : `${network.name} address`}
+          </h2>
           <button
             ref={closeButton}
             type="button"
@@ -176,19 +179,27 @@ export default function AddressDrawer({
         <div className="transactions-drawer__body">
           <div className="transactions-hero">
             <span className="transactions-hero__amount">
-              {balance === null ? `${DASH} BTC` : `${quantity(balance)} BTC`}
+              {balances === null ? `${DASH} ${network.symbol}` : chainAmounts(address)}
             </span>
             <span className="transactions-hero__value">
-              {balance === null
+              {balances === null
                 ? 'The balance appears once the whole history is loaded.'
-                : (value ?? 'No BTC price yet')}
+                : value === DASH
+                  ? 'No price yet'
+                  : value}
             </span>
           </div>
           <dl className="transactions-facts" aria-label="Details">
             <div>
               <dt>Network</dt>
-              <dd>Bitcoin</dd>
+              <dd>{network.name}</dd>
             </div>
+            {network.assets.length > 1 && (
+              <div>
+                <dt>Tracked assets</dt>
+                <dd>{network.assets.join(', ')}</dd>
+              </div>
+            )}
             <div>
               <dt>Address</dt>
               <dd>
@@ -215,7 +226,7 @@ export default function AddressDrawer({
             </div>
             <div>
               <dt>Data source</dt>
-              <dd>Blockstream Esplora</dd>
+              <dd>{network.source}</dd>
             </div>
             <div>
               <dt>Updates</dt>
@@ -315,8 +326,8 @@ export default function AddressDrawer({
                       </span>
                     </span>
                     <span className="wallets-num">
-                      {item.netBtc.startsWith('-') ? '-' : '+'}
-                      {quantity(item.netBtc)} BTC
+                      {item.net.startsWith('-') ? '-' : '+'}
+                      {quantity(item.net)} {item.symbol}
                     </span>
                   </li>
                 ))}

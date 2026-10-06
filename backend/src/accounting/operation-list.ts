@@ -1,11 +1,11 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 import type { TradePurpose } from './trade-purpose';
 
 // One read model over every journal and the raw chain history (list-all-operations).
-const SAT_TO_ATOMS = 10n ** 22n;
 
 export interface OperationAsset {
   instrumentId: string | null;
@@ -18,7 +18,7 @@ export interface OperationPlace {
 }
 export interface OperationWallet {
   id: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   /** The owner's name for the address (M10), or null. */
   label: string | null;
@@ -129,6 +129,8 @@ export interface ChainOperationInput {
   /** The account the address belongs to (WAL-ACCOUNT), or null until the owner picks one. */
   account: OperationPlace | null;
   txid: string;
+  /** The token the leg moves (M14), or null for the network's own coin. */
+  asset: string | null;
   blockHeight: number;
   blockTime: string;
   direction: 'in' | 'out' | 'self';
@@ -236,9 +238,11 @@ export interface OperationList {
   operations: Operation[];
 }
 
-const CHAIN_ASSETS: Record<OperationWallet['network'], OperationAsset> = {
-  bitcoin: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
-};
+/** What a chain leg moves, as the list names assets; the fee is in the network's own coin. */
+function legAsset(network: Network, token: string | null): OperationAsset {
+  const { symbol, name } = chainAsset(network, token);
+  return { instrumentId: null, symbol, name };
+}
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
 const purposeTypes: Record<TradePurpose, OperationType> = {
   income: 'income',
@@ -308,8 +312,8 @@ function inCurrency(operation: Projected, fx: FxConverter, today: string): Opera
 }
 const recorded = { status: 'recorded', source: 'manual' } as const;
 
-function sats(units: string): string {
-  return formatAtoms(BigInt(units) * SAT_TO_ATOMS);
+function amount(units: bigint, network: Network, token: string | null): string {
+  return formatAtoms(unitsToAtoms(units, chainAsset(network, token)));
 }
 
 const netUnits = (row: ChainOperationInput) => BigInt(row.receivedUnits) - BigInt(row.sentUnits);
@@ -344,10 +348,11 @@ function chainOperation(
   produced: Projected | undefined,
   other: ChainOperationInput | null,
 ): Projected {
-  const asset = CHAIN_ASSETS[row.wallet.network];
+  const { network } = row.wallet;
+  const asset = legAsset(network, row.asset);
   const net = netUnits(row);
   const magnitude = net < 0n ? -net : net;
-  const quantity = formatAtoms(magnitude * SAT_TO_ATOMS);
+  const quantity = amount(magnitude, network, row.asset);
   const price = asset.symbol ? prices.get(asset.symbol) : undefined;
   const answer = row.classification ?? null;
   const leg = row.direction === 'self' ? 'internal' : row.direction;
@@ -365,7 +370,10 @@ function chainOperation(
     fee:
       row.direction === 'in' || BigInt(row.feeUnits) === 0n
         ? null
-        : { asset, quantity: sats(row.feeUnits) },
+        : {
+            asset: legAsset(network, null),
+            quantity: amount(BigInt(row.feeUnits), network, null),
+          },
     account: row.account,
     wallet: row.wallet,
     chain: {

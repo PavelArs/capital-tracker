@@ -1,6 +1,8 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
+import type { Network } from './chain-assets';
+import { normalizeEthereumAddress } from './ethereum-address';
 
 export const LABEL_MAX_LENGTH = 40;
 
@@ -33,17 +35,23 @@ function account(value: unknown): string | null {
 }
 
 export interface Registration {
+  network: Network;
   address: string;
   accountId: string | null;
   label: string | null;
 }
 
-// Only Bitcoin is tracked so far; Ethereum and Solana join with their own sync (M14, M15).
+// Bitcoin (the default of the legacy body) and Ethereum; Solana joins with its sync (M15).
 export function parseRegistration(raw: unknown): Registration {
   const row = object(raw, ['network', 'address', 'accountId', 'label']);
-  if (row.network !== undefined && row.network !== 'bitcoin') return bad();
+  const network = row.network ?? 'bitcoin';
+  if (network !== 'bitcoin' && network !== 'ethereum') return bad();
   return {
-    address: normalizeBitcoinAddress(row.address),
+    network,
+    address:
+      network === 'bitcoin'
+        ? normalizeBitcoinAddress(row.address)
+        : normalizeEthereumAddress(row.address),
     accountId: account(row.accountId),
     label: label(row.label),
   };

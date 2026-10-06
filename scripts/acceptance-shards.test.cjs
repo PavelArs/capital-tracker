@@ -61,6 +61,7 @@ const legacyChecks = [
   'manual-operations-db',
   'chain-classification-db',
   'chain-transfers-db',
+  'ethereum-wallets-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

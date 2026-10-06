@@ -4,6 +4,7 @@ import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { ChainClassificationService } from '../accounting/chain-classification.service';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
+import { isNetwork, networkNames } from './chain-assets';
 import {
   CHAIN_SYNC_ADAPTERS,
   type ChainSyncAdapter,
@@ -21,7 +22,6 @@ export type WalletTickResult =
 const LOCK_KEY = 7_340_600_011;
 // Wallets per tick; the rest wait for the next minute.
 const WALLETS_PER_TICK = 20;
-const NETWORK_NAMES: Record<string, string> = { bitcoin: 'Bitcoin' };
 
 interface DueWallet {
   id: string;
@@ -110,7 +110,8 @@ export class WalletSyncService {
   ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
     const key = walletSourceKey(wallet.id);
     const adapter = this.adapters.get(wallet.network);
-    const name = adapter?.name ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
+    const name =
+      adapter?.name ?? (isNetwork(wallet.network) ? networkNames[wallet.network] : wallet.network);
     if (!adapter) {
       const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
       await this.record(key, outcome, now);

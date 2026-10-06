@@ -1,5 +1,6 @@
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
-import type { WalletAddress } from '@api/wallet-addresses.api';
+import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
+import { networkOf } from './networks';
 
 // Exact decimal arithmetic for comparing balances; display rounding happens in format.ts.
 const SCALE = 30;
@@ -25,83 +26,147 @@ export function sum(values: readonly string[]): string {
 
 /** Bitcoin as the portfolio knows it: the crypto asset with ticker BTC. */
 export function isBitcoin(asset: { symbol: string | null; assetType: string }): boolean {
-  return asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === 'BTC';
+  return isCoin(asset, 'BTC');
 }
 
-/** What the account's transactions say it holds in BTC; "0" when it holds none. */
-export function recordedBitcoin(portfolio: PortfolioValuation, accountId: string): string {
+/** A chain asset as the portfolio knows it: the crypto asset with that ticker. */
+export function isCoin(asset: { symbol: string | null; assetType: string }, symbol: string) {
+  return asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === symbol;
+}
+
+/** What the account's transactions say it holds of a coin; "0" when it holds none. */
+export function recordedCoin(
+  portfolio: PortfolioValuation,
+  accountId: string,
+  symbol: string,
+): string {
   return sum(
     portfolio.assets
-      .filter(isBitcoin)
+      .filter((asset) => isCoin(asset, symbol))
       .flatMap((asset) => asset.holdings)
       .filter((holding) => holding.accountId === accountId)
       .map((holding) => holding.quantity),
   );
 }
 
+/** Every asset's balance on the chain, the network's own coin first; null until synced. */
+export function chainBalances(address: WalletAddress): ChainBalance[] | null {
+  if (address.balances) return address.balances;
+  return address.chainBalance === null
+    ? null
+    : [{ symbol: networkOf(address).symbol, quantity: address.chainBalance }];
+}
+
+/** The latest price of each crypto ticker in the portfolio's currency. */
+export function pricesOf(portfolio: PortfolioValuation | null): Map<string, string> {
+  const prices = new Map<string, string>();
+  for (const asset of portfolio?.assets ?? []) {
+    const symbol = asset.symbol?.toUpperCase();
+    if (asset.assetType === 'crypto' && symbol && asset.price && !prices.has(symbol))
+      prices.set(symbol, asset.price.value);
+  }
+  return prices;
+}
+
+export interface AssetDifference {
+  symbol: string;
+  chain: string;
+  recorded: string;
+  difference: string;
+}
+
 export type Reconciliation =
   | { state: 'none' }
   | { state: 'pending' }
-  | { state: 'match'; chain: string }
-  | { state: 'differs'; chain: string; recorded: string; difference: string };
+  | { state: 'match' }
+  | { state: 'differs'; assets: AssetDifference[] };
 
 /**
- * SYNC-RECONCILE: the account's Bitcoin addresses against its transactions. Known only when
- * every address has its whole history; a partly loaded address would show a false difference.
+ * SYNC-RECONCILE: the account's addresses against its transactions, asset by asset (BTC; ETH,
+ * USDT and USDC). Known only when every address has its whole history; a partly loaded
+ * address would show a false difference.
  */
 export function reconcile(
   addresses: readonly WalletAddress[],
   portfolio: PortfolioValuation,
   accountId: string,
 ): Reconciliation {
-  const bitcoin = addresses.filter(
-    (address) => address.network === 'bitcoin' && address.accountId === accountId,
-  );
-  if (bitcoin.length === 0) return { state: 'none' };
-  const balances = bitcoin.map((address) => address.chainBalance);
+  const own = addresses.filter((address) => address.accountId === accountId);
+  if (own.length === 0) return { state: 'none' };
+  const balances = own.map(chainBalances);
   if (balances.some((balance) => balance === null)) return { state: 'pending' };
-  const chain = sum(balances as string[]);
-  const recorded = recordedBitcoin(portfolio, accountId);
-  const difference = decimal(units(chain) - units(recorded));
-  return difference === '0'
-    ? { state: 'match', chain }
-    : { state: 'differs', chain, recorded, difference };
+  const symbols = [...new Set(own.flatMap((address) => networkOf(address).assets))];
+  const assets = symbols.flatMap((symbol) => {
+    const chain = sum(
+      (balances as ChainBalance[][])
+        .flat()
+        .filter((balance) => balance.symbol === symbol)
+        .map((balance) => balance.quantity),
+    );
+    const recorded = recordedCoin(portfolio, accountId, symbol);
+    const difference = decimal(units(chain) - units(recorded));
+    return difference === '0' ? [] : [{ symbol, chain, recorded, difference }];
+  });
+  return assets.length === 0 ? { state: 'match' } : { state: 'differs', assets };
 }
 
 export type AddressCheck =
   | { ok: true; address: string; kind: string }
   | { ok: false; message: string; secret?: true };
 
-const COMING_SOON = 'Only Bitcoin can be tracked so far';
+const COMING_SOON = 'Only Bitcoin and Ethereum can be tracked so far';
+const SEED_PHRASE =
+  'This looks like a seed phrase. Never share it: the app needs only the public address.';
+const PRIVATE_KEY =
+  'This looks like a private key. Never share it: the app needs only the public address.';
+
+/** A seed phrase or a private key in any network's address field (WAL-NO-SECRETS). */
+function secretCheck(value: string): AddressCheck | null {
+  const words = value.split(/\s+/);
+  if (words.length >= 12 && words.every((word) => /^[a-z]+$/i.test(word)))
+    return { ok: false, secret: true, message: SEED_PHRASE };
+  if (/^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value) || /^(0x)?[0-9a-f]{64}$/i.test(value))
+    return { ok: false, secret: true, message: PRIVATE_KEY };
+  return null;
+}
 
 /**
  * WAL-INVALID, WAL-NO-SECRETS: a first check in the browser. The server verifies the
  * checksum; a seed phrase or a private key is refused here and never sent anywhere.
  */
+export function checkAddress(network: WalletAddress['network'], raw: string): AddressCheck {
+  return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
+}
+
+export function checkEthereumAddress(raw: string): AddressCheck {
+  const value = raw.trim();
+  if (!value) return { ok: false, message: 'Paste the wallet address.' };
+  const secret = secretCheck(value);
+  if (secret) return secret;
+  // The server checks the EIP-55 checksum of a mixed-case address.
+  if (/^0x[0-9a-f]{40}$/i.test(value))
+    return { ok: true, address: value.toLowerCase(), kind: 'Ethereum address' };
+  if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
+    return {
+      ok: false,
+      message:
+        'This is not an Ethereum address: it looks like a Bitcoin address. Go back and pick Bitcoin to track it.',
+    };
+  return {
+    ok: false,
+    message: 'This is not a valid Ethereum address. Check that it was copied in full.',
+  };
+}
+
 export function checkBitcoinAddress(raw: string): AddressCheck {
   const value = raw.trim();
   if (!value) return { ok: false, message: 'Paste the wallet address.' };
-  const words = value.split(/\s+/);
-  if (words.length >= 12 && words.every((word) => /^[a-z]+$/i.test(word))) {
-    return {
-      ok: false,
-      secret: true,
-      message:
-        'This looks like a seed phrase. Never share it: the app needs only the public address.',
-    };
-  }
-  if (/^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value)) {
-    return {
-      ok: false,
-      secret: true,
-      message:
-        'This looks like a private key. Never share it: the app needs only the public address.',
-    };
-  }
+  const secret = secretCheck(value);
+  if (secret) return secret;
   if (/^0x[0-9a-f]{40}$/i.test(value)) {
     return {
       ok: false,
-      message: `This looks like an Ethereum address. ${COMING_SOON}; Ethereum comes next.`,
+      message: 'This looks like an Ethereum address. Go back and pick Ethereum to track it.',
     };
   }
   if (/^[xyz]pub[1-9A-HJ-NP-Za-km-z]{100,112}$/.test(value)) {

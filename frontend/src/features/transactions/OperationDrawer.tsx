@@ -23,6 +23,7 @@ import {
   statusLabel,
   statusLabels,
   ticker,
+  transactionHash,
   typeLabel,
 } from './operation-format';
 
@@ -110,7 +111,7 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
       [
         'Transaction',
         <span key="txid" className="transactions-mono">
-          {chain.txid}
+          {transactionHash(operation)}
         </span>,
       ],
       ['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)],

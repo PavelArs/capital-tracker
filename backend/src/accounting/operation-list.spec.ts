@@ -38,6 +38,7 @@ const chain = (n: number, overrides: Partial<ChainOperationInput> = {}): ChainOp
   wallet,
   account: null,
   txid: txid(n),
+  asset: null,
   blockHeight: 800000 + n,
   blockTime: '2025-06-20T08:00:00.000Z',
   direction: 'in',
@@ -203,6 +204,58 @@ describe('list-all-operations projection', () => {
       estimatedValue: '780.10005255',
       costBasis: null,
       feeValue: null,
+    });
+  });
+
+  it('ETH-IDENTITY: an Ethereum hash lists its ether fee and its USDC transfer apart (M14)', () => {
+    const ethereumWallet = {
+      id: id(21),
+      network: 'ethereum' as const,
+      address: `0x${'a1'.repeat(20)}`,
+      label: null,
+    };
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(3, {
+            wallet: ethereumWallet,
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '420000000000000',
+            feeUnits: '420000000000000',
+          }),
+          chain(3, {
+            wallet: ethereumWallet,
+            txid: `${txid(3)}-17`,
+            asset: 'USDC',
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '250000000',
+            feeUnits: '0',
+          }),
+        ],
+        marketPrices: new Map([
+          ['USDC', { priceUsd: '1', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+        ]),
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(2);
+    const [fee, usdc] = [...list.operations].sort((left, right) => left.id.localeCompare(right.id));
+    expect(fee).toMatchObject({
+      id: `chain:${id(21)}:${txid(3)}`,
+      asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+      quantity: '0.00042',
+      fee: { asset: { symbol: 'ETH' }, quantity: '0.00042' },
+      estimatedValueUsd: null,
+    });
+    expect(usdc).toMatchObject({
+      id: `chain:${id(21)}:${txid(3)}-17`,
+      asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin' },
+      quantity: '250',
+      fee: null,
+      estimatedValueUsd: '250',
+      chain: { txid: `${txid(3)}-17`, priceObservedAt: '2026-10-04T11:00:00.000Z' },
     });
   });
 

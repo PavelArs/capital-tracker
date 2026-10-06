@@ -1,6 +1,7 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
 import {
   type ChainLeg,
+  chainCoin,
   classificationPayload,
   fitsDirection,
   legMovement,
@@ -12,6 +13,7 @@ import {
 const requestId = '00000000-0000-4000-8000-000000000001';
 const receipt: ChainLeg = {
   network: 'bitcoin',
+  asset: null,
   blockTime: '2025-06-20T08:00:00.000Z',
   receivedUnits: '918359',
   sentUnits: '0',
@@ -68,6 +70,24 @@ describe('classify-chain-transactions input and plan', () => {
     expect(planOperation(payment, { type: 'fee', valueUsd: '40' }, undefined).fields).toMatchObject(
       { side: 'sell', purpose: 'fee', grossUsd: '40', feeUsd: '40' },
     );
+  });
+
+  it('ETH-IDENTITY: an Ethereum leg moves its own asset at its own precision (M14)', () => {
+    const ethereum = { ...receipt, network: 'ethereum' as const };
+    expect(legMovement({ ...ethereum, receivedUnits: '1500000000000000000' })).toEqual({
+      inbound: true,
+      quantity: '1.5',
+    });
+    expect(
+      legMovement({ ...ethereum, asset: 'USDC', receivedUnits: '0', sentUnits: '250000001' }),
+    ).toEqual({ inbound: false, quantity: '250.000001' });
+    expect(chainCoin({ network: 'ethereum', asset: 'USDT' })).toEqual({
+      assetType: 'crypto',
+      symbol: 'USDT',
+      name: 'Tether',
+    });
+    expect(chainCoin(receipt)).toEqual({ assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' });
+    expect(() => legMovement({ ...ethereum, asset: 'DAI' })).toThrow('Unknown chain asset');
   });
 
   it('income, gift and rewards carry their value; a reward may have none', () => {
