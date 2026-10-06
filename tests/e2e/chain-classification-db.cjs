@@ -284,12 +284,12 @@ async function hide(db, s, f, { address }) {
     acquisitionBasisUsd: null,
     incomeValueUsd: null,
   });
-  const row = await listed(s, owner, 4);
+  const otherRow = await listed(s, owner, 4);
   assert.deepEqual(
-    [row.type, row.status, row.valueUsd, row.costBasisUsd, row.comment],
+    [otherRow.type, otherRow.status, otherRow.valueUsd, otherRow.costBasisUsd, otherRow.comment],
     ['other', 'recorded', null, null, 'Unknown origin'],
   );
-  assert.deepEqual(row.classification.value, { type: 'other' });
+  assert.deepEqual(otherRow.classification.value, { type: 'other' });
   assert.equal(await count(s, owner), 0);
   await rejected(
     () =>
