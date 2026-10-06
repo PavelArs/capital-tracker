@@ -10,6 +10,7 @@ const sent: OwnLeg & { accountId: string } = {
   addressId: walletA,
   accountId: accountA,
   network: 'bitcoin',
+  asset: null,
   receivedUnits: '0',
   sentUnits: '50010000',
   feeUnits: '10000',
@@ -18,6 +19,7 @@ const received: OwnLeg & { accountId: string } = {
   addressId: walletB,
   accountId: accountB,
   network: 'bitcoin',
+  asset: null,
   receivedUnits: '50000000',
   sentUnits: '0',
   feeUnits: '10000',
@@ -76,6 +78,41 @@ describe('link-own-transfers plan', () => {
     expect(() => planTransfer({ ...sent, sentUnits: '10000' }, bybit, null)).toThrow(
       UnprocessableEntityException,
     );
+  });
+});
+
+describe('link-own-transfers of Ethereum legs (M14)', () => {
+  // A sends 250 USDC to B; the ether fee is a leg of its own, so the token transfer has none.
+  const token = { network: 'ethereum' as const, asset: 'USDC', feeUnits: '0' };
+  const tokenSent = { ...sent, ...token, sentUnits: '250000000' };
+  const tokenReceived = { ...received, ...token, receivedUnits: '250000000' };
+
+  it('XFER-AUTO: a token transfer between two own addresses moves the tokens without a fee', () => {
+    expect(planTransfer(tokenSent, accountB, tokenReceived)).toEqual({
+      fromAccountId: accountA,
+      toAccountId: accountB,
+      quantity: '250',
+      feeQuantity: '0',
+    });
+    const outgoing = matchable(tokenSent, { txid: `${txid(1)}-4` });
+    const incoming = matchable(tokenReceived, { txid: `${txid(1)}-4` });
+    expect(ownTransferPairs([outgoing, incoming])).toEqual([{ outgoing, incoming }]);
+  });
+
+  it('an ether transfer pays its fee in ether at 18 decimals', () => {
+    const ether = { network: 'ethereum' as const, asset: null };
+    const plan = planTransfer(
+      { ...sent, ...ether, sentUnits: '1000420000000000000', feeUnits: '420000000000000' },
+      accountB,
+      { ...received, ...ether, receivedUnits: '1000000000000000000', feeUnits: '0' },
+    );
+    expect(plan).toMatchObject({ quantity: '1', feeQuantity: '0.00042' });
+  });
+
+  it('never pairs legs of different assets', () => {
+    const outgoing = matchable(tokenSent);
+    const incoming = matchable({ ...tokenReceived, asset: 'USDT' });
+    expect(ownTransferPairs([outgoing, incoming])).toEqual([]);
   });
 });
 

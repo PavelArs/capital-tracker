@@ -1,4 +1,5 @@
 import { UnprocessableEntityException } from '@nestjs/common';
+import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import { unfit } from './chain-classification';
 import { formatAtoms } from './money';
 
@@ -11,13 +12,15 @@ export interface OwnLeg {
   addressId: string;
   /** The account of the address (M10), or null until the owner picks one. */
   accountId: string | null;
-  network: 'bitcoin';
+  network: Network;
+  /** The token the leg moves (M14), or null for the network's own coin. */
+  asset: string | null;
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
 }
 
-/** The movement a transfer records, in the coin of the leg. */
+/** The movement a transfer records, in the asset of the leg; a token leg carries no fee. */
 export interface PlannedTransfer {
   fromAccountId: string;
   toAccountId: string;
@@ -27,9 +30,9 @@ export interface PlannedTransfer {
   feeQuantity: string;
 }
 
-const SAT_TO_ATOMS = 10n ** 22n;
 const net = (leg: OwnLeg) => BigInt(leg.receivedUnits) - BigInt(leg.sentUnits);
-const coins = (units: bigint) => formatAtoms(units * SAT_TO_ATOMS);
+const coins = (units: bigint, leg: OwnLeg) =>
+  formatAtoms(unitsToAtoms(units, chainAsset(leg.network, leg.asset)));
 
 export const sameAccount = () =>
   new UnprocessableEntityException('Choose an account other than the one of this wallet');
@@ -66,8 +69,8 @@ export function planTransfer(
   return {
     fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
     toAccountId: moved < 0n ? counterAccountId : leg.accountId,
-    quantity: coins(arrived),
-    feeQuantity: coins(fee),
+    quantity: coins(arrived, leg),
+    feeQuantity: coins(fee, leg),
   };
 }
 
@@ -96,6 +99,7 @@ export function ownTransferPairs(
     const outgoing = moving.find((leg) => net(leg) < 0n);
     const incoming = moving.find((leg) => net(leg) > 0n);
     if (!outgoing || !incoming || outgoing.network !== incoming.network) continue;
+    if (outgoing.asset !== incoming.asset) continue;
     if (outgoing.accountId === null || incoming.accountId === null) continue;
     if (outgoing.accountId === incoming.accountId) continue;
     if (moving.some((leg) => leg.status !== null && leg.status !== 'unclassified')) continue;

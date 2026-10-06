@@ -8,6 +8,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -98,12 +99,13 @@ interface FlowRow {
 }
 interface ChainRow {
   addressId: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   label: string | null;
   accountId: string | null;
   accountName: string | null;
   txid: string;
+  asset: string | null;
   blockHeight: number;
   blockTime: Date;
   direction: ChainOperationInput['direction'];
@@ -278,7 +280,7 @@ export class OperationListService {
       );
       const chain: ChainRow[] = await manager.query(
         `SELECT w.id AS "addressId", w.network, w.address, w.label, a.id AS "accountId",
-            a.name AS "accountName", t.txid, t."blockHeight", t."blockTime",
+            a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
@@ -296,7 +298,8 @@ export class OperationListService {
           WHERE w."ownerId"=$1`,
         [owner],
       );
-      const market = await latestMarketPrices(manager, chain.length > 0 ? ['BTC'] : [], now);
+      const symbols = new Set(chain.map((row) => chainAsset(row.network, row.asset).symbol));
+      const market = await latestMarketPrices(manager, [...symbols], now);
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
@@ -401,6 +404,7 @@ export class OperationListService {
                 ? { id: row.accountId, name: row.accountName }
                 : null,
             txid: row.txid,
+            asset: row.asset,
             blockHeight: row.blockHeight,
             blockTime: row.blockTime.toISOString(),
             direction: row.direction,

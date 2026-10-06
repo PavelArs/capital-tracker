@@ -3,13 +3,29 @@ import { parseRegistration, parseUpdate } from './wallet-address-input';
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
+// An EIP-55 test vector, not an owner's address.
+const ethereum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
 // Synthetic BIP-39 words in the order of the standard test vector, never a real wallet.
 const seedPhrase =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 describe('WAL-ADD: wallet registration input', () => {
-  it('keeps the legacy address-only body', () => {
-    expect(parseRegistration({ address })).toEqual({ address, accountId: null, label: null });
+  it('keeps the legacy address-only body as a Bitcoin address', () => {
+    expect(parseRegistration({ address })).toEqual({
+      network: 'bitcoin',
+      address,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes an Ethereum address in lower case (M14)', () => {
+    expect(parseRegistration({ network: 'ethereum', address: ethereum, accountId })).toEqual({
+      network: 'ethereum',
+      address: ethereum.toLowerCase(),
+      accountId,
+      label: null,
+    });
   });
 
   it('binds the address to an account with a trimmed label', () => {
@@ -20,11 +36,12 @@ describe('WAL-ADD: wallet registration input', () => {
         accountId: accountId.toUpperCase(),
         label: '  Trust Wallet BTC ',
       }),
-    ).toEqual({ address, accountId, label: 'Trust Wallet BTC' });
+    ).toEqual({ network: 'bitcoin', address, accountId, label: 'Trust Wallet BTC' });
   });
 
   it('treats a blank label as none', () => {
     expect(parseRegistration({ address, label: '   ' })).toEqual({
+      network: 'bitcoin',
       address,
       accountId: null,
       label: null,
@@ -32,7 +49,9 @@ describe('WAL-ADD: wallet registration input', () => {
   });
 
   it.each([
-    ['another network', { network: 'ethereum', address }],
+    ['WAL-INVALID: a Bitcoin address as Ethereum', { network: 'ethereum', address }],
+    ['an Ethereum address as Bitcoin', { network: 'bitcoin', address: ethereum }],
+    ['a network not tracked yet', { network: 'solana', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],

@@ -2,11 +2,13 @@ import type { SourceState } from '../sync-status/sync-source';
 import type { ProviderFailure } from './esplora-client';
 
 export type StepOutcome = 'complete' | 'partial' | 'provider_error';
+/** Why a provider gave no history: its own failure, or no API key on this server. */
+export type StepFailure = ProviderFailure | 'not_configured';
 
 /** One bounded pass over a wallet's history; the next pass continues from its cursor. */
 export interface StepResult {
   outcome: StepOutcome;
-  reason: ProviderFailure | null;
+  reason: StepFailure | null;
   imported: number;
 }
 
@@ -24,7 +26,7 @@ export interface ChainSyncAdapter {
 
 export const CHAIN_SYNC_ADAPTERS = Symbol('CHAIN_SYNC_ADAPTERS');
 
-export type SyncFailure = ProviderFailure | 'unsupported' | 'error';
+export type SyncFailure = StepFailure | 'unsupported' | 'error';
 
 export interface SourceOutcome {
   state: SourceState;
@@ -47,6 +49,8 @@ export function failureMessage(network: string, reason: SyncFailure): string {
       return `${network} data is temporarily unavailable.`;
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read.`;
+    case 'not_configured':
+      return `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
     case 'unsupported':
       return `Syncing ${network} wallets is not supported yet.`;
     case 'error':

@@ -15,7 +15,7 @@ import { parseRewardCreate, parseRewardVoid } from './asset-reward-input';
 import {
   type ChainLeg,
   type ClassificationInput,
-  chainCoins,
+  chainCoin,
   classificationPayload,
   fitsDirection,
   legMovement,
@@ -41,7 +41,8 @@ import { parseTradeCreate, parseTradeVoid } from './trade-input';
 import { readJournal } from './trade-journal.store';
 
 interface LegRow {
-  network: 'bitcoin';
+  network: ChainLeg['network'];
+  asset: string | null;
   accountId: string | null;
   blockTime: Date;
   receivedUnits: string;
@@ -94,7 +95,7 @@ interface MatchRow extends OwnLeg {
 const versionColumns = `v."addressId", v.txid, v.version, v."requestId", v."canonicalPayload",
   v.status, v.type, v.details, v.comment, v."accountId", v."tradeId", v."rewardId",
   v."transferId", v."linkedAddressId", v.automatic, v."createdAt"`;
-const legColumns = `w.network, w."accountId", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
+const legColumns = `w.network, t.asset, w."accountId", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
   t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits"`;
 const conflict = () => new ConflictException('Classification request conflicts with saved state');
 const nothing: Produced = { accountId: null, tradeId: null, rewardId: null, transferId: null };
@@ -124,6 +125,7 @@ export function classificationView(row: ClassificationRow) {
 
 const leg = (row: LegRow): ChainLeg => ({
   network: row.network,
+  asset: row.asset,
   blockTime: row.blockTime.toISOString(),
   receivedUnits: row.receivedUnits,
   sentUnits: row.sentUnits,
@@ -132,6 +134,7 @@ const own = (address: string, row: LegRow): OwnLeg => ({
   addressId: address,
   accountId: row.accountId,
   network: row.network,
+  asset: row.asset,
   receivedUnits: row.receivedUnits,
   sentUnits: row.sentUnits,
   feeUnits: row.feeUnits,
@@ -172,7 +175,8 @@ export class ChainClassificationService {
   async classify(ownerId: string, addressId: string, txid: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const address = parseUuid(addressId);
-    if (!/^[0-9a-f]{64}$/.test(txid)) throw new NotFoundException();
+    // A token leg's identity is the hash and its event index (M14).
+    if (!/^[0-9a-f]{64}(-[0-9]{1,9})?$/.test(txid)) throw new NotFoundException();
     const input = parseClassification(raw);
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
@@ -234,7 +238,7 @@ export class ChainClassificationService {
   async linkOwnTransfers(ownerId: string): Promise<{ linked: number }> {
     const owner = parseUuid(ownerId);
     const legs: MatchRow[] = await this.source.query(
-      `SELECT t.txid, t."addressId", w.network, w."accountId", t."receivedUnits"::text AS "receivedUnits",
+      `SELECT t.txid, t."addressId", w.network, t.asset, w."accountId", t."receivedUnits"::text AS "receivedUnits",
           t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
@@ -524,7 +528,7 @@ export class ChainClassificationService {
     accountId: string,
     planned: PlannedOperation,
   ): Promise<Produced> {
-    const coin = await findOrCreateInstrument(manager, owner, chainCoins[row.network], true);
+    const coin = await findOrCreateInstrument(manager, owner, chainCoin(row), true);
     if (!coin) throw new Error('Chain coin was not created');
     const pins = {
       requestId: randomUUID(),
@@ -560,7 +564,7 @@ export class ChainClassificationService {
     accountId: string,
     plan: PlannedTransfer,
   ): Promise<Produced> {
-    const coin = await findOrCreateInstrument(manager, owner, chainCoins[row.network], true);
+    const coin = await findOrCreateInstrument(manager, owner, chainCoin(row), true);
     if (!coin) throw new Error('Chain coin was not created');
     const { value } = await this.transfers.mutateWithin(
       manager,
