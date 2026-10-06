@@ -899,6 +899,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     version: 1,
     paid: null,
     comment: null,
+    classification: null,
     orderWithinTimestamp: 0,
     settlement: null,
     value: '800',

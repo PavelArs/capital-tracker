@@ -1,3 +1,4 @@
+import { announceClassificationChange, operationsApi } from '@api/operations.api';
 import {
   type HistoryPeriod,
   type PortfolioHistory,
@@ -84,7 +85,11 @@ function renderPage(path = '/dashboard') {
   );
 }
 
+const toClassify = vi.spyOn(operationsApi, 'needsClassification');
+
 beforeEach(() => {
+  toClassify.mockReset();
+  toClassify.mockResolvedValue(0);
   get.mockReset();
   get.mockImplementation(async (period: HistoryPeriod, currency?: AccountingCurrency) =>
     history({ period, currency: currency ?? 'USD' }),
@@ -407,5 +412,23 @@ describe('record-portfolio-snapshots dashboard', () => {
     expect(document.body.textContent).not.toMatch(/\$0\.00/);
     await user.click(within(alert).getByRole('button', { name: 'Try again' }));
     expect(await screen.findByRole('region', { name: 'Net worth' })).toBeInTheDocument();
+  });
+});
+
+describe('classify-chain-transactions dashboard notice', () => {
+  it('CLS-COUNT says how many blockchain transactions wait and links to them', async () => {
+    toClassify.mockResolvedValueOnce(3).mockResolvedValue(0);
+    renderPage();
+    const notice = await screen.findByRole('region', { name: 'Needs attention' });
+    expect(notice).toHaveTextContent('3 blockchain transactions need classification');
+    expect(within(notice).getByRole('link', { name: 'Review' })).toHaveAttribute(
+      'href',
+      '/transactions?status=needs-classification',
+    );
+    // An answer saved anywhere refreshes the count; none left, no notice.
+    announceClassificationChange();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull(),
+    );
   });
 });

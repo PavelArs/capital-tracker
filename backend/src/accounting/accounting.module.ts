@@ -7,6 +7,8 @@ import { AssetSwapController } from './asset-swap.controller';
 import { AssetSwapService } from './asset-swap.service';
 import { CarryInController } from './carry-in.controller';
 import { CarryInService } from './carry-in.service';
+import { ChainClassificationController } from './chain-classification.controller';
+import { ChainClassificationService } from './chain-classification.service';
 import { CsvImportController } from './csv-import.controller';
 import { CsvImportService } from './csv-import.service';
 import { CsvUploadInterceptor } from './csv-upload.interceptor';
@@ -46,6 +48,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     AssetSwapController,
     PortfolioValuationController,
     OperationListController,
+    ChainClassificationController,
   ],
   providers: [
     AccountingService,
@@ -64,6 +67,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     AssetSwapService,
     PortfolioValuationService,
     OperationListService,
+    ChainClassificationService,
   ],
 })
 export class AccountingModule {}

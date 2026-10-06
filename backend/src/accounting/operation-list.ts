@@ -1,4 +1,5 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import type { ChainType, Classification } from './chain-classification';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 import type { TradePurpose } from './trade-purpose';
@@ -110,6 +111,15 @@ export interface FlowOperationInput {
   occurredAt: string;
   amountUsd: string;
 }
+/** The owner's current answer for a chain transaction (M12) and the entry it produced. */
+export interface ChainClassificationInput {
+  version: number;
+  status: 'unclassified' | 'classified' | 'hidden';
+  type: ChainType | null;
+  details: Classification | null;
+  comment: string | null;
+  produced: { kind: 'trade' | 'reward'; id: string } | null;
+}
 export interface ChainOperationInput {
   wallet: OperationWallet;
   /** The account the address belongs to (WAL-ACCOUNT), or null until the owner picks one. */
@@ -121,6 +131,7 @@ export interface ChainOperationInput {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  classification?: ChainClassificationInput | null;
 }
 export interface OperationSources {
   trades: readonly TradeOperationInput[];
@@ -172,8 +183,16 @@ export interface Operation {
   counterAccount: OperationPlace | null;
   wallet: OperationWallet | null;
   chain: { txid: string; blockHeight: number; priceObservedAt: string | null } | null;
-  status: 'recorded' | 'needs-classification';
+  /** Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). */
+  status: 'recorded' | 'needs-classification' | 'hidden';
   source: 'manual' | 'csv' | 'chain';
+  /** Chain only: the owner's current answer, to change it (M12); null before the first. */
+  classification: {
+    version: number;
+    hidden: boolean;
+    value: Classification | null;
+    comment: string | null;
+  } | null;
   version: number | null;
   /** Trades only: the amounts as paid in RUB or EUR (CUR-PAID-RUB). */
   paid: TradePayment | null;
@@ -231,6 +250,7 @@ const blank = {
   paid: null,
   comment: null,
   settlement: null,
+  classification: null,
 } satisfies Partial<Operation>;
 type Projected = Omit<Operation, 'value' | 'estimatedValue' | 'costBasis' | 'feeValue'>;
 const inUsdOnly = () => new FxConverter({ USD: [], EUR: [] }, 'USD');
@@ -272,12 +292,17 @@ function sats(units: string): string {
   return formatAtoms(BigInt(units) * SAT_TO_ATOMS);
 }
 
-function chainOperation(row: ChainOperationInput, prices: OperationSources['marketPrices']) {
+function chainOperation(
+  row: ChainOperationInput,
+  prices: OperationSources['marketPrices'],
+  produced: Projected | undefined,
+): Projected {
   const asset = CHAIN_ASSETS[row.wallet.network];
   const net = BigInt(row.receivedUnits) - BigInt(row.sentUnits);
   const magnitude = net < 0n ? -net : net;
   const quantity = formatAtoms(magnitude * SAT_TO_ATOMS);
   const price = asset.symbol ? prices.get(asset.symbol) : undefined;
+  const answer = row.classification ?? null;
   const operation: Projected = {
     ...blank,
     id: `chain:${row.wallet.id}:${row.txid}`,
@@ -305,9 +330,31 @@ function chainOperation(row: ChainOperationInput, prices: OperationSources['mark
     status: 'needs-classification',
     source: 'chain',
     version: null,
+    comment: answer?.comment ?? null,
+    classification: answer && {
+      version: answer.version,
+      hidden: answer.status === 'hidden',
+      value: answer.details,
+      comment: answer.comment,
+    },
     orderWithinTimestamp: 0,
   };
-  return operation;
+  if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
+  // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
+  // elsewhere leaves the transaction to classify again.
+  if (answer?.status !== 'classified' || !answer.type || !produced) return operation;
+  return {
+    ...operation,
+    type: answer.type,
+    status: 'recorded',
+    valueUsd: produced.valueUsd,
+    costBasisUsd: produced.costBasisUsd,
+    feeUsd: produced.feeUsd,
+    account: produced.account,
+    paid: produced.paid,
+    settlement: produced.settlement,
+    orderWithinTimestamp: produced.orderWithinTimestamp,
+  };
 }
 
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
@@ -317,8 +364,21 @@ export function projectOperations(
   fx: FxConverter = inUsdOnly(),
 ): OperationList {
   const entries: { operation: Projected; order: number }[] = [];
-  const push = (operation: Omit<Projected, 'orderWithinTimestamp'>, order: number) =>
-    entries.push({ operation: { ...operation, orderWithinTimestamp: order }, order });
+  // Entries a chain classification produced are shown on their chain row, not twice (M12).
+  const producedIds = new Set(
+    sources.chain.flatMap((row) => {
+      const produced = row.classification?.produced;
+      return row.classification?.status === 'classified' && produced
+        ? [`${produced.kind}:${produced.id}`]
+        : [];
+    }),
+  );
+  const produced = new Map<string, Projected>();
+  const push = (operation: Omit<Projected, 'orderWithinTimestamp'>, order: number) => {
+    const projected = { ...operation, orderWithinTimestamp: order };
+    if (producedIds.has(projected.id)) produced.set(projected.id, projected);
+    else entries.push({ operation: projected, order });
+  };
 
   for (const row of sources.trades) {
     push(
@@ -444,8 +504,15 @@ export function projectOperations(
       0,
     );
   }
-  for (const row of sources.chain)
-    entries.push({ operation: chainOperation(row, sources.marketPrices), order: 0 });
+  for (const row of sources.chain) {
+    const ref = row.classification?.produced;
+    const operation = chainOperation(
+      row,
+      sources.marketPrices,
+      ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined,
+    );
+    entries.push({ operation, order: operation.orderWithinTimestamp });
+  }
 
   entries.sort(
     (left, right) =>

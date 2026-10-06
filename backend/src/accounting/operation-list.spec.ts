@@ -139,6 +139,7 @@ describe('list-all-operations projection', () => {
       paid: null,
       comment: 'First buy from the spreadsheet',
       settlement: null,
+      classification: null,
       orderWithinTimestamp: 0,
       // Without asked rates the list is in USD, exactly as recorded.
       value: '1000',
@@ -189,6 +190,7 @@ describe('list-all-operations projection', () => {
       paid: null,
       comment: null,
       settlement: null,
+      classification: null,
       orderWithinTimestamp: 0,
       value: null,
       estimatedValue: '780.10005255',
@@ -512,6 +514,123 @@ describe('list-all-operations projection', () => {
       ],
       ['opening', null, null, null, null],
     ]);
+  });
+
+  it('CLS-BUY: a classified receipt reads as the buy it produced, listed once, out of the count', () => {
+    const tradeId = id(50);
+    const list = projectOperations(
+      now,
+      sources({
+        trades: [
+          {
+            tradeId,
+            version: 1,
+            account: trust,
+            asset: btc,
+            side: 'buy',
+            occurredAt: '2025-06-20T08:00:00.000Z',
+            orderWithinTimestamp: 2,
+            quantity: '0.00918359',
+            grossUsd: '1000',
+            feeUsd: '0',
+            csv: false,
+            paid: null,
+            comment: 'From the exchange',
+            settlement: { asset: usdt, quantity: '0' },
+            purpose: null,
+          },
+        ],
+        chain: [
+          chain(1, {
+            classification: {
+              version: 1,
+              status: 'classified',
+              type: 'buy',
+              details: { type: 'buy', currency: 'USDT', amount: '1000' },
+              comment: 'From the exchange',
+              produced: { kind: 'trade', id: tradeId },
+            },
+          }),
+          chain(2),
+        ],
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(1);
+    expect(list.operations.map((operation) => operation.id)).toEqual([
+      `chain:${wallet.id}:${txid(1)}`,
+      `chain:${wallet.id}:${txid(2)}`,
+    ]);
+    expect(list.operations[0]).toMatchObject({
+      kind: 'chain',
+      type: 'buy',
+      status: 'recorded',
+      source: 'chain',
+      quantity: '0.00918359',
+      valueUsd: '1000',
+      value: '1000',
+      account: trust,
+      wallet,
+      comment: 'From the exchange',
+      settlement: { asset: usdt, quantity: '0' },
+      orderWithinTimestamp: 2,
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'buy', currency: 'USDT', amount: '1000' },
+        comment: 'From the exchange',
+      },
+    });
+  });
+
+  it('CLS-HIDE: a hidden transaction stays listed as hidden and leaves the count', () => {
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(1, {
+            classification: {
+              version: 2,
+              status: 'hidden',
+              type: null,
+              details: null,
+              comment: 'Dust',
+              produced: null,
+            },
+          }),
+        ],
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(0);
+    expect(list.operations[0]).toMatchObject({
+      type: null,
+      status: 'hidden',
+      valueUsd: null,
+      account: null,
+      comment: 'Dust',
+      classification: { version: 2, hidden: true, value: null, comment: 'Dust' },
+    });
+  });
+
+  it('CLS-RESYNC: an answer whose entry was voided elsewhere needs classification again', () => {
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(1, {
+            classification: {
+              version: 1,
+              status: 'classified',
+              type: 'income',
+              details: { type: 'income', valueUsd: '700' },
+              comment: null,
+              produced: { kind: 'trade', id: id(51) },
+            },
+          }),
+        ],
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(1);
+    expect(list.operations[0]).toMatchObject({ type: null, status: 'needs-classification' });
   });
 
   it('OPS-EMPTY: no operations is an empty list', () => {

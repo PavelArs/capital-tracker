@@ -59,6 +59,7 @@ const legacyChecks = [
   'operation-list-db',
   'capital-flows-db',
   'manual-operations-db',
+  'chain-classification-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
@@ -313,7 +314,7 @@ test('ENG-007-C browser cases are a deterministic modulo split of the manifest',
   const split = shards.BROWSER_SHARDS.map((shard) => shards.browserCases(manifest, shard));
   assert.deepEqual(
     split.map((cases) => cases.length),
-    [7, 7, 7, 7],
+    [8, 7, 7, 7],
   );
   split.forEach((cases, index) => {
     assert.deepEqual(

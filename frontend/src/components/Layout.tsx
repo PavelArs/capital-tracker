@@ -5,6 +5,7 @@ import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
 import SyncIndicator from '@features/shell/SyncIndicator';
+import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -24,6 +25,8 @@ export default function Layout() {
   const { t } = useTranslation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
+  const toClassify = useNeedsClassification();
   // Open by default: the owner still works in these screens until they are replaced.
   const [legacyOpen, setLegacyOpen] = useState(true);
   const menuToggleRef = useRef<HTMLButtonElement>(null);
@@ -96,6 +99,15 @@ export default function Layout() {
                 <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
                   <Icon name={section.icon} />
                   {section.label}
+                  {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
+                    <span
+                      className="shell-nav__count"
+                      title={`${toClassify} to classify`}
+                      aria-label={`${toClassify} to classify`}
+                    >
+                      {toClassify}
+                    </span>
+                  )}
                 </NavLink>
               </li>
             ))}

@@ -11,6 +11,7 @@ import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { useNeedsClassification } from '../transactions/useNeedsClassification';
 import HistoryChart from './HistoryChart';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -207,6 +208,7 @@ export default function DashboardPage() {
   const [adding, setAdding] = useState(false);
   const [asked] = useAskedCurrency();
   const latest = useRef(0);
+  const toClassify = useNeedsClassification();
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
@@ -234,6 +236,23 @@ export default function DashboardPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={load} />
+      {/* CLS-COUNT: until classified, these transactions are left out of the numbers below. */}
+      {toClassify !== null && toClassify > 0 && (
+        <section className="dashboard-attention" aria-label="Needs attention">
+          <span className="dashboard-attention__dot" aria-hidden="true" />
+          <span className="dashboard-attention__text">
+            {toClassify === 1
+              ? '1 blockchain transaction needs classification'
+              : `${toClassify} blockchain transactions need classification`}
+          </span>
+          <Link
+            className="shell-button"
+            to={`/transactions?status=needs-classification${asked ? `&currency=${asked}` : ''}`}
+          >
+            Review
+          </Link>
+        </section>
+      )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
