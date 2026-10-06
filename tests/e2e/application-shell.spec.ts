@@ -107,7 +107,10 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   ] as const;
   for (const [index, [name, path]] of sections.entries()) {
     await expect(nav.getByRole('link').nth(index)).toHaveAttribute('href', path);
-    await expect(nav.getByRole('link').nth(index)).toHaveText(name);
+    // CLS-COUNT: Transactions may carry the number of blockchain transactions to classify.
+    await expect(nav.getByRole('link').nth(index)).toHaveText(
+      name === 'Transactions' ? /^Transactions(\d+)?$/ : name,
+    );
   }
   // SYNC-STATUS: the sidebar reads the background sync state and opens Wallets.
   const syncStatus = nav.locator('[data-sync-status]');

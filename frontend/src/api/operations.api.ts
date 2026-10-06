@@ -51,8 +51,16 @@ export interface Operation {
   /** A blockchain row's address; its account is in `account` once the owner picked one (M10). */
   wallet: { id: string; network: 'bitcoin'; address: string; label: string | null } | null;
   chain: { txid: string; blockHeight: number; priceObservedAt: string | null } | null;
-  status: 'recorded' | 'needs-classification';
+  /** Hidden: a blockchain transaction left out of every calculation (M12). */
+  status: 'recorded' | 'needs-classification' | 'hidden';
   source: 'manual' | 'csv' | 'chain';
+  /** Blockchain only: the owner's current answer, to change it; null before the first. */
+  classification: {
+    version: number;
+    hidden: boolean;
+    value: ChainClassification | null;
+    comment: string | null;
+  } | null;
   version: number | null;
   /** Trades paid in RUB or EUR keep the amounts as paid. */
   paid: TradePayment | null;
@@ -78,6 +86,32 @@ export interface OperationList {
   operations: Operation[];
 }
 
+/** What a blockchain transaction can be classified as (M12); transfers come with M13. */
+export type ChainClassification =
+  | {
+      type: 'buy' | 'sell';
+      currency: 'USD' | 'USDT' | 'USDC' | 'EUR' | 'RUB';
+      amount: string;
+      /** RUB or EUR only: units per 1 USD actually paid; without it the Bank of Russia rate. */
+      perUsd?: string;
+    }
+  | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
+  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null };
+
+export interface ClassificationCommand {
+  requestId: string;
+  /** The version shown; 0 before the first classification. */
+  expectedVersion: number;
+  hidden: boolean;
+  classification: ChainClassification | null;
+  comment?: string;
+}
+
+/** Fired after a classification changes, so counts elsewhere refresh. */
+export const CLASSIFICATION_CHANGED = 'capital:classification-changed';
+export const announceClassificationChange = () =>
+  window.dispatchEvent(new Event(CLASSIFICATION_CHANGED));
+
 export const operationsApi = {
   /** Without a currency the owner's main currency is used. */
   list: async (currency?: AccountingCurrency): Promise<OperationList> => {
@@ -85,5 +119,23 @@ export const operationsApi = {
       params: currency ? { currency } : undefined,
     });
     return response.data;
+  },
+  /** CLS-BUY, CLS-HIDE: records the answer for one blockchain transaction. */
+  classify: async (
+    wallet: { id: string },
+    txid: string,
+    command: ClassificationCommand,
+  ): Promise<void> => {
+    await apiClient.post(
+      `/accounting/chain-transactions/${wallet.id}/${txid}/classifications`,
+      command,
+    );
+  },
+  /** CLS-COUNT: blockchain transactions nobody has classified or hidden yet. */
+  needsClassification: async (): Promise<number> => {
+    const response = await apiClient.get<{ count: number }>(
+      '/accounting/chain-transactions/needs-classification',
+    );
+    return response.data.count;
   },
 };

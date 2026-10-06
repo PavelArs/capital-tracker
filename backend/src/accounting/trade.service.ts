@@ -175,6 +175,45 @@ function page<T>(snapshot: CurrentSnapshot, items: readonly T[], query: TradePag
   };
 }
 
+/**
+ * The owner's market-priced asset with this type and ticker, the oldest if several; created
+ * when `create` and none exists (a sale's cash, a chain coin being classified).
+ */
+export async function findOrCreateInstrument(
+  manager: EntityManager,
+  owner: string,
+  asset: { assetType: 'fiat' | 'crypto'; symbol: string; name: string },
+  create: boolean,
+): Promise<{ id: string; name: string; symbol: string | null } | null> {
+  const [found]: { id: string; name: string; symbol: string | null }[] = await manager.query(
+    `SELECT id,name,symbol FROM accounting_instruments
+      WHERE "ownerId"=$1 AND "assetType"=$2 AND upper(symbol)=$3
+        AND ("assetType"<>'crypto' OR "priceSource"='market')
+      ORDER BY "createdAt",id LIMIT 1`,
+    [owner, asset.assetType, asset.symbol],
+  );
+  if (found || !create) return found ?? null;
+  const value = { requestId: randomUUID(), ...asset };
+  const classification = classifyAsset(value);
+  const [created]: { id: string; name: string; symbol: string | null }[] = await manager.query(
+    `INSERT INTO accounting_instruments
+    (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,name,symbol`,
+    [
+      randomUUID(),
+      owner,
+      value.requestId,
+      instrumentPayload(value, classification),
+      value.name,
+      value.symbol,
+      classification.assetType,
+      classification.valuationCurrency,
+      classification.priceSource,
+    ],
+  );
+  return created;
+}
+
 @Injectable()
 export class TradeService {
   constructor(private readonly source: DataSource) {}
@@ -244,6 +283,24 @@ export class TradeService {
     target: string | undefined,
     value: TradeCreateInput | TradeVoidInput,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
+    return this.source
+      .transaction((manager) => this.mutateWithin(manager, owner, id, kind, target, value))
+      .catch(rethrowAccountingHistory);
+  }
+
+  /**
+   * One create, correction or void inside the caller's transaction, under the owner's
+   * accounting lock: a chain classification (M12) writes its own row in the same transaction.
+   * The caller rethrows history errors.
+   */
+  async mutateWithin(
+    manager: EntityManager,
+    owner: string,
+    id: string,
+    kind: Kind,
+    target: string | undefined,
+    value: TradeCreateInput | TradeVoidInput,
+  ): Promise<{ created: boolean; value: TradeReceipt }> {
     const input = kind === 'void' ? undefined : (value as TradeCreateInput);
     const fields = input && requested(input);
     const payload = JSON.stringify({
@@ -252,122 +309,114 @@ export class TradeService {
       expectedJournalRevision: value.expectedJournalRevision,
       ...fields,
     });
-    return this.source
-      .transaction(async (manager) => {
-        await lockAccountingOwner(manager, owner);
-        const account = await readOwnedAccount(manager, owner, id);
-        const journal =
-          (await readJournal(manager, owner, id)) ??
-          (kind === 'create' && value.expectedJournalRevision === 0
-            ? await startEmptyJournal(manager, owner, account, value.requestId)
-            : undefined);
-        if (!journal) throw conflict();
-        const [previous]: VersionRow[] = await manager.query(
-          `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
-          [owner, id, value.requestId],
-        );
-        if (previous) {
-          if (previous.canonicalPayload !== payload) throw conflict();
-          return { created: false, value: receipt(id, projectTradeVersion(previous)) };
-        }
-        const ledger = await readConnectedLedger(manager, owner, [id], { lock: true });
-        const heads = await readTradeHeads(manager, owner, id);
-        const current =
-          target === undefined ? undefined : heads.find((head) => head.tradeId === target);
-        if (target !== undefined && !current) throw new NotFoundException();
-        let nextExecution: Execution;
-        let labels: { instrumentName: string; instrumentSymbol: string | null };
-        const place = (fields: Ordered<number | null>): Execution => {
-          const orderWithinTimestamp =
-            fields.orderWithinTimestamp ??
-            automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
-          if (orderWithinTimestamp === null) throw conflict();
-          return { ...fields, orderWithinTimestamp };
-        };
-        if (input) {
-          const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
-            'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
-            [owner, input.instrumentId],
-          );
-          if (!instrument) throw new NotFoundException();
-          if (input.paid) {
-            const derived = derivePaidAmounts(
-              input.paid,
-              await readFxRates(manager),
-              input.occurredAt,
-            );
-            if (!derived) throw noRate();
-            nextExecution = place(execution({ ...input, ...derived }));
-          } else nextExecution = place(execution(input));
-          labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
-        } else {
-          if (!current) throw new NotFoundException();
-          nextExecution = execution(current);
-          labels = {
-            instrumentName: current.instrumentName,
-            instrumentSymbol: current.instrumentSymbol,
-          };
-        }
-        if (
-          current?.kind === 'void' ||
-          journal.currentRevision !== value.expectedJournalRevision ||
-          journal.currentRevision >= 10000
-        )
-          throw conflict();
-        if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
-        if (input?.settlementCurrency) {
-          const settlement = await this.settle(
-            manager,
-            owner,
-            input.settlementCurrency,
-            nextExecution,
-            target === undefined ? ledger : withoutTrade(ledger, id, target),
-            id,
-          );
-          if (settlement) nextExecution = { ...nextExecution, settlement };
-        }
-        const tradeId = target ?? randomUUID();
-        const next = {
-          ...nextExecution,
-          ...labels,
-          tradeId,
-          version: (current?.version ?? 0) + 1,
-          journalRevision: journal.currentRevision + 1,
-          requestId: value.requestId,
-          kind,
-          ...(input?.comment === undefined ? {} : { comment: input.comment }),
-        };
-        assertRevisionCapacity(ledger);
-        projectConnectedLedger(ledger);
-        const trades = [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
-          (head) => head.kind !== 'void',
-        );
-        try {
-          projectConnectedLedger(ledger, { accountId: id, trades });
-        } catch (error) {
-          // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
-          const shortfall =
-            error instanceof FifoHistoryError &&
-            firstShortfall({
-              accounts: new Map(
-                [...ledger.accounts].map(([key, item]) => [
-                  key,
-                  key === id ? { ...item, trades } : item,
-                ]),
-              ),
-              transfers: ledger.transfers,
-            });
-          if (shortfall) throw dependent(shortfall);
-          throw error;
-        }
-        const saved = await appendTradeVersion(manager, owner, id, {
-          ...next,
-          canonicalPayload: payload,
+    await lockAccountingOwner(manager, owner);
+    const account = await readOwnedAccount(manager, owner, id);
+    const journal =
+      (await readJournal(manager, owner, id)) ??
+      (kind === 'create' && value.expectedJournalRevision === 0
+        ? await startEmptyJournal(manager, owner, account, value.requestId)
+        : undefined);
+    if (!journal) throw conflict();
+    const [previous]: VersionRow[] = await manager.query(
+      `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
+      [owner, id, value.requestId],
+    );
+    if (previous) {
+      if (previous.canonicalPayload !== payload) throw conflict();
+      return { created: false, value: receipt(id, projectTradeVersion(previous)) };
+    }
+    const ledger = await readConnectedLedger(manager, owner, [id], { lock: true });
+    const heads = await readTradeHeads(manager, owner, id);
+    const current =
+      target === undefined ? undefined : heads.find((head) => head.tradeId === target);
+    if (target !== undefined && !current) throw new NotFoundException();
+    let nextExecution: Execution;
+    let labels: { instrumentName: string; instrumentSymbol: string | null };
+    const place = (fields: Ordered<number | null>): Execution => {
+      const orderWithinTimestamp =
+        fields.orderWithinTimestamp ??
+        automaticOrder(ledger.accounts.get(id)!, ledger.transfers, fields.occurredAt, target);
+      if (orderWithinTimestamp === null) throw conflict();
+      return { ...fields, orderWithinTimestamp };
+    };
+    if (input) {
+      const [instrument]: { name: string; symbol: string | null }[] = await manager.query(
+        'SELECT name,symbol FROM accounting_instruments WHERE "ownerId"=$1 AND id=$2',
+        [owner, input.instrumentId],
+      );
+      if (!instrument) throw new NotFoundException();
+      if (input.paid) {
+        const derived = derivePaidAmounts(input.paid, await readFxRates(manager), input.occurredAt);
+        if (!derived) throw noRate();
+        nextExecution = place(execution({ ...input, ...derived }));
+      } else nextExecution = place(execution(input));
+      labels = { instrumentName: instrument.name, instrumentSymbol: instrument.symbol };
+    } else {
+      if (!current) throw new NotFoundException();
+      nextExecution = execution(current);
+      labels = {
+        instrumentName: current.instrumentName,
+        instrumentSymbol: current.instrumentSymbol,
+      };
+    }
+    if (
+      current?.kind === 'void' ||
+      journal.currentRevision !== value.expectedJournalRevision ||
+      journal.currentRevision >= 10000
+    )
+      throw conflict();
+    if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
+    if (input?.settlementCurrency) {
+      const settlement = await this.settle(
+        manager,
+        owner,
+        input.settlementCurrency,
+        nextExecution,
+        target === undefined ? ledger : withoutTrade(ledger, id, target),
+        id,
+      );
+      if (settlement) nextExecution = { ...nextExecution, settlement };
+    }
+    const tradeId = target ?? randomUUID();
+    const next = {
+      ...nextExecution,
+      ...labels,
+      tradeId,
+      version: (current?.version ?? 0) + 1,
+      journalRevision: journal.currentRevision + 1,
+      requestId: value.requestId,
+      kind,
+      ...(input?.comment === undefined ? {} : { comment: input.comment }),
+    };
+    assertRevisionCapacity(ledger);
+    projectConnectedLedger(ledger);
+    const trades = [...heads.filter((head) => head.tradeId !== tradeId), next].filter(
+      (head) => head.kind !== 'void',
+    );
+    try {
+      projectConnectedLedger(ledger, { accountId: id, trades });
+    } catch (error) {
+      // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
+      const shortfall =
+        error instanceof FifoHistoryError &&
+        firstShortfall({
+          accounts: new Map(
+            [...ledger.accounts].map(([key, item]) => [
+              key,
+              key === id ? { ...item, trades } : item,
+            ]),
+          ),
+          transfers: ledger.transfers,
         });
-        await advanceConnectedJournals(manager, owner, ledger);
-        return { created: true, value: receipt(id, saved) };
-      })
-      .catch(rethrowAccountingHistory);
+      if (shortfall) throw dependent(shortfall);
+      throw error;
+    }
+    const saved = await appendTradeVersion(manager, owner, id, {
+      ...next,
+      canonicalPayload: payload,
+    });
+    await advanceConnectedJournals(manager, owner, ledger);
+    return { created: true, value: receipt(id, saved) };
   }
 
   /**
@@ -384,36 +433,14 @@ export class TradeService {
     others: LedgerView,
     accountId: string,
   ): Promise<TradeSettlement | null> {
-    const asset = cashAsset[currency];
-    const [found]: { id: string; name: string; symbol: string | null }[] = await manager.query(
-      `SELECT id,name,symbol FROM accounting_instruments
-        WHERE "ownerId"=$1 AND "assetType"=$2 AND upper(symbol)=$3
-          AND ("assetType"<>'crypto' OR "priceSource"='market')
-        ORDER BY "createdAt",id LIMIT 1`,
-      [owner, asset.assetType, asset.symbol],
+    const instrument = await findOrCreateInstrument(
+      manager,
+      owner,
+      cashAsset[currency],
+      trade.side === 'sell',
     );
-    let instrument = found;
-    if (!instrument) {
-      if (trade.side === 'buy') return null;
-      const value = { requestId: randomUUID(), ...asset };
-      const classification = classifyAsset(value);
-      [instrument] = await manager.query(
-        `INSERT INTO accounting_instruments
-        (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id,name,symbol`,
-        [
-          randomUUID(),
-          owner,
-          value.requestId,
-          instrumentPayload(value, classification),
-          value.name,
-          value.symbol,
-          classification.assetType,
-          classification.valuationCurrency,
-          classification.priceSource,
-        ],
-      );
-    }
+    // Without the asset there is no cash to spend.
+    if (!instrument) return null;
     // Not a BadRequestException: the history rethrow would turn that into a 409.
     if (instrument.id === trade.instrumentId)
       throw new HttpException(

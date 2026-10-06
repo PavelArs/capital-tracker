@@ -57,6 +57,7 @@ const recordedDefaults: Omit<
   paid: null,
   settlement: null,
   comment: null,
+  classification: null,
   account: bybit,
   counterAccount: null,
   wallet: null,
@@ -284,7 +285,8 @@ describe('TransactionsPage (list-all-operations)', () => {
       within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
     expect(fact('Wallet')).toBe('Cold storage');
     expect(fact('Address')).toBe(`Savings · ${wallet.address}`);
-    expect(within(drawer).getByRole('link', { name: 'Open Cold storage' })).toHaveAttribute(
+    // The wallet's name opens its page (M10); classifying happens right here (M12).
+    expect(within(drawer).getByRole('link', { name: 'Cold storage' })).toHaveAttribute(
       'href',
       `/wallets/${cold.id}`,
     );
@@ -482,7 +484,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Network fee')).toBe('Paid by sender');
     expect(fact('Status')).toBe('Needs classification');
     expect(fact('Source')).toBe('Blockchain');
-    expect(within(drawer).getByText(/never edited/)).toBeInTheDocument();
+    expect(within(drawer).getByRole('group', { name: 'What was this transaction?' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(opener).toHaveFocus();
@@ -795,5 +797,195 @@ describe('TransactionsPage manual operations (M9)', () => {
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Delete this transaction?' })).toBeNull();
     expect(screen.getByRole('dialog', { name: 'Buy · BTC' })).toBeInTheDocument();
+  });
+});
+
+describe('classify-chain-transactions (M12)', () => {
+  const inCold = { account: cold };
+  const toClassify = chainOperation(1, {
+    ...inCold,
+    occurredAt: '2025-06-20T08:05:00.000Z',
+    quantity: '0.00918359',
+  });
+  const nextOne = chainOperation(2, {
+    ...inCold,
+    direction: 'out',
+    occurredAt: '2025-06-19T08:00:00.000Z',
+    quantity: '0.0005',
+    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null },
+  });
+  const bought = chainOperation(1, {
+    ...inCold,
+    occurredAt: '2025-06-20T08:05:00.000Z',
+    quantity: '0.00918359',
+    type: 'buy',
+    status: 'recorded',
+    valueUsd: '1000',
+    costBasisUsd: '1000',
+    feeUsd: '0',
+    comment: 'From the exchange',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'buy', currency: 'USDT', amount: '1000' },
+      comment: 'From the exchange',
+    },
+  });
+  const httpError = (status: number, data: object) =>
+    new AxiosError('refused', String(status), undefined, undefined, {
+      status,
+      statusText: 'Refused',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data,
+    });
+  const openRow = async (index: number, name: string) => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  it('CLS-BUY: classifies a receipt as a buy and opens the next one to classify', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([toClassify, nextOne]))
+      .mockResolvedValue(list([bought, nextOne]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    const question = within(drawer).getByRole('group', { name: 'What was this transaction?' });
+    expect(
+      within(question)
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Buy', 'Income', 'Reward', 'Staking reward', 'Airdrop', 'Gift received']);
+    expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
+    const save = within(drawer).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
+    await user.click(within(question).getByRole('button', { name: 'Buy' }));
+    await user.click(save);
+    expect(within(drawer).getByText('Enter the amount you paid')).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await user.type(within(drawer).getByLabelText('You paid'), '1000');
+    await user.click(within(drawer).getByText('More options'));
+    await user.type(within(drawer).getByLabelText('Comment'), 'From the exchange');
+    await user.click(save);
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][0]).toEqual(wallet);
+    expect(classify.mock.calls[0][1]).toBe(txid(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'buy', currency: 'USDT', amount: '1000' },
+      comment: 'From the exchange',
+    });
+    const next = await screen.findByRole('dialog', { name: 'Outgoing transaction · BTC' });
+    expect(within(next).getByRole('status')).toHaveTextContent(
+      'Saved as Buy. Here is the next one.',
+    );
+    expect(
+      within(within(next).getByRole('group', { name: 'What was this transaction?' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['Sell', 'Expense', 'Gift sent', 'Fee']);
+    expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
+    // The classified row reads as the buy it recorded.
+    expect(cellTexts(bodyRows()[0])).toEqual([
+      'Buy08:05',
+      'BTC',
+      '+0.00918359',
+      '$1,000.00',
+      'Cold storage · bc1qsy…f3t4',
+      'Recorded',
+      'Blockchain',
+    ]);
+  });
+
+  it('CLS-BUY: a purchase paid in rubles may carry the rate actually paid', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.click(within(drawer).getByRole('radio', { name: 'RUB' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '83000');
+    expect(within(drawer).getByText(/Empty means the Bank of Russia rate/)).toBeInTheDocument();
+    await user.type(within(drawer).getByLabelText('Exchange rate'), '79');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({
+      type: 'buy',
+      currency: 'RUB',
+      amount: '83000',
+      perUsd: '79',
+    });
+  });
+
+  it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {
+    const hidden = { ...bought, type: null, status: 'hidden' as const };
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([bought]))
+      .mockResolvedValue(
+        list([{ ...hidden, classification: { ...bought.classification!, version: 2 } }]),
+      );
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Buy · BTC');
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Value')).toBe('$1,000.00');
+    expect(fact('Comment')).toBe('From the exchange');
+    expect(within(drawer).getByText(/can't be deleted/)).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByRole('button', { name: 'Buy' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(within(drawer).getByLabelText('You paid')).toHaveValue('1000');
+    await user.click(within(drawer).getByRole('button', { name: 'Later' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Hide from calculations' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 1,
+      hidden: true,
+      classification: { type: 'buy', currency: 'USDT', amount: '1000' },
+      comment: 'From the exchange',
+    });
+    const again = await screen.findByRole('dialog', { name: 'Incoming transaction · BTC' });
+    expect(within(again).getByRole('status')).toHaveTextContent('Hidden from calculations.');
+    expect(
+      within(again).getByRole('button', { name: 'Include in calculations' }),
+    ).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(cellTexts(bodyRows()[0])).toContain('Hidden');
+    await user.click(screen.getByRole('button', { name: /^Hidden\s*1/ }));
+    expect(bodyRows()).toHaveLength(1);
+  });
+
+  it('says what to do when the wallet has no account or the server refuses', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([{ ...toClassify, account: null }]));
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(httpError(422, { message: 'Choose the account of this wallet first' }))
+      .mockRejectedValueOnce(new AxiosError('offline'));
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    expect(within(drawer).getByRole('note')).toHaveTextContent('not in a wallet yet');
+    await user.click(within(drawer).getByRole('button', { name: 'Income' }));
+    await user.type(within(drawer).getByLabelText('Value at the time'), '700');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'This wallet is not in an account yet.',
+    );
+    expect(within(drawer).getByRole('link', { name: 'Choose its account' })).toHaveAttribute(
+      'href',
+      '/wallets',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(within(drawer).getByRole('alert')).toHaveTextContent('Nothing was saved'),
+    );
+    // A retry of one answer reuses its request id, so it is recorded at most once.
+    expect(classify.mock.calls[1][2].requestId).toBe(classify.mock.calls[0][2].requestId);
   });
 });

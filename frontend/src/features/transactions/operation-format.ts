@@ -31,6 +31,7 @@ export const sourceLabels: Record<Operation['source'], string> = {
 export const statusLabels: Record<Operation['status'], string> = {
   recorded: 'Recorded',
   'needs-classification': 'Needs classification',
+  hidden: 'Hidden',
 };
 const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> = {
   bitcoin: 'Bitcoin',

@@ -110,5 +110,9 @@
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
     "title": "WAL-UI / WAL-NO-SECRETS / SYNC-STATUS: owner adds a Bitcoin address to a new wallet, sees its chain balance against recorded transactions and a failed sync with its reason"
+  },
+  {
+    "file": "tests/e2e/chain-classification.spec.ts",
+    "title": "CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, and both survive a resync"
   }
 ]

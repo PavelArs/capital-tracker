@@ -147,6 +147,7 @@ const operation = (n: number, changes: Partial<Operation>): Operation => ({
   paid: null,
   settlement: null,
   comment: null,
+  classification: null,
   account: { id: trust, name: 'Trust Wallet' },
   counterAccount: null,
   wallet: null,
