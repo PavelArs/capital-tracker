@@ -18,6 +18,13 @@ playwright_version=1.63.0
 [[ $(id -u) -eq 0 ]] || { echo 'run as root' >&2; exit 1; }
 [[ $(uname -m) == x86_64 ]] || { echo 'needs x86-64' >&2; exit 1; }
 
+# 0. IPv4 only. Where the container gets an IPv6 address but no working IPv6 route, Node's
+#    dual-stack connect waits on IPv6 for every download (Playwright gives up after five
+#    seconds), while curl falls back to IPv4 at once.
+printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' \
+  > /etc/sysctl.d/90-no-ipv6.conf
+sysctl -p /etc/sysctl.d/90-no-ipv6.conf
+
 # 1. Packages and Docker Engine (buildx and compose plugins included).
 apt-get update
 # libatomic1: Node.js 26 (the setup script and every job's setup-node) links against it.

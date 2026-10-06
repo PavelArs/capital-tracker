@@ -62,10 +62,7 @@ code. The layers below hold whether the repository is public or private:
 - Docker Engine with the `buildx` and `compose` plugins, plus `git`, `jq`, `zstd`, `curl`, `libatomic1`,
   `tar` and `python3` (the security tests).
 - Chromium's system libraries, installed once as root by the setup script. Node.js, pnpm,
-  the Chromium browser itself and Trivy are downloaded by the jobs. On these runners the
-  browser jobs fetch Chrome for Testing from Google's public bucket
-  (`scripts/playwright-cft-mirror.cjs`), because the Playwright CDN stalls from some networks;
-  the browser stays in `~/.cache/ms-playwright` between jobs.
+  the Chromium browser itself and Trivy are downloaded by the jobs.
 - Only **one** runner per Docker daemon. Acceptance uses a fixed Compose project name,
   fixed subnets and the fixed local port 8443 (also written into the tests), so two jobs on
   one daemon would collide. Several runners on one server therefore each get their own
@@ -145,7 +142,8 @@ lxc exec ghrunner-deploy -- bash /root/self-hosted-runner-setup.sh ghrunner-depl
 
 The script asks for a registration token from **Settings → Actions → Runners → New
 self-hosted runner** (valid for one hour and usable for both runners; never commit or
-paste it anywhere else). It installs Docker with the `buildx` and `compose` plugins,
+paste it anywhere else). It turns IPv6 off inside the container (with an IPv6 address but
+no working IPv6 route, Playwright's browser download hangs on IPv6 and fails), installs Docker with the `buildx` and `compose` plugins,
 `git`, `jq`, `zstd`, `python3` and `libatomic1` (Node.js 26 needs it) (plus the SSH client and `gh` from GitHub's apt repository for the deploy role),
 creates the `ci` user in the `docker` group, gives a CI runner one sudoers rule (below)
 and Chromium's system libraries for the pinned Playwright version, downloads the latest

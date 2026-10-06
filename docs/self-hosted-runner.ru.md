@@ -113,6 +113,8 @@ chmod 0755 /etc/cron.daily/ci-images-prune
    ```
 
    Скрипт спросит токен (ввод не отображается) и сам сделает остальное:
+   - выключит IPv6 внутри контейнера: без рабочего IPv6-маршрута Playwright зависает на
+     скачивании браузера;
    - поставит Docker, git, jq, zstd, python3 и libatomic1;
    - раннеру CI добавит системные библиотеки Chromium и правило sudo ровно на один тест;
    - раннеру деплоя добавит `gh` и SSH-клиент;
@@ -158,8 +160,6 @@ lxc exec ghrunner-deploy -- bash -c 'timeout 5 bash -c "</dev/tcp/<адрес>/<
   местом на диске хоста всё равно следи.
 - При обновлении `@playwright/test` поправь `playwright_version` в скрипте. Затем в каждом
   контейнере CI выполни `npx -y playwright@<версия> install-deps chromium` под root.
-- Сам браузер раннеры скачивают из публичного хранилища Google, а не с CDN Playwright: из
-  твоей сети CDN зависает. Скачанный браузер остаётся в `~/.cache/ms-playwright` между задачами.
 - Пока репозиторий публичный, в **Settings → Actions → General** должно стоять **Require
   approval for all external contributors**. Не одобряй запуск из форка, который меняет
   `.github/`.

@@ -395,8 +395,6 @@ describe('ENG-004: release work runs beside the early gates and the aggregate re
   });
 });
 
-const selfHostedMirror =
-  "runner.environment == 'self-hosted' && 'node scripts/playwright-cft-mirror.cjs' || ''";
 const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3', 'browser-4'];
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
 const mergedPrStep = 'Require a successful full pull request CI run';
@@ -471,17 +469,12 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const steps = shard.steps ?? [];
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
-    expect(browser[0].run?.trim()).toBe(
-      '$PLAYWRIGHT_MIRROR pnpm exec playwright install $PLAYWRIGHT_DEPS chromium',
-    );
+    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install $PLAYWRIGHT_DEPS chromium');
     // GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
     // has them preinstalled by its owner and grants the job no sudo.
     expect(expression(browser[0].env?.PLAYWRIGHT_DEPS)).toBe(
       "runner.environment == 'github-hosted' && '--with-deps' || ''",
     );
-    // Only the self-hosted runners, whose network stalls on the Playwright CDN, fetch Chrome
-    // for Testing from Google through the local redirect.
-    expect(expression(browser[0].env?.PLAYWRIGHT_MIRROR)).toBe(selfHostedMirror);
     expect(expression(browser[0].if)).toBe("startsWith(matrix.shard, 'browser-')");
     // The browser comes from a cache keyed on the installed Playwright version; the install
     // still runs after it, so a stale or missing cache only costs the download.
@@ -792,12 +785,6 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     );
     expect(cache?.uses).toBe(shardCache?.uses);
     expect(cache?.with).toEqual(shardCache?.with);
-    const download = steps.filter((step) => step.run?.includes('playwright install'));
-    expect(download).toHaveLength(1);
-    expect(download[0].run?.trim()).toBe(
-      '$PLAYWRIGHT_MIRROR pnpm exec playwright install chromium',
-    );
-    expect(expression(download[0].env?.PLAYWRIGHT_MIRROR)).toBe(selfHostedMirror);
     for (const step of steps) {
       expect(step.run ?? '').not.toMatch(/docker|acceptance\.mjs|playwright test/);
       expect(step.with?.name).not.toBe('manual-mvp-candidate');

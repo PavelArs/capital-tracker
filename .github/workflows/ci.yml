@@ -385,14 +385,12 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       # GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
-      # has them preinstalled by its owner and gives the job no sudo. The Playwright CDN stalls
-      # from the self-hosted runners' network, so they fetch Chrome for Testing from Google.
+      # has them preinstalled by its owner and gives the job no sudo.
       - name: Install the Playwright browser
         if: startsWith(matrix.shard, 'browser-')
         env:
           PLAYWRIGHT_DEPS: ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }}
-          PLAYWRIGHT_MIRROR: ${{ runner.environment == 'self-hosted' && 'node scripts/playwright-cft-mirror.cjs' || '' }}
-        run: $PLAYWRIGHT_MIRROR pnpm exec playwright install $PLAYWRIGHT_DEPS chromium
+        run: pnpm exec playwright install $PLAYWRIGHT_DEPS chromium
       - name: Download the built release images
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -618,9 +616,7 @@ jobs:
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
       - name: Download the Playwright browser
         if: steps.cache.outputs.cache-hit != 'true'
-        env:
-          PLAYWRIGHT_MIRROR: ${{ runner.environment == 'self-hosted' && 'node scripts/playwright-cft-mirror.cjs' || '' }}
-        run: $PLAYWRIGHT_MIRROR pnpm exec playwright install chromium
+        run: pnpm exec playwright install chromium
 
   # A push to main runs no tests of its own: it may release only a commit whose merged pull
   # request passed every job above, critical acceptance shards included, on its last head.
