@@ -1076,7 +1076,14 @@ describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
     );
     expect(checksum).toBeGreaterThan(0);
     expect(move).toBeGreaterThan(checksum);
-    expect(save[move - 2]).toBe('if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then');
+    const storeMounted =
+      "mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }";
+    // A missing mount must fail the build, not fill the runner's own disk unseen.
+    expect(save.slice(move - 3, move)).toEqual([
+      'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+      storeMounted,
+      'install -d "/srv/ci-images/$GITHUB_RUN_ID"',
+    ]);
     const exported = lines(build.find((step) => step.name === exportStepName));
     const sum = exported.indexOf(
       'sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256',
@@ -1086,7 +1093,11 @@ describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
     );
     expect(sum).toBeGreaterThan(0);
     expect(moveCandidate).toBeGreaterThan(sum);
-    expect(exported[moveCandidate - 2]).toBe('if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then');
+    expect(exported.slice(moveCandidate - 3, moveCandidate)).toEqual([
+      'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+      storeMounted,
+      'install -d "/srv/ci-images/$GITHUB_RUN_ID"',
+    ]);
     // The checksum file stays in the uploaded directories.
     expect(save.join('\n')).not.toMatch(/mv release-images\/images\.tar\.zst\.sha256/);
     expect(exported.join('\n')).not.toMatch(/mv candidate\/images\.tar\.gz\.sha256/);

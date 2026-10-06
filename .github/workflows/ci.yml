@@ -283,6 +283,7 @@ jobs:
           # The owner's runners share the image store instead of the artifact storage quota; the
           # checksum still travels in the artifact, so the shards detect a changed archive.
           if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }
             install -d "/srv/ci-images/$GITHUB_RUN_ID"
             mv release-images/images.tar.zst "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst"
           fi
@@ -337,6 +338,7 @@ jobs:
           sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
           # On the owner's runners the archive goes to the image store the deploy runner reads.
           if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }
             install -d "/srv/ci-images/$GITHUB_RUN_ID"
             mv candidate/images.tar.gz "/srv/ci-images/$GITHUB_RUN_ID/images.tar.gz"
           fi
