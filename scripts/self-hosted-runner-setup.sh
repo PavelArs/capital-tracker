@@ -22,8 +22,8 @@ playwright_version=1.63.0
 apt-get update
 apt-get install -y ca-certificates git jq zstd curl tar xz-utils python3
 # The deploy downloads the candidate and tags releases with gh, and dispatches over SSH.
-# gh comes from GitHub's own apt repository, as on GitHub's runners: not every Ubuntu
-# release carries it (26.04 does not).
+# gh comes from GitHub's own apt repository, as on GitHub's runners, so its version
+# does not depend on the Ubuntu release.
 if [[ $role == deploy ]]; then
   install -d -m 0755 /etc/apt/keyrings
   curl -fsSL -o /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg
