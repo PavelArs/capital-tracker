@@ -929,7 +929,8 @@ else process.exit(9);
 // Owner decisions 2026-10-05/06: every CI job may run on the owner's self-hosted runner.
 describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
   const ciJobs = Object.keys(workflow('ci').jobs);
-  const selfHosted = ['self-hosted', 'linux', 'x64'];
+  const selfHosted = ['self-hosted', 'linux', 'x64', 'ci'];
+  const deployRunner = ['self-hosted', 'linux', 'x64', 'deploy'];
   let ci: Workflow;
 
   beforeAll(() => {
@@ -1017,9 +1018,28 @@ describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
     });
   });
 
-  it('ENG-008-A the deploy stays on GitHub runners', () => {
-    for (const job of Object.values(workflow('cd').jobs))
-      expect(job['runs-on']).toBe('ubuntu-latest');
+  // The deploy holds the dispatcher key: only its own runner may take it, and that runner
+  // never takes a CI job, whose code comes from branches and dependencies.
+  const deployCases: [string, Record<string, string>, unknown][] = [
+    ['switches off', {}, 'ubuntu-latest'],
+    ['only the CI switch on', { CI_SELF_HOSTED: 'true' }, 'ubuntu-latest'],
+    ['deploy switch set to another value', { DEPLOY_SELF_HOSTED: 'yes' }, 'ubuntu-latest'],
+    ['deploy switch on', { DEPLOY_SELF_HOSTED: 'true' }, deployRunner],
+    ['both switches on', { CI_SELF_HOSTED: 'true', DEPLOY_SELF_HOSTED: 'true' }, deployRunner],
+  ];
+
+  describe.each(Object.keys(workflow('cd').jobs))('ENG-008-D deploy job %s', (job) => {
+    it.each(deployCases)('%s', (_case, vars, expected) => {
+      for (const event of ['workflow_run', 'workflow_dispatch']) {
+        const github = { event_name: event, repository, event: {} };
+        expect(runner(workflow('cd').jobs[job]['runs-on'], vars, github)).toEqual(expected);
+      }
+    });
+  });
+
+  it('ENG-008-D CI and deploy runners share no distinguishing label', () => {
+    expect(selfHosted).not.toContain('deploy');
+    expect(deployRunner).not.toContain('ci');
   });
 
   // The runner user has no sudo except one sudoers rule for exactly this command

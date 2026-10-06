@@ -2,29 +2,34 @@
 
 GitHub's hosted runners can be scarce: on 2026-10-05 jobs waited or were cancelled for
 lack of a runner, which held back pull requests and the main release build. Every CI job
-can therefore run on a runner the owner hosts; only the deploy stays on GitHub.
+can therefore run on runners the owner hosts, and the deploy on a separate runner of its own.
 
 ## What runs where
 
-| Workflow | Runner when `CI_SELF_HOSTED` is `true` |
-| --- | --- |
-| Every job of `.github/workflows/ci.yml`: lint, unit tests, builds, specification gates, dependency audit, release image build, six acceptance shards, image scan, acceptance receipt, merged pull request check, browser cache warm-up, CI Status | self-hosted |
-| Deploy Manual MVP (`cd.yml`) | GitHub |
+| Workflow | Switch (repository variable) | Runner labels when the switch is `true` |
+| --- | --- | --- |
+| Every job of `.github/workflows/ci.yml`: lint, unit tests, builds, specification gates, dependency audit, release image build, six acceptance shards, image scan, acceptance receipt, merged pull request check, browser cache warm-up, CI Status | `CI_SELF_HOSTED` | `self-hosted, linux, x64, ci` |
+| Deploy Manual MVP (`cd.yml`): deploy and tag | `DEPLOY_SELF_HOSTED` | `self-hosted, linux, x64, deploy` |
 
-The deploy keeps GitHub's runners: it holds the production environment's credentials
-and reaches the server, and a self-hosted runner must hold no secrets.
+Unset or anything other than `true`, a workflow runs on GitHub as before. Turn a switch
+off whenever its runners are down, otherwise the jobs wait in the queue for them.
 
-The repository variable `CI_SELF_HOSTED` is the switch. Unset or anything other than
-`true`, every job runs on GitHub as before. Turn it off whenever the runner machine is
-down, otherwise the jobs wait in the queue for it.
+The deploy holds the production environment's dispatcher key and publishes images, so it
+runs only on its own runner (label `deploy`). CI jobs run code from branches and
+dependencies and a runner keeps files between jobs; since CI runners carry the label `ci`
+and the deploy runner does not, a CI job can never run where the key is written.
+`ENG-008-D` checks both label sets. The deploy still waits for the approval of the
+GitHub `production` environment. The release images themselves are built by a CI job, so
+the CI runners must be trusted as much as GitHub's builders were.
 
-Each runner executes one job at a time; with two runners a run proceeds two jobs at a
+Each runner executes one job at a time; with two CI runners a run proceeds two jobs at a
 time, so a full pull request run takes longer than on GitHub's parallel runners.
 
-## Security on a public repository
+## Security
 
-Anyone can open a pull request against a public repository, and a job runs whatever code
-the pull request contains. A self-hosted runner must never execute that code. The layers:
+While the repository is public, anyone can open a pull request against it, and a job runs
+whatever code the pull request contains. A self-hosted runner must never execute that
+code. The layers below hold whether the repository is public or private:
 
 1. **Workflow routing.** The jobs pick the self-hosted runner only for a push, a manual
    dispatch or a pull request whose branch lives in this repository and was not opened by
@@ -60,7 +65,7 @@ the pull request contains. A self-hosted runner must never execute that code. Th
   one daemon would collide. Several runners on one server therefore each get their own
   LXD container (or VM) with its own Docker daemon and network namespace.
 
-## Two runners on one server (LXD containers)
+## CI and deploy runners on one server (LXD containers)
 
 On the host, as root (Ubuntu with a kernel of 5.15 or newer). Unprivileged LXD containers
 also keep the CI jobs away from the host: `docker` group membership inside a container is
@@ -69,7 +74,7 @@ root only inside that container.
 ```sh
 snap install lxd
 lxd init --auto
-for name in ghrunner-1 ghrunner-2; do
+for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
   lxc launch ubuntu:24.04 "$name" \
     -c security.nesting=true \
     -c security.syscalls.intercept.mknod=true \
@@ -79,22 +84,25 @@ done
 ```
 
 Then, for each container, copy `scripts/self-hosted-runner-setup.sh` from this repository
-into it and run it with the runner's name:
+into it and run it with the runner's name and role (`ci` or `deploy`):
 
 ```sh
 lxc file push self-hosted-runner-setup.sh ghrunner-1/root/
-lxc exec ghrunner-1 -- bash /root/self-hosted-runner-setup.sh ghrunner-1
+lxc exec ghrunner-1 -- bash /root/self-hosted-runner-setup.sh ghrunner-1 ci
+lxc file push self-hosted-runner-setup.sh ghrunner-deploy/root/
+lxc exec ghrunner-deploy -- bash /root/self-hosted-runner-setup.sh ghrunner-deploy deploy
 ```
 
 The script asks for a registration token from **Settings → Actions → Runners → New
 self-hosted runner** (valid for one hour and usable for both runners; never commit or
 paste it anywhere else). It installs Docker with the `buildx` and `compose` plugins,
-`git`, `jq`, `zstd` and `python3`, creates the `ci` user in the `docker` group with one
-sudoers rule (below), installs Chromium's system libraries for the pinned Playwright
-version, downloads the latest runner and checks it against the SHA-256 in its release
-notes, registers it under the given name with the default labels `self-hosted`, `Linux`
-and `X64`, starts it as a service and adds a weekly Docker cleanup. Both runners then
-show as **Idle** under **Settings → Actions → Runners**.
+`git`, `jq`, `zstd` and `python3` (plus `gh` and the SSH client for the deploy role),
+creates the `ci` user in the `docker` group, gives a CI runner one sudoers rule (below)
+and Chromium's system libraries for the pinned Playwright version, downloads the latest
+runner and checks it against the SHA-256 in its release notes, registers it under the
+given name with the default labels `self-hosted`, `Linux` and `X64` plus its role label,
+starts it as a service and adds a weekly Docker cleanup. The runners then show as
+**Idle** under **Settings → Actions → Runners**.
 
 The default `dir` storage pool does not cap the containers' disk use; watch the host's
 free space, since images, build cache and the browser take several gigabytes per runner.
@@ -116,11 +124,12 @@ When `@playwright/test` is upgraded, update `playwright_version` in the script a
 
 1. Set the fork approval policy from the security section above.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable**:
-   name `CI_SELF_HOSTED`, value `true`.
-3. Re-run CI on an open pull request or run the CI workflow manually. Every job lists the
-   self-hosted runner's name under **Set up job**.
+   name `CI_SELF_HOSTED`, value `true`; and, for the deploy runner, `DEPLOY_SELF_HOSTED`,
+   value `true`.
+3. Re-run CI on an open pull request or run the CI workflow manually. Every job lists a CI
+   runner's name under **Set up job**; the next deploy lists the deploy runner.
 
-To go back to GitHub's runners, set the variable to `false` or delete it.
+To go back to GitHub's runners, set a variable to `false` or delete it.
 
 ## Housekeeping
 

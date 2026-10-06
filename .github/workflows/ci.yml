@@ -23,17 +23,17 @@ env:
 
 jobs:
   # Owner decision 2026-10-06: with the repository variable CI_SELF_HOSTED set to 'true' every
-  # job below runs on the owner's self-hosted runner (ENG-008 keeps every job's runs-on the
-  # same expression). Without it, or for a pull request from a fork or from Dependabot, they
-  # run on GitHub's runners, so untrusted code never reaches the owner's machine
-  # (docs/self-hosted-runner.md).
+  # job below runs on the owner's self-hosted CI runners (label ci; ENG-008 keeps every job's
+  # runs-on the same expression). Without it, or for a pull request from a fork or from
+  # Dependabot, they run on GitHub's runners, so untrusted code never reaches the owner's
+  # machine. The deploy runner (label deploy) never takes these jobs (docs/self-hosted-runner.md).
   # ============================================
   # Backend Jobs
   # ============================================
   backend-check:
     name: Backend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: backend
@@ -59,7 +59,7 @@ jobs:
   backend-test:
     name: Backend Tests
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: backend
@@ -95,7 +95,7 @@ jobs:
   backend-build:
     name: Backend Build
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs: [backend-check]
     defaults:
       run:
@@ -128,7 +128,7 @@ jobs:
   frontend-check:
     name: Frontend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: frontend
@@ -154,7 +154,7 @@ jobs:
   frontend-test:
     name: Frontend Tests
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: frontend
@@ -190,7 +190,7 @@ jobs:
   frontend-build:
     name: Frontend Build
     if: github.event_name != 'push'
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs: [frontend-check]
     defaults:
       run:
@@ -229,7 +229,7 @@ jobs:
   # their receipts before scanning the same images.
   release-images:
     name: Build Release Images
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -341,7 +341,7 @@ jobs:
 
   critical-acceptance:
     name: Critical acceptance (${{ matrix.shard }})
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -416,7 +416,7 @@ jobs:
   # The scans need only the built images, so they run beside the shards rather than after them.
   image-security:
     name: Image Security Scan
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -507,7 +507,7 @@ jobs:
   # Passes only when every shard passed on the built images and the scan job passed on them.
   docker-build:
     name: Acceptance Receipt and Image Security
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -545,7 +545,7 @@ jobs:
 
   spec-check:
     name: Specification and Engineering Gates
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -561,7 +561,7 @@ jobs:
 
   dependency-audit:
     name: Production Dependency Audit
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     if: github.event_name != 'push'
     timeout-minutes: 10
     steps:
@@ -578,7 +578,7 @@ jobs:
   # It gates nothing, so a cache outage cannot hold back a release.
   playwright-cache:
     name: Warm Playwright Browser Cache
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     continue-on-error: true
     if: github.event_name == 'push'
@@ -606,7 +606,7 @@ jobs:
   # request passed every job above, critical acceptance shards included, on its last head.
   merged-pr-ci:
     name: Merged Pull Request CI
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     if: github.event_name == 'push'
     permissions:
@@ -625,7 +625,7 @@ jobs:
 
   ci-status:
     name: CI Status
-    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64"]') || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs:
       - backend-check
       - backend-test
