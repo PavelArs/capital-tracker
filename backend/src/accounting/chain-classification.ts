@@ -23,6 +23,7 @@ export const chainTypes = [
   'reward',
   'staking-reward',
   'airdrop',
+  'other',
 ] as const;
 export type ChainType = (typeof chainTypes)[number];
 
@@ -34,6 +35,7 @@ const incoming: readonly ChainType[] = [
   'reward',
   'staking-reward',
   'airdrop',
+  'other',
 ];
 const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee'];
 
@@ -60,11 +62,16 @@ export interface TransferClassification {
   type: 'transfer';
   accountId: string;
 }
+/** Received, but nothing more is known: the coins count without a purchase price. */
+export interface OtherClassification {
+  type: 'other';
+}
 export type Classification =
   | PricedClassification
   | ValuedClassification
   | RewardClassification
-  | TransferClassification;
+  | TransferClassification
+  | OtherClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -118,6 +125,10 @@ function classification(raw: unknown): Classification | null {
       type,
       valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
     };
+  }
+  if (type === 'other') {
+    object(raw, ['type']);
+    return { type };
   }
   return bad();
 }
@@ -203,8 +214,9 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
 /**
  * The entry for the whole amount the leg moved, at the block time. A buy or sale settles in
  * the account's cash like one added by hand (PR-OPS-9); income, expense, gift and fee carry
- * their value; a reward's value is also its cost basis. The network fee stays inside the
- * amount; only a transfer (chain-transfer.ts) records it apart.
+ * their value; a reward's value is also its cost basis. Other adds the coins with an unknown
+ * cost and no deposit, like a reward nobody valued. The network fee stays inside the amount;
+ * only a transfer (chain-transfer.ts) records it apart.
  */
 export function planOperation(
   leg: ChainLeg,
@@ -258,6 +270,17 @@ export function planOperation(
         },
       };
     }
+    case 'other':
+      return {
+        journal: 'reward',
+        fields: {
+          ...common,
+          assertReward: true,
+          category: 'unclassified',
+          acquisitionBasisUsd: null,
+          incomeValueUsd: null,
+        },
+      };
     default:
       return {
         journal: 'reward',

@@ -873,6 +873,7 @@ describe('classify-chain-transactions (M12)', () => {
       'Staking reward',
       'Airdrop',
       'Gift received',
+      'Other',
     ]);
     expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
     const save = within(drawer).getByRole('button', { name: 'Save' });
@@ -933,6 +934,30 @@ describe('classify-chain-transactions (M12)', () => {
       currency: 'RUB',
       amount: '83000',
       perUsd: '79',
+    });
+  });
+
+  it('CLS-OTHER: a receipt nobody can name asks only for a comment and saves as Other', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Other' }));
+    expect(
+      within(drawer).getByText(
+        'The amount stays in your balance without a purchase price. Add a comment so you remember what it was.',
+      ),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/Value at the time/)).not.toBeInTheDocument();
+    // The comment is up front, not under "More options".
+    await user.type(within(drawer).getByLabelText('Comment'), 'Unknown origin');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'other' },
+      comment: 'Unknown origin',
     });
   });
 
