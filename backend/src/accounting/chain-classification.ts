@@ -11,10 +11,11 @@ import { type SettlementCurrency, settlementCurrencies } from './trade-settlemen
 // The raw row is never edited; a classification produces one journal entry in the wallet's
 // account, which then counts like any other operation.
 
-/** Types a chain transaction can be classified as here; transfers come with M13. */
+/** Types a chain transaction can be classified as; a transfer joins it with M13. */
 export const chainTypes = [
   'buy',
   'sell',
+  'transfer',
   'income',
   'expense',
   'gift',
@@ -27,13 +28,14 @@ export type ChainType = (typeof chainTypes)[number];
 
 const incoming: readonly ChainType[] = [
   'buy',
+  'transfer',
   'income',
   'gift',
   'reward',
   'staking-reward',
   'airdrop',
 ];
-const outgoing: readonly ChainType[] = ['sell', 'expense', 'gift', 'fee'];
+const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee'];
 
 /** Buy or sell: what was paid or received, in the currency it was paid in. */
 export interface PricedClassification {
@@ -53,7 +55,16 @@ export interface RewardClassification {
   type: 'reward' | 'staking-reward' | 'airdrop';
   valueUsd: string | null;
 }
-export type Classification = PricedClassification | ValuedClassification | RewardClassification;
+/** A move between the owner's own accounts (M13): the account on the other side. */
+export interface TransferClassification {
+  type: 'transfer';
+  accountId: string;
+}
+export type Classification =
+  | PricedClassification
+  | ValuedClassification
+  | RewardClassification
+  | TransferClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -92,6 +103,10 @@ function classification(raw: unknown): Classification | null {
       amount: parseDecimal(row.amount, true),
       ...(row.perUsd === undefined ? {} : { perUsd: parseDecimal(row.perUsd, true) }),
     };
+  }
+  if (type === 'transfer') {
+    const row = object(raw, ['type', 'accountId']);
+    return { type, accountId: parseUuid(row.accountId) };
   }
   if (type === 'income' || type === 'expense' || type === 'gift' || type === 'fee') {
     const row = object(raw, ['type', 'valueUsd']);
@@ -146,6 +161,12 @@ export interface ChainLeg {
   sentUnits: string;
 }
 
+/** Whether the type fits what the coins did: what arrives cannot be sold, and so on. */
+export function fitsDirection(leg: ChainLeg, type: ChainType): boolean {
+  const { inbound, quantity } = legMovement(leg);
+  return quantity !== '0' && (inbound ? incoming : outgoing).includes(type);
+}
+
 const SAT_TO_ATOMS = 10n ** 22n;
 
 /** The coin and amount the leg moves: what arrived, or what left with the network fee. */
@@ -160,7 +181,7 @@ export const chainCoins: Record<
   { assetType: 'crypto'; symbol: string; name: string }
 > = { bitcoin: { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' } };
 
-const unfit = () =>
+export const unfit = () =>
   new UnprocessableEntityException('This type does not fit the direction of the transaction');
 
 /** The journal entry a classification produces, before the journal pins are known. */
@@ -182,8 +203,8 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
 /**
  * The entry for the whole amount the leg moved, at the block time. A buy or sale settles in
  * the account's cash like one added by hand (PR-OPS-9); income, expense, gift and fee carry
- * their value; a reward's value is also its cost basis. Network fees stay inside the amount
- * until M13 records them as a Fee.
+ * their value; a reward's value is also its cost basis. The network fee stays inside the
+ * amount; only a transfer (chain-transfer.ts) records it apart.
  */
 export function planOperation(
   leg: ChainLeg,
@@ -191,7 +212,8 @@ export function planOperation(
   comment: string | undefined,
 ): PlannedOperation {
   const { inbound, quantity } = legMovement(leg);
-  if (quantity === '0' || !(inbound ? incoming : outgoing).includes(value.type)) throw unfit();
+  if (!fitsDirection(leg, value.type)) throw unfit();
+  if (value.type === 'transfer') throw new Error('A transfer records an owned transfer instead');
   const common = { occurredAt: leg.blockTime, quantity };
   const note = comment === undefined ? {} : { comment };
   switch (value.type) {

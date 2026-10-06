@@ -21,6 +21,7 @@ import {
   readTransferRevision,
   TRANSFER_LIMITS,
   type TransferKind,
+  type TransferReceipt,
   type TransferVersionRow,
   transferReceipt,
   transferVersionSelect,
@@ -81,108 +82,120 @@ export class OwnedTransferService {
     input: TransferCreateInput | TransferCorrectionInput | TransferVoidInput,
     target?: string,
   ) {
-    const payload = transferPayload(kind, input, target);
     try {
-      return await this.source.transaction(async (manager) => {
-        await lockAccountingOwner(manager, owner);
-        const replay = await readTransferReplay(manager, owner, input.requestId);
-        if (replay) {
-          if (replay.canonicalPayload !== payload) throw conflict();
-          return { created: false, value: transferReceipt(replay) };
-        }
-        const row =
-          target === undefined ? undefined : await readTransferHead(manager, owner, target);
-        if (target !== undefined && !row) throw new NotFoundException();
-        const current = row ? projectTransferVersion(row) : undefined;
-        const pair = 'fromAccountId' in input ? input : current;
-        if (!pair) throw new Error('Transfer target required');
-        const { fromAccountId, toAccountId } = pair;
-        const fromOwned = await readOwnedAccount(manager, owner, fromAccountId);
-        const toOwned = await readOwnedAccount(manager, owner, toAccountId);
-        if (fromAccountId === toAccountId) throw conflict();
-        // The first operation of an account starts its journal (M9, OPS-ADD-BUY).
-        if (kind === 'create') {
-          if (input.expectedFromJournalRevision === 0)
-            await startEmptyJournal(manager, owner, fromOwned, input.requestId);
-          if (input.expectedToJournalRevision === 0)
-            await startEmptyJournal(manager, owner, toOwned, input.requestId);
-        }
-        if (
-          'expectedVersion' in input &&
-          (current?.kind === 'void' || current?.version !== input.expectedVersion)
-        )
-          throw conflict();
-        const fields = 'quantity' in input ? movement(input) : current && movement(current);
-        if (!fields) throw new Error('Transfer movement required');
-        const labels = await this.labels(manager, owner, fields);
-        const revision = await readTransferRevision(manager, owner);
-        if (revision >= TRANSFER_LIMITS.versions) throw conflict();
-        const heads = await readTransferHeads(manager, owner);
-        if (kind === 'create' && heads.length >= TRANSFER_LIMITS.activeTransfers) throw conflict();
-        const transferId = target ?? randomUUID();
-        const candidates = heads.filter((head) => head.transferId !== transferId);
-        const placed = (orderWithinTimestamp: number) => ({
-          ...fields,
-          ...labels,
-          orderWithinTimestamp,
-          fromAccountId,
-          toAccountId,
-          transferId,
-          version: (current?.version ?? 0) + 1,
-        });
-        const provisional = placed(fields.orderWithinTimestamp ?? 0);
-        const ledger = await readConnectedLedger(manager, owner, [fromAccountId, toAccountId], {
-          lock: true,
-          transfers: heads,
-          candidateTransfers: kind === 'void' ? candidates : [...candidates, provisional],
-        });
-        const from = ledger.accounts.get(fromAccountId)!;
-        const to = ledger.accounts.get(toAccountId)!;
-        if (
-          from.journal.currentRevision !== input.expectedFromJournalRevision ||
-          to.journal.currentRevision !== input.expectedToJournalRevision
-        )
-          throw conflict();
-        // Without an order the transfer goes after every event of both accounts at its instant.
-        const order =
-          fields.orderWithinTimestamp ??
-          Math.max(
-            automaticOrder(from, candidates, fields.occurredAt, undefined) ?? Infinity,
-            automaticOrder(to, candidates, fields.occurredAt, undefined) ?? Infinity,
-          );
-        if (!Number.isSafeInteger(order)) throw conflict();
-        const next = placed(order);
-        const candidateEvents = kind === 'void' ? candidates : [...candidates, next];
-        assertRevisionCapacity(ledger);
-        projectConnectedLedger(ledger);
-        const transfers = candidateEvents.filter((event) =>
-          ledger.accounts.has(event.fromAccountId),
-        );
-        try {
-          projectConnectedLedger(ledger, { transfers });
-        } catch (error) {
-          // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
-          const shortfall =
-            error instanceof FifoHistoryError &&
-            firstShortfall({ accounts: ledger.accounts, transfers });
-          if (shortfall) throw dependent(shortfall);
-          throw error;
-        }
-        const receipt = await appendTransferVersion(manager, owner, {
-          ...next,
-          kind,
-          requestId: input.requestId,
-          canonicalPayload: payload,
-          journalRevision: revision + 1,
-          fromJournalRevision: from.journal.currentRevision + 1,
-          toJournalRevision: to.journal.currentRevision + 1,
-        });
-        await advanceConnectedJournals(manager, owner, ledger);
-        return { created: true, value: receipt };
-      });
+      return await this.source.transaction((manager) =>
+        this.mutateWithin(manager, owner, kind, input, target),
+      );
     } catch (error) {
       return rethrowAccountingHistory(error);
     }
+  }
+
+  /**
+   * One create, correction or void inside the caller's transaction, under the owner's
+   * accounting lock: a chain transaction classified as a transfer (M13) writes its own rows in
+   * the same transaction. The caller rethrows history errors.
+   */
+  async mutateWithin(
+    manager: EntityManager,
+    owner: string,
+    kind: TransferKind,
+    input: TransferCreateInput | TransferCorrectionInput | TransferVoidInput,
+    target?: string,
+  ): Promise<{ created: boolean; value: TransferReceipt }> {
+    const payload = transferPayload(kind, input, target);
+    await lockAccountingOwner(manager, owner);
+    const replay = await readTransferReplay(manager, owner, input.requestId);
+    if (replay) {
+      if (replay.canonicalPayload !== payload) throw conflict();
+      return { created: false, value: transferReceipt(replay) };
+    }
+    const row = target === undefined ? undefined : await readTransferHead(manager, owner, target);
+    if (target !== undefined && !row) throw new NotFoundException();
+    const current = row ? projectTransferVersion(row) : undefined;
+    const pair = 'fromAccountId' in input ? input : current;
+    if (!pair) throw new Error('Transfer target required');
+    const { fromAccountId, toAccountId } = pair;
+    const fromOwned = await readOwnedAccount(manager, owner, fromAccountId);
+    const toOwned = await readOwnedAccount(manager, owner, toAccountId);
+    if (fromAccountId === toAccountId) throw conflict();
+    // The first operation of an account starts its journal (M9, OPS-ADD-BUY).
+    if (kind === 'create') {
+      if (input.expectedFromJournalRevision === 0)
+        await startEmptyJournal(manager, owner, fromOwned, input.requestId);
+      if (input.expectedToJournalRevision === 0)
+        await startEmptyJournal(manager, owner, toOwned, input.requestId);
+    }
+    if (
+      'expectedVersion' in input &&
+      (current?.kind === 'void' || current?.version !== input.expectedVersion)
+    )
+      throw conflict();
+    const fields = 'quantity' in input ? movement(input) : current && movement(current);
+    if (!fields) throw new Error('Transfer movement required');
+    const labels = await this.labels(manager, owner, fields);
+    const revision = await readTransferRevision(manager, owner);
+    if (revision >= TRANSFER_LIMITS.versions) throw conflict();
+    const heads = await readTransferHeads(manager, owner);
+    if (kind === 'create' && heads.length >= TRANSFER_LIMITS.activeTransfers) throw conflict();
+    const transferId = target ?? randomUUID();
+    const candidates = heads.filter((head) => head.transferId !== transferId);
+    const placed = (orderWithinTimestamp: number) => ({
+      ...fields,
+      ...labels,
+      orderWithinTimestamp,
+      fromAccountId,
+      toAccountId,
+      transferId,
+      version: (current?.version ?? 0) + 1,
+    });
+    const provisional = placed(fields.orderWithinTimestamp ?? 0);
+    const ledger = await readConnectedLedger(manager, owner, [fromAccountId, toAccountId], {
+      lock: true,
+      transfers: heads,
+      candidateTransfers: kind === 'void' ? candidates : [...candidates, provisional],
+    });
+    const from = ledger.accounts.get(fromAccountId)!;
+    const to = ledger.accounts.get(toAccountId)!;
+    if (
+      from.journal.currentRevision !== input.expectedFromJournalRevision ||
+      to.journal.currentRevision !== input.expectedToJournalRevision
+    )
+      throw conflict();
+    // Without an order the transfer goes after every event of both accounts at its instant.
+    const order =
+      fields.orderWithinTimestamp ??
+      Math.max(
+        automaticOrder(from, candidates, fields.occurredAt, undefined) ?? Infinity,
+        automaticOrder(to, candidates, fields.occurredAt, undefined) ?? Infinity,
+      );
+    if (!Number.isSafeInteger(order)) throw conflict();
+    const next = placed(order);
+    const candidateEvents = kind === 'void' ? candidates : [...candidates, next];
+    assertRevisionCapacity(ledger);
+    projectConnectedLedger(ledger);
+    const transfers = candidateEvents.filter((event) => ledger.accounts.has(event.fromAccountId));
+    try {
+      projectConnectedLedger(ledger, { transfers });
+    } catch (error) {
+      // Name what the change would break: OPS-DELETE-GUARD, OPS-OVERSPEND.
+      const shortfall =
+        error instanceof FifoHistoryError &&
+        firstShortfall({ accounts: ledger.accounts, transfers });
+      if (shortfall) throw dependent(shortfall);
+      throw error;
+    }
+    const receipt = await appendTransferVersion(manager, owner, {
+      ...next,
+      kind,
+      requestId: input.requestId,
+      canonicalPayload: payload,
+      journalRevision: revision + 1,
+      fromJournalRevision: from.journal.currentRevision + 1,
+      toJournalRevision: to.journal.currentRevision + 1,
+    });
+    await advanceConnectedJournals(manager, owner, ledger);
+    return { created: true, value: receipt };
   }
 
   private async labels(manager: EntityManager, owner: string, value: RequestedMovement) {

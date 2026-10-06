@@ -138,7 +138,7 @@ export class WalletAddressService {
     const owner = parseUuid(ownerId);
     const addressId = parseUuid(id);
     const changes = parseUpdate(raw);
-    return this.source.transaction('READ COMMITTED', async (manager) => {
+    const result = await this.source.transaction('READ COMMITTED', async (manager) => {
       if (changes.accountId) await this.account(manager, owner, changes.accountId);
       // TypeORM returns [rows, affected] for UPDATE ... RETURNING on PostgreSQL.
       const [updated]: [unknown[], number] = await manager.query(
@@ -158,6 +158,9 @@ export class WalletAddressService {
       if (updated.length !== 1) throw new NotFoundException();
       return summary(await this.address(manager, owner, addressId));
     });
+    // An address now in an account may complete a transfer between own wallets (D7).
+    if ('accountId' in changes) await this.walletSync.linkOwnTransfers(owner);
+    return result;
   }
 
   async list(ownerId: string) {

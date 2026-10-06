@@ -117,6 +117,9 @@ interface ChainRow {
   classificationComment: string | null;
   producedTradeId: string | null;
   producedRewardId: string | null;
+  producedTransferId: string | null;
+  linkedAddressId: string | null;
+  automatic: boolean | null;
 }
 
 // Current versions only: a voided operation has left the books (its history keeps it).
@@ -281,7 +284,8 @@ export class OperationListService {
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
-            c."rewardId" AS "producedRewardId"
+            c."rewardId" AS "producedRewardId", c."transferId" AS "producedTransferId",
+            c."linkedAddressId", c.automatic
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
           LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -416,7 +420,11 @@ export class OperationListService {
                       ? { kind: 'trade', id: row.producedTradeId }
                       : row.producedRewardId
                         ? { kind: 'reward', id: row.producedRewardId }
-                        : null,
+                        : row.producedTransferId
+                          ? { kind: 'transfer', id: row.producedTransferId }
+                          : null,
+                    linkedAddressId: row.linkedAddressId,
+                    automatic: row.automatic === true,
                   },
           })),
           marketPrices: new Map(
