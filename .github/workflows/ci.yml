@@ -401,7 +401,7 @@ jobs:
           set -euo pipefail
           if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
-          zstd -dc release-images/images.tar.zst | docker load
+          zstd -dc < release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Run critical real release acceptance
@@ -453,7 +453,7 @@ jobs:
           set -euo pipefail
           if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
-          zstd -dc release-images/images.tar.zst | docker load
+          zstd -dc < release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Scan the backend image

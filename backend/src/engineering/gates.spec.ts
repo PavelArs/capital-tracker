@@ -405,7 +405,8 @@ const loadImages = [
   'set -euo pipefail',
   imageStoreLink,
   '(cd release-images && sha256sum -c images.tar.zst.sha256)',
-  'zstd -dc release-images/images.tar.zst | docker load',
+  // zstd ignores a symbolic link given as a file name, so the stored archive is read from stdin.
+  'zstd -dc < release-images/images.tar.zst | docker load',
   'rm release-images/images.tar.zst',
   'node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
 ];
