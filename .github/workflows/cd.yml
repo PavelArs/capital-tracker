@@ -102,6 +102,11 @@ jobs:
           set -euo pipefail
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -n manual-mvp-candidate -D candidate
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$GITHUB_SHA" "$RUN_ID" deploy/manual-mvp-infrastructure-pins.json
+          # A candidate built on the owner's CI runners left its archive in the shared image
+          # store (read-only here); the artifact's checksum below still proves it unchanged.
+          if [[ ! -e candidate/images.tar.gz && $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            ln -s "/srv/ci-images/$RUN_ID/images.tar.gz" candidate/images.tar.gz
+          fi
           sha256sum -c candidate/images.tar.gz.sha256
       - name: Promote the identical tested images
         if: env.RELEASE_MODE == 'promote' || env.RELEASE_MODE == 'release'

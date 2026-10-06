@@ -97,6 +97,33 @@ ufw allow in on lxdbr0 to any port 53
 ufw route allow in on lxdbr0 out on "$(ip route show default | awk '{print $5; exit}')"
 ```
 
+### Shared image store
+
+The repository is private, and its artifact storage quota (about 500 MB on the free plan)
+cannot hold the image archives: about 220 MB per pull request run and as much for each
+release candidate. On a self-hosted runner, Build Release Images therefore moves the archive
+to `/srv/ci-images/<run id>/` and uploads only the manifest and the archive's checksum. The
+shards, the image scan and the deploy link the stored archive and check it against the
+artifact's checksum before loading it (`ENG-008-E`), so a changed archive is refused. On
+GitHub's runners nothing changes. Turn both switches on or off together: a candidate built
+on the CI runners can only be deployed by the deploy runner.
+
+The store is a host directory, preferably on a large disk, mounted into every runner
+container: read-write for the CI runners, read-only for the deploy runner. A daily cron job
+removes runs older than three days, roughly 8-15 GB at a busy pace (an estimate).
+
+```sh
+store=/srv/ci-images   # any directory on the large disk
+install -d -m 1777 "$store"
+for name in ghrunner-1 ghrunner-2; do
+  lxc config device add "$name" ci-images disk source="$store" path=/srv/ci-images
+done
+lxc config device add ghrunner-deploy ci-images disk source="$store" path=/srv/ci-images readonly=true
+printf '#!/bin/sh\nfind %s -mindepth 1 -maxdepth 1 -mtime +2 -exec rm -rf {} +\n' "$store" \
+  > /etc/cron.daily/ci-images-prune
+chmod 0755 /etc/cron.daily/ci-images-prune
+```
+
 Then, for each container, copy `scripts/self-hosted-runner-setup.sh` from this repository
 into it and run it with the runner's name and role (`ci` or `deploy`):
 

@@ -48,6 +48,35 @@ ufw route allow in on lxdbr0 out on "$(ip route show default | awk '{print $5; e
 свежего клона, как при обновлении сервера, или скачай на странице файла в GitHub (кнопка
 Raw). Положи его в `/root/self-hosted-runner-setup.sh`.
 
+## Общее хранилище образов
+
+Репозиторий приватный, и бесплатной квоты артефактов (около 500 МБ) не хватает на архивы
+образов: около 220 МБ на каждый прогон PR и столько же на кандидат релиза. Поэтому на своих
+раннерах CI кладёт архив в общую папку `/srv/ci-images/<номер прогона>/`, а в GitHub
+загружает только манифест и контрольную сумму. Шарды e2e, сканер и деплой сверяют архив с
+этой суммой перед загрузкой, так что подменённый архив не пройдёт. Переключатели
+`CI_SELF_HOSTED` и `DEPLOY_SELF_HOSTED` включай и выключай вместе: кандидат, собранный на
+своих раннерах, может развернуть только свой раннер деплоя.
+
+Папка лежит на хосте, лучше на большом диске. Раннерам CI она подключена на запись, раннеру
+деплоя только на чтение. Каждый день cron удаляет прогоны старше трёх дней. В загруженные
+дни это примерно 8–15 ГБ, оценка.
+
+```sh
+store=/srv/ci-images   # любая папка на большом диске
+install -d -m 1777 "$store"
+for name in ghrunner-1 ghrunner-2; do
+  lxc config device add "$name" ci-images disk source="$store" path=/srv/ci-images
+done
+lxc config device add ghrunner-deploy ci-images disk source="$store" path=/srv/ci-images readonly=true
+printf '#!/bin/sh\nfind %s -mindepth 1 -maxdepth 1 -mtime +2 -exec rm -rf {} +\n' "$store" \
+  > /etc/cron.daily/ci-images-prune
+chmod 0755 /etc/cron.daily/ci-images-prune
+```
+
+Новому раннеру CI подключи папку той же командой `lxc config device add`, новому раннеру
+деплоя — с `readonly=true`.
+
 ## Добавить раннер
 
 Пример для третьего раннера CI `ghrunner-3`. Для раннера деплоя укажи свои лимиты (1 CPU,

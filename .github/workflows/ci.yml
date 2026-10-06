@@ -280,6 +280,12 @@ jobs:
           set -euo pipefail
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
           (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
+          # The owner's runners share the image store instead of the artifact storage quota; the
+          # checksum still travels in the artifact, so the shards detect a changed archive.
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            install -d "/srv/ci-images/$GITHUB_RUN_ID"
+            mv release-images/images.tar.zst "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst"
+          fi
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
         if: github.event_name != 'push'
@@ -329,6 +335,11 @@ jobs:
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
           sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
+          # On the owner's runners the archive goes to the image store the deploy runner reads.
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            install -d "/srv/ci-images/$GITHUB_RUN_ID"
+            mv candidate/images.tar.gz "/srv/ci-images/$GITHUB_RUN_ID/images.tar.gz"
+          fi
       - name: Upload the release candidate
         if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -386,6 +397,7 @@ jobs:
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
           zstd -dc release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
@@ -409,8 +421,9 @@ jobs:
           path: |
             playwright-report/
             test-results/
-          retention-days: 7
-          # Diagnostics only: a re-run of a failed shard may replace its earlier report.
+          # Diagnostics only, kept briefly to stay within the private repository's artifact
+          # storage; a re-run of a failed shard may replace its earlier report.
+          retention-days: 2
           overwrite: true
 
   # The scans need only the built images, so they run beside the shards rather than after them.
@@ -436,6 +449,7 @@ jobs:
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
           zstd -dc release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst

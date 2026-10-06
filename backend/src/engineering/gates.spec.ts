@@ -399,8 +399,11 @@ const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
 const mergedPrStep = 'Require a successful full pull request CI run';
 const exportStepName = 'Export the release candidate images';
+const imageStoreLink =
+  'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi';
 const loadImages = [
   'set -euo pipefail',
+  imageStoreLink,
   '(cd release-images && sha256sum -c images.tar.zst.sha256)',
   'zstd -dc release-images/images.tar.zst | docker load',
   'rm release-images/images.tar.zst',
@@ -1051,6 +1054,57 @@ describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
     expect(sudo.map((step) => step.run?.trim())).toEqual([
       'sudo python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths',
     ]);
+  });
+
+  // A private repository's artifact storage cannot hold the image archives, so the owner's
+  // runners pass them through a shared store; the checksum still travels in the artifact.
+  it('ENG-008-E self-hosted runs keep image archives out of artifacts but verify them', () => {
+    const lines = (step: WorkflowStep | undefined) =>
+      (step?.run ?? '')
+        .trim()
+        .split('\n')
+        .map((line) => line.trim());
+    const build = ci.jobs['release-images'].steps ?? [];
+    const save = lines(
+      build.find((step) => step.name === 'Save the exact images for the acceptance shards'),
+    );
+    const checksum = save.indexOf(
+      '(cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)',
+    );
+    const move = save.indexOf(
+      'mv release-images/images.tar.zst "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst"',
+    );
+    expect(checksum).toBeGreaterThan(0);
+    expect(move).toBeGreaterThan(checksum);
+    expect(save[move - 2]).toBe('if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then');
+    const exported = lines(build.find((step) => step.name === exportStepName));
+    const sum = exported.indexOf(
+      'sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256',
+    );
+    const moveCandidate = exported.indexOf(
+      'mv candidate/images.tar.gz "/srv/ci-images/$GITHUB_RUN_ID/images.tar.gz"',
+    );
+    expect(sum).toBeGreaterThan(0);
+    expect(moveCandidate).toBeGreaterThan(sum);
+    expect(exported[moveCandidate - 2]).toBe('if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then');
+    // The checksum file stays in the uploaded directories.
+    expect(save.join('\n')).not.toMatch(/mv release-images\/images\.tar\.zst\.sha256/);
+    expect(exported.join('\n')).not.toMatch(/mv candidate\/images\.tar\.gz\.sha256/);
+    // The deploy links the stored archive only when the artifact lacks it, then checks it
+    // against the artifact's checksum before loading anything.
+    const download = lines(
+      (workflow('cd').jobs.deploy.steps ?? []).find(
+        (step) => step.name === 'Download and verify the tested candidate',
+      ),
+    );
+    const link = download.indexOf(
+      'ln -s "/srv/ci-images/$RUN_ID/images.tar.gz" candidate/images.tar.gz',
+    );
+    expect(download[link - 1]).toBe(
+      'if [[ ! -e candidate/images.tar.gz && $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+    );
+    expect(download.indexOf('sha256sum -c candidate/images.tar.gz.sha256')).toBeGreaterThan(link);
+    expect(download.at(-1)).toBe('sha256sum -c candidate/images.tar.gz.sha256');
   });
 
   it('ENG-008-B pull requests never trigger with base-repository privileges', () => {
