@@ -5,7 +5,8 @@ const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
 const { createHash } = require('node:crypto');
 
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
+const solanaHost = 'api.mainnet-beta.solana.com';
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -43,6 +44,12 @@ let cbr = null;
 const etherscanKey = 'acceptance-etherscan-key';
 const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], fault: null, requests: 0 });
 let ethereum = initialEthereum();
+// Synthetic Solana mainnet JSON-RPC (track-solana-wallets): the finalized slot and raw
+// getTransaction results exactly as the probe posts them. Signatures and token accounts are
+// derived from those transactions as the chain would: an address's signatures are the
+// transactions naming it, a wallet's token accounts are those its token balances name.
+const initialSolana = () => ({ slot: 300000100, transactions: new Map(), fault: null, requests: 0 });
+let solana = initialSolana();
 
 function cbrDynamic(response, url) {
   const code = url.searchParams.get('VAL_NM_RQ') ?? '';
@@ -115,6 +122,56 @@ function etherscan(response, url) {
     .slice(0, offset);
   if (items.length === 0) return respond(response, 200, { status: '0', message: 'No transactions found', result: [] });
   return respond(response, 200, { status: '1', message: 'OK', result: items });
+}
+
+function solanaKeys(result) {
+  const loaded = result.meta.loadedAddresses ?? { writable: [], readonly: [] };
+  return [...result.transaction.message.accountKeys, ...loaded.writable, ...loaded.readonly];
+}
+
+function solanaRpc(response, body) {
+  const rpc = (result) => respond(response, 200, { jsonrpc: '2.0', id: body.id, result });
+  const error = (code, message) => respond(response, 200, { jsonrpc: '2.0', id: body.id, error: { code, message } });
+  if (body.jsonrpc !== '2.0' || typeof body.method !== 'string' || !Array.isArray(body.params)) return error(-32600, 'Invalid request');
+  solana.requests++;
+  const fault = solana.fault;
+  if (fault && fault.onRequest === solana.requests) {
+    solana.fault = null;
+    if (fault.rateLimited) return respond(response, 429, { jsonrpc: '2.0', id: body.id, error: { code: 429, message: 'Too many requests for a specific RPC call' } });
+    return respond(response, fault.status, { error: 'Synthetic provider fault' });
+  }
+  const [first, second, third] = body.params;
+  const options = (value) => value && typeof value === 'object' && value.commitment === 'finalized';
+  // Only what is final at the posted slot exists, newest first as getSignaturesForAddress lists it.
+  const final = [...solana.transactions.entries()].filter(([, result]) => result.slot <= solana.slot)
+    .sort(([leftSig, left], [rightSig, right]) => right.slot - left.slot || (leftSig < rightSig ? 1 : -1));
+  if (body.method === 'getSlot' && options(first)) return rpc(solana.slot);
+  if (body.method === 'getTokenAccountsByOwner' && typeof first === 'string' && typeof second?.mint === 'string'
+    && options(third) && third.encoding === 'base64') {
+    const accounts = new Set();
+    for (const [, result] of final) {
+      const keys = solanaKeys(result);
+      for (const balance of [...(result.meta.preTokenBalances ?? []), ...(result.meta.postTokenBalances ?? [])]) {
+        if (balance.owner === first && balance.mint === second.mint) accounts.add(keys[balance.accountIndex]);
+      }
+    }
+    return rpc({ context: { slot: solana.slot }, value: [...accounts].sort().map((pubkey) => ({ pubkey,
+      account: { data: ['', 'base64'], executable: false, lamports: 2039280, owner: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', rentEpoch: 0, space: 165 } })) });
+  }
+  if (body.method === 'getSignaturesForAddress' && typeof first === 'string' && options(second)
+    && Number.isSafeInteger(second.limit) && second.limit >= 1 && second.limit <= 1000) {
+    const touching = final.filter(([, result]) => solanaKeys(result).includes(first));
+    const start = second.before ? touching.findIndex(([signature]) => signature === second.before) + 1 : 0;
+    if (second.before && start === 0) return error(-32602, 'Invalid param: before');
+    return rpc(touching.slice(start, start + second.limit).map(([signature, result]) => ({ signature, slot: result.slot,
+      err: result.meta.err, memo: null, blockTime: result.blockTime, confirmationStatus: 'finalized' })));
+  }
+  if (body.method === 'getTransaction' && typeof first === 'string' && options(second) && second.encoding === 'json'
+    && second.maxSupportedTransactionVersion === 0) {
+    const result = solana.transactions.get(first);
+    return rpc(result && result.slot <= solana.slot ? result : null);
+  }
+  return error(-32601, 'Method not found');
 }
 
 // Kraken OHLC: hourly candles end with the open candle three hours after `since`; daily
@@ -263,6 +320,19 @@ function provider(request, response, url) {
   return respond(response, 501, { error: 'No fixture for outbound destination' });
 }
 
+async function solanaRequest(request, response, url) {
+  if (requests.length >= 10000) return respond(response, 503, { error: 'Fixture request budget exhausted' });
+  let body;
+  try {
+    body = await readJson(request);
+  } catch {
+    return respond(response, 400, { error: 'Invalid JSON-RPC body' });
+  }
+  if (!(/^application\/json\b/.test(request.headers['content-type'] ?? ''))) return respond(response, 415, { error: 'JSON only' });
+  requests.push({ method: request.method, url: url.href, rpc: { method: body?.method, params: body?.params } });
+  return solanaRpc(response, body);
+}
+
 // Controls are available only on this internal plaintext service, never inside TLS.
 const server = http.createServer(async (request, response) => {
   try {
@@ -276,6 +346,7 @@ const server = http.createServer(async (request, response) => {
       marketPrices = null;
       cbr = null;
       ethereum = initialEthereum();
+      solana = initialSolana();
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/fx') {
@@ -337,6 +408,31 @@ const server = http.createServer(async (request, response) => {
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, tip: ethereum.tip });
+    }
+    // Transactions merge by signature, so a long history is posted in several calls.
+    if (request.method === 'POST' && request.url === '/__control/solana') {
+      const data = await readJson(request);
+      const base58 = (value, min, max) => typeof value === 'string' && new RegExp(`^[1-9A-HJ-NP-Za-km-z]{${min},${max}}$`).test(value);
+      const transaction = (item) => item && typeof item === 'object' && base58(item.signature, 64, 88)
+        && item.result && typeof item.result === 'object' && Number.isSafeInteger(item.result.slot)
+        && item.result.meta && typeof item.result.meta === 'object'
+        && Array.isArray(item.result.transaction?.signatures) && item.result.transaction.signatures[0] === item.signature
+        && Array.isArray(item.result.transaction?.message?.accountKeys)
+        && item.result.transaction.message.accountKeys.every((key) => base58(key, 32, 44));
+      const fault = data.fault;
+      if ((data.slot !== undefined && (!Number.isSafeInteger(data.slot) || data.slot < 0 || data.slot >= 2 ** 31))
+        || (data.transactions !== undefined && (!Array.isArray(data.transactions) || data.transactions.length > 20
+          || !data.transactions.every(transaction)))
+        || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || (fault.rateLimited !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+        return respond(response, 400, { error: 'Invalid synthetic Solana fixture' });
+      }
+      for (const item of data.transactions ?? []) solana.transactions.set(item.signature, item.result);
+      if (solana.transactions.size > 200) return respond(response, 400, { error: 'Synthetic history is bounded' });
+      solana = { ...solana, slot: data.slot ?? solana.slot,
+        fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
+        requests: 0 };
+      return respond(response, 200, { ok: true, slot: solana.slot, transactions: solana.transactions.size });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
       const data = await readJson(request);
@@ -404,6 +500,11 @@ server.on('connect', (request, socket, head) => {
       const url = new URL(incoming.url, `https://${host}`);
       if (url.origin !== `https://${host}`) return respond(response, 421, { error: 'Fixture authority mismatch' });
       if (url.pathname.startsWith('/__control/')) return respond(response, 501, { error: 'No provider fixture' });
+      // Solana JSON-RPC is the one provider called with a body: one bounded JSON POST to "/".
+      if (host === solanaHost && incoming.method === 'POST' && url.pathname === '/' && !url.search
+        && !incoming.headers['transfer-encoding'] && /^[1-9][0-9]{0,3}$/.test(incoming.headers['content-length'] ?? '')) {
+        return solanaRequest(incoming, response, url);
+      }
       if (incoming.headers['transfer-encoding'] || ![undefined, '0'].includes(incoming.headers['content-length'])) {
         return respond(response, 501, { error: 'Provider bodies are unsupported' });
       }

@@ -62,6 +62,7 @@ const legacyChecks = [
   'chain-classification-db',
   'chain-transfers-db',
   'ethereum-wallets-db',
+  'solana-wallets-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
