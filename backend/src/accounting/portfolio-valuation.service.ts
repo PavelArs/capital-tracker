@@ -8,8 +8,8 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
-import type { PriceSource } from './asset-classification';
 import type { Network } from '../wallet-addresses/chain-assets';
+import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
 import {
   type ConnectedLedger,
