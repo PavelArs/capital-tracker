@@ -1,5 +1,8 @@
 # Self-hosted CI runner
 
+A short owner's guide in Russian (add, reinstall or remove a runner) is in
+[self-hosted-runner.ru.md](self-hosted-runner.ru.md).
+
 GitHub's hosted runners can be scarce: on 2026-10-05 jobs waited or were cancelled for
 lack of a runner, which held back pull requests and the main release build. Every CI job
 can therefore run on runners the owner hosts, and the deploy on a separate runner of its own.
