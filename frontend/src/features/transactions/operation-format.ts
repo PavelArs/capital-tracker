@@ -37,6 +37,7 @@ export const statusLabels: Record<Operation['status'], string> = {
 const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
+  solana: 'Solana',
 };
 
 /** "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO). */
@@ -92,8 +93,9 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
 }
 
 /**
- * The transaction hash as the network's explorers show it: Ethereum's with 0x. A token
- * transfer's record adds its event index to the hash (M14), which is not part of it.
+ * The transaction hash as the network's explorers show it: Ethereum's with 0x, Solana's
+ * signature as is. A token transfer's record adds its leg number to the hash (M14, M15),
+ * which is not part of it.
  */
 export function transactionHash(operation: Operation): string | null {
   if (!operation.chain) return null;

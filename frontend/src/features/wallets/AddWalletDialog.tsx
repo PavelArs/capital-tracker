@@ -22,7 +22,7 @@ const networks = [
     detail: 'One public address. Account keys (xpub, zpub) come later',
   },
   { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH, USDT and USDC' },
-  { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'Coming soon' },
+  { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL, USDT and USDC' },
   { key: 'bybit', symbol: null, name: 'Bybit', detail: 'Read-only API key. Coming soon' },
 ] as const;
 const MAX_LABEL = 40;
@@ -271,6 +271,12 @@ export default function AddWalletDialog({
                   <p className="wallets-note">
                     One Ethereum address holds ETH and tokens. The app tracks ETH, USDT and USDC on
                     Ethereum mainnet; other tokens and networks such as Arbitrum are not read.
+                  </p>
+                ) : network === 'solana' ? (
+                  <p className="wallets-note">
+                    Paste the wallet address, not a token account: the app finds its USDT and USDC
+                    accounts itself. It tracks SOL, USDT and USDC on Solana mainnet; other tokens
+                    are not read.
                   </p>
                 ) : (
                   <p className="wallets-note">

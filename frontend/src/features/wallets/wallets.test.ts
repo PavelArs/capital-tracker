@@ -175,7 +175,7 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
   it.each([
     ['', 'Paste the wallet address.'],
     ['0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31', 'This looks like an Ethereum address.'],
-    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'This looks like a Solana address.'],
+    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'pick Solana to track it'],
     ['bitcoin', 'This is not a valid Bitcoin address.'],
     [`zpub${'6'.repeat(107)}`, 'Account public keys (xpub, zpub) are not supported yet.'],
   ])('refuses %j', (input, message) => {
@@ -218,6 +218,44 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the Ethereum address field (M14)', () => 
     ['a bare hex private key', '4c'.repeat(32)],
   ])('marks %s as a secret', (_case, input) => {
     expect(checkAddress('ethereum', input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
+describe('WAL-INVALID, WAL-NO-SECRETS: the Solana address field (M15)', () => {
+  // Base58 of the SHA-256 of a fixed label: a synthetic key, never an owner's wallet.
+  const solana = '74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf';
+
+  it('accepts a 32-byte base58 address exactly as pasted', () => {
+    expect(checkAddress('solana', ` ${solana} `)).toEqual({
+      ok: true,
+      address: solana,
+      kind: 'Solana address',
+    });
+    expect(checkAddress('solana', '11111111111111111111111111111111')).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    ['bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'it looks like a Bitcoin address'],
+    [solana.slice(0, 40), 'This is not a valid Solana address.'],
+    [`${solana.slice(0, -1)}0`, 'This is not a valid Solana address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('solana', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    [
+      'a base58 secret key',
+      '5mt57dE8bXApgQb9YsEisaZkJaHfQmgG9ugpng2gLKLryJRStLK6TLUFTExTAzvU99cipvEgBuo39t1yHVLcXxYB',
+    ],
+    ['a keypair file', `[${Array(64).fill('17').join(',')}]`],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('solana', input)).toMatchObject({ ok: false, secret: true });
+    expect(checkAddress('bitcoin', input)).toMatchObject({ ok: false, secret: true });
   });
 });
 

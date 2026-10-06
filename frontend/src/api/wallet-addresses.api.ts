@@ -8,7 +8,7 @@ export type ProviderFailure =
   | 'unavailable'
   | 'invalid_response'
   | 'not_configured';
-export type Network = 'bitcoin' | 'ethereum';
+export type Network = 'bitcoin' | 'ethereum' | 'solana';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {
@@ -27,7 +27,7 @@ export interface WalletAddress {
   transactionCount: number;
   /** The network's own coin on the chain from the whole stored history; null until a sync completes. */
   chainBalance: string | null;
-  /** Every asset the wallet can hold (ETH, USDT, USDC on Ethereum); null until a sync completes. */
+  /** Every asset the wallet can hold (ETH or SOL, USDT, USDC); null until a sync completes. */
   balances: ChainBalance[] | null;
   sync: {
     /** How much of the history is stored. */

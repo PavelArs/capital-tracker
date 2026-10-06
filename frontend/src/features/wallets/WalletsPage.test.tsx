@@ -728,3 +728,121 @@ describe('M14: Ethereum wallets', () => {
     expect(await within(drawer).findByRole('alert')).toHaveTextContent('Etherscan');
   });
 });
+
+describe('M15: Solana wallets', () => {
+  // Base58 of the SHA-256 of a fixed label: a synthetic key, never an owner's wallet.
+  const solAddress = '74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf';
+  const solWallet = (changes: Partial<WalletAddress>) =>
+    wallet(6, {
+      network: 'solana',
+      address: solAddress,
+      label: 'Main SOL',
+      chainBalance: '12.500000000',
+      balances: [
+        { symbol: 'SOL', quantity: '12.500000000' },
+        { symbol: 'USDT', quantity: '40.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+      ],
+      ...changes,
+    });
+  const withSol = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: [
+        ...valuation.assets,
+        asset({
+          instrumentId: id(5),
+          name: 'Solana',
+          symbol: 'SOL',
+          price: { value: '150', observedAt: null, source: 'kraken', status: 'fresh' },
+          quantity: '12.5',
+          value: '1875',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '12.5', value: '1875' },
+          ],
+        }),
+      ],
+    };
+  };
+
+  it('WAL-ADD tracks a Solana address with SOL, USDT and USDC, case kept', async () => {
+    setup([]);
+    const added = solWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const solana = within(dialog).getByRole('button', { name: /^Solana/ });
+    expect(solana).toBeEnabled();
+    expect(solana).toHaveTextContent('One address. SOL, USDT and USDC');
+    await user.click(solana);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Solana wallet address');
+    expect(dialog).toHaveTextContent('tracks SOL, USDT and USDC on Solana mainnet');
+    await user.type(field, solAddress);
+    expect(within(dialog).getByText('Solana address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(within(dialog).getByText(solAddress)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'solana', address: solAddress, accountId: trust });
+  });
+
+  it('WAL-INVALID refuses an Ethereum address picked as Solana and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Solana/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText('Solana wallet address'), `0x${'5e'.repeat(20)}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(
+      within(dialog).getByText(/This is not a Solana address: it looks like an Ethereum address/),
+    ).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('WAL-NO-SECRETS drops a Solana keypair pasted as an address', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Solana/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Solana wallet address');
+    await user.click(field);
+    await user.paste(`[${Array(64).fill('7').join(',')}]`);
+    expect(field).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('It was not saved.');
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('shows SOL and the held tokens, values them and checks each against the records', async () => {
+    setup([wallet(1, {}), solWallet({})], withSol());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(within(trustCard).getByText('Bitcoin, Solana · 2 addresses')).toBeInTheDocument();
+    const row = within(trustCard).getByRole('button', { name: `Main SOL ${solAddress}` });
+    expect(row).toHaveTextContent('12.5 SOL · 40 USDT');
+    expect(row).not.toHaveTextContent('USDC');
+    // 12.5 SOL at $150 plus 40 USDT at $1.
+    expect(row).toHaveTextContent('$1,915.00');
+    expect(within(trustCard).getByRole('note')).toHaveTextContent(
+      'The blockchain shows 40 USDT; your transactions in this wallet give 1,000 USDT.',
+    );
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Solana' });
+    expect(drawer).toHaveTextContent('12.5 SOL · 40 USDT');
+    expect(drawer).toHaveTextContent('Tracked assetsSOL, USDT, USDC');
+    expect(drawer).toHaveTextContent('Solana public RPC');
+  });
+});
