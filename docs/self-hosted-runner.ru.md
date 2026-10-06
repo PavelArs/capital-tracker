@@ -32,7 +32,13 @@ SSH-ключ от прода. Задачи CI никогда не попадаю
 ```sh
 snap install lxd
 lxd init --auto
+lxc storage create raid dir source=/mnt/raid1/lxd
 ```
+
+Контейнеры раннеров держи только на большом диске (пул `raid`), не на системном SSD. Их
+образы Docker, кэш сборки и браузер занимают десятки гигабайт. Прод работает на этом же
+сервере, и переполненный системный диск остановит его. Контейнер, который уже стоит на
+SSD, переносится так: `lxc stop <имя>`, `lxc move <имя> --storage raid`, `lxc start <имя>`.
 
 Если на хосте включён ufw, он режет DHCP на мосту LXD, и контейнеры остаются без адреса.
 Следующие правила разрешают контейнерам только DHCP, DNS к хосту и выход в интернет. К
@@ -85,7 +91,7 @@ chmod 0755 /etc/cron.daily/ci-images-prune
 1. Создай контейнер:
 
    ```sh
-   lxc launch ubuntu:24.04 ghrunner-3 \
+   lxc launch ubuntu:24.04 ghrunner-3 --storage raid \
      -c security.nesting=true \
      -c security.syscalls.intercept.mknod=true \
      -c security.syscalls.intercept.setxattr=true \

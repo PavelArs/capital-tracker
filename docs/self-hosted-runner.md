@@ -74,11 +74,16 @@ On the host, as root (Ubuntu with a kernel of 5.15 or newer). Unprivileged LXD c
 also keep the CI jobs away from the host: `docker` group membership inside a container is
 root only inside that container.
 
+Put the containers on a large data disk, never on the system disk of a host that also runs
+production: the runners' Docker images, build cache and browser fill tens of gigabytes, and
+a full system disk stops production too. The example uses a `dir` pool on a RAID mount.
+
 ```sh
 snap install lxd
 lxd init --auto
+lxc storage create raid dir source=/mnt/raid1/lxd   # a directory on the large disk
 for name in ghrunner-1 ghrunner-2 ghrunner-deploy; do
-  lxc launch ubuntu:24.04 "$name" \
+  lxc launch ubuntu:24.04 "$name" --storage raid \
     -c security.nesting=true \
     -c security.syscalls.intercept.mknod=true \
     -c security.syscalls.intercept.setxattr=true \
@@ -145,8 +150,10 @@ given name with the default labels `self-hosted`, `Linux` and `X64` plus its rol
 starts it as a service and adds a weekly Docker cleanup. The runners then show as
 **Idle** under **Settings → Actions → Runners**.
 
-The default `dir` storage pool does not cap the containers' disk use; watch the host's
-free space, since images, build cache and the browser take several gigabytes per runner.
+A `dir` storage pool does not cap the containers' disk use; watch the data disk's free
+space, since images, build cache and the browser take several gigabytes per runner.
+Containers already on the system disk move with `lxc stop <name>`, then
+`lxc move <name> --storage raid` and `lxc start <name>`.
 
 The sudoers rule allows exactly the one security test that must run as root
 (Specification and Engineering Gates; `ENG-008-C` keeps it the only `sudo` in CI):
