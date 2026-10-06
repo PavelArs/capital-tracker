@@ -62,10 +62,12 @@ describe('exact PostgreSQL snapshot normalization', () => {
       pairs[0][0],
       '1\t123.4500\t\\x00ff\tfilename.csv',
     ];
-    const dump = ['COPY public.synthetic FROM stdin;', ...data, '\\.', 'SELECT 1;', ''].join('\n');
-    expect(normalize(dump)).toBe(dump);
+    const dump = (rows: readonly string[]) =>
+      ['COPY public.synthetic FROM stdin;', ...rows, '\\.', 'SELECT 1;', ''].join('\n');
+    // Rows come out unchanged, in byte order (all rows here are ASCII).
+    expect(normalize(dump(data))).toBe(dump([...data].sort()));
     for (const altered of ['123.4501', '\\x00fe', 'different.csv']) {
-      const changed = dump.replace(
+      const changed = dump(data).replace(
         altered.startsWith('123')
           ? '123.4500'
           : altered.startsWith('\\')
@@ -73,8 +75,33 @@ describe('exact PostgreSQL snapshot normalization', () => {
             : 'filename.csv',
         altered,
       );
-      expect(normalize(changed)).not.toBe(normalize(dump));
+      expect(normalize(changed)).not.toBe(normalize(dump(data)));
     }
+  });
+  it('ignores the physical order of COPY rows but not a missing, duplicated or moved row', () => {
+    const rows = ['b\t2', 'a\t1', 'c\t3', 'a\t10'];
+    const dump = (first: readonly string[], second: readonly string[] = ['z\t9']) =>
+      [
+        'SELECT 1;',
+        'COPY public.first (key, value) FROM stdin;',
+        ...first,
+        '\\.',
+        '',
+        'COPY public.second (key, value) FROM stdin;',
+        ...second,
+        '\\.',
+        '',
+        'ALTER TABLE ONLY public.first ADD CONSTRAINT first_pkey PRIMARY KEY (key);',
+        '',
+      ].join('\n');
+    const expected = normalize(dump(rows));
+    expect(expected).toBe(dump(['a\t1', 'a\t10', 'b\t2', 'c\t3']));
+    expect(normalize(dump([...rows].reverse()))).toBe(expected);
+    expect(normalize(dump(['c\t3', 'a\t10', 'b\t2', 'a\t1']))).toBe(expected);
+    expect(normalize(dump(rows.slice(1)))).not.toBe(expected);
+    expect(normalize(dump([...rows, 'b\t2']))).not.toBe(expected);
+    expect(normalize(dump(rows.slice(1), ['b\t2', 'z\t9']))).not.toBe(expected);
+    expect(normalize(dump([], []))).toBe(dump([], []));
   });
   it('preserves dollar-quoted SQL bodies and unrelated DDL exactly', () => {
     const dump = [
