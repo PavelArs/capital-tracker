@@ -96,7 +96,7 @@ lxc exec ghrunner-deploy -- bash /root/self-hosted-runner-setup.sh ghrunner-depl
 The script asks for a registration token from **Settings → Actions → Runners → New
 self-hosted runner** (valid for one hour and usable for both runners; never commit or
 paste it anywhere else). It installs Docker with the `buildx` and `compose` plugins,
-`git`, `jq`, `zstd` and `python3` (plus `gh` and the SSH client for the deploy role),
+`git`, `jq`, `zstd` and `python3` (plus the SSH client and `gh` from GitHub's apt repository for the deploy role),
 creates the `ci` user in the `docker` group, gives a CI runner one sudoers rule (below)
 and Chromium's system libraries for the pinned Playwright version, downloads the latest
 runner and checks it against the SHA-256 in its release notes, registers it under the

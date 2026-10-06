@@ -22,7 +22,17 @@ playwright_version=1.63.0
 apt-get update
 apt-get install -y ca-certificates git jq zstd curl tar xz-utils python3
 # The deploy downloads the candidate and tags releases with gh, and dispatches over SSH.
-[[ $role == ci ]] || apt-get install -y gh openssh-client
+# gh comes from GitHub's own apt repository, as on GitHub's runners: not every Ubuntu
+# release carries it (26.04 does not).
+if [[ $role == deploy ]]; then
+  install -d -m 0755 /etc/apt/keyrings
+  curl -fsSL -o /etc/apt/keyrings/githubcli-archive-keyring.gpg https://cli.github.com/packages/githubcli-archive-keyring.gpg
+  chmod 0644 /etc/apt/keyrings/githubcli-archive-keyring.gpg
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+    > /etc/apt/sources.list.d/github-cli.list
+  apt-get update
+  apt-get install -y gh openssh-client
+fi
 if ! command -v docker >/dev/null; then
   curl -fsSL https://get.docker.com | sh
 fi
