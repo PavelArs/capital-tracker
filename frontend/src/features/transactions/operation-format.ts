@@ -37,6 +37,13 @@ const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> 
   bitcoin: 'Bitcoin',
 };
 
+/** "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO). */
+export function statusLabel(operation: Operation): string {
+  return operation.classification?.automatic && operation.status === 'recorded'
+    ? 'Auto: own wallets'
+    : statusLabels[operation.status];
+}
+
 /** "Buy", or "Incoming" for a blockchain transaction nobody has classified yet. */
 export function typeLabel(operation: Operation): string {
   return operation.type ? typeLabels[operation.type] : directionLabels[operation.direction];
@@ -84,6 +91,9 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
 
 /** Where the operation happened: an account, two for a transfer, or a wallet. */
 export function placeLabel(operation: Operation): string {
+  // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
+  if (operation.type === 'transfer' && operation.account && operation.counterAccount)
+    return `${operation.account.name} → ${operation.counterAccount.name}`;
   // A chain row of an address in a wallet shows the wallet, then the address's own name.
   if (operation.wallet && operation.account)
     return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;

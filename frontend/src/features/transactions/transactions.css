@@ -520,6 +520,11 @@
   background: var(--raised);
 }
 
+/* M13: "Transfer between my wallets" spans the row (accepted prototype). */
+.transactions-option--wide {
+  grid-column: 1 / -1;
+}
+
 .transactions-option[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);

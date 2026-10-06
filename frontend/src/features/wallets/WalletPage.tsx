@@ -30,7 +30,9 @@ export function accountOperations(operations: readonly Operation[], accountId: s
   return operations
     .filter(
       (operation) =>
-        operation.account?.id === accountId || operation.counterAccount?.id === accountId,
+        operation.account?.id === accountId ||
+        // A blockchain row to classify only suggests its other side (M13).
+        (operation.type === 'transfer' && operation.counterAccount?.id === accountId),
     )
     .sort(
       (left, right) =>
@@ -121,7 +123,7 @@ function WalletTransactions({
                   )}
                   <span className="portfolio-sub">
                     {day(operation.occurredAt)}
-                    {operation.counterAccount
+                    {operation.type === 'transfer' && operation.counterAccount
                       ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
                       : ''}
                   </span>

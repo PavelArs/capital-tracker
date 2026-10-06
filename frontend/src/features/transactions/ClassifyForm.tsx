@@ -5,20 +5,23 @@ import {
   operationsApi,
 } from '@api/operations.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, type ReactNode, useId, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
-import { dependentOf } from '../portfolio/AddTransactionDialog';
+import { type Account, dependentOf, journalAccounts } from '../portfolio/AddTransactionDialog';
 import { decimal, MAX_COMMENT_LENGTH, positive } from '../portfolio/add-transaction';
-import { day } from './operation-format';
+import { amount, day } from './operation-format';
 
 type ChainType = ChainClassification['type'];
 type Currency = Extract<ChainClassification, { currency: string }>['currency'];
 const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 
 // "What was this transaction?" from the accepted prototype, limited to what the coins did:
-// what arrives can be bought or received, what leaves can be sold, spent or given.
+// what arrives can be bought or received, what leaves can be sold, spent or given, and either
+// can move between the owner's own wallets (M13).
+const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
 const incoming: [ChainType, string][] = [
+  TRANSFER,
   ['buy', 'Buy'],
   ['income', 'Income'],
   ['reward', 'Reward'],
@@ -27,14 +30,18 @@ const incoming: [ChainType, string][] = [
   ['gift', 'Gift received'],
 ];
 const outgoing: [ChainType, string][] = [
+  TRANSFER,
   ['sell', 'Sell'],
   ['expense', 'Expense'],
   ['gift', 'Gift sent'],
   ['fee', 'Fee'],
 ];
+/** The leg's own direction: a recorded transfer reads as internal in the list. */
+const legDirection = (operation: Operation) => operation.chain?.direction ?? operation.direction;
 export function choices(operation: Operation): [ChainType, string][] {
-  if (operation.direction === 'in') return incoming;
-  if (operation.direction === 'out') return outgoing;
+  const leg = legDirection(operation);
+  if (leg === 'in') return incoming;
+  if (leg === 'out') return outgoing;
   // Between the wallet's own addresses only the network fee leaves.
   return outgoing.filter(([type]) => type === 'fee');
 }
@@ -47,8 +54,17 @@ interface Draft {
   currency: Currency;
   rate: string;
   value: string;
+  /** Transfer only: the owner's other wallet. */
+  account: string;
   comment: string;
   hidden: boolean;
+}
+
+/** The wallet of this address: a transfer received lists it second. */
+function ownAccount(operation: Operation) {
+  return operation.type === 'transfer' && legDirection(operation) === 'in'
+    ? operation.counterAccount
+    : operation.account;
 }
 
 function draftOf(operation: Operation): Draft {
@@ -56,23 +72,29 @@ function draftOf(operation: Operation): Draft {
   const value = saved?.value ?? null;
   const priced = value && (value.type === 'buy' || value.type === 'sell') ? value : null;
   const valued = value && !priced && 'valueUsd' in value ? value : null;
+  const moved = value?.type === 'transfer' ? value : null;
+  // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
+  const suggested = !value && operation.counterWallet && operation.counterAccount;
   return {
-    type: value?.type ?? null,
+    type: value?.type ?? (suggested ? 'transfer' : null),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
     value: valued?.valueUsd ?? '',
+    account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
     hidden: false,
   };
 }
 
-type Problem = 'amount' | 'rate' | 'value' | 'comment';
+type Problem = 'amount' | 'rate' | 'value' | 'account' | 'comment';
 
 function problems(draft: Draft): Set<Problem> {
   const found = new Set<Problem>();
-  if (draft.type === 'buy' || draft.type === 'sell') {
+  if (draft.type === 'transfer') {
+    if (!draft.account) found.add('account');
+  } else if (draft.type === 'buy' || draft.type === 'sell') {
     if (!positive(draft.amount)) found.add('amount');
     if ((draft.currency === 'EUR' || draft.currency === 'RUB') && draft.rate.trim())
       if (!positive(draft.rate)) found.add('rate');
@@ -91,6 +113,8 @@ function answer(draft: Draft): ChainClassification | null {
   switch (draft.type) {
     case null:
       return null;
+    case 'transfer':
+      return { type: 'transfer', accountId: draft.account };
     case 'buy':
     case 'sell': {
       const rate =
@@ -127,6 +151,18 @@ function failure(error: unknown): ReactNode {
         classify the transaction.
       </>
     );
+  if (status === 422 && message === 'Choose an account other than the one of this wallet')
+    return 'Choose a wallet other than the one of this address.';
+  if (
+    status === 422 &&
+    message === 'The other wallet did not receive what this one sent, less the network fee'
+  )
+    return 'The other wallet did not receive what this one sent, less the network fee. Choose another wallet or another type.';
+  if (
+    status === 422 &&
+    message === 'Several addresses of that account took part in this transaction'
+  )
+    return 'Several addresses of that wallet took part in this transaction, so it cannot be linked automatically. Choose another type.';
   if (status === 422) return 'This type does not fit the direction of the transaction.';
   if (status === 409)
     return 'This could not be saved: it was changed elsewhere, or the account would not hold enough on that date. Close this window, reload and try again.';
@@ -169,6 +205,25 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
       </span>
     );
   const ready = draft.type !== null || draft.hidden;
+  // XFER-MANUAL: the wallets a transfer can name, loaded once it is chosen.
+  const [accounts, setAccounts] = useState<Account[] | null>(null);
+  const [accountsFailed, setAccountsFailed] = useState(false);
+  const transfer = draft.type === 'transfer';
+  useEffect(() => {
+    if (!transfer || accounts) return;
+    let live = true;
+    journalAccounts()
+      .then((items) => live && setAccounts(items))
+      .catch(() => live && setAccountsFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [transfer, accounts]);
+  const own = ownAccount(operation);
+  const others = (accounts ?? []).filter((account) => account.id !== own?.id);
+  const known = [operation.account, operation.counterAccount].find(
+    (place) => place && place.id === draft.account && place.id !== own?.id,
+  );
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -186,7 +241,7 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
         ...(comment ? { comment } : {}),
       });
       announceClassificationChange();
-      onSaved(draft.type ? typeName(operation, draft.type) : 'hidden');
+      onSaved(transfer ? 'Transfer' : draft.type ? typeName(operation, draft.type) : 'hidden');
     } catch (caught) {
       setError(failure(caught));
       setSaving(false);
@@ -216,7 +271,7 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
               <button
                 key={type}
                 type="button"
-                className="transactions-option"
+                className={`transactions-option${type === 'transfer' ? ' transactions-option--wide' : ''}`}
                 aria-pressed={draft.type === type}
                 onClick={() => change({ type })}
               >
@@ -303,7 +358,43 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
             )}
           </div>
         )}
-        {draft.type && !priced && (
+        {transfer && (
+          <div className="transactions-subform">
+            <div className="portfolio-field">
+              <label className="portfolio-field__label" htmlFor={`${id}-account`}>
+                {legDirection(operation) === 'out' ? 'Sent to' : 'Received from'}
+              </label>
+              <select
+                id={`${id}-account`}
+                className="portfolio-input"
+                value={draft.account}
+                onChange={(event) => change({ account: event.target.value })}
+                {...invalid('account')}
+              >
+                <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
+                {others.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.name}
+                  </option>
+                ))}
+                {/* The saved or suggested wallet stays shown while the list loads. */}
+                {!accounts && known && <option value={known.id}>{known.name}</option>}
+              </select>
+              {fieldError('account', 'Choose the other wallet') ||
+                (accountsFailed && (
+                  <span className="portfolio-field__error">
+                    Could not load your wallets. Close this window and try again.
+                  </span>
+                ))}
+            </div>
+            <span className="portfolio-field__hint">
+              Transfers between your wallets don't change your capital. Only the network fee
+              {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
+              counted as a cost.
+            </span>
+          </div>
+        )}
+        {draft.type && !priced && !transfer && (
           <div className="transactions-subform">
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor={`${id}-value`}>
