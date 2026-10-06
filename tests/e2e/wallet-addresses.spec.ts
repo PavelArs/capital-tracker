@@ -209,9 +209,24 @@ isolated(
     await expect(row).toContainText('Synced');
     await expect(row).toContainText('46.88647965 BTC');
     await expect(card.getByText('Bitcoin · 1 address', { exact: true })).toBeVisible();
-    await expect(card.getByRole('note')).toContainText(
-      'Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.',
-    );
+    // CLS-PROVISIONAL: the unclassified history already counts, so the wallet holds what the
+    // chain shows and no difference is reported.
+    await expect
+      .poll(async () => {
+        const portfolio = (await (await page.request.get('/api/accounting/portfolio')).json()) as {
+          assets: {
+            symbol: string | null;
+            holdings: { accountName: string; quantity: string }[];
+          }[];
+        };
+        return portfolio.assets
+          .filter((asset) => asset.symbol === 'BTC')
+          .flatMap((asset) => asset.holdings)
+          .filter((holding) => holding.accountName === walletName)
+          .map((holding) => holding.quantity);
+      })
+      .toEqual(['46.88647965']);
+    await expect(card.getByRole('note')).toHaveCount(0);
     expect(
       query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
         JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
