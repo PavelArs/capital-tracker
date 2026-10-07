@@ -103,8 +103,15 @@ export class AuthClientSourceService {
     this.resolve(context.switchToHttp().getRequest<SourceRequest>());
   }
 
-  async tracker(request: SourceRequest, context: ExecutionContext): Promise<string> {
-    if (!this.marked(context)) return request.ip as string;
+  async tracker(
+    request: SourceRequest & { authSession?: { hash: string } },
+    context: ExecutionContext,
+  ): Promise<string> {
+    if (!this.marked(context)) {
+      // Behind the edge every client shares one peer address; count each session apart.
+      const session = request.authSession?.hash;
+      return session ? `session:${session}` : (request.ip as string);
+    }
     this.validate(context);
     // Throttler's unchanged generateKey hashes this bounded subject with handler/name.
     return this.resolve(request).subject;
