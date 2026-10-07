@@ -431,28 +431,167 @@
   }
 }
 
-/* CLS-COUNT: blockchain transactions waiting for an answer (M12). */
-.dashboard-attention {
+/* Net worth beside what needs attention, then the chart, then top assets beside allocation
+   (prototype "dash-top" and "dash-bottom"). */
+.dashboard-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+.dashboard-bottom {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  gap: var(--sp-5);
+  align-items: start;
+}
+
+@media (max-width: 1340px) {
+  .dashboard-top {
+    grid-template-columns: minmax(0, 1fr) 320px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .dashboard-top,
+  .dashboard-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.dashboard-link {
+  color: var(--accent);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+  text-decoration: none;
+}
+
+.dashboard-link:hover {
+  text-decoration: underline;
+}
+
+.dashboard-assets__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  color: var(--ink-2);
+}
+
+.dashboard-assets__state p {
+  margin: 0;
+}
+
+.dashboard-assets__state .shell-button {
+  margin-top: 0;
+}
+
+/* DASH-ATTENTION: one row per problem, or one quiet line. */
+.dashboard-attn {
+  padding: 6px;
+}
+
+.dashboard-attn__title {
+  margin: 0;
+  padding: 8px 12px 6px;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.dashboard-attn__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-attn__row {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-4);
-  padding: 10px 12px 10px 16px;
+  gap: 12px;
+  padding: 10px 12px;
   border-radius: var(--r-md);
+}
+
+.dashboard-attn__row:hover {
+  background: var(--raised);
+}
+
+.dashboard-attn__icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+}
+
+.dashboard-attn__icon--warn {
   background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.dashboard-attn__icon--neg {
+  background: var(--neg-soft);
+  color: var(--neg);
+}
+
+.dashboard-attn__text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-attn__text small {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+}
+
+.dashboard-attn .shell-button {
+  flex: none;
+  height: 30px;
+  margin-top: 0;
+  padding: 0 10px;
+  font-size: var(--fs-xs);
+}
+
+.dashboard-attn .shell-button--ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-2);
+}
+
+.dashboard-attn .shell-button--ghost:hover {
+  background: var(--raised);
   color: var(--ink);
+}
+
+.dashboard-attn__quiet,
+.dashboard-attn__foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.dashboard-attn__quiet {
+  padding: 12px 14px;
   font-size: var(--fs-sm);
 }
 
-.dashboard-attention__dot {
-  width: 8px;
-  height: 8px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--warn);
+.dashboard-attn__foot {
+  padding: 8px 12px 6px;
+  font-size: var(--fs-xs);
 }
 
-.dashboard-attention__text {
-  flex: 1;
-  min-width: 0;
+.dashboard-attn__ok {
+  color: var(--pos);
 }
