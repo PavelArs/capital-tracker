@@ -672,6 +672,41 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  it('CLS-OTHER: an outgoing Other is recorded with no entry, no value and out of the count', () => {
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          chain(1, {
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '60300',
+            feeUnits: '300',
+            classification: {
+              version: 1,
+              status: 'classified',
+              type: 'other',
+              details: { type: 'other' },
+              comment: 'Lost card',
+              produced: null,
+            },
+          }),
+        ],
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(0);
+    expect(list.operations[0]).toMatchObject({
+      type: 'other',
+      status: 'recorded',
+      direction: 'out',
+      quantity: '0.000603',
+      valueUsd: null,
+      costBasisUsd: null,
+      comment: 'Lost card',
+      classification: { version: 1, hidden: false, value: { type: 'other' } },
+    });
+  });
+
   it('CLS-RESYNC: an answer whose entry was voided elsewhere needs classification again', () => {
     const list = projectOperations(
       now,

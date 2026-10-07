@@ -18,7 +18,7 @@ const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 
 // "What was this transaction?" from the accepted prototype, limited to what the coins did:
 // what arrives can be bought or received, what leaves can be sold, spent or given, and either
-// can move between the owner's own wallets (M13). Other is a receipt nobody can name yet.
+// can move between the owner's own wallets (M13). Other is a movement nobody can name yet.
 const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
 const incoming: [ChainType, string][] = [
   TRANSFER,
@@ -36,6 +36,7 @@ const outgoing: [ChainType, string][] = [
   ['expense', 'Expense'],
   ['gift', 'Gift sent'],
   ['fee', 'Fee'],
+  ['other', 'Other'],
 ];
 /** The leg's own direction: a recorded transfer reads as internal in the list. */
 const legDirection = (operation: Operation) => operation.chain?.direction ?? operation.direction;
@@ -418,8 +419,9 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
         {other && (
           <div className="transactions-subform">
             <span className="portfolio-field__hint">
-              The amount stays in your balance without a purchase price. Add a comment so you
-              remember what it was.
+              {legDirection(operation) === 'out'
+                ? 'The amount leaves your balance without a sale price and is not a withdrawal. Add a comment so you remember what it was.'
+                : 'The amount stays in your balance without a purchase price. Add a comment so you remember what it was.'}
             </span>
             {commentField}
           </div>

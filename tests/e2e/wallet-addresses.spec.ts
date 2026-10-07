@@ -209,9 +209,23 @@ isolated(
     await expect(row).toContainText('Synced');
     await expect(row).toContainText('46.88647965 BTC');
     await expect(card.getByText('Bitcoin · 1 address', { exact: true })).toBeVisible();
-    await expect(card.getByRole('note')).toContainText(
-      'Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.',
-    );
+    // CLS-PROVISIONAL: the unclassified history already counts, so the wallet holds what the
+    // chain shows and no difference is reported.
+    const walletBitcoin = async () => {
+      const portfolio = (await (await page.request.get('/api/accounting/portfolio')).json()) as {
+        assets: {
+          symbol: string | null;
+          holdings: { accountName: string; quantity: string }[];
+        }[];
+      };
+      return portfolio.assets
+        .filter((asset) => asset.symbol === 'BTC')
+        .flatMap((asset) => asset.holdings)
+        .filter((holding) => holding.accountName === walletName)
+        .map((holding) => holding.quantity);
+    };
+    await expect.poll(walletBitcoin).toEqual(['46.88647965']);
+    await expect(card.getByRole('note')).toHaveCount(0);
     expect(
       query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
         JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
@@ -318,8 +332,27 @@ isolated(
       query(`DELETE FROM sync_sources WHERE key = 'prices:kraken'`);
     }
 
-    // WAL-PAGE: the wallet's own page lists its address, assets and chain transactions.
+    // A hidden transaction leaves the books, so the wallet now differs from the chain by it.
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/transactions?status=needs-classification');
+    await main.getByRole('combobox', { name: 'Account', exact: true }).selectOption({
+      label: walletName,
+    });
+    await main
+      .getByRole('table', { name: 'Transactions', exact: true })
+      .locator('tbody tr:not(.transactions-day)')
+      .first()
+      .getByRole('button', { name: /^(Incoming|Outgoing)$/ })
+      .click();
+    const hide = page.getByRole('dialog', { name: /transaction · BTC$/ });
+    await hide.getByText('More options').click();
+    await hide.getByText('Hide from calculations').click();
+    await hide.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(walletBitcoin).not.toEqual(['46.88647965']);
+    await page.keyboard.press('Escape');
+    await page.goto('/wallets');
+
+    // WAL-PAGE: the wallet's own page lists its address, assets and chain transactions.
     await card.getByRole('link', { name: walletName, exact: true }).click();
     await expect(page).toHaveURL(/\/wallets\/[0-9a-f-]{36}$/);
     await expect(
@@ -327,7 +360,9 @@ isolated(
     ).toBeVisible();
     // The chain check spans the summary under its figures; Last sync starts under its label.
     const summary = main.getByRole('region', { name: 'Summary', exact: true });
-    await expect(summary.getByRole('note')).toContainText('Balance differs by 46.88647965 BTC.');
+    await expect(summary.getByRole('note')).toContainText(
+      /Balance differs by [\d.]+ BTC\. The blockchain shows 46\.88647965 BTC;/,
+    );
     const misplaced = await summary.evaluate((card) => {
       const box = (element: Element | null) => element?.getBoundingClientRect();
       const grid = box(card.querySelector('dl'));

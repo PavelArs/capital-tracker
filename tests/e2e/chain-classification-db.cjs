@@ -41,6 +41,7 @@ function services(db) {
     trades,
     rewards,
     operations: make('operation-list.service', 'OperationListService'),
+    portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     classifications: make(
       'chain-classification.service',
       'ChainClassificationService',
@@ -291,15 +292,90 @@ async function hide(db, s, f, { address }) {
   );
   assert.deepEqual(otherRow.classification.value, { type: 'other' });
   assert.equal(await count(s, owner), 0);
-  await rejected(
-    () =>
-      classify(s, owner, address, 3, {
-        expectedVersion: 0,
-        classification: { type: 'other' },
-      }),
-    422,
-  );
   console.log('PASS CLS-OTHER');
+}
+
+async function provisional(db, s) {
+  stage = 'CLS-PROVISIONAL an unanswered receipt counts at its price, cost unknown, no deposit';
+  const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
+  const { readValuationInputs } = require(
+    '/app/backend/dist/accounting/portfolio-valuation.service.js',
+  );
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-provisional@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const cold = await account(s, owner, 'Cold storage');
+  const address = await wallet(db, owner, cold, 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  // Binding an address to an account creates its coin's asset (WalletAddressService).
+  await require('/app/backend/dist/accounting/trade.service.js').findOrCreateInstrument(
+    db.manager,
+    owner,
+    { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' },
+    true,
+  );
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken',$1,80000,'hourly-close')`, [new Date(now.getTime() - 600000)]);
+  await raw(db, owner, address, 21, 'in', '1000000', '0', '300', '2026-01-10T08:00:00.000Z');
+  const btc = async () => {
+    const report = await s.portfolio.read(owner, { currency: 'USD' }, now);
+    return report.assets.find((asset) => asset.symbol === 'BTC');
+  };
+  const flows = () =>
+    db.transaction(async (manager) => capitalFlows(await readValuationInputs(manager, owner)));
+  let asset = await btc();
+  assert.deepEqual(
+    [Number(asset.quantity), Number(asset.value), asset.costBasis, Number(asset.unknownCostQuantity)],
+    [0.01, 800, null, 0.01],
+  );
+  assert.deepEqual(await flows(), [], 'No deposit before the receipt is classified');
+  assert.equal(await count(s, owner), 1);
+
+  stage = 'CLS-PROVISIONAL an unanswered payment leaves too, without a withdrawal';
+  await raw(db, owner, address, 22, 'out', '596000', '1000000', '4000', '2026-02-10T08:00:00.000Z');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.value)], [0.00596, 476.8]);
+  assert.deepEqual(await flows(), []);
+
+  stage = 'CLS-OTHER a payment nobody can name stays out of the balance with no entry';
+  const answered = await classify(s, owner, address, 22, {
+    expectedVersion: 0,
+    classification: { type: 'other' },
+    comment: 'Lost card',
+  });
+  assert.deepEqual([answered.value.status, answered.value.operation], ['classified', null]);
+  const row = await listed(s, owner, 22);
+  assert.deepEqual(
+    [row.type, row.status, row.direction, row.valueUsd, row.comment],
+    ['other', 'recorded', 'out', null, 'Lost card'],
+  );
+  assert.equal(await count(s, owner), 1, 'Only the receipt still waits');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.value)], [0.00596, 476.8]);
+
+  stage = 'CLS-PROVISIONAL classifying the receipt as a buy gives the rest its cost';
+  await classify(s, owner, address, 21, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '700' },
+  });
+  asset = await btc();
+  // The 0.00404 BTC that left takes 404/1000 of the 700 USD cost with it; nothing is realised.
+  assert.deepEqual(
+    [Number(asset.quantity), Number(asset.costBasis), Number(asset.unknownCostQuantity)],
+    [0.00596, 417.2, 0],
+  );
+  const deposits = await flows();
+  assert.equal(deposits.length, 1, 'The buy is the only flow; the Other payment is none');
+  assert.equal(deposits[0].usd, 700n * 10n ** 30n);
+  assert.equal(await count(s, owner), 0);
+
+  stage = 'CLS-RECLASSIFY the payment changed from Other to a sale becomes an entry';
+  await classify(s, owner, address, 22, {
+    expectedVersion: 1,
+    classification: { type: 'sell', currency: 'USD', amount: '300' },
+  });
+  assert.equal((await listed(s, owner, 22)).type, 'sell');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.costBasis)], [0.00596, 417.2]);
+  console.log('PASS CLS-PROVISIONAL/CLS-OTHER-OUT');
 }
 
 async function reclassify(db, s, f, { trust, address }) {
@@ -402,6 +478,7 @@ async function main() {
     const made = await buyAndCount(db, s, f);
     await hide(db, s, f, made);
     await reclassify(db, s, f, made);
+    await provisional(db, s);
     await rejected(() => s.classifications.classify(owner.id, made.address, txid(1), null), 400);
   } finally {
     if (db.isInitialized) await db.destroy();

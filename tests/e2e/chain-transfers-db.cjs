@@ -236,13 +236,15 @@ async function capital(db, s, owner, f, transferId) {
   same(sender.summary.realizedUsd, '0', 'A transfer realises nothing');
   assert.equal(await transferKind(db, transferId), 'create');
 
-  stage = 'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the week changes by the fee only';
+  stage = 'XFER-CAPITAL / FLOW-SPLIT-TRANSFER at BTC 60000 the transfer changes the week by its fee';
   const history = await week(s, owner);
   assert.equal(history.points[0].at, '2026-09-28T00:00:00.000Z');
   same(history.points[0].value, '36000');
   assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
-  same(history.change, '-6', 'Portfolio value changes by the 6 USD fee only');
-  same(history.marketEffect, '-6', 'The fee is market effect, not a withdrawal');
+  // D1: the unanswered send of 0.05002 BTC (3001.2 USD) has already left A, without a
+  // withdrawal; the transfer itself costs only its 6 USD fee.
+  same(history.change, '-3007.2', 'The 6 USD fee and the unanswered send leave the portfolio');
+  same(history.marketEffect, '-3007.2', 'Neither is a withdrawal');
   console.log('PASS XFER-CAPITAL/FLOW-SPLIT-TRANSFER');
 }
 

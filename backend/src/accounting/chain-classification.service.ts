@@ -36,6 +36,7 @@ import { parseUuid } from './input';
 import { OwnedTransferService } from './owned-transfer.service';
 import { readTransferHead } from './owned-transfer.store';
 import { parseTransferCreate, parseTransferVoid } from './owned-transfer-input';
+import { ensureChainCoins } from './portfolio-valuation.service';
 import { findOrCreateInstrument, TradeService } from './trade.service';
 import { parseTradeCreate, parseTradeVoid } from './trade-input';
 import { readJournal } from './trade-journal.store';
@@ -222,9 +223,17 @@ export class ChainClassificationService {
     return result;
   }
 
-  /** Automatic linking never fails the write that triggered it; the next one tries again. */
+  /**
+   * Automatic linking never fails the write that triggered it; the next one tries again. The
+   * assets of what the wallets moved are created first, so unanswered movements count (D1).
+   */
   async linkQuietly(ownerId: string): Promise<void> {
     try {
+      const owner = parseUuid(ownerId);
+      await this.source.transaction('READ COMMITTED', async (manager) => {
+        await lockAccountingOwner(manager, owner);
+        await ensureChainCoins(manager, owner);
+      });
       await this.linkOwnTransfers(ownerId);
     } catch {
       this.logger.warn('Own transfers could not be linked now');
@@ -424,7 +433,7 @@ export class ChainClassificationService {
       instrumentId: randomUUID(),
     };
     if (planned.journal === 'trade') parseTradeCreate({ ...planned.fields, ...pins });
-    else parseRewardCreate({ ...planned.fields, ...pins });
+    else if (planned.journal === 'reward') parseRewardCreate({ ...planned.fields, ...pins });
   }
 
   private async readLeg(manager: EntityManager, owner: string, address: string, txid: string) {
@@ -516,7 +525,8 @@ export class ChainClassificationService {
       const head = await readTransferHead(manager, owner, row.transferId);
       return head !== undefined && head.kind !== 'void';
     }
-    return false;
+    // An outgoing Other produced no entry: the answer itself is what counts (D1).
+    return row.status === 'classified' && row.type === 'other';
   }
 
   private async revision(manager: EntityManager, owner: string, accountId: string) {
@@ -530,6 +540,7 @@ export class ChainClassificationService {
     accountId: string,
     planned: PlannedOperation,
   ): Promise<Produced> {
+    if (planned.journal === 'none') return { ...nothing, accountId };
     const coin = await findOrCreateInstrument(manager, owner, chainCoin(row), true);
     if (!coin) throw new Error('Chain coin was not created');
     const pins = {
@@ -618,6 +629,8 @@ export class ChainClassificationService {
         await this.unlink(manager, owner, row.linkedAddressId, row.txid, row.transferId);
       return;
     }
+    // An outgoing Other produced nothing to void.
+    if (!row.tradeId && !row.rewardId) return;
     const accountId = row.accountId!;
     const expectedJournalRevision = await this.revision(manager, owner, accountId);
     if (row.tradeId) {

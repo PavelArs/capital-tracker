@@ -246,6 +246,25 @@ async function main() {
     console.log('PASS ETH-IDENTITY one hash moving ETH and USDC stores two legs (native, and token with log index 7); fees in ETH; a reverted send keeps only its fee; zero-value and unknown tokens skipped');
     console.log('PASS SYNC-RECONCILE complete history gives ETH 1.249858, USDT 200, USDC 250');
 
+    // CLS-PROVISIONAL: the sync created each moved asset, so the unclassified history already
+    // gives the account the chain's balances, without a purchase price.
+    {
+      const { readValuationInputs, accountsAt } = require(`${dist}/accounting/portfolio-valuation.service.js`);
+      const { canonicalDecimalToAtoms, formatAtoms } = require(`${dist}/accounting/money.js`);
+      const inputs = await readValuationInputs(db.manager, owner);
+      const held = accountsAt(inputs, new Date().toISOString()).find((item) => item.accountId === mainAccount);
+      const symbol = new Map(inputs.instruments.map((item) => [item.id, item.symbol]));
+      const totals = new Map();
+      for (const lot of held.lots) {
+        const key = symbol.get(lot.instrumentId);
+        totals.set(key, (totals.get(key) ?? 0n) + canonicalDecimalToAtoms(lot.quantity));
+        assert.equal(lot.costUsd, null);
+      }
+      assert.deepEqual([...totals].map(([key, atoms]) => [key, formatAtoms(atoms)]).sort(),
+        [['ETH', '1.249858'], ['USDC', '250'], ['USDT', '200']]);
+    }
+    console.log('PASS CLS-PROVISIONAL unclassified ETH, USDT and USDC count in the account at the chain balances');
+
     // Resync: no duplicates; only blocks that became final are read.
     const sync2 = await newRequests(() => s.addresses.sync(owner, main));
     assert.deepEqual([sync2.result.outcome, sync2.result.imported], ['complete', 0]);

@@ -38,7 +38,7 @@ const incoming: readonly ChainType[] = [
   'airdrop',
   'other',
 ];
-const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee'];
+const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee', 'other'];
 
 /** Buy or sell: what was paid or received, in the currency it was paid in. */
 export interface PricedClassification {
@@ -63,7 +63,7 @@ export interface TransferClassification {
   type: 'transfer';
   accountId: string;
 }
-/** Received, but nothing more is known: the coins count without a purchase price. */
+/** Nothing more is known: received coins count without a purchase price, sent ones without a sale price. */
 export interface OtherClassification {
   type: 'other';
 }
@@ -205,7 +205,9 @@ export const unfit = () =>
 /** The journal entry a classification produces, before the journal pins are known. */
 export type PlannedOperation =
   | { journal: 'trade'; fields: Record<string, unknown> }
-  | { journal: 'reward'; fields: Record<string, unknown> };
+  | { journal: 'reward'; fields: Record<string, unknown> }
+  /** Outgoing Other: no entry; the coins leave as an unanswered payment does (D1). */
+  | { journal: 'none' };
 
 const purposes: Record<'income' | 'expense' | 'fee', TradePurpose> = {
   income: 'income',
@@ -221,8 +223,9 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
 /**
  * The entry for the whole amount the leg moved, at the block time. A buy or sale settles in
  * the account's cash like one added by hand (PR-OPS-9); income, expense, gift and fee carry
- * their value; a reward's value is also its cost basis. Other adds the coins with an unknown
- * cost and no deposit, like a reward nobody valued. The network fee stays inside the amount;
+ * their value; a reward's value is also its cost basis. Other adds received coins with an
+ * unknown cost and no deposit, like a reward nobody valued; sent coins leave with no sale price
+ * and no withdrawal, as before any answer (D1). The network fee stays inside the amount;
  * only a transfer (chain-transfer.ts) records it apart.
  */
 export function planOperation(
@@ -278,6 +281,7 @@ export function planOperation(
       };
     }
     case 'other':
+      if (!inbound) return { journal: 'none' };
       return {
         journal: 'reward',
         fields: {

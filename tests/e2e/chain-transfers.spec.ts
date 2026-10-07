@@ -185,6 +185,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     'Expense',
     'Gift sent',
     'Fee',
+    'Other',
   ]);
   await question.getByRole('button', { name: 'Transfer between my wallets' }).click();
   await expect(
