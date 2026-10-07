@@ -1,7 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseUuid } from '../accounting/input';
+import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { chainAsset, formatUnits, type Network, networkAssets } from './chain-assets';
 import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
@@ -191,6 +193,7 @@ export class WalletAddressService {
         ],
       );
       if (updated.length !== 1) throw new NotFoundException();
+      if (changes.accountId) await ensureChainCoins(manager, owner);
       return summary(await this.address(manager, owner, addressId));
     });
     // An address now in an account may complete a transfer between own wallets (D7).
@@ -259,8 +262,10 @@ export class WalletAddressService {
     return row;
   }
 
-  // Another owner's account is as unknown as a missing one.
+  // Another owner's account is as unknown as a missing one. Accounting writes lock the owner
+  // before any account row, so this does too.
   private async account(manager: EntityManager, owner: string, id: string) {
+    await lockAccountingOwner(manager, owner);
     const rows: unknown[] = await manager.query(
       'SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 FOR KEY SHARE',
       [owner, id],

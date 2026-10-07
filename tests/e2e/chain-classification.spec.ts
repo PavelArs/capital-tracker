@@ -126,7 +126,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   await expect(next.getByRole('status')).toHaveText('Saved as Buy. Here is the next one.');
   await expect(
     next.getByRole('group', { name: 'What was this transaction?' }).getByRole('button'),
-  ).toHaveText(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee']);
+  ).toHaveText(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee', 'Other']);
   await expect(nav.getByLabel(`${before - 1} to classify`, { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('classify-next-1440-dark.png') });
 

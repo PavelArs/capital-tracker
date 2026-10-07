@@ -77,6 +77,7 @@ function inputs(
     instruments: [],
     accounts: [],
     ledgers: new Map(accounts.map((account) => [account.id, ledger])),
+    chainMoves: new Map(),
   };
 }
 const shown = (flows: CapitalFlow[]) =>
