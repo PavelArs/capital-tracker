@@ -393,7 +393,8 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(create).toHaveBeenCalledWith(id(11), {
       instrumentId: id(1),
       side: 'buy',
-      occurredAt: expect.stringMatching(/T00:00:00\.000Z$/),
+      // Today without a time is the current minute (OPS-SAME-DAY).
+      occurredAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/),
       quantity: '0.01',
       grossUsd: '850.53',
       feeUsd: '0',
@@ -536,6 +537,40 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ side: 'sell', quantity: '0.2' });
+  });
+
+  it('OPS-SAME-DAY a new sale dated today without a time stands for the current minute', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-07T15:59:30.000Z'));
+    try {
+      const user = userEvent.setup();
+      available.mockImplementation(async (accountId, query) => ({
+        accountId,
+        ...query,
+        journalRevision: 4,
+        quantity: '1',
+      }));
+      const { dialog, onSaved } = await open();
+      const view = within(dialog);
+      await user.click(view.getByRole('radio', { name: 'Sell' }));
+      expect(view.getByLabelText('Date')).toHaveValue('2026-10-07');
+      expect(await view.findByText(/Available in Hardware wallet: 1 BTC/)).toBeInTheDocument();
+      expect(available).toHaveBeenLastCalledWith(id(11), {
+        instrumentId: id(1),
+        at: '2026-10-07T15:59:00.000Z',
+      });
+      expect(view.getByLabelText('Time, UTC (optional)')).toHaveValue('');
+      await user.type(view.getByLabelText('Amount'), '0.5');
+      await user.type(view.getByLabelText('Total received'), '30000');
+      await user.click(view.getByRole('button', { name: 'Save transaction' }));
+      await waitFor(() => expect(onSaved).toHaveBeenCalled());
+      expect(create.mock.calls[0][1]).toMatchObject({
+        side: 'sell',
+        occurredAt: '2026-10-07T15:59:00.000Z',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   const recorded: Operation = {
@@ -762,7 +797,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     ).toBeInTheDocument();
     expect(available).toHaveBeenCalledWith(id(11), {
       instrumentId: id(4),
-      at: expect.stringMatching(/T00:00:00\.000Z$/),
+      at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00\.000Z$/),
     });
     await user.clear(view.getByLabelText('Total paid'));
     await user.type(view.getByLabelText('Total paid'), '20000');

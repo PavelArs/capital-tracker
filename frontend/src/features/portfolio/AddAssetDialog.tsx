@@ -1,3 +1,4 @@
+import { fxRatesApi } from '@api/fx-rates.api';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
   type PortfolioAsset,
@@ -22,7 +23,7 @@ import {
   balanceTrade,
   unitPrice,
 } from './add-asset';
-import { MAX_COMMENT_LENGTH } from './add-transaction';
+import { bankRate, MAX_COMMENT_LENGTH } from './add-transaction';
 
 const kindHints: Record<AssetKind, string> = {
   cash: 'Cash is worth exactly its amount in its own currency.',
@@ -182,6 +183,22 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     setSaving(true);
     setError(null);
     let asset = created;
+    // A RUB or EUR balance needs today's Bank of Russia rate. Without one the asset would be
+    // saved and its balance refused, so check first and save nothing.
+    const { currency } = entry;
+    if (!asset && entry.amount.trim() && (currency === 'RUB' || currency === 'EUR')) {
+      const rate = await fxRatesApi.get().then(
+        (report) => bankRate(currency, report),
+        () => undefined, // Unknown: the balance itself reports a missing rate.
+      );
+      if (rate === null) {
+        setError(
+          `No Bank of Russia rate is stored for today yet, so the ${currency} balance cannot be converted. Nothing was saved; try again later.`,
+        );
+        setSaving(false);
+        return;
+      }
+    }
     if (!asset) {
       const body = assetBody(entry);
       const key = JSON.stringify(body);

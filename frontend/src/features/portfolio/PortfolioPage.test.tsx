@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
+import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { manualPricesApi, type PriceReceipt } from '@api/manual-prices.api';
 import { type Operation, operationsApi } from '@api/operations.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
@@ -203,10 +204,21 @@ const emptyHistory = (instrumentId: string): AssetHistory => ({
   points: [],
 });
 
+const rates = (usd: string | null, eur: string | null): FxRatesReport => ({
+  date: '2026-10-05',
+  source: 'cbr',
+  rates: [
+    { currency: 'USD', rubPerUnit: usd, date: usd && '2026-10-05' },
+    { currency: 'EUR', rubPerUnit: eur, date: eur && '2026-10-05' },
+  ],
+  sync: null,
+});
+
 beforeEach(() => {
   vi.restoreAllMocks();
   createTrade.mockReset();
   setPrice.mockReset();
+  vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates('90.12', '100.5'));
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
       { id: id(101), name: 'Trust Wallet', currentRevision: 0, createdAt: '2025-01-01T00:00:00Z' },
@@ -626,6 +638,32 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       paid: { currency: 'EUR', gross: '1200', fee: '0' },
     });
     expect(setPrice).not.toHaveBeenCalled();
+  });
+
+  it('ADD-ASSET-RATE adds nothing when a RUB or EUR balance has no Bank of Russia rate', async () => {
+    vi.mocked(fxRatesApi.get).mockResolvedValueOnce(rates(null, null));
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.type(within(dialog).getByLabelText('Name'), 'Cash at home');
+    await user.type(within(dialog).getByLabelText('Amount'), '90120');
+    await user.click(within(dialog).getByRole('radio', { name: 'RUB' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'No Bank of Russia rate is stored for today yet, so the RUB balance cannot be converted. Nothing was saved; try again later.',
+    );
+    expect(create).not.toHaveBeenCalled();
+    expect(createTrade).not.toHaveBeenCalled();
+    // Still editable: nothing was saved.
+    expect(within(dialog).getByLabelText('Name')).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createTrade.mock.calls[0][1]).toMatchObject({
+      paid: { currency: 'RUB', gross: '90120' },
+    });
   });
 
   it('asks for the amount and keeps a saved asset when its balance is refused', async () => {

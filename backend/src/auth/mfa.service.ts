@@ -17,6 +17,7 @@ import {
   recoveryHash,
   recoveryPattern,
 } from './mfa-crypto';
+import { recordFailure, streakLocked } from './mfa-failures';
 import { SessionService } from './session.service';
 
 interface FactorRow {
@@ -31,6 +32,7 @@ interface FactorRow {
   failedAttempts: number;
   failureWindowStart: Date | null;
   blockedUntil: Date | null;
+  consecutiveFailures: number;
 }
 interface OwnerRow {
   userId: string;
@@ -48,7 +50,6 @@ export interface EnrollmentOutput {
 export interface RecoveryOutput {
   recoveryCodes: string[];
 }
-const WINDOW_MS = 10 * 60 * 1000;
 
 @Injectable()
 export class MfaService implements OnModuleInit {
@@ -158,7 +159,8 @@ export class MfaService implements OnModuleInit {
       await manager.query(
         `UPDATE owner_mfa SET "activeVersion" = "candidateId", "activeEnvelope" = "candidateEnvelope", "lastCounter" = $1,
         "candidateId" = NULL, "candidateEnvelope" = NULL, "candidateExpiresAt" = NULL, "candidateAttempts" = 0,
-        "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL WHERE id = 1`,
+        "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
         [counter],
       );
       await manager.query('DELETE FROM owner_mfa_recovery WHERE "userId" = $1', [userId]);
@@ -225,7 +227,10 @@ export class MfaService implements OnModuleInit {
         );
       const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
       if (pending.expiresAt.getTime() <= now.getTime()) throw new UnauthorizedException();
-      if (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+      if (
+        streakLocked(factor) ||
+        (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+      )
         return { status: 429 } as const;
       let accepted = false;
       try {
@@ -260,17 +265,15 @@ export class MfaService implements OnModuleInit {
         accepted = rows[0].length === 1;
       }
       if (!accepted) {
-        const currentWindow =
-          factor.failureWindowStart &&
-          now.getTime() - factor.failureWindowStart.getTime() < WINDOW_MS &&
-          !factor.blockedUntil;
-        const failures = currentWindow ? factor.failedAttempts + 1 : 1;
+        const failure = recordFailure(factor, now);
         await manager.query(
-          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3 WHERE id = 1`,
+          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
+          "consecutiveFailures" = $4 WHERE id = 1`,
           [
-            failures,
-            currentWindow ? factor.failureWindowStart : now,
-            failures >= 10 ? new Date(now.getTime() + WINDOW_MS) : null,
+            failure.next.failedAttempts,
+            failure.next.failureWindowStart,
+            failure.next.blockedUntil,
+            failure.next.consecutiveFailures,
           ],
         );
         if (pending.failedAttempts + 1 >= 5)
@@ -280,10 +283,11 @@ export class MfaService implements OnModuleInit {
             'UPDATE auth_sessions SET "failedAttempts" = "failedAttempts" + 1 WHERE "tokenHash" = $1',
             [hash],
           );
-        return { status: failures >= 10 ? 429 : 401 } as const;
+        return { status: failure.status } as const;
       }
       await manager.query(
-        'UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL WHERE id = 1',
+        `UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
       );
       const [user]: UserWithoutPassword[] = await manager.query(
         'SELECT id, email, "firstName", "lastName", "createdAt", "updatedAt" FROM users WHERE id = $1',

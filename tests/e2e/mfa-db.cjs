@@ -239,6 +239,24 @@ async function main() {
     await mfa.complete(hash(one.token),{kind:'recovery',code:fixture.recoveryCodes[0]});
     console.log('PASS MFA-005 persisted five-attempt challenge retirement, ten-attempt account cooldown and finite expiry');
 
+    stage='consecutive failure streak';
+    assert.equal((await source.query('SELECT "consecutiveFailures" AS n FROM owner_mfa'))[0].n,0,'Success clears the streak');
+    // A hundred paced failures across windows reach this state; set it directly, then spend one more.
+    await source.query('UPDATE owner_mfa SET "consecutiveFailures"=99');
+    one=await pending();
+    await rejected(mfa.complete(hash(one.token),{kind:'recovery',code:wrong}),429);
+    const [locked]=await source.query('SELECT * FROM owner_mfa');
+    assert.equal(locked.consecutiveFailures,100);
+    assert.equal(locked.blockedUntil,null,'The streak lock is not the timed window cooldown');
+    one=await pending();
+    await rejected(mfa.complete(hash(one.token),{kind:'recovery',code:fixture.recoveryCodes[1]}),429);
+    assert.equal(fingerprint((await source.query('SELECT * FROM owner_mfa'))[0]),fingerprint(locked),'Locked attempts change nothing');
+    fixture=await enroll(source,userId);
+    assert.equal((await source.query('SELECT "consecutiveFailures" AS n FROM owner_mfa'))[0].n,0,'Trusted confirmation clears the streak');
+    one=await pending();
+    await mfa.complete(hash(one.token),{kind:'recovery',code:fixture.recoveryCodes[0]});
+    console.log('PASS MFA-005-B hundredth consecutive failure locks completion until trusted confirmation');
+
     stage='pending lock expiry';
     fixture=await enroll(source,userId); one=await pending();
     const tokenHash=hash(one.token);
