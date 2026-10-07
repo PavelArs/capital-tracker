@@ -1,6 +1,6 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
 
-// The tracked networks as the Wallets screens present them (M10, M14): the coin, the tokens a
+// The tracked networks as the Wallets screens present them (M10, M14, M15): the coin, the tokens a
 // wallet on it can hold (USDT and USDC only, Q7) and where its history comes from.
 export interface NetworkInfo {
   name: string;
@@ -32,6 +32,15 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     placeholder: '0x…',
     defaultWallet: 'Ethereum wallet',
     labelExample: 'Main ETH',
+  },
+  solana: {
+    name: 'Solana',
+    symbol: 'SOL',
+    assets: ['SOL', 'USDT', 'USDC'],
+    source: 'Solana public RPC',
+    placeholder: 'Base58 address, 32 to 44 characters',
+    defaultWallet: 'Solana wallet',
+    labelExample: 'Main SOL',
   },
 };
 

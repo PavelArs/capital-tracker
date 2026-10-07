@@ -175,8 +175,10 @@ export class ChainClassificationService {
   async classify(ownerId: string, addressId: string, txid: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const address = parseUuid(addressId);
-    // A token leg's identity is the hash and its event index (M14).
-    if (!/^[0-9a-f]{64}(-[0-9]{1,9})?$/.test(txid)) throw new NotFoundException();
+    // A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds
+    // its number (M14).
+    if (!/^([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?$/.test(txid))
+      throw new NotFoundException();
     const input = parseClassification(raw);
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a

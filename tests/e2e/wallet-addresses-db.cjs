@@ -130,7 +130,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 35/);
+  assert.match(migrate(database), /Migrations applied: 36/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -368,7 +368,9 @@ async function main() {
       FROM wallet_address_transactions WHERE "addressId"=$1 AND txid=$2`, [pages, stored.txid]), (error) => error.code === '23505');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
       VALUES (gen_random_uuid(),$1,'bitcoin',$2)`, [owner, addresses.pages]), (error) => error.code === '23505');
-    // M14 allows Ethereum, stored lower case only; any other network is still refused.
+    // M14 allows Ethereum, stored lower case only, and M15 Solana; any other network is still refused.
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
+      VALUES (gen_random_uuid(),$1,'tron','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
       VALUES (gen_random_uuid(),$1,'solana','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)

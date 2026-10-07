@@ -33,7 +33,7 @@ export interface OperationPlace {
 
 export interface OperationWallet {
   id: string;
-  network: 'bitcoin' | 'ethereum';
+  network: 'bitcoin' | 'ethereum' | 'solana';
   address: string;
   label: string | null;
 }

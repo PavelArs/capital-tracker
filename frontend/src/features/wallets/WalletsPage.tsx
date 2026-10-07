@@ -106,8 +106,8 @@ export default function WalletsPage() {
           </span>
           <h2 id="wallets-empty">No wallets connected</h2>
           <p>
-            Add a Bitcoin or Ethereum address. The app only reads public data and never asks for a
-            seed phrase.
+            Add a Bitcoin, Ethereum or Solana address. The app only reads public data and never asks
+            for a seed phrase.
           </p>
           {addButton}
         </section>

@@ -114,7 +114,6 @@ export type AddressCheck =
   | { ok: true; address: string; kind: string }
   | { ok: false; message: string; secret?: true };
 
-const COMING_SOON = 'Only Bitcoin and Ethereum can be tracked so far';
 const SEED_PHRASE =
   'This looks like a seed phrase. Never share it: the app needs only the public address.';
 const PRIVATE_KEY =
@@ -127,7 +126,22 @@ function secretCheck(value: string): AddressCheck | null {
     return { ok: false, secret: true, message: SEED_PHRASE };
   if (/^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value) || /^(0x)?[0-9a-f]{64}$/i.test(value))
     return { ok: false, secret: true, message: PRIVATE_KEY };
+  // A Solana secret key: 64 bytes in base58, or the byte array a keypair file holds.
+  if (base58Length(value) === 64 || /^\[\s*\d{1,3}(\s*,\s*\d{1,3}){63}\s*\]$/.test(value))
+    return { ok: false, secret: true, message: PRIVATE_KEY };
   return null;
+}
+
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+/** How many bytes a base58 text encodes; null when it is not base58. */
+function base58Length(value: string): number | null {
+  if (!/^[1-9A-HJ-NP-Za-km-z]{1,100}$/.test(value)) return null;
+  let number = 0n;
+  for (const character of value) number = number * 58n + BigInt(BASE58.indexOf(character));
+  const zeros = value.length - value.replace(/^1+/, '').length;
+  const hex = number === 0n ? '' : number.toString(16);
+  return zeros + Math.ceil(hex.length / 2);
 }
 
 /**
@@ -135,7 +149,34 @@ function secretCheck(value: string): AddressCheck | null {
  * checksum; a seed phrase or a private key is refused here and never sent anywhere.
  */
 export function checkAddress(network: WalletAddress['network'], raw: string): AddressCheck {
+  if (network === 'solana') return checkSolanaAddress(raw);
   return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
+}
+
+export function checkSolanaAddress(raw: string): AddressCheck {
+  const value = raw.trim();
+  if (!value) return { ok: false, message: 'Paste the wallet address.' };
+  const secret = secretCheck(value);
+  if (secret) return secret;
+  // Base58 is case-sensitive: the address is kept exactly as pasted.
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
+    return { ok: true, address: value, kind: 'Solana address' };
+  if (/^0x[0-9a-f]{40}$/i.test(value))
+    return {
+      ok: false,
+      message:
+        'This is not a Solana address: it looks like an Ethereum address. Go back and pick Ethereum to track it.',
+    };
+  if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
+    return {
+      ok: false,
+      message:
+        'This is not a Solana address: it looks like a Bitcoin address. Go back and pick Bitcoin to track it.',
+    };
+  return {
+    ok: false,
+    message: 'This is not a valid Solana address. Check that it was copied in full.',
+  };
 }
 
 export function checkEthereumAddress(raw: string): AddressCheck {
@@ -194,7 +235,7 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
     return {
       ok: false,
-      message: `This looks like a Solana address. ${COMING_SOON}.`,
+      message: 'This looks like a Solana address. Go back and pick Solana to track it.',
     };
   }
   return {

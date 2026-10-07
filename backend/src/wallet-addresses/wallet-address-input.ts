@@ -1,8 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
-import type { Network } from './chain-assets';
+import { isNetwork, type Network } from './chain-assets';
 import { normalizeEthereumAddress } from './ethereum-address';
+import { normalizeSolanaAddress } from './solana-address';
 
 export const LABEL_MAX_LENGTH = 40;
 
@@ -41,17 +42,20 @@ export interface Registration {
   label: string | null;
 }
 
-// Bitcoin (the default of the legacy body) and Ethereum; Solana joins with its sync (M15).
+const normalizers: Record<Network, (value: unknown) => string> = {
+  bitcoin: normalizeBitcoinAddress,
+  ethereum: normalizeEthereumAddress,
+  solana: normalizeSolanaAddress,
+};
+
+// Bitcoin (the default of the legacy body), Ethereum (M14) and Solana (M15).
 export function parseRegistration(raw: unknown): Registration {
   const row = object(raw, ['network', 'address', 'accountId', 'label']);
   const network = row.network ?? 'bitcoin';
-  if (network !== 'bitcoin' && network !== 'ethereum') return bad();
+  if (!isNetwork(network)) return bad();
   return {
     network,
-    address:
-      network === 'bitcoin'
-        ? normalizeBitcoinAddress(row.address)
-        : normalizeEthereumAddress(row.address),
+    address: normalizers[network](row.address),
     accountId: account(row.accountId),
     label: label(row.label),
   };

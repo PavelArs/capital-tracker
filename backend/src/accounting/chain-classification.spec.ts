@@ -90,6 +90,22 @@ describe('classify-chain-transactions input and plan', () => {
     expect(() => legMovement({ ...ethereum, asset: 'DAI' })).toThrow('Unknown chain asset');
   });
 
+  it('SOL-IDENTITY: a Solana leg moves SOL at 9 decimals or an SPL token at 6 (M15)', () => {
+    const solana = { ...receipt, network: 'solana' as const };
+    expect(legMovement({ ...solana, receivedUnits: '1250000000' })).toEqual({
+      inbound: true,
+      quantity: '1.25',
+    });
+    expect(
+      legMovement({ ...solana, asset: 'USDC', receivedUnits: '0', sentUnits: '25000000' }),
+    ).toEqual({ inbound: false, quantity: '25' });
+    expect(chainCoin({ network: 'solana', asset: null })).toEqual({
+      assetType: 'crypto',
+      symbol: 'SOL',
+      name: 'Solana',
+    });
+  });
+
   it('income, gift and rewards carry their value; a reward may have none', () => {
     expect(planOperation(receipt, { type: 'income', valueUsd: '700' }, 'Salary').fields).toEqual({
       occurredAt: receipt.blockTime,
