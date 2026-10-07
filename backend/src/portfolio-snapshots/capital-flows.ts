@@ -135,11 +135,13 @@ const unknownSplit = {
 /**
  * Capital change from `start` to `end` split into flows and market (BR 10): netFlow =
  * deposits − withdrawals after `start` up to `end`; marketEffect = V1 − V0 − netFlow;
- * marketReturnPercent = marketEffect / (V0 + deposits), empty when that is 0.
+ * marketReturnPercent = marketEffect / (V0 + deposits), empty when that is 0. A value that
+ * leaves out a held asset without a price gives no market effect: the asset's flows are
+ * counted while its value is not, which would show its cost as a loss.
  */
 export function splitChange(
-  start: { at: number; value: string | null } | null,
-  end: { at: number; value: string | null },
+  start: { at: number; value: string | null; unpriced?: boolean } | null,
+  end: { at: number; value: string | null; unpriced?: boolean },
   flows: readonly StatedFlow[],
 ): {
   deposits: string | null;
@@ -163,7 +165,12 @@ export function splitChange(
     withdrawals: formatProduct(withdrawals),
     netFlow: formatSignedProduct(netFlow),
   };
-  if (start.value === null || end.value === null)
+  if (
+    start.value === null ||
+    end.value === null ||
+    start.unpriced === true ||
+    end.unpriced === true
+  )
     return { ...split, marketEffect: null, marketReturnPercent: null };
   const from = valueAtoms(start.value);
   const market = valueAtoms(end.value) - from - netFlow;
@@ -177,13 +184,15 @@ export function splitChange(
 
 /**
  * Profit or loss to date: net worth minus all-time net invested, and its share of net
- * invested; no percentage of nothing when more was taken out than put in.
+ * invested; no percentage of nothing when more was taken out than put in. Unknown when the
+ * value leaves out a held asset without a price.
  */
 export function profitToDate(
   value: string | null,
   invested: string | null,
+  unpriced = false,
 ): { profit: string | null; profitPercent: string | null } {
-  if (value === null || invested === null) return { profit: null, profitPercent: null };
+  if (value === null || invested === null || unpriced) return { profit: null, profitPercent: null };
   const base = valueAtoms(invested);
   const profit = valueAtoms(value) - base;
   return {

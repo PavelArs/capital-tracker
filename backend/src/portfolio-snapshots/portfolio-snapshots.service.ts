@@ -141,7 +141,7 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): SnapshotValue[] {
+): (SnapshotValue & { unpriced: boolean })[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
@@ -153,6 +153,8 @@ function valuesAt(
       currency: fx.currency,
       value: rated ? report.pricedSubtotal : null,
       complete: rated && report.completeness === 'complete',
+      // The value leaves out a held asset without a price (not an account yet to start).
+      unpriced: rated && report.missingPriceCount > 0,
     };
   });
 }
@@ -327,7 +329,12 @@ export class PortfolioSnapshotsService {
       const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
       const series = [
         ...stored,
-        { at: now.getTime(), value: current.value, complete: current.complete },
+        {
+          at: now.getTime(),
+          value: current.value,
+          complete: current.complete,
+          unpriced: current.unpriced,
+        },
       ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
@@ -354,7 +361,7 @@ export class PortfolioSnapshotsService {
         ...periodChange(start?.value ?? null, current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
-        ...profitToDate(current.value, invested.at(-1) ?? null),
+        ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),
         ...splitChange(start, series.at(-1)!, flows),
         points,
       };
