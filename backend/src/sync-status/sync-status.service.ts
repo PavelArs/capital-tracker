@@ -24,7 +24,16 @@ interface WalletRow {
   label: string | null;
 }
 
-const NETWORK_NAMES: Record<string, string> = { bitcoin: 'Bitcoin' };
+const NETWORK_NAMES: Record<string, string> = {
+  bitcoin: 'Bitcoin',
+  ethereum: 'Ethereum',
+  solana: 'Solana',
+};
+
+/** The owner's label, else the network's name, never its stored key ("ethereum"). */
+export function walletSourceName(wallet: Pick<WalletRow, 'network' | 'label'>): string {
+  return wallet.label ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
+}
 const latest = (dates: (string | null)[]) =>
   dates
     .filter((date): date is string => date !== null)
@@ -92,7 +101,7 @@ export class SyncStatusService {
       const fx = rows.find(({ key }) => key === 'fx:cbr');
       if (fx) sources.push(summary(fx, 'fx', 'Bank of Russia rates', now));
       for (const wallet of wallets) {
-        const name = wallet.label ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
+        const name = walletSourceName(wallet);
         const key = `wallet:${wallet.id}`;
         const row = wallet as unknown as KeyedRow & { key: string | null };
         sources.push(

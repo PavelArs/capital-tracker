@@ -8,10 +8,10 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
-import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
 import PageHeader from '../shell/PageHeader';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
+import Allocation from './Allocation';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
@@ -28,12 +28,6 @@ const filters: [Filter, string][] = [
   ['crypto', 'Crypto'],
   ['fiat', 'Cash'],
   ['manual', 'Manual'],
-];
-type Grouping = 'byAsset' | 'byType' | 'byAccount';
-const groupings: [Grouping, string][] = [
-  ['byAsset', 'Asset'],
-  ['byType', 'Type'],
-  ['byAccount', 'Account'],
 ];
 
 /** "BTC · Crypto · USD": ticker, type and value currency of an asset. */
@@ -173,101 +167,6 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
             : `${portfolio.missingRateCount} assets have`}{' '}
           operations dated before the stored Bank of Russia rates, so their cost or P&amp;L in{' '}
           {currency} is not shown.
-        </p>
-      )}
-    </section>
-  );
-}
-
-/** Slice colour: the asset's own or its type's; accounts keep the positional palette. */
-function sliceColor(
-  portfolio: PortfolioValuation,
-  grouping: Grouping,
-  key: string,
-): string | undefined {
-  if (grouping === 'byType') return assetTypeColors[key as AssetType];
-  if (grouping !== 'byAsset') return undefined;
-  const asset = portfolio.assets.find((item) => item.instrumentId === key);
-  return asset ? assetIdentity(asset).color : undefined;
-}
-
-function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
-  const [grouping, setGrouping] = useState<Grouping>('byAsset');
-  const slices = portfolio.allocation[grouping].map((slice, index) => {
-    const color = sliceColor(portfolio, grouping, slice.key);
-    const asset =
-      grouping === 'byAsset'
-        ? portfolio.assets.find((item) => item.instrumentId === slice.key)
-        : undefined;
-    // An asset is shown as "Bitcoin BTC" when its ticker differs from its name.
-    const ticker = asset?.symbol && asset.symbol !== slice.label ? asset.symbol : undefined;
-    return { ...slice, ticker, color, tone: color ? undefined : index % 6 };
-  });
-  return (
-    <section className="shell-card" aria-labelledby="portfolio-allocation">
-      <div className="portfolio-toolbar">
-        <h2 id="portfolio-allocation">Allocation</h2>
-        <div className="shell-seg" role="radiogroup" aria-label="Group allocation by">
-          {groupings.map(([value, label]) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="allocation-grouping"
-                value={value}
-                checked={grouping === value}
-                onChange={() => setGrouping(value)}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </div>
-      {slices.length === 0 ? (
-        <p className="portfolio-none">Nothing with a price yet.</p>
-      ) : (
-        <>
-          <div className="portfolio-bar" aria-hidden="true">
-            {slices.map((slice) => (
-              <span
-                key={slice.key}
-                style={{ width: `${slice.percent ?? 0}%`, background: slice.color }}
-                data-tone={slice.tone}
-              />
-            ))}
-          </div>
-          <ul
-            className="portfolio-slices"
-            aria-label={`Allocation by ${grouping.slice(2).toLowerCase()}`}
-          >
-            {slices.map((slice) => (
-              <li key={slice.key}>
-                <span
-                  className="portfolio-swatch"
-                  style={{ background: slice.color }}
-                  data-tone={slice.tone}
-                  aria-hidden="true"
-                />
-                <span className="portfolio-slices__label">
-                  {slice.label}
-                  {slice.ticker && (
-                    <span className="portfolio-slices__ticker"> {slice.ticker}</span>
-                  )}
-                </span>
-                <span className="portfolio-slices__value">
-                  {money(slice.value, portfolio.currency)}
-                </span>
-                <span className="portfolio-slices__percent">{percent(slice.percent, false)}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {!portfolio.allocation.complete && (
-        <p className="shell-note portfolio-note">
-          {portfolio.missingPriceCount > 0 && 'Assets without a price are not included.'}
-          {portfolio.missingPriceCount > 0 && portfolio.unavailableAccountCount > 0 && ' '}
-          {portfolio.unavailableAccountCount > 0 &&
-            'Accounts whose history starts later are not included.'}
         </p>
       )}
     </section>
