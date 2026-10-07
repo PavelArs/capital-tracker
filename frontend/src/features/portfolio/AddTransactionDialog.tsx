@@ -40,6 +40,7 @@ import {
   usdTotal,
   valued,
   valueOptional,
+  withDefaultTime,
 } from './add-transaction';
 import { money, price, quantity } from './format';
 
@@ -292,14 +293,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   }, [rateKey]);
   const prefill = bank && bank.key === rateKey ? bank.rate : null;
   const rateLoading = rateKey !== null && bank?.key !== rateKey;
-  const shown: TransactionEntry = entry.rateEdited ? entry : { ...entry, rate: prefill ?? '' };
+  // An edit keeps its recorded instant; a new entry for today without a time is now.
+  const timed = editing ? entry : withDefaultTime(entry, new Date());
+  const shown: TransactionEntry = entry.rateEdited ? timed : { ...timed, rate: prefill ?? '' };
 
   // A sale cannot take more than the account holds on its date or later (OPS-OVERSPEND), nor
   // can an expense, a gift sent, a fee or a transfer with its fee.
   const sell = spends(kind);
   const buy = kind === 'buy';
   const transfer = kind === 'transfer';
-  const at = occurredAt(entry);
+  const at = occurredAt(shown);
   const availableKey =
     sell &&
     accountId &&
