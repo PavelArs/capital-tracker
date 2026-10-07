@@ -98,6 +98,7 @@ const migrationNames = [
   'LinkOwnTransfers1791800000000',
   'TrackEthereumWallets1792000000000',
   'TrackSolanaWallets1792100000000',
+  'CapMfaFailureStreak1792200000000',
 ];
 
 function connection(database) {
@@ -190,7 +191,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirty-six migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirty-seven migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -714,6 +715,12 @@ function classificationAddition(kind, row) {
       row.conname === `accounting_instruments_${column}_not_null` && row.definition === `NOT NULL "${column}"`)));
   return false;
 }
+// CapMfaFailureStreak1792200000000 adds one defaulted owner factor column and its checks.
+function mfaStreakAddition(kind, row) {
+  if (kind === 'columns') return row.table_name === 'owner_mfa' && row.column_name === 'consecutiveFailures';
+  return kind === 'constraints' && row.relname === 'owner_mfa'
+    && ['owner_mfa_consecutiveFailures_check', 'owner_mfa_consecutiveFailures_not_null'].includes(row.conname);
+}
 function replacedOriginCheck(kind, row) {
   return kind === 'constraints' && row.relname === 'account_trade_journals'
     && row.conname === 'account_trade_journals_originKind_check';
@@ -1029,6 +1036,10 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     const upgraded = runMigration(target);
     assert.equal(upgraded.status, 0, 'Populated upgrade must run the actual migration CLI successfully');
     const after = await snapshot(client);
+    const streak = after.columns.filter(row => mfaStreakAddition('columns', row));
+    assert.deepEqual(streak.map(row => [row.data_type, row.is_nullable]), [['integer', 'NO']]);
+    assert.deepEqual(after.constraints.filter(row => mfaStreakAddition('constraints', row)).map(row => row.conname).sort(),
+      ['owner_mfa_consecutiveFailures_check', 'owner_mfa_consecutiveFailures_not_null']);
     const link = after.columns.filter(row => row.table_name === 'account_trade_journals' && row.column_name === 'openingRevision');
     assert.equal(link.length,1);
     assert.equal(link[0].data_type,'integer');
@@ -1069,6 +1080,14 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           const ordered = (values) => values.sort((a, b) => a.id.localeCompare(b.id));
           assert.deepEqual(ordered(parsed), ordered(rows.map(({ row }) => JSON.parse(row))),
             'Every old instrument column/value remains identical');
+        } else if (table === 'owner_mfa') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.equal(row.consecutiveFailures, 0, 'Prior factors start with an empty failure streak');
+            delete row.consecutiveFailures;
+          }
+          assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
+            'Every old owner factor column/value remains identical');
         } else {
           assert.deepEqual(after.rows[table], rows, `Preserve every previous ${table} row, including all session classes`);
         }
@@ -1081,14 +1100,15 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
     ]) {
       const prior = before[kind].filter(row => !(previousCount < 16 && replacedOriginCheck(kind,row)));
       const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row))
-        && !(previousCount >= 13 && classificationAddition(kind, row)));
+        && !(previousCount >= 13 && classificationAddition(kind, row))
+        && !mfaStreakAddition(kind, row));
       assert.deepEqual(retained, prior, `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);

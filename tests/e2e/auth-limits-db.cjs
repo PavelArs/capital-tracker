@@ -57,6 +57,7 @@ const expectedMigrationNames = [
   'LinkOwnTransfers1791800000000',
   'TrackEthereumWallets1792000000000',
   'TrackSolanaWallets1792100000000',
+  'CapMfaFailureStreak1792200000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -574,7 +575,7 @@ async function main() {
     assert.deepEqual(
       (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current thirty-six-migration ledger',
+      'The actual migration CLI must build the complete current thirty-seven-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {

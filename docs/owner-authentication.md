@@ -327,7 +327,10 @@ window begin a ten-minute cooldown; the tenth and blocked completion attempts re
 Renewing a challenge, restarting the backend or spoofing forwarding headers cannot
 reset the persisted owner block. Blocked attempts do not extend its deadline. Expiry,
 successful factor completion, trusted confirmation or password recovery clears the
-relevant failure state. The shared source and claimed-account admissions
+relevant failure state. Window expiry does not clear the owner's separate count of
+consecutive failures: the hundredth failure since the last success locks TOTP and
+recovery-code completion (429) until successful trusted confirmation or CLI password
+recovery, so guesses paced below the window cooldown cannot continue indefinitely. The shared source and claimed-account admissions
 are separate from this persistent owner/challenge cooldown. Do not reset either
 ledger during a test case to make a later factor phase pass; use the real
 two-replica path and record the expected ledger deltas.

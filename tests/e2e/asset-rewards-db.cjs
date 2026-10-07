@@ -43,8 +43,10 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
+    // Upgrades add owner_mfa."consecutiveFailures" (asserted to be 0 separately).
     const row = withoutClassification && tablename === 'accounting_instruments'
-      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'"
+      : withoutClassification && tablename === 'owner_mfa' ? "to_jsonb(t) - 'consecutiveFailures'" : 'to_jsonb(t)';
     values.push([tablename, await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -136,7 +138,8 @@ async function migrationPreservation() {
       VALUES($1,$2,$3,$4,$5,$6,'prior.csv','draft')`,
       [randomUUID(), owner, accountId, createHash('sha256').update(csvBytes).digest('hex'), csvBytes, csvBytes.length]);
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 16/);
+    assert.match(migrate(predecessor), /Migrations applied: 17/);
+    assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [{ consecutiveFailures: 0 }]);
     assert.equal(await fingerprint(db, [...rewardTables, 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes', 'chain_transaction_classifications', 'chain_transaction_classification_versions', 'migrations'], true), before);
     assert.deepEqual(await db.query('SELECT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
@@ -468,7 +471,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 36/);
+  assert.match(migrate(database), /Migrations applied: 37/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();
