@@ -14,7 +14,10 @@ import SettingsPage from './SettingsPage';
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'EUR' });
+  vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
   // The Add transaction window only has to open here; its form has its own tests.
   vi.spyOn(portfolioAssetsApi, 'listAll').mockReturnValue(new Promise(() => {}));
   vi.spyOn(accountingApi, 'listAccounts').mockReturnValue(new Promise(() => {}));
@@ -78,8 +81,14 @@ describe('Shared page header', () => {
   });
 
   it('follows a main currency saved in Settings at once', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'USD' });
-    vi.spyOn(ownerSettingsApi, 'update').mockResolvedValue({ mainCurrency: 'RUB' });
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    vi.spyOn(ownerSettingsApi, 'update').mockResolvedValue({
+      mainCurrency: 'RUB',
+      dustThresholdUsd: null,
+    });
     renderAt('/preferences', <SettingsPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     await waitFor(() =>

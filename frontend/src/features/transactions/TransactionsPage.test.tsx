@@ -133,11 +133,12 @@ const manual = operation({
   valueUsd: '1000',
   feeUsd: '0',
 });
-const list = (operations: Operation[]): OperationList => ({
+const list = (operations: Operation[], dustThresholdUsd: string | null = null): OperationList => ({
   at: '2026-10-04T12:00:00.000Z',
   quoteCurrency: 'USD',
   needsClassificationCount: operations.filter((item) => item.status === 'needs-classification')
     .length,
+  dustThresholdUsd,
   operations,
 });
 const all = list([outgoing, receipt, transfer, tether, imported, manual]);
@@ -1042,6 +1043,72 @@ describe('classify-chain-transactions (M12)', () => {
     );
     // A retry of one answer reuses its request id, so it is recorded at most once.
     expect(classify.mock.calls[1][2].requestId).toBe(classify.mock.calls[0][2].requestId);
+  });
+});
+
+describe('chain dust threshold (CLS-DUST)', () => {
+  const dust = chainOperation(3, {
+    occurredAt: '2025-06-22T09:00:00.000Z',
+    quantity: '0.00000546',
+    estimatedValueUsd: '0.546',
+    status: 'dust',
+  });
+
+  it('keeps dust out of every view but its own, which says why and links to Settings', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust, receipt, manual], '1'));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.getByRole('button', { name: /^Dust\s*1/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /^Blockchain/ }));
+    expect(bodyRows().map(typeOf)).toEqual(['Incoming']);
+    await user.click(screen.getByRole('button', { name: /^Dust/ }));
+    expect(bodyRows().map(cellTexts)).toEqual([
+      [
+        'Incoming09:00',
+        'BTC',
+        '+0.00000546',
+        '≈ $0.55',
+        'Bitcoin wallet bc1qsy…f3t4',
+        'Dust',
+        'Blockchain',
+      ],
+    ]);
+    expect(
+      screen.getByText(/Incoming wallet transactions worth less than \$1\.00 at the latest price/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Change the threshold in Settings' })).toHaveAttribute(
+      'href',
+      '/preferences',
+    );
+  });
+
+  it('reads the Dust filter from the address and hides the chip while nothing is dust', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([receipt, manual]));
+    const { unmount } = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(screen.queryByRole('button', { name: /^Dust/ })).toBeNull();
+    unmount();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust, receipt], '1'));
+    renderPage('/transactions?status=dust');
+    await waitFor(() => expect(bodyRows().map(typeOf)).toEqual(['Incoming']));
+    expect(screen.getByRole('button', { name: /^Dust/ })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('opens a dust receipt with a note and lets the owner classify or hide it', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([dust], '1'));
+    renderPage('/transactions?status=dust');
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      "Worth less than your dust threshold, so it doesn't ask to be classified. It still counts in your balance.",
+    );
+    expect(within(drawer).getByRole('button', { name: 'Classify' })).toBeInTheDocument();
+    expect(
+      within(drawer).getByRole('button', { name: 'Hide from calculations' }),
+    ).toBeInTheDocument();
   });
 });
 

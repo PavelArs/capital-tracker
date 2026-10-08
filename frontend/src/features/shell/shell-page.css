@@ -224,3 +224,20 @@
     width: 100%;
   }
 }
+
+/* Settings: the dust threshold, a USD amount and its Save button on one line. */
+.shell-dust {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.shell-dust__unit {
+  color: var(--ink-3);
+}
+
+.shell-dust input {
+  width: 8rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

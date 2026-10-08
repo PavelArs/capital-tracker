@@ -752,6 +752,93 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  it('CLS-DUST: an unanswered receipt worth less than the threshold is dust, out of the count', () => {
+    const prices = new Map([
+      ['BTC', { priceUsd: '100000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+    ]);
+    const list = projectOperations(
+      now,
+      sources({
+        dustThresholdUsd: '1',
+        marketPrices: prices,
+        chain: [
+          // 546 sat at 100,000 USD: 0.546 USD.
+          chain(1, { receivedUnits: '546', feeUnits: '0' }),
+          // Exactly 1 USD is not below the threshold.
+          chain(2, { receivedUnits: '1000', feeUnits: '0' }),
+          // What the owner sent always asks, however small.
+          chain(3, { direction: 'out', receivedUnits: '0', sentUnits: '546', feeUnits: '100' }),
+          // Once answered, the answer stands.
+          chain(4, {
+            receivedUnits: '546',
+            classification: {
+              version: 1,
+              status: 'classified',
+              type: 'other',
+              details: { type: 'other' },
+              comment: null,
+              produced: null,
+            },
+          }),
+          chain(5, {
+            receivedUnits: '546',
+            classification: {
+              version: 2,
+              status: 'hidden',
+              type: null,
+              details: null,
+              comment: null,
+              produced: null,
+            },
+          }),
+          // Sent back to "Needs classification" by hand: below the threshold it is dust again.
+          chain(6, {
+            receivedUnits: '546',
+            classification: {
+              version: 2,
+              status: 'unclassified',
+              type: null,
+              details: null,
+              comment: null,
+              produced: null,
+            },
+          }),
+        ],
+      }),
+    );
+    const status = (n: number) =>
+      list.operations.find((operation) => operation.chain?.txid === txid(n))?.status;
+    expect(list.dustThresholdUsd).toBe('1');
+    expect(status(1)).toBe('dust');
+    expect(status(2)).toBe('needs-classification');
+    expect(status(3)).toBe('needs-classification');
+    expect(status(4)).toBe('recorded');
+    expect(status(5)).toBe('hidden');
+    expect(status(6)).toBe('dust');
+    expect(list.needsClassificationCount).toBe(2);
+    // The dust row keeps every raw fact and its estimate; only its status differs.
+    expect(list.operations.find((operation) => operation.chain?.txid === txid(1))).toMatchObject({
+      kind: 'chain',
+      type: null,
+      direction: 'in',
+      quantity: '0.00000546',
+      estimatedValueUsd: '0.546',
+      classification: null,
+    });
+  });
+
+  it('CLS-DUST: without a threshold or a price nothing is dust', () => {
+    const off = projectOperations(now, sources({ chain: [chain(1, { receivedUnits: '1' })] }));
+    expect(off.dustThresholdUsd).toBeNull();
+    expect(off.operations[0].status).toBe('needs-classification');
+    const unpriced = projectOperations(
+      now,
+      sources({ dustThresholdUsd: '1', chain: [chain(1, { receivedUnits: '1' })] }),
+    );
+    expect(unpriced.operations[0].status).toBe('needs-classification');
+    expect(unpriced.needsClassificationCount).toBe(1);
+  });
+
   it('CLS-OTHER: an outgoing Other is recorded with no entry, no value and out of the count', () => {
     const list = projectOperations(
       now,
@@ -909,6 +996,7 @@ describe('list-all-operations projection', () => {
       at: now.toISOString(),
       quoteCurrency: 'USD',
       needsClassificationCount: 0,
+      dustThresholdUsd: null,
       operations: [],
     });
   });

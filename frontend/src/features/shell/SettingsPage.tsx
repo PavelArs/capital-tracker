@@ -1,10 +1,11 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { announceClassificationChange } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { useTheme } from '@contexts/ThemeContext';
-import { useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { rateText } from '../portfolio/format';
+import { money, rateText } from '../portfolio/format';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
 import './shell-page.css';
@@ -129,6 +130,122 @@ function MainCurrency() {
   );
 }
 
+const dustAmount = /^[0-9]{1,7}(\.[0-9]{1,8})?$/;
+
+/** The dust threshold as typed: empty turns it off; else a positive USD amount up to 1,000,000. */
+function parseDust(text: string): string | null | undefined {
+  const value = text.trim();
+  if (value === '') return null;
+  if (!dustAmount.test(value) || Number(value) <= 0 || Number(value) > 1_000_000) return undefined;
+  return value;
+}
+
+/** CLS-DUST: incoming wallet transactions worth less than this skip "Needs classification". */
+function DustThreshold() {
+  const [saved, setSaved] = useState<string | null | undefined>(undefined);
+  const [text, setText] = useState('');
+  const [state, setState] = useState<
+    'loading' | 'ready' | 'saving' | 'saved' | 'invalid' | 'failed' | 'save-failed'
+  >('loading');
+  useEffect(() => {
+    let active = true;
+    ownerSettingsApi
+      .get()
+      .then((settings) => {
+        if (!active) return;
+        setSaved(settings.dustThresholdUsd);
+        setText(settings.dustThresholdUsd ?? '');
+        setState('ready');
+      })
+      .catch(() => active && setState('failed'));
+    return () => {
+      active = false;
+    };
+  }, []);
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    const value = parseDust(text);
+    if (value === undefined) {
+      setState('invalid');
+      return;
+    }
+    setState('saving');
+    try {
+      const settings = await ownerSettingsApi.update({ dustThresholdUsd: value });
+      setSaved(settings.dustThresholdUsd);
+      setText(settings.dustThresholdUsd ?? '');
+      setState('saved');
+      // The sidebar count and the dashboard re-read what needs classification.
+      announceClassificationChange();
+    } catch {
+      setState('save-failed');
+    }
+  };
+  const hint = {
+    loading: 'Loading…',
+    ready:
+      saved === null
+        ? 'Off: every incoming wallet transaction asks to be classified.'
+        : `Incoming wallet transactions worth less than ${money(saved ?? null, 'USD')} at the latest price don't ask to be classified.`,
+    saving: 'Saving…',
+    saved:
+      saved === null
+        ? 'Saved. Every incoming wallet transaction asks to be classified again.'
+        : `Saved. Smaller incoming transactions are under Transactions → Dust.`,
+    invalid:
+      'Enter an amount in USD above 0 and up to 1,000,000, or leave it empty to turn it off.',
+    failed: 'Could not load the dust threshold; try again later.',
+    'save-failed': 'Could not save the dust threshold; nothing changed.',
+  }[state];
+  const alert = state === 'invalid' || state === 'failed' || state === 'save-failed';
+  return (
+    <form className="shell-setting" onSubmit={(event) => void save(event)} noValidate>
+      <div className="shell-setting__text">
+        <label htmlFor="settings-dust" className="shell-setting__label">
+          Dust threshold
+        </label>
+        <p
+          id="settings-dust-hint"
+          className="shell-setting__hint"
+          role={alert ? 'alert' : undefined}
+        >
+          {hint}
+        </p>
+        <p className="shell-setting__hint">
+          They still count in your balances, so wallets stay in step with the blockchain.
+        </p>
+      </div>
+      <div className="shell-dust">
+        <span className="shell-dust__unit" aria-hidden="true">
+          $
+        </span>
+        <input
+          id="settings-dust"
+          type="text"
+          inputMode="decimal"
+          placeholder="Off"
+          autoComplete="off"
+          value={text}
+          disabled={saved === undefined || state === 'saving'}
+          aria-invalid={state === 'invalid' || undefined}
+          aria-describedby="settings-dust-hint"
+          onChange={(event) => {
+            setText(event.target.value);
+            if (state !== 'saving') setState('ready');
+          }}
+        />
+        <button
+          type="submit"
+          className="shell-button shell-button--secondary"
+          disabled={saved === undefined || state === 'saving' || text.trim() === (saved ?? '')}
+        >
+          Save
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   return (
@@ -169,6 +286,10 @@ export default function SettingsPage() {
             </div>
           </div>
           <MainCurrency />
+        </section>
+        <section className="shell-card" aria-labelledby="settings-wallets">
+          <h2 id="settings-wallets">Wallets</h2>
+          <DustThreshold />
         </section>
         <p className="shell-note">
           Security, sessions and export arrive in later steps. Language and the old display rates
