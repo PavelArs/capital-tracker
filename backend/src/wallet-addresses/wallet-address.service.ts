@@ -6,6 +6,7 @@ import { parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { chainAsset, formatUnits, type Network, networkAssets } from './chain-assets';
+import type { StakeState } from './solana-stake';
 import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
 import { WalletSyncService } from './wallet-sync.service';
 
@@ -25,11 +26,20 @@ interface AddressRow {
   transactionCount: number;
   /** Received minus sent per asset; null names the network's own coin. */
   balances: { asset: string | null; units: string }[];
+  /** Solana: the wallet's stake accounts, what each holds by its history and its rewards. */
+  stake: StakeRow[];
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
         Record<'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt', string | null>)
     | null;
+}
+interface StakeRow {
+  account: string;
+  validator: string | null;
+  state: StakeState | null;
+  units: string;
+  rewardUnits: string;
 }
 interface TransactionRow {
   txid: string;
@@ -44,8 +54,10 @@ interface TransactionRow {
 }
 // Each stored leg's received minus sent units is its whole effect on the address in its asset,
 // the network fee included, so their sum per asset over the complete history is the chain
-// balance. The wallet's background source (PR-SYN-1) comes along; null until its first pass.
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances,
+// balance. A Solana wallet's stake accounts are part of it (SOL-STAKE-BALANCE): what moved
+// into them stays the wallet's SOL, and so do their rewards. The wallet's background source
+// (PR-SYN-1) comes along; null until its first pass.
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -55,8 +67,21 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances,
     FROM wallet_address_transactions x WHERE x."addressId" = a.id) t
   CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
       'units', y.units::text)), '[]'::json) AS balances
-    FROM (SELECT x.asset, sum(x."receivedUnits" - x."sentUnits") AS units
-      FROM wallet_address_transactions x WHERE x."addressId" = a.id GROUP BY x.asset) y) b
+    FROM (SELECT z.asset, sum(z.units) AS units FROM (
+        SELECT x.asset, x."receivedUnits" - x."sentUnits" AS units
+          FROM wallet_address_transactions x WHERE x."addressId" = a.id
+        UNION ALL SELECT NULL, m.units FROM wallet_stake_moves m WHERE m."addressId" = a.id
+        UNION ALL SELECT NULL, r.units FROM wallet_stake_rewards r WHERE r."addressId" = a.id
+      ) z GROUP BY z.asset) y) b
+  CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('account', w.account,
+      'validator', w.validator, 'state', w.state, 'units', (w.moved + w.rewarded)::text,
+      'rewardUnits', w.rewarded::text) ORDER BY w."discoveredAt", w.account), '[]'::json) AS stake
+    FROM (SELECT sa.account, sa.validator, sa.state, sa."discoveredAt",
+        coalesce((SELECT sum(m.units) FROM wallet_stake_moves m
+          WHERE m."addressId" = sa."addressId" AND m.account = sa.account), 0) AS moved,
+        coalesce((SELECT sum(r.units) FROM wallet_stake_rewards r
+          WHERE r."addressId" = sa."addressId" AND r.account = sa.account), 0) AS rewarded
+      FROM wallet_stake_accounts sa WHERE sa."addressId" = a.id) w) k
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -85,9 +110,35 @@ function balancesOf(row: AddressRow) {
   });
 }
 
+/**
+ * SOL-STAKE-BALANCE: the SOL in the wallet's stake accounts, part of its balance above. A
+ * closed account that holds nothing is history only and is left out.
+ */
+function stakingOf(row: AddressRow) {
+  const sol = chainAsset(row.network, null);
+  const accounts = row.stake
+    .filter((item) => item.state !== 'closed' || BigInt(item.units) !== 0n)
+    .map((item) => ({
+      account: item.account,
+      validator: item.validator,
+      // Null until the chain was read after the account was found.
+      state: item.state,
+      quantity: formatUnits(BigInt(item.units), sol),
+      rewards: formatUnits(BigInt(item.rewardUnits), sol),
+    }));
+  if (accounts.length === 0) return null;
+  const total = (key: 'units' | 'rewardUnits') =>
+    formatUnits(
+      row.stake.reduce((sum, item) => sum + BigInt(item[key]), 0n),
+      sol,
+    );
+  return { symbol: sol.symbol, quantity: total('units'), rewards: total('rewardUnits'), accounts };
+}
+
 function summary(row: AddressRow, now = new Date()) {
   const state = historyState(row);
   const balances = state === 'complete' ? balancesOf(row) : null;
+  const staking = state === 'complete' ? stakingOf(row) : null;
   const source = sourceRow(row.source);
   const status = source ? presentSource(source, now) : null;
   return {
@@ -101,6 +152,7 @@ function summary(row: AddressRow, now = new Date()) {
     // SYNC-RECONCILE: known only once the whole history is stored; never a partial sum.
     chainBalance: balances?.[0].quantity ?? null,
     balances,
+    staking,
     sync: {
       state,
       completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,

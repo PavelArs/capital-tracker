@@ -9,6 +9,8 @@ export const typeLabels: Record<OperationType, string> = {
   swap: 'Swap',
   reward: 'Reward',
   'staking-reward': 'Staking reward',
+  stake: 'Stake',
+  unstake: 'Unstake',
   airdrop: 'Airdrop',
   'opening-balance': 'Opening balance',
   deposit: 'Deposit',

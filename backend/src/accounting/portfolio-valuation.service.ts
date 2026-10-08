@@ -104,12 +104,23 @@ interface ChainMoveRow {
   blockTime: Date;
   receivedUnits: string;
   sentUnits: string;
+  /** SOL-STAKE-MOVE: the part of the leg that went into (or came from) own stake accounts. */
+  stakeUnits: string;
 }
+
+/** A signed amount as a leg: positive arrives, negative leaves. */
+const signedLeg = (units: bigint) => ({
+  receivedUnits: (units > 0n ? units : 0n).toString(),
+  sentUnits: (units < 0n ? -units : 0n).toString(),
+});
 
 /**
  * D1, CLS-PROVISIONAL: the chain movements that count before anyone answers them. Hidden ones
  * and answers that produced an entry are out; an outgoing "Other" produced none and stays in.
- * A coin the owner has no asset for yet is left out until one exists.
+ * A coin the owner has no asset for yet is left out until one exists. SOL-STAKE-MOVE: SOL that
+ * went into the wallet's own stake accounts never left it, so only the rest of its leg (the
+ * fee) moves; a stake change without a leg of its own and every staking reward count as they
+ * are (SOL-STAKE-REWARD: received without a purchase price, not a deposit).
  */
 export async function readChainMoves(
   manager: EntityManager,
@@ -118,7 +129,9 @@ export async function readChainMoves(
   const rows: ChainMoveRow[] = await manager.query(
     `SELECT w."accountId", w.network, t.asset, t."blockTime",
         t."receivedUnits"::text AS "receivedUnits",
-        t."sentUnits"::text AS "sentUnits"
+        t."sentUnits"::text AS "sentUnits",
+        coalesce((SELECT sum(m.units) FROM wallet_stake_moves m WHERE t.asset IS NULL
+          AND m."addressId"=t."addressId" AND m.signature=t.txid), 0)::text AS "stakeUnits"
       FROM wallet_addresses w
       JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
       LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
@@ -132,6 +145,23 @@ export async function readChainMoves(
       ORDER BY t."blockTime", t.txid, w.id`,
     [owner],
   );
+  const stake: (Omit<ChainMoveRow, 'receivedUnits' | 'sentUnits'> & { units: string })[] =
+    await manager.query(
+      `SELECT w."accountId", w.network, NULL AS asset, m."blockTime", m.units::text AS units,
+          '0' AS "stakeUnits"
+        FROM wallet_addresses w
+        JOIN wallet_stake_moves m ON m."ownerId"=w."ownerId" AND m."addressId"=w.id
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM wallet_address_transactions t
+            WHERE t."addressId"=m."addressId" AND t.txid=m.signature)
+      UNION ALL
+      SELECT w."accountId", w.network, NULL, r."observedAt", r.units::text, '0'
+        FROM wallet_addresses w
+        JOIN wallet_stake_rewards r ON r."ownerId"=w."ownerId" AND r."addressId"=w.id
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL`,
+      [owner],
+    );
+  for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
   const coins = new Map<string, string | null>();
   const moves = new Map<string, ChainMove[]>();
   for (const row of rows) {
@@ -143,7 +173,8 @@ export async function readChainMoves(
       );
     const instrumentId = coins.get(key);
     const occurredAt = row.blockTime.toISOString();
-    const { inbound, quantity } = legMovement({ ...row, blockTime: occurredAt });
+    const net = BigInt(row.receivedUnits) - BigInt(row.sentUnits) + BigInt(row.stakeUnits);
+    const { inbound, quantity } = legMovement({ ...row, ...signedLeg(net), blockTime: occurredAt });
     if (!instrumentId || quantity === '0') continue;
     const list = moves.get(row.accountId) ?? [];
     list.push({ instrumentId, occurredAt, inbound, quantity });

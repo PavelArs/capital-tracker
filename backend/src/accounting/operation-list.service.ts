@@ -112,6 +112,7 @@ interface ChainRow {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  stakeUnits: string;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -283,6 +284,8 @@ export class OperationListService {
             a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
+            coalesce((SELECT sum(m.units) FROM wallet_stake_moves m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.signature=t.txid), 0)::text AS "stakeUnits",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
@@ -411,6 +414,7 @@ export class OperationListService {
             receivedUnits: row.receivedUnits,
             sentUnits: row.sentUnits,
             feeUnits: row.feeUnits,
+            stakeUnits: row.stakeUnits,
             classification:
               row.classificationVersion === null || row.classificationStatus === null
                 ? null

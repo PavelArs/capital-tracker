@@ -3,7 +3,7 @@ import type {
   AssetValuation,
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
-import type { WalletAddress } from '@api/wallet-addresses.api';
+import type { StakeState, Staking, WalletAddress } from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { networkOf, networks } from './networks';
@@ -58,18 +58,113 @@ function chainPieces(address: WalletAddress): string[] {
     .map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
 }
 
+/** SOL-STAKE-BALANCE: "14.5 SOL staked", the part of the balance above held in stake accounts. */
+function stakedPiece(address: WalletAddress): string | null {
+  const staking = address.staking;
+  if (!staking || Number(staking.quantity) === 0) return null;
+  return `${quantity(staking.quantity)} ${staking.symbol} staked`;
+}
+
+const stakeStates: Record<
+  StakeState,
+  { label: string; tone: 'pos' | 'info' | 'warn' | 'neutral' }
+> = {
+  activating: { label: 'Activating', tone: 'info' },
+  active: { label: 'Active', tone: 'pos' },
+  deactivating: { label: 'Unstaking', tone: 'warn' },
+  inactive: { label: 'Not staked', tone: 'neutral' },
+  closed: { label: 'Closed', tone: 'neutral' },
+};
+
+/**
+ * SOL-STAKE-BALANCE: a Solana address's stake accounts in its drawer. What each holds is already
+ * in the balance above; "available" is the rest.
+ */
+export function StakingSection({ address, staking }: { address: WalletAddress; staking: Staking }) {
+  const own = chainBalances(address)?.find((balance) => balance.symbol === staking.symbol);
+  const available = own ? sum([own.quantity, `-${staking.quantity}`]) : null;
+  const symbol = staking.symbol;
+  return (
+    <section aria-labelledby="address-staking">
+      <h3 id="address-staking" className="transactions-section">
+        Staking
+      </h3>
+      <dl className="transactions-facts">
+        {available !== null && (
+          <div>
+            <dt>Available</dt>
+            <dd className="wallets-num">
+              {quantity(available)} {symbol}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Staked</dt>
+          <dd className="wallets-num">
+            {quantity(staking.quantity)} {symbol}
+          </dd>
+        </div>
+        <div>
+          <dt>Rewards so far</dt>
+          <dd className="wallets-num">
+            {quantity(staking.rewards)} {symbol}
+          </dd>
+        </div>
+      </dl>
+      <ul className="wallets-stake" aria-label="Stake accounts">
+        {staking.accounts.map((item) => {
+          const state = item.state ? stakeStates[item.state] : null;
+          return (
+            <li key={item.account}>
+              <span className="wallets-stake__main">
+                <span className="wallets-mono">{shortAddress(item.account)}</span>
+                <span className="wallets-muted">
+                  {item.validator
+                    ? `Validator ${shortAddress(item.validator)}`
+                    : 'Not delegated to a validator'}
+                </span>
+              </span>
+              <span className="wallets-stake__side">
+                <span className="wallets-num">
+                  {quantity(item.quantity)} {symbol}
+                </span>
+                {state ? (
+                  <span className={`wallets-badge wallets-badge--${state.tone}`}>
+                    {state.label}
+                  </span>
+                ) : (
+                  <span className="wallets-muted">Checked on the next sync</span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="wallets-muted wallets-stake__note">
+        Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and moving
+        it into a stake account or back is not a sale. Rewards count as received coins without a
+        purchase price, not as deposits.
+      </p>
+    </section>
+  );
+}
+
 /** "1.5 ETH · 250 USDC". */
 export const chainAmounts = (address: WalletAddress): string => chainPieces(address).join(' · ');
 
 // Each coin is one unbreakable piece: a row wraps between coins, a phone stacks them.
+// Staked SOL is already in the SOL amount; a muted line under it says how much.
 function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
   const pieces = chainPieces(address);
+  const staked = stakedPiece(address);
+  const note = staked && <span className="wallets-muted wallets-amounts__staked">{staked}</span>;
   if (stacked)
     return (
       <span className="transactions-item__amount wallets-stack">
         {pieces.map((piece) => (
           <span key={piece}>{piece}</span>
         ))}
+        {note}
       </span>
     );
   return (
@@ -81,6 +176,7 @@ function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: b
           {index < pieces.length - 1 && ' ·'}
         </span>,
       ])}
+      {note}
     </span>
   );
 }

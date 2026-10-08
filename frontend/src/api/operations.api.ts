@@ -10,6 +10,8 @@ export type OperationType =
   | 'swap'
   | 'reward'
   | 'staking-reward'
+  | 'stake'
+  | 'unstake'
   | 'airdrop'
   | 'opening-balance'
   | 'deposit'

@@ -309,7 +309,7 @@ export class ChainClassificationService {
     return { linked };
   }
 
-  /** CLS-COUNT: chain transactions nobody has classified or hidden. */
+  /** CLS-COUNT: chain transactions nobody has classified or hidden; a stake move needs none. */
   async needsClassificationCount(ownerId: string): Promise<{ count: number }> {
     const owner = parseUuid(ownerId);
     const [{ count }]: { count: number }[] = await this.source.query(
@@ -318,7 +318,9 @@ export class ChainClassificationService {
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
         LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
           AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')`,
+        WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
+          AND NOT EXISTS (SELECT 1 FROM wallet_stake_moves m WHERE t.asset IS NULL
+            AND m."addressId"=t."addressId" AND m.signature=t.txid)`,
       [owner],
     );
     return { count };
