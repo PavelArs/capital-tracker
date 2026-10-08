@@ -11,3 +11,5 @@ export { cryptoApi } from './crypto.api';
 export type { ConversionResult } from './currencies.api';
 export { currenciesApi } from './currencies.api';
 export { metricsApi } from './metrics.api';
+export type { ResetLinkState } from './password-reset.api';
+export { passwordResetApi } from './password-reset.api';

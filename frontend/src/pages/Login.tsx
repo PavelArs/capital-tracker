@@ -3,7 +3,7 @@ import type { FactorCredentials } from '@shared/types';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import './Auth.css';
 
 export default function Login() {
@@ -154,7 +154,12 @@ export default function Login() {
             </div>
 
             <div className="form-group">
-              <label htmlFor="password">{t('common.password')}</label>
+              <div className="form-group__label-row">
+                <label htmlFor="password">{t('common.password')}</label>
+                <Link className="auth-inline-link" to="/password-reset">
+                  {t('auth.forgotPassword')}
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"

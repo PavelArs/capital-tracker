@@ -44,6 +44,7 @@
     "tooManyAttempts": "Too many attempts. Try again later.",
     "sessionExpired": "Your session has changed. Please try again.",
     "logoutFailed": "Unable to log out. Please try again.",
+    "forgotPassword": "Forgot password?",
     "ownerAccessGuidance": "The server operator provisions and recovers owner access."
   },
   "navigation": {

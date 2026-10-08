@@ -73,6 +73,15 @@ describe('Russian owner second-factor login', () => {
     vi.restoreAllMocks();
   });
 
+  it('links the password step to the emailed reset', async () => {
+    await renderLogin();
+
+    expect(screen.getByRole('link', { name: 'Забыли пароль?' })).toHaveAttribute(
+      'href',
+      '/password-reset',
+    );
+  });
+
   it('keeps password success anonymous on the factor step without opening the portfolio', async () => {
     const user = await renderLogin();
     await submitPassword(user);

@@ -5,6 +5,8 @@ import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
+import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
+import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
 import AssetPage from '@features/portfolio/AssetPage';
 import PortfolioPage from '@features/portfolio/PortfolioPage';
 import SettingsPage from '@features/shell/SettingsPage';
@@ -50,6 +52,8 @@ function AppRoutes() {
     <Routes>
       {/* Public routes */}
       <Route path="/login" element={<Login />} />
+      <Route path="/password-reset" element={<ForgotPasswordPage />} />
+      <Route path="/password-reset/new" element={<ResetPasswordPage />} />
 
       {/* Protected routes */}
       <Route

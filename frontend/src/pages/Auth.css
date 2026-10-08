@@ -114,3 +114,21 @@
   padding-top: 1rem;
   border-top: 1px solid var(--border-color);
 }
+
+.auth-card .form-group__label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.375rem;
+}
+
+.auth-card .form-group__label-row label {
+  margin-bottom: 0;
+}
+
+.auth-card .auth-inline-link {
+  color: var(--primary-color-dark);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
