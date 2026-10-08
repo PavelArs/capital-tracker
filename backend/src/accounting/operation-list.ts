@@ -1,6 +1,7 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
+import { isDust } from './chain-dust';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 import type { TradePurpose } from './trade-purpose';
@@ -154,6 +155,8 @@ export interface OperationSources {
   chain: readonly ChainOperationInput[];
   /** Latest stored USD price by upper-case ticker. */
   marketPrices: ReadonlyMap<string, StoredMarketPrice>;
+  /** CLS-DUST: the owner's dust threshold in USD; absent or null: off. */
+  dustThresholdUsd?: string | null;
 }
 
 export type OperationType =
@@ -209,8 +212,12 @@ export interface Operation {
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
   } | null;
-  /** Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). */
-  status: 'recorded' | 'needs-classification' | 'hidden';
+  /**
+   * Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). Dust: an
+   * unanswered receipt worth less than the dust threshold; it counts like any unanswered one
+   * but does not ask to be classified (CLS-DUST).
+   */
+  status: 'recorded' | 'needs-classification' | 'hidden' | 'dust';
   source: 'manual' | 'csv' | 'chain';
   /** Chain only: the owner's current answer, to change it (M12); null before the first. */
   classification: {
@@ -242,6 +249,8 @@ export interface OperationList {
   at: string;
   quoteCurrency: AccountingCurrency;
   needsClassificationCount: number;
+  /** CLS-DUST: the threshold the statuses were read with; null: off. */
+  dustThresholdUsd: string | null;
   operations: Operation[];
 }
 
@@ -326,7 +335,7 @@ function amount(units: bigint, network: Network, token: string | null): string {
 const netUnits = (row: ChainOperationInput) => BigInt(row.receivedUnits) - BigInt(row.sentUnits);
 
 /** Quantity at the latest stored price, an estimate. */
-function estimate(quantity: string, price: StoredMarketPrice | undefined): string | null {
+export function estimate(quantity: string, price: StoredMarketPrice | undefined): string | null {
   return price
     ? formatProduct(canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(price.priceUsd))
     : null;
@@ -354,6 +363,7 @@ function chainOperation(
   prices: OperationSources['marketPrices'],
   produced: Projected | undefined,
   other: ChainOperationInput | null,
+  dustThresholdUsd: string | null,
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
@@ -424,6 +434,12 @@ function chainOperation(
             },
     };
   }
+  // CLS-DUST: nobody has answered it and it is worth too little to ask about.
+  if (
+    (answer === null || answer.status === 'unclassified') &&
+    isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd)
+  )
+    return { ...operation, status: 'dust' };
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
     return { ...operation, type: 'other', status: 'recorded' };
@@ -469,6 +485,7 @@ export function projectOperations(
   fx: FxConverter = inUsdOnly(),
 ): OperationList {
   const entries: { operation: Projected; order: number }[] = [];
+  const dustThresholdUsd = sources.dustThresholdUsd ?? null;
   // Entries a chain classification produced are shown on their chain row, not twice (M12).
   const producedIds = new Set(
     sources.chain.flatMap((row) => {
@@ -624,7 +641,7 @@ export function projectOperations(
       netUnits(row) > 0n
     )
       continue;
-    const operation = chainOperation(row, sources.marketPrices, entry, other);
+    const operation = chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd);
     entries.push({ operation, order: operation.orderWithinTimestamp });
   }
 
@@ -642,6 +659,7 @@ export function projectOperations(
     needsClassificationCount: operations.filter(
       (operation) => operation.status === 'needs-classification',
     ).length,
+    dustThresholdUsd,
     operations,
   };
 }

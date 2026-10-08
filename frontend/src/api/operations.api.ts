@@ -73,8 +73,11 @@ export interface Operation {
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
   } | null;
-  /** Hidden: a blockchain transaction left out of every calculation (M12). */
-  status: 'recorded' | 'needs-classification' | 'hidden';
+  /**
+   * Hidden: a blockchain transaction left out of every calculation (M12). Dust: an unanswered
+   * receipt worth less than the dust threshold; it counts but does not ask to be classified.
+   */
+  status: 'recorded' | 'needs-classification' | 'hidden' | 'dust';
   source: 'manual' | 'csv' | 'chain';
   /** Blockchain only: the owner's current answer, to change it; null before the first. */
   classification: {
@@ -107,6 +110,8 @@ export interface OperationList {
   at: string;
   quoteCurrency: AccountingCurrency;
   needsClassificationCount: number;
+  /** The dust threshold in USD the statuses were read with; null: off. */
+  dustThresholdUsd: string | null;
   operations: Operation[];
 }
 

@@ -241,6 +241,7 @@ beforeEach(() => {
     at: '2026-10-05T12:00:00.000Z',
     quoteCurrency: 'USD',
     needsClassificationCount: 0,
+    dustThresholdUsd: null,
     operations: [],
   });
   vi.spyOn(assetHistoryApi, 'get').mockImplementation(async (instrumentId) =>
@@ -962,6 +963,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       at: '2026-10-05T12:00:00.000Z',
       quoteCurrency: 'USD',
       needsClassificationCount: 0,
+      dustThresholdUsd: null,
       operations: [operation(20, { quantity: '0.2', occurredAt: '2026-09-20T09:00:00.000Z' })],
     });
     const history = vi
@@ -1063,6 +1065,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       at: '2026-10-05T12:00:00.000Z',
       quoteCurrency: 'USD',
       needsClassificationCount: 1,
+      dustThresholdUsd: null,
       operations: [...buys, unclassified, ether],
     });
     renderAt(`/portfolio/${bitcoin.instrumentId}`);
@@ -1088,6 +1091,7 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
         at: '2026-10-05T12:00:00.000Z',
         quoteCurrency: 'USD',
         needsClassificationCount: 0,
+        dustThresholdUsd: null,
         operations: [operation(3)],
       });
     vi.mocked(assetHistoryApi.get).mockRejectedValueOnce(httpError(500));

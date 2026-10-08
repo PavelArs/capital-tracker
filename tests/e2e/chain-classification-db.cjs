@@ -434,6 +434,77 @@ async function reclassify(db, s, f, { trust, address }) {
   console.log('PASS CLS-RECLASSIFY/CLS-RESYNC');
 }
 
+async function dust(db, s) {
+  stage = 'CLS-DUST receipts below the threshold leave the count, keep counting, stay unanswered';
+  const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
+  const ownerSettings = new OwnerSettingsService(db);
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-dust@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const hot = await account(s, owner, 'Hot wallet');
+  const address = await wallet(db, owner, hot, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken',$1,100000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+  // 546 sat and 100 sat at 100,000 USD: 0.546 and 0.1 USD; a real receipt; a tiny send.
+  await raw(db, owner, address, 31, 'in', '546', '0', '200', '2026-02-01T08:00:00.000Z');
+  await raw(db, owner, address, 32, 'in', '1000000', '0', '300', '2026-02-02T08:00:00.000Z');
+  await raw(db, owner, address, 33, 'out', '0', '546', '200', '2026-02-03T08:00:00.000Z');
+  await raw(db, owner, address, 34, 'in', '100', '0', '200', '2026-02-04T08:00:00.000Z');
+  const btc = async () =>
+    (await s.portfolio.read(owner, { currency: 'USD' }, now)).assets.find(
+      (asset) => asset.symbol === 'BTC',
+    );
+  const status = async (n) => (await listed(s, owner, n)).status;
+  const before = await btc();
+  const rawBefore = await rawFingerprint(db, address);
+  assert.equal(await count(s, owner), 4, 'No threshold: every unanswered transaction asks');
+  assert.deepEqual(await ownerSettings.read(owner), { mainCurrency: 'USD', dustThresholdUsd: null });
+
+  assert.deepEqual(await ownerSettings.update(owner, { mainCurrency: 'EUR' }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
+  assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: '1.00' }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: '1',
+  });
+  await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '0' }), 400);
+  await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '2000000' }), 400);
+  assert.equal(await count(s, owner), 2, 'The two receipts under 1 USD leave the count');
+  assert.deepEqual(
+    [await status(31), await status(32), await status(33), await status(34)],
+    ['dust', 'needs-classification', 'needs-classification', 'dust'],
+  );
+  const list = await s.operations.read(owner, {}, now);
+  assert.equal(list.dustThresholdUsd, '1');
+  assert.equal(list.needsClassificationCount, 2);
+  assert.deepEqual(await btc(), before, 'Dust still counts in the balance and value');
+  assert.equal(await rawFingerprint(db, address), rawBefore, 'Raw chain rows untouched');
+  assert.deepEqual(
+    await db.query('SELECT txid FROM chain_transaction_classifications WHERE "addressId"=$1', [
+      address,
+    ]),
+    [],
+    'Nothing is answered on the owner\'s behalf',
+  );
+
+  // The owner can still answer a dust receipt; the answer stands over the threshold.
+  const answered = await classify(s, owner, address, 31, {
+    expectedVersion: 0,
+    classification: { type: 'other' },
+  });
+  assert.equal(answered.value.status, 'classified');
+  assert.equal(await status(31), 'recorded');
+
+  // Turned off, the unanswered small receipt asks again.
+  assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: null }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
+  assert.equal(await status(34), 'needs-classification');
+  assert.equal(await count(s, owner), 3);
+  console.log('PASS CLS-DUST');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -469,7 +540,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 40);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 41);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('classification-owner@example.invalid','synthetic-not-a-hash',true),
       ('classification-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
@@ -479,6 +550,7 @@ async function main() {
     await hide(db, s, f, made);
     await reclassify(db, s, f, made);
     await provisional(db, s);
+    await dust(db, s);
     await rejected(() => s.classifications.classify(owner.id, made.address, txid(1), null), 400);
   } finally {
     if (db.isInitialized) await db.destroy();

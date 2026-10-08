@@ -25,14 +25,18 @@ const SHOWN_OPERATIONS = 10;
 
 type OperationsState = OperationList | 'loading' | 'failed';
 
-/** What happened in the account, newest first: its own rows, transfers in and chain rows. */
+/**
+ * What happened in the account, newest first: its own rows, transfers in and chain rows. Dust
+ * stays on the Transactions page under its own filter.
+ */
 export function accountOperations(operations: readonly Operation[], accountId: string) {
   return operations
     .filter(
       (operation) =>
-        operation.account?.id === accountId ||
-        // A blockchain row to classify only suggests its other side (M13).
-        (operation.type === 'transfer' && operation.counterAccount?.id === accountId),
+        operation.status !== 'dust' &&
+        (operation.account?.id === accountId ||
+          // A blockchain row to classify only suggests its other side (M13).
+          (operation.type === 'transfer' && operation.counterAccount?.id === accountId)),
     )
     .sort(
       (left, right) =>
