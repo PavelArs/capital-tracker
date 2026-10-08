@@ -43,7 +43,8 @@ test('SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new
     const sessions = security.getByRole('list', { name: 'Active sessions' });
     await expect(sessions.getByRole('listitem')).toHaveCount(2);
     const current = sessions.getByRole('listitem').filter({ hasText: 'This browser' });
-    await expect(current).toContainText('Chrome on Linux');
+    // The Desktop Chrome device of the Playwright config reports Windows.
+    await expect(current).toContainText('Chrome on Windows');
     const iphone = sessions.getByRole('listitem').filter({ hasText: 'Safari on iPhone' });
     await expect(iphone.getByRole('button', { name: 'Log out Safari on iPhone' })).toBeVisible();
 
