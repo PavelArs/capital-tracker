@@ -80,6 +80,7 @@ async function resetCall(page: Page, path = ''): Promise<Response> {
     (response) =>
       new URL(response.url()).pathname === `/api/auth/password-reset${path}` &&
       response.request().method() === 'POST',
+    { timeout: 20_000 },
   );
 }
 
@@ -174,6 +175,8 @@ test('RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an email
     await expect(otherPage).toHaveURL(`${origin}/login`);
 
     // RESET-REUSE: the used link is refused and nothing changes.
+    // Open the link as a fresh page load: from the same URL a fragment-only change reloads nothing.
+    await page.goto('about:blank');
     const reopened = resetCall(page, '/status');
     await page.goto(link);
     expect(await (await reopened).json()).toEqual({ state: 'invalid' });
@@ -223,9 +226,10 @@ test('RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an email
     expect((await page.context().request.get('/api/auth/me')).status()).toBe(200);
     expect(errors).toEqual([]);
   } finally {
-    await other.close();
-    // Leave the fixture's ordinary credentials ready for the next independent case.
+    // Restore the fixture's ordinary credentials first, so a failure here never locks the
+    // owner out of the next independent cases.
     recoverOwnerPassword(owner.password);
     query('DELETE FROM password_reset_tokens');
+    await other.close();
   }
 });
