@@ -845,4 +845,48 @@ describe('M15: Solana wallets', () => {
     expect(drawer).toHaveTextContent('Tracked assetsSOL, USDT, USDC');
     expect(drawer).toHaveTextContent('Solana public RPC');
   });
+
+  it('SOL-STAKE-BALANCE counts staked SOL in the balance and lists each stake account', async () => {
+    // Synthetic stake and vote account keys.
+    const stakeAccount = 'StakeAccSynthetic8Key8Number8Two11111111111';
+    const validator = 'Vote8Synthetic8Validator8Key8Three11111111';
+    const staked = solWallet({
+      staking: {
+        symbol: 'SOL',
+        quantity: '10.040000000',
+        rewards: '0.040000000',
+        accounts: [
+          {
+            account: stakeAccount,
+            validator,
+            state: 'active',
+            quantity: '10.040000000',
+            rewards: '0.040000000',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked], withSol());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main SOL ${solAddress}` });
+    expect(row).toHaveTextContent('12.5 SOL · 40 USDT10.04 SOL staked');
+    // The records hold 12.5 SOL like the chain, stake included: SOL is not reported as differing.
+    expect(within(trustCard).getByRole('note')).not.toHaveTextContent('SOL');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Solana' });
+    // The headline balance is the whole balance; the Staking section breaks it down.
+    expect(within(drawer).getByText('12.5 SOL · 40 USDT')).toBeInTheDocument();
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available2.46 SOL');
+    expect(staking).toHaveTextContent('Staked10.04 SOL');
+    expect(staking).toHaveTextContent('Rewards so far0.04 SOL');
+    const [item] = within(staking).getAllByRole('listitem');
+    expect(item).toHaveTextContent('StakeAcc…111111');
+    expect(item).toHaveTextContent('Validator Vote8Syn…111111');
+    expect(item).toHaveTextContent('10.04 SOL');
+    expect(item).toHaveTextContent('Active');
+    expect(staking).toHaveTextContent('moving it into a stake account or back is not a sale');
+  });
 });

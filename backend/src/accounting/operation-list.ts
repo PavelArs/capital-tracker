@@ -137,6 +137,11 @@ export interface ChainOperationInput {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  /**
+   * SOL-STAKE-MOVE: how much of the leg went into the wallet's own stake accounts (positive) or
+   * came back from them (negative); absent or "0" for every other leg.
+   */
+  stakeUnits?: string;
   classification?: ChainClassificationInput | null;
 }
 export interface OperationSources {
@@ -158,6 +163,8 @@ export type OperationType =
   | 'swap'
   | 'reward'
   | 'staking-reward'
+  | 'stake'
+  | 'unstake'
   | 'airdrop'
   | 'opening-balance'
   | 'deposit'
@@ -396,6 +403,27 @@ function chainOperation(
     orderWithinTimestamp: 0,
   };
   if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
+  // SOL-STAKE-MOVE: SOL moved into the wallet's own stake account or back stays the owner's;
+  // nothing to classify, only the network fee is a cost.
+  const staked = BigInt(row.stakeUnits ?? '0');
+  if (staked !== 0n && answer?.status !== 'classified') {
+    const moved = amount(staked < 0n ? -staked : staked, network, null);
+    return {
+      ...operation,
+      type: staked > 0n ? 'stake' : 'unstake',
+      direction: 'internal',
+      status: 'recorded',
+      quantity: moved,
+      estimatedValueUsd: estimate(moved, price),
+      fee:
+        BigInt(row.feeUnits) === 0n
+          ? null
+          : {
+              asset: legAsset(network, null),
+              quantity: amount(BigInt(row.feeUnits), network, null),
+            },
+    };
+  }
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
     return { ...operation, type: 'other', status: 'recorded' };

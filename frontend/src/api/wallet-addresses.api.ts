@@ -16,6 +16,27 @@ export interface ChainBalance {
   quantity: string;
 }
 
+export type StakeState = 'activating' | 'active' | 'deactivating' | 'inactive' | 'closed';
+
+/** One stake account of a Solana wallet; its SOL is part of the wallet's balance. */
+export interface StakeAccount {
+  account: string;
+  /** The vote account it delegates to; null when it delegates to none. */
+  validator: string | null;
+  /** Null until the chain was read after the account was found. */
+  state: StakeState | null;
+  quantity: string;
+  rewards: string;
+}
+
+/** SOL in the wallet's stake accounts, already included in its SOL balance. */
+export interface Staking {
+  symbol: string;
+  quantity: string;
+  rewards: string;
+  accounts: StakeAccount[];
+}
+
 export interface WalletAddress {
   id: string;
   network: Network;
@@ -29,6 +50,8 @@ export interface WalletAddress {
   chainBalance: string | null;
   /** Every asset the wallet can hold (ETH or SOL, USDT, USDC); null until a sync completes. */
   balances: ChainBalance[] | null;
+  /** Solana stake accounts; null when there are none or until a sync completes. */
+  staking?: Staking | null;
   sync: {
     /** How much of the history is stored. */
     state: SyncState;

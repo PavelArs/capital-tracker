@@ -130,7 +130,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 38/);
+  assert.match(migrate(database), /Migrations applied: 39/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -159,7 +159,7 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null,
+      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null,
       sync: { state: 'never', completedAt: null, status: null, lastAttemptAt: null, lastSuccessAt: null, nextRunAt: null, errorMessage: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');

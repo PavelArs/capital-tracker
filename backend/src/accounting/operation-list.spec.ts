@@ -259,6 +259,86 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  it('SOL-STAKE-MOVE: SOL moved into an own stake account or back lists as Stake or Unstake', () => {
+    const solanaWallet = {
+      id: id(22),
+      network: 'solana' as const,
+      address: 'So1anaSyntheticWa11etAddress111111111111111',
+      label: null,
+    };
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          // 10 SOL into a stake account plus the 0.000005 SOL fee.
+          chain(4, {
+            wallet: solanaWallet,
+            account: trust,
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '10000005000',
+            feeUnits: '5000',
+            stakeUnits: '10000000000',
+          }),
+          // 10.04 SOL back from it, the fee paid out of what arrived.
+          chain(5, {
+            wallet: solanaWallet,
+            account: trust,
+            direction: 'in',
+            receivedUnits: '10039995000',
+            sentUnits: '0',
+            feeUnits: '5000',
+            stakeUnits: '-10040000000',
+            blockTime: '2025-07-20T08:00:00.000Z',
+          }),
+          // An answer the owner gave before stays theirs.
+          chain(6, {
+            wallet: solanaWallet,
+            account: trust,
+            direction: 'out',
+            receivedUnits: '0',
+            sentUnits: '1000005000',
+            feeUnits: '5000',
+            stakeUnits: '1000000000',
+            blockTime: '2025-08-20T08:00:00.000Z',
+            classification: {
+              version: 1,
+              status: 'hidden',
+              type: null,
+              details: null,
+              comment: null,
+              produced: null,
+            },
+          }),
+        ],
+        marketPrices: new Map([
+          ['SOL', { priceUsd: '150', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+        ]),
+      }),
+    );
+    expect(list.needsClassificationCount).toBe(0);
+    const [hidden, unstake, stake] = list.operations;
+    expect(stake).toMatchObject({
+      type: 'stake',
+      direction: 'internal',
+      status: 'recorded',
+      asset: { symbol: 'SOL' },
+      quantity: '10',
+      estimatedValueUsd: '1500',
+      fee: { asset: { symbol: 'SOL' }, quantity: '0.000005' },
+      account: trust,
+      chain: { direction: 'out' },
+    });
+    expect(unstake).toMatchObject({
+      type: 'unstake',
+      direction: 'internal',
+      status: 'recorded',
+      quantity: '10.04',
+      fee: { asset: { symbol: 'SOL' }, quantity: '0.000005' },
+    });
+    expect(hidden).toMatchObject({ type: null, status: 'hidden' });
+  });
+
   it('OPS-STATUS: a chain transaction without a stored price has no value, never zero', () => {
     const list = projectOperations(
       now,

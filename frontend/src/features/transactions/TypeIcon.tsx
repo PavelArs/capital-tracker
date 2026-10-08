@@ -55,6 +55,8 @@ function glyph(operation: Operation): Glyph {
       return operation.type;
     case 'transfer':
     case 'swap':
+    case 'stake':
+    case 'unstake':
       return 'move';
     case 'reward':
     case 'staking-reward':

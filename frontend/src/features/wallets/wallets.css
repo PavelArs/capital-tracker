@@ -182,6 +182,12 @@ a.wallets-asset:hover {
   overflow-wrap: anywhere;
 }
 
+/* SOL-STAKE-BALANCE: "14.5 SOL staked" on its own line under the balance it is part of. */
+.wallets-amounts__staked {
+  display: block;
+  font-size: var(--fs-xs);
+}
+
 button.wallets-source__open {
   cursor: pointer;
 }
@@ -517,4 +523,40 @@ button.wallets-source__open:focus-visible {
 .wallets-stack {
   display: grid;
   justify-items: end;
+}
+
+/* SOL-STAKE-BALANCE: stake accounts in a Solana address's drawer, two lines each at any width. */
+.wallets-stake {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-stake li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+
+.wallets-stake__main,
+.wallets-stake__side {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wallets-stake__side {
+  justify-items: end;
+}
+
+.wallets-stake__note {
+  margin: 10px 0 0;
 }

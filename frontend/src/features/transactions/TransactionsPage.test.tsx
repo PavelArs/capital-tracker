@@ -1131,6 +1131,34 @@ describe('link-own-transfers (M13)', () => {
     expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
   });
 
+  it('SOL-STAKE-MOVE: SOL moved into an own stake account needs no classification', async () => {
+    const sol = { instrumentId: null, symbol: 'SOL', name: 'Solana' };
+    const staked = chainOperation(9, {
+      type: 'stake',
+      direction: 'internal',
+      status: 'recorded',
+      asset: sol,
+      account: bybit,
+      quantity: '10',
+      estimatedValueUsd: '1500',
+      fee: { asset: sol, quantity: '0.000005' },
+      chain: { txid: txid(9), blockHeight: 300000009, priceObservedAt: null, direction: 'out' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([staked]));
+    const { drawer } = await openRow(0, 'Stake · SOL');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price. Only the network fee is a cost.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Classify' })).toBeNull();
+    expect(within(drawer).queryByRole('button', { name: 'Change classification' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Hide from calculations' })).toBeEnabled();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(
+      within(facts).getByText('Network fee', { exact: true }).nextElementSibling,
+    ).toHaveTextContent('0.000005 SOL');
+    expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
+  });
+
   it('XFER-AUTO: the owner can still reclassify an automatic transfer', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
     const { user, drawer } = await openRow(0, 'Transfer · BTC');

@@ -47,8 +47,10 @@ let ethereum = initialEthereum();
 // Synthetic Solana mainnet JSON-RPC (track-solana-wallets): the finalized slot and raw
 // getTransaction results exactly as the probe posts them. Signatures and token accounts are
 // derived from those transactions as the chain would: an address's signatures are the
-// transactions naming it, a wallet's token accounts are those its token balances name.
-const initialSolana = () => ({ slot: 300000100, transactions: new Map(), fault: null, requests: 0 });
+// transactions naming it, a wallet's token accounts are those its token balances name. Stake
+// accounts (track-solana-stake) answer getMultipleAccounts with the "jsonParsed" value posted
+// for them; an account never posted, or posted as null, does not exist.
+const initialSolana = () => ({ slot: 300000100, epoch: 800, stakes: new Map(), transactions: new Map(), fault: null, requests: 0 });
 let solana = initialSolana();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
@@ -153,6 +155,14 @@ function solanaRpc(response, body) {
   const final = [...solana.transactions.entries()].filter(([, result]) => result.slot <= solana.slot)
     .sort(([leftSig, left], [rightSig, right]) => right.slot - left.slot || (leftSig < rightSig ? 1 : -1));
   if (body.method === 'getSlot' && options(first)) return rpc(solana.slot);
+  if (body.method === 'getEpochInfo' && options(first)) {
+    return rpc({ absoluteSlot: solana.slot, blockHeight: solana.slot - 20000000, epoch: solana.epoch, slotIndex: 1000,
+      slotsInEpoch: 432000, transactionCount: 1 });
+  }
+  if (body.method === 'getMultipleAccounts' && Array.isArray(first) && first.length >= 1 && first.length <= 100
+    && first.every((key) => typeof key === 'string') && options(second) && second.encoding === 'jsonParsed') {
+    return rpc({ context: { slot: solana.slot }, value: first.map((key) => solana.stakes.get(key) ?? null) });
+  }
   if (body.method === 'getTokenAccountsByOwner' && typeof first === 'string' && typeof second?.mint === 'string'
     && options(third) && third.encoding === 'base64') {
     const accounts = new Set();
@@ -429,7 +439,12 @@ const server = http.createServer(async (request, response) => {
         && Array.isArray(item.result.transaction?.message?.accountKeys)
         && item.result.transaction.message.accountKeys.every((key) => base58(key, 32, 44));
       const fault = data.fault;
+      const stakes = data.stakes;
       if ((data.slot !== undefined && (!Number.isSafeInteger(data.slot) || data.slot < 0 || data.slot >= 2 ** 31))
+        || (data.epoch !== undefined && (!Number.isSafeInteger(data.epoch) || data.epoch < 0))
+        || (stakes !== undefined && (!stakes || typeof stakes !== 'object' || Array.isArray(stakes)
+          || Object.keys(stakes).length > 20 || !Object.keys(stakes).every((key) => base58(key, 32, 44))
+          || !Object.values(stakes).every((value) => value === null || (typeof value === 'object' && !Array.isArray(value)))))
         || (data.transactions !== undefined && (!Array.isArray(data.transactions) || data.transactions.length > 20
           || !data.transactions.every(transaction)))
         || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
@@ -438,7 +453,8 @@ const server = http.createServer(async (request, response) => {
       }
       for (const item of data.transactions ?? []) solana.transactions.set(item.signature, item.result);
       if (solana.transactions.size > 200) return respond(response, 400, { error: 'Synthetic history is bounded' });
-      solana = { ...solana, slot: data.slot ?? solana.slot,
+      for (const [key, value] of Object.entries(stakes ?? {})) solana.stakes.set(key, value);
+      solana = { ...solana, slot: data.slot ?? solana.slot, epoch: data.epoch ?? solana.epoch,
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, slot: solana.slot, transactions: solana.transactions.size });
