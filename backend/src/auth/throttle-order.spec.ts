@@ -8,6 +8,7 @@ import { ApplicationThrottlerModule } from './application-throttler.module';
 import { AuthModule } from './auth.module';
 import { AuthService } from './auth.service';
 import { MfaService } from './mfa.service';
+import { PasswordResetService } from './password-reset.service';
 import { AuthRequestLimitsService } from './request-limits.service';
 import { readSessionCookie, SESSION_COOKIE, SessionService } from './session.service';
 
@@ -57,6 +58,8 @@ describe('THROTTLE-ORDER private-route throttling after session authorization', 
       .overrideProvider(AuthService)
       .useValue({})
       .overrideProvider(MfaService)
+      .useValue({})
+      .overrideProvider(PasswordResetService)
       .useValue({})
       .overrideProvider(AuthRequestLimitsService)
       .useValue({})

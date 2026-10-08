@@ -118,5 +118,9 @@
   {
     "file": "tests/e2e/chain-transfers.spec.ts",
     "title": "XFER-UI: a send between two own wallets is one automatic transfer, and a send to the exchange is linked by hand"
+  },
+  {
+    "file": "tests/e2e/password-reset.spec.ts",
+    "title": "RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an emailed single-use link sets a new password, signs every device out and still needs TOTP"
   }
 ]

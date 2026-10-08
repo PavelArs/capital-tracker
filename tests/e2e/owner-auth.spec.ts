@@ -227,9 +227,12 @@ for (const path of [
     await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Вход', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('link', { name: /регистраци|забыли пароль|верификаци/i }),
-    ).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /регистраци|верификаци/i })).toHaveCount(0);
+    // BR 2.2 replaced the retired token routes with the emailed single-use reset link.
+    await expect(page.getByRole('link', { name: 'Забыли пароль?', exact: true })).toHaveAttribute(
+      'href',
+      '/password-reset',
+    );
     await expect(
       page.getByText('Доступ владельца создаёт и восстанавливает оператор сервера.', {
         exact: true,

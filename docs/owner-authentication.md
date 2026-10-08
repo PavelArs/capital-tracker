@@ -2,7 +2,9 @@
 
 The current change requires a password and a confirmed second factor before private
 access. Operator enrollment, replacement and password recovery use trusted CLIs;
-there is no public signup, email reset or MFA setup route. The MFA implementation
+the owner can also reset a forgotten password through an emailed single-use link
+(see [Password reset by email](#password-reset-by-email)). There is no public signup or
+MFA setup route. The MFA implementation
 passed local release-image PostgreSQL and55 HTTPS Chromium checks. Consult the
 archived `enforce-owner-second-factor` verification record for exact execution
 evidence and limitations. Production rollout has not occurred.
@@ -289,6 +291,9 @@ its `/api` prefix.
 | `POST /auth/mfa` | Requires a password-derived pending cookie, exact Origin and its CSRF token, plus `{ kind: 'totp' \| 'recovery', code: string }`. Success consumes pending state and issues a new full cookie with `{ user, csrfToken }`. |
 | `GET /auth/me` | Requires full authentication. Pending/anonymous cookies cannot restore a profile. Browser startup removes the obsolete localStorage `token` key. |
 | `POST /auth/logout` | Requires a pending or full cookie, Origin and CSRF. Deletes that session and clears the cookie, returning 204. The UI clears full user state only after success. |
+| `POST /auth/password-reset` | Public with exact Origin, a session cookie and CSRF, plus `{ email }`. Always answers 202 with no body; only the owner's email gets a link. |
+| `POST /auth/password-reset/status` | Public with Origin and CSRF, plus `{ token }`. Answers `{ state: 'valid' \| 'expired' \| 'invalid' }` without changing anything. |
+| `POST /auth/password-reset/confirm` | Public with Origin and CSRF, plus `{ token, password }`. Sets the password and answers 204; an expired or used link answers 410 with `error: 'expired' \| 'invalid'`, a password outside 15–128 characters 400. |
 
 The Russian login form separates password and factor steps and offers recovery-code
 entry. Full user/navigation state appears only after factor verification. Reloading
@@ -298,7 +303,7 @@ pending state. Every successful rotation installs the new in-memory CSRF token.
 Every matched state-changing route requires Origin and CSRF. Failed CSRF writes are
 rejected; the client refreshes CSRF for a later explicit retry and never automatically
 replays the mutation. Controller routes are private by default; explicit public
-endpoints are CSRF retrieval, password login and minimal `GET /health`
+endpoints are CSRF retrieval, password login, the three password-reset routes and minimal `GET /health`
 (`{"status":"ok"}`). MFA completion and logout explicitly allow pending state without
 bypassing authentication or CSRF. Detailed health and the backend root require full
 authentication. Auth/private responses use `Cache-Control: no-store`. There is no
@@ -335,11 +340,39 @@ are separate from this persistent owner/challenge cooldown. Do not reset either
 ledger during a test case to make a later factor phase pass; use the real
 two-replica path and record the expected ledger deltas.
 
+## Password reset by email
+
+BR 2.2 / PR-AUTH-3. "Forgot password?" on the login page opens `/password-reset`, which
+asks for an email and always shows "Check your email". When the email is the owner's,
+the backend stores only the SHA-256 digest of a new random 256-bit token
+(`password_reset_tokens`, migration `1792500000000`) and emails
+`FRONTEND_URL/password-reset/new#token=…`. The token sits in the fragment, so it never
+reaches a server or proxy log; the page posts it back and removes it from the address
+bar once the link is spent. The answer never waits for SMTP, so neither its content nor
+its timing says whether an email went out, and an unknown email sends nothing.
+
+A link lives exactly 30 minutes (a table check) and works once. A newer link, a used
+link and CLI `recover` revoke every other outstanding link. Confirming sets the new
+Argon2id password, rotates the credential revision and deletes every owner session in
+one transaction; the TOTP factor and recovery codes stay as they are, so the new
+password still leads only to the pending state. The owner gets at most three links
+per hour; past that a request still answers 202 and sends nothing. All three routes
+also share the `reset-ip` source budget of 5 requests per 60 seconds, refused with
+429 and `Retry-After` before any lookup. Links older than a day are pruned.
+
+Mail goes through Yandex SMTP with implicit TLS on `smtp.yandex.ru:465`, signed in with
+`SMTP_USER` and an app password in `SMTP_PASSWORD` from `.env.release` (optional
+`SMTP_HOST`, `SMTP_PORT` and `SMTP_FROM`). Without them the request still answers 202
+and the backend logs that email is not configured. Failure logs name only the SMTP
+error code, never the address, link or credentials. Acceptance replaces only the mail
+provider with the providers fixture's synthetic SMTP sink.
+
 ## Threat model and remaining controls
 
 | Threat | Current boundary | Still required |
 |---|---|---|
-| Anonymous account creation/email recovery | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
+| Anonymous account creation | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
+| Email reset abuse or a leaked link | Same answer for any email, hashed single-use 30-minute links, three per hour, source budget, every session revoked, TOTP still required | Mailbox compromise still yields a password reset; recent-MFA checks for settings (M18) |
 | Retained non-owner, expired cookie or legacy bearer | Owner/revision checks, protected opaque cookie, server expiry/revocation; no bearer fallback | Full ASVS mapping and broader negative acceptance |
 | Stolen owner password | Password produces only pending state; mandatory TOTP or single-use recovery code | Phishing-resistant options and distributed abuse controls |
 | Stolen full cookie | One-day absolute lifetime, server logout and CLI revocation | Recent-MFA checks for sensitive settings, XSS/CSP hardening |

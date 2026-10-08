@@ -51,6 +51,10 @@ services:
       PRICE_COLLECTION_ENABLED: "true"
       # Free Etherscan key for Ethereum wallets (M14); without it they report a missing key.
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      # Yandex mailbox and app password for password reset emails (M17); without them reset
+      # requests are answered as usual but no email is sent.
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:?Set exact observed proxy socket IPs as JSON or explicit [] for direct mode}
       MFA_KEY_FILE: /run/secrets/ct-mfa-key
       MFA_KEY_ID: ${MFA_KEY_ID:?Set the non-secret MFA key identifier}

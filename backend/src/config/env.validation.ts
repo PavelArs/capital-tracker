@@ -40,6 +40,28 @@ export class EnvironmentVariables {
   @IsOptional()
   ETHERSCAN_API_KEY?: string;
 
+  // Password reset email (M17, Q5): Yandex SMTP over implicit TLS. Without a user and an
+  // app password, reset requests are answered as usual but no email goes out.
+  @IsString()
+  @IsOptional()
+  SMTP_HOST?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PORT?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_USER?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_PASSWORD?: string;
+
+  @IsString()
+  @IsOptional()
+  SMTP_FROM?: string;
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;

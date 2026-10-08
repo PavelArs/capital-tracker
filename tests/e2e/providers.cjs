@@ -50,6 +50,13 @@ let ethereum = initialEthereum();
 // transactions naming it, a wallet's token accounts are those its token balances name.
 const initialSolana = () => ({ slot: 300000100, transactions: new Map(), fault: null, requests: 0 });
 let solana = initialSolana();
+// Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
+// with the synthetic credentials of the acceptance environment, every accepted message kept
+// raw for the probe to read. Nothing is relayed anywhere.
+const smtpHost = 'smtp.yandex.ru';
+const smtpUser = 'acceptance-mailer@example.invalid';
+const smtpPassword = 'acceptance-smtp-password';
+let mail = [];
 
 function cbrDynamic(response, url) {
   const code = url.searchParams.get('VAL_NM_RQ') ?? '';
@@ -338,6 +345,7 @@ const server = http.createServer(async (request, response) => {
   try {
     if (request.method === 'GET' && request.url === '/__control/health') return respond(response, 200, { ok: true });
     if (request.method === 'GET' && request.url === '/__control/requests') return respond(response, 200, requests);
+    if (request.method === 'GET' && request.url === '/__control/mail') return respond(response, 200, mail);
     if (request.method === 'POST' && request.url === '/__control/reset') {
       bitcoin = initialBitcoin();
       requests = [];
@@ -347,6 +355,7 @@ const server = http.createServer(async (request, response) => {
       cbr = null;
       ethereum = initialEthereum();
       solana = initialSolana();
+      mail = [];
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/fx') {
@@ -525,3 +534,96 @@ server.on('connect', (request, socket, head) => {
   socket.resume();
 });
 server.listen(8080, '0.0.0.0');
+
+// One SMTP session at a time per socket: greeting, EHLO, AUTH PLAIN, one envelope, DATA, QUIT.
+const smtp = tls.createServer({
+  ...credentials,
+  handshakeTimeout: 5000,
+  SNICallback(servername, callback) {
+    if (servername !== smtpHost) return callback(new Error('Fixture TLS authority mismatch'));
+    callback(null, secureContext);
+  },
+}, (socket) => {
+  socket.setTimeout(10000, () => socket.destroy());
+  socket.on('error', () => socket.destroy());
+  const reply = (line) => socket.write(`${line}\r\n`);
+  const state = { authenticated: false, from: null, to: [], data: null };
+  let buffer = '';
+  reply(`220 ${smtpHost} ESMTP synthetic fixture`);
+  socket.on('data', (chunk) => {
+    buffer += chunk.toString('latin1');
+    if (buffer.length > 262144) return socket.destroy();
+    for (;;) {
+      if (state.data !== null) {
+        const end = buffer.indexOf('\r\n.\r\n');
+        if (end < 0) return;
+        const message = (state.data + buffer.slice(0, end)).replace(/^\.\./gm, '.');
+        buffer = buffer.slice(end + 5);
+        state.data = null;
+        if (mail.length >= 100) {
+          reply('452 4.3.1 Fixture mailbox full');
+        } else {
+          mail.push({ from: state.from, to: state.to, message });
+          reply('250 2.0.0 Ok: queued');
+        }
+        state.from = null;
+        state.to = [];
+        continue;
+      }
+      const end = buffer.indexOf('\r\n');
+      if (end < 0) return;
+      const line = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      const [verb] = line.split(' ', 1);
+      switch (verb.toUpperCase()) {
+        case 'EHLO':
+          reply(`250-${smtpHost}`);
+          reply('250-AUTH PLAIN');
+          reply('250 8BITMIME');
+          break;
+        case 'AUTH': {
+          const [, method, encoded] = line.split(' ');
+          const parts = Buffer.from(encoded ?? '', 'base64').toString('utf8').split('\0');
+          state.authenticated = method === 'PLAIN' && parts.length === 3
+            && parts[1] === smtpUser && parts[2] === smtpPassword;
+          reply(state.authenticated ? '235 2.7.0 Authentication successful' : '535 5.7.8 Invalid credentials');
+          break;
+        }
+        case 'MAIL': {
+          const from = /^MAIL FROM:<([^>]*)>/i.exec(line)?.[1];
+          if (!state.authenticated) reply('530 5.7.0 Authentication required');
+          else if (from !== smtpUser) reply('553 5.7.1 Sender must be the authenticated mailbox');
+          else { state.from = from; reply('250 2.1.0 Ok'); }
+          break;
+        }
+        case 'RCPT': {
+          const to = /^RCPT TO:<([^>]+)>/i.exec(line)?.[1];
+          if (!state.from || !to) reply('503 5.5.1 Bad sequence');
+          else { state.to.push(to); reply('250 2.1.5 Ok'); }
+          break;
+        }
+        case 'DATA':
+          if (!state.from || !state.to.length) { reply('503 5.5.1 Bad sequence'); break; }
+          state.data = '';
+          reply('354 End data with <CR><LF>.<CR><LF>');
+          break;
+        case 'RSET':
+          state.from = null;
+          state.to = [];
+          reply('250 2.0.0 Ok');
+          break;
+        case 'NOOP':
+          reply('250 2.0.0 Ok');
+          break;
+        case 'QUIT':
+          reply('221 2.0.0 Bye');
+          socket.end();
+          return;
+        default:
+          reply('502 5.5.2 Command not implemented');
+      }
+    }
+  });
+});
+smtp.on('tlsClientError', (_error, socket) => socket.destroy());
+smtp.listen(2465, '0.0.0.0');
