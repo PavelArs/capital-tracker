@@ -20,6 +20,7 @@ import { FxRatesModule } from './fx-rates/fx-rates.module';
 import { HealthModule } from './health/health.module';
 import { LiabilitiesModule } from './liabilities/liabilities.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { OwnerExportModule } from './owner-export/owner-export.module';
 import { OwnerSettingsModule } from './owner-settings/owner-settings.module';
 import { PortfolioSnapshotsModule } from './portfolio-snapshots/portfolio-snapshots.module';
 import { PricesModule } from './prices/prices.module';
@@ -98,6 +99,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     DisplayFxModule,
     FxRatesModule,
     MetricsModule,
+    OwnerExportModule,
     OwnerSettingsModule,
     HealthModule,
     PortfolioSnapshotsModule,
