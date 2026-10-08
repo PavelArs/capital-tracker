@@ -6,8 +6,10 @@ import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { money, rateText } from '../portfolio/format';
+import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
+import '../portfolio/portfolio.css';
 import './shell-page.css';
 
 const themeChoices = [
@@ -252,6 +254,7 @@ export default function SettingsPage() {
     <div className="shell-page">
       <PageHeader title="Settings" />
       <div className="shell-settings">
+        <SecuritySettings />
         <section className="shell-card" aria-labelledby="settings-display">
           <h2 id="settings-display">Display</h2>
           <div className="shell-setting">
@@ -292,8 +295,8 @@ export default function SettingsPage() {
           <DustThreshold />
         </section>
         <p className="shell-note">
-          Security, sessions and export arrive in later steps. Language and the old display rates
-          are still in <Link to="/settings">Legacy settings</Link>.
+          Export arrives in a later step. Language and the old display rates are still in{' '}
+          <Link to="/settings">Legacy settings</Link>.
         </p>
       </div>
     </div>

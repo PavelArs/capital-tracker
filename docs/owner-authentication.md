@@ -294,6 +294,10 @@ its `/api` prefix.
 | `POST /auth/password-reset` | Public with exact Origin, a session cookie and CSRF, plus `{ email }`. Always answers 202 with no body; only the owner's email gets a link. |
 | `POST /auth/password-reset/status` | Public with Origin and CSRF, plus `{ token }`. Answers `{ state: 'valid' \| 'expired' \| 'invalid' }` without changing anything. |
 | `POST /auth/password-reset/confirm` | Public with Origin and CSRF, plus `{ token, password }`. Sets the password and answers 204; an expired or used link answers 410 with `error: 'expired' \| 'invalid'`, a password outside 15–128 characters 400. |
+| `GET /auth/security` | Full session. Answers `{ recoveryCodes: { unused, total }, sessions: [{ id, device, signedInAt, lastActiveAt, current }] }` for Settings → Security. |
+| `POST /auth/security/recovery-codes` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ code }` (a fresh TOTP). Answers `{ recoveryCodes }` once; see [Security settings](#security-settings). |
+| `DELETE /auth/security/sessions/:id` | Full session, Origin and CSRF. Logs out one other signed-in browser (204); this browser or an unknown id answers 404. |
+| `POST /auth/security/logout-everywhere` | Full session, Origin and CSRF. Deletes every pending and full owner session, this one included, clears the cookie and answers 204. |
 
 The Russian login form separates password and factor steps and offers recovery-code
 entry. Full user/navigation state appears only after factor verification. Reloading
@@ -367,15 +371,37 @@ and the backend logs that email is not configured. Failure logs name only the SM
 error code, never the address, link or credentials. Acceptance replaces only the mail
 provider with the providers fixture's synthetic SMTP sink.
 
+## Security settings
+
+BR 2.3 / PR-AUTH-4 (M18). Settings → Security shows that two-factor authentication is on
+(it cannot be turned off), how many recovery codes of the active factor are unused, and every
+signed-in browser of the owner, newest activity first.
+
+New recovery codes need a fresh TOTP from the authenticator, checked like a sign-in factor:
+the step must be newer than the last accepted one, a wrong or replayed code answers 422 and
+counts toward the owner's ten-per-ten-minutes cooldown and the hundred-failure lock (429 once
+reached), and a malformed code answers 400 without spending a guess. Success consumes the step
+and, in one transaction, replaces all recovery codes with ten new ones that the browser shows
+once; only their hashes are stored. Sessions, password and the TOTP secret stay as they are.
+
+The session list names each browser by a fixed label such as "Safari on iPhone", derived from
+the User-Agent when the factor completes and stored in `auth_sessions.device` (migration
+`1792800000000`); the header itself is never kept, and sessions from before the migration
+show "Unknown device". A session's id is a digest of its token hash, so the list exposes no
+cookie, token digest or CSRF token. Logging out one session or everywhere locks the owner row
+first, as factor completion does, so no sign-in completes past it; "everywhere" also ends
+half-finished password steps and leaves anonymous visitors alone. Neither changes the password
+or the factor.
+
 ## Threat model and remaining controls
 
 | Threat | Current boundary | Still required |
 |---|---|---|
 | Anonymous account creation | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
-| Email reset abuse or a leaked link | Same answer for any email, hashed single-use 30-minute links, three per hour, source budget, every session revoked, TOTP still required | Mailbox compromise still yields a password reset; recent-MFA checks for settings (M18) |
+| Email reset abuse or a leaked link | Same answer for any email, hashed single-use 30-minute links, three per hour, source budget, every session revoked, TOTP still required | Mailbox compromise still yields a password reset |
 | Retained non-owner, expired cookie or legacy bearer | Owner/revision checks, protected opaque cookie, server expiry/revocation; no bearer fallback | Full ASVS mapping and broader negative acceptance |
 | Stolen owner password | Password produces only pending state; mandatory TOTP or single-use recovery code | Phishing-resistant options and distributed abuse controls |
-| Stolen full cookie | One-day absolute lifetime, server logout and CLI revocation | Recent-MFA checks for sensitive settings, XSS/CSP hardening |
+| Stolen full cookie | One-day absolute lifetime, server logout, "Log out everywhere" and per-session logout in Settings, CLI revocation; new recovery codes need a fresh TOTP that counts toward the factor limits | XSS/CSP hardening |
 | Replayed factor or concurrent recovery code | Monotonic TOTP counter and transactional code/session consumption | Continuing concurrency and availability review |
 | Cross-site writes | Exact configured HTTPS Origin and bound CSRF, no implicit proxy trust | Broader browser/proxy review and XSS defenses |
 | Guessing or session exhaustion | Persisted owner/challenge MFA limits and transactional session caps | Shared password/IP limits and operational capacity tests |

@@ -70,6 +70,7 @@ const CHECKS = [
   { name: 'mfa-db', shard: 'probes-2' }, // 42
   { name: 'mfa-expiry', shard: 'probes-2' }, // 20
   { name: 'password-reset-db', shard: 'probes-1' },
+  { name: 'security-settings-db', shard: 'probes-2' },
   // Needs the migrated and seeded main database, so its shard migrates and seeds first.
   { name: 'client-source-startup', shard: 'probes-2' }, // 44
 ];

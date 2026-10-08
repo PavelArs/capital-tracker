@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -22,6 +23,9 @@ export const FULL_SESSION_MS = 24 * 60 * 60 * 1000;
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 export const sessionHash = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
+// The id Settings uses for a session: derived from its token digest, never revealing it.
+export const sessionId = (hash: string): string =>
+  createHash('sha256').update(`session-id:${hash}`).digest('hex').slice(0, 32);
 
 export function readSessionCookie(header: string | undefined): string | null {
   if (!header) return null;
@@ -54,6 +58,15 @@ export interface SessionRow {
   databaseNow: Date;
   failedAttempts: number;
   mfaVerifiedAt: Date | null;
+  device?: string | null;
+}
+
+export interface ListedSession {
+  id: string;
+  device: string | null;
+  signedInAt: Date;
+  lastActiveAt: Date;
+  current: boolean;
 }
 
 @Injectable()
@@ -130,16 +143,21 @@ export class SessionService {
           AND o."credentialVersion" = s."credentialVersion")))`);
   }
 
-  private async insert(manager: EntityManager, owner?: ValidatedOwner, full = false) {
+  private async insert(
+    manager: EntityManager,
+    owner?: ValidatedOwner,
+    full = false,
+    device: string | null = null,
+  ) {
     const token = randomBytes(32).toString('base64url');
     const csrfToken = randomBytes(32).toString('base64url');
     const lifetime = full ? FULL_SESSION_MS : ANONYMOUS_MS;
     await manager.query(
       `INSERT INTO auth_sessions ("tokenHash", "csrfToken", state, "userId",
-      "credentialVersion", "createdAt", "lastSeenAt", "expiresAt", "mfaVerifiedAt")
+      "credentialVersion", "createdAt", "lastSeenAt", "expiresAt", "mfaVerifiedAt", device)
       VALUES ($1, $2, $3, $4, $5, statement_timestamp(), statement_timestamp(),
         statement_timestamp() + $6 * interval '1 millisecond',
-        CASE WHEN $7 THEN statement_timestamp() ELSE NULL END)`,
+        CASE WHEN $7 THEN statement_timestamp() ELSE NULL END, $8)`,
       [
         sessionHash(token),
         csrfToken,
@@ -148,6 +166,7 @@ export class SessionService {
         owner?.credentialVersion ?? null,
         lifetime,
         full,
+        full ? device : null,
       ],
     );
     return { token, csrfToken };
@@ -243,6 +262,7 @@ export class SessionService {
     manager: EntityManager,
     previous: SessionRow,
     verified: ValidatedOwner,
+    device: string | null = null,
   ): Promise<{ token: string; csrfToken: string; user: UserWithoutPassword }> {
     await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [previous.tokenHash]);
     await manager.query(`DELETE FROM auth_sessions WHERE "tokenHash" IN (
@@ -250,10 +270,62 @@ export class SessionService {
       ORDER BY "createdAt" DESC, "tokenHash" DESC OFFSET 9)`);
     const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
     if (previous.expiresAt.getTime() <= now.getTime()) throw new UnauthorizedException();
-    return { ...(await this.insert(manager, verified, true)), user: verified.user };
+    return { ...(await this.insert(manager, verified, true, device)), user: verified.user };
   }
 
   async revoke(hash: string): Promise<void> {
     await this.source.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [hash]);
+  }
+
+  // SEC-SESSIONS: the owner's signed-in browsers, newest activity first.
+  async list(userId: string, currentHash: string): Promise<ListedSession[]> {
+    const rows: (Pick<SessionRow, 'tokenHash' | 'mfaVerifiedAt' | 'lastSeenAt'> & {
+      device: string | null;
+    })[] = await this.source.query(
+      `SELECT s."tokenHash", s.device, s."mfaVerifiedAt", s."lastSeenAt" FROM auth_sessions s
+        JOIN owner_auth o ON o.id = 1 AND o."userId" = s."userId"
+          AND o."credentialVersion" = s."credentialVersion"
+        WHERE s."userId" = $1 AND s.state = 'authenticated' AND s."expiresAt" > clock_timestamp()
+        ORDER BY s."lastSeenAt" DESC, s."tokenHash"`,
+      [userId],
+    );
+    return rows.map((row) => ({
+      id: sessionId(row.tokenHash),
+      device: row.device,
+      signedInAt: row.mfaVerifiedAt!,
+      lastActiveAt: row.lastSeenAt,
+      current: row.tokenHash === currentHash,
+    }));
+  }
+
+  // Locks the owner first, as factor completion and recovery do, so no sign-in slips past.
+  private async lockOwner(manager: EntityManager, userId: string): Promise<void> {
+    await manager.query("SET LOCAL lock_timeout = '5s'");
+    const [owner] = await manager.query('SELECT "userId" FROM owner_auth WHERE id = 1 FOR UPDATE');
+    if (owner?.userId !== userId) throw new UnauthorizedException();
+  }
+
+  // Logs out one other signed-in browser of the owner; this browser uses logout instead.
+  async revokeOther(userId: string, currentHash: string, id: string): Promise<void> {
+    await this.source.transaction(async (manager) => {
+      await this.lockOwner(manager, userId);
+      const rows: { tokenHash: string }[] = await manager.query(
+        `SELECT "tokenHash" FROM auth_sessions WHERE "userId" = $1 AND state = 'authenticated'`,
+        [userId],
+      );
+      const target = rows.find(
+        (row) => row.tokenHash !== currentHash && sessionId(row.tokenHash) === id,
+      );
+      if (!target) throw new NotFoundException();
+      await manager.query('DELETE FROM auth_sessions WHERE "tokenHash" = $1', [target.tokenHash]);
+    });
+  }
+
+  // "Log out everywhere": every signed-in or half-signed-in session of the owner ends.
+  async revokeAll(userId: string): Promise<void> {
+    await this.source.transaction(async (manager) => {
+      await this.lockOwner(manager, userId);
+      await manager.query('DELETE FROM auth_sessions WHERE "userId" = $1', [userId]);
+    });
   }
 }
