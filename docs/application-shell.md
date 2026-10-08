@@ -25,10 +25,14 @@ others; their old URLs open the section that replaced them:
 | Old URL | Opens |
 |---|---|
 | `/legacy-overview`, `/capital-flows`, `/period-profit` | `/dashboard` |
-| `/assets/*`, `/liabilities/*` | `/portfolio` |
+| `/liabilities/*` | `/portfolio` |
 | `/crypto`, `/wallet-addresses` | `/wallets` |
 | `/owned-transfers` | `/transactions` |
 | `/settings` | `/preferences` |
+
+The old asset screens under `/assets/*` have no redirect: the web server serves the built
+bundle under that prefix (`deploy/container-nginx.conf`), so they were only ever opened
+from inside the app and a reload there already answered 404.
 
 Theme: System is the default and follows the device; Dark or Light is stored in this
 browser (`localStorage.theme`) and survives reload. The shell and new pages use the

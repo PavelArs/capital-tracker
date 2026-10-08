@@ -33,8 +33,6 @@ afterEach(() => window.history.replaceState(null, '', '/'));
 describe('LEGACY-RETIRE: retired screens send old bookmarks to their replacement', () => {
   it.each([
     ['/legacy-overview', '/dashboard', 'Dashboard'],
-    ['/assets', '/portfolio', 'Portfolio'],
-    ['/assets/stock', '/portfolio', 'Portfolio'],
     ['/liabilities', '/portfolio', 'Portfolio'],
     ['/crypto', '/wallets', 'Wallets'],
     ['/wallet-addresses', '/wallets', 'Wallets'],

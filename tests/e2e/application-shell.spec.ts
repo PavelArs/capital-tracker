@@ -281,7 +281,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   // LEGACY-RETIRE: a bookmark of a retired screen opens the section that replaced it.
   for (const [retired, replacement, heading] of [
     ['/legacy-overview', '/dashboard', 'Dashboard'],
-    ['/assets/overview', '/portfolio', 'Portfolio'],
+    ['/liabilities', '/portfolio', 'Portfolio'],
     ['/crypto', '/wallets', 'Wallets'],
     ['/wallet-addresses', '/wallets', 'Wallets'],
     ['/owned-transfers', '/transactions', 'Transactions'],

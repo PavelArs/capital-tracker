@@ -23,10 +23,11 @@ export const legacyLinks = [
   ['/manual-prices', 'Ручные цены'],
 ] as const;
 
-// Retired screens (M20) send old bookmarks to the section that replaced them.
+// Retired screens (M20) send old bookmarks to the section that replaced them. `/assets/*`
+// is not here: the web server keeps that prefix for the built bundle, so the old asset
+// screens were only ever reached by in-app navigation and the browser never asks for them.
 export const retiredPaths = [
   ['/legacy-overview', '/dashboard'],
-  ['/assets', '/portfolio'],
   ['/liabilities', '/portfolio'],
   ['/crypto', '/wallets'],
   ['/wallet-addresses', '/wallets'],
