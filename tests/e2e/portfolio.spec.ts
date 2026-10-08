@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { type Page, expect } from '@playwright/test';
-import { loginWithMfa, restartBackend, test } from './mfa-fixtures';
+import { loginWithMfa, test } from './mfa-fixtures';
 
 // Characterize retained portfolio behavior through the real opaque-cookie authentication path.
 // All credentials, addresses, database rows and browser artifacts here are synthetic test fixtures.
@@ -100,12 +100,6 @@ async function loginThroughBrowser(page: Page): Promise<string> {
   return result.csrfToken;
 }
 
-async function openWallets(page: Page): Promise<void> {
-  const navigation = page.getByRole('navigation', { name: 'Main navigation' });
-  await navigation.getByRole('link', { name: 'Криптокошельки', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
-}
-
 test('ISO-003-A: HTTPS login is public and direct private API requests are denied', async ({
   page,
   request,
@@ -143,93 +137,17 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
 
 test('ISO-003-B: the browser authenticates using the real seeded password', async ({ page }) => {
   await loginThroughBrowser(page);
-  await openWallets(page);
-  await expect(page.getByText(foreignAddress, { exact: true })).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
-  await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
-});
-
-test('ISO-004-A/ISO-004-B: BTC create, restart, refresh and delete persist through PostgreSQL', async ({
-  page,
-  request,
-}) => {
-  providerControl('/__control/reset', {});
-  await loginThroughBrowser(page);
-  await openWallets(page);
-  expect(databaseRows(`"userId" = '${owner.id}'::uuid`)).toEqual([]);
-
-  await test.step('Browser creates a wallet through the real outbound adapter', async () => {
-    await page.getByRole('button', { name: 'Добавить кошелек', exact: true }).click();
-    await page.getByLabel('Тип', { exact: true }).selectOption('bitcoin');
-    await page.getByLabel('Адрес', { exact: true }).fill(bitcoinAddress);
-    await page.getByRole('button', { name: 'Добавить кошелек', exact: true }).click();
-    await expect(page.getByText(bitcoinAddress, { exact: true })).toBeVisible();
-    await expect(page.getByText('1.25000000 BTC', { exact: true })).toBeVisible();
-    expect(walletProviderRequests(bitcoinAddress).length).toBeGreaterThan(0);
-  });
-
-  const created = databaseRows(`"userId" = '${owner.id}'::uuid`);
-  expect(created).toHaveLength(1);
-  expect(created[0]).toMatchObject({
-    userId: owner.id,
-    type: 'bitcoin',
-    address: bitcoinAddress,
-    balance: '1.250000000000000000',
-  });
-  expect(created[0].lastUpdated).not.toBeNull();
-  const walletId = created[0].id;
-
-  await test.step('Reload and backend restart preserve the same complete database row', async () => {
-    await page.reload();
-    await expect(page.getByText('1.25000000 BTC', { exact: true })).toBeVisible();
-    expect(walletRows(walletId)).toEqual(created);
-    await restartBackend(request);
-    await page.reload();
-    await expect(page.getByText(bitcoinAddress, { exact: true })).toBeVisible();
-    await expect(page.getByText('1.25000000 BTC', { exact: true })).toBeVisible();
-    expect(walletRows(walletId)).toEqual(created);
-  });
-
-  await test.step('Explicit refresh reads the new fixture and updates stored balance', async () => {
-    providerControl('/__control/bitcoin', { funded: 225000000, spent: 25000000 });
-    const before = walletProviderRequests(bitcoinAddress).length;
-    await page.getByRole('button', { name: 'Обновить баланс', exact: true }).click();
-    await expect(page.getByText('2.00000000 BTC', { exact: true })).toBeVisible();
-    expect(walletRows(walletId)).toHaveLength(1);
-    expect(walletRows(walletId)[0]).toMatchObject({
-      id: walletId,
-      userId: owner.id,
-      address: bitcoinAddress,
-      balance: '2.000000000000000000',
-    });
-    expect(walletProviderRequests(bitcoinAddress).length).toBeGreaterThan(before);
-    await page.reload();
-    await expect(page.getByText('2.00000000 BTC', { exact: true })).toBeVisible();
-  });
-
-  await test.step('Browser deletion removes the row without resurrection on reload', async () => {
-    page.once('dialog', async (dialog) => {
-      expect(dialog.type()).toBe('confirm');
-      await dialog.accept();
-    });
-    await page.getByRole('button', { name: 'Удалить', exact: true }).click();
-    await expect(page.getByText(bitcoinAddress, { exact: true })).toHaveCount(0);
-    expect(walletRows(walletId)).toEqual([]);
-    await page.reload();
-    await expect(page.getByRole('heading', { name: 'Криптокошельки', exact: true })).toBeVisible();
-    await expect(page.getByText(bitcoinAddress, { exact: true })).toHaveCount(0);
-    expect(walletRows(walletId)).toEqual([]);
-  });
+  await expect(page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true })).toBeVisible();
 });
 
 test("ISO-004-C: another owner's wallet cannot be read, deleted or refreshed", async ({ page }) => {
+  // The legacy screen is retired (M20); its API stays until the module goes.
   const csrfToken = await loginThroughBrowser(page);
-  await openWallets(page);
   const before = walletRows(foreignWalletId);
   expect(before).toHaveLength(1);
   expect(before[0]).toMatchObject({ userId: foreignOwnerId, address: foreignAddress });
-  await expect(page.getByText(foreignAddress, { exact: true })).toHaveCount(0);
   const providerBefore = walletProviderRequests(foreignAddress);
 
   for (const [method, path] of [

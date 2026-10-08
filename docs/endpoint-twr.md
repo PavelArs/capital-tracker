@@ -1,5 +1,7 @@
 # Endpoint TWR preview
 
+> **Retired screen (M20, 2026-10-08):** the TWR preview lived on `/period-profit`, which now opens the Dashboard; it is hidden in the new interface (Q10) and its API stays until a separate removal.
+
 This bounded preview adds a period return to the existing manual USD profit/XIRR
 form. Values and results are temporary. It is not automatic portfolio valuation,
 complete linked TWR, or a tax/GIPS compliance report.

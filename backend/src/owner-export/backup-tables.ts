@@ -1,6 +1,6 @@
 // EXP-JSON: which tables the backup holds. Every table of the schema is listed exactly once,
-// either here or in `notBackedUp` with the reason; the owner-export probe refuses a table
-// that is in neither, so a new table has to be placed on purpose.
+// here, in `legacyTables` or in `notBackedUp` with the reason; the owner-export probe refuses
+// a table that is in none, so a new table has to be placed on purpose.
 
 /** The owner's own records, each keyed by "ownerId", in restore order. */
 export const backupTables = [
@@ -39,6 +39,22 @@ export const backupTables = [
   'chain_transaction_classification_versions',
 ] as const;
 
+/**
+ * Rows of the screens retired in M20, keyed by "userId", in restore order. Their tables stay in
+ * the database untouched; the backup carries them so they leave with the owner's data. The
+ * legacy currency list is shared, so only the currencies those rows name are included.
+ */
+export const legacyTables = [
+  'currencies',
+  'capitals',
+  'assets',
+  'liabilities',
+  'crypto_wallets',
+  'reports',
+  'subscriptions',
+  'user_currency_preferences',
+] as const;
+
 export const notBackedUp: Record<string, string> = {
   // Secrets and sign-in state never leave the server.
   users: 'password hash',
@@ -54,19 +70,10 @@ export const notBackedUp: Record<string, string> = {
   fx_rates: 'Bank of Russia rates',
   display_fx_collection: 'legacy display rates',
   display_fx_observations: 'legacy display rates',
-  currencies: 'legacy currency list',
   // Rebuilt from the records above.
   portfolio_snapshots: 'rebuilt from operations',
   portfolio_snapshot_state: 'rebuilt from operations',
   sync_sources: 'sync status',
   wallet_stake_scans: 'sync progress',
-  // Legacy screens; retiring them (M20) exports their rows first.
-  assets: 'legacy screens',
-  capitals: 'legacy screens',
-  crypto_wallets: 'legacy screens',
-  liabilities: 'legacy screens',
-  reports: 'legacy screens',
-  subscriptions: 'legacy screens',
-  user_currency_preferences: 'legacy screens',
   migrations: 'schema history',
 };

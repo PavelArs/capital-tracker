@@ -1,5 +1,7 @@
 # Daily USD display conversion
 
+> **Retired panel (M20, 2026-10-08):** the display rates panel left with the old Settings screen; collection stays disabled and the API stays until the legacy modules are removed.
+
 The private Settings panel can convert an entered USD amount to EUR and RUB
 using the latest saved daily observation. It is an indicative display only: it
 does not change USD trades, account values, profit, or XIRR. It is not a trade

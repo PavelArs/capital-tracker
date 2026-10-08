@@ -3,7 +3,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { deriveCarryInAmounts } from '../accounting/fifo';
 import { parseUuid } from '../accounting/input';
 import { isTradePurpose } from '../accounting/trade-purpose';
-import { backupTables } from './backup-tables';
+import { backupTables, legacyTables } from './backup-tables';
 import {
   backupDocument,
   type ExportAccount,
@@ -28,6 +28,14 @@ const text = (value: unknown) => (value === null || value === undefined ? null :
 const iso = (value: unknown) => (value as Date).toISOString();
 const day = (at: Date) => at.toISOString().slice(0, 10);
 const exact = (column: string) => `trim_scale(${column})::text`;
+
+/** The legacy screens' rows (M20) belong to their "userId"; currencies to no one. */
+const legacyOwner = (table: (typeof legacyTables)[number]) =>
+  table === 'currencies' ? null : 'userId';
+/** The shared legacy currency list: only the currencies the owner's legacy rows name. */
+const legacyCurrencies = `t.id IN (SELECT "currencyId" FROM assets WHERE "userId"=$1
+  UNION SELECT "currencyId" FROM liabilities WHERE "userId"=$1
+  UNION SELECT "currencyId" FROM user_currency_preferences WHERE "userId"=$1)`;
 
 /** The last version that is not a void: what a voided entry said before it left the books. */
 const lastContent = (versions: string, key: string) =>
@@ -121,16 +129,19 @@ export class OwnerExportService {
         `SELECT table_name AS table, column_name AS column, data_type AS type
           FROM information_schema.columns
           WHERE table_schema='public' AND table_name = ANY($1) ORDER BY ordinal_position`,
-        [backupTables],
+        [[...backupTables, ...legacyTables]],
       );
       const read = [];
-      for (const name of backupTables) {
+      for (const [name, ownerColumn] of [
+        ...backupTables.map((name) => [name, 'ownerId'] as const),
+        ...legacyTables.map((name) => [name, legacyOwner(name)] as const),
+      ]) {
         const own = columns.filter((column) => column.table === name);
-        if (!own.some((column) => column.column === 'ownerId'))
+        if (ownerColumn && !own.some((column) => column.column === ownerColumn))
           throw new Error(`Backup table without an owner: ${name}`);
         // Exact decimals as strings and bytes as base64; names come from the catalog.
         const fields = own
-          .filter((column) => column.column !== 'ownerId')
+          .filter((column) => column.column !== ownerColumn)
           .map(({ column, type }) => {
             const value = `t."${column.replaceAll('"', '""')}"`;
             const json =
@@ -143,7 +154,8 @@ export class OwnerExportService {
           });
         const rows: { row: string }[] = await manager.query(
           `SELECT jsonb_build_object(${fields.join(', ')})::text AS row
-            FROM "${name}" t WHERE t."ownerId"=$1 ORDER BY 1`,
+            FROM "${name}" t WHERE ${ownerColumn ? `t."${ownerColumn}"=$1` : legacyCurrencies}
+            ORDER BY 1`,
           [owner],
         );
         read.push({ name, rows: rows.map(({ row }) => row) });

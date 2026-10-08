@@ -4,7 +4,6 @@ import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import SecuritySettings from '../security/SecuritySettings';
@@ -296,10 +295,6 @@ export default function SettingsPage() {
           <DustThreshold />
         </section>
         <DataExport />
-        <p className="shell-note">
-          Language and the old display rates are still in{' '}
-          <Link to="/settings">Legacy settings</Link>.
-        </p>
       </div>
     </div>
   );

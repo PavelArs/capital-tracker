@@ -257,6 +257,50 @@ async function secrets(db, owner) {
     .concat(secret('csrf').slice(0, 43));
 }
 
+/** Rows of the screens retired in M20, written as their legacy modules stored them. */
+async function legacyRows(db, owner, other) {
+  const currency = async (code) =>
+    (await db.query('SELECT id FROM currencies WHERE code=$1', [code]))[0].id;
+  const [usd, eur, rub, btc] = [
+    await currency('USD'),
+    await currency('EUR'),
+    await currency('RUB'),
+    await currency('BTC'),
+  ];
+  const [capital] = await db.query(
+    `INSERT INTO capitals("userId",name,description) VALUES ($1,'Family','Synthetic') RETURNING id`,
+    [owner],
+  );
+  await db.query(
+    `INSERT INTO assets("userId",name,"assetType",category,amount,date,"currencyId")
+      VALUES ($1,'Flat','stock','real_estate',1234.56789012,'2025-03-01',$2),
+        ($3,'Foreign flat','stock','real_estate',5,'2025-03-01',$4)`,
+    [owner, usd, other, btc],
+  );
+  await db.query(
+    `INSERT INTO liabilities("userId",name,category,amount,date,frequency,"currencyId")
+      VALUES ($1,'Loan','loans',100.5,'2025-04-01','monthly',$2)`,
+    [owner, eur],
+  );
+  await db.query(
+    `INSERT INTO crypto_wallets("userId",type,address,balance,tokens)
+      VALUES ($1,'bitcoin',$2,0.5,'[{"symbol":"BTC"}]')`,
+    [owner, walletAddress],
+  );
+  await db.query(
+    `INSERT INTO reports("userId","capitalId",type,name,format,parameters)
+      VALUES ($1,$2,'custom','Yearly','json','{"year":2025}')`,
+    [owner, capital.id],
+  );
+  await db.query(`INSERT INTO subscriptions("userId",type,status) VALUES ($1,'free','active')`, [
+    owner,
+  ]);
+  await db.query(
+    `INSERT INTO user_currency_preferences("userId","currencyId","isHidden") VALUES ($1,$2,true)`,
+    [owner, rub],
+  );
+}
+
 async function seed(db, s, f) {
   stage = 'synthetic journals of every kind, a classified chain history and sign-in secrets';
   const { owner, other } = f;
@@ -398,6 +442,7 @@ async function seed(db, s, f) {
     grossUsd: '1',
     feeUsd: '0',
   });
+  await legacyRows(db, owner, other);
   return {
     btc,
     usdt,
@@ -541,12 +586,14 @@ async function csvArchive(db, s, f, made) {
 
 async function jsonBackup(db, s, f, made) {
   stage = 'EXP-JSON the backup holds every owner table with a format version and no secret';
-  const { backupTables, notBackedUp } = require('/app/backend/dist/owner-export/backup-tables.js');
+  const { backupTables, legacyTables, notBackedUp } = require(
+    '/app/backend/dist/owner-export/backup-tables.js',
+  );
   const schema = (
     await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1")
   ).map((row) => row.tablename);
   assert.deepEqual(
-    [...backupTables, ...Object.keys(notBackedUp)].sort(),
+    [...backupTables, ...legacyTables, ...Object.keys(notBackedUp)].sort(),
     schema,
     'Every table is backed up or left out on purpose, exactly once',
   );
@@ -562,7 +609,7 @@ async function jsonBackup(db, s, f, made) {
     [backup.format, backup.formatVersion, backup.exportedAt],
     ['capital-tracker-backup', 1, now.toISOString()],
   );
-  assert.deepEqual(Object.keys(backup.tables), [...backupTables]);
+  assert.deepEqual(Object.keys(backup.tables), [...backupTables, ...legacyTables]);
   for (const name of backupTables) {
     const [{ n }] = await db.query(`SELECT count(*)::int AS n FROM "${name}" WHERE "ownerId"=$1`, [
       f.owner,
@@ -571,6 +618,28 @@ async function jsonBackup(db, s, f, made) {
     for (const row of backup.tables[name]) assert.equal('ownerId' in row, false);
   }
   assert.ok(backup.tables.wallet_address_transactions.length === 3);
+  // LEGACY-EXPORT: the retired screens' rows leave with the owner's backup (M20).
+  for (const name of legacyTables.filter((name) => name !== 'currencies')) {
+    const [{ n }] = await db.query(`SELECT count(*)::int AS n FROM "${name}" WHERE "userId"=$1`, [
+      f.owner,
+    ]);
+    assert.ok(n > 0, `${name}: a synthetic legacy row`);
+    assert.equal(backup.tables[name].length, n, `${name}: every legacy row of the owner`);
+    for (const row of backup.tables[name]) assert.equal('userId' in row, false);
+  }
+  assert.deepEqual(
+    backup.tables.currencies.map((row) => row.code).sort(),
+    ['EUR', 'RUB', 'USD'],
+    'Only the currencies the legacy rows name',
+  );
+  const usd = backup.tables.currencies.find((row) => row.code === 'USD');
+  assert.deepEqual(
+    backup.tables.assets.map((row) => [row.name, row.amount, row.currencyId, row.date]),
+    [['Flat', '1234.56789012', usd.id, '2025-03-01']],
+    'Exact legacy amounts and their currency',
+  );
+  assert.deepEqual(backup.tables.crypto_wallets[0].tokens, [{ symbol: 'BTC' }]);
+  assert.deepEqual(backup.tables.reports[0].parameters, { year: 2025 });
   for (const marker of [...made.secrets, f.other])
     assert.equal(text.includes(marker), false, 'No secret, session or foreign id');
   for (const name of Object.keys(notBackedUp)) assert.equal(name in backup.tables, false);
@@ -603,6 +672,11 @@ async function jsonBackup(db, s, f, made) {
     ['5'],
   );
   assert.equal(JSON.stringify(foreign).includes(made.btc), false);
+  assert.deepEqual(
+    [foreign.tables.assets.map((row) => row.name), foreign.tables.currencies.map((row) => row.code)],
+    [['Foreign flat'], ['BTC']],
+  );
+  assert.deepEqual(foreign.tables.liabilities, []);
   await rejected(() => s.exports.backup('not-a-uuid', now), 400);
   console.log('PASS EXP-JSON');
 }

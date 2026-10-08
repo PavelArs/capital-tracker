@@ -496,8 +496,8 @@ export default function TransactionsPage() {
             <Link className="shell-button" to="/manual-accounts">
               Open manual accounts
             </Link>
-            <Link className="shell-button" to="/wallet-addresses">
-              Open wallet addresses
+            <Link className="shell-button" to="/wallets">
+              Open wallets
             </Link>
           </div>
         </section>

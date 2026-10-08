@@ -118,8 +118,6 @@ const path = '/wallet-addresses';
 
 export const walletAddressesApi = {
   list: async (): Promise<WalletAddress[]> => (await apiClient.get<WalletAddress[]>(path)).data,
-  register: async (address: string): Promise<WalletAddress> =>
-    (await apiClient.post<WalletAddress>(path, { address })).data,
   /** 201 adds the address; 200 returns the one already tracked, unchanged (WAL-DUP). */
   add: async (input: NewWalletAddress): Promise<{ created: boolean; address: WalletAddress }> => {
     const response = await apiClient.post<WalletAddress>(path, input);

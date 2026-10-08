@@ -17,11 +17,18 @@ sections in this order:
 Placeholders say the section is not built yet, show no numbers and make no requests.
 Their own changes replace them (M2/M4, M6, M8, M10, M18).
 
-**Legacy** (open by default, collapsible) holds every current screen with its Russian
-name and unchanged URL: manual accounts, owned transfers, external flows, manual
-prices, wallet addresses, period profit, legacy settings (`/settings`), the old
-overview, legacy assets and crypto wallets. Retired liabilities stay out of the
-navigation. Legacy screens keep their own styles and language (decision D6).
+**Legacy** (open by default, collapsible) holds the screens no new section covers yet,
+with their Russian names and unchanged URLs: manual accounts (CSV import, swaps) and manual
+prices. Legacy screens keep their own styles and language (decision D6). M20 retired the
+others; their old URLs open the section that replaced them:
+
+| Old URL | Opens |
+|---|---|
+| `/legacy-overview`, `/capital-flows`, `/period-profit` | `/dashboard` |
+| `/assets/*`, `/liabilities/*` | `/portfolio` |
+| `/crypto`, `/wallet-addresses` | `/wallets` |
+| `/owned-transfers` | `/transactions` |
+| `/settings` | `/preferences` |
 
 Theme: System is the default and follows the device; Dark or Light is stored in this
 browser (`localStorage.theme`) and survives reload. The shell and new pages use the

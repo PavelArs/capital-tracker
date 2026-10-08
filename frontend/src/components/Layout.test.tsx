@@ -74,7 +74,7 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
     ]);
   });
 
-  it('keeps every current screen in an open Legacy group with unchanged URLs and labels', async () => {
+  it('keeps only the screens no new section covers yet in an open Legacy group (M20)', async () => {
     const document = await markup();
     const group = [...document.querySelectorAll('details')].find(
       (node) => node.querySelector('summary')?.textContent === 'Legacy',
@@ -83,17 +83,20 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
     expect(group?.hasAttribute('open')).toBe(true);
     expect(linksOf(group)).toEqual([
       ['Ручные счета', '/manual-accounts'],
-      ['Переводы между счетами', '/owned-transfers'],
-      ['Вводы и выводы', '/capital-flows'],
       ['Ручные цены', '/manual-prices'],
-      ['Адреса кошельков', '/wallet-addresses'],
-      ['Прибыль за период', '/period-profit'],
-      ['Настройки', '/settings'],
-      ['Прежний обзор', '/legacy-overview'],
-      ['Активы', '/assets'],
-      ['Криптокошельки', '/crypto'],
     ]);
-    expect(document.querySelector('nav a[href^="/liabilities"]')).toBeNull();
+    for (const retired of [
+      '/owned-transfers',
+      '/capital-flows',
+      '/wallet-addresses',
+      '/period-profit',
+      '/settings',
+      '/legacy-overview',
+      '/assets',
+      '/crypto',
+      '/liabilities',
+    ])
+      expect(document.querySelector(`nav a[href^="${retired}"]`)).toBeNull();
   });
 
   it('marks exactly one current destination for new and nested legacy routes', async () => {
