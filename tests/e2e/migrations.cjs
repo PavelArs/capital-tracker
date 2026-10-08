@@ -101,6 +101,7 @@ const migrationNames = [
   'TrackSolanaWallets1792100000000',
   'CapMfaFailureStreak1792200000000',
   'AddPasswordResetTokens1792500000000',
+  'AddSessionDevice1792800000000',
 ];
 
 function connection(database) {
@@ -193,7 +194,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirty-eight migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly thirty-nine migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -728,6 +729,10 @@ function mfaStreakAddition(kind, row) {
   return kind === 'constraints' && row.relname === 'owner_mfa'
     && ['owner_mfa_consecutiveFailures_check', 'owner_mfa_consecutiveFailures_not_null'].includes(row.conname);
 }
+// AddSessionDevice1792800000000 adds one nullable browser name to sessions, no constraint.
+function sessionDeviceAddition(kind, row) {
+  return kind === 'columns' && row.table_name === 'auth_sessions' && row.column_name === 'device';
+}
 function replacedOriginCheck(kind, row) {
   return kind === 'constraints' && row.relname === 'account_trade_journals'
     && row.conname === 'account_trade_journals_originKind_check';
@@ -1049,6 +1054,9 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(streak.map(row => [row.data_type, row.is_nullable]), [['integer', 'NO']]);
     assert.deepEqual(after.constraints.filter(row => mfaStreakAddition('constraints', row)).map(row => row.conname).sort(),
       ['owner_mfa_consecutiveFailures_check', 'owner_mfa_consecutiveFailures_not_null']);
+    assert.deepEqual(after.columns.filter(row => sessionDeviceAddition('columns', row))
+      .map(row => [row.data_type, row.is_nullable, row.column_default]), [['character varying', 'YES', null]]);
+    assert.equal(after.constraints.some(row => row.relname === 'auth_sessions' && row.conname.includes('device')), false);
     const link = after.columns.filter(row => row.table_name === 'account_trade_journals' && row.column_name === 'openingRevision');
     assert.equal(link.length,1);
     assert.equal(link[0].data_type,'integer');
@@ -1097,6 +1105,14 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           }
           assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
             'Every old owner factor column/value remains identical');
+        } else if (table === 'auth_sessions') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.equal(row.device, null, 'Prior sessions have no browser name');
+            delete row.device;
+          }
+          assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
+            'Preserve every previous session row and class');
         } else {
           assert.deepEqual(after.rows[table], rows, `Preserve every previous ${table} row, including all session classes`);
         }
@@ -1109,7 +1125,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000', '1792800000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
@@ -1117,7 +1133,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       const prior = before[kind].filter(row => !(previousCount < 16 && replacedOriginCheck(kind,row)) && !replacedScopeCheck(kind, row));
       const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row))
         && !(previousCount >= 13 && classificationAddition(kind, row))
-        && !mfaStreakAddition(kind, row) && !replacedScopeCheck(kind, row));
+        && !mfaStreakAddition(kind, row) && !sessionDeviceAddition(kind, row) && !replacedScopeCheck(kind, row));
       assert.deepEqual(retained, prior, `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);

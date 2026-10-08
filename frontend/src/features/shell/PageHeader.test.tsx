@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { fxRatesApi } from '@api/fx-rates.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { securityApi } from '@api/security.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -12,6 +13,9 @@ import { MainCurrencyProvider } from './main-currency';
 import PageHeader from './PageHeader';
 import SettingsPage from './SettingsPage';
 
+// Settings → Security has its own tests; here it only has to render.
+vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
+
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'EUR' });
@@ -19,6 +23,7 @@ beforeEach(() => {
   vi.spyOn(portfolioAssetsApi, 'listAll').mockReturnValue(new Promise(() => {}));
   vi.spyOn(accountingApi, 'listAccounts').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(cleanup);

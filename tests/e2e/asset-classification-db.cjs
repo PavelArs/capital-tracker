@@ -47,14 +47,14 @@ async function createDatabase() {
 // Every migration except this change (later ones such as AddHourlyPrices1790800000000 and
 // AccountInThreeCurrencies1790900000000, RecordPortfolioSnapshots1791000000000, PaidCurrencyTrades1791100000000, TradeComments1791200000000, TradeSettlements1791300000000, TradePurposes1791400000000, BindWalletsToAccounts1791600000000, ClassifyChainTransactions1791700000000,
 // LinkOwnTransfers1791800000000, TrackEthereumWallets1792000000000, TrackSolanaWallets1792100000000,
-// CapMfaFailureStreak1792200000000 and AddPasswordResetTokens1792500000000 do not
+// CapMfaFailureStreak1792200000000, AddPasswordResetTokens1792500000000 and AddSessionDevice1792800000000 do not
 // touch instruments), run as a release without the classification did.
 async function createPreviousSchema() {
   const classes = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
     .flatMap((file) => Object.values(require(`/app/backend/dist/migrations/${file}`)))
     .filter((entry) => typeof entry === 'function' && /^[A-Za-z]+\d{13}$/.test(entry.name) && entry.name !== migration);
-  assert.equal(classes.length, 37, 'Every migration but the classification: exactly thirty-seven');
+  assert.equal(classes.length, 38, 'Every migration but the classification: exactly thirty-eight');
   const prior = new DataSource({ type: 'postgres', host: settings.DB_HOST, port: Number(settings.DB_PORT),
     username: settings.DB_USERNAME, password: settings.DB_PASSWORD, database,
     synchronize: false, migrationsRun: false, installExtensions: false, migrations: classes });

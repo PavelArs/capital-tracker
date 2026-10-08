@@ -13,11 +13,12 @@ import { PasswordResetController } from './password-reset.controller';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordResetMailer, resetMailSettings } from './password-reset-mailer';
 import { AuthRequestLimitsService } from './request-limits.service';
+import { SecurityController } from './security.controller';
 import { SessionService } from './session.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([OwnerAuth]), AuthClientSourceModule],
-  controllers: [AuthController, PasswordResetController],
+  controllers: [AuthController, PasswordResetController, SecurityController],
   providers: [
     AuthService,
     AuthRequestLimitsService,

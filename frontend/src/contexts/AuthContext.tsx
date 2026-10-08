@@ -1,4 +1,4 @@
-import { authApi } from '@api';
+import { authApi, securityApi } from '@api';
 import { setUnauthorizedHandler } from '@api/client';
 import type { FactorCredentials, User } from '@shared/types';
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -11,6 +11,7 @@ interface AuthContextType {
   verifyFactor: (kind: FactorCredentials['kind'], code: string) => Promise<void>;
   restartPassword: () => void;
   logout: () => Promise<void>;
+  logoutEverywhere: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
 
@@ -82,6 +83,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMfaPending(false);
   }, []);
 
+  // SEC-SESSIONS: every session ends on the server, so this browser returns to login too.
+  const logoutEverywhere = useCallback(async () => {
+    const version = ++stateVersion.current;
+    await securityApi.logoutEverywhere();
+    if (version !== stateVersion.current) return;
+    setUser(null);
+    setMfaPending(false);
+  }, []);
+
   const refreshUser = useCallback(async () => {
     const version = stateVersion.current;
     try {
@@ -102,6 +112,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     verifyFactor,
     restartPassword,
     logout,
+    logoutEverywhere,
     refreshUser,
   };
 

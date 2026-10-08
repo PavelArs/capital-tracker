@@ -1,0 +1,64 @@
+import { Body, Controller, Delete, Get, HttpCode, Param, Post, Request, Res } from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Response } from 'express';
+import { CurrentUser, OwnerIdentity } from '../shared/decorators';
+import { RecoveryCodesDto } from './dto/security.dto';
+import { SessionRequest } from './guards/session.guard';
+import { MfaService, RecoveryStatus } from './mfa.service';
+import { AuthRequestLimit } from './request-limit.decorator';
+import { COOKIE_OPTIONS, ListedSession, SESSION_COOKIE, SessionService } from './session.service';
+
+// PR-AUTH-4, Settings → Security. Private like every route: a full session, and for writes
+// the exact Origin and CSRF token.
+@ApiTags('auth')
+@Controller('auth/security')
+export class SecurityController {
+  constructor(
+    private readonly sessions: SessionService,
+    private readonly factors: MfaService,
+  ) {}
+
+  @Get()
+  async overview(
+    @CurrentUser() user: OwnerIdentity,
+    @Request() req: SessionRequest,
+  ): Promise<{ recoveryCodes: RecoveryStatus; sessions: ListedSession[] }> {
+    return {
+      recoveryCodes: await this.factors.recoveryStatus(user.userId),
+      sessions: await this.sessions.list(user.userId, req.authSession.hash),
+    };
+  }
+
+  // Shares the sign-in factor budget per client, on top of the owner's factor limits.
+  @AuthRequestLimit('mfa-ip')
+  @Post('recovery-codes')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Replace every recovery code after a fresh TOTP; codes shown once' })
+  async regenerate(
+    @CurrentUser() user: OwnerIdentity,
+    @Body() body: RecoveryCodesDto,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return { recoveryCodes: await this.factors.regenerateRecoveryCodes(user.userId, body.code) };
+  }
+
+  @Delete('sessions/:id')
+  @HttpCode(204)
+  async endSession(
+    @CurrentUser() user: OwnerIdentity,
+    @Request() req: SessionRequest,
+    @Param('id') id: string,
+  ): Promise<void> {
+    await this.sessions.revokeOther(user.userId, req.authSession.hash, id);
+  }
+
+  @Post('logout-everywhere')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'End every session of the owner, this browser included' })
+  async logoutEverywhere(
+    @CurrentUser() user: OwnerIdentity,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    await this.sessions.revokeAll(user.userId);
+    res.clearCookie(SESSION_COOKIE, COOKIE_OPTIONS);
+  }
+}

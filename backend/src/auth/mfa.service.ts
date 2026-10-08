@@ -5,6 +5,7 @@ import {
   Injectable,
   OnModuleInit,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
@@ -49,6 +50,10 @@ export interface EnrollmentOutput {
 }
 export interface RecoveryOutput {
   recoveryCodes: string[];
+}
+export interface RecoveryStatus {
+  unused: number;
+  total: number;
 }
 
 @Injectable()
@@ -188,6 +193,7 @@ export class MfaService implements OnModuleInit {
   async complete(
     hash: string,
     input: FactorInput,
+    device: string | null = null,
   ): Promise<{ token: string; csrfToken: string; user: UserWithoutPassword }> {
     if (
       !input ||
@@ -294,10 +300,12 @@ export class MfaService implements OnModuleInit {
         [owner.userId],
       );
       return {
-        session: await this.sessions.issueAuthenticated(manager, pending, {
-          user,
-          credentialVersion: owner.credentialVersion,
-        }),
+        session: await this.sessions.issueAuthenticated(
+          manager,
+          pending,
+          { user, credentialVersion: owner.credentialVersion },
+          device,
+        ),
       };
     });
     if ('status' in outcome)
@@ -306,5 +314,68 @@ export class MfaService implements OnModuleInit {
         outcome.status!,
       );
     return outcome.session;
+  }
+
+  // SEC-CODES: unused codes of the active factor, as Settings shows them.
+  async recoveryStatus(userId: string): Promise<RecoveryStatus> {
+    const [row] = await this.source.query(
+      `SELECT count(*) FILTER (WHERE r."usedAt" IS NULL)::int AS unused, count(r."codeHash")::int AS total
+      FROM owner_mfa m LEFT JOIN owner_mfa_recovery r
+        ON r."userId" = m."userId" AND r."enrollmentVersion" = m."activeVersion"
+      WHERE m.id = 1 AND m."userId" = $1`,
+      [userId],
+    );
+    return { unused: row?.unused ?? 0, total: row?.total ?? 0 };
+  }
+
+  // SEC-CODES: a fresh TOTP from the signed-in owner replaces every recovery code at once.
+  // Wrong codes count against the same limits as sign-in, so a stolen cookie cannot guess.
+  async regenerateRecoveryCodes(userId: string, code: unknown): Promise<string[]> {
+    if (typeof code !== 'string' || !/^[0-9]{6}$/.test(code)) throw new BadRequestException();
+    const outcome = await this.source.transaction(async (manager) => {
+      const owner = await this.owner(manager);
+      if (owner.userId !== userId) throw new UnauthorizedException();
+      const factor = await this.factor(manager, userId);
+      if (!factor?.activeVersion) throw new UnauthorizedException();
+      const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
+      if (
+        streakLocked(factor) ||
+        (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+      )
+        return { status: 429 } as const;
+      const counter = this.counter(factor.activeEnvelope, userId, factor.activeVersion, code, now);
+      if (counter === null || BigInt(counter) <= BigInt(factor.lastCounter!)) {
+        const failure = recordFailure(factor, now);
+        await manager.query(
+          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
+          "consecutiveFailures" = $4 WHERE id = 1`,
+          [
+            failure.next.failedAttempts,
+            failure.next.failureWindowStart,
+            failure.next.blockedUntil,
+            failure.next.consecutiveFailures,
+          ],
+        );
+        return { status: failure.status === 429 ? 429 : 422 } as const;
+      }
+      const recoveryCodes = newRecoveryCodes();
+      await manager.query(
+        `UPDATE owner_mfa SET "lastCounter" = $1, "failedAttempts" = 0, "failureWindowStart" = NULL,
+        "blockedUntil" = NULL, "consecutiveFailures" = 0 WHERE id = 1`,
+        [counter],
+      );
+      await manager.query('DELETE FROM owner_mfa_recovery WHERE "userId" = $1', [userId]);
+      for (const value of recoveryCodes)
+        await manager.query(
+          `INSERT INTO owner_mfa_recovery ("codeHash", "userId", "enrollmentVersion") VALUES ($1, $2, $3)`,
+          [recoveryHash(value, userId, factor.activeVersion), userId, factor.activeVersion],
+        );
+      return { recoveryCodes };
+    });
+    if ('status' in outcome) {
+      if (outcome.status === 429) throw new HttpException('Too many attempts', 429);
+      throw new UnprocessableEntityException('Invalid code');
+    }
+    return outcome.recoveryCodes;
   }
 }

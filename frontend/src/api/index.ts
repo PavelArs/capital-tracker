@@ -13,3 +13,5 @@ export { currenciesApi } from './currencies.api';
 export { metricsApi } from './metrics.api';
 export type { ResetLinkState } from './password-reset.api';
 export { passwordResetApi } from './password-reset.api';
+export type { SecurityOverview, SecuritySession } from './security.api';
+export { securityApi } from './security.api';

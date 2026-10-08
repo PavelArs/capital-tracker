@@ -1,11 +1,15 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
+import { securityApi } from '@api/security.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from './SettingsPage';
+
+// Settings → Security has its own tests; here it only has to render.
+vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
 
 // A controllable device colour scheme behind window.matchMedia.
 let deviceDark = false;
@@ -24,6 +28,7 @@ beforeEach(() => {
   // Theme cases do not depend on the server settings; they stay pending.
   vi.spyOn(ownerSettingsApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);

@@ -122,5 +122,9 @@
   {
     "file": "tests/e2e/password-reset.spec.ts",
     "title": "RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an emailed single-use link sets a new password, signs every device out and still needs TOTP"
+  },
+  {
+    "file": "tests/e2e/security-settings.spec.ts",
+    "title": "SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new recovery codes after a TOTP and logs out everywhere"
   }
 ]
