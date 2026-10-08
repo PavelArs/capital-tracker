@@ -130,7 +130,9 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     );
     // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
     // value of its own, only the network fee (XFER-CAPITAL).
-    if (operation.status === 'recorded' && !moved) {
+    // SOL-STAKE-MOVE: SOL kept in the wallet's own stake account has no value of its own either.
+    const staking = operation.type === 'stake' || operation.type === 'unstake';
+    if (operation.status === 'recorded' && !moved && !staking) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
       if (operation.paid)
         rows.push([
@@ -409,6 +411,8 @@ export default function OperationDrawer({
         ? `≈ ${money(operation.estimatedValue, currency)} at the latest stored price`
         : null;
   const purchase = operation.type === 'buy';
+  // SOL-STAKE-MOVE: a move into the wallet's own stake account or back has nothing to classify.
+  const stakeMove = operation.type === 'stake' || operation.type === 'unstake';
   const summary = (
     <>
       {notice && (
@@ -432,6 +436,14 @@ export default function OperationDrawer({
         )}
         <span className="transactions-hero__value">{value ?? `Value ${DASH}`}</span>
       </div>
+      {stakeMove && (
+        <p className="transactions-notice" role="note">
+          {operation.type === 'stake'
+            ? 'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price.'
+            : 'Returned from a stake account of this wallet: not income and not a deposit, rewards count as they are earned.'}{' '}
+          Only the network fee is a cost.
+        </p>
+      )}
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         operation.counterAccount && (
@@ -512,7 +524,7 @@ export default function OperationDrawer({
                   </ol>
                 </section>
               )}
-              {chain && (
+              {chain && !stakeMove && (
                 <p className="transactions-info">
                   Blockchain transactions can't be deleted. You can change the classification, add a
                   comment or hide it from calculations. Your changes survive the next sync.
@@ -526,14 +538,16 @@ export default function OperationDrawer({
             </div>
             {chain ? (
               <div className="transactions-drawer__foot">
-                <button
-                  type="button"
-                  className="shell-button shell-button--secondary"
-                  disabled={toggling.busy}
-                  onClick={() => setClassifying(true)}
-                >
-                  {operation.classification?.value ? 'Change classification' : 'Classify'}
-                </button>
+                {!stakeMove && (
+                  <button
+                    type="button"
+                    className="shell-button shell-button--secondary"
+                    disabled={toggling.busy}
+                    onClick={() => setClassifying(true)}
+                  >
+                    {operation.classification?.value ? 'Change classification' : 'Classify'}
+                  </button>
+                )}
                 <span className="transactions-grow" />
                 <button
                   type="button"

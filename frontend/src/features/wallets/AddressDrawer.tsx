@@ -13,7 +13,7 @@ import { DASH, quantity } from '../portfolio/format';
 import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
-import { addressValue, chainAmounts, type Prices } from './WalletParts';
+import { addressValue, chainAmounts, type Prices, StakingSection } from './WalletParts';
 import { chainBalances } from './wallets';
 
 const NEW = '__new';
@@ -233,6 +233,7 @@ export default function AddressDrawer({
               <dd>Every hour in the background</dd>
             </div>
           </dl>
+          {address.staking && <StakingSection address={address} staking={address.staking} />}
           {syncProblem(address, run) && (
             <p className="wallets-message wallets-message--error" role="alert">
               {syncProblem(address, run)}

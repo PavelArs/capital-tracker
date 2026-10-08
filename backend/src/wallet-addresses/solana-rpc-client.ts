@@ -49,6 +49,14 @@ export type SlotResult = { ok: true; slot: number } | Failure;
 export type AccountsResult = { ok: true; accounts: string[] } | Failure;
 export type SignaturesResult = { ok: true; items: SignatureInfo[] } | Failure;
 export type TransactionResult = { ok: true; transaction: SolanaTransaction } | Failure;
+export type EpochResult = { ok: true; epoch: bigint } | Failure;
+/** Each requested account's "jsonParsed" value in request order; null for a closed one. */
+export type AccountValuesResult = { ok: true; values: unknown[] } | Failure;
+/** The slot of the newest finalized transaction naming the address; null when none does. */
+export type NewestSlotResult = { ok: true; slot: number | null } | Failure;
+
+/** Accounts per getMultipleAccounts call, the method's own limit. */
+export const SOLANA_ACCOUNTS_PER_CALL = 100;
 
 class InvalidResponse extends Error {}
 class Refused extends Error {
@@ -173,6 +181,16 @@ export function parseTransaction(result: unknown, expected: string): SolanaTrans
   };
 }
 
+export function parseEpoch(result: unknown): bigint {
+  return BigInt(integer(record(result).epoch, Number.MAX_SAFE_INTEGER));
+}
+
+export function parseAccountValues(result: unknown, count: number): unknown[] {
+  const values = list(record(result).value);
+  if (values.length !== count) invalid();
+  return values;
+}
+
 export class SolanaRpcClient {
   private readonly url: string;
   private readonly timeoutMs: number;
@@ -231,6 +249,37 @@ export class SolanaRpcClient {
       (result) => {
         if (result === null) throw new Refused('unavailable');
         return { ok: true, transaction: parseTransaction(result, value) };
+      },
+    );
+  }
+
+  /** The epoch of the newest finalized slot. */
+  epoch(): Promise<EpochResult> {
+    return this.call('getEpochInfo', [{ commitment: COMMITMENT }], (result) => ({
+      ok: true,
+      epoch: parseEpoch(result),
+    }));
+  }
+
+  /** Accounts as the RPC parses them (stake accounts read as such); at most 100 per call. */
+  accounts(keys: readonly string[]): Promise<AccountValuesResult> {
+    if (keys.length === 0 || keys.length > SOLANA_ACCOUNTS_PER_CALL)
+      throw new Error('Account batch out of range');
+    return this.call(
+      'getMultipleAccounts',
+      [keys, { commitment: COMMITMENT, encoding: 'jsonParsed' }],
+      (result) => ({ ok: true, values: parseAccountValues(result, keys.length) }),
+    );
+  }
+
+  /** Only the newest signature of an address: has anything touched it since a slot? */
+  newestSlot(address: string): Promise<NewestSlotResult> {
+    return this.call(
+      'getSignaturesForAddress',
+      [address, { commitment: COMMITMENT, limit: 1 }],
+      (result) => {
+        const items = parseSignatures(result);
+        return { ok: true, slot: items.length === 0 ? null : items[0].slot };
       },
     );
   }

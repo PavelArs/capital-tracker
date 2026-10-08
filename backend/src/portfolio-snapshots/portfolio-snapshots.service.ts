@@ -92,6 +92,10 @@ const INPUT_TABLES = [
   // D1: unanswered chain movements count, so new ones and new answers change the history.
   'wallet_address_transactions',
   'chain_transaction_classifications',
+  // SOL-STAKE-*: what stayed in a wallet's stake accounts, and their rewards. A stake account's
+  // last read balance changes no value by itself.
+  'wallet_stake_moves',
+  'wallet_stake_rewards',
 ] as const;
 // Only which account an address belongs to; its sync progress changes no value.
 const INPUT_PARTS: readonly [string, string][] = [

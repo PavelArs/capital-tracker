@@ -19,6 +19,8 @@ const { BitcoinSyncAdapter } = require(`${dist}/wallet-addresses/bitcoin-sync.ad
 const { SolanaRpcClient } = require(`${dist}/wallet-addresses/solana-rpc-client.js`);
 const { SolanaSyncAdapter } = require(`${dist}/wallet-addresses/solana-sync.adapter.js`);
 const { TrackSolanaWallets1792100000000 } = require(`${dist}/migrations/1792100000000-TrackSolanaWallets.js`);
+const { TrackSolanaStake1792600000000 } = require(`${dist}/migrations/1792600000000-TrackSolanaStake.js`);
+const { readChainMoves } = require(`${dist}/accounting/portfolio-valuation.service.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_solana_wallets_e2e';
@@ -49,7 +51,11 @@ const USDT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const TOKEN = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const SYSTEM = '11111111111111111111111111111111';
-const wallets = { main: key('main'), cold: key('cold'), busy: key('busy') };
+const wallets = { main: key('main'), cold: key('cold'), busy: key('busy'), staker: key('staker') };
+// track-solana-stake: the public stake program id; a synthetic stake account and vote account.
+const STAKE = 'Stake11111111111111111111111111111111111111';
+const stakeAccount = key('stake-1');
+const vote = key('vote-1');
 const outside = key('outside');
 const accounts = { mainUsdc: key('main-usdc'), mainUsdt: key('main-usdt'), mainOther: key('main-other'),
   outsideUsdc: key('outside-usdc'), outsideUsdt: key('outside-usdt'), outsideOther: key('outside-other') };
@@ -63,15 +69,28 @@ const bitcoinAddress = '1H1dv7Mxs3yqdEGkx3HuMx6jLStmJi8e1d';
 const balance = (accountIndex, mint, owner, amount) => ({ accountIndex, mint, owner, programId: TOKEN,
   uiTokenAmount: { amount: String(amount), decimals: 6, uiAmount: amount / 1e6, uiAmountString: String(amount / 1e6) } });
 // A getTransaction result ("json" encoding) as mainnet returns it.
-function tx(n, slot, { keys, pre, post, fee = FEE, err = null, preTokens = [], postTokens = [], loaded }) {
+function tx(n, slot, { keys, pre, post, fee = FEE, err = null, preTokens = [], postTokens = [], loaded, instructions = [] }) {
   return { signature: sig(n), result: { slot, blockTime: time(slot), version: loaded ? 0 : 'legacy',
     meta: { err, status: err ? { Err: err } : { Ok: null }, fee, preBalances: pre, postBalances: post,
       preTokenBalances: preTokens, postTokenBalances: postTokens, innerInstructions: [], logMessages: [], rewards: [],
       ...(loaded ? { loadedAddresses: loaded } : {}) },
     transaction: { signatures: [sig(n)], message: { accountKeys: keys,
       header: { numRequiredSignatures: 1, numReadonlySignedAccounts: 0, numReadonlyUnsignedAccounts: 1 },
-      instructions: [], recentBlockhash: key(`blockhash:${slot}`) } } } };
+      instructions, recentBlockhash: key(`blockhash:${slot}`) } } } };
 }
+// A stake program instruction ("json" encoding): its accounts by index and its u32 tag.
+function stakeInstruction(program, accounts, tag) {
+  const data = Buffer.alloc(12, 3);
+  data.writeUInt32LE(tag, 0);
+  return { programIdIndex: program, accounts, data: base58(data), stackHeight: null };
+}
+// getMultipleAccounts "jsonParsed" for a delegated stake account, as mainnet answers it.
+const delegated = (lamports, activationEpoch) => ({ lamports, owner: STAKE, executable: false, rentEpoch: 0, space: 200,
+  data: { program: 'stake', space: 200, parsed: { type: 'delegated', info: {
+    meta: { authorized: { staker: wallets.staker, withdrawer: wallets.staker }, rentExemptReserve: '2282880',
+      lockup: { custodian: SYSTEM, epoch: 0, unixTimestamp: 0 } },
+    stake: { creditsObserved: 1, delegation: { voter: vote, stake: String(lamports - 2282880), activationEpoch: String(activationEpoch),
+      deactivationEpoch: '18446744073709551615', warmupCooldownRate: 0.25 } } } } } });
 
 // The provider history; the stub derives signatures and token accounts from it.
 const history = [
@@ -145,7 +164,7 @@ async function newRequests(action) {
 const call = ({ method, rpc }) => {
   assert.equal(method, 'POST');
   const [first, second] = rpc.params;
-  if (rpc.method === 'getSlot') return [rpc.method];
+  if (rpc.method === 'getSlot' || rpc.method === 'getEpochInfo') return [rpc.method];
   if (rpc.method === 'getTokenAccountsByOwner') return [rpc.method, first, second.mint];
   return [rpc.method, first];
 };
@@ -211,7 +230,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 39/);
+  assert.match(migrate(database), /Migrations applied: 40/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -382,10 +401,114 @@ async function main() {
     assert.deepEqual(await s.addresses.list(stranger), []);
     console.log('PASS SOL-PRIVATE another owner gets 404 for the wallet and sees none; legs read per asset');
 
+    // SOL-STAKE-FIND, SOL-STAKE-MOVE, SOL-STAKE-REWARD: 12 SOL arrive, 10 SOL go into a stake account
+    // the wallet creates and delegates; the chain later shows that account with 10.04 SOL.
+    const stakerAccount = await account('Staker');
+    const staker = (await s.addresses.register(owner, { network: 'solana', address: wallets.staker, accountId: stakerAccount })).value.id;
+    const toClassify = async () => (await s.classifications.needsClassificationCount(owner)).count;
+    const waiting = await toClassify();
+    await postHistory([
+      tx(20, 300000210, { keys: [outside, wallets.staker, SYSTEM], pre: [20 * SOL, 0, 1], post: [8 * SOL - FEE, 12 * SOL, 1] }),
+      tx(21, 300000220, { keys: [wallets.staker, stakeAccount, SYSTEM, STAKE, vote], pre: [12 * SOL, 0, 1, 1, 1],
+        post: [2 * SOL - FEE, 10 * SOL, 1, 1, 1], instructions: [
+          { programIdIndex: 2, accounts: [0, 1], data: base58(Buffer.alloc(4)), stackHeight: null },
+          stakeInstruction(3, [1, 2], 0), stakeInstruction(3, [1, 4, 2, 2, 2, 0], 2)] }),
+    ], { slot: 300000300, epoch: 800, stakes: { [stakeAccount]: delegated(10.04 * SOL, 790) } });
+    const staked = await newRequests(() => s.addresses.sync(owner, staker));
+    assert.deepEqual([staked.result.outcome, staked.result.imported], ['complete', 2]);
+    assert.deepEqual(staked.calls.map(call), [
+      ['getSlot'],
+      ['getTokenAccountsByOwner', wallets.staker, USDT],
+      ['getTokenAccountsByOwner', wallets.staker, USDC],
+      ['getSignaturesForAddress', wallets.staker],
+      ['getTransaction', sig(20)],
+      ['getTransaction', sig(21)],
+      ['getEpochInfo'],
+      ['getMultipleAccounts', [stakeAccount]],
+      // Growth is a reward only when no transaction newer than the synced slot touched the account.
+      ['getSignaturesForAddress', stakeAccount],
+    ]);
+    const stakeRows = async () => ({
+      moves: (await db.query(`SELECT signature, account, slot, units::text AS units FROM wallet_stake_moves
+        WHERE "addressId"=$1 ORDER BY slot, signature`, [staker])).map((row) => [row.signature, row.account, row.slot, row.units]),
+      rewards: (await db.query(`SELECT account, slot, units::text AS units FROM wallet_stake_rewards
+        WHERE "addressId"=$1 ORDER BY slot`, [staker])).map((row) => [row.account, row.slot, row.units]),
+      accounts: (await db.query(`SELECT account, lamports::text AS lamports, validator, state FROM wallet_stake_accounts
+        WHERE "addressId"=$1`, [staker])).map((row) => [row.account, row.lamports, row.validator, row.state]),
+    });
+    assert.deepEqual(await stakeRows(), {
+      moves: [[sig(21), stakeAccount, 300000220, String(10 * SOL)]],
+      rewards: [[stakeAccount, 300000300, String(0.04 * SOL)]],
+      accounts: [[stakeAccount, String(10.04 * SOL), vote, 'active']],
+    });
+    // The wallet's SOL counts what sits in its stake account: 12 - 10 - fee + 10 + 0.04.
+    const stakedSummary = staked.result.address;
+    assert.deepEqual(stakedSummary.balances[0], { symbol: 'SOL', quantity: '12.039995000' });
+    assert.deepEqual(stakedSummary.staking, { symbol: 'SOL', quantity: '10.040000000', rewards: '0.040000000', accounts: [
+      { account: stakeAccount, validator: vote, state: 'active', quantity: '10.040000000', rewards: '0.040000000' }] });
+    // Only the fee left: the staked SOL keeps its lots; the reward arrives without a purchase price.
+    // In time order; the synthetic chain is dated 2025, rewards when this probe saw them.
+    const movesOf = async () => ((await readChainMoves(db.manager, owner)).get(stakerAccount) ?? [])
+      .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt))
+      .map((move) => [move.inbound, Number(move.quantity)]);
+    assert.deepEqual(await movesOf(), [[true, 12], [false, 0.000005], [true, 0.04]]);
+    const stakeOps = async () => (await s.operations.read(owner, {}, now)).operations
+      .filter((operation) => operation.wallet?.id === staker)
+      .map((operation) => [operation.chain.txid, operation.type, operation.direction, operation.quantity, operation.fee?.quantity ?? null, operation.status]);
+    assert.deepEqual(await stakeOps(), [
+      [sig(21), 'stake', 'internal', '10', '0.000005', 'recorded'],
+      [sig(20), null, 'in', '12', null, 'needs-classification'],
+    ]);
+    assert.equal(await toClassify(), waiting + 1, 'Only the receipt waits for an answer');
+    console.log('PASS SOL-STAKE-FIND the stake account the wallet created is found in its own transaction and read from the chain (active, its validator)');
+    console.log('PASS SOL-STAKE-MOVE 10 SOL moved into the stake account stay in the wallet balance; only the fee leaves; listed as Stake, nothing to classify');
+    console.log('PASS SOL-STAKE-REWARD 0.04 SOL of unexplained growth is a staking reward counted without a purchase price');
+
+    // Same slot again: the balance is read, nothing is counted twice.
+    const again2 = await newRequests(() => s.addresses.sync(owner, staker));
+    assert.deepEqual(again2.calls.map(call), [['getSlot'], ['getEpochInfo'], ['getMultipleAccounts', [stakeAccount]]]);
+    // The next epoch adds 0.01 SOL.
+    await post('solana', { slot: 300000400, epoch: 802, stakes: { [stakeAccount]: delegated(10.05 * SOL, 790) } });
+    await s.addresses.sync(owner, staker);
+    assert.deepEqual((await stakeRows()).rewards, [[stakeAccount, 300000300, String(0.04 * SOL)], [stakeAccount, 300000400, String(0.01 * SOL)]]);
+
+    // Withdrawing everything back closes the stake account: an Unstake, again only the fee.
+    await postHistory([tx(22, 300000450, { keys: [wallets.staker, stakeAccount, SYSTEM, STAKE],
+      pre: [2 * SOL - FEE, 10.05 * SOL, 1, 1], post: [12.05 * SOL - 2 * FEE, 0, 1, 1],
+      instructions: [stakeInstruction(3, [1, 2, 0], 5), stakeInstruction(3, [1, 0, 2, 2, 0], 4)] })],
+    { slot: 300000500, stakes: { [stakeAccount]: null } });
+    const unstaked = await newRequests(() => s.addresses.sync(owner, staker));
+    assert.deepEqual(unstaked.calls.map(call).slice(-2), [['getEpochInfo'], ['getMultipleAccounts', [stakeAccount]]]);
+    const closed = await stakeRows();
+    assert.deepEqual(closed.moves, [[sig(21), stakeAccount, 300000220, String(10 * SOL)], [sig(22), stakeAccount, 300000450, String(-10.05 * SOL)]]);
+    assert.deepEqual(closed.accounts, [[stakeAccount, '0', null, 'closed']]);
+    assert.equal(closed.rewards.length, 2, 'A closed account explained by its history adds no reward');
+    assert.deepEqual([unstaked.result.address.balances[0], unstaked.result.address.staking], [{ symbol: 'SOL', quantity: '12.049990000' }, null]);
+    assert.deepEqual(await movesOf(), [[true, 12], [false, 0.000005], [false, 0.000005], [true, 0.04], [true, 0.01]]);
+    assert.deepEqual((await stakeOps())[0], [sig(22), 'unstake', 'internal', '10.05', '0.000005', 'recorded']);
+    console.log('PASS SOL-STAKE-MOVE withdrawing 10.05 SOL back is an Unstake: balance 12.04999 SOL, rewards kept, the closed account no longer listed');
+
+    // An address synced before stake accounts were followed reads its stored history once.
+    await db.query('DELETE FROM wallet_stake_moves WHERE "addressId"=$1', [staker]);
+    await db.query('DELETE FROM wallet_stake_scans WHERE "addressId"=$1', [staker]);
+    const backfilled = await newRequests(() => s.addresses.sync(owner, staker));
+    assert.deepEqual(backfilled.calls.map(call), [['getSlot'], ['getEpochInfo'], ['getMultipleAccounts', [stakeAccount]]]);
+    assert.deepEqual(await stakeRows(), closed);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM wallet_stake_scans WHERE "addressId"=$1', [staker]))[0].n, 1);
+    // Wallets without stake accounts never ask for them.
+    const plain = await newRequests(() => s.addresses.sync(owner, main));
+    assert.ok(plain.calls.every(({ rpc }) => !['getEpochInfo', 'getMultipleAccounts'].includes(rpc.method)));
+    await assert.rejects(() => db.query(`INSERT INTO wallet_stake_moves("ownerId","addressId",signature,account,slot,"blockTime",units)
+      VALUES ($1,$2,$3,$4,1,now(),0)`, [owner, staker, sig(30), stakeAccount]), /wallet_stake_moves_units_check/);
+    await assert.rejects(() => db.query(`INSERT INTO wallet_stake_rewards("ownerId","addressId",account,slot,"observedAt",units)
+      VALUES ($1,$2,$3,1,now(),-1)`, [owner, staker, stakeAccount]), /wallet_stake_rewards_units_check/);
+    console.log('PASS SOL-STAKE-FIND history stored before stake tracking is read once from the stored transactions, no provider call; wallets without stake accounts make no extra call; zero moves and negative rewards refused');
+
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackSolanaWallets1792100000000().down(), /recovery plan/);
+    await assert.rejects(() => new TrackSolanaStake1792600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS SOL-MIGRATION fresh 36 applies once; down refuses');
+    console.log('PASS SOL-MIGRATION fresh 40 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }
