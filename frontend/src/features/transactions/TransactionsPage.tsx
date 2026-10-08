@@ -31,20 +31,25 @@ import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './transactions.css';
 
-type View = 'all' | 'needs-classification' | 'hidden' | Operation['source'];
+type StatusView = 'needs-classification' | 'hidden' | 'dust';
+type View = 'all' | StatusView | Operation['source'];
 const views: [View, string][] = [
   ['all', 'All'],
   ['needs-classification', 'Needs classification'],
   ['hidden', 'Hidden'],
+  ['dust', 'Dust'],
   ['chain', 'Blockchain'],
   ['manual', 'Manual'],
   ['csv', 'CSV'],
 ];
+const isStatusView = (value: string | null): value is StatusView =>
+  value === 'needs-classification' || value === 'hidden' || value === 'dust';
 
+// Dust is filtered out of every view but its own (CLS-DUST).
 function inView(operation: Operation, view: View): boolean {
-  if (view === 'all') return true;
-  if (view === 'needs-classification' || view === 'hidden') return operation.status === view;
-  return operation.source === view;
+  if (isStatusView(view)) return operation.status === view;
+  if (operation.status === 'dust') return false;
+  return view === 'all' || operation.source === view;
 }
 
 /** Where a row happened; a blockchain row's suggested other side is not a place yet (M13). */
@@ -153,15 +158,10 @@ function OperationRow({
   onOpen: () => void;
 }) {
   const needs = operation.status === 'needs-classification';
+  const muted = operation.status === 'hidden' || operation.status === 'dust';
   return (
     <tr
-      className={
-        needs
-          ? 'transactions-row--needs'
-          : operation.status === 'hidden'
-            ? 'transactions-row--hidden'
-            : undefined
-      }
+      className={needs ? 'transactions-row--needs' : muted ? 'transactions-row--hidden' : undefined}
       onClick={onOpen}
     >
       <td className="transactions-wrap">
@@ -214,7 +214,7 @@ function OperationRow({
         )}
       </td>
       <td>
-        {needs || operation.status === 'hidden' ? (
+        {needs || muted ? (
           <span
             className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
           >
@@ -288,7 +288,8 @@ function OperationItem({
             </span>
           ) : (
             <span className="transactions-item__detail">
-              {operation.status === 'hidden' && 'Hidden · '}
+              {(operation.status === 'hidden' || operation.status === 'dust') &&
+                `${statusLabels[operation.status]} · `}
               {placeLabel(operation)}
               {at !== 'No time' && ` · ${at}`}
             </span>
@@ -342,11 +343,9 @@ export default function TransactionsPage() {
 
   // Filters live in the address, so other screens can link to "Needs classification".
   const status = params.get('status');
-  const view: View = (
-    status === 'needs-classification' || status === 'hidden'
-      ? status
-      : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all')
-  ) as View;
+  const view: View = isStatusView(status)
+    ? status
+    : (views.find(([key]) => key === params.get('source'))?.[0] ?? 'all');
   const asset = params.get('asset') ?? '';
   const place = params.get('account') ?? '';
   const replaceParams = (next: URLSearchParams) => {
@@ -364,8 +363,8 @@ export default function TransactionsPage() {
   };
   const setView = (next: View) =>
     update({
-      status: next === 'needs-classification' || next === 'hidden' ? next : '',
-      source: next === 'all' || next === 'needs-classification' || next === 'hidden' ? '' : next,
+      status: isStatusView(next) ? next : '',
+      source: next === 'all' || isStatusView(next) ? '' : next,
     });
 
   const operations = list?.operations ?? [];
@@ -508,6 +507,9 @@ export default function TransactionsPage() {
             <div className="portfolio-chips" role="group" aria-label="Filter transactions">
               {views.map(([key, label]) => {
                 const count = operations.filter((operation) => inView(operation, key)).length;
+                // The Dust chip appears once a threshold is set or something is dust.
+                if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
+                  return null;
                 return (
                   <button
                     key={key}
@@ -555,6 +557,14 @@ export default function TransactionsPage() {
               />
             </div>
           </div>
+          {view === 'dust' && (
+            <p className="transactions-info transactions-dust-note">
+              {list.dustThresholdUsd === null
+                ? 'No dust threshold is set, so every incoming wallet transaction asks to be classified.'
+                : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}{' '}
+              <Link to="/preferences">Change the threshold in Settings</Link>
+            </p>
+          )}
           {visible.length === 0 ? (
             <div className="portfolio-none transactions-none">
               <p>

@@ -8,6 +8,8 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
+import { readDustThreshold } from '../owner-settings/owner-settings.service';
+import { latestMarketPrices } from '../prices/market-price.store';
 import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
 import { projectRewardVersion, readRewardHead } from './asset-reward.store';
@@ -24,6 +26,7 @@ import {
   planOperation,
   unfit,
 } from './chain-classification';
+import { isDust } from './chain-dust';
 import {
   type OwnLeg,
   ownTransferPairs,
@@ -33,6 +36,7 @@ import {
 import { rethrowAccountingHistory } from './connected-accounting.store';
 import { FifoHistoryError } from './fifo';
 import { parseUuid } from './input';
+import { estimate } from './operation-list';
 import { OwnedTransferService } from './owned-transfer.service';
 import { readTransferHead } from './owned-transfer.store';
 import { parseTransferCreate, parseTransferVoid } from './owned-transfer-input';
@@ -309,21 +313,46 @@ export class ChainClassificationService {
     return { linked };
   }
 
-  /** CLS-COUNT: chain transactions nobody has classified or hidden; a stake move needs none. */
-  async needsClassificationCount(ownerId: string): Promise<{ count: number }> {
+  /**
+   * CLS-COUNT: chain transactions nobody has classified or hidden, less the receipts worth
+   * less than the owner's dust threshold at the latest stored price (CLS-DUST); a stake move
+   * needs none.
+   */
+  async needsClassificationCount(ownerId: string, now = new Date()): Promise<{ count: number }> {
     const owner = parseUuid(ownerId);
-    const [{ count }]: { count: number }[] = await this.source.query(
-      `SELECT count(*)::int AS count FROM wallet_address_transactions t
-        JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
-        LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
-        LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
-          AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
-          AND NOT EXISTS (SELECT 1 FROM wallet_stake_moves m WHERE t.asset IS NULL
-            AND m."addressId"=t."addressId" AND m.signature=t.txid)`,
-      [owner],
-    );
-    return { count };
+    return this.source.transaction('REPEATABLE READ', async (manager) => {
+      await manager.query('SET TRANSACTION READ ONLY');
+      const rows: (ChainLeg & { direction: 'in' | 'out' | 'self' })[] = await manager.query(
+        `SELECT w.network, t.asset, t.direction, t."blockTime"::text AS "blockTime",
+            t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits"
+          FROM wallet_address_transactions t
+          JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+          LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+          LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+            AND v.txid=h.txid AND v.version=h."currentVersion"
+          WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
+            AND NOT EXISTS (SELECT 1 FROM wallet_stake_moves m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.signature=t.txid)`,
+        [owner],
+      );
+      const threshold = await readDustThreshold(manager, owner);
+      if (threshold === null || rows.length === 0) return { count: rows.length };
+      const symbols = [...new Set(rows.map((row) => chainCoin(row).symbol))];
+      const prices = new Map(
+        (await latestMarketPrices(manager, symbols, now)).map((row) => [
+          row.asset,
+          { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
+        ]),
+      );
+      const dust = rows.filter((row) =>
+        isDust(
+          row.direction,
+          estimate(legMovement(row).quantity, prices.get(chainCoin(row).symbol)),
+          threshold,
+        ),
+      );
+      return { count: rows.length - dust.length };
+    });
   }
 
   /**

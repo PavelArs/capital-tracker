@@ -313,6 +313,7 @@ async function everyJournal(db, s, f) {
   const list = await read(s, owner);
   assert.deepEqual(Object.keys(list).sort(), [
     'at',
+    'dustThresholdUsd',
     'needsClassificationCount',
     'operations',
     'quoteCurrency',
@@ -423,6 +424,7 @@ async function emptyOwner(db, s, f) {
     at: now.toISOString(),
     quoteCurrency: 'USD',
     needsClassificationCount: 0,
+    dustThresholdUsd: null,
     operations: [],
   });
   console.log('PASS OPS-EMPTY');
@@ -488,7 +490,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 39);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 40);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('operations-owner@example.invalid','synthetic-not-a-hash',true),

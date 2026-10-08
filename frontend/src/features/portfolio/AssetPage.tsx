@@ -68,11 +68,16 @@ const periodNames: Record<HistoryPeriod, string> = {
 const keyOf = (asset: AssetValuation) =>
   assetKey({ instrumentId: asset.instrumentId, symbol: asset.symbol, name: asset.name });
 
-/** Operations that move this asset, newest first (as the Transactions page filters them). */
+/**
+ * Operations that move this asset, newest first (as the Transactions page filters them); dust
+ * stays under its own filter there.
+ */
 export function assetOperations(operations: readonly Operation[], key: string): Operation[] {
   return operations
-    .filter((operation) =>
-      [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
+    .filter(
+      (operation) =>
+        operation.status !== 'dust' &&
+        [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
     )
     .sort(
       (left, right) =>

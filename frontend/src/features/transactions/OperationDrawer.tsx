@@ -404,6 +404,7 @@ export default function OperationDrawer({
 
   const link = editLink(operation);
   const hidden = operation.status === 'hidden';
+  const dust = operation.status === 'dust';
   const value =
     operation.value !== null
       ? money(operation.value, currency)
@@ -422,9 +423,9 @@ export default function OperationDrawer({
       )}
       <div className="transactions-hero">
         <span
-          className={`transactions-badge${needs ? ' transactions-badge--warn' : hidden ? ' transactions-badge--muted' : ''}`}
+          className={`transactions-badge${needs ? ' transactions-badge--warn' : hidden || dust ? ' transactions-badge--muted' : ''}`}
         >
-          {needs || hidden
+          {needs || hidden || dust
             ? statusLabels[operation.status]
             : `${sourceLabels[operation.source]} · ${typeLabel(operation)}`}
         </span>
@@ -442,6 +443,12 @@ export default function OperationDrawer({
             ? 'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price.'
             : 'Returned from a stake account of this wallet: not income and not a deposit, rewards count as they are earned.'}{' '}
           Only the network fee is a cost.
+        </p>
+      )}
+      {dust && (
+        <p className="transactions-notice" role="note">
+          Worth less than your dust threshold, so it doesn't ask to be classified. It still counts
+          in your balance. Classify it if it matters, or hide it.
         </p>
       )}
       {operation.classification?.automatic &&

@@ -163,6 +163,7 @@ const operations = (items: Operation[]): OperationList => ({
   at: '2026-10-05T12:00:00.000Z',
   quoteCurrency: 'USD',
   needsClassificationCount: 0,
+  dustThresholdUsd: null,
   operations: items,
 });
 

@@ -6,7 +6,7 @@ import {
   isAccountingCurrency,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
-import { readMainCurrency } from '../owner-settings/owner-settings.service';
+import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
@@ -441,6 +441,7 @@ export class OperationListService {
               { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
             ]),
           ),
+          dustThresholdUsd: await readDustThreshold(manager, owner),
         },
         fx,
       );

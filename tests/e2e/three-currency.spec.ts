@@ -49,7 +49,10 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
   const headers = { Origin: origin, 'X-CSRF-Token': api.csrfToken };
   const settings = page.context().request;
   try {
-    expect(await (await settings.get('/api/owner-settings')).json()).toEqual({ mainCurrency: 'USD' });
+    expect(await (await settings.get('/api/owner-settings')).json()).toEqual({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
     expect(
       (await settings.put('/api/owner-settings', { data: { mainCurrency: 'GBP' }, headers })).status(),
     ).toBe(400);
