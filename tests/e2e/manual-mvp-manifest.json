@@ -126,5 +126,9 @@
   {
     "file": "tests/e2e/security-settings.spec.ts",
     "title": "SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new recovery codes after a TOTP and logs out everywhere"
+  },
+  {
+    "file": "tests/e2e/owner-export.spec.ts",
+    "title": "EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive and a JSON backup without secrets"
   }
 ]

@@ -10,6 +10,8 @@ export { cryptoApi } from './crypto.api';
 // Re-export types from API modules
 export type { ConversionResult } from './currencies.api';
 export { currenciesApi } from './currencies.api';
+export type { ExportKind } from './export.api';
+export { exportApi } from './export.api';
 export { metricsApi } from './metrics.api';
 export type { ResetLinkState } from './password-reset.api';
 export { passwordResetApi } from './password-reset.api';

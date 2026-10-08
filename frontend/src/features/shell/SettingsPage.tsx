@@ -5,6 +5,7 @@ import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-va
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
@@ -294,8 +295,9 @@ export default function SettingsPage() {
           <h2 id="settings-wallets">Wallets</h2>
           <DustThreshold />
         </section>
+        <DataExport />
         <p className="shell-note">
-          Export arrives in a later step. Language and the old display rates are still in{' '}
+          Language and the old display rates are still in{' '}
           <Link to="/settings">Legacy settings</Link>.
         </p>
       </div>

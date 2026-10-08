@@ -160,6 +160,10 @@
   font-size: var(--fs-sm);
 }
 
+.shell-setting__hint--error {
+  color: var(--neg);
+}
+
 .shell-seg {
   display: inline-flex;
   gap: 2px;
