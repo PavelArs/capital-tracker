@@ -22,7 +22,7 @@ export interface ChainBalance {
 }
 
 /** TOKEN-HIDE: why an address's balances leave a token out. */
-export type HiddenReason = 'negative' | 'lookalike' | 'owner';
+export type HiddenReason = 'negative' | 'lookalike' | 'dust' | 'owner';
 
 /** A token the address holds that its balances leave out; the coins are not counted. */
 export interface HiddenToken {

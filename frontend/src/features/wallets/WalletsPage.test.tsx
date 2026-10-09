@@ -1733,6 +1733,7 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
             { symbol: 'T', name: 'Spoof', quantity: '-3000', reason: 'negative' },
             { symbol: 'USDT1A2B', name: 'Tether', quantity: '40', reason: 'lookalike' },
             { symbol: 'AAA', name: 'AAA token', quantity: '5', reason: 'owner' },
+            { symbol: 'DDD', name: 'DDD token', quantity: '9', reason: 'dust' },
           ],
         }),
       ],
@@ -1745,6 +1746,7 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     expect(drawer).toHaveTextContent('the history sends out more than it received');
     expect(drawer).toHaveTextContent('calls itself like a coin you track');
     expect(drawer).toHaveTextContent('Hidden by you');
+    expect(drawer).toHaveTextContent('worth less than your dust threshold');
     expect(drawer).toHaveTextContent('-3,000');
     await user.click(within(drawer).getByRole('button', { name: 'Restore T' }));
     expect(restore).toHaveBeenCalledWith(holder().id, ['T'], 'shown');

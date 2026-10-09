@@ -692,6 +692,34 @@ async function main() {
           { symbol: frg, name: 'Forged Token', quantity: '-3000.000000', reason: 'negative' },
         ].sort((left, right) => left.symbol.localeCompare(right.symbol)));
         assert.equal(seen.chainBalance, '1.000000000000000000', 'ETH is not a token: it always counts');
+
+        // TOKEN-DUST: with the dust threshold set, a token worth less than it, or one no source lists, is left out too.
+        {
+          const { OwnerSettingsService } = require(`${dist}/owner-settings/owner-settings.service.js`);
+          const settings = new OwnerSettingsService(db);
+          const hiddenOf = async () => Object.fromEntries((await view()).hiddenTokens.map((item) => [item.symbol, item.reason]));
+          assert.equal((await hiddenOf()).WANTED, undefined, 'No threshold, no dust');
+          await settings.update(owner, { dustThresholdUsd: '1' });
+          assert.equal((await hiddenOf()).WANTED, 'dust', 'Unpriced and unlisted: worth nothing');
+          const reload = async () => { forgetTokens(); await loadChainTokens(db.manager); };
+          const { forgetTokens } = require(`${dist}/wallet-addresses/chain-assets.js`);
+          const { loadChainTokens } = require(`${dist}/wallet-addresses/chain-tokens.js`);
+          const price = (value, minute) => db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+            VALUES ('WANTED','USD','coingecko', now() - interval '${minute} minutes', $1, 'spot')`, [value]);
+          // A listed token whose price is not known yet is not known to be dust.
+          await db.query('UPDATE chain_tokens SET "coingeckoId"=$1 WHERE contract=$2', [wanted, wanted]);
+          await reload();
+          assert.equal((await hiddenOf()).WANTED, undefined);
+          // 7 tokens at 0.01 USD are worth 0.07 USD, below the threshold; at 1 USD they are worth 7 USD.
+          await price('0.01', 10);
+          assert.equal((await hiddenOf()).WANTED, 'dust');
+          await price('1', 5);
+          assert.equal((await hiddenOf()).WANTED, undefined);
+          await db.query('UPDATE chain_tokens SET "coingeckoId"=NULL WHERE contract=$1', [wanted]);
+          await reload();
+          await settings.update(owner, { dustThresholdUsd: null });
+          assert.equal((await hiddenOf()).WANTED, undefined);
+        }
         const choose = (tickers, visibility, id = spamId, who = owner) => s.addresses.setTokenVisibility(who, id, { tickers, visibility });
         const stored = async () => (await db.query('SELECT "hiddenTokens", "shownTokens" FROM wallet_addresses WHERE id=$1', [spamId]))[0];
 

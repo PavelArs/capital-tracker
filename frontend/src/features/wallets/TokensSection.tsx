@@ -15,6 +15,7 @@ const reasons: Record<HiddenReason, string> = {
   negative:
     'Hidden by the app: the history sends out more than it received, which forged transfers do',
   lookalike: 'Hidden by the app: it calls itself like a coin you track but is a different token',
+  dust: 'Hidden by the app: worth less than your dust threshold, or no price source lists it',
   owner: 'Hidden by you',
 };
 

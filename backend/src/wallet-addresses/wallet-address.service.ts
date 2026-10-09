@@ -12,6 +12,8 @@ import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
+import { readDustThreshold } from '../owner-settings/owner-settings.service';
+import { latestMarketPrices } from '../prices/market-price.store';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
@@ -32,7 +34,7 @@ import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
-import { type HiddenReason, hiddenReason } from './token-visibility';
+import { type HiddenReason, hiddenReason, isWorthless } from './token-visibility';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
@@ -56,6 +58,8 @@ interface AddressRow {
   /** TOKEN-HIDE: contracts the owner hid, and ones the app would hide that the owner brought back. */
   hiddenTokens: string[];
   shownTokens: string[];
+  /** TOKEN-DUST: contracts of other tokens the address holds that are worth nothing; set when read. */
+  dustTokens?: ReadonlySet<string>;
   walkTopTxid: string | null;
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
@@ -292,6 +296,7 @@ function leftOut(row: AddressRow): Map<string, HiddenReason> {
       BigInt(item.units),
       row.hiddenTokens,
       row.shownTokens,
+      row.dustTokens?.has(item.asset as string) ?? false,
     );
     if (reason) found.set(item.asset as string, reason);
   }
@@ -485,6 +490,52 @@ function poolsOf(row: AddressRow) {
   return pools.length === 0 ? null : pools;
 }
 
+/**
+ * TOKEN-DUST: marks the other tokens each address holds that are worth nothing, by the owner's
+ * dust threshold and the latest stored prices. Without a threshold nothing is dust.
+ */
+async function withDust(
+  manager: EntityManager,
+  owner: string,
+  rows: AddressRow[],
+): Promise<AddressRow[]> {
+  const candidates = rows.filter((row) => movesAnyToken(row.network));
+  const threshold = candidates.length > 0 ? await readDustThreshold(manager, owner) : null;
+  if (threshold === null) return rows;
+  const held = (row: AddressRow) =>
+    row.balances.filter((item) => isOtherToken(row.network, item.asset) && BigInt(item.units) > 0n);
+  const tickers = [
+    ...new Set(
+      candidates.flatMap((row) =>
+        held(row).map((item) => chainAsset(row.network, item.asset).symbol),
+      ),
+    ),
+  ];
+  const prices = new Map(
+    (await latestMarketPrices(manager, tickers, new Date())).map((item) => [
+      item.asset,
+      item.price,
+    ]),
+  );
+  for (const row of candidates) {
+    const dust = new Set<string>();
+    for (const item of held(row)) {
+      const asset = chainAsset(row.network, item.asset);
+      if (
+        isWorthless(
+          asset,
+          formatUnits(BigInt(item.units), asset),
+          threshold,
+          prices.get(asset.symbol),
+        )
+      )
+        dust.add(item.asset as string);
+    }
+    row.dustTokens = dust;
+  }
+  return rows;
+}
+
 function summary(row: AddressRow, now = new Date()) {
   const state = historyState(row);
   const balances = state === 'complete' ? balancesOf(row) : null;
@@ -631,7 +682,10 @@ export class WalletAddressService {
         `${selectAddress} WHERE a."ownerId" = $1 AND a.network = $2 AND a.address = $3`,
         [owner, network, address],
       );
-      return { created: inserted.length === 1, value: summary(row) };
+      return {
+        created: inserted.length === 1,
+        value: summary((await withDust(manager, owner, [row]))[0]),
+      };
     });
   }
 
@@ -781,7 +835,7 @@ export class WalletAddressService {
         `${selectAddress} WHERE a."ownerId" = $1 ORDER BY a."createdAt", a.id`,
         [owner],
       );
-      return rows.map((row) => summary(row));
+      return (await withDust(manager, owner, rows)).map((row) => summary(row));
     });
   }
 
@@ -832,7 +886,7 @@ export class WalletAddressService {
       [owner, id],
     );
     if (!row) throw new NotFoundException();
-    return row;
+    return (await withDust(manager, owner, [row]))[0];
   }
 
   // Another owner's account is as unknown as a missing one. Accounting writes lock the owner
