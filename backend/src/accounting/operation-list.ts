@@ -3,6 +3,7 @@ import { priceAt } from '../prices/market-price.store';
 import {
   chainAsset,
   isExchange,
+  isUnlistedToken,
   type Network,
   unitsToAtoms,
 } from '../wallet-addresses/chain-assets';
@@ -529,7 +530,12 @@ function chainOperation(
   // CLS-DUST: nobody has answered it and it is worth too little to ask about.
   if (
     (answer === null || answer.status === 'unclassified' || recordGone) &&
-    isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd)
+    isDust(
+      row.direction,
+      operation.estimatedValueUsd,
+      dustThresholdUsd,
+      isUnlistedToken(network, row.asset),
+    )
   )
     return { ...operation, status: 'dust' };
   if (named && record && !recordGone)

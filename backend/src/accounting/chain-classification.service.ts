@@ -11,7 +11,7 @@ import {
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { marketPricesAt, priceAt, storedPricesAt } from '../prices/market-price.store';
-import { isExchange } from '../wallet-addresses/chain-assets';
+import { isExchange, isUnlistedToken } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { TRON_REWARD_CONTRACT } from '../wallet-addresses/tron-legs';
 import { lockAccountingOwner } from './accounting-lock';
@@ -604,6 +604,7 @@ export class ChainClassificationService {
             priceAt(prices.get(chainCoin(row).symbol), row.blockTime),
           ),
           threshold,
+          isUnlistedToken(row.network, row.asset),
         ),
       );
       return { count: rows.length - dust.length };
