@@ -27,3 +27,37 @@
   height: 44px;
   font-size: 18px;
 }
+
+/* TOKEN-CHAIN: the token's blockchain in the corner, ringed by the surface it sits on. */
+.asset-icon {
+  position: relative;
+}
+
+.asset-icon__chain {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--surface, var(--bg));
+  font-size: 8px;
+}
+
+.asset-icon__chain::before {
+  content: attr(data-chain);
+}
+
+.asset-icon--sm .asset-icon__chain {
+  width: 12px;
+  height: 12px;
+  font-size: 7px;
+}
+
+.asset-icon--lg .asset-icon__chain {
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+}

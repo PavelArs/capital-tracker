@@ -17,6 +17,7 @@ import {
 } from '../portfolio/format';
 import { Change } from '../portfolio/PortfolioPage';
 import AssetIcon from '../shell/AssetIcon';
+import { onlyChain, type TokenChains, withChains } from '../shell/token-chains';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 
 const TOP = 5;
@@ -26,17 +27,24 @@ export function topAssets(portfolio: PortfolioValuation): AssetValuation[] {
   return portfolio.assets.filter((asset) => Number(asset.quantity) !== 0).slice(0, TOP);
 }
 
-const amount = (asset: AssetValuation) =>
-  `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`;
+/** "500 USDT on Ethereum": a token held in tracked wallets names their blockchains. */
+const amount = (asset: AssetValuation, chains: TokenChains) =>
+  withChains(
+    `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+    asset.symbol,
+    chains,
+  );
 
 function Table({
   assets,
   currency,
   asked,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
+  chains: TokenChains;
 }) {
   return (
     <div className="portfolio-table-wrap">
@@ -63,7 +71,12 @@ function Table({
             <tr key={asset.instrumentId}>
               <td>
                 <span className="portfolio-asset">
-                  <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+                  <AssetIcon
+                    symbol={asset.symbol}
+                    name={asset.name}
+                    assetType={asset.assetType}
+                    network={onlyChain(asset.symbol, chains)}
+                  />
                   <span>
                     <Link
                       className="portfolio-asset__name"
@@ -71,7 +84,7 @@ function Table({
                     >
                       {asset.name}
                     </Link>
-                    <span className="portfolio-asset__ticker">{amount(asset)}</span>
+                    <span className="portfolio-asset__ticker">{amount(asset, chains)}</span>
                   </span>
                 </span>
               </td>
@@ -97,10 +110,12 @@ function List({
   assets,
   currency,
   asked,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
+  chains: TokenChains;
 }) {
   return (
     <ul className="portfolio-list">
@@ -113,10 +128,15 @@ function List({
               className="portfolio-list__row"
               to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
             >
-              <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+              <AssetIcon
+                symbol={asset.symbol}
+                name={asset.name}
+                assetType={asset.assetType}
+                network={onlyChain(asset.symbol, chains)}
+              />
               <span className="portfolio-list__name">{asset.name}</span>
               <span className="portfolio-list__value">{money(asset.value, currency)}</span>
-              <span className="portfolio-list__detail">{amount(asset)}</span>
+              <span className="portfolio-list__detail">{amount(asset, chains)}</span>
               <span
                 className={`portfolio-list__pnl${market && tone(change) ? ` portfolio-${tone(change)}` : ''}`}
               >
@@ -136,7 +156,10 @@ export default function TopAssets({
   failed,
   onRetry,
   asked,
+  chains = new Map(),
 }: {
+  /** TOKEN-CHAIN: where the tracked wallets hold each token. */
+  chains?: TokenChains;
   portfolio: PortfolioValuation | null;
   failed: boolean;
   onRetry: () => void;
@@ -165,9 +188,9 @@ export default function TopAssets({
       ) : assets.length === 0 ? (
         <p className="portfolio-none">No assets held right now.</p>
       ) : phone ? (
-        <List assets={assets} currency={portfolio.currency} asked={asked} />
+        <List assets={assets} currency={portfolio.currency} asked={asked} chains={chains} />
       ) : (
-        <Table assets={assets} currency={portfolio.currency} asked={asked} />
+        <Table assets={assets} currency={portfolio.currency} asked={asked} chains={chains} />
       )}
     </section>
   );

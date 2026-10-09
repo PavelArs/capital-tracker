@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
 import Allocation from './Allocation';
@@ -30,9 +31,16 @@ const filters: [Filter, string][] = [
   ['manual', 'Manual'],
 ];
 
-/** "BTC · Crypto · USD": ticker, type and value currency of an asset. */
-export function assetCaption(asset: AssetValuation): string {
-  return [asset.symbol, typeLabels[asset.assetType], asset.valuationCurrency]
+/**
+ * "BTC · Crypto · USD": ticker, type and value currency of an asset; a token held in tracked
+ * wallets names their blockchains, "USDT on Ethereum, Solana" (TOKEN-CHAIN).
+ */
+export function assetCaption(asset: AssetValuation, chains: TokenChains = new Map()): string {
+  return [
+    asset.symbol && withChains(asset.symbol, asset.symbol, chains),
+    typeLabels[asset.assetType],
+    asset.valuationCurrency,
+  ]
     .filter(Boolean)
     .join(' · ');
 }
@@ -178,11 +186,13 @@ function AssetsTable({
   currency,
   asked,
   now,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
+  chains: TokenChains;
 }) {
   return (
     <div className="portfolio-table-wrap">
@@ -218,7 +228,12 @@ function AssetsTable({
             <tr key={asset.instrumentId}>
               <td>
                 <span className="portfolio-asset">
-                  <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+                  <AssetIcon
+                    symbol={asset.symbol}
+                    name={asset.name}
+                    assetType={asset.assetType}
+                    network={onlyChain(asset.symbol, chains)}
+                  />
                   <span>
                     <Link
                       className="portfolio-asset__name"
@@ -226,7 +241,7 @@ function AssetsTable({
                     >
                       {asset.name}
                     </Link>
-                    <span className="portfolio-asset__ticker">{assetCaption(asset)}</span>
+                    <span className="portfolio-asset__ticker">{assetCaption(asset, chains)}</span>
                   </span>
                 </span>
               </td>
@@ -264,10 +279,12 @@ function AssetsList({
   assets,
   currency,
   asked,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
+  chains: TokenChains;
 }) {
   return (
     <ul className="portfolio-list">
@@ -277,12 +294,20 @@ function AssetsList({
             className="portfolio-list__row"
             to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
           >
-            <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+            <AssetIcon
+              symbol={asset.symbol}
+              name={asset.name}
+              assetType={asset.assetType}
+              network={onlyChain(asset.symbol, chains)}
+            />
             <span className="portfolio-list__name">{asset.name}</span>
             <span className="portfolio-list__value">{money(asset.value, currency)}</span>
             <span className="portfolio-list__detail">
-              {quantity(asset.quantity)}
-              {asset.symbol && ` ${asset.symbol}`}
+              {withChains(
+                `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+                asset.symbol,
+                chains,
+              )}
             </span>
             <span
               className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
@@ -313,6 +338,7 @@ export default function PortfolioPage() {
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked] = useAskedCurrency();
+  const chains = useTokenChains();
   const latest = useRef(0);
 
   // Only the newest request may change the page; a quiet refresh keeps what is shown.
@@ -447,10 +473,17 @@ export default function PortfolioPage() {
                   assets={sortAssets(visible, sortKey)}
                   currency={portfolio.currency}
                   asked={asked}
+                  chains={chains}
                 />
               </>
             ) : (
-              <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
+              <AssetsTable
+                assets={visible}
+                currency={portfolio.currency}
+                asked={asked}
+                now={now}
+                chains={chains}
+              />
             )}
             {visible.length === 0 && (
               <p className="portfolio-none">
