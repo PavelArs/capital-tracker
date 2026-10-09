@@ -1269,7 +1269,7 @@ describe('link-own-transfers (M13)', () => {
       classification: {
         version: 1,
         hidden: false,
-        value: { type: 'sell', currency: 'USDT', amount: '650', fee: '0' },
+        value: { type: 'sell', currency: 'USDT', amount: '650' },
         comment: null,
         automatic: true,
       },
