@@ -1257,7 +1257,9 @@ describe('M22: Bybit accounts', () => {
     vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({ id: bybit } as never);
     const user = userEvent.setup();
     const dialog = await openBybit(user);
-    expect(dialog).toHaveTextContent('Set permissions to Read-Only and tick nothing else');
+    expect(dialog).toHaveTextContent(
+      'Set permissions to Read-Only and tick Earn under it, so coins in Earn count. Tick nothing that trades or withdraws.',
+    );
     expect(dialog).toHaveTextContent('Bind it to this server');
     const secret = within(dialog).getByLabelText('API secret');
     expect(secret).toHaveAttribute('type', 'password');
@@ -1328,7 +1330,7 @@ describe('M22: Bybit accounts', () => {
     expect(row).not.toHaveTextContent('ETH');
     expect(account).toHaveTextContent('Bybit · 1 account');
     expect(within(account).getByRole('note')).toHaveTextContent(
-      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn, as transactions by hand.',
+      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
     );
   });
 
@@ -1343,6 +1345,70 @@ describe('M22: Bybit accounts', () => {
     expect(drawer).toHaveTextContent('As Bybit reported them 5 min ago');
     expect(drawer).toHaveTextContent('Not tracked5 XRP · not counted');
     expect(drawer).toHaveTextContent('Bybit records');
+  });
+
+  it('BYBIT-EARN shows the coins in Earn, already in the balance, in the row and the drawer', async () => {
+    setup(
+      [
+        exchangeAccount({
+          exchange: {
+            keyHint: '0001',
+            ipBound: true,
+            keyExpiresAt: null,
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+            earnAllowed: true,
+            earn: [
+              { symbol: 'USDT', quantity: '200', product: 'flexible' },
+              { symbol: 'SOL', quantity: '0.5', product: 'onchain' },
+              { symbol: 'USDC', quantity: '100', product: 'fixed' },
+            ],
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: 'Bybit 123456789' });
+    expect(row).toHaveTextContent('200 USDT · 0.5 SOL · 100 USDC in Earn');
+    await user.click(row);
+    const earn = within(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).getByRole('region', {
+      name: 'Earn',
+    });
+    expect(earn).toHaveTextContent('Flexible Savings200 USDT');
+    expect(earn).toHaveTextContent('On-chain Earn0.5 SOL');
+    expect(earn).toHaveTextContent('Fixed-term savings100 USDC');
+    expect(earn).toHaveTextContent(
+      'Coins in Bybit Earn stay yours: they count in this balance and in net worth. Yield Bybit paid in the last three months is recorded as staking income by itself; Bybit lists no older yield.',
+    );
+  });
+
+  it('BYBIT-EARN says how to let a key read Earn', async () => {
+    setup(
+      [
+        exchangeAccount({
+          exchange: {
+            keyHint: '0001',
+            ipBound: true,
+            keyExpiresAt: null,
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+            earnAllowed: false,
+            earn: null,
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    const drawer = screen.getByRole('dialog', { name: 'Bybit · Bybit' });
+    expect(within(drawer).queryByRole('region', { name: 'Earn' })).toBeNull();
+    expect(drawer).toHaveTextContent(
+      'This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key, tick Earn under Read-Only and press Sync now; no need to add the account again.',
+    );
   });
 
   it('SYNC-STATUS says a key Bybit stopped accepting must be added again', async () => {

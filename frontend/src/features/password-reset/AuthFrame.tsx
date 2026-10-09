@@ -8,11 +8,13 @@ import './password-reset.css';
 type Tone = 'accent' | 'pos' | 'warn';
 
 interface AuthFrameProps {
-  icon: IconName;
+  icon?: IconName;
   tone?: Tone;
   title: string;
   children: ReactNode;
   onSubmit?: (event: FormEvent<HTMLFormElement>) => void;
+  /** A quiet line under the box, such as a way back to the first step. */
+  footer?: ReactNode;
 }
 
 /** The prototype's sign-in frame: brand above one box with an icon and a heading. */
@@ -22,12 +24,15 @@ export default function AuthFrame({
   title,
   children,
   onSubmit,
+  footer,
 }: AuthFrameProps) {
   const body = (
     <>
-      <div className={tone === 'accent' ? 'auth-ico' : `auth-ico auth-ico--${tone}`}>
-        <Icon name={icon} />
-      </div>
+      {icon && (
+        <div className={tone === 'accent' ? 'auth-ico' : `auth-ico auth-ico--${tone}`}>
+          <Icon name={icon} />
+        </div>
+      )}
       <h1 id="auth-heading">{title}</h1>
       {children}
     </>
@@ -48,6 +53,7 @@ export default function AuthFrame({
             {body}
           </section>
         )}
+        {footer && <p className="auth-foot">{footer}</p>}
       </div>
     </main>
   );

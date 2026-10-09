@@ -1,11 +1,8 @@
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { createInstance } from 'i18next';
-import { I18nextProvider } from 'react-i18next';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ru from '../i18n/locales/ru.json';
 import Login from './Login';
 
 const api = vi.hoisted(() => ({
@@ -30,36 +27,28 @@ function ProfileStatus() {
 }
 
 async function renderLogin() {
-  const i18n = createInstance();
-  await i18n.init({
-    lng: 'ru',
-    resources: { ru: { translation: ru } },
-    interpolation: { escapeValue: false },
-  });
   render(
-    <I18nextProvider i18n={i18n}>
-      <MemoryRouter initialEntries={['/login']}>
-        <AuthProvider>
-          <ProfileStatus />
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<div>Private portfolio</div>} />
-          </Routes>
-        </AuthProvider>
-      </MemoryRouter>
-    </I18nextProvider>,
+    <MemoryRouter initialEntries={['/login']}>
+      <AuthProvider>
+        <ProfileStatus />
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<div>Private portfolio</div>} />
+        </Routes>
+      </AuthProvider>
+    </MemoryRouter>,
   );
-  await screen.findByLabelText('Пароль');
+  await screen.findByLabelText('Password');
   return userEvent.setup();
 }
 
 async function submitPassword(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Email'), owner.email);
-  await user.type(screen.getByLabelText('Пароль'), 'Synthetic-password-42!');
-  await user.click(screen.getByRole('button', { name: 'Вход' }));
+  await user.type(screen.getByLabelText('Password'), 'Synthetic-password-42!');
+  await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 
-describe('Russian owner second-factor login', () => {
+describe('Owner second-factor login (prototype Sign-in)', () => {
   beforeEach(() => {
     for (const mock of Object.values(api)) mock.mockReset();
     api.getCurrentUser.mockRejectedValue(new Error('Unauthorized'));
@@ -76,7 +65,7 @@ describe('Russian owner second-factor login', () => {
   it('links the password step to the emailed reset', async () => {
     await renderLogin();
 
-    expect(screen.getByRole('link', { name: 'Забыли пароль?' })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: 'Forgot password?' })).toHaveAttribute(
       'href',
       '/password-reset',
     );
@@ -88,8 +77,9 @@ describe('Russian owner second-factor login', () => {
 
     expect(screen.queryByText('Private portfolio')).not.toBeInTheDocument();
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
-    expect(await screen.findByLabelText('Код из приложения')).toBeVisible();
-    expect(screen.queryByLabelText('Пароль')).not.toBeInTheDocument();
+    expect(await screen.findByLabelText('Code from your authenticator app')).toBeVisible();
+    expect(screen.getByLabelText('Code from your authenticator app')).toHaveFocus();
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument();
     expect(api.verifyFactor).not.toHaveBeenCalled();
     expect(localStorage.setItem).not.toHaveBeenCalled();
     expect(Storage.prototype.setItem).not.toHaveBeenCalled();
@@ -104,14 +94,14 @@ describe('Russian owner second-factor login', () => {
     );
     const user = await renderLogin();
     await submitPassword(user);
-    await user.type(await screen.findByLabelText('Код из приложения'), '012345');
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '012345');
     expect(api.verifyFactor).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
 
     expect(api.verifyFactor).toHaveBeenCalledExactlyOnceWith({ kind: 'totp', code: '012345' });
     expect(screen.queryByText('Private portfolio')).not.toBeInTheDocument();
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
-    expect(screen.getByLabelText('Код из приложения')).toBeDisabled();
+    expect(screen.getByLabelText('Code from your authenticator app')).toBeDisabled();
     completeFactor(fullResponse);
     expect(await screen.findByText('Private portfolio')).toBeVisible();
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent(owner.email);
@@ -119,16 +109,14 @@ describe('Russian owner second-factor login', () => {
     expect(Storage.prototype.setItem).not.toHaveBeenCalled();
   });
 
-  it('offers a Russian recovery form and preserves the recovery code as a string', async () => {
+  it('offers a recovery form and preserves the recovery code as a string', async () => {
     const user = await renderLogin();
     await submitPassword(user);
-    await user.click(
-      await screen.findByRole('button', { name: 'Использовать код восстановления' }),
-    );
+    await user.click(await screen.findByRole('button', { name: 'Use a recovery code instead' }));
     const code = '01234567-89ABCDEF-01234567-89ABCDEF';
-    await user.type(screen.getByLabelText('Код восстановления'), code);
+    await user.type(screen.getByLabelText('Recovery code'), code);
     expect(api.verifyFactor).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
     await screen.findByText('Private portfolio');
     expect(api.verifyFactor).toHaveBeenCalledExactlyOnceWith({ kind: 'recovery', code });
@@ -136,19 +124,19 @@ describe('Russian owner second-factor login', () => {
     expect(Storage.prototype.setItem).not.toHaveBeenCalled();
   });
 
-  it('shows a generic Russian invalid-code error without retrying or exposing the server message', async () => {
+  it('shows a generic invalid-code error without retrying or exposing the server message', async () => {
     api.verifyFactor.mockRejectedValueOnce({
       isAxiosError: true,
       response: { status: 401, data: { message: 'Internal secret marker' } },
     });
     const user = await renderLogin();
     await submitPassword(user);
-    await user.type(await screen.findByLabelText('Код из приложения'), '123456');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
 
     expect(
       await screen.findByText(
-        'Не удалось подтвердить вход. Проверьте код или вернитесь к вводу пароля.',
+        "That code didn't work. Enter the current one; if it keeps failing, sign in again.",
       ),
     ).toBeVisible();
     expect(api.verifyFactor).toHaveBeenCalledTimes(1);
@@ -157,14 +145,16 @@ describe('Russian owner second-factor login', () => {
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
   });
 
-  it('shows Russian cooldown guidance without automatically repeating a blocked factor', async () => {
+  it('shows cooldown guidance without automatically repeating a blocked factor', async () => {
     api.verifyFactor.mockRejectedValueOnce({ isAxiosError: true, response: { status: 429 } });
     const user = await renderLogin();
     await submitPassword(user);
-    await user.type(await screen.findByLabelText('Код из приложения'), '123456');
-    await user.click(screen.getByRole('button', { name: 'Подтвердить' }));
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '123456');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
 
-    expect(await screen.findByText('Слишком много попыток. Повторите позже.')).toBeVisible();
+    expect(
+      await screen.findByText('Too many attempts. Wait 10 minutes and try again.'),
+    ).toBeVisible();
     expect(api.verifyFactor).toHaveBeenCalledTimes(1);
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
   });
@@ -172,30 +162,102 @@ describe('Russian owner second-factor login', () => {
   it('can return to the password form and clears the previous password and factor input', async () => {
     const user = await renderLogin();
     await submitPassword(user);
-    await user.type(await screen.findByLabelText('Код из приложения'), '012345');
-    await user.click(screen.getByRole('button', { name: 'Вернуться к паролю' }));
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '012345');
+    await user.click(screen.getByRole('button', { name: 'Back to sign in' }));
 
-    expect(screen.getByLabelText('Пароль')).toHaveValue('');
-    expect(screen.queryByLabelText('Код из приложения')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Password')).toHaveValue('');
+    expect(screen.queryByLabelText('Code from your authenticator app')).not.toBeInTheDocument();
     expect(api.verifyFactor).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText('Пароль'), 'Synthetic-password-42!');
-    await user.click(screen.getByRole('button', { name: 'Вход' }));
-    expect(await screen.findByLabelText('Код из приложения')).toHaveValue('');
+    await user.type(screen.getByLabelText('Password'), 'Synthetic-password-42!');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByLabelText('Code from your authenticator app')).toHaveValue('');
     expect(api.login).toHaveBeenCalledTimes(2);
   });
 
   it('starts a new password step after reload instead of remembering a pending factor', async () => {
     const user = await renderLogin();
     await submitPassword(user);
-    await user.type(await screen.findByLabelText('Код из приложения'), '012345');
+    await user.type(await screen.findByLabelText('Code from your authenticator app'), '012345');
     cleanup();
     await renderLogin();
 
-    await waitFor(() => expect(screen.getByLabelText('Пароль')).toHaveValue(''));
-    expect(screen.queryByLabelText('Код из приложения')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Password')).toHaveValue(''));
+    expect(screen.queryByLabelText('Code from your authenticator app')).not.toBeInTheDocument();
     expect(screen.getByLabelText('authenticated owner')).toHaveTextContent('anonymous');
     expect(api.verifyFactor).not.toHaveBeenCalled();
     expect(localStorage.setItem).not.toHaveBeenCalled();
     expect(Storage.prototype.setItem).not.toHaveBeenCalled();
+  });
+  it('checks the fields first and explains a refused password without the server message', async () => {
+    api.login.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 401, data: { message: 'Internal secret marker' } },
+    });
+    const user = await renderLogin();
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.getByText('Enter your email')).toBeVisible();
+    expect(screen.getByText('Enter your password')).toBeVisible();
+    expect(screen.getByLabelText('Email')).toHaveAttribute('aria-invalid', 'true');
+    expect(api.login).not.toHaveBeenCalled();
+
+    await submitPassword(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Email or password is incorrect. Check both and try again.',
+    );
+    expect(screen.queryByText('Internal secret marker')).not.toBeInTheDocument();
+    expect(api.login).toHaveBeenCalledExactlyOnceWith({
+      email: owner.email,
+      password: 'Synthetic-password-42!',
+    });
+  });
+
+  it('shows and hides the password on request', async () => {
+    const user = await renderLogin();
+    const field = screen.getByLabelText('Password');
+    expect(field).toHaveAttribute('type', 'password');
+    expect(field).toHaveAttribute('autocomplete', 'current-password');
+    await user.click(screen.getByRole('button', { name: 'Show password' }));
+    expect(field).toHaveAttribute('type', 'text');
+  });
+
+  it('keeps only digits in the authenticator code and asks for all six', async () => {
+    const user = await renderLogin();
+    await submitPassword(user);
+    const field = await screen.findByLabelText('Code from your authenticator app');
+    await user.type(field, '12 3a4');
+    expect(field).toHaveValue('1234');
+    await user.click(screen.getByRole('button', { name: 'Verify' }));
+    expect(screen.getByText('Enter all 6 digits')).toBeVisible();
+    expect(api.verifyFactor).not.toHaveBeenCalled();
+  });
+
+  it('checks the recovery code shape, explains a refused code and returns to the authenticator', async () => {
+    api.verifyFactor.mockRejectedValueOnce({ isAxiosError: true, response: { status: 401 } });
+    const user = await renderLogin();
+    await submitPassword(user);
+    await user.click(await screen.findByRole('button', { name: 'Use a recovery code instead' }));
+    expect(screen.getByRole('heading', { name: 'Use a recovery code' })).toBeVisible();
+    const field = screen.getByLabelText('Recovery code');
+    expect(field).toHaveFocus();
+    await user.type(field, '1234-5678');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(screen.getByText(/Recovery codes look like/)).toBeVisible();
+    expect(api.verifyFactor).not.toHaveBeenCalled();
+    await user.clear(field);
+    await user.type(field, ' 01234567-89abcdef-01234567-89abcdef ');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(api.verifyFactor).toHaveBeenCalledExactlyOnceWith({
+      kind: 'recovery',
+      code: '01234567-89abcdef-01234567-89abcdef',
+    });
+    expect(
+      await screen.findByText(
+        "That recovery code didn't work. Each code works once; check it and try again.",
+      ),
+    ).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Back to authenticator code' }));
+    expect(screen.getByRole('heading', { name: 'Two-factor authentication' })).toBeVisible();
+    expect(screen.getByLabelText('Code from your authenticator app')).toHaveValue('');
+    expect(screen.getByLabelText('Code from your authenticator app')).toHaveFocus();
   });
 });

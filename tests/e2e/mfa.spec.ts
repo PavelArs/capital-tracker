@@ -114,7 +114,7 @@ async function assertPending(page: Page, token: string) {
     AND "expiresAt" <= "createdAt" + interval '5 minutes'
     FROM auth_sessions WHERE "tokenHash" = '${hashToken(token)}'`),
   ).toBe('t');
-  await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Code from your authenticator app', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
 }
 

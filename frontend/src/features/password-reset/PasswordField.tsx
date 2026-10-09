@@ -1,5 +1,5 @@
 import { Icon } from '@features/shell/icons';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { FieldError } from './AuthFrame';
 
 interface PasswordFieldProps {
@@ -10,6 +10,9 @@ interface PasswordFieldProps {
   error?: string;
   hint?: string;
   disabled?: boolean;
+  autoComplete?: 'new-password' | 'current-password';
+  /** Shown at the end of the label row, such as "Forgot password?". */
+  labelAside?: ReactNode;
 }
 
 export default function PasswordField({
@@ -20,6 +23,8 @@ export default function PasswordField({
   error,
   hint,
   disabled,
+  autoComplete = 'new-password',
+  labelAside,
 }: PasswordFieldProps) {
   const [visible, setVisible] = useState(false);
   const described = [hint ? `${id}-hint` : '', error ? `${id}-error` : '']
@@ -27,13 +32,20 @@ export default function PasswordField({
     .join(' ');
   return (
     <div className="auth-field">
-      <label htmlFor={id}>{label}</label>
+      {labelAside ? (
+        <div className="auth-label-row">
+          <label htmlFor={id}>{label}</label>
+          {labelAside}
+        </div>
+      ) : (
+        <label htmlFor={id}>{label}</label>
+      )}
       <div className="auth-pw">
         <input
           className="auth-input"
           id={id}
           type={visible ? 'text' : 'password'}
-          autoComplete="new-password"
+          autoComplete={autoComplete}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           aria-invalid={error ? true : undefined}
