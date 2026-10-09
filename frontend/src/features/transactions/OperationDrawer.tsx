@@ -657,6 +657,15 @@ export default function OperationDrawer({
         )}
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
+        operation.type === 'staking-reward' &&
+        operation.wallet?.network === 'bybit' && (
+          <p className="transactions-notice" role="note">
+            Recognised automatically from Bybit's Earn yield history: counts as staking income at
+            the coin's price when Bybit paid it. Change the classification if it is wrong.
+          </p>
+        )}
+      {operation.classification?.automatic &&
+        operation.status === 'recorded' &&
         operation.counterAccount && (
           <p className="transactions-notice" role="note">
             Recognised automatically: both addresses belong to your wallets and{' '}

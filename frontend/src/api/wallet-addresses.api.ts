@@ -75,6 +75,20 @@ export interface ExchangeAccount {
   untracked: ChainBalance[];
   /** How far back the history is read: Bybit keeps two years of trades. */
   historyFrom: string;
+  /** BYBIT-EARN: the key may read Earn, as Bybit last said; null until a sync asked. */
+  earnAllowed?: boolean | null;
+  /**
+   * BYBIT-EARN: what each Earn product holds, already included in `balances`; null when the key
+   * cannot read Earn or until the history is read.
+   */
+  earn?: EarnHolding[] | null;
+}
+
+/** Coins in one of Bybit's Earn products: Flexible Savings, On-chain Earn or fixed-term. */
+export interface EarnHolding {
+  symbol: string;
+  quantity: string;
+  product: 'flexible' | 'onchain' | 'fixed';
 }
 
 export interface WalletAddress {

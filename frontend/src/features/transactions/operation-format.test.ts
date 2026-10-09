@@ -48,6 +48,11 @@ describe('a Bybit record (M22)', () => {
     expect(exchangeRecord(trade)).toBe('Trade 2100000000000000001');
     expect(exchangeRecord(leg('bybit', 'bybit-deposit-internal-9000001'))).toBe('Deposit 9000001');
     expect(exchangeRecord(leg('bybit', 'bybit-withdrawal-7000001'))).toBe('Withdrawal 7000001');
+    // BYBIT-EARN: a paid Earn yield.
+    const earned = leg('bybit', 'bybit-earn-flexible-1002096');
+    expect(transactionHash(earned)).toBeNull();
+    expect(exchangeRecord(earned)).toBe('Earn yield 1002096');
+    expect(exchangeRecord(leg('bybit', 'bybit-earn-onchain-1002097'))).toBe('Earn yield 1002097');
   });
 
   it('names the account by its user ID and an automatic fill as a Bybit trade', () => {
@@ -64,6 +69,13 @@ describe('a Bybit record (M22)', () => {
     expect(statusLabel(automatic('transfer'))).toBe('Auto: own wallets');
     // TRON-REWARD: a vote reward claim the app recorded by itself.
     expect(statusLabel(automatic('staking-reward'))).toBe('Auto: vote reward');
+    // BYBIT-EARN: Earn yield Bybit paid, recorded by the app.
+    expect(
+      statusLabel({
+        ...automatic('staking-reward'),
+        wallet: { id: 'w', network: 'bybit', address: '123456789', label: null },
+      } as Operation),
+    ).toBe('Auto: Earn yield');
   });
 
   it('says a record came from Bybit, not from a blockchain', () => {

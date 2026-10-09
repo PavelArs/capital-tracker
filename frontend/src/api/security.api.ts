@@ -8,6 +8,14 @@ export interface SecuritySession {
   current: boolean;
 }
 
+// SEC-TOTP: a new authenticator waiting for its first code. The key is shown only now.
+export interface AuthenticatorSetup {
+  uri: string;
+  secret: string;
+  candidateId: string;
+  expiresAt: string;
+}
+
 export interface SecurityOverview {
   recoveryCodes: { unused: number; total: number };
   sessions: SecuritySession[];
@@ -24,6 +32,25 @@ export const securityApi = {
     const response = await apiClient.post<{ recoveryCodes: string[] }>(
       '/auth/security/recovery-codes',
       { code },
+    );
+    return response.data.recoveryCodes;
+  },
+
+  prepareAuthenticator: async (factor: {
+    kind: 'totp' | 'recovery';
+    code: string;
+  }): Promise<AuthenticatorSetup> => {
+    const response = await apiClient.post<AuthenticatorSetup>(
+      '/auth/security/authenticator',
+      factor,
+    );
+    return response.data;
+  },
+
+  confirmAuthenticator: async (candidateId: string, code: string): Promise<string[]> => {
+    const response = await apiClient.post<{ recoveryCodes: string[] }>(
+      '/auth/security/authenticator/confirm',
+      { candidateId, code },
     );
     return response.data.recoveryCodes;
   },

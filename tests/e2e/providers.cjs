@@ -65,9 +65,12 @@ let solana = initialSolana();
 // records posted as { at: <ms>, row: <Bybit's row> }; every private request must carry a valid
 // HMAC-SHA256 signature of the exact query string, checked here independently of the backend.
 // `pageSize` splits lists into smaller pages (cursor "<offset>%3A<n>", sent back raw); `fault`
-// answers the n-th signed request after the post with a retCode or an HTTP status.
+// answers the n-th signed request after the post with a retCode or an HTTP status. Earn
+// (BYBIT-EARN) answers only a key whose permissions include Earn: the positions posted per
+// product and the yield records of the last three months, as `yield` the way Bybit sends it.
 const initialBybit = () => ({ keys: [], executions: [], deposits: [], internalDeposits: [], withdrawals: [],
-  balances: { FUND: [], UNIFIED: [] }, pageSize: null, fault: null, requests: 0, badSignatures: 0 });
+  balances: { FUND: [], UNIFIED: [] }, earn: { FlexibleSaving: [], OnChain: [], fixed: [] },
+  flexibleYield: [], onchainYield: [], pageSize: null, fault: null, requests: 0, badSignatures: 0 });
 let bybit = initialBybit();
 // Synthetic TronGrid (track-tron-wallets): the newest solidified block and raw items exactly as
 // the probe posts them, merged by id. An account's transactions are those whose contract names
@@ -227,7 +230,22 @@ function bybitRequest(request, response, url) {
       equity: row.walletBalance, locked: '0', borrowAmount: '0', usdValue: '', availableToWithdraw: '' }));
     return reply(0, 'OK', { list: [{ accountType: 'UNIFIED', totalEquity: '', coin }] });
   }
+  if (url.pathname.startsWith('/v5/earn/')) {
+    if (!(key.info.permissions?.Earn ?? []).includes('Earn'))
+      return reply(10005, 'Permission denied, please check your API key permissions.');
+    const category = params.get('category');
+    if (url.pathname === '/v5/earn/position') {
+      if (!['FlexibleSaving', 'OnChain'].includes(category)) return reply(10001, 'category invalid');
+      return reply(0, '', { list: bybit.earn[category] });
+    }
+    if (url.pathname === '/v5/earn/fixed-term/position') return reply(0, '', { list: bybit.earn.fixed });
+    if (url.pathname !== '/v5/earn/yield' || !['FlexibleSaving', 'OnChain'].includes(category))
+      return reply(10001, 'Unknown synthetic endpoint');
+    // Bybit keeps three months of yield.
+    if (Number(params.get('startTime')) < Date.now() - 90 * DAY_MS) return reply(10001, 'Only the past 3 months data');
+  }
   const lists = {
+    '/v5/earn/yield': [params.get('category') === 'OnChain' ? 'onchainYield' : 'flexibleYield', 'yield', 7 * DAY_MS, 100],
     '/v5/execution/list': ['executions', 'list', 7 * DAY_MS, 100],
     '/v5/asset/deposit/query-record': ['deposits', 'rows', 30 * DAY_MS, 50],
     '/v5/asset/deposit/query-internal-record': ['internalDeposits', 'rows', 30 * DAY_MS, 50],
@@ -243,7 +261,7 @@ function bybitRequest(request, response, url) {
   const limit = Number(params.get('limit'));
   // Bybit's own limits: the backend must split history into windows it accepts.
   if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || end - start > longest
-    || (name !== 'executions' && end - start >= longest)) return reply(10001, 'The time range is too long or invalid');
+    || (longest !== 7 * DAY_MS && end - start >= longest)) return reply(10001, 'The time range is too long or invalid');
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > largest) return reply(10001, 'limit invalid');
   const size = Math.min(limit, bybit.pageSize ?? limit);
   const cursor = params.get('cursor');
@@ -654,8 +672,11 @@ const server = http.createServer(async (request, response) => {
       const coins = (value) => value === undefined || (Array.isArray(value) && value.length <= 20 && value.every(plain));
       const fault = data.fault;
       if (!keys || !records(data.executions) || !records(data.deposits) || !records(data.internalDeposits)
-        || !records(data.withdrawals) || (data.balances !== undefined && (!plain(data.balances)
+        || !records(data.withdrawals) || !records(data.flexibleYield) || !records(data.onchainYield)
+        || (data.balances !== undefined && (!plain(data.balances)
           || !coins(data.balances.FUND) || !coins(data.balances.UNIFIED)))
+        || (data.earn !== undefined && (!plain(data.earn) || !coins(data.earn.FlexibleSaving)
+          || !coins(data.earn.OnChain) || !coins(data.earn.fixed)))
         || (data.pageSize !== undefined && data.pageSize !== null && (!Number.isInteger(data.pageSize) || data.pageSize < 1))
         || (fault !== undefined && (!plain(fault) || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
           || (!Number.isInteger(fault.retCode) && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
@@ -664,7 +685,10 @@ const server = http.createServer(async (request, response) => {
       const merge = (name) => (data[name] === undefined ? bybit[name] : data.append ? [...bybit[name], ...data[name]] : data[name]);
       bybit = { keys: data.keys ?? bybit.keys, executions: merge('executions'), deposits: merge('deposits'),
         internalDeposits: merge('internalDeposits'), withdrawals: merge('withdrawals'),
+        flexibleYield: merge('flexibleYield'), onchainYield: merge('onchainYield'),
         balances: data.balances ? { FUND: data.balances.FUND ?? [], UNIFIED: data.balances.UNIFIED ?? [] } : bybit.balances,
+        earn: data.earn ? { FlexibleSaving: data.earn.FlexibleSaving ?? [], OnChain: data.earn.OnChain ?? [],
+          fixed: data.earn.fixed ?? [] } : bybit.earn,
         pageSize: data.pageSize === undefined ? bybit.pageSize : data.pageSize,
         fault: fault ? { onRequest: fault.onRequest, retCode: fault.retCode, status: fault.status } : null,
         requests: 0, badSignatures: bybit.badSignatures };

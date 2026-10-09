@@ -27,13 +27,13 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await page.screenshot({ path: testInfo.outputPath('login-360.png'), fullPage: true });
 
   await page.getByLabel('Email', { exact: true }).fill(owner.email);
-  await page.getByLabel('Пароль', { exact: true }).fill('incorrect-synthetic-password');
+  await page.getByLabel('Password', { exact: true }).fill('incorrect-synthetic-password');
   const refusedLogin = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/login' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Вход', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   expect((await refusedLogin).status()).toBe(401);
   await expect(page.getByRole('alert')).toBeVisible();
   await fitsViewport(page);
@@ -43,20 +43,20 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('mfa-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код восстановления', exact: true }).click();
-  await expect(page.getByLabel('Код восстановления', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Use a recovery code instead', exact: true }).click();
+  await expect(page.getByLabel('Recovery code', { exact: true })).toBeVisible();
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('recovery-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код из приложения', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to authenticator code', exact: true }).click();
   const factor = nextFactor();
   expect(factor.kind).toBe('totp');
-  await page.getByLabel('Код из приложения', { exact: true }).fill(factor.code);
+  await page.getByLabel('Code from your authenticator app', { exact: true }).fill(factor.code);
   const pendingFactor = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/mfa' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify', exact: true }).click();
   const factorResponse = await pendingFactor;
   expect(factorResponse.status()).toBe(200);
   expect((await factorResponse.json()).user.email).toBe(owner.email);
@@ -338,7 +338,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await page.goto('/mvp-unknown-route');
   await expect(page).toHaveURL(`${origin}/login`);
-  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

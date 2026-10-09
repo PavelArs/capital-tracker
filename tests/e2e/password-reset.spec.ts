@@ -120,7 +120,7 @@ test('RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an email
 
     // RESET-REQUEST: unknown and known emails get the same answer and page; one email arrives.
     await page.goto('/login');
-    await page.getByRole('link', { name: 'Забыли пароль?', exact: true }).click();
+    await page.getByRole('link', { name: 'Forgot password?', exact: true }).click();
     await expect(page).toHaveURL(`${origin}/password-reset`);
     const unknown = await requestLink(page, unknownEmail);
     await page.goto('/password-reset');

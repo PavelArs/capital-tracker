@@ -20,6 +20,7 @@ const { BybitClient } = require(`${dist}/wallet-addresses/bybit-client.js`);
 const { BybitKeyBox } = require(`${dist}/wallet-addresses/bybit-key-box.js`);
 const { BybitSyncAdapter } = require(`${dist}/wallet-addresses/bybit-sync.adapter.js`);
 const { SyncBybitAccount1793300000000 } = require(`${dist}/migrations/1793300000000-SyncBybitAccount.js`);
+const { ReadBybitEarn1794000000000 } = require(`${dist}/migrations/1794000000000-ReadBybitEarn.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_bybit_e2e';
@@ -188,7 +189,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 46/);
+  assert.match(migrate(database), /Migrations applied: 47/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -219,7 +220,8 @@ async function main() {
     assert.deepEqual([first.value.network, first.value.address, first.value.accountId, first.value.label, first.value.sync.state, first.value.balances],
       ['bybit', String(uid), exchange, 'Bybit', 'never', null]);
     assert.deepEqual({ ...first.value.exchange, historyFrom: undefined },
-      { keyHint: 'ly01', ipBound: false, keyExpiresAt: '2027-01-01T00:00:00.000Z', reportedAt: null, untracked: [], historyFrom: undefined });
+      { keyHint: 'ly01', ipBound: false, keyExpiresAt: '2027-01-01T00:00:00.000Z', reportedAt: null, untracked: [], historyFrom: undefined,
+        earnAllowed: null, earn: null });
     // The secret and the key are stored encrypted only, and never returned.
     const storedRows = JSON.stringify(await db.query('SELECT * FROM bybit_accounts')) + JSON.stringify(await db.query('SELECT * FROM wallet_addresses'));
     const listed = JSON.stringify(await s.addresses.list(owner));
@@ -371,6 +373,91 @@ async function main() {
     assert.deepEqual((await s.addresses.sync(owner, wallet)).reason, 'rate_limited');
     console.log('PASS BYBIT-KEY-RENEW a key Bybit refuses fails the sync as key_rejected with Bybit\'s words; adding the account with a new key keeps its records and cursors; a rate limit is its own reason');
 
+    // BYBIT-EARN: a key without the Earn permission reads no Earn and says so.
+    const noEarn = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([noEarn.result.outcome, noEarn.result.address.exchange.earnAllowed, noEarn.result.address.exchange.earn],
+      ['complete', false, null]);
+    assert.ok(!noEarn.urls.some((url) => url.pathname.startsWith('/v5/earn/')), 'No Earn request without the permission');
+    // The owner ticks Earn on the same key in Bybit and moves 300 USDT and 0.1 BTC into Earn,
+    // which pays 0.5 USDT and 0.0001 BTC of yield into the funding account. Bybit lists three
+    // months of yield; one older, one still pending and one in an untracked coin never count.
+    const earnKey = { ...replacement, info: { ...replacement.info, permissions: { ...replacement.info.permissions, Earn: ['Earn'] } } };
+    const paid = (category, n, at, coin, amount, status = 'Success') => ({ at, row: { productId: category === 'OnChain' ? '8' : '428', coin,
+      id: String(1002000 + n), amount, yieldType: 'Normal', distributionMode: 'Auto', effectiveStakingAmount: '300', orderId: '', status,
+      createdAt: String(at) } });
+    const yieldAt = ago(30 * DAY);
+    await post('bybit', {
+      keys: [readOnly, earnKey],
+      balances: {
+        FUND: [{ coin: 'USDT', walletBalance: '49.5', transferBalance: '49.5', bonus: '' }, { coin: 'BTC', walletBalance: '0.1001', transferBalance: '0.1001', bonus: '' }],
+        UNIFIED: balances.UNIFIED,
+      },
+      earn: {
+        FlexibleSaving: [{ coin: 'USDT', productId: '428', amount: '300', totalPnl: '', claimableYield: '0.01' },
+          { coin: 'USDC', productId: '429', amount: '0', totalPnl: '', claimableYield: '0' }],
+        OnChain: [{ coin: 'BTC', productId: '8', amount: '0.1', totalPnl: '0', claimableYield: '', id: '326', status: 'Active' }],
+        fixed: [{ positionId: '4064', productId: '724', category: 'FixedTermSaving', coin: 'MNT', amount: '10', status: 'Active' }],
+      },
+      flexibleYield: [paid('FlexibleSaving', 1, yieldAt, 'USDT', '0.5'), paid('FlexibleSaving', 2, ago(100 * DAY), 'USDT', '9'),
+        paid('FlexibleSaving', 3, ago(2 * DAY), 'USDT', '0.25', 'Pending'), paid('FlexibleSaving', 4, ago(20 * DAY), 'MNT', '1')],
+      onchainYield: [paid('OnChain', 5, ago(10 * DAY), 'BTC', '0.0001')],
+    });
+    const earnPasses = await syncUntilComplete(s, owner, wallet);
+    const earned = earnPasses.at(-1).result;
+    assert.deepEqual([earned.outcome, earned.reason], ['complete', null]);
+    assert.equal(earnPasses.reduce((sum, pass) => sum + pass.result.imported, 0), 2);
+    const earnUrls = earnPasses.flatMap(({ urls: list }) => list);
+    assert.ok(earnPasses.every(({ urls: list }) => list.length <= 40), 'At most 40 requests a pass');
+    for (const category of ['FlexibleSaving', 'OnChain']) {
+      const read = earnUrls.filter((url) => url.pathname === '/v5/earn/yield' && url.searchParams.get('category') === category)
+        .map((url) => [Number(url.searchParams.get('startTime')), Number(url.searchParams.get('endTime'))]);
+      assert.ok(read.length >= 13, `${category} yield read in seven-day windows`);
+      assert.ok(read.every(([from, to]) => to - from <= 7 * DAY), `${category} windows within Bybit's limit`);
+      assert.ok(read[0][0] >= ago(90 * DAY) && read[0][0] <= ago(88 * DAY), `${category} starts three months back`);
+      assert.ok(read.at(-1)[1] >= ago(60_000), `${category} read up to now`);
+    }
+    for (const path of ['/v5/earn/position', '/v5/earn/fixed-term/position']) assert.ok(earnUrls.some((url) => url.pathname === path), path);
+    const earnLegs = (await legsOf(db, wallet)).filter((row) => row.txid.startsWith('bybit-earn-'));
+    assert.deepEqual(earnLegs.map((row) => [row.txid, row.asset, row.received, row.sent, row.direction, row.raw.product]), [
+      ['bybit-earn-flexible-1002001', 'USDT', '500000000000000000', '0', 'in', 'flexible'],
+      ['bybit-earn-onchain-1002005', 'BTC', '100000000000000', '0', 'in', 'onchain'],
+    ]);
+    // Each paid yield is recorded as a staking reward without asking.
+    const rewards = await db.query(`SELECT txid, type, automatic FROM chain_transaction_classification_versions
+      WHERE "addressId"=$1 AND txid LIKE 'bybit-earn-%' ORDER BY txid`, [wallet]);
+    assert.deepEqual(rewards.map((row) => [row.txid, row.type, row.automatic]), [
+      ['bybit-earn-flexible-1002001', 'staking-reward', true],
+      ['bybit-earn-onchain-1002005', 'staking-reward', true],
+    ]);
+    const listedRewards = (await listOf()).filter((item) => item.chain?.txid?.startsWith('bybit-earn-'));
+    assert.deepEqual(listedRewards.map((item) => [item.type, item.status, item.asset.symbol, item.quantity, item.account?.id,
+      item.classification?.automatic]).sort(), [
+      ['staking-reward', 'recorded', 'BTC', '0.0001', exchange, true],
+      ['staking-reward', 'recorded', 'USDT', '0.5', exchange, true],
+    ]);
+    // BYBIT-GAPS with Earn: what Bybit holds in Earn counts; the records match it.
+    assert.deepEqual(earned.address.balances, [
+      { symbol: 'BTC', quantity: '0.71009' }, { symbol: 'ETH', quantity: '0' }, { symbol: 'SOL', quantity: '0' },
+      { symbol: 'USDT', quantity: '599.5' }, { symbol: 'USDC', quantity: '0' },
+    ]);
+    assert.deepEqual([earned.address.exchange.earnAllowed, earned.address.exchange.earn], [true, [
+      { symbol: 'USDT', quantity: '300', product: 'flexible' },
+      { symbol: 'BTC', quantity: '0.1', product: 'onchain' },
+    ]]);
+    assert.deepEqual(earned.address.exchange.untracked, [{ symbol: 'MNT', quantity: '10' }, { symbol: 'XRP', quantity: '5' }]);
+    assert.deepEqual(await held(db, owner, exchange), { BTC: '0.71009', USDT: '599.5' });
+    const earnAgain = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([earnAgain.result.outcome, earnAgain.result.imported], ['complete', 0]);
+    assert.equal((await legsOf(db, wallet)).filter((row) => row.txid.startsWith('bybit-earn-')).length, 2);
+    // Earn turned off again: its positions no longer count and nothing is asked.
+    await post('bybit', { keys: [readOnly, replacement] });
+    const earnOff = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([earnOff.result.outcome, earnOff.result.address.exchange.earnAllowed, earnOff.result.address.exchange.earn],
+      ['complete', false, null]);
+    assert.ok(!earnOff.urls.some((url) => url.pathname.startsWith('/v5/earn/')));
+    assert.deepEqual(earnOff.result.address.balances.find((item) => item.symbol === 'USDT'), { symbol: 'USDT', quantity: '299.5' });
+    console.log(`PASS BYBIT-EARN without the Earn permission nothing of Earn is asked; once ticked on the same key, ${earnPasses.length} passes read three months of yield in seven-day windows: 0.5 USDT and 0.0001 BTC paid become automatic staking rewards (older, pending and untracked yield left out), 300 USDT and 0.1 BTC in Earn count in Bybit's balance, which then matches the records; turned off, Earn no longer counts`);
+
     // Constraints and privacy.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'bybit','not-a-uid')`,
       [owner]), /wallet_addresses_address_check/);
@@ -378,6 +465,9 @@ async function main() {
       [owner, String(uid)]), /wallet_addresses_address_check/);
     await assert.rejects(() => db.query(`INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
       VALUES ($1,$2,'bybit-trade-x y',0,now(),1,0,0,'in','{"txid":"bybit-trade-x y"}','BTC')`, [owner, wallet]), /wallet_address_transactions_txid_check/);
+    await assert.rejects(() => db.query(`INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
+      VALUES ($1,$2,'bybit-earn-fixed-1',0,now(),1,0,0,'in','{"txid":"bybit-earn-fixed-1"}','BTC')`, [owner, wallet]), /wallet_address_transactions_txid_check/);
+    await assert.rejects(() => db.query(`UPDATE bybit_accounts SET earn='{}'::jsonb WHERE "walletId"=$1`, [wallet]), /bybit_accounts_earn_check/);
     await assert.rejects(() => db.query(`INSERT INTO bybit_accounts("ownerId","walletId",credentials,"keyHint","ipBound","historyFrom","tradesReadTo","depositsReadTo","internalReadTo","withdrawalsReadTo")
       VALUES ($1,$2,'{}','abcd',false,now(),now(),now(),now(),now())`, [stranger, wallet]), /foreign key|duplicate key/);
     await assert.rejects(() => db.query('DELETE FROM wallet_addresses WHERE id=$1', [wallet]), /foreign key/);
@@ -387,8 +477,9 @@ async function main() {
 
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new SyncBybitAccount1793300000000().down(), /recovery plan/);
+    await assert.rejects(() => new ReadBybitEarn1794000000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS BYBIT-MIGRATION fresh 46 applies once; down refuses');
+    console.log('PASS BYBIT-MIGRATION fresh 47 applies once; neither Bybit migration goes down');
   } finally {
     await db.destroy();
   }

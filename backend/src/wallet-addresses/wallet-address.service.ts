@@ -15,7 +15,7 @@ import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { bybitCoins } from './bybit-records';
-import { HISTORY_DAYS } from './bybit-sync.adapter';
+import { type EarnHolding, HISTORY_DAYS } from './bybit-sync.adapter';
 import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
@@ -103,6 +103,10 @@ interface ExchangeRow {
   balancesAt: string | null;
   historyFrom: string;
   readFrom: string;
+  /** BYBIT-EARN: whether the key may read Earn; null before a pass asked Bybit. */
+  earnAllowed: boolean | null;
+  /** BYBIT-EARN: what Earn held on the last complete pass, already inside `balances`. */
+  earn: EarnHolding[] | null;
 }
 interface TransactionRow {
   txid: string;
@@ -185,7 +189,8 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
   LEFT JOIN LATERAL (SELECT json_build_object('keyHint', x."keyHint", 'ipBound', x."ipBound",
       'keyExpiresAt', x."keyExpiresAt", 'balances', x.balances, 'balancesAt', x."balancesAt",
       'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
-        x."internalReadTo", x."withdrawalsReadTo")) AS exchange
+        x."internalReadTo", x."withdrawalsReadTo"), 'earnAllowed', x."earnAllowed",
+      'earn', x.earn) AS exchange
     FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
   LEFT JOIN LATERAL (SELECT json_build_object('reported', x.reported,
       'staked', (SELECT coalesce(sum(m.units), 0) FROM wallet_tron_stake_moves m
@@ -387,6 +392,18 @@ function summary(row: AddressRow, now = new Date()) {
                   .map((item) => ({ symbol: item.coin, quantity: item.quantity }))
               : [],
           historyFrom: new Date(row.exchange.historyFrom).toISOString(),
+          earnAllowed: row.exchange.earnAllowed,
+          // BYBIT-EARN: the tracked coins in each Earn product, already in the balances.
+          earn:
+            state === 'complete' && row.exchange.earn
+              ? row.exchange.earn
+                  .filter((item) => bybitCoins.includes(item.coin))
+                  .map((item) => ({
+                    symbol: item.coin,
+                    quantity: item.quantity,
+                    product: item.product,
+                  }))
+              : null,
         }
       : null,
     accountKey: row.derived

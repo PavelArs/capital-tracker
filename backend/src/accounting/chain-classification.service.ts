@@ -425,10 +425,10 @@ export class ChainClassificationService {
   }
 
   /**
-   * TRON-REWARD: records every Tron vote reward claim (a WithdrawBalance the wallet signed) as a
-   * Staking reward without asking, valued at the stored TRX price of its time when there is
-   * one, each in its own transaction. It needs the wallet's account; a claim the owner has
-   * answered is never touched.
+   * TRON-REWARD, BYBIT-EARN: records every Tron vote reward claim (a WithdrawBalance the wallet
+   * signed) and every Earn yield Bybit paid as a Staking reward without asking, valued at the
+   * stored price of its coin at its time when there is one, each in its own transaction. It
+   * needs the wallet's account; a reward the owner has answered is never touched.
    */
   async recognizeStakingRewards(ownerId: string): Promise<{ recognized: number }> {
     const owner = parseUuid(ownerId);
@@ -437,8 +437,9 @@ export class ChainClassificationService {
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
-        WHERE t."ownerId"=$1 AND w.network='tron' AND w."accountId" IS NOT NULL
-          AND t.asset IS NULL AND t.raw->>'contractType'=$2 AND h.txid IS NULL
+        WHERE t."ownerId"=$1 AND w."accountId" IS NOT NULL AND h.txid IS NULL
+          AND ((w.network='tron' AND t.asset IS NULL AND t.raw->>'contractType'=$2)
+            OR (w.network='bybit' AND t.raw->>'kind'='earn'))
         ORDER BY t."blockTime", t.txid`,
       [owner, TRON_REWARD_CONTRACT],
     );
@@ -480,7 +481,7 @@ export class ChainClassificationService {
         if (done) recognized += 1;
       } catch (error) {
         if (!(error instanceof HttpException || error instanceof FifoHistoryError))
-          this.logger.warn('A Tron reward could not be recorded; it stays to classify');
+          this.logger.warn('A staking reward could not be recorded; it stays to classify');
       }
     }
     return { recognized };
@@ -699,8 +700,9 @@ export class ChainClassificationService {
       comment,
       produced: { ...nothing, ...produced },
       linkedAddressId: produced.transferId ? linked : null,
-      // A note added to a recognised transfer leaves it recognised; a Bybit trade (M22) or a
-      // Tron reward claim (TRON-REWARD) the app recorded by itself is recognised too.
+      // A note added to a recognised transfer leaves it recognised; a Bybit trade (M22), a Tron
+      // reward claim (TRON-REWARD) or Earn yield (BYBIT-EARN) the app recorded by itself is
+      // recognised too.
       automatic: produced.transferId
         ? (keep && live?.automatic) || automatic
         : automatic && (produced.tradeId || produced.rewardId)
