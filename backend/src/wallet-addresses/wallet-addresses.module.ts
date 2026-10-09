@@ -11,6 +11,8 @@ import { EthereumSyncAdapter } from './ethereum-sync.adapter';
 import { EtherscanClient } from './etherscan-client';
 import { SolanaRpcClient } from './solana-rpc-client';
 import { SolanaSyncAdapter } from './solana-sync.adapter';
+import { TronSyncAdapter } from './tron-sync.adapter';
+import { TronGridClient } from './trongrid-client';
 import { WalletAddressController } from './wallet-address.controller';
 import { WalletAddressService } from './wallet-address.service';
 import { WalletSyncService } from './wallet-sync.service';
@@ -25,6 +27,7 @@ import { WalletSyncService } from './wallet-sync.service';
     EthereumSyncAdapter,
     SolanaSyncAdapter,
     BybitSyncAdapter,
+    TronSyncAdapter,
     { provide: EsploraClient, useFactory: () => new EsploraClient() },
     // The free Etherscan key (Q6) comes from the server's environment, never from the code.
     {
@@ -35,6 +38,14 @@ import { WalletSyncService } from './wallet-sync.service';
     },
     // Solana's public endpoint needs no key (M15).
     { provide: SolanaRpcClient, useFactory: () => new SolanaRpcClient() },
+    // TronGrid answers without a key at a low rate; a free key from the server's environment
+    // raises it (TRON-SYNC).
+    {
+      provide: TronGridClient,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new TronGridClient({ apiKey: config.get<string>('TRONGRID_API_KEY') ?? null }),
+    },
     // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
     { provide: BybitClient, useFactory: () => new BybitClient() },
     {
@@ -45,13 +56,20 @@ import { WalletSyncService } from './wallet-sync.service';
     // One adapter per network.
     {
       provide: CHAIN_SYNC_ADAPTERS,
-      inject: [BitcoinSyncAdapter, EthereumSyncAdapter, SolanaSyncAdapter, BybitSyncAdapter],
+      inject: [
+        BitcoinSyncAdapter,
+        EthereumSyncAdapter,
+        SolanaSyncAdapter,
+        BybitSyncAdapter,
+        TronSyncAdapter,
+      ],
       useFactory: (
         bitcoin: BitcoinSyncAdapter,
         ethereum: EthereumSyncAdapter,
         solana: SolanaSyncAdapter,
         bybit: BybitSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit],
+        tron: TronSyncAdapter,
+      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron],
     },
   ],
 })
