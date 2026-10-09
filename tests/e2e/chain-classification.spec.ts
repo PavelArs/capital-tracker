@@ -108,6 +108,8 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     'Staking reward',
     'Airdrop',
     'Gift received',
+    'Pool reward',
+    'Pool withdrawal',
     'Other',
   ]);
   await expect(drawer.getByText(`${before - 1} left to classify`)).toBeVisible();
@@ -134,6 +136,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     'Expense',
     'Gift sent',
     'Fee',
+    'Pool deposit',
     'Other',
   ]);
   await expect(nav.getByLabel(`${before - 1} to classify`, { exact: true })).toBeVisible();
