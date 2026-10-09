@@ -86,8 +86,7 @@ const history = {
     token(2, 20000010, usdt, 'USDT', wallets.main, outside, 100000000n, 3),
     // Address poisoning: a zero-value copycat transfer is never stored.
     token(8, 20000025, usdc, 'USDC', wallets.main, outside, 0n, 1),
-    // Any other token is out of scope (Q7).
-    token(9, 20000026, address('other-token'), 'XYZ', outside, wallets.main, 5000000n, 4),
+    // Any other token: see TOKEN-ANY below, on a wallet of its own.
   ],
 };
 // Independent oracle of the stored legs of the main wallet, newest block first.
@@ -180,7 +179,7 @@ function services(db, apiKey = etherscanKey) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 49/);
+  assert.match(migrate(database), /Migrations applied: 50/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -243,7 +242,7 @@ async function main() {
     ]);
     assert.deepEqual([summary.chainBalance, summary.transactionCount, summary.sync.state], ['1.249858000000000000', 8, 'complete']);
     assert.equal((await db.query('SELECT "scannedBlock" FROM wallet_addresses WHERE id=$1', [main]))[0].scannedBlock, 20000036);
-    console.log('PASS ETH-IDENTITY one hash moving ETH and USDC stores two legs (native, and token with log index 7); fees in ETH; a reverted send keeps only its fee; zero-value and unknown tokens skipped');
+    console.log('PASS ETH-IDENTITY one hash moving ETH and USDC stores two legs (native, and token with log index 7); fees in ETH; a reverted send keeps only its fee; zero-value transfers skipped');
     console.log('PASS SYNC-RECONCILE complete history gives ETH 1.249858, USDT 200, USDC 250');
 
     // CLS-PROVISIONAL: the sync created each moved asset, so the unclassified history already
@@ -380,7 +379,8 @@ async function main() {
           stakeCall(24, 20000090, pool, 0, '0xb7ba18c7'),
         ],
         internal: [internal(24, 20000090, queue, staker, ether(0.51))],
-        // The pool token minted for the deposit is no tracked asset.
+        // The pool token minted for the deposit is the pool's share, already the staked ETH: left
+        // out, so the stake never counts twice (TOKEN-ANY).
         tokens: [token(21, 20000070, pool, 'synETH', zero, staker, ether(1.98), 9)],
       };
       const readings = [
@@ -491,6 +491,104 @@ async function main() {
       await assert.rejects(() => db.query(`INSERT INTO wallet_ether_stake_moves("ownerId","addressId",txid,contract,"blockHeight","blockTime",units)
         VALUES ($1,$2,$3,$4,1,now(),0)`, [owner, stakerId, bare(30), pool]), /wallet_ether_stake_moves_units_check/);
       console.log('PASS ETH-STAKE-STATE a refused pool reading reports a provider error; contract and zero moves are refused by the schema');
+    }
+
+    // TOKEN-ANY: any ERC-20 token the wallet moves is read with what Etherscan says about it.
+    // A token copying USDT's symbol gets a ticker of its own; one without readable decimals is
+    // left out. Unpriced receipts of tokens no source lists are dust once a threshold is set.
+    {
+      const holder = address('token-holder');
+      const syn = address('syn-token');
+      const fakeUsdt = address('fake-usdt');
+      const broken = address('broken-token');
+      const named = (item, tokenName, tokenDecimal) => ({ ...item, tokenName, tokenDecimal });
+      const tokenHistory = {
+        normal: [
+          normal(30, 20000101, outside, holder, ether(1), 21000, 10 ** 9),
+          normal(34, 20000104, holder, syn, 0, 50000, 10 ** 9),
+        ],
+        internal: [],
+        tokens: [
+          named(token(31, 20000102, syn, 'SYN', outside, holder, 42n * 10n ** 18n, 1), 'Synthetic Token', '18'),
+          token(32, 20000103, fakeUsdt, 'USDT', outside, holder, 5000000n, 1),
+          named(token(33, 20000103, broken, 'BRK', outside, holder, 7n, 2), 'Broken', ''),
+          named(token(34, 20000104, syn, 'SYN', holder, outside, 2n * 10n ** 18n, 3), 'Synthetic Token', '18'),
+        ],
+      };
+      await post('ethereum', { tip: 20000200, ...tokenHistory });
+      const tokenAccount = await account('Tokens');
+      const holderId = (await s.addresses.register(owner, { network: 'ethereum', address: holder, accountId: tokenAccount })).value.id;
+      const synced = await newRequests(() => s.addresses.sync(owner, holderId));
+      assert.deepEqual([synced.result.outcome, synced.result.reason, synced.result.imported], ['complete', null, 5]);
+      const fakeTicker = `USDT${fakeUsdt.slice(2, 6).toUpperCase()}`;
+      const tokenLegs = [
+        { txid: bare(34), asset: null, received: 0n, sent: 50000n * 10n ** 9n, fee: 50000n * 10n ** 9n, direction: 'out', block: 20000104 },
+        { txid: `${bare(34)}-3`, asset: syn, received: 0n, sent: 2n * 10n ** 18n, fee: 0n, direction: 'out', block: 20000104 },
+        { txid: `${bare(32)}-1`, asset: fakeUsdt, received: 5000000n, sent: 0n, fee: 0n, direction: 'in', block: 20000103 },
+        { txid: `${bare(31)}-1`, asset: syn, received: 42n * 10n ** 18n, sent: 0n, fee: 0n, direction: 'in', block: 20000102 },
+        { txid: bare(30), asset: null, received: ether(1), sent: 0n, fee: 0n, direction: 'in', block: 20000101 },
+      ];
+      assertLegs(await stored(db, holderId), tokenLegs);
+      assert.deepEqual((await db.query(`SELECT network, contract, symbol, name, decimals, ticker, "coingeckoId"
+        FROM chain_tokens ORDER BY ticker`)).map((row) => Object.values(row)), [
+        ['ethereum', syn, 'SYN', 'Synthetic Token', 18, 'SYN', null],
+        ['ethereum', fakeUsdt, 'USDT', 'USDT', 6, fakeTicker, null],
+      ]);
+      assert.deepEqual(synced.result.address.balances, [
+        { symbol: 'ETH', quantity: '0.999950000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+        { symbol: 'SYN', quantity: '40.000000000000000000' },
+        { symbol: fakeTicker, quantity: '5.000000' },
+      ]);
+      // D1: each token is one market-priced asset, created once however often the sync runs.
+      assert.deepEqual((await s.addresses.sync(owner, holderId)).imported, 0);
+      const instruments = async () => (await db.query(`SELECT symbol, "priceSource", count(*)::int AS n
+        FROM accounting_instruments WHERE "ownerId"=$1 AND symbol = ANY($2) GROUP BY 1, 2 ORDER BY 1`, [owner, ['SYN', fakeTicker]]))
+        .map((row) => Object.values(row));
+      assert.deepEqual(await instruments(), [['SYN', 'market', 1], [fakeTicker, 'market', 1]]);
+      const rows = async () => {
+        const list = (await s.operations.read(owner, {}, now)).operations;
+        return [`${bare(31)}-1`, `${bare(32)}-1`, `${bare(34)}-3`].map((txid) => {
+          const row = list.find((operation) => operation.chain?.txid === txid);
+          return [row.asset.symbol, row.asset.name, row.asset.network, row.quantity, row.estimatedValueUsd, row.status,
+            row.fee?.asset.symbol ?? null, row.fee?.quantity ?? null];
+        });
+      };
+      // TOKEN-FEE: the SYN send shows its ETH gas as its fee, in one row.
+      assert.deepEqual(await rows(), [
+        ['SYN', 'Synthetic Token', 'ethereum', '42', null, 'needs-classification', null, null],
+        [fakeTicker, 'USDT', 'ethereum', '5', null, 'needs-classification', null, null],
+        ['SYN', 'Synthetic Token', 'ethereum', '2', null, 'needs-classification', 'ETH', '0.00005'],
+      ]);
+      const before = (await s.classifications.needsClassificationCount(owner)).count;
+      const { OwnerSettingsService } = require(`${dist}/owner-settings/owner-settings.service.js`);
+      await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: '1' });
+      assert.deepEqual((await rows()).map((row) => row[5]), ['dust', 'dust', 'needs-classification']);
+      assert.equal((await s.classifications.needsClassificationCount(owner)).count, before - 2);
+      await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: null });
+      console.log('PASS TOKEN-ANY any ERC-20 token is read with its symbol, name and decimals; a USDT copycat gets its own ticker; a token without decimals is left out; balances list each token; one market asset per token');
+      console.log('PASS TOKEN-DUST unpriced receipts of tokens no source lists are dust once a threshold is set; the token send still asks, with its ETH gas as the fee');
+
+      // TOKEN-BACKFILL: an address synced before every token was read gets its stored history
+      // read again for them, once, before anything new; ether legs stay as they are.
+      await db.query(`DELETE FROM wallet_address_transactions WHERE "addressId"=$1 AND asset LIKE '0x%'`, [holderId]);
+      await db.query('UPDATE wallet_addresses SET "tokenBackfillTo"="scannedBlock" WHERE id=$1', [holderId]);
+      const pending = (await s.addresses.list(owner)).find((item) => item.id === holderId);
+      assert.deepEqual(pending.balances.map((item) => item.symbol), ['ETH', 'USDT', 'USDC'], 'No token balance from a part of its history');
+      const backfill = await newRequests(() => s.addresses.sync(owner, holderId));
+      assert.deepEqual([backfill.result.outcome, backfill.result.imported], ['complete', 3]);
+      assert.deepEqual(backfill.urls.map(call), [
+        ['eth_blockNumber', null, null, null],
+        ['tokentx', holder, '0', '20000136'],
+      ]);
+      assertLegs(await stored(db, holderId), tokenLegs);
+      assert.deepEqual((await db.query('SELECT "tokenBackfillTo", "tokenBackfillAt" FROM wallet_addresses WHERE id=$1', [holderId]))[0],
+        { tokenBackfillTo: null, tokenBackfillAt: null });
+      assert.deepEqual(backfill.result.address.balances.map((item) => item.symbol), ['ETH', 'USDT', 'USDC', 'SYN', fakeTicker]);
+      const after = await newRequests(() => s.addresses.sync(owner, holderId));
+      assert.deepEqual([after.result.imported, after.urls.map(call)], [0, [['eth_blockNumber', null, null, null]]]);
+      console.log('PASS TOKEN-BACKFILL a wallet read before any token was followed has its old token transfers read once, up to the stored block; no balance shows a token until then');
     }
 
     // Reads stay owner-scoped and per asset.

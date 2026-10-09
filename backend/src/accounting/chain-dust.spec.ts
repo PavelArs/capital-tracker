@@ -19,8 +19,17 @@ describe('chain dust threshold', () => {
     expect(isDust('in', '0', null)).toBe(false);
   });
 
-  it('a transaction without a price is never dust', () => {
+  it('a transaction without a price is not dust unless it is a token no source lists', () => {
     expect(isDust('in', null, '1')).toBe(false);
+    expect(isDust('in', null, '1', false)).toBe(false);
+  });
+
+  it('TOKEN-ANY an unpriced receipt of a token no source lists is dust once a threshold is set', () => {
+    expect(isDust('in', null, '1', true)).toBe(true);
+    expect(isDust('in', null, null, true)).toBe(false);
+    expect(isDust('out', null, '1', true)).toBe(false);
+    // A price, once there is one, decides.
+    expect(isDust('in', '5', '1', true)).toBe(false);
   });
 
   it('only incoming transactions can be dust: what the owner sent always asks', () => {

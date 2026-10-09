@@ -154,6 +154,33 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
     });
   });
 
+  it('TOKEN-ANY checks another token once the portfolio counts it; an airdrop nobody recorded is no difference', () => {
+    const ethereum = address(5, {
+      network: 'ethereum',
+      address: `0x${'b2'.repeat(20)}`,
+      chainBalance: '1.000000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.000000000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+        { symbol: 'SYN', quantity: '12.5' },
+        { symbol: 'FREEDROP', quantity: '1000' },
+      ],
+    });
+    const held = {
+      assets: [
+        { symbol: 'ETH', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '1' }] },
+        { symbol: 'SYN', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '10' }] },
+      ],
+    } as unknown as PortfolioValuation;
+    expect(reconcile([ethereum], held, trust)).toEqual({
+      state: 'differs',
+      assets: [
+        { symbol: 'SYN', chain: '12.5', recorded: '10', difference: '2.5', exchange: false },
+      ],
+    });
+  });
+
   it('sums exact decimals', () => {
     expect(sum(['0.1', '0.2'])).toBe('0.3');
     expect(sum([])).toBe('0');
