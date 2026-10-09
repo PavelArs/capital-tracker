@@ -160,7 +160,7 @@ const call = ({ method, url }) => {
   assert.equal(method, 'GET');
   const parsed = new URL(url);
   const query = parsed.searchParams;
-  if (parsed.pathname === '/walletsolidity/getnowblock') return ['tip'];
+  if (parsed.pathname === '/walletsolidity/getblock' && parsed.search === '?detail=false') return ['tip'];
   if (parsed.pathname === '/walletsolidity/gettransactioninfobyid') return ['info', query.get('value')];
   if (parsed.pathname === '/walletsolidity/getaccount') return ['account', query.get('address')];
   if (parsed.pathname === '/wallet/getReward') return ['reward', query.get('address')];
@@ -467,7 +467,9 @@ async function main() {
     assert.deepEqual([staked.result.outcome, staked.result.imported], ['complete', 5]);
     assert.deepEqual(staked.calls.map(call), [
       ['tip'],
+      // Seven transactions are two of the app's small pages.
       ['transactions', staker.address, 1, null],
+      ['transactions', staker.address, 1, 'offset-6'],
       ['trc20', staker.address, USDT, 1, null],
       ['trc20', staker.address, USDC, 1, null],
       ...['s2', 's3', 's4', 's5', 's6', 's7'].map((id) => ['info', hash(id)]),

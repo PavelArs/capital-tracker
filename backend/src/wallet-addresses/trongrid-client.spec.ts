@@ -10,7 +10,8 @@ import {
   parseInfo,
   parsePage,
   parseTokenTransfer,
-  TRONGRID_PAGE_SIZE,
+  TRONGRID_TOKEN_PAGE_SIZE,
+  TRONGRID_TRANSACTION_PAGE_SIZE,
   TronGridClient,
 } from './trongrid-client';
 
@@ -143,18 +144,17 @@ describe('TRON-SYNC TronGrid responses', () => {
       parsePage(
         { success: true, data: [token], meta: { fingerprint: 'next-1' } },
         parseTokenTransfer,
+        TRONGRID_TOKEN_PAGE_SIZE,
       ),
     ).toMatchObject({ next: 'next-1', items: [{ txid: hash('4') }] });
-    expect(parsePage({ success: true, data: [] }, parseTokenTransfer)).toEqual({
+    expect(parsePage({ success: true, data: [] }, parseTokenTransfer, 1)).toEqual({
       items: [],
       next: null,
     });
-    expect(() => parsePage({ success: false, data: [] }, parseTokenTransfer)).toThrow();
+    expect(() => parsePage({ success: false, data: [] }, parseTokenTransfer, 1)).toThrow();
+    // More items than the page asked for is an answer to another request.
     expect(() =>
-      parsePage(
-        { success: true, data: Array(TRONGRID_PAGE_SIZE + 1).fill(token) },
-        parseTokenTransfer,
-      ),
+      parsePage({ success: true, data: [token, token] }, parseTokenTransfer, 1),
     ).toThrow();
   });
 
@@ -271,7 +271,7 @@ describe('TRON-SYNC TronGrid client', () => {
     expect(url.pathname).toBe(`/v1/accounts/${wallet}/transactions`);
     expect(Object.fromEntries(url.searchParams)).toEqual({
       only_confirmed: 'true',
-      limit: String(TRONGRID_PAGE_SIZE),
+      limit: String(TRONGRID_TRANSACTION_PAGE_SIZE),
       order_by: 'block_timestamp,asc',
       min_timestamp: '1000',
       max_timestamp: '2000',
@@ -289,6 +289,7 @@ describe('TRON-SYNC TronGrid client', () => {
     const [{ url, headers }] = requests;
     expect(url.pathname).toBe(`/v1/accounts/${wallet}/transactions/trc20`);
     expect(url.searchParams.get('contract_address')).toBe(USDT);
+    expect(url.searchParams.get('limit')).toBe(String(TRONGRID_TOKEN_PAGE_SIZE));
     expect(url.searchParams.has('fingerprint')).toBe(false);
     expect(headers['tron-pro-api-key']).toBeUndefined();
   });
@@ -309,11 +310,29 @@ describe('TRON-SYNC TronGrid client', () => {
     });
     await expect(client().reward(wallet)).resolves.toEqual({ ok: true, units: 3_200_000n });
     expect(requests.map(({ url }) => url.pathname)).toEqual([
-      '/walletsolidity/getnowblock',
+      '/walletsolidity/getblock',
       '/walletsolidity/getaccount',
       '/wallet/getReward',
     ]);
+    expect(Object.fromEntries(requests[0].url.searchParams)).toEqual({ detail: 'false' });
     expect(requests[1].url.searchParams.get('visible')).toBe('true');
+  });
+
+  it('TRON-SYNC-SMALL: opens a new connection for every request', async () => {
+    let connections = 0;
+    const count = () => connections++;
+    server.on('connection', count);
+    try {
+      const reader = client();
+      for (let index = 0; index < 3; index++) {
+        replies.push(json({ reward: 1 }));
+        await expect(reader.reward(wallet)).resolves.toEqual({ ok: true, units: 1n });
+      }
+      expect([requests.length, connections]).toEqual([3, 3]);
+      expect(requests.map(({ headers }) => headers.connection)).toEqual(Array(3).fill('close'));
+    } finally {
+      server.off('connection', count);
+    }
   });
 
   it.each([
@@ -373,6 +392,6 @@ describe('TRON-SYNC TronGrid client', () => {
       pauseMs: 0,
     });
     await expect(closed.tip()).resolves.toEqual({ ok: false, reason: 'unavailable' });
-    expect(warn).toHaveBeenCalledWith('TronGrid /walletsolidity/getnowblock failed: ECONNREFUSED');
+    expect(warn).toHaveBeenCalledWith('TronGrid /walletsolidity/getblock failed: ECONNREFUSED');
   });
 });

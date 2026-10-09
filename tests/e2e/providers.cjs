@@ -79,7 +79,8 @@ let bybit = initialBybit();
 // the probe posts them, merged by id. An account's transactions are those whose contract names
 // it as owner_address or to_address, and the internal transfers naming it; its TRC-20 transfers
 // those naming it as from or to. Lists answer oldest first between min_ and max_timestamp, only
-// up to the solid block, `pageSize` items a page with a fingerprint for the next. The node's
+// up to the solid block, the asked limit (6 transactions or 20 token transfers, the app's small
+// pages) capped by `pageSize`, with a fingerprint for the next. The node's
 // record of a transaction, an account (getaccount) and its unclaimed reward answer as posted;
 // anything not yet solid or never posted answers {} like the node. A posted `key` makes every
 // request without that TRON-PRO-API-KEY a 401; `fault` answers the n-th request after the post
@@ -557,7 +558,8 @@ function tronRequest(request, response, url) {
     return respond(response, fault.status, { Error: 'Synthetic provider fault' });
   }
   const solid = (time) => time <= tron.tip.timestamp;
-  if (url.pathname === '/walletsolidity/getnowblock' && !url.search) {
+  // Header only: the app never asks for a whole block (its answers must stay small).
+  if (url.pathname === '/walletsolidity/getblock' && url.search === '?detail=false') {
     return respond(response, 200, { blockID: tron.tip.number.toString(16).padStart(64, '0'),
       block_header: { raw_data: { number: tron.tip.number, timestamp: tron.tip.timestamp } } });
   }
@@ -577,7 +579,7 @@ function tronRequest(request, response, url) {
   const from = Number(query.get('min_timestamp'));
   const to = Number(query.get('max_timestamp'));
   const expected = ['fingerprint', 'limit', 'max_timestamp', 'min_timestamp', 'only_confirmed', 'order_by', ...(list?.[2] ? ['contract_address'] : [])];
-  if (!list || tronHex(list[1]) === null || query.get('only_confirmed') !== 'true' || query.get('limit') !== '200'
+  if (!list || tronHex(list[1]) === null || query.get('only_confirmed') !== 'true' || query.get('limit') !== (list?.[2] ? '20' : '6')
     || query.get('order_by') !== 'block_timestamp,asc' || !Number.isSafeInteger(from) || !Number.isSafeInteger(to)
     || ![...query.keys()].every((name) => expected.includes(name))) {
     return respond(response, 400, { success: false, error: 'Invalid synthetic TronGrid request', statusCode: 400 });
@@ -598,7 +600,7 @@ function tronRequest(request, response, url) {
   items = items.filter((item) => solid(time(item)) && time(item) >= from && time(item) <= to)
     .sort((left, right) => time(left) - time(right) || (left.txID ?? left.tx_id ?? left.transaction_id).localeCompare(right.txID ?? right.tx_id ?? right.transaction_id));
   const offset = query.has('fingerprint') ? Number(query.get('fingerprint').replace(/^offset-/, '')) : 0;
-  const page = items.slice(offset, offset + tron.pageSize);
+  const page = items.slice(offset, offset + Math.min(Number(query.get('limit')), tron.pageSize));
   const more = offset + page.length < items.length;
   return respond(response, 200, { data: page, success: true,
     meta: { at: tron.tip.timestamp, page_size: page.length, ...(more ? { fingerprint: `offset-${offset + page.length}` } : {}) } });
