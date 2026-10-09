@@ -2,6 +2,7 @@ import { type SecurityOverview, type SecuritySession, securityApi } from '@api/s
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
+import AuthenticatorDialog from './AuthenticatorDialog';
 import ConfirmDialog from './ConfirmDialog';
 import RecoveryCodesDialog from './RecoveryCodesDialog';
 import './security.css';
@@ -24,6 +25,7 @@ function activity(lastActiveAt: string): string {
 }
 
 type Dialog =
+  | { kind: 'authenticator' }
   | { kind: 'codes' }
   | { kind: 'session'; session: SecuritySession }
   | { kind: 'everywhere' };
@@ -84,10 +86,20 @@ export default function SecuritySettings() {
             <div className="shell-setting__text">
               <span className="shell-setting__label">Two-factor authentication</span>
               <p className="shell-setting__hint">
-                Authenticator app. Required for this account, so it can't be turned off.
+                Authenticator app. Always on; set it up again for a new phone.
               </p>
             </div>
-            <span className="security-badge">On</span>
+            <div className="security-actions">
+              <span className="security-badge">On</span>
+              <button
+                type="button"
+                className="shell-button shell-button--secondary"
+                disabled={!overview}
+                onClick={() => setDialog({ kind: 'authenticator' })}
+              >
+                Set up again
+              </button>
+            </div>
           </div>
           <div className="shell-setting">
             <div className="shell-setting__text">
@@ -157,6 +169,9 @@ export default function SecuritySettings() {
             )}
           </div>
         </>
+      )}
+      {dialog?.kind === 'authenticator' && (
+        <AuthenticatorDialog onFinished={load} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === 'codes' && overview && (
         <RecoveryCodesDialog
