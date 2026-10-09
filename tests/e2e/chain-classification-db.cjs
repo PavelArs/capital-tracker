@@ -161,6 +161,19 @@ async function buyAndCount(db, s, f) {
     'The produced buy is listed once, on its chain row',
   );
 
+  stage = 'CLS-PRODUCED a produced entry is changed through its classification only';
+  // Voiding the buy on its own would drop the coins while the receipt still reads as answered.
+  await rejected(
+    () =>
+      s.trades.void(owner, trust, saved.value.operation.id, {
+        requestId: randomUUID(),
+        expectedJournalRevision: 0,
+      }),
+    409,
+  );
+  assert.deepEqual(await lots(s, owner, trust), [['BTC', '0.00918359', '1000']]);
+  assert.equal(await count(s, owner), 3, 'CLS-PRODUCED: the refused void changed nothing');
+
   stage = 'CLS-BUY replay, stale version, misfit and refusals';
   const replay = await classify(s, owner, address, 1, { ...body, requestId });
   assert.equal(replay.created, false);
