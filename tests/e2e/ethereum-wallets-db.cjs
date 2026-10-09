@@ -589,6 +589,77 @@ async function main() {
       const after = await newRequests(() => s.addresses.sync(owner, holderId));
       assert.deepEqual([after.result.imported, after.urls.map(call)], [0, [['eth_blockNumber', null, null, null]]]);
       console.log('PASS TOKEN-BACKFILL a wallet read before any token was followed has its old token transfers read once, up to the stored block; no balance shows a token until then');
+
+      // TOKEN-ANY-PRICE: held tokens are priced by contract from CoinGecko, hourly; one CoinGecko
+      // does not list gets no price and is asked about once a day.
+      const { PricesService } = require(`${dist}/prices/prices.service.js`);
+      const { BybitMarketClient } = require(`${dist}/prices/bybit-market.js`);
+      const { CoinGeckoClient, KrakenClient } = require(`${dist}/prices/price-providers.js`);
+      const { latestMarketPrices } = require(`${dist}/prices/market-price.store.js`);
+      const { isUnlistedToken } = require(`${dist}/wallet-addresses/chain-assets.js`);
+      const prices = new PricesService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }),
+        new KrakenClient({ pauseMs: 0, retryPauseMs: 0 }), new CoinGeckoClient(), new BybitMarketClient());
+      const geckoCalls = (urls) => urls.filter((url) => url.hostname === 'api.coingecko.com' && url.pathname.startsWith('/api/v3/simple/token_price/'))
+        .map((url) => [url.pathname.split('/').pop(), url.searchParams.get('contract_addresses')]);
+      const requestsOf = async (action) => {
+        const before = (await (await fetch(`${control}/requests`)).json()).length;
+        const result = await action();
+        const all = await (await fetch(`${control}/requests`)).json();
+        return { result, urls: all.slice(before).map(({ url }) => new URL(url)) };
+      };
+      assert.equal(isUnlistedToken('ethereum', syn), true, 'No source lists the token before it is priced');
+      await post('token-prices', { ethereum: { [syn.toLowerCase()]: 0.25 } });
+      const priced = await requestsOf(() => prices.collect(new Date()));
+      assert.equal(priced.result.outcome, 'collected');
+      // Both held tokens are asked about, in one request; only SYN is known.
+      assert.deepEqual(geckoCalls(priced.urls), [['ethereum', [syn, fakeUsdt].sort().join(',')]]);
+      const stateOf = async () => (await db.query(`SELECT ticker, "coingeckoId", "priceCheckedAt" IS NOT NULL AS checked
+        FROM chain_tokens ORDER BY ticker`)).map((row) => Object.values(row));
+      assert.deepEqual(await stateOf(), [['SYN', syn, true], [fakeTicker, null, true]]);
+      const latest = await latestMarketPrices(db.manager, ['SYN', fakeTicker], new Date());
+      assert.deepEqual(latest.map((row) => [row.asset, row.price, row.source]), [['SYN', '0.25', 'coingecko']]);
+      assert.equal(isUnlistedToken('ethereum', syn), false, 'The app now knows CoinGecko lists SYN');
+      assert.equal(isUnlistedToken('ethereum', fakeUsdt), true);
+      // Listed tokens are asked every run; the one CoinGecko does not know, once a day.
+      const again = await requestsOf(() => prices.collect(new Date()));
+      assert.deepEqual(geckoCalls(again.urls), [['ethereum', syn]]);
+      await db.query(`UPDATE chain_tokens SET "priceCheckedAt" = now() - interval '25 hours' WHERE contract = $1`, [fakeUsdt]);
+      const recheck = await requestsOf(() => prices.collect(new Date()));
+      // The token checked longest ago comes first.
+      assert.deepEqual(geckoCalls(recheck.urls), [['ethereum', `${fakeUsdt},${syn}`]]);
+      // A token no wallet holds any more is not asked about.
+      await db.query(`DELETE FROM wallet_address_transactions WHERE "addressId"=$1 AND asset = $2`, [holderId, syn]);
+      const sold = await requestsOf(() => prices.collect(new Date()));
+      assert.deepEqual(geckoCalls(sold.urls), []);
+      assert.equal((await db.query(`SELECT state FROM sync_sources WHERE key='prices:tokens'`))[0].state, 'synced');
+      // CoinGecko failing is named, and the tokens are asked again next time.
+      await post('token-prices', { status: 429 });
+      await db.query(`UPDATE chain_tokens SET "priceCheckedAt" = NULL`);
+      await prices.collect(new Date());
+      assert.deepEqual((await db.query(`SELECT state, "errorCode", "errorMessage" FROM sync_sources WHERE key='prices:tokens'`))[0],
+        { state: 'failed', errorCode: 'rate_limited', errorMessage: 'CoinGecko rate limit reached' });
+      assert.equal((await db.query(`SELECT count(*)::int AS n FROM chain_tokens WHERE "priceCheckedAt" IS NULL`))[0].n, 2);
+      // The Bybit step never prices a token by its ticker.
+      assert.equal((await db.query(`SELECT count(*)::int AS n FROM price_observations WHERE source='bybit'`))[0].n, 0);
+      await post('token-prices', {});
+      console.log('PASS TOKEN-ANY-PRICE held tokens are priced by contract from CoinGecko, each run; a token it does not list stays unpriced and unlisted and is asked about once a day; a token no wallet holds is not asked; a failure is named; Bybit never prices a token');
+
+      // A token never takes a ticker an existing market asset (a Bybit coin, say) already uses:
+      // one asset key names one coin only.
+      {
+        const collider = address('xrp-token-holder');
+        const xrpToken = address('xrp-lookalike');
+        await db.query(`INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload","assetType","valuationCurrency","priceSource")
+          VALUES($1,$2,'XRP',$3,$4,$5,'crypto','USD','market')`, [randomUUID(), owner, 'XRP', randomUUID(), JSON.stringify({ name: 'XRP', symbol: 'XRP' })]);
+        await post('ethereum', { tip: 20000400, normal: [normal(60, 20000301, outside, collider, ether(1), 21000, 10 ** 9)], internal: [],
+          tokens: [named(token(61, 20000302, xrpToken, 'XRP', outside, collider, 3n * 10n ** 18n, 1), 'Ripple Lookalike', '18')] });
+        const colliderId = (await s.addresses.register(owner, { network: 'ethereum', address: collider, accountId: tokenAccount })).value.id;
+        assert.equal((await s.addresses.sync(owner, colliderId)).outcome, 'complete');
+        const [row] = await db.query(`SELECT symbol, ticker FROM chain_tokens WHERE contract = $1`, [xrpToken]);
+        assert.equal(row.symbol, 'XRP');
+        assert.equal(row.ticker, `XRP${xrpToken.slice(2, 6).toUpperCase()}`, 'The ticker of the market asset XRP is left to it');
+        console.log('PASS TOKEN-TICKER a token named like an existing market asset gets a ticker of its own');
+      }
     }
 
     // Reads stay owner-scoped and per asset.

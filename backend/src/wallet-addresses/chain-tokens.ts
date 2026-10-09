@@ -167,7 +167,12 @@ export async function registerChainTokens(
   });
   const added: TokenRow[] = [];
   if (fresh.length > 0) {
-    const tickers: { ticker: string }[] = await manager.query('SELECT ticker FROM chain_tokens');
+    const tickers: { ticker: string }[] = await manager.query(
+      // Also a market asset's ticker, a Bybit coin say: one asset key may name one coin only.
+      `SELECT ticker FROM chain_tokens
+       UNION SELECT upper(symbol) FROM accounting_instruments
+        WHERE "assetType" = 'crypto' AND symbol IS NOT NULL`,
+    );
     const taken = new Set([...reservedTickers, ...tickers.map((row) => row.ticker)]);
     for (const item of fresh) {
       const ticker = newTicker(item.symbol, item.contract, (value) => taken.has(value));

@@ -284,4 +284,56 @@ export class CoinGeckoClient implements PriceProvider {
       return { ok: false, reason: 'invalid_response' };
     }
   }
+
+  /**
+   * TOKEN-ANY-PRICE: the USD price of tokens by contract on one of CoinGecko's platforms. A
+   * token CoinGecko does not know is absent from the answer. An Ethereum contract is matched
+   * without regard to case, a Solana mint exactly.
+   */
+  async tokens(
+    platform: 'ethereum' | 'solana',
+    contracts: readonly string[],
+    now: Date,
+  ): Promise<{ ok: true; prices: Map<string, TokenQuote> } | { ok: false; reason: PriceFailure }> {
+    const query = new URLSearchParams({
+      contract_addresses: contracts.join(','),
+      vs_currencies: 'usd',
+      include_last_updated_at: 'true',
+      precision: 'full',
+    });
+    const fetched = await getJson(
+      `${this.baseUrl}/api/v3/simple/token_price/${platform}?${query}`,
+      this.timeoutMs,
+      this.demoKey ? { 'x-cg-demo-api-key': this.demoKey } : {},
+    );
+    if (!fetched.ok) return fetched;
+    const nowSeconds = Math.floor(now.getTime() / 1000);
+    try {
+      const body = record(fetched.body);
+      const answered = new Map(
+        Object.entries(body).map(([key, value]) => [
+          platform === 'ethereum' ? key.toLowerCase() : key,
+          value,
+        ]),
+      );
+      const prices = new Map<string, TokenQuote>();
+      for (const contract of contracts) {
+        const value = answered.get(platform === 'ethereum' ? contract.toLowerCase() : contract);
+        if (value === undefined) continue;
+        const entry = record(value);
+        prices.set(contract, {
+          price: geckoPrice(entry.usd),
+          observedAt: new Date(instant(entry.last_updated_at, nowSeconds) * 1000).toISOString(),
+        });
+      }
+      return { ok: true, prices };
+    } catch {
+      return { ok: false, reason: 'invalid_response' };
+    }
+  }
+}
+
+export interface TokenQuote {
+  price: string;
+  observedAt: string;
 }
