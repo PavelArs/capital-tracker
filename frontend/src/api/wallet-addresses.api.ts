@@ -104,7 +104,8 @@ export interface WalletAddress {
   transactionCount: number;
   /** The network's own coin on the chain from the whole stored history; null until a sync completes. */
   chainBalance: string | null;
-  /** Every asset the wallet can hold (ETH or SOL, USDT, USDC); null until a sync completes. */
+  /** Every asset the wallet holds (its coin first, then USDT, USDC and, on Ethereum and Solana,
+   * any other token by its ticker); null until a sync completes. */
   balances: ChainBalance[] | null;
   /** Solana stake accounts or Ethereum pools; null when there are none or until a sync completes. */
   staking?: Staking | null;

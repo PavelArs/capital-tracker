@@ -1,4 +1,4 @@
-import { ethereumLegs, rangeEnd } from './ethereum-legs';
+import { ethereumLegs, ethereumTokenFacts, rangeEnd } from './ethereum-legs';
 import type { InternalTransfer, NormalTransaction, TokenTransfer } from './etherscan-client';
 import { ETHERSCAN_PAGE_SIZE } from './etherscan-client';
 
@@ -197,7 +197,7 @@ describe('ETH-IDENTITY: legs of an Ethereum address', () => {
     });
   });
 
-  it('ignores zero-value transfers, other tokens and transfers of other addresses', () => {
+  it('ignores zero-value transfers and transfers of other addresses', () => {
     expect(
       ethereumLegs(
         owned,
@@ -205,11 +205,60 @@ describe('ETH-IDENTITY: legs of an Ethereum address', () => {
         [],
         [
           token({ from: owned, to: other, value: 0n, logIndex: 1 }),
-          token({ contract: unknownToken, logIndex: 2 }),
+          token({ contract: unknownToken, from: owned, to: other, value: 0n, logIndex: 2 }),
           token({ from: other, to: `0x${'d4'.repeat(20)}`, logIndex: 3 }),
         ],
       ),
     ).toEqual([]);
+  });
+
+  it('TOKEN-ANY reads any other token, named by its contract', () => {
+    const legs = ethereumLegs(
+      owned,
+      [],
+      [],
+      [token({ contract: unknownToken, value: 42n * 10n ** 18n, logIndex: 2 })],
+    );
+    expect(pick(legs)).toEqual([
+      {
+        txid: `${'1'.repeat(64)}-2`,
+        asset: unknownToken,
+        received: 42n * 10n ** 18n,
+        sent: 0n,
+        fee: 0n,
+        direction: 'in',
+      },
+    ]);
+  });
+
+  it('TOKEN-ANY takes each other token’s symbol, name and decimals from its first transfer', () => {
+    const other18 = `0x${'e5'.repeat(20)}`;
+    const broken = `0x${'f6'.repeat(20)}`;
+    expect(
+      ethereumTokenFacts([
+        token({ raw: { tokenSymbol: 'USDC', tokenName: 'USD Coin', tokenDecimal: '6' } }),
+        token({
+          contract: unknownToken,
+          raw: { tokenSymbol: 'SYN', tokenName: 'Synthetic Token', tokenDecimal: '18' },
+        }),
+        token({
+          contract: unknownToken,
+          raw: { tokenSymbol: 'LATER', tokenName: 'Renamed', tokenDecimal: '9' },
+        }),
+        token({ contract: other18, raw: { tokenDecimal: '0' } }),
+        token({ contract: broken, raw: { tokenSymbol: 'BAD', tokenDecimal: '' } }),
+      ]),
+    ).toEqual([
+      {
+        network: 'ethereum',
+        contract: unknownToken,
+        symbol: 'SYN',
+        name: 'Synthetic Token',
+        decimals: 18,
+      },
+      { network: 'ethereum', contract: other18, symbol: null, name: null, decimals: 0 },
+      { network: 'ethereum', contract: broken, symbol: 'BAD', name: null, decimals: Number.NaN },
+    ]);
   });
 
   it('numbers the transfers of a hash the same way on both sides without an event index', () => {
