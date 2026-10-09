@@ -2,6 +2,7 @@ import { BadRequestException, UnprocessableEntityException } from '@nestjs/commo
 import {
   type ChainLeg,
   chainCoin,
+  chainTxid,
   classificationPayload,
   exchangeTrade,
   fitsDirection,
@@ -349,5 +350,20 @@ describe('BYBIT-TRADES: a Bybit spot fill as a Buy or Sell (M22)', () => {
     expect(exchangeTrade(trade({ fee: '-0.01', feeCoin: 'USDT' }))).toBeNull();
     expect(exchangeTrade({ kind: 'deposit' })).toBeNull();
     expect(exchangeTrade(null)).toBeNull();
+  });
+});
+
+describe('Bybit record ids (M22, BYBIT-EARN)', () => {
+  it('names trades, deposits, withdrawals and paid Earn yield', () => {
+    for (const txid of [
+      'bybit-trade-2100000000000000001',
+      'bybit-deposit-internal-9000001',
+      'bybit-withdrawal-7000001',
+      'bybit-earn-flexible-1002096',
+      'bybit-earn-onchain-1002097',
+    ])
+      expect(chainTxid.test(txid)).toBe(true);
+    expect(chainTxid.test('bybit-earn-fixed-1')).toBe(false);
+    expect(chainTxid.test('bybit-loan-1')).toBe(false);
   });
 });

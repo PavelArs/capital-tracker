@@ -141,10 +141,11 @@ const bad = (): never => {
 
 /**
  * A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds its
- * number (M14); a Bybit record off chain has Bybit's own ID (M22).
+ * number (M14); a Bybit record off chain has Bybit's own ID (M22), a paid Earn yield its
+ * product kind too (BYBIT-EARN).
  */
 export const chainTxid =
-  /^(([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?|bybit-(trade|deposit|withdrawal)-[0-9A-Za-z_-]{1,80})$/;
+  /^(([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?|bybit-(trade|deposit|withdrawal|earn-flexible|earn-onchain)-[0-9A-Za-z_-]{1,80})$/;
 
 function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();

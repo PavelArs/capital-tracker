@@ -230,7 +230,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 46/);
+  assert.match(migrate(database), /Migrations applied: 47/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -508,7 +508,7 @@ async function main() {
     await assert.rejects(() => new TrackSolanaWallets1792100000000().down(), /recovery plan/);
     await assert.rejects(() => new TrackSolanaStake1792600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS SOL-MIGRATION fresh 46 applies once; both Solana migrations refuse down');
+    console.log('PASS SOL-MIGRATION fresh 47 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }

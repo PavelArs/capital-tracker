@@ -5,6 +5,8 @@ import type {
 } from '@api/portfolio-valuation.api';
 import type {
   ChainBalance,
+  EarnHolding,
+  ExchangeAccount,
   StakeAccount,
   StakeState,
   Staking,
@@ -87,6 +89,68 @@ function pooledPiece(address: WalletAddress): string | null {
   const pools = (address.pools ?? []).filter((item) => Number(item.quantity) !== 0);
   if (pools.length === 0) return null;
   return `${pools.map((item) => `${quantity(item.quantity)} ${item.symbol}`).join(' · ')} in pools`;
+}
+
+/** BYBIT-EARN: "200 USDT · 0.5 SOL in Earn", the part of a Bybit account's balance in Earn. */
+function earnPiece(address: WalletAddress): string | null {
+  const coins = earnByCoin(address.exchange?.earn ?? []);
+  if (coins.length === 0) return null;
+  return `${coins.map((item) => `${quantity(item.quantity)} ${item.symbol}`).join(' · ')} in Earn`;
+}
+
+/** One line per coin, the products added up, in Bybit's order. */
+function earnByCoin(earn: EarnHolding[]): ChainBalance[] {
+  const coins: ChainBalance[] = [];
+  for (const item of earn) {
+    const known = coins.find((coin) => coin.symbol === item.symbol);
+    if (known) known.quantity = sum([known.quantity, item.quantity]);
+    else coins.push({ symbol: item.symbol, quantity: item.quantity });
+  }
+  return coins.filter((item) => Number(item.quantity) !== 0);
+}
+
+const earnProducts: Record<EarnHolding['product'], string> = {
+  flexible: 'Flexible Savings',
+  onchain: 'On-chain Earn',
+  fixed: 'Fixed-term savings',
+};
+
+/**
+ * BYBIT-EARN: the coins a Bybit account holds in Earn, per product, in its drawer; already in
+ * the balance above. A key that cannot read Earn says how to let it.
+ */
+export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
+  if (exchange.earnAllowed === false)
+    return (
+      <p className="wallets-message wallets-message--warn" role="note">
+        This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key,
+        tick Earn under Read-Only and press Sync now; no need to add the account again.
+      </p>
+    );
+  const earn = (exchange.earn ?? []).filter((item) => Number(item.quantity) !== 0);
+  if (earn.length === 0) return null;
+  return (
+    <section aria-labelledby="address-earn">
+      <h3 id="address-earn" className="transactions-section">
+        Earn
+      </h3>
+      <dl className="transactions-facts">
+        {earn.map((item) => (
+          <div key={`${item.product}-${item.symbol}`}>
+            <dt>{earnProducts[item.product]}</dt>
+            <dd className="wallets-num">
+              {quantity(item.quantity)} {item.symbol}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="wallets-muted wallets-stake__note">
+        Coins in Bybit Earn stay yours: they count in this balance and in net worth. Yield Bybit
+        paid in the last three months is recorded as staking income by itself; Bybit lists no older
+        yield.
+      </p>
+    </section>
+  );
 }
 
 const stakeStates: Record<
@@ -273,7 +337,7 @@ export const chainAmounts = (address: WalletAddress): string => chainPieces(addr
 // say how much.
 function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
   const pieces = chainPieces(address);
-  const notes = [stakedPiece(address), pooledPiece(address)].filter(
+  const notes = [stakedPiece(address), pooledPiece(address), earnPiece(address)].filter(
     (piece): piece is string => piece !== null,
   );
   const note =
@@ -473,7 +537,7 @@ export function ReconcileNote({ result }: { result: Reconciliation }) {
   });
   // BYBIT-GAPS: what the API never lists, such as P2P purchases, is entered by hand.
   const advice = result.assets.every((item) => item.exchange)
-    ? 'Add what Bybit does not report, such as P2P purchases or Earn, as transactions by hand.'
+    ? 'Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.'
     : 'Add the missing transactions or check that every address belongs here.';
   return (
     <p className="wallets-message wallets-message--warn" role="note">

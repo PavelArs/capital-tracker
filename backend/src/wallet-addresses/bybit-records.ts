@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { BybitDeposit, BybitExecution, BybitWithdrawal } from './bybit-client';
+import type {
+  BybitDeposit,
+  BybitEarnCategory,
+  BybitEarnYield,
+  BybitExecution,
+  BybitWithdrawal,
+} from './bybit-client';
 import { networkAssets } from './chain-assets';
 
 // sync-bybit-account (M22): Bybit's records as raw legs of the account, never edited later. A
@@ -9,7 +15,7 @@ export const BYBIT_DECIMALS = 18;
 /** The coins a Bybit account can hold in the app (Q7): the tracked chains' coins and tokens. */
 export const bybitCoins = networkAssets('bybit').map((asset) => asset.symbol);
 
-export type BybitKind = 'trade' | 'deposit' | 'withdrawal';
+export type BybitKind = 'trade' | 'deposit' | 'withdrawal' | 'earn';
 
 export interface BybitLeg {
   txid: string;
@@ -184,5 +190,32 @@ export function withdrawalLeg(withdrawal: BybitWithdrawal): BybitLeg | null {
       raw: { kind: 'withdrawal', internal: withdrawal.internal, record: withdrawal.raw },
     },
     -(toUnits(withdrawal.amount) + fee),
+  );
+}
+
+const earnProducts: Record<BybitEarnCategory, string> = {
+  FlexibleSaving: 'flexible',
+  OnChain: 'onchain',
+};
+
+/**
+ * BYBIT-EARN: a paid Earn yield adds its coin to the account; the app records it as a Staking
+ * reward by itself. Bybit's yield ids are unique per product kind, so the kind is in the txid.
+ */
+export function earnLeg(paid: BybitEarnYield, category: BybitEarnCategory): BybitLeg | null {
+  if (paid.state !== 'done' || !tracked(paid.coin)) return null;
+  const units = toUnits(paid.amount);
+  if (units === 0n) return null;
+  const product = earnProducts[category];
+  return leg(
+    {
+      txid: `bybit-earn-${product}-${paid.id}`,
+      kind: 'earn',
+      asset: paid.coin,
+      blockTime: iso(paid.time),
+      feeUnits: 0n,
+      raw: { kind: 'earn', product, record: paid.raw },
+    },
+    units,
   );
 }

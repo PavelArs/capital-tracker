@@ -1180,6 +1180,40 @@ describe('link-own-transfers (M13)', () => {
     });
   });
 
+  it('BYBIT-EARN: Earn yield Bybit paid is recorded as staking income by itself', async () => {
+    const earned = chainOperation(5, {
+      type: 'staking-reward',
+      occurredAt: '2025-06-24T00:30:00.000Z',
+      quantity: '0.0001',
+      estimatedValueUsd: '6',
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-earn-flexible-1002096',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'in',
+      },
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'staking-reward', valueUsd: '6.00' },
+        comment: null,
+        automatic: true,
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([earned]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(cellTexts(bodyRows()[0]).at(-1)).toBe('Auto: Earn yieldBybit');
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    expect(within(screen.getByRole('dialog')).getByRole('note')).toHaveTextContent(
+      "Recognised automatically from Bybit's Earn yield history: counts as staking income at the coin's price when Bybit paid it. Change the classification if it is wrong.",
+    );
+  });
+
   it('XFER-AUTO: a pair between own wallets is one transfer A → B, recognised automatically', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
     const { drawer } = await openRow(0, 'Transfer · BTC');
