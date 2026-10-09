@@ -225,7 +225,9 @@ async function rates(db, s, f) {
   await trade(db, s, early, wallet, btc, 'buy', '2024-12-20T10:00:00.000Z', '1', '40000');
   const usd = await s.snapshots.history(early, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(usd.points.every((entry) => entry.invested === '40000'));
-  assert.deepEqual([usd.netFlow, usd.marketEffect], ['0', minus(usd.value, usd.points[0].value)]);
+  // BTC was held at the first point but has no stored price before 2025-01-02, so the start
+  // leaves it out and the market effect is unknown, not the whole value.
+  assert.deepEqual([usd.netFlow, usd.marketEffect, usd.change], ['0', null, null]);
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
   assert.ok(rub.points.every((entry) => entry.invested === null), 'No rate: net invested is unknown');
   assert.equal(rub.invested, null);
@@ -274,6 +276,27 @@ async function paidTrades(db, s, f) {
   console.log('PASS CUR-PAID-RUB flows of trades paid in RUB or EUR are exact in that currency');
 }
 
+async function unpricedStart(db, s, f) {
+  stage = 'HIST-START-UNPRICED a period that starts before an asset has a price gives no market effect';
+  const { unpriced } = f;
+  const eth = (await s.accounting.createInstrument(unpriced, { requestId: randomUUID(), name: 'Ethereum',
+    symbol: 'ETH', assetType: 'crypto' })).value.id;
+  const wallet = await account(s, unpriced, 'Unpriced wallet', '2026-08-01T00:00:00.000Z');
+  await trade(db, s, unpriced, wallet, eth, 'buy', '2026-08-10T10:00:00.000Z', '2', '5000');
+  // The first ETH price arrives after the period has started: 2026-09-10.
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    SELECT 'ETH','USD','kraken',d, 2500, 'daily-close'
+    FROM generate_series(timestamptz '2026-09-10 00:00+00', timestamptz '2026-10-04 00:00+00', interval '1 day') d`);
+  const history = await s.snapshots.history(unpriced, { period: '1M', currency: 'USD' }, now);
+  assert.equal(history.points[0].at, '2026-09-05T00:00:00.000Z');
+  assert.equal(history.points[0].complete, false, 'The start left out ETH, which had no price then');
+  assert.equal(history.value, '5000', 'The end is priced');
+  assert.deepEqual([history.change, history.changePercent, history.marketEffect, history.marketReturnPercent],
+    [null, null, null, null], 'No change from a start that left out a held asset');
+  assert.deepEqual([history.deposits, history.withdrawals, history.netFlow], ['0', '0', '0']);
+  console.log('PASS HIST-START-UNPRICED an incomplete start with a missing price gives no change or market effect; the flows stay');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact isolated settings required');
   assert.ok(existsSync(modulePath), 'Missing implementation is prerequisite failure, not RED');
@@ -290,16 +313,17 @@ async function main() {
   try {
     await db.initialize();
     assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 50);
-    const [owner, early, other, paid] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    const [owner, early, other, paid, unpriced] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('flows-owner@example.invalid','synthetic-not-a-hash',true),
       ('flows-early@example.invalid','synthetic-not-a-hash',true),
       ('flows-other@example.invalid','synthetic-not-a-hash',true),
-      ('flows-paid@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('flows-paid@example.invalid','synthetic-not-a-hash',true),
+      ('flows-unpriced@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
-    const f = { owner: owner.id, early: early.id, other: other.id, paid: paid.id };
+    const f = { owner: owner.id, early: early.id, other: other.id, paid: paid.id, unpriced: unpriced.id };
     await storedHistory(db);
     await operations(db, s, f);
-    for (const check of [month, transfer, allTime, legacy, rates, paidTrades]) await check(db, s, f);
+    for (const check of [month, transfer, allTime, legacy, rates, paidTrades, unpricedStart]) await check(db, s, f);
   } finally { if (db.isInitialized) await db.destroy(); }
 }
 const watchdog = setTimeout(() => { console.error(`FAIL timeout at ${stage}`); process.exit(1); }, 240000);
