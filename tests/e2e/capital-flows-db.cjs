@@ -225,7 +225,9 @@ async function rates(db, s, f) {
   await trade(db, s, early, wallet, btc, 'buy', '2024-12-20T10:00:00.000Z', '1', '40000');
   const usd = await s.snapshots.history(early, { period: 'ALL', currency: 'USD' }, now);
   assert.ok(usd.points.every((entry) => entry.invested === '40000'));
-  assert.deepEqual([usd.netFlow, usd.marketEffect], ['0', minus(usd.value, usd.points[0].value)]);
+  // BTC was held at the first point but has no stored price before 2025-01-02, so the start
+  // leaves it out and the market effect is unknown, not the whole value.
+  assert.deepEqual([usd.netFlow, usd.marketEffect, usd.change], ['0', null, null]);
   const rub = await s.snapshots.history(early, { period: 'ALL', currency: 'RUB' }, now);
   assert.ok(rub.points.every((entry) => entry.invested === null), 'No rate: net invested is unknown');
   assert.equal(rub.invested, null);
