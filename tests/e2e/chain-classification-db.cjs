@@ -434,6 +434,58 @@ async function reclassify(db, s, f, { trust, address }) {
   console.log('PASS CLS-RECLASSIFY/CLS-RESYNC');
 }
 
+async function feeValue(db, s, f, { address }) {
+  stage = 'FEE-VALUE a fee without a value is worth its coins at the stored price';
+  const { owner } = f;
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken','2025-07-01T07:00:00Z',60000,'hourly-close')`);
+  // 1300 sat leave as the network fee alone; 0.000013 BTC at 60,000 USD is 0.78 USD.
+  await raw(db, owner, address, 40, 'out', '0', '1300', '1300', '2025-07-01T08:00:00.000Z');
+  const fee = await classify(s, owner, address, 40, {
+    expectedVersion: 0,
+    classification: { type: 'fee', valueUsd: null },
+  });
+  assert.equal(fee.value.type, 'fee');
+  assert.deepEqual(
+    (await tradeVersions(db, fee.value.operation.id)).map((row) => [
+      row.kind,
+      row.side,
+      row.quantity,
+      row.grossUsd,
+    ]),
+    [['create', 'sell', '0.000013', '0.78']],
+  );
+  const [saved] = await db.query(
+    `SELECT details FROM chain_transaction_classification_versions WHERE txid=$1`,
+    [txid(40)],
+  );
+  assert.equal(saved.details.valueUsd, null, 'The answer stays empty; only the entry is priced');
+  assert.deepEqual(
+    [(await listed(s, owner, 40)).type, (await listed(s, owner, 40)).valueUsd],
+    ['fee', '0.78'],
+  );
+
+  stage = 'FEE-VALUE without a stored price the owner enters the value; an entered one is kept';
+  await raw(db, owner, address, 41, 'out', '0', '1300', '1300', '2025-07-10T08:00:00.000Z');
+  await rejected(
+    () =>
+      classify(s, owner, address, 41, {
+        expectedVersion: 0,
+        classification: { type: 'fee', valueUsd: null },
+      }),
+    422,
+  );
+  const entered = await classify(s, owner, address, 41, {
+    expectedVersion: 0,
+    classification: { type: 'fee', valueUsd: '2' },
+  });
+  assert.deepEqual(
+    (await tradeVersions(db, entered.value.operation.id)).map((row) => row.grossUsd),
+    ['2'],
+  );
+  console.log('PASS FEE-VALUE');
+}
+
 async function dust(db, s) {
   stage = 'CLS-DUST receipts below the threshold leave the count, keep counting, stay unanswered';
   const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
@@ -550,6 +602,7 @@ async function main() {
     await hide(db, s, f, made);
     await reclassify(db, s, f, made);
     await provisional(db, s);
+    await feeValue(db, s, f, made);
     await dust(db, s);
     await rejected(() => s.classifications.classify(owner.id, made.address, txid(1), null), 400);
   } finally {
