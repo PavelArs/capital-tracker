@@ -53,6 +53,24 @@ const swapProducedBy = `(SELECT x.txid FROM chain_transaction_classification_ver
     JOIN wallet_address_transactions t ON t."addressId"=x."addressId" AND t.txid=x.txid
     WHERE x."ownerId"=h."ownerId" AND x."swapId"=h.id
     ORDER BY t."receivedUnits" > t."sentUnits" DESC, x."createdAt" DESC LIMIT 1)`;
+/**
+ * TOKEN-CHAIN: the blockchain of the token the chain transaction that produced the entry moved;
+ * null for a network's own coin, an exchange's coin and an entry no chain transaction produced. A swap picks
+ * its paying (`out`) or receiving (`in`) leg.
+ */
+const tokenNetwork = (column: string, leg?: 'in' | 'out') =>
+  `(SELECT w.network FROM chain_transaction_classification_versions x
+    JOIN wallet_address_transactions t ON t."addressId"=x."addressId" AND t.txid=x.txid
+    JOIN wallet_addresses w ON w."ownerId"=x."ownerId" AND w.id=x."addressId"
+    WHERE x."ownerId"=h."ownerId" AND x."${column}"=h.id AND t.asset IS NOT NULL
+      AND w.network<>'bybit'${
+        leg === 'in'
+          ? ' AND t."receivedUnits" > t."sentUnits"'
+          : leg === 'out'
+            ? ' AND t."sentUnits" > t."receivedUnits"'
+            : ''
+      }
+    ORDER BY x."createdAt" DESC LIMIT 1)`;
 const named = (alias: string, column: string) =>
   `LEFT JOIN accounting_instruments ${alias} ON ${alias}."ownerId"=h."ownerId" AND ${alias}.id=v."${column}"`;
 
@@ -69,9 +87,11 @@ function base(row: Row, kind: ExportOperation['kind']) {
     toAccountName: null,
     asset: text(row.symbol),
     assetName: String(row.assetName),
+    assetNetwork: text(row.assetNetwork),
     quantity: String(row.quantity),
     counterAsset: null,
     counterQuantity: null,
+    counterAssetNetwork: null,
     valueUsd: null,
     costBasisUsd: null,
     feeUsd: null,
@@ -245,7 +265,7 @@ export class OwnerExportService {
           si.name AS "settlementName", ${exact('s.quantity')} AS "settlementQuantity", u.purpose,
           EXISTS (SELECT 1 FROM account_csv_import_rows r WHERE r."ownerId"=h."ownerId"
             AND r."accountId"=h."accountId" AND r."tradeId"=h.id) AS csv,
-          ${producedBy('tradeId')} AS "chainTxid"
+          ${producedBy('tradeId')} AS "chainTxid", ${tokenNetwork('tradeId')} AS "assetNetwork"
         FROM account_trades h
         ${lastContent('account_trade_versions', 'tradeId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
@@ -266,7 +286,8 @@ export class OwnerExportService {
       `SELECT ${entry}, h."fromAccountId" AS "accountId", a.name AS "accountName",
           h."toAccountId", b.name AS "toAccountName", i.symbol, i.name AS "assetName",
           ${exact('v.quantity')} AS quantity, fi.symbol AS "feeSymbol", fi.name AS "feeName",
-          ${exact('v."feeQuantity"')} AS "feeQuantity", ${producedBy('transferId')} AS "chainTxid"
+          ${exact('v."feeQuantity"')} AS "feeQuantity", ${producedBy('transferId')} AS "chainTxid",
+          ${tokenNetwork('transferId')} AS "assetNetwork"
         FROM owned_transfers h
         ${lastContent('owned_transfer_versions', 'transferId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
@@ -283,7 +304,8 @@ export class OwnerExportService {
           ${exact('v."incomingQuantity"')} AS "counterQuantity",
           ${exact('v."considerationUsd"')} AS "considerationUsd", fi.symbol AS "feeSymbol",
           fi.name AS "feeName", ${exact('v."feeQuantity"')} AS "feeQuantity",
-          ${swapProducedBy} AS "chainTxid"
+          ${swapProducedBy} AS "chainTxid", ${tokenNetwork('swapId', 'out')} AS "assetNetwork",
+          ${tokenNetwork('swapId', 'in')} AS "counterAssetNetwork"
         FROM account_swaps h
         ${lastContent('account_swap_versions', 'swapId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."outgoingInstrumentId"
@@ -298,7 +320,7 @@ export class OwnerExportService {
           v.category, ${exact('v.quantity')} AS quantity,
           ${exact('v."incomeValueUsd"')} AS "incomeValueUsd",
           ${exact('v."acquisitionBasisUsd"')} AS "acquisitionBasisUsd",
-          ${producedBy('rewardId')} AS "chainTxid"
+          ${producedBy('rewardId')} AS "chainTxid", ${tokenNetwork('rewardId')} AS "assetNetwork"
         FROM account_rewards h
         ${lastContent('account_reward_versions', 'rewardId')}
         JOIN accounting_instruments i ON i."ownerId"=h."ownerId" AND i.id=v."instrumentId"
@@ -378,6 +400,7 @@ export class OwnerExportService {
           source: chainOr(row, 'manual'),
           counterAsset: text(row.counterSymbol ?? row.counterName),
           counterQuantity: text(row.counterQuantity),
+          counterAssetNetwork: text(row.counterAssetNetwork),
           valueUsd: text(row.considerationUsd),
           ...fee(row),
         }),

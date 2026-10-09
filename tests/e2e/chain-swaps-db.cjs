@@ -416,6 +416,74 @@ async function invalid(db, s, owner, f) {
   console.log('PASS CLS-SWAP-INVALID');
 }
 
+// SWAP-ONE-TX and TOKEN-CHAIN: a DEX swap of 0.01 ETH for 25 USDC in one Ethereum transaction
+// the owner's address sent to a router contract. The raw rows are stored as a sync stores them.
+async function oneTransaction(db, s, owner, f) {
+  stage = 'SWAP-ONE-TX a contract call that returned another coin is suggested as one swap';
+  const dex = { eth: hash(10), usdc: `${hash(10)}-5` };
+  const at = '2026-09-20T10:00:00.000Z';
+  const insert = (txid, asset, received, sent, fee, direction, data) =>
+    db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,asset,"blockHeight",
+        "blockHash","blockTime","receivedUnits","sentUnits","feeUnits",direction,raw)
+        VALUES ($1,$2,$3,$4,10,$5,$6,$7,$8,$9,$10,$11)`,
+      [owner, f.eth, txid, asset, sha256('block:10'), at, received, sent, fee, direction, JSON.stringify(data)],
+    );
+  await insert(dex.eth, null, '0', '11000000000000000', '1000000000000000', 'out', {
+    hash: `0x${dex.eth}`,
+    transaction: {
+      hash: `0x${dex.eth}`,
+      from: `0x${'AB'.repeat(20)}`,
+      to: `0x${'7a'.repeat(20)}`,
+      value: '10000000000000000',
+      input: '0x7ff36ab5000000000000000000000000000000000000000000000000000000000000002a',
+      methodId: '0x7ff36ab5',
+      functionName: 'swapExactETHForTokens(uint256 amountOutMin, address[] path, address to, uint256 deadline)',
+    },
+    internal: [],
+  });
+  await insert(dex.usdc, 'USDC', '25000000', '0', '0', 'in', { hash: `0x${dex.eth}`, transfer: {} });
+  const untouched = await rawFingerprint(db, owner);
+  const call = { method: 'swapExactETHForTokens' };
+  const row = async (txid) =>
+    (await listed(s, owner)).find((item) => item.wallet?.id === f.eth && item.chain?.txid === txid);
+  const usdc = await row(dex.usdc);
+  assert.deepEqual(usdc.asset, { instrumentId: null, symbol: 'USDC', name: 'USD Coin', network: 'ethereum' });
+  assert.deepEqual([usdc.chain.call, usdc.chain.swapWith], [call, { addressId: f.eth, txid: dex.eth }]);
+  const ether = await row(dex.eth);
+  assert.equal('network' in ether.asset, false, "The network's own coin names no blockchain");
+  assert.deepEqual([ether.chain.call, ether.chain.swapWith], [call, { addressId: f.eth, txid: dex.usdc }]);
+  // A plain token send of another hash names no call and suggests nothing.
+  const plain = await row(legs.usdtIn);
+  assert.deepEqual([plain.chain.call, plain.chain.swapWith], [undefined, undefined]);
+  assert.equal(plain.asset.network, 'ethereum');
+
+  const saved = await classify(s, owner, f.eth, dex.usdc, {
+    expectedVersion: 0,
+    classification: swapWith(f.eth, dex.eth),
+  });
+  assert.equal(saved.value.status, 'classified');
+  const swap = await row(dex.usdc);
+  assert.deepEqual(
+    [swap.type, swap.asset.symbol, swap.asset.network, swap.quantity, swap.counterAsset.symbol, swap.counterAsset.network, swap.counterQuantity, swap.valueUsd],
+    ['swap', 'ETH', undefined, '0.01', 'USDC', 'ethereum', '25', '25'],
+  );
+  assert.equal(swap.chain.swapWith, undefined, 'An answered swap suggests nothing');
+  assert.deepEqual(swap.chain.call, call);
+  assert.equal(await row(dex.eth), undefined, 'The swap is listed once, on the coins it bought');
+  const answered = await answer(db, f.eth, dex.eth);
+  assert.deepEqual([answered.type, answered.pairedTxid], ['swap', dex.usdc]);
+  const exported = (await s.exports.operations(db.manager, owner)).find(
+    (entry) => entry.id === `swap:${answered.swapId}`,
+  );
+  assert.deepEqual(
+    [exported.asset, exported.assetNetwork, exported.counterAsset, exported.counterAssetNetwork],
+    ['ETH', null, 'USDC', 'ethereum'],
+  );
+  assert.equal(await rawFingerprint(db, owner), untouched, 'Raw chain rows are never edited');
+  console.log('PASS SWAP-ONE-TX/TOKEN-CHAIN');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -462,6 +530,7 @@ async function main() {
     await crossWallet(db, s, owner.id, f);
     await invalid(db, s, owner.id, f);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
+    await oneTransaction(db, s, owner.id, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

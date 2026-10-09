@@ -230,7 +230,12 @@ function OperationRow({
           className="transactions-asset"
           title={[operation.asset.name, operation.counterAsset?.name].filter(Boolean).join(' → ')}
         >
-          <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} size="sm" />
+          <AssetIcon
+            symbol={operation.asset.symbol}
+            name={operation.asset.name}
+            network={operation.asset.network}
+            size="sm"
+          />
           {ticker(operation.asset)}
           {operation.counterAsset && ` → ${ticker(operation.counterAsset)}`}
         </span>
@@ -305,7 +310,11 @@ function OperationItem({
         className={`transactions-item${needs ? ' transactions-item--needs' : ''}${current ? ' transactions-item--open' : ''}`}
         onClick={onOpen}
       >
-        <AssetIcon symbol={operation.asset.symbol} name={operation.asset.name} />
+        <AssetIcon
+          symbol={operation.asset.symbol}
+          name={operation.asset.name}
+          network={operation.asset.network}
+        />
         <span className="transactions-item__main">
           <span className="transactions-item__title">{title}</span>
           {needs ? (
