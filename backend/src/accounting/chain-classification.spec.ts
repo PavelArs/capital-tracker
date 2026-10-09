@@ -146,6 +146,28 @@ describe('classify-chain-transactions input and plan', () => {
     ).toMatchObject({ category: 'staking', acquisitionBasisUsd: '5', incomeValueUsd: '5' });
   });
 
+  it('FEE-VALUE: a fee may come without a value; the service prices it before the plan', () => {
+    expect(parse({ classification: { type: 'fee', valueUsd: null } }).classification).toEqual({
+      type: 'fee',
+      valueUsd: null,
+    });
+    expect(parse({ classification: { type: 'fee', valueUsd: '12.5' } }).classification).toEqual({
+      type: 'fee',
+      valueUsd: '12.5',
+    });
+    expect(plan(payment, { type: 'fee', valueUsd: '12.5' }, undefined).fields).toEqual({
+      occurredAt: payment.blockTime,
+      quantity: '0.000603',
+      side: 'sell',
+      grossUsd: '12.5',
+      feeUsd: '12.5',
+      purpose: 'fee',
+    });
+    expect(() => planOperation(payment, { type: 'fee', valueUsd: null }, undefined)).toThrow(
+      'A fee without a value takes its stored price',
+    );
+  });
+
   it('CLS-OTHER: a receipt nobody can name counts without a purchase price and no deposit', () => {
     const input = parse({ classification: { type: 'other' }, comment: 'Found on an old card' });
     expect(input.classification).toEqual({ type: 'other' });
@@ -268,6 +290,8 @@ describe('classify-chain-transactions input and plan', () => {
     refused(body({ type: 'buy', currency: 'USD', amount: '1', perUsd: '1' }));
     refused(body({ type: 'income', valueUsd: '0' }));
     refused(body({ type: 'income', valueUsd: null }));
+    refused(body({ type: 'fee', valueUsd: '0' }));
+    refused(body({ type: 'fee' }));
     refused(body({ type: 'income', valueUsd: '1', currency: 'USD' }));
     refused(body({ type: 'other', valueUsd: '1' }));
     refused({ ...body(null), comment: 'x'.repeat(501) });

@@ -23,6 +23,7 @@ import { type ChainSwapCreateInput, parseSwapCreate, parseSwapVoid } from './ass
 import { availableQuantity } from './available-quantity';
 import {
   type ChainLeg,
+  type Classification,
   type ClassificationInput,
   chainCoin,
   chainTxid,
@@ -38,7 +39,13 @@ import {
   unfit,
 } from './chain-classification';
 import { isDust } from './chain-dust';
-import { type PoolLeg, planPoolWithdrawal, poolDepositUnits, poolGainValueUsd } from './chain-pool';
+import {
+  type PoolLeg,
+  planPoolWithdrawal,
+  poolDepositUnits,
+  poolGainValueUsd,
+  storedValueUsd,
+} from './chain-pool';
 import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 import {
   coinOf,
@@ -255,7 +262,14 @@ export class ChainClassificationService {
     const value = input.hidden ? null : input.classification;
     if (value?.type === 'transfer' || value?.type === 'swap' || value?.type === 'pool-withdrawal') {
       if (!fitsDirection(leg(before), value.type)) throw unfit();
-    } else if (value) this.check(planOperation(leg(before), value, input.comment));
+    } else if (value)
+      this.check(
+        planOperation(
+          leg(before),
+          await this.priced(this.source.manager, before, value),
+          input.comment,
+        ),
+      );
     // POOL-DEPOSIT: a leg that moved only its network fee put nothing into a pool.
     if (value?.type === 'pool-deposit' && poolDepositUnits(own(address, before)) <= 0n)
       throw unfit();
@@ -551,7 +565,7 @@ export class ChainClassificationService {
     const planned = withdrawal
       ? await this.planWithdrawal(manager, owner, target, withdrawal)
       : value && value.type !== 'transfer'
-        ? planOperation(leg(row), value, input.comment)
+        ? planOperation(leg(row), await this.priced(manager, row, value), input.comment)
         : null;
     const movement =
       transfer && accountId
@@ -802,6 +816,30 @@ export class ChainClassificationService {
       swapAccountId: plan.accountId,
       swapId: value.swap.swapId,
     };
+  }
+
+  /**
+   * FEE-VALUE: a fee answered without a value is worth what its coins were at the block time:
+   * USDT and USDC 1:1, other coins at their stored price. With no price stored the owner enters
+   * the value. Only the journal entry carries it; the saved answer stays empty.
+   */
+  private async priced<T extends Classification>(
+    manager: EntityManager,
+    row: LegRow,
+    value: T,
+  ): Promise<T> {
+    if (value.type !== 'fee' || value.valueUsd !== null) return value;
+    const chain = leg(row);
+    const { symbol } = chainCoin(chain);
+    const { quantity } = legMovement(chain);
+    const valueUsd = storedValueUsd(
+      symbol,
+      quantity,
+      await this.storedPrice(manager, symbol, chain.blockTime),
+    );
+    if (valueUsd === null)
+      throw new UnprocessableEntityException('No stored price for this coin at that time');
+    return { ...value, valueUsd };
   }
 
   /** CLS-SWAP-VALUE: the paid coin's stored USD price at the swap, if it is recent enough. */

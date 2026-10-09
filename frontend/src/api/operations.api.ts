@@ -148,7 +148,8 @@ export type ChainClassification =
       /** RUB or EUR only: units per 1 USD actually paid; without it the Bank of Russia rate. */
       perUsd?: string;
     }
-  | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
+  | { type: 'income' | 'expense' | 'gift'; valueUsd: string }
+  | { type: 'fee'; valueUsd: string | null }
   | { type: 'reward' | 'staking-reward' | 'airdrop' | 'pool-reward'; valueUsd: string | null }
   /** Received, nothing more known: counts without a purchase price and no deposit. */
   | { type: 'other' }
