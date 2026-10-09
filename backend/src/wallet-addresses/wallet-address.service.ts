@@ -16,7 +16,14 @@ import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { bybitCoins } from './bybit-records';
 import { type EarnHolding, HISTORY_DAYS } from './bybit-sync.adapter';
-import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from './chain-assets';
+import {
+  chainAsset,
+  formatUnits,
+  isBybitCoin,
+  isExchange,
+  type Network,
+  networkAssets,
+} from './chain-assets';
 import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
@@ -241,11 +248,18 @@ function historyState(row: AddressRow): 'never' | 'partial' | 'complete' {
 /** The balance of each asset the network's wallet can hold, its own coin first. */
 function balancesOf(row: AddressRow) {
   // BYBIT-GAPS: an exchange account's balance is what Bybit reports, compared with the records.
-  if (row.exchange)
-    return networkAssets(row.network).map((asset) => ({
-      symbol: asset.symbol,
-      quantity: row.exchange?.balances?.find((item) => item.coin === asset.symbol)?.quantity ?? '0',
+  // BYBIT-ANY-COIN: the coins it always shows, then any other coin it holds.
+  if (row.exchange) {
+    const reported = row.exchange.balances ?? [];
+    const others = reported
+      .filter((item) => isBybitCoin(item.coin) && !bybitCoins.includes(item.coin))
+      .filter((item) => /[1-9]/.test(item.quantity))
+      .map((item) => item.coin);
+    return [...bybitCoins, ...others].map((symbol) => ({
+      symbol,
+      quantity: reported.find((item) => item.coin === symbol)?.quantity ?? '0',
     }));
+  }
   return networkAssets(row.network).map((asset) => {
     const units = row.balances.find((item) => item.asset === asset.token)?.units ?? '0';
     return { symbol: asset.symbol, quantity: formatUnits(BigInt(units), asset) };
@@ -405,11 +419,11 @@ function summary(row: AddressRow, now = new Date()) {
             state === 'complete' && row.exchange.balancesAt
               ? new Date(row.exchange.balancesAt).toISOString()
               : null,
-          // Coins Bybit holds that the app does not track (Q7); they never count.
+          // Coins Bybit holds whose ticker the app cannot record (BYBIT-ANY-COIN); they never count.
           untracked:
             state === 'complete'
               ? (row.exchange.balances ?? [])
-                  .filter((item) => !bybitCoins.includes(item.coin))
+                  .filter((item) => !isBybitCoin(item.coin))
                   .map((item) => ({ symbol: item.coin, quantity: item.quantity }))
               : [],
           historyFrom: new Date(row.exchange.historyFrom).toISOString(),
@@ -419,7 +433,7 @@ function summary(row: AddressRow, now = new Date()) {
           earn:
             state === 'complete' && row.exchange.earn
               ? row.exchange.earn
-                  .filter((item) => bybitCoins.includes(item.coin))
+                  .filter((item) => isBybitCoin(item.coin))
                   .map((item) => ({
                     symbol: item.coin,
                     quantity: item.quantity,
@@ -562,8 +576,8 @@ export class WalletAddressService {
       await manager.query(
         `INSERT INTO bybit_accounts ("ownerId", "walletId", credentials, "keyHint", "ipBound",
             "keyExpiresAt", "historyFrom", "tradesReadTo", "depositsReadTo", "internalReadTo",
-            "withdrawalsReadTo")
-          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $7, $7, $7, $7)
+            "withdrawalsReadTo", "everyCoinAt")
+          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $7, $7, $7, $7, clock_timestamp())
           ON CONFLICT ("walletId") DO UPDATE SET credentials = EXCLUDED.credentials,
             "keyHint" = EXCLUDED."keyHint", "ipBound" = EXCLUDED."ipBound",
             "keyExpiresAt" = EXCLUDED."keyExpiresAt", "keySavedAt" = clock_timestamp()`,

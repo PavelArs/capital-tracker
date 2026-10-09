@@ -82,3 +82,18 @@ export const networkIcon = (network: NetworkInfo) =>
 
 export const networkOf = (address: Pick<WalletAddress, 'network'>): NetworkInfo =>
   networks[address.network];
+
+/**
+ * The coins an address's balances are compared with and shown for: the network's assets; an
+ * exchange account (BYBIT-ANY-COIN) also any other coin it reports.
+ */
+export function addressAssets(
+  address: Pick<WalletAddress, 'network' | 'balances'>,
+): readonly string[] {
+  const network = networkOf(address);
+  if (!network.exchange) return network.assets;
+  const others = (address.balances ?? [])
+    .map((balance) => balance.symbol)
+    .filter((symbol) => !network.assets.includes(symbol));
+  return [...network.assets, ...others];
+}

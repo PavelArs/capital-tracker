@@ -844,6 +844,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
 | M23 | `track-stellar-wallets` | XLM history and balance of a Stellar account from the public Horizon, the balance Horizon reports when the history differs (after D4, section 10) | M11, M12, M13 | — |
+| M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 
 ```mermaid
 flowchart LR
@@ -872,6 +873,7 @@ flowchart LR
   M9 --> M22
   M11 --> M22
   M13 --> M22
+  M22 --> M26
   M11 --> M23
   M12 --> M23
   M13 --> M23

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
+import { BybitMarketClient, type BybitMarketMiss } from './bybit-market';
+import { extraMarketCodes } from './market-codes';
 import { latestMarketPrices } from './market-price.store';
 import { MARKET_ASSETS, QUOTE_CURRENCY } from './price-catalog';
 import { freshness, gatherQuotes, isDue, nextRunAt, type SourceOutcome } from './price-collection';
@@ -15,6 +17,15 @@ export type CollectionResult =
 export const BACKFILL_FROM = new Date('2025-01-01T00:00:00Z');
 const BACKFILL_KEY = 'prices:backfill';
 const PROVIDER_KEYS = { kraken: 'prices:kraken', coingecko: 'prices:coingecko' } as const;
+const BYBIT_KEY = 'prices:bybit';
+// BYBIT-ANY-COIN: coins asked of Bybit's market in one run, two requests each at most.
+const MAX_BYBIT_COINS = 50;
+const BYBIT_MISS_TEXT: Record<BybitMarketMiss, string> = {
+  not_listed: 'has no USDT market for',
+  unavailable: 'did not answer for',
+  rate_limited: 'rate limit reached for',
+  invalid_response: 'sent an unreadable answer for',
+};
 // Arbitrary constant identifying the price collector's session advisory lock.
 const LOCK_KEY = 7_340_600_001;
 const INTERRUPTED_AFTER_MS = 15 * 60_000;
@@ -40,6 +51,7 @@ export class PricesService {
     private readonly config: ConfigService,
     private readonly kraken: KrakenClient,
     private readonly coingecko: CoinGeckoClient,
+    private readonly bybit: BybitMarketClient,
   ) {}
 
   private get enabled(): boolean {
@@ -80,7 +92,12 @@ export class PricesService {
         if (onlyIfDue && !isDue(await this.lastAttempt(), now)) return { outcome: 'not_due' };
         const backfilled = await this.backfill(now);
         const stored = await this.collectLatest(now);
-        return { outcome: 'collected', stored, backfilled };
+        const bybit = await this.collectBybit(now);
+        return {
+          outcome: 'collected',
+          stored: stored + bybit.stored,
+          backfilled: backfilled + bybit.backfilled,
+        };
       } finally {
         await runner.rollbackTransaction();
       }
@@ -113,6 +130,56 @@ export class PricesService {
         );
       }
       return stored;
+    });
+  }
+
+  /**
+   * BYBIT-ANY-COIN: every market-priced coin the catalog does not list, priced from Bybit's
+   * spot market: the last closed hourly candle, and once per coin the daily candles Bybit keeps,
+   * so a transaction can be valued at its time. A coin Bybit does not list stays without a price.
+   */
+  private async collectBybit(now: Date): Promise<{ stored: number; backfilled: number }> {
+    const codes = (await extraMarketCodes(this.source)).slice(0, MAX_BYBIT_COINS);
+    if (codes.length === 0) return { stored: 0, backfilled: 0 };
+    const done: { asset: string }[] = await this.source.query(
+      `SELECT DISTINCT asset FROM price_observations
+       WHERE kind = 'daily-close' AND source = 'bybit' AND "quoteCurrency" = $1
+         AND asset = ANY($2)`,
+      [QUOTE_CURRENCY, codes],
+    );
+    const complete = new Set(done.map(({ asset }) => asset));
+    const history: Quote[] = [];
+    const quotes: Quote[] = [];
+    const missed = new Map<string, BybitMarketMiss>();
+    for (const code of codes) {
+      const latest = await this.bybit.latest(code, now);
+      if (typeof latest === 'string') {
+        missed.set(code, latest);
+        continue;
+      }
+      quotes.push(latest);
+      if (complete.has(code)) continue;
+      const daily = await this.bybit.daily(code, now);
+      if (typeof daily !== 'string') history.push(...daily);
+    }
+    const reasons = [...new Set(missed.values())];
+    const text = reasons
+      .map((reason) => {
+        const names = codes.filter((code) => missed.get(code) === reason);
+        return `Bybit ${BYBIT_MISS_TEXT[reason]} ${names.join(', ')}`;
+      })
+      .join('; ');
+    const outcome: SourceOutcome =
+      missed.size === 0
+        ? { state: 'synced', errorCode: null, errorMessage: null }
+        : quotes.length === 0 && !missed.has('not_listed')
+          ? { state: 'failed', errorCode: reasons[0], errorMessage: text }
+          : { state: 'delayed', errorCode: 'missing_assets', errorMessage: text };
+    return this.source.transaction(async (manager) => {
+      const backfilled = await this.insert(manager, history);
+      const stored = await this.insert(manager, quotes);
+      await this.record(manager, BYBIT_KEY, outcome, now);
+      return { stored, backfilled };
     });
   }
 
@@ -207,18 +274,19 @@ export class PricesService {
   async read(now = new Date()) {
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const latest = await latestMarketPrices(
-        manager,
-        MARKET_ASSETS.map(({ code }) => code),
-        now,
-      );
+      // BYBIT-ANY-COIN: the catalog, then the coins priced from Bybit's market.
+      const codes = [
+        ...MARKET_ASSETS.map(({ code }) => code),
+        ...(await extraMarketCodes(manager)).slice(0, MAX_BYBIT_COINS),
+      ];
+      const latest = await latestMarketPrices(manager, codes, now);
       const sources: SourceRow[] = await manager.query(
         `SELECT * FROM sync_sources WHERE key LIKE 'prices:%' ORDER BY key`,
       );
       const byAsset = new Map(latest.map((row) => [row.asset, row]));
       return {
         quoteCurrency: QUOTE_CURRENCY,
-        assets: MARKET_ASSETS.map(({ code }) => {
+        assets: codes.map((code) => {
           const row = byAsset.get(code);
           const observedAt = row?.observedAt ?? null;
           return {

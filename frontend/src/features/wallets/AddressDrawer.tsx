@@ -229,7 +229,11 @@ export default function AddressDrawer({
             {network.assets.length > 1 && (
               <div>
                 <dt>Tracked assets</dt>
-                <dd>{network.assets.join(', ')}</dd>
+                <dd>
+                  {exchange
+                    ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
+                    : network.assets.join(', ')}
+                </dd>
               </div>
             )}
             <div>

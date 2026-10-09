@@ -29,7 +29,7 @@ const networks = [
     key: 'bybit',
     symbol: null,
     name: 'Bybit',
-    detail: 'Read-only API key. Spot trades, deposits and withdrawals',
+    detail: 'Read-only API key. Every coin: trades, deposits and withdrawals',
   },
 ] as const;
 const MAX_LABEL = 40;
@@ -326,10 +326,11 @@ export default function AddWalletDialog({
                 </div>
                 <p className="wallets-note">
                   The app checks with Bybit that the key is read-only and refuses one that can trade
-                  or withdraw. It reads spot trades, deposits and withdrawals of the last two years,
-                  the balances Bybit reports, with Earn ticked the coins in Earn and three months of
-                  their yield, and with Exchange History ticked every convert. P2P purchases are not
-                  in the API: add them by hand.
+                  or withdraw. It reads spot trades, deposits and withdrawals of every coin for the
+                  last two years, the balances Bybit reports, with Earn ticked the coins in Earn and
+                  three months of their yield, and with Exchange History ticked every convert. Coins
+                  Kraken does not list are priced from Bybit's own market. P2P purchases are not in
+                  the API: add them by hand.
                 </p>
               </>
             )}

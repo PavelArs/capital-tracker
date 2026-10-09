@@ -1,6 +1,6 @@
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
-import { networkOf } from './networks';
+import { addressAssets, networkOf } from './networks';
 
 // Exact decimal arithmetic for comparing balances; display rounding happens in format.ts.
 const SCALE = 30;
@@ -97,7 +97,14 @@ export function reconcile(
   if (own.length === 0) return { state: 'none' };
   const balances = own.map(chainBalances);
   if (balances.some((balance) => balance === null)) return { state: 'pending' };
-  const symbols = [...new Set(own.flatMap((address) => networkOf(address).assets))];
+  // BYBIT-ANY-COIN: an exchange account is also compared for any coin its records hold.
+  const recorded = own.some((address) => networkOf(address).exchange)
+    ? portfolio.assets
+        .filter((asset) => asset.assetType === 'crypto' && asset.symbol)
+        .filter((asset) => asset.holdings.some((holding) => holding.accountId === accountId))
+        .map((asset) => (asset.symbol as string).toUpperCase())
+    : [];
+  const symbols = [...new Set([...own.flatMap(addressAssets), ...recorded])];
   const assets = symbols.flatMap((symbol) => {
     const chain = sum(
       (balances as ChainBalance[][])

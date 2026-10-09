@@ -70,9 +70,11 @@ let solana = initialSolana();
 // product and the yield records of the last three months, as `yield` the way Bybit sends it.
 // Convert history and coin exchange records (BYBIT-CONVERT) answer only a key whose Exchange
 // permissions include ExchangeHistory, newest first, by page number and by cursor.
+// Bybit's public spot market (BYBIT-ANY-COIN) needs no key: `markets` gives each listed coin's
+// price against USDT, every candle closing at it; any other symbol is not listed.
 const initialBybit = () => ({ keys: [], executions: [], deposits: [], internalDeposits: [], withdrawals: [],
   balances: { FUND: [], UNIFIED: [] }, earn: { FlexibleSaving: [], OnChain: [], fixed: [] },
-  flexibleYield: [], onchainYield: [], converts: [], coinExchanges: [], pageSize: null, fault: null,
+  flexibleYield: [], onchainYield: [], converts: [], coinExchanges: [], markets: {}, pageSize: null, fault: null,
   requests: 0, badSignatures: 0 });
 let bybit = initialBybit();
 // Synthetic TronGrid (track-tron-wallets): the newest solidified block and raw items exactly as
@@ -204,6 +206,21 @@ function etherscan(response, url) {
 const DAY_MS = 86400000;
 function bybitRequest(request, response, url) {
   const reply = (retCode, retMsg, result = {}) => respond(response, 200, { retCode, retMsg, result, retExtInfo: {}, time: Date.now() });
+  if (url.pathname === '/v5/market/kline') {
+    const params = url.searchParams;
+    const step = { 60: 60 * 60_000, D: DAY_MS }[params.get('interval')];
+    const limit = Number(params.get('limit'));
+    if (params.get('category') !== 'spot' || !step || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000)
+      return reply(10001, 'params error');
+    const symbol = params.get('symbol') ?? '';
+    const price = symbol.endsWith('USDT') ? bybit.markets[symbol.slice(0, -4)] : undefined;
+    if (price === undefined) return reply(10001, 'Not supported symbols');
+    // Newest first, the current candle still open; daily history stops 40 days back.
+    const open = Math.floor(Date.now() / step) * step;
+    const list = Array.from({ length: Math.min(limit, step === DAY_MS ? 40 : limit) }, (_, index) =>
+      [String(open - index * step), price, price, price, price, '1', price]);
+    return reply(0, 'OK', { category: 'spot', symbol, list });
+  }
   const header = (name) => (typeof request.headers[name] === 'string' ? request.headers[name] : '');
   const apiKey = header('x-bapi-api-key');
   const timestamp = header('x-bapi-timestamp');
@@ -748,6 +765,8 @@ const server = http.createServer(async (request, response) => {
       if (!keys || !records(data.executions) || !records(data.deposits) || !records(data.internalDeposits)
         || !records(data.withdrawals) || !records(data.flexibleYield) || !records(data.onchainYield)
         || !records(data.converts) || !records(data.coinExchanges)
+        || (data.markets !== undefined && (!plain(data.markets) || !Object.entries(data.markets)
+          .every(([coin, price]) => /^[A-Z0-9]{1,16}$/.test(coin) && /^\d+(\.\d+)?$/.test(price))))
         || (data.balances !== undefined && (!plain(data.balances)
           || !coins(data.balances.FUND) || !coins(data.balances.UNIFIED)))
         || (data.earn !== undefined && (!plain(data.earn) || !coins(data.earn.FlexibleSaving)
@@ -761,7 +780,7 @@ const server = http.createServer(async (request, response) => {
       bybit = { keys: data.keys ?? bybit.keys, executions: merge('executions'), deposits: merge('deposits'),
         internalDeposits: merge('internalDeposits'), withdrawals: merge('withdrawals'),
         flexibleYield: merge('flexibleYield'), onchainYield: merge('onchainYield'),
-        converts: merge('converts'), coinExchanges: merge('coinExchanges'),
+        converts: merge('converts'), coinExchanges: merge('coinExchanges'), markets: data.markets ?? bybit.markets,
         balances: data.balances ? { FUND: data.balances.FUND ?? [], UNIFIED: data.balances.UNIFIED ?? [] } : bybit.balances,
         earn: data.earn ? { FlexibleSaving: data.earn.FlexibleSaving ?? [], OnChain: data.earn.OnChain ?? [],
           fixed: data.earn.fixed ?? [] } : bybit.earn,

@@ -18,6 +18,7 @@ import { BybitKeyBox } from './bybit-key-box';
 import {
   type BybitLeg,
   bybitCoins,
+  completedTradeLeg,
   convertLeg,
   depositLeg,
   earnLeg,
@@ -70,6 +71,9 @@ interface AccountRow {
   /** BYBIT-EARN: null until the key could read Earn. */
   flexibleReadTo: Date | null;
   onchainReadTo: Date | null;
+  historyFrom: Date;
+  /** BYBIT-ANY-COIN: when the account began counting every coin; null: not yet. */
+  everyCoinAt: Date | null;
 }
 
 /** BYBIT-EARN: what one Earn product holds of a coin, as stored with the balances. */
@@ -177,6 +181,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     const account = await this.account(ownerId, addressId);
     const key = account && this.box.open(account.credentials, ownerId, addressId);
     if (!account || !key) return finish('provider_error', 'not_configured');
+    if (account.everyCoinAt === null) await this.countEveryCoin(account);
     const now = Date.now();
     const started = now;
     let requests = 0;
@@ -354,6 +359,73 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     return true;
   }
 
+  /**
+   * BYBIT-ANY-COIN, once per account: an account read while it tracked only BTC, ETH, SOL, USDT
+   * and USDC left the other coins out. Its trades that moved only USDT or USDC for another coin
+   * now move that coin too, unless the owner already answered them, and every list is read again
+   * from the start of its history; stored records are never written twice.
+   */
+  private async countEveryCoin(account: AccountRow) {
+    const reset = await this.source.transaction('READ COMMITTED', async (manager) => {
+      const [current]: { everyCoinAt: Date | null }[] = await manager.query(
+        `SELECT "everyCoinAt" FROM bybit_accounts WHERE "walletId" = $1 FOR UPDATE`,
+        [account.id],
+      );
+      if (!current || current.everyCoinAt !== null) return false;
+      const trades: { txid: string; blockTime: Date; raw: Record<string, unknown> }[] =
+        await manager.query(
+          `SELECT t.txid, t."blockTime", t.raw FROM wallet_address_transactions t
+            WHERE t."addressId" = $1 AND t.raw->>'kind' = 'trade' AND NOT t.raw ? 'quoteAsset'
+              AND t.asset = t.raw->'trade'->>'quote'
+              AND NOT EXISTS (SELECT 1 FROM chain_transaction_classifications h
+                WHERE h."addressId" = t."addressId" AND h.txid = t.txid)
+            ORDER BY t."blockTime", t.txid`,
+          [account.id],
+        );
+      for (const trade of trades) {
+        let leg: BybitLeg | null;
+        try {
+          leg = completedTradeLeg(trade.raw, trade.blockTime);
+        } catch (error) {
+          // A stored amount that cannot be read again stays the leg it was.
+          if (!(error instanceof UnreadableAmount)) throw error;
+          leg = null;
+        }
+        if (!leg) continue;
+        await manager.query(
+          `UPDATE wallet_address_transactions SET asset = $3, "receivedUnits" = $4::numeric,
+              "sentUnits" = $5::numeric, direction = $6, raw = $7::jsonb
+            WHERE "addressId" = $1 AND txid = $2`,
+          [
+            account.id,
+            leg.txid,
+            leg.asset,
+            leg.receivedUnits.toString(),
+            leg.sentUnits.toString(),
+            leg.direction,
+            JSON.stringify(leg.raw),
+          ],
+        );
+      }
+      // Earn yield is listed for three months only: its lists start there again (keyFacts).
+      await manager.query(
+        `UPDATE bybit_accounts SET "tradesReadTo" = "historyFrom", "depositsReadTo" = "historyFrom",
+            "internalReadTo" = "historyFrom", "withdrawalsReadTo" = "historyFrom",
+            "flexibleReadTo" = NULL, "onchainReadTo" = NULL, "everyCoinAt" = clock_timestamp()
+          WHERE "walletId" = $1`,
+        [account.id],
+      );
+      return true;
+    });
+    if (!reset) return;
+    account.tradesReadTo = account.historyFrom;
+    account.depositsReadTo = account.historyFrom;
+    account.internalReadTo = account.historyFrom;
+    account.withdrawalsReadTo = account.historyFrom;
+    account.flexibleReadTo = null;
+    account.onchainReadTo = null;
+  }
+
   /** BYBIT-EARN: the key cannot read Earn; its positions are not counted until it can. */
   private async denyEarn(account: AccountRow) {
     await this.source.query(
@@ -366,7 +438,8 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   private async account(owner: string, id: string): Promise<AccountRow | null> {
     const [row]: AccountRow[] = await this.source.query(
       `SELECT w.id, w."ownerId", b.credentials, b."tradesReadTo", b."depositsReadTo",
-          b."internalReadTo", b."withdrawalsReadTo", b."flexibleReadTo", b."onchainReadTo"
+          b."internalReadTo", b."withdrawalsReadTo", b."flexibleReadTo", b."onchainReadTo",
+          b."historyFrom", b."everyCoinAt"
         FROM wallet_addresses w JOIN bybit_accounts b ON b."walletId" = w.id
         WHERE w."ownerId" = $1 AND w.id = $2 AND w.network = 'bybit'`,
       [owner, id],
