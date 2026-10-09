@@ -29,6 +29,7 @@ import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import { capitalFlows, investedAt, profitToDate, splitChange, stateFlows } from './capital-flows';
 import {
   DEFAULT_PERIOD,
+  firstValuedPoint,
   HISTORY_FROM_MS,
   type HistoryPeriod,
   HOURLY_WINDOW_MS,
@@ -41,7 +42,6 @@ import {
   periodChange,
   periodPoints,
   periodStart,
-  periodStartPoint,
   rateDateStart,
   type SnapshotValue,
   seriesInstants,
@@ -335,15 +335,16 @@ export class PortfolioSnapshotsService {
       const prices = await latestPortfolioPrices(manager, owner, valuation.instruments, now);
       const fx = new FxConverter(await readFxRates(manager), currency);
       const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
-      const series = [
-        ...stored,
-        {
-          at: now.getTime(),
-          value: current.value,
-          complete: current.complete,
-          unpriced: current.unpriced,
-        },
-      ];
+      const series: { at: number; value: string | null; complete: boolean; unpriced?: boolean }[] =
+        [
+          ...stored,
+          {
+            at: now.getTime(),
+            value: current.value,
+            complete: current.complete,
+            unpriced: current.unpriced,
+          },
+        ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
       const flows = stateFlows(capitalFlows(valuation), fx);
@@ -357,7 +358,14 @@ export class PortfolioSnapshotsService {
         complete: point.complete,
         invested: invested[index],
       }));
-      const start = periodStartPoint(series);
+      let start = firstValuedPoint(series);
+      if (start && !start.complete && start.unpriced === undefined) {
+        // A stored snapshot is incomplete for a held asset without a price and for accounts
+        // not yet started; only the first leaves out value, so that is read again.
+        const inputs = await readSeriesInputs(manager, owner);
+        const [again] = valuesAt(inputs.valuation, start.at, pricesAt(inputs, start.at), [fx]);
+        start = { ...start, unpriced: again.unpriced };
+      }
       return {
         period: query.period,
         currency,
@@ -366,7 +374,7 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         value: current.value,
         complete: points.every((point) => point.complete),
-        ...periodChange(start && !start.unpriced ? start.value : null, current.value),
+        ...periodChange(start?.unpriced ? null : (start?.value ?? null), current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
         ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),

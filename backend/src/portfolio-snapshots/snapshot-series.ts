@@ -182,14 +182,9 @@ export function periodChange(start: string | null, end: string | null) {
   };
 }
 
-/**
- * The first point of a series that has a value. A stored snapshot only says `complete`, which
- * is false when a held asset had no price then, so such a start leaves that asset out and is
- * marked unpriced: the change from it would show the asset's whole value as market gain.
- */
-export function periodStartPoint<
-  T extends { value: string | null; complete: boolean; unpriced?: boolean },
->(series: readonly T[]): (T & { unpriced: boolean }) | null {
-  const start = series.find((point) => point.value !== null);
-  return start ? { ...start, unpriced: start.unpriced === true || !start.complete } : null;
+/** The first point of a series that has a value. */
+export function firstValuedPoint<T extends { value: string | null }>(
+  series: readonly T[],
+): T | null {
+  return series.find((point) => point.value !== null) ?? null;
 }

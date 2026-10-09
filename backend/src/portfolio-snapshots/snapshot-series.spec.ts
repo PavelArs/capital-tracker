@@ -1,5 +1,6 @@
 import {
   DAY_MS,
+  firstValuedPoint,
   HISTORY_FROM_MS,
   HOUR_MS,
   latestAtOrBefore,
@@ -8,7 +9,6 @@ import {
   periodChange,
   periodPoints,
   periodStart,
-  periodStartPoint,
   rateDateStart,
   seriesInstants,
   snapshotChanges,
@@ -177,26 +177,13 @@ describe('portfolio snapshot series (record-portfolio-snapshots)', () => {
   it('keeps hour arithmetic exact', () => {
     expect(HOUR_MS * 24).toBe(DAY_MS);
   });
-  it('HIST-START-UNPRICED a start point that left out a held asset gives no period change', () => {
-    // Stored snapshots only carry `complete`: false when a held asset had no price then.
+  it('HIST-START the period starts at its first valued point', () => {
     const series = [
-      { at: 1, value: null, complete: true },
-      { at: 2, value: '5000', complete: false },
-      { at: 3, value: '105000', complete: true },
+      { at: 1, value: null },
+      { at: 2, value: '5000' },
+      { at: 3, value: '105000' },
     ];
-    const start = periodStartPoint(series);
-    expect(start).toEqual({ at: 2, value: '5000', complete: false, unpriced: true });
-    expect(periodChange(start?.unpriced ? null : (start?.value ?? null), '105000')).toEqual({
-      change: null,
-      changePercent: null,
-    });
-    // A complete start keeps its change.
-    const whole = periodStartPoint([{ at: 2, value: '5000', complete: true }]);
-    expect(whole?.unpriced).toBe(false);
-    expect(periodStartPoint([{ at: 1, value: null, complete: true }])).toBeNull();
-    // A point already marked by the live valuation keeps its mark even when complete.
-    expect(
-      periodStartPoint([{ at: 1, value: '1', complete: true, unpriced: true }])?.unpriced,
-    ).toBe(true);
+    expect(firstValuedPoint(series)).toEqual({ at: 2, value: '5000' });
+    expect(firstValuedPoint([{ at: 1, value: null }])).toBeNull();
   });
 });
