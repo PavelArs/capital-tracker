@@ -14,6 +14,7 @@ import ClassifyForm from './ClassifyForm';
 import {
   amount,
   day,
+  hashOf,
   moment,
   networkName,
   placeLabel,
@@ -65,7 +66,11 @@ function stakePlace(operation: Operation): string {
 
 function title(operation: Operation): string {
   const label = operation.type ? typeLabel(operation) : `${typeLabel(operation)} transaction`;
-  return `${label} · ${ticker(operation.asset)}`;
+  const counter =
+    operation.type === 'swap' && operation.counterAsset
+      ? ` → ${ticker(operation.counterAsset)}`
+      : '';
+  return `${label} · ${ticker(operation.asset)}${counter}`;
 }
 
 /** An amount in the list's currency; a recorded one without that date's rate says so. */
@@ -79,6 +84,58 @@ function shown(
   return usd === null ? missing : 'No Bank of Russia rate for this date';
 }
 
+const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
+  <span className="transactions-mono">
+    {networkName(wallet)} · {wallet.label ? `${wallet.label} · ` : ''}
+    {wallet.address}
+  </span>
+);
+
+/**
+ * CLS-SWAP: a blockchain swap reads as both of its transactions, what was paid and from where,
+ * then what arrived and where; its value is the cost basis of the coins bought.
+ */
+function swapFacts(
+  operation: Operation,
+  currency: AccountingCurrency,
+  walletLink: (place: NonNullable<Operation['account']>) => ReactNode,
+): [string, ReactNode][] {
+  const { wallet, chain } = operation;
+  if (!wallet || !chain) return [];
+  const other = operation.counterWallet;
+  const payer = operation.counterAccount ?? operation.account;
+  const rows: [string, ReactNode][] = [['Paid', signedAmount(operation)]];
+  if (payer) rows.push(['Paid from', walletLink(payer)]);
+  if (other) rows.push(['Paying address', addressLine(other)]);
+  if (chain.pairedTxid)
+    rows.push([
+      'Paying transaction',
+      <span key="paid" className="transactions-mono">
+        {hashOf(chain.pairedTxid, other?.network)}
+      </span>,
+    ]);
+  if (operation.counterAsset && operation.counterQuantity)
+    rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
+  rows.push(
+    ['Received in', operation.account ? walletLink(operation.account) : 'Not in a wallet yet'],
+    ['Address', addressLine(wallet)],
+    [
+      'Transaction',
+      <span key="txid" className="transactions-mono">
+        {transactionHash(operation)}
+      </span>,
+    ],
+    ['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)],
+    [
+      'Network fee',
+      operation.fee ? amount(operation.fee.quantity, operation.fee.asset) : 'Paid by sender',
+    ],
+    ['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')],
+    ['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, 'Unknown')],
+  );
+  return rows;
+}
+
 function facts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
   const { wallet, chain } = operation;
@@ -87,7 +144,11 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
       {place.name}
     </Link>
   );
-  if (wallet && chain) {
+  if (wallet && chain && operation.type === 'swap') {
+    rows.push(...swapFacts(operation, currency, walletLink));
+    if (operation.classification)
+      rows.push(['Comment', operation.classification.comment ?? 'None']);
+  } else if (wallet && chain) {
     // XFER-AUTO: a transfer names both wallets and, when it is one, the other address.
     const moved =
       operation.type === 'transfer' && operation.account && operation.counterAccount
@@ -507,6 +568,7 @@ export default function OperationDrawer({
         {chain && classifying ? (
           <ClassifyForm
             operation={chain}
+            operations={operations}
             left={Math.max(left - (needs ? 1 : 0), 0)}
             onSaved={(label) => onClassified?.(label)}
             onCancel={needs ? onClose : () => setClassifying(false)}

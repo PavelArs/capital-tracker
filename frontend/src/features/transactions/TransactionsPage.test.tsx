@@ -869,6 +869,7 @@ describe('classify-chain-transactions (M12)', () => {
     ).toEqual([
       'Transfer between my wallets',
       'Buy',
+      'Swap',
       'Income',
       'Reward',
       'Staking reward',
@@ -905,7 +906,15 @@ describe('classify-chain-transactions (M12)', () => {
       within(within(next).getByRole('group', { name: 'What was this transaction?' }))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['Transfer between my wallets', 'Sell', 'Expense', 'Gift sent', 'Fee', 'Other']);
+    ).toEqual([
+      'Transfer between my wallets',
+      'Sell',
+      'Swap',
+      'Expense',
+      'Gift sent',
+      'Fee',
+      'Other',
+    ]);
     expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
     // The classified row reads as the buy it recorded.
     expect(cellTexts(bodyRows()[0])).toEqual([
@@ -1322,6 +1331,201 @@ describe('link-own-transfers (M13)', () => {
     await user.click(within(drawer).getByRole('button', { name: 'Save' }));
     expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       'Choose another wallet or another type.',
+    );
+  });
+});
+
+describe('swap-chain-coins (CLS-SWAP)', () => {
+  // Trust Wallet pays 1000 USDT from its Ethereum address for 0.0125 BTC at its Bitcoin one.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(22),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000aa',
+    label: null,
+  };
+  const chainUsdt = { instrumentId: null, symbol: 'USDT', name: 'Tether' };
+  const bought = chainOperation(5, {
+    occurredAt: '2026-09-01T10:40:00.000Z',
+    quantity: '0.0125',
+    estimatedValueUsd: '750',
+    account: trust,
+  });
+  const usdtTxid = `${'d'.repeat(64)}-3`;
+  const paid = operation({
+    id: `chain:${ethWallet.id}:${usdtTxid}`,
+    kind: 'chain',
+    type: null,
+    direction: 'out',
+    occurredAt: '2026-09-01T10:00:00.000Z',
+    asset: chainUsdt,
+    quantity: '1000',
+    account: trust,
+    wallet: ethWallet,
+    chain: { txid: usdtTxid, blockHeight: 20000003, priceObservedAt: null, direction: 'out' },
+    status: 'needs-classification',
+    source: 'chain',
+    version: null,
+  });
+  // Not candidates: the same coin, and a payment a month earlier.
+  const btcSent = chainOperation(6, {
+    direction: 'out',
+    occurredAt: '2026-09-01T09:00:00.000Z',
+    quantity: '0.1',
+    account: trust,
+    chain: { txid: txid(6), blockHeight: 800006, priceObservedAt: null, direction: 'out' },
+  });
+  const earlier = {
+    ...paid,
+    id: `chain:${ethWallet.id}:${'f'.repeat(64)}-1`,
+    occurredAt: '2026-08-01T10:00:00.000Z',
+    chain: { ...paid.chain!, txid: `${'f'.repeat(64)}-1` },
+  };
+  const swapped = chainOperation(5, {
+    type: 'swap',
+    direction: 'internal',
+    occurredAt: '2026-09-01T10:40:00.000Z',
+    asset: chainUsdt,
+    quantity: '1000',
+    counterAsset: chainBtc,
+    counterQuantity: '0.0125',
+    valueUsd: '1000',
+    costBasisUsd: '1000',
+    account: trust,
+    counterWallet: ethWallet,
+    chain: {
+      txid: txid(5),
+      blockHeight: 800005,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: usdtTxid,
+    },
+    status: 'recorded',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'swap', with: { addressId: ethWallet.id, txid: usdtTxid }, valueUsd: null },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const openRow = async (operations: Operation[], index: number, name: string) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  it('CLS-SWAP-UI: a receipt is paid with a transaction from one of the wallets', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(
+      [bought, paid, btcSent, earlier],
+      0,
+      'Incoming transaction · BTC',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    const select = within(drawer).getByLabelText('Paid with');
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:00 · -1,000 USDT · Trust Wallet · Ethereum 0x0000…00aa',
+    ]);
+    expect(
+      within(drawer).getByText(
+        'Empty: USDT and USDC count 1:1, other coins at their stored price on Sep 1, 2026.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(
+      within(drawer).getByText('Choose the transaction on the other side'),
+    ).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await user.selectOptions(select, `${ethWallet.id}|${usdtTxid}`);
+    await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '1012.5');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][1]).toBe(txid(5));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'swap',
+        with: { addressId: ethWallet.id, txid: usdtTxid },
+        valueUsd: '1012.5',
+      },
+    });
+  });
+
+  it('CLS-SWAP-UI: an outgoing transaction names what it bought', async () => {
+    const { user, drawer } = await openRow([bought, paid], 1, 'Outgoing transaction · USDT');
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    expect(
+      within(within(drawer).getByLabelText('Received in exchange'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:40 · +0.0125 BTC · Trust Wallet · Bitcoin bc1qsy…f3t4',
+    ]);
+  });
+
+  it('CLS-SWAP-UI: a swap is one row USDT → BTC with both transactions in the drawer', async () => {
+    const { user, drawer } = await openRow([swapped], 0, 'Swap · USDT → BTC');
+    expect(cellTexts(bodyRows()[0])).toEqual([
+      'Swap10:40',
+      'USDT → BTC',
+      '-1,000+0.0125 BTC',
+      '$1,000.00',
+      'Trust Wallet',
+      'Recorded',
+      'Blockchain',
+    ]);
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Paid')).toBe('-1,000 USDT');
+    expect(fact('Paid from')).toBe('Trust Wallet');
+    expect(fact('Paying address')).toBe(`Ethereum · ${ethWallet.address}`);
+    expect(fact('Paying transaction')).toBe(`0x${'d'.repeat(64)}`);
+    expect(fact('Received')).toBe('+0.0125 BTC');
+    expect(fact('Received in')).toBe('Trust Wallet');
+    expect(fact('Address')).toBe(`Bitcoin · ${wallet.address}`);
+    expect(fact('Value')).toBe('$1,000.00');
+    expect(fact('Cost basis')).toBe('$1,000.00');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The transaction paired now stays the choice, though the list shows it inside the swap.
+    expect(within(drawer).getByLabelText('Paid with')).toHaveValue(`${ethWallet.id}|${usdtTxid}`);
+  });
+
+  it('CLS-SWAP-UI: says why a pair cannot be one swap', async () => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'Choose the account of the other wallet first' },
+      }),
+    );
+    const { user, drawer } = await openRow([bought, paid], 0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    await user.selectOptions(
+      within(drawer).getByLabelText('Paid with'),
+      `${ethWallet.id}|${usdtTxid}`,
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'The address on the other side is not in a wallet yet. Choose its wallet first.',
     );
   });
 });

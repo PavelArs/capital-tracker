@@ -102,8 +102,15 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
  */
 export function transactionHash(operation: Operation): string | null {
   if (!operation.chain) return null;
-  const [hash] = operation.chain.txid.split('-');
-  return operation.wallet?.network === 'ethereum' ? `0x${hash}` : hash;
+  return hashOf(operation.chain.txid, operation.wallet?.network);
+}
+
+export function hashOf(
+  txid: string,
+  network: NonNullable<Operation['wallet']>['network'] | undefined,
+): string {
+  const [hash] = txid.split('-');
+  return network === 'ethereum' ? `0x${hash}` : hash;
 }
 
 /** Where the operation happened: an account, two for a transfer, or a wallet. */
@@ -111,6 +118,11 @@ export function placeLabel(operation: Operation): string {
   // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
   if (operation.type === 'transfer' && operation.account && operation.counterAccount)
     return `${operation.account.name} → ${operation.counterAccount.name}`;
+  // CLS-SWAP: paid from one wallet, received in another; within one wallet, just that wallet.
+  if (operation.type === 'swap' && operation.wallet && operation.account)
+    return operation.counterAccount
+      ? `${operation.counterAccount.name} → ${operation.account.name}`
+      : operation.account.name;
   // A chain row of an address in a wallet shows the wallet, then the address's own name.
   if (operation.wallet && operation.account)
     return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;

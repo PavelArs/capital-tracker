@@ -122,8 +122,11 @@ interface ChainRow {
   producedTradeId: string | null;
   producedRewardId: string | null;
   producedTransferId: string | null;
+  producedSwapId: string | null;
   linkedAddressId: string | null;
   automatic: boolean | null;
+  pairedAddressId: string | null;
+  pairedTxid: string | null;
 }
 
 // Current versions only: a voided operation has left the books (its history keeps it).
@@ -291,7 +294,8 @@ export class OperationListService {
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
             c."rewardId" AS "producedRewardId", c."transferId" AS "producedTransferId",
-            c."linkedAddressId", c.automatic
+            c."swapId" AS "producedSwapId", c."linkedAddressId", c.automatic,
+            c."pairedAddressId", c."pairedTxid"
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
           LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -425,15 +429,22 @@ export class OperationListService {
                     type: row.classificationType,
                     details: row.classificationDetails,
                     comment: row.classificationComment,
-                    produced: row.producedTradeId
-                      ? { kind: 'trade', id: row.producedTradeId }
-                      : row.producedRewardId
-                        ? { kind: 'reward', id: row.producedRewardId }
-                        : row.producedTransferId
-                          ? { kind: 'transfer', id: row.producedTransferId }
-                          : null,
+                    produced: row.producedSwapId
+                      ? { kind: 'swap', id: row.producedSwapId }
+                      : row.producedTradeId
+                        ? { kind: 'trade', id: row.producedTradeId }
+                        : row.producedRewardId
+                          ? { kind: 'reward', id: row.producedRewardId }
+                          : row.producedTransferId
+                            ? { kind: 'transfer', id: row.producedTransferId }
+                            : null,
                     linkedAddressId: row.linkedAddressId,
                     automatic: row.automatic === true,
+                    paired:
+                      row.pairedAddressId && row.pairedTxid
+                        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
+                        : null,
+                    carryTransferId: row.producedSwapId ? row.producedTransferId : null,
                   },
           })),
           marketPrices: new Map(

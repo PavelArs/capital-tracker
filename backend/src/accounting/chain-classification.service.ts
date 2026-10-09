@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ConflictException,
   HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -15,19 +16,25 @@ import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
 import { projectRewardVersion, readRewardHead } from './asset-reward.store';
 import { parseRewardCreate, parseRewardVoid } from './asset-reward-input';
+import { AssetSwapService } from './asset-swap.service';
+import { projectSwapVersion, readSwapHead } from './asset-swap.store';
+import { type ChainSwapCreateInput, parseSwapCreate, parseSwapVoid } from './asset-swap-input';
 import {
   type ChainLeg,
   type ClassificationInput,
   chainCoin,
+  chainTxid,
   classificationPayload,
   fitsDirection,
   legMovement,
   type PlannedOperation,
   parseClassification,
   planOperation,
+  type SwapClassification,
   unfit,
 } from './chain-classification';
 import { isDust } from './chain-dust';
+import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 import {
   type OwnLeg,
   ownTransferPairs,
@@ -73,6 +80,12 @@ export interface ClassificationRow {
   linkedAddressId: string | null;
   /** Linked by the app without asking (D7); null for every answer before M13. */
   automatic: boolean | null;
+  /** CLS-SWAP: the swap both sides name, in the account the bought coins arrived in. */
+  swapAccountId: string | null;
+  swapId: string | null;
+  /** CLS-SWAP: the owner's raw transaction on the other side of the swap. */
+  pairedAddressId: string | null;
+  pairedTxid: string | null;
   createdAt: Date;
 }
 /** One chain transaction of one address, with the version its answer has now (0: none). */
@@ -91,7 +104,10 @@ interface Produced {
   accountId: string | null;
   tradeId: string | null;
   rewardId: string | null;
+  /** An own transfer (M13), or the one that carried a swap's paid coins over (CLS-SWAP). */
   transferId: string | null;
+  swapAccountId: string | null;
+  swapId: string | null;
 }
 interface MatchRow extends OwnLeg {
   txid: string;
@@ -100,11 +116,25 @@ interface MatchRow extends OwnLeg {
 
 const versionColumns = `v."addressId", v.txid, v.version, v."requestId", v."canonicalPayload",
   v.status, v.type, v.details, v.comment, v."accountId", v."tradeId", v."rewardId",
-  v."transferId", v."linkedAddressId", v.automatic, v."createdAt"`;
+  v."transferId", v."linkedAddressId", v.automatic, v."swapAccountId", v."swapId",
+  v."pairedAddressId", v."pairedTxid", v."createdAt"`;
 const legColumns = `w.network, t.asset, w."accountId", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
   t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits"`;
 const conflict = () => new ConflictException('Classification request conflicts with saved state');
-const nothing: Produced = { accountId: null, tradeId: null, rewardId: null, transferId: null };
+const nothing: Produced = {
+  accountId: null,
+  tradeId: null,
+  rewardId: null,
+  transferId: null,
+  swapAccountId: null,
+  swapId: null,
+};
+/** One raw transaction of one address. */
+const key = (address: string, txid: string) => `${address}:${txid}`;
+/** A write the journals refused: the books would not hold the coins then. */
+const refused = (error: unknown) =>
+  error instanceof FifoHistoryError ||
+  (error instanceof HttpException && error.getStatus() === HttpStatus.CONFLICT);
 
 /** The receipt: the classification as stored now and the journal entry it produced. */
 export function classificationView(row: ClassificationRow) {
@@ -116,15 +146,21 @@ export function classificationView(row: ClassificationRow) {
     type: row.type,
     classification: row.details,
     comment: row.comment,
-    operation: row.tradeId
-      ? { kind: 'trade' as const, accountId: row.accountId, id: row.tradeId }
-      : row.rewardId
-        ? { kind: 'reward' as const, accountId: row.accountId, id: row.rewardId }
-        : row.transferId
-          ? { kind: 'transfer' as const, accountId: row.accountId, id: row.transferId }
-          : null,
+    operation: row.swapId
+      ? { kind: 'swap' as const, accountId: row.swapAccountId, id: row.swapId }
+      : row.tradeId
+        ? { kind: 'trade' as const, accountId: row.accountId, id: row.tradeId }
+        : row.rewardId
+          ? { kind: 'reward' as const, accountId: row.accountId, id: row.rewardId }
+          : row.transferId
+            ? { kind: 'transfer' as const, accountId: row.accountId, id: row.transferId }
+            : null,
     linkedAddressId: row.linkedAddressId,
     automatic: row.automatic === true,
+    paired:
+      row.pairedAddressId && row.pairedTxid
+        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
+        : null,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -145,21 +181,34 @@ const own = (address: string, row: LegRow): OwnLeg => ({
   sentUnits: row.sentUnits,
   feeUnits: row.feeUnits,
 });
+const side = (address: string, txid: string, row: LegRow): SwapSide => ({
+  ...own(address, row),
+  txid,
+  blockTime: row.blockTime.toISOString(),
+});
 const inbound = (row: LegRow) => legMovement(leg(row)).inbound;
 const sameEntry = (left: Produced, right: Produced) =>
   left.tradeId === right.tradeId &&
   left.rewardId === right.rewardId &&
-  left.transferId === right.transferId;
+  left.transferId === right.transferId &&
+  left.swapId === right.swapId;
+/** The stored price of a coin counts for a swap only if it is at most two days older. */
+const PRICE_AGE_MS = 2 * 24 * 60 * 60 * 1000;
 
 /**
  * What decides the produced entry: same answer, same account, same note keep it as it is. A
- * transfer carries no note of its own, so its comment changes nothing.
+ * transfer or a swap carries no note of its own, so its comment changes nothing.
  */
 const operationKey = (
   accountId: string | null,
   value: ClassificationInput['classification'],
   comment: string | null,
-) => JSON.stringify({ accountId, value, comment: value?.type === 'transfer' ? null : comment });
+) =>
+  JSON.stringify({
+    accountId,
+    value,
+    comment: value?.type === 'transfer' || value?.type === 'swap' ? null : comment,
+  });
 
 @Injectable()
 export class ChainClassificationService {
@@ -170,6 +219,7 @@ export class ChainClassificationService {
     private readonly trades: TradeService,
     private readonly rewards: AssetRewardService,
     private readonly transfers: OwnedTransferService,
+    private readonly swaps: AssetSwapService,
   ) {}
 
   /**
@@ -181,18 +231,15 @@ export class ChainClassificationService {
   async classify(ownerId: string, addressId: string, txid: string, raw: unknown) {
     const owner = parseUuid(ownerId);
     const address = parseUuid(addressId);
-    // A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds
-    // its number (M14).
-    if (!/^([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?$/.test(txid))
-      throw new NotFoundException();
+    if (!chainTxid.test(txid)) throw new NotFoundException();
     const input = parseClassification(raw);
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
     // malformed amount is a 400 here, not a conflict inside the journal.
     const before = await this.readLeg(this.source.manager, owner, address, txid);
     const value = input.hidden ? null : input.classification;
-    if (value?.type === 'transfer') {
-      if (!fitsDirection(leg(before), 'transfer')) throw unfit();
+    if (value?.type === 'transfer' || value?.type === 'swap') {
+      if (!fitsDirection(leg(before), value.type)) throw unfit();
     } else if (value) this.check(planOperation(leg(before), value, input.comment));
     let result: { created: boolean; value: ReturnType<typeof classificationView> };
     try {
@@ -370,12 +417,14 @@ export class ChainClassificationService {
     automatic: boolean,
   ): Promise<ClassificationRow> {
     const { address, txid, row } = target;
+    const value = input.hidden ? null : input.classification;
+    if (value?.type === 'swap')
+      return this.recordSwap(manager, owner, target, input, payload, value);
     const current = target.version
       ? await this.version(manager, address, txid, target.version)
       : null;
     const live = current && (await this.active(manager, owner, current)) ? current : null;
     const comment = input.comment ?? null;
-    const value = input.hidden ? null : input.classification;
     const accountId = row.accountId;
     if (value && accountId === null)
       throw new UnprocessableEntityException('Choose the account of this wallet first');
@@ -406,12 +455,13 @@ export class ChainClassificationService {
     let produced: Produced = keep && live ? live : nothing;
     if (!keep) {
       // Spent coins are freed before the new entry and added coins removed after it.
+      const written = [key(address, txid), ...(linked ? [key(linked, txid)] : [])];
       const retireOwn = async () => {
-        if (live) await this.retire(manager, owner, live, [address, linked]);
+        if (live) await this.retire(manager, owner, live, written);
       };
       const retirePartner = async () => {
         if (partner?.live && !(live && sameEntry(live, partner.live)))
-          await this.retire(manager, owner, partner.live, [address, partner.address]);
+          await this.retire(manager, owner, partner.live, written);
       };
       const spends = !inbound(row);
       await (spends ? retireOwn() : retirePartner());
@@ -430,15 +480,11 @@ export class ChainClassificationService {
       status: input.hidden ? 'hidden' : input.classification ? 'classified' : 'unclassified',
       details: input.classification,
       comment,
-      produced: {
-        accountId: produced.accountId,
-        tradeId: produced.tradeId,
-        rewardId: produced.rewardId,
-        transferId: produced.transferId,
-      },
+      produced: { ...nothing, ...produced },
       linkedAddressId: produced.transferId ? linked : null,
       // A note added to a recognised transfer leaves it recognised.
       automatic: produced.transferId ? (keep && live?.automatic) || automatic : null,
+      paired: null,
     });
     if (partner && !keep && produced.transferId && accountId)
       await this.append(manager, owner, {
@@ -453,8 +499,191 @@ export class ChainClassificationService {
         produced: { ...nothing, accountId: partner.row.accountId, transferId: produced.transferId },
         linkedAddressId: address,
         automatic,
+        paired: null,
       });
     return saved;
+  }
+
+  /**
+   * CLS-SWAP-SAME, CLS-SWAP-CROSS: pairs the leg with the owner's raw transaction on the other
+   * side as one swap; both sides name it and each other. Whatever either side recorded before
+   * is voided. The paying side's entry goes first, as it held the paid coins; the receiving
+   * side's entry may have spent them too (a Buy paid in USDT) or may be spent later, so it is
+   * voided before the swap where the books allow that, and after it otherwise.
+   */
+  private async recordSwap(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+    payload: string,
+    value: SwapClassification,
+  ): Promise<ClassificationRow> {
+    const { address, txid, row } = target;
+    const current = target.version
+      ? await this.version(manager, address, txid, target.version)
+      : null;
+    const live = current && (await this.active(manager, owner, current)) ? current : null;
+    const other = value.with;
+    const otherRow = await this.readLeg(manager, owner, other.addressId, other.txid);
+    const otherVersion = await this.lockHead(manager, other.addressId, other.txid);
+    const otherCurrent = otherVersion
+      ? await this.version(manager, other.addressId, other.txid, otherVersion)
+      : null;
+    const otherLive =
+      otherCurrent && (await this.active(manager, owner, otherCurrent)) ? otherCurrent : null;
+    const plan = planSwap(side(address, txid, row), side(other.addressId, other.txid, otherRow));
+    const comment = input.comment ?? null;
+    const keep =
+      live !== null &&
+      operationKey(live.accountId, live.details, live.comment) ===
+        operationKey(row.accountId, value, comment) &&
+      live.pairedAddressId === other.addressId &&
+      live.pairedTxid === other.txid &&
+      otherCurrent?.status === 'classified' &&
+      otherCurrent.swapId === live.swapId;
+    let produced: Produced = keep && live ? live : nothing;
+    if (!keep) {
+      const paying = plan.paying.addressId === address && plan.paying.txid === txid;
+      const [payingLive, receivingLive] = paying ? [live, otherLive] : [otherLive, live];
+      const written = [key(address, txid), key(other.addressId, other.txid)];
+      if (payingLive) await this.retire(manager, owner, payingLive, written);
+      const receivingRetires =
+        receivingLive && !(payingLive && sameEntry(payingLive, receivingLive))
+          ? receivingLive
+          : null;
+      if (!receivingRetires) produced = await this.swap(manager, owner, plan, value.valueUsd);
+      else {
+        await manager.query('SAVEPOINT chain_swap');
+        try {
+          await this.retire(manager, owner, receivingRetires, written);
+          produced = await this.swap(manager, owner, plan, value.valueUsd);
+          await manager.query('RELEASE SAVEPOINT chain_swap');
+        } catch (error) {
+          if (!refused(error)) throw error;
+          await manager.query('ROLLBACK TO SAVEPOINT chain_swap');
+          produced = await this.swap(manager, owner, plan, value.valueUsd);
+          await this.retire(manager, owner, receivingRetires, written);
+        }
+      }
+    }
+    const saved = await this.append(manager, owner, {
+      address,
+      txid,
+      previous: target.version,
+      requestId: input.requestId,
+      payload,
+      status: 'classified',
+      details: input.classification,
+      comment,
+      produced: { ...produced, accountId: row.accountId },
+      linkedAddressId: null,
+      automatic: null,
+      paired: other,
+    });
+    if (!keep)
+      await this.append(manager, owner, {
+        address: other.addressId,
+        txid: other.txid,
+        previous: otherVersion,
+        requestId: randomUUID(),
+        payload: JSON.stringify({
+          pairedWith: { addressId: address, txid },
+          swapId: produced.swapId,
+        }),
+        status: 'classified',
+        details: { type: 'swap', with: { addressId: address, txid }, valueUsd: value.valueUsd },
+        comment: null,
+        produced: { ...produced, accountId: otherRow.accountId },
+        linkedAddressId: null,
+        automatic: null,
+        paired: { addressId: address, txid },
+      });
+    return saved;
+  }
+
+  /**
+   * The swap a plan stands for, in the account the bought coins arrived in; paid from another
+   * account, the owned transfer that brings the coins there first (CLS-SWAP-CROSS).
+   */
+  private async swap(
+    manager: EntityManager,
+    owner: string,
+    plan: PlannedSwap,
+    valueUsd: string | null,
+  ): Promise<Produced> {
+    const paid = await findOrCreateInstrument(manager, owner, chainCoin(plan.paying), true);
+    const bought = await findOrCreateInstrument(manager, owner, chainCoin(plan.receiving), true);
+    if (!paid || !bought) throw new Error('Chain coin was not created');
+    let transferId: string | null = null;
+    if (plan.carry) {
+      const carry = plan.carry;
+      const { value } = await this.transfers.mutateWithin(
+        manager,
+        owner,
+        'create',
+        parseTransferCreate({
+          requestId: randomUUID(),
+          expectedFromJournalRevision: await this.revision(manager, owner, carry.fromAccountId),
+          expectedToJournalRevision: await this.revision(manager, owner, carry.toAccountId),
+          fromAccountId: carry.fromAccountId,
+          toAccountId: carry.toAccountId,
+          assertInternal: true,
+          instrumentId: paid.id,
+          occurredAt: carry.occurredAt,
+          quantity: carry.quantity,
+          feeInstrumentId: carry.feeQuantity === '0' ? null : paid.id,
+          feeQuantity: carry.feeQuantity,
+        }),
+      );
+      transferId = value.transfer.transferId;
+    }
+    const considerationUsd = swapValueUsd(
+      valueUsd,
+      plan,
+      valueUsd === null ? await this.storedPrice(manager, paid.symbol, plan.occurredAt) : null,
+    );
+    const fee = plan.feeQuantity !== '0';
+    const input: ChainSwapCreateInput = {
+      ...parseSwapCreate({
+        requestId: randomUUID(),
+        expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
+        assertExecuted: true,
+        outgoingInstrumentId: paid.id,
+        incomingInstrumentId: bought.id,
+        occurredAt: plan.occurredAt,
+        orderWithinTimestamp: 0,
+        outgoingQuantity: plan.paid,
+        incomingQuantity: plan.received,
+        considerationUsd,
+        feeSource: fee ? 'held' : null,
+        feeInstrumentId: fee ? paid.id : null,
+        feeQuantity: plan.feeQuantity,
+      }),
+      orderWithinTimestamp: null,
+    };
+    const { value } = await this.swaps.mutateWithin(
+      manager,
+      owner,
+      plan.accountId,
+      'create',
+      input,
+    );
+    return {
+      ...nothing,
+      transferId,
+      swapAccountId: plan.accountId,
+      swapId: value.swap.swapId,
+    };
+  }
+
+  /** CLS-SWAP-VALUE: the paid coin's stored USD price at the swap, if it is recent enough. */
+  private async storedPrice(manager: EntityManager, symbol: string | null, at: string) {
+    if (!symbol) return null;
+    const [price] = await latestMarketPrices(manager, [symbol.toUpperCase()], new Date(at));
+    return price && Date.parse(at) - Date.parse(price.observedAt) <= PRICE_AGE_MS
+      ? price.price
+      : null;
   }
 
   /** The planned entry must parse as its journal takes it, with placeholder pins. */
@@ -538,6 +767,10 @@ export class ChainClassificationService {
 
   /** Whether the entry a version produced still counts; one voided elsewhere does not. */
   private async active(manager: EntityManager, owner: string, row: ClassificationRow) {
+    if (row.swapId && row.swapAccountId) {
+      const head = await readSwapHead(manager, owner, row.swapAccountId, row.swapId);
+      return head !== undefined && projectSwapVersion(head).kind !== 'void';
+    }
     if (row.accountId === null) return false;
     if (row.tradeId) {
       const [head]: { kind: string }[] = await manager.query(
@@ -640,24 +873,36 @@ export class ChainClassificationService {
     manager: EntityManager,
     owner: string,
     row: ClassificationRow,
-    written: (string | null)[],
+    written: string[],
   ) {
-    if (row.transferId) {
-      const head = await readTransferHead(manager, owner, row.transferId);
-      if (!head) throw new Error('Missing produced transfer');
-      await this.transfers.mutateWithin(
+    if (row.swapId && row.swapAccountId) {
+      // The swap goes first: it spends what the carrying transfer brought.
+      const head = await readSwapHead(manager, owner, row.swapAccountId, row.swapId);
+      if (!head) throw new Error('Missing produced swap');
+      await this.swaps.mutateWithin(
         manager,
         owner,
+        row.swapAccountId,
         'void',
-        parseTransferVoid({
+        parseSwapVoid({
           requestId: randomUUID(),
-          expectedVersion: head.version,
-          expectedFromJournalRevision: await this.revision(manager, owner, head.fromAccountId),
-          expectedToJournalRevision: await this.revision(manager, owner, head.toAccountId),
+          expectedJournalRevision: await this.revision(manager, owner, row.swapAccountId),
+          expectedVersion: projectSwapVersion(head).version,
         }),
-        row.transferId,
+        row.swapId,
       );
-      if (row.linkedAddressId && !written.includes(row.linkedAddressId))
+      if (row.transferId) await this.voidTransfer(manager, owner, row.transferId);
+      if (
+        row.pairedAddressId &&
+        row.pairedTxid &&
+        !written.includes(key(row.pairedAddressId, row.pairedTxid))
+      )
+        await this.unlink(manager, owner, row.pairedAddressId, row.pairedTxid, row.swapId);
+      return;
+    }
+    if (row.transferId) {
+      await this.voidTransfer(manager, owner, row.transferId);
+      if (row.linkedAddressId && !written.includes(key(row.linkedAddressId, row.txid)))
         await this.unlink(manager, owner, row.linkedAddressId, row.txid, row.transferId);
       return;
     }
@@ -692,30 +937,49 @@ export class ChainClassificationService {
     );
   }
 
-  /** The other leg of a voided transfer has no answer of its own any more. */
+  private async voidTransfer(manager: EntityManager, owner: string, transferId: string) {
+    const head = await readTransferHead(manager, owner, transferId);
+    if (!head) throw new Error('Missing produced transfer');
+    await this.transfers.mutateWithin(
+      manager,
+      owner,
+      'void',
+      parseTransferVoid({
+        requestId: randomUUID(),
+        expectedVersion: head.version,
+        expectedFromJournalRevision: await this.revision(manager, owner, head.fromAccountId),
+        expectedToJournalRevision: await this.revision(manager, owner, head.toAccountId),
+      }),
+      transferId,
+    );
+  }
+
+  /** The other leg of a voided transfer or swap has no answer of its own any more. */
   private async unlink(
     manager: EntityManager,
     owner: string,
     address: string,
     txid: string,
-    transferId: string,
+    entryId: string,
   ) {
     const version = await this.lockHead(manager, address, txid);
     if (!version) return;
     const current = await this.version(manager, address, txid, version);
-    if (current.status !== 'classified' || current.transferId !== transferId) return;
+    const named = current.swapId ? current.swapId === entryId : current.transferId === entryId;
+    if (current.status !== 'classified' || !named) return;
     await this.append(manager, owner, {
       address,
       txid,
       previous: version,
       requestId: randomUUID(),
-      payload: JSON.stringify({ unlinkedFrom: transferId, addressId: address, txid }),
+      payload: JSON.stringify({ unlinkedFrom: entryId, addressId: address, txid }),
       status: 'unclassified',
       details: null,
       comment: null,
       produced: nothing,
       linkedAddressId: null,
       automatic: null,
+      paired: null,
     });
   }
 
@@ -734,6 +998,7 @@ export class ChainClassificationService {
       produced: Produced;
       linkedAddressId: string | null;
       automatic: boolean | null;
+      paired: { addressId: string; txid: string } | null;
     },
   ): Promise<ClassificationRow> {
     const version = entry.previous + 1;
@@ -752,8 +1017,9 @@ export class ChainClassificationService {
     const [saved]: ClassificationRow[] = await manager.query(
       `INSERT INTO chain_transaction_classification_versions AS v
         ("ownerId","addressId",txid,version,"requestId","canonicalPayload",status,type,details,
-         comment,"accountId","tradeId","rewardId","transferId","linkedAddressId",automatic)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16)
+         comment,"accountId","tradeId","rewardId","transferId","linkedAddressId",automatic,
+         "swapAccountId","swapId","pairedAddressId","pairedTxid")
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
         RETURNING ${versionColumns}`,
       [
         owner,
@@ -772,6 +1038,10 @@ export class ChainClassificationService {
         entry.produced.transferId,
         entry.linkedAddressId,
         entry.automatic,
+        entry.produced.swapAccountId,
+        entry.produced.swapId,
+        entry.paired?.addressId ?? null,
+        entry.paired?.txid ?? null,
       ],
     );
     return saved;
