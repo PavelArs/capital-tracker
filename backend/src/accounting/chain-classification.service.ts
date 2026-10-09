@@ -11,6 +11,7 @@ import {
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
 import { projectRewardVersion, readRewardHead } from './asset-reward.store';
@@ -378,8 +379,8 @@ export class ChainClassificationService {
           LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
             AND v.txid=h.txid AND v.version=h."currentVersion"
           WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
-            AND NOT EXISTS (SELECT 1 FROM wallet_stake_moves m WHERE t.asset IS NULL
-              AND m."addressId"=t."addressId" AND m.signature=t.txid)`,
+            AND NOT EXISTS (SELECT 1 FROM ${stakeMoves} m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.txid=t.txid)`,
         [owner],
       );
       const threshold = await readDustThreshold(manager, owner);

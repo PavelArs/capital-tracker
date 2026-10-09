@@ -53,6 +53,8 @@ export interface TokenTransfer {
 
 export type ListResult<T> = { ok: true; items: T[] } | { ok: false; reason: StepFailure };
 export type BlockResult = { ok: true; block: number } | { ok: false; reason: StepFailure };
+/** What a read-only contract call returned; null when the call reverted. */
+export type CallResult = { ok: true; data: string | null } | { ok: false; reason: StepFailure };
 
 class InvalidResponse extends Error {}
 class Refused extends Error {
@@ -185,6 +187,29 @@ export function parseBlockNumber(body: unknown): number {
   return invalid();
 }
 
+// A contract's answer to one view call: a few words, never a page of data.
+const MAX_CALL_HEX = 2 + 64 * 64;
+
+/**
+ * The answer to proxy eth_call: the returned bytes as hex, or null when the contract reverted
+ * (it has no such function). A refusal reads as in the lists.
+ */
+export function parseCall(body: unknown): string | null {
+  const envelope = record(body);
+  const { result, error } = envelope;
+  if (
+    typeof result === 'string' &&
+    result.length <= MAX_CALL_HEX &&
+    /^0x([0-9a-f]{2})*$/i.test(result)
+  )
+    return result.toLowerCase();
+  if (error !== undefined) {
+    return /revert/i.test(text(record(error).message)) ? null : invalid();
+  }
+  if (envelope.status === '0') throw refusal(result);
+  return invalid();
+}
+
 export class EtherscanClient {
   private readonly apiKey: string | null;
   private readonly baseUrl: string;
@@ -217,6 +242,14 @@ export class EtherscanClient {
       ok: true,
       block: parseBlockNumber(body),
     }));
+  }
+
+  /** A read-only call of `to` with `data` as of the given block (proxy eth_call). */
+  call(to: string, data: string, block: number): Promise<CallResult> {
+    return this.get(
+      { module: 'proxy', action: 'eth_call', to, data, tag: `0x${block.toString(16)}` },
+      (body) => ({ ok: true, data: parseCall(body) }),
+    );
   }
 
   normal(address: string, from: number, to: number): Promise<ListResult<NormalTransaction>> {

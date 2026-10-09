@@ -9,6 +9,7 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { Network } from '../wallet-addresses/chain-assets';
+import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
 import {
@@ -130,8 +131,8 @@ export async function readChainMoves(
     `SELECT w."accountId", w.network, t.asset, t."blockTime",
         t."receivedUnits"::text AS "receivedUnits",
         t."sentUnits"::text AS "sentUnits",
-        coalesce((SELECT sum(m.units) FROM wallet_stake_moves m WHERE t.asset IS NULL
-          AND m."addressId"=t."addressId" AND m.signature=t.txid), 0)::text AS "stakeUnits"
+        coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
+          AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits"
       FROM wallet_addresses w
       JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
       LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
@@ -150,14 +151,14 @@ export async function readChainMoves(
       `SELECT w."accountId", w.network, NULL AS asset, m."blockTime", m.units::text AS units,
           '0' AS "stakeUnits"
         FROM wallet_addresses w
-        JOIN wallet_stake_moves m ON m."ownerId"=w."ownerId" AND m."addressId"=w.id
+        JOIN ${stakeMoves} m ON m."ownerId"=w."ownerId" AND m."addressId"=w.id
         WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND NOT EXISTS (
           SELECT 1 FROM wallet_address_transactions t
-            WHERE t."addressId"=m."addressId" AND t.txid=m.signature)
+            WHERE t."addressId"=m."addressId" AND t.txid=m.txid)
       UNION ALL
       SELECT w."accountId", w.network, NULL, r."observedAt", r.units::text, '0'
         FROM wallet_addresses w
-        JOIN wallet_stake_rewards r ON r."ownerId"=w."ownerId" AND r."addressId"=w.id
+        JOIN ${stakeRewards} r ON r."ownerId"=w."ownerId" AND r."addressId"=w.id
         WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL`,
       [owner],
     );

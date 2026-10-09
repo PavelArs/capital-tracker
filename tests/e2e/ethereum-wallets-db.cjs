@@ -180,7 +180,7 @@ function services(db, apiKey = etherscanKey) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 43/);
+  assert.match(migrate(database), /Migrations applied: 44/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -357,6 +357,140 @@ async function main() {
     assertLegs(await stored(db, main), finalLegs);
     console.log('PASS SYNC-ISOLATION without ETHERSCAN_API_KEY only Ethereum wallets fail, with that reason and no request; Bitcoin syncs; a rate-limited Etherscan delays one wallet');
     console.log('PASS SYNC-BG the hourly job syncs Ethereum wallets beside Bitcoin ones and recovers on the next due run');
+
+    // ETH-STAKE-*: a stake() deposit into a pool that answers balanceOfUnderlying stays the
+    // wallet's ETH, grows by the pool's rewards and comes back out with a claimed exit.
+    {
+      const staker = address('staker');
+      const pool = address('pool');
+      const queue = address('exit-queue');
+      const notPool = address('not-a-pool');
+      const zero = `0x${'0'.repeat(40)}`;
+      const stakeCall = (n, block, to, value, input) => ({ ...normal(n, block, staker, to, value, 100000, 10 ** 9), input });
+      const feeStake = 100000n * 10n ** 9n;
+      const stakeHistory = {
+        normal: [
+          normal(20, 20000060, outside, staker, ether(3), 21000, 10 ** 9),
+          stakeCall(21, 20000070, pool, ether(2), '0x3a4b66f1'),
+          // stake() on a contract without balanceOfUnderlying is no pool: an ordinary payment.
+          stakeCall(22, 20000072, notPool, ether(0.1), '0x3a4b66f1'),
+          // requestExit(uint256) moves no ether; claiming it returns 0.51 ETH from the exit queue.
+          stakeCall(23, 20000080, pool, 0, `0x721c6513${(ether(0.51)).toString(16).padStart(64, '0')}`),
+          stakeCall(24, 20000090, pool, 0, '0xb7ba18c7'),
+        ],
+        internal: [internal(24, 20000090, queue, staker, ether(0.51))],
+        // The pool token minted for the deposit is no tracked asset.
+        tokens: [token(21, 20000070, pool, 'synETH', zero, staker, ether(1.98), 9)],
+      };
+      const readings = [
+        { holder: staker, block: 20000070, units: String(ether(2)) },
+        { holder: staker, block: 20000075, units: String(ether(2.004)) },
+        { holder: staker, block: 20000080, units: String(ether(1.5)) },
+      ];
+      await post('ethereum', { tip: 20000139, ...stakeHistory, pools: { [pool]: { symbol: 'synETH', readings } } });
+      const stakeAccount = await account('Staking');
+      const stakerId = (await s.addresses.register(owner, { network: 'ethereum', address: staker, accountId: stakeAccount })).value.id;
+      const ethCall = (url) => url.searchParams.get('action') === 'eth_call'
+        ? ['eth_call', url.searchParams.get('to'), url.searchParams.get('data').slice(0, 10), url.searchParams.get('tag')]
+        : call(url);
+      const first = await newRequests(() => s.addresses.sync(owner, stakerId));
+      assert.deepEqual([first.result.outcome, first.result.reason, first.result.imported], ['complete', null, 3]);
+      const tag = `0x${(20000075).toString(16)}`;
+      assert.deepEqual(first.urls.map(ethCall), [
+        ['eth_blockNumber', null, null, null],
+        ['txlist', staker, '0', '20000075'],
+        ['txlistinternal', staker, '0', '20000075'],
+        ['tokentx', staker, '0', '20000075'],
+        ...[notPool, pool].sort().map((to) => ['eth_call', to, '0x3af9e669', tag]),
+        ['eth_call', pool, '0x3af9e669', tag],
+        ['eth_call', pool, '0x95d89b41', tag],
+      ]);
+      assert.equal(first.urls.find((url) => url.searchParams.get('to') === pool).searchParams.get('data'),
+        `0x3af9e669${staker.slice(2).padStart(64, '0')}`);
+      const fee = (n) => feeStake * BigInt(n);
+      const units = (value) => (Number(value) === 0 ? 0n : BigInt(value));
+      const stakeRows = async () => ({
+        moves: (await db.query(`SELECT txid, contract, "blockHeight", units::text FROM wallet_ether_stake_moves
+          WHERE "addressId"=$1 ORDER BY "blockHeight"`, [stakerId])).map((row) => [row.txid, row.contract, row.blockHeight, row.units]),
+        rewards: (await db.query(`SELECT contract, "blockHeight", units::text FROM wallet_ether_stake_rewards
+          WHERE "addressId"=$1 ORDER BY "blockHeight"`, [stakerId])).map((row) => [row.contract, row.blockHeight, row.units]),
+      });
+      assert.deepEqual(await stakeRows(), {
+        moves: [[bare(21), pool, 20000070, String(ether(2))]],
+        rewards: [[pool, 20000075, String(ether(0.004))]],
+      });
+      // 3 in, 0.1 paid out, two fees; the 2 ETH deposit stays and earned 0.004.
+      const firstEth = ether(3) - ether(0.1) - fee(2) + ether(0.004);
+      assert.equal(units(first.result.address.balances[0].quantity.replace('.', '')), firstEth);
+      assert.deepEqual(first.result.address.staking, {
+        symbol: 'ETH', quantity: '2.004000000000000000', rewards: '0.004000000000000000',
+        accounts: [{ account: pool, validator: null, pool: 'synETH', state: 'active',
+          quantity: '2.004000000000000000', rewards: '0.004000000000000000' }],
+      });
+      console.log('PASS ETH-STAKE-FIND a stake() deposit into a contract that answers balanceOfUnderlying is a pool; one that does not stays a payment');
+      console.log('PASS ETH-STAKE-BALANCE the 2 ETH deposit stays in the wallet balance as staked ETH with its 0.004 ETH reward');
+
+      // The claimed exit leaves the pool; the pool's growth since is a reward.
+      await post('ethereum', { tip: 20000160 });
+      const second = await s.addresses.sync(owner, stakerId);
+      assert.deepEqual([second.outcome, second.imported], ['complete', 2]);
+      assert.deepEqual(await stakeRows(), {
+        moves: [[bare(21), pool, 20000070, String(ether(2))], [bare(24), pool, 20000090, String(-ether(0.51))]],
+        rewards: [[pool, 20000075, String(ether(0.004))], [pool, 20000096, String(ether(0.006))]],
+      });
+      const finalEth = ether(3) - ether(0.1) - fee(4) + ether(0.01);
+      assert.equal(units(second.address.balances[0].quantity.replace('.', '')), finalEth);
+      assert.deepEqual([second.address.staking.quantity, second.address.staking.rewards, second.address.staking.accounts[0].state],
+        ['1.500000000000000000', '0.010000000000000000', 'active']);
+      const listed = (await s.operations.read(owner, {}, now)).operations.filter((item) => item.wallet?.id === stakerId);
+      const row = (n) => listed.find((item) => item.chain?.txid === bare(n));
+      assert.deepEqual([row(21).type, row(21).direction, row(21).status, row(21).quantity, row(21).fee.quantity],
+        ['stake', 'internal', 'recorded', '2', '0.0001']);
+      assert.deepEqual([row(24).type, row(24).direction, row(24).status, row(24).quantity], ['unstake', 'internal', 'recorded', '0.51']);
+      assert.deepEqual([row(22).status, row(22).direction], ['needs-classification', 'out']);
+      // CLS-PROVISIONAL: the account holds what the chain shows, rewards without a purchase price.
+      {
+        const { readValuationInputs, accountsAt } = require(`${dist}/accounting/portfolio-valuation.service.js`);
+        const { canonicalDecimalToAtoms } = require(`${dist}/accounting/money.js`);
+        const inputs = await db.transaction((manager) => readValuationInputs(manager, owner));
+        const held = accountsAt(inputs, new Date().toISOString()).find((item) => item.accountId === stakeAccount);
+        const total = held.lots.reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.quantity), 0n);
+        assert.equal(total, finalEth * 10n ** 12n);
+      }
+      console.log('PASS ETH-STAKE-MOVE the deposit and the claimed 0.51 ETH exit list as Stake and Unstake, recorded, with only the fee leaving');
+      console.log('PASS ETH-STAKE-REWARD growth after the exit is a reward at the block read; the account holds the chain balance');
+
+      // ETH-STAKE-FIND: a wallet synced before pools were followed is read once from its stored history.
+      await db.query('DELETE FROM wallet_ether_stake_rewards WHERE "addressId"=$1', [stakerId]);
+      await db.query('DELETE FROM wallet_ether_stake_moves WHERE "addressId"=$1', [stakerId]);
+      await db.query('DELETE FROM wallet_ether_stake_positions WHERE "addressId"=$1', [stakerId]);
+      await db.query('DELETE FROM wallet_stake_scans WHERE "addressId"=$1', [stakerId]);
+      const backfilled = await newRequests(() => s.addresses.sync(owner, stakerId));
+      assert.deepEqual([backfilled.result.outcome, backfilled.result.imported], ['complete', 0]);
+      assert.deepEqual(backfilled.urls.map(ethCall), [
+        ['eth_blockNumber', null, null, null],
+        ...[notPool, pool].sort().map((to) => ['eth_call', to, '0x3af9e669', `0x${(20000096).toString(16)}`]),
+        ['eth_call', pool, '0x3af9e669', `0x${(20000096).toString(16)}`],
+        ['eth_call', pool, '0x95d89b41', `0x${(20000096).toString(16)}`],
+      ]);
+      assert.deepEqual(await stakeRows(), {
+        moves: [[bare(21), pool, 20000070, String(ether(2))], [bare(24), pool, 20000090, String(-ether(0.51))]],
+        rewards: [[pool, 20000096, String(ether(0.01))]],
+      });
+      assert.equal(units(backfilled.result.address.balances[0].quantity.replace('.', '')), finalEth);
+      console.log('PASS ETH-STAKE-FIND an address synced before pools were followed finds its deposit and exit in the stored history once');
+
+      // A refused pool reading leaves the wallet to try again.
+      await post('ethereum', { fault: { onRequest: 2, rateLimited: true } });
+      const refused = await s.addresses.sync(owner, stakerId);
+      assert.deepEqual([refused.outcome, refused.reason], ['provider_error', 'rate_limited']);
+      assert.equal((await stakeRows()).rewards.length, 1);
+      await assert.rejects(() => db.query(`INSERT INTO wallet_ether_stake_positions("ownerId","addressId",contract) VALUES ($1,$2,$3)`,
+        [owner, stakerId, checksummed(address('upper'))]), /wallet_ether_stake_positions_contract_check/);
+      await assert.rejects(() => db.query(`INSERT INTO wallet_ether_stake_moves("ownerId","addressId",txid,contract,"blockHeight","blockTime",units)
+        VALUES ($1,$2,$3,$4,1,now(),0)`, [owner, stakerId, bare(30), pool]), /wallet_ether_stake_moves_units_check/);
+      console.log('PASS ETH-STAKE-STATE a refused pool reading reports a provider error; contract and zero moves are refused by the schema');
+    }
 
     // Reads stay owner-scoped and per asset.
     const page = await s.addresses.transactions(owner, main, {});

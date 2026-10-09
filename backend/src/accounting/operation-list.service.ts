@@ -9,6 +9,7 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
+import { stakeMoves } from '../wallet-addresses/stake-tables';
 import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -287,8 +288,8 @@ export class OperationListService {
             a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
-            coalesce((SELECT sum(m.units) FROM wallet_stake_moves m WHERE t.asset IS NULL
-              AND m."addressId"=t."addressId" AND m.signature=t.txid), 0)::text AS "stakeUnits",
+            coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
