@@ -108,7 +108,7 @@ jq -e '.services.backend.environment.MFA_KEY_ID | length>0' <<<"$config" >/dev/n
 smoke() {
   [[ $(curl --fail --silent --show-error --max-time 10 "$origin/health") == '{"status":"ok"}' ]] || return 1
   local route code
-  for route in auth/me accounting/accounts assets crypto/wallets metrics health/details; do
+  for route in auth/me accounting/accounts accounting/operations wallet-addresses owner-settings health/details; do
     code=$(curl --silent --show-error --max-time 10 --output /dev/null --write-out '%{http_code}' "$origin/api/$route")
     [[ $code == 401 ]] || return 1
   done

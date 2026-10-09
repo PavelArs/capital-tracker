@@ -310,6 +310,7 @@ test('SES-004-A: backend root is private by default', async ({ request }) => {
   for (const path of [
     '/api/',
     '/api/auth/me',
+    '/api/accounting/accounts',
     '/api/accounting/portfolio',
     '/api/accounting/portfolio/history',
     '/api/accounting/operations',
