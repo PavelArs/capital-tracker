@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 
-const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
+export const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+export const BECH32 = 'qpzry9x8gf2tvdw0s3jn54khce6mua7l';
 const BECH32_CONST = 1;
 const BECH32M_CONST = 0x2bc830a3;
 const GENERATOR = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
@@ -11,7 +11,7 @@ function bad(): never {
   throw new BadRequestException('Invalid Bitcoin address');
 }
 
-const sha256 = (data: Buffer) => createHash('sha256').update(data).digest();
+export const sha256 = (data: Buffer) => createHash('sha256').update(data).digest();
 
 // P2PKH (version 0x00) and P2SH (0x05) with a verified double-SHA-256 checksum.
 function isBase58Address(value: string): boolean {
@@ -31,7 +31,7 @@ function isBase58Address(value: string): boolean {
   return checksum.equals(bytes.subarray(21));
 }
 
-function polymod(values: number[]): number {
+export function polymod(values: number[]): number {
   let checksum = 1;
   for (const value of values) {
     const top = checksum >>> 25;
@@ -41,7 +41,7 @@ function polymod(values: number[]): number {
   return checksum >>> 0;
 }
 
-function convertBits(data: number[], from: number, to: number): number[] | null {
+export function convertBits(data: number[], from: number, to: number): number[] | null {
   let accumulator = 0;
   let bits = 0;
   const result: number[] = [];

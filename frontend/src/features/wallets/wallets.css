@@ -217,6 +217,11 @@ button.wallets-source__open:focus-visible {
   min-width: 0;
 }
 
+.wallets-asset__text {
+  display: grid;
+  min-width: 0;
+}
+
 .wallets-asset__name {
   overflow: hidden;
   font-weight: 500;
