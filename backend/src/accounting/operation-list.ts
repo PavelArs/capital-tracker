@@ -453,6 +453,7 @@ function chainOperation(
   other: ChainOperationInput | null,
   dustThresholdUsd: string | null,
   gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
+  records: ReadonlyMap<string, Projected> = new Map(),
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
@@ -501,6 +502,15 @@ function chainOperation(
     orderWithinTimestamp: 0,
   };
   if (answer?.status === 'hidden') return { ...operation, status: 'hidden' };
+  // CLS-RECORDED: the trade or swap the owner added by hand or from CSV for this movement, while
+  // it counts in this wallet's account; once it does not, the transaction asks again.
+  const named =
+    answer?.status === 'classified' && answer.details?.type === 'recorded'
+      ? answer.details.operation
+      : null;
+  const record = named ? records.get(`${named.kind}:${named.id}`) : undefined;
+  const recordGone =
+    named !== null && (record === undefined || record.account?.id !== row.account?.id);
   // SOL-STAKE-MOVE: SOL moved into the wallet's own stake account or back stays the owner's;
   // nothing to classify, only the network fee is a cost.
   const staked = BigInt(row.stakeUnits ?? '0');
@@ -518,10 +528,12 @@ function chainOperation(
   }
   // CLS-DUST: nobody has answered it and it is worth too little to ask about.
   if (
-    (answer === null || answer.status === 'unclassified') &&
+    (answer === null || answer.status === 'unclassified' || recordGone) &&
     isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd)
   )
     return { ...operation, status: 'dust' };
+  if (named && record && !recordGone)
+    return { ...operation, type: record.type, status: 'recorded' };
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
     return { ...operation, type: 'other', status: 'recorded' };
@@ -565,7 +577,7 @@ function chainOperation(
   }
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
   // elsewhere leaves the transaction to classify again, with the other side to suggest.
-  if (answer?.status !== 'classified' || !answer.type || !produced)
+  if (answer?.status !== 'classified' || !answer.type || answer.type === 'recorded' || !produced)
     return other
       ? { ...operation, counterAccount: other.account, counterWallet: other.wallet }
       : operation;
@@ -891,6 +903,12 @@ export function projectOperations(
   }
   const folded = new Set(gas.values());
   const gasOf = (leg: ChainOperationInput) => gas.get(leg);
+  // CLS-RECORDED: trades and swaps added by hand or from CSV a transaction can name.
+  const records = new Map(
+    entries
+      .filter(({ operation }) => operation.kind === 'trade' || operation.kind === 'swap')
+      .map(({ operation }) => [operation.id, operation] as const),
+  );
   for (const row of sources.chain) {
     if (folded.has(row)) continue;
     const ref = row.classification?.produced;
@@ -910,7 +928,7 @@ export function projectOperations(
     )
       continue;
     const operation = oneTransactionSwap(
-      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd, gasOf),
+      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd, gasOf, records),
       row,
       byHash.get(hashKey(row)) ?? [],
     );

@@ -36,6 +36,7 @@ import {
   type PoolWithdrawalClassification,
   parseClassification,
   planOperation,
+  type RecordedClassification,
   type SwapClassification,
   unfit,
 } from './chain-classification';
@@ -47,6 +48,7 @@ import {
   poolGainValueUsd,
   storedValueUsd,
 } from './chain-pool';
+import { recordGone, recordMoves, swapCoins, tradeCoins } from './chain-recorded';
 import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 import {
   coinOf,
@@ -581,7 +583,8 @@ export class ChainClassificationService {
           LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
           LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
             AND v.txid=h.txid AND v.version=h."currentVersion"
-          WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
+          WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified'
+              OR ${recordGone('v', 'w."accountId"')})
             AND NOT EXISTS (SELECT 1 FROM ${stakeMoves} m WHERE t.asset IS NULL
               AND m."addressId"=t."addressId" AND m.txid=t.txid)
             AND NOT (${tokenSendGas})`,
@@ -639,6 +642,8 @@ export class ChainClassificationService {
     const accountId = row.accountId;
     if (value && accountId === null)
       throw new UnprocessableEntityException('Choose the account of this wallet first');
+    if (value?.type === 'recorded' && accountId)
+      await this.checkRecord(manager, owner, row, accountId, value);
     const transfer = value?.type === 'transfer' ? value : null;
     const partner = transfer
       ? await this.partner(manager, owner, target, transfer.accountId)
@@ -1045,12 +1050,79 @@ export class ChainClassificationService {
       const head = await readTransferHead(manager, owner, row.transferId);
       return head !== undefined && head.kind !== 'void';
     }
-    // An outgoing Other, a pool deposit and a withdrawal without a gain produced no entry: the
-    // answer itself is what counts (D1, POOL-*).
+    // An outgoing Other, a pool deposit, a withdrawal without a gain and a movement recorded
+    // by hand produced no entry: the answer itself is what counts (D1, POOL-*, CLS-RECORDED).
     return (
       row.status === 'classified' &&
-      (row.type === 'other' || row.type === 'pool-deposit' || row.type === 'pool-withdrawal')
+      (row.type === 'other' ||
+        row.type === 'pool-deposit' ||
+        row.type === 'pool-withdrawal' ||
+        row.type === 'recorded')
     );
+  }
+
+  /**
+   * CLS-RECORDED: the record must be a trade or swap the owner added by hand or from CSV, still
+   * counting, in this wallet's account, that moved this coin the way the transaction did.
+   */
+  private async checkRecord(
+    manager: EntityManager,
+    owner: string,
+    row: LegRow,
+    accountId: string,
+    value: RecordedClassification,
+  ) {
+    const { id, kind } = value.operation;
+    const [found]: {
+      accountId: string;
+      side: 'buy' | 'sell' | null;
+      asset: string | null;
+      cash: string | null;
+      incoming: string | null;
+    }[] =
+      kind === 'trade'
+        ? await manager.query(
+            `SELECT t."accountId", v.side, i.symbol AS asset, si.symbol AS cash, NULL AS incoming
+              FROM account_trades t
+              JOIN account_trade_versions v ON v."ownerId"=t."ownerId"
+                AND v."accountId"=t."accountId" AND v."tradeId"=t.id
+                AND v.version=t."currentVersion"
+              JOIN accounting_instruments i ON i."ownerId"=v."ownerId" AND i.id=v."instrumentId"
+              LEFT JOIN account_trade_version_settlements s ON s."ownerId"=v."ownerId"
+                AND s."accountId"=v."accountId" AND s."tradeId"=v."tradeId"
+                AND s.version=v.version
+              LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId"
+                AND si.id=s."instrumentId"
+              WHERE t."ownerId"=$1 AND t.id=$2 AND v.kind<>'void'
+                AND NOT EXISTS (SELECT 1 FROM chain_transaction_classification_versions x
+                  WHERE x."ownerId"=t."ownerId" AND x."tradeId"=t.id)`,
+            [owner, id],
+          )
+        : await manager.query(
+            `SELECT s."accountId", NULL AS side, o.symbol AS asset, NULL AS cash,
+                n.symbol AS incoming
+              FROM account_swaps s
+              JOIN account_swap_versions v ON v."ownerId"=s."ownerId"
+                AND v."accountId"=s."accountId" AND v."swapId"=s.id
+                AND v.version=s."currentVersion"
+              JOIN accounting_instruments o ON o."ownerId"=v."ownerId"
+                AND o.id=v."outgoingInstrumentId"
+              JOIN accounting_instruments n ON n."ownerId"=v."ownerId"
+                AND n.id=v."incomingInstrumentId"
+              WHERE s."ownerId"=$1 AND s.id=$2 AND v.kind<>'void'
+                AND NOT EXISTS (SELECT 1 FROM chain_transaction_classification_versions x
+                  WHERE x."ownerId"=s."ownerId" AND x."swapId"=s.id)`,
+            [owner, id],
+          );
+    if (!found) throw new UnprocessableEntityException('Choose an operation you added or imported');
+    if (found.accountId !== accountId)
+      throw new UnprocessableEntityException('Choose an operation of this wallet');
+    const coins =
+      kind === 'trade'
+        ? tradeCoins(found.side ?? 'buy', found.asset, found.cash)
+        : swapCoins(found.asset, found.incoming);
+    if (!recordMoves(coins, chainCoin(row).symbol, inbound(row)))
+      throw new UnprocessableEntityException('That operation did not move this coin this way');
   }
 
   /**

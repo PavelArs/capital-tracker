@@ -1124,6 +1124,71 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  it('CLS-RECORDED: a send recorded by hand reads as that record and leaves the count', () => {
+    const paidWithUsdt = {
+      tradeId: id(32),
+      version: 1,
+      account: trust,
+      asset: btc,
+      side: 'buy' as const,
+      occurredAt: '2025-06-20T07:30:00.000Z',
+      orderWithinTimestamp: 0,
+      quantity: '0.01',
+      grossUsd: '1000',
+      feeUsd: '0',
+      csv: true,
+      paid: null,
+      comment: null,
+      settlement: { asset: usdt, quantity: '1000' },
+      purpose: null,
+    };
+    const send = (account: typeof trust | null) =>
+      chain(1, {
+        account,
+        wallet: { ...wallet, network: 'ethereum', address: `0x${'ab'.repeat(20)}` },
+        asset: 'USDT',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '1000000000',
+        feeUnits: '0',
+        classification: {
+          version: 1,
+          status: 'classified',
+          type: 'recorded',
+          details: { type: 'recorded', operation: { kind: 'trade', id: id(32) } },
+          comment: null,
+          produced: null,
+        },
+      });
+    const list = projectOperations(now, sources({ trades: [paidWithUsdt], chain: [send(trust)] }));
+    expect(list.needsClassificationCount).toBe(0);
+    expect(list.operations.map((operation) => operation.id)).toEqual([
+      `chain:${id(20)}:${txid(1)}`,
+      `trade:${id(32)}`,
+    ]);
+    expect(list.operations[0]).toMatchObject({
+      type: 'buy',
+      status: 'recorded',
+      source: 'chain',
+      direction: 'out',
+      quantity: '1000',
+      valueUsd: null,
+      classification: { value: { type: 'recorded', operation: { kind: 'trade', id: id(32) } } },
+    });
+    expect(list.operations[1]).toMatchObject({ source: 'csv', status: 'recorded' });
+    // Deleted, or in another account than the wallet's: the send asks again.
+    for (const gone of [
+      projectOperations(now, sources({ chain: [send(trust)] })),
+      projectOperations(now, sources({ trades: [paidWithUsdt], chain: [send(bybit)] })),
+    ]) {
+      expect(gone.needsClassificationCount).toBe(1);
+      expect(gone.operations.find((operation) => operation.kind === 'chain')).toMatchObject({
+        type: null,
+        status: 'needs-classification',
+      });
+    }
+  });
+
   it('CLS-RESYNC: an answer whose entry was voided elsewhere needs classification again', () => {
     const list = projectOperations(
       now,

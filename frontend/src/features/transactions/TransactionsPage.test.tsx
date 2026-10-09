@@ -1513,8 +1513,13 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       automatic: false,
     },
   });
-  const openRow = async (operations: Operation[], index: number, name: string) => {
-    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations));
+  const openRow = async (
+    operations: Operation[],
+    index: number,
+    name: string,
+    dustThresholdUsd: string | null = null,
+  ) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations, dustThresholdUsd));
     const user = userEvent.setup();
     renderPage();
     await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
@@ -1630,6 +1635,142 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
     expect(await within(drawer).findByRole('alert')).toHaveTextContent(
       'The address on the other side is not in a wallet yet. Choose its wallet first.',
     );
+  });
+
+  it('CLS-SWAP-DUST: dust, hidden and too-small transactions are no other side', async () => {
+    const other = (n: number, changes: Partial<Operation>) => ({
+      ...paid,
+      id: `chain:${ethWallet.id}:${'e'.repeat(63)}${n}-1`,
+      chain: { ...paid.chain!, txid: `${'e'.repeat(63)}${n}-1` },
+      ...changes,
+    });
+    const { user, drawer } = await openRow(
+      [
+        bought,
+        paid,
+        other(1, { quantity: '0.4', estimatedValueUsd: '0.4' }),
+        other(2, { status: 'hidden' }),
+        other(3, { status: 'dust', direction: 'in', estimatedValueUsd: '0.2' }),
+        other(4, { quantity: '0' }),
+      ],
+      0,
+      'Incoming transaction · BTC',
+      '1',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+    expect(
+      within(within(drawer).getByLabelText('Paid with'))
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the transaction',
+      'Sep 1, 2026, 10:00 · -1,000 USDT · Trust Wallet · Ethereum 0x0000…00aa',
+    ]);
+  });
+
+  describe('CLS-RECORDED-UI', () => {
+    // The 1000 USDT sent paid for 0.0125 BTC the owner had already added by hand.
+    const purchase = operation({
+      id: `trade:${id(60)}`,
+      occurredAt: '2026-09-01T09:30:00.000Z',
+      quantity: '0.0125',
+      asset: btc,
+      account: trust,
+      valueUsd: '1000',
+      settlement: { asset: usdt, quantity: '1000' },
+    });
+    const imported = operation({
+      ...purchase,
+      id: `trade:${id(61)}`,
+      occurredAt: '2026-09-02T00:00:00.000Z',
+      settlement: null,
+      source: 'csv',
+    });
+    // Not choices: another wallet's record and a sale of BTC.
+    const elsewhere = operation({ ...purchase, id: `trade:${id(62)}`, account: cold });
+    const sold = operation({ ...purchase, id: `trade:${id(63)}`, type: 'sell', direction: 'out' });
+    const linked = operation({
+      ...paid,
+      type: 'buy',
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'recorded', operation: { kind: 'trade', id: id(60) } },
+        comment: null,
+        automatic: false,
+      },
+    });
+
+    it('an outgoing transaction can be the payment of a purchase added by hand', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(
+        [imported, paid, purchase, elsewhere, sold],
+        1,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      const group = within(select).getByRole('group', { name: 'Added by you or from CSV' });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you']);
+      await user.selectOptions(select, `trade:${id(60)}`);
+      expect(within(drawer).queryByLabelText('Value at the time (optional)')).toBeNull();
+      expect(
+        within(drawer).getByText(
+          'This transaction is that record: nothing new is added, and the coins are not counted twice.',
+        ),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: { type: 'recorded', operation: { kind: 'trade', id: id(60) } },
+      });
+    });
+
+    it('a receipt can be the coins of a purchase imported from CSV', async () => {
+      const { user, drawer } = await openRow(
+        [imported, bought, purchase],
+        1,
+        'Incoming transaction · BTC',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const group = within(within(drawer).getByLabelText('Paid with')).getByRole('group', {
+        name: 'Added by you or from CSV',
+      });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual([
+        'Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you',
+        'Sep 2, 2026, No time · Buy 0.0125 BTC · From CSV',
+      ]);
+    });
+
+    it('a recorded transaction names its record and opens on it to change', async () => {
+      const { user, drawer } = await openRow([linked, purchase], 0, 'Buy · USDT');
+      expect(within(drawer).getByText(/Already recorded by hand or from CSV/)).toBeInTheDocument();
+      const facts = within(drawer).getByRole('region', { name: 'Details' });
+      const fact = (label: string) =>
+        within(facts).queryByText(label, { exact: true })?.nextElementSibling?.textContent;
+      expect(fact('Recorded as')).toBe(
+        'Sep 1, 2026, 09:30 · Buy 0.0125 BTC for 1,000 USDT · Added by you',
+      );
+      expect(fact('Value')).toBeUndefined();
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(`trade:${id(60)}`);
+    });
   });
 });
 

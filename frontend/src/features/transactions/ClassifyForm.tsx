@@ -18,6 +18,7 @@ import {
   rowTime,
   shortAddress,
   signedAmount,
+  typeLabels,
 } from './operation-format';
 
 type ChainType = ChainClassification['type'];
@@ -27,7 +28,8 @@ const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 // "What was this transaction?" from the accepted prototype, limited to what the coins did:
 // what arrives can be bought or received, what leaves can be sold, spent or given, and either
 // can move between the owner's own wallets (M13). Other is a movement nobody can name yet.
-// A swap pairs a receipt with a payment in another coin, from any of the wallets (CLS-SWAP).
+// A swap pairs a receipt with a payment in another coin, from any of the wallets (CLS-SWAP),
+// or names the purchase the owner already added by hand or from CSV (CLS-RECORDED).
 // Coins put into a liquidity pool stay the owner's; a withdrawal names the deposit it returns,
 // and the pool's rewards are income (POOL-*).
 const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
@@ -75,7 +77,10 @@ interface Draft {
   value: string;
   /** Transfer only: the owner's other wallet. */
   account: string;
-  /** Swap only: the transaction on the other side, as "address id|txid". */
+  /**
+   * Swap only: the transaction on the other side, as "address id|txid", or the trade or swap
+   * already added by hand or from CSV, as its list id "trade:id" or "swap:id".
+   */
   pair: string;
   /** Pool withdrawal only: the deposit it returns, as "address id|txid". */
   deposit: string;
@@ -97,13 +102,14 @@ function draftOf(operation: Operation): Draft {
   const valued = value && !priced && 'valueUsd' in value ? value : null;
   const moved = value?.type === 'transfer' ? value : null;
   const swapped = value?.type === 'swap' ? value : null;
+  const recorded = value?.type === 'recorded' ? value.operation : null;
   const returned = value?.type === 'pool-withdrawal' ? value : null;
   // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
   const suggested = !value && operation.counterWallet && operation.counterAccount;
   // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
   const together = !value && !suggested ? operation.chain?.swapWith : undefined;
   return {
-    type: value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null),
+    type: recorded ? 'swap' : (value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null)),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
@@ -111,9 +117,11 @@ function draftOf(operation: Operation): Draft {
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
     pair: swapped
       ? `${swapped.with.addressId}|${swapped.with.txid}`
-      : together
-        ? `${together.addressId}|${together.txid}`
-        : '',
+      : recorded
+        ? `${recorded.kind}:${recorded.id}`
+        : together
+          ? `${together.addressId}|${together.txid}`
+          : '',
     deposit: returned ? `${returned.deposit.addressId}|${returned.deposit.txid}` : '',
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
@@ -137,13 +145,27 @@ const pairKey = (operation: Operation) =>
   operation.wallet && operation.chain ? `${operation.wallet.id}|${operation.chain.txid}` : '';
 const addressText = (wallet: NonNullable<Operation['wallet']>) =>
   `${networkName(wallet)} ${wallet.label ?? shortAddress(wallet.address)}`;
+/** CLS-RECORDED: a picked trade or swap added by hand or from CSV, by its list id. */
+const recordKey = /^(trade|swap):(.+)$/;
+/** CLS-DUST: a leg too small to be the other side of anything worth recording. */
+const dust = (item: Operation, thresholdUsd: string | null) =>
+  item.status === 'dust' ||
+  Number(item.quantity) === 0 ||
+  (thresholdUsd !== null &&
+    item.estimatedValueUsd !== null &&
+    Number(item.estimatedValueUsd) < Number(thresholdUsd));
 
 /**
  * CLS-SWAP: the owner's blockchain transactions that can be the other side of this one, from
- * any wallet: moving the other way, another coin, within a week, nearest first. A saved pair
+ * any wallet: moving the other way, another coin, within a week, nearest first. Hidden ones and
+ * dust, worth less than the dust threshold either way, are left out (CLS-DUST). A saved pair
  * stays a choice though the list shows it inside the swap.
  */
-export function swapCandidates(operation: Operation, operations: Operation[]): [string, string][] {
+export function swapCandidates(
+  operation: Operation,
+  operations: Operation[],
+  dustThresholdUsd: string | null = null,
+): [string, string][] {
   const leg = legDirection(operation);
   const coin = assetKey(legAsset(operation));
   const at = Date.parse(operation.occurredAt);
@@ -157,6 +179,8 @@ export function swapCandidates(operation: Operation, operations: Operation[]): [
         pairKey(item) !== '' &&
         legDirection(item) === (leg === 'in' ? 'out' : 'in') &&
         !(item.type && unpaired.has(item.type)) &&
+        item.status !== 'hidden' &&
+        !dust(item, dustThresholdUsd) &&
         assetKey(item.asset) !== coin &&
         Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS,
     )
@@ -191,6 +215,67 @@ export function swapCandidates(operation: Operation, operations: Operation[]): [
       ].join(' · '),
     ]);
   }
+  return found;
+}
+
+/** CLS-RECORDED: the coins a manual or CSV record received and spent, by asset key. */
+function recordCoins(item: Operation): { received: string[]; sent: string[] } {
+  const cash = item.settlement ? [assetKey(item.settlement.asset)] : [];
+  if (item.kind === 'swap')
+    return {
+      received: item.counterAsset ? [assetKey(item.counterAsset)] : [],
+      sent: [assetKey(item.asset)],
+    };
+  return item.direction === 'in'
+    ? { received: [assetKey(item.asset)], sent: cash }
+    : { received: cash, sent: [assetKey(item.asset)] };
+}
+
+/** CLS-RECORDED: a trade or swap added by hand or from CSV, as a choice and in the details. */
+export function recordText(item: Operation): string {
+  return [
+    `${day(item.occurredAt)}, ${rowTime(item)}`,
+    item.kind === 'swap' && item.counterAsset && item.counterQuantity
+      ? `Swap ${amount(item.quantity, item.asset)} for ${amount(item.counterQuantity, item.counterAsset)}`
+      : `${item.type ? typeLabels[item.type] : 'Trade'} ${amount(item.quantity, item.asset)}${
+          item.settlement && Number(item.settlement.quantity) > 0
+            ? ` for ${amount(item.settlement.quantity, item.settlement.asset)}`
+            : ''
+        }`,
+    item.source === 'csv' ? 'From CSV' : 'Added by you',
+  ].join(' · ');
+}
+
+/**
+ * CLS-RECORDED: the trades and swaps added by hand or from CSV in this wallet's account that
+ * moved this coin the same way within a week, nearest first: this transaction can be one of
+ * them, already recorded. The saved one stays a choice.
+ */
+export function recordCandidates(
+  operation: Operation,
+  operations: Operation[],
+): [string, string][] {
+  const inbound = legDirection(operation) === 'in';
+  const coin = assetKey(legAsset(operation));
+  const at = Date.parse(operation.occurredAt);
+  const found = operations
+    .filter(
+      (item) =>
+        (item.kind === 'trade' || item.kind === 'swap') &&
+        item.source !== 'chain' &&
+        item.status === 'recorded' &&
+        operation.account !== null &&
+        item.account?.id === operation.account.id &&
+        recordCoins(item)[inbound ? 'received' : 'sent'].includes(coin) &&
+        Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS,
+    )
+    .sort(
+      (a, b) => Math.abs(Date.parse(a.occurredAt) - at) - Math.abs(Date.parse(b.occurredAt) - at),
+    )
+    .map((item): [string, string] => [item.id, recordText(item)]);
+  const saved = operation.classification?.value;
+  const key = saved?.type === 'recorded' ? `${saved.operation.kind}:${saved.operation.id}` : '';
+  if (key && !found.some(([id]) => id === key)) found.unshift([key, 'The saved record']);
   return found;
 }
 
@@ -247,7 +332,8 @@ function problems(draft: Draft): Set<Problem> {
     if (!draft.account) found.add('account');
   } else if (draft.type === 'swap') {
     if (!draft.pair) found.add('pair');
-    if (draft.value.trim() && !positive(draft.value)) found.add('value');
+    if (!recordKey.test(draft.pair) && draft.value.trim() && !positive(draft.value))
+      found.add('value');
   } else if (draft.type === 'pool-withdrawal') {
     if (!draft.deposit) found.add('deposit');
     if (draft.value.trim() && !positive(draft.value)) found.add('value');
@@ -277,6 +363,12 @@ function answer(draft: Draft): ChainClassification | null {
     case 'transfer':
       return { type: 'transfer', accountId: draft.account };
     case 'swap': {
+      const record = recordKey.exec(draft.pair);
+      if (record)
+        return {
+          type: 'recorded',
+          operation: { kind: record[1] as 'trade' | 'swap', id: record[2] },
+        };
       const [addressId, txid] = draft.pair.split('|');
       return {
         type: 'swap',
@@ -315,6 +407,9 @@ function answer(draft: Draft): ChainClassification | null {
         valueUsd: draft.value.trim() ? decimal(draft.value) : null,
       };
     }
+    case 'recorded':
+      // CLS-RECORDED: asked for as a swap that names the record (draftOf); never a type here.
+      return null;
     default:
       return { type: draft.type, valueUsd: decimal(draft.value)! };
   }
@@ -346,6 +441,15 @@ function failure(error: unknown): ReactNode {
     return 'Both transactions moved the same coin. Choose a transaction in another coin.';
   if (status === 422 && message === 'Choose the other side of the swap')
     return 'Choose the transaction on the other side.';
+  const records: Record<string, string> = {
+    'Choose an operation you added or imported':
+      'That record was deleted or was not added by you. Reload and choose another one.',
+    'Choose an operation of this wallet':
+      'That record is in another wallet. Choose one of the wallet of this address.',
+    'That operation did not move this coin this way':
+      'That record did not move this coin this way. Choose another one.',
+  };
+  if (status === 422 && typeof message === 'string' && records[message]) return records[message];
   const pools: Record<string, string> = {
     'Choose a pool deposit': 'Choose the pool deposit this withdrawal returns.',
     'A pool withdrawal returns the coin of its deposit':
@@ -383,6 +487,8 @@ interface Props {
   operation: Operation;
   /** The whole list, for the other side of a swap. */
   operations?: Operation[];
+  /** CLS-DUST: the list's dust threshold; dust is no other side of a swap. Null: off. */
+  dustThresholdUsd?: string | null;
   /** Shown first: the amount and the raw facts. */
   children: ReactNode;
   /** Other transactions still to classify, for the footer. */
@@ -396,6 +502,7 @@ interface Props {
 export default function ClassifyForm({
   operation,
   operations = [],
+  dustThresholdUsd = null,
   children,
   left,
   onSaved,
@@ -429,6 +536,8 @@ export default function ClassifyForm({
   const [accountsFailed, setAccountsFailed] = useState(false);
   const transfer = draft.type === 'transfer';
   const swap = draft.type === 'swap';
+  // CLS-RECORDED: the swap names a record added by hand: nothing to value.
+  const recorded = swap && recordKey.test(draft.pair);
   const poolDeposit = draft.type === 'pool-deposit';
   const poolWithdrawal = draft.type === 'pool-withdrawal';
   useEffect(() => {
@@ -470,6 +579,14 @@ export default function ClassifyForm({
     }
   };
 
+  const pairs = swap ? swapCandidates(operation, operations, dustThresholdUsd) : [];
+  const records = swap ? recordCandidates(operation, operations) : [];
+  const options = (items: [string, string][]) =>
+    items.map(([key, label]) => (
+      <option key={key} value={key}>
+        {label}
+      </option>
+    ));
   const priced = draft.type === 'buy' || draft.type === 'sell';
   const rated = draft.currency === 'EUR' || draft.currency === 'RUB';
   const optional =
@@ -654,15 +771,20 @@ export default function ClassifyForm({
                 {...invalid('pair')}
               >
                 <option value="">Choose the transaction</option>
-                {swapCandidates(operation, operations).map(([key, label]) => (
-                  <option key={key} value={key}>
-                    {label}
-                  </option>
-                ))}
+                {records.length > 0 ? (
+                  <>
+                    <optgroup label="Your blockchain transactions">{options(pairs)}</optgroup>
+                    <optgroup label="Added by you or from CSV">{options(records)}</optgroup>
+                  </>
+                ) : (
+                  options(pairs)
+                )}
               </select>
               {fieldError('pair', 'Choose the transaction on the other side') || (
                 <span className="portfolio-field__hint">
-                  Transactions in another coin within a week, from any of your wallets.
+                  {recorded
+                    ? 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
+                    : 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.'}
                 </span>
               )}
             </div>
@@ -717,7 +839,7 @@ export default function ClassifyForm({
             {commentField}
           </div>
         )}
-        {draft.type && !priced && !transfer && !other && !poolDeposit && (
+        {draft.type && !priced && !transfer && !other && !poolDeposit && !recorded && (
           <div className="transactions-subform">
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor={`${id}-value`}>

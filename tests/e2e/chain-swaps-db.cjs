@@ -487,6 +487,109 @@ async function oneTransaction(db, s, owner, f) {
   console.log('PASS SWAP-ONE-TX/TOKEN-CHAIN');
 }
 
+// CLS-RECORDED: 500 USDT left Trust Wallet to pay for 0.2 ETH the owner had already added by
+// hand as a Buy paid in USDT. Unanswered, the send and the buy both take the USDT away.
+async function recordedByHand(db, s, owner, f) {
+  stage = 'CLS-RECORDED a manual buy paid in USDT and the chain send that paid it count twice';
+  const paid = `${hash(11)}-3`;
+  await raw(db, owner, f.eth, { txid: paid, asset: 'USDT', height: 11, at: '2026-09-25T10:00:00.000Z', received: '0', sent: '500000000', fee: '0', direction: 'out' });
+  const waiting = await count(s, owner);
+  assert.equal(await held(s, owner, 'USDT', f.trust), coins('1500'), 'The send counts before an answer (D1)');
+  const [eth] = await db.query(
+    `SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND symbol='ETH'`,
+    [owner],
+  );
+  const revision = async () => (await journal(s, owner, f.trust)).journalRevision;
+  const bought = await s.trades.create(owner, f.trust, {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(),
+    instrumentId: eth.id,
+    side: 'buy',
+    occurredAt: '2026-09-25T09:00:00.000Z',
+    quantity: '0.2',
+    grossUsd: '500',
+    feeUsd: '0',
+    settlementCurrency: 'USDT',
+  });
+  const tradeId = bought.value.trade.tradeId;
+  assert.equal(await held(s, owner, 'USDT', f.trust), coins('1000'), 'The same 500 USDT leave twice');
+
+  stage = 'CLS-RECORDED-INVALID only a counting record of this wallet that moved this coin this way';
+  const recorded = (kind, id) => ({ type: 'recorded', operation: { kind, id } });
+  const before = await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions');
+  const produced = (await db.query(
+    `SELECT v."tradeId" FROM chain_transaction_classifications h
+      JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      WHERE h."addressId"=$1 AND h.txid=$2`,
+    [f.eth, legs.usdtIn],
+  ))[0].tradeId;
+  assert.ok(produced);
+  await rejected(
+    () => classify(s, owner, f.eth, paid, { expectedVersion: 0, classification: recorded('trade', produced) }),
+    422,
+    'Choose an operation you added or imported',
+  );
+  await rejected(
+    () => classify(s, owner, f.eth, paid, { expectedVersion: 0, classification: recorded('swap', randomUUID()) }),
+    422,
+    'Choose an operation you added or imported',
+  );
+  await rejected(
+    () => classify(s, owner, f.btc, legs.btcOut, { expectedVersion: 1, classification: recorded('trade', tradeId) }),
+    422,
+    'That operation did not move this coin this way',
+  );
+  await rejected(
+    () => classify(s, owner, f.vault, legs.coldIn, { expectedVersion: 3, classification: recorded('trade', tradeId) }),
+    422,
+    'Choose an operation of this wallet',
+  );
+  await rejected(
+    () => classify(s, owner, f.eth, paid, { expectedVersion: 0, classification: { type: 'recorded', operation: { kind: 'reward', id: tradeId } } }),
+    400,
+  );
+  assert.deepEqual(
+    await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions'),
+    before,
+  );
+
+  stage = 'CLS-RECORDED the send is the manual buy: no new entry, the USDT leave once';
+  const saved = await classify(s, owner, f.eth, paid, {
+    expectedVersion: 0,
+    classification: recorded('trade', tradeId),
+  });
+  assert.equal(saved.value.operation, null, 'Nothing new is recorded');
+  const linked = await answer(db, f.eth, paid);
+  assert.deepEqual(
+    [linked.status, linked.type, linked.accountId, linked.swapId, linked.transferId],
+    ['classified', 'recorded', f.trust, null, null],
+  );
+  assert.deepEqual(linked.details, recorded('trade', tradeId));
+  assert.equal(await held(s, owner, 'USDT', f.trust), coins('1500'));
+  assert.equal(await count(s, owner), waiting - 1);
+  let operations = await listed(s, owner);
+  const row = operations.find((item) => item.chain?.txid === paid);
+  assert.deepEqual(
+    [row.type, row.status, row.source, row.asset.symbol, row.direction],
+    ['buy', 'recorded', 'chain', 'USDT', 'out'],
+  );
+  same(row.quantity, '500');
+  const manual = operations.find((item) => item.id === `trade:${tradeId}`);
+  assert.deepEqual([manual.source, manual.status], ['manual', 'recorded'], 'The record stays listed');
+
+  stage = 'CLS-RECORDED deleting the manual buy makes the send count and ask again';
+  await s.trades.void(owner, f.trust, tradeId, {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(),
+  });
+  assert.equal(await held(s, owner, 'USDT', f.trust), coins('1500'), 'Only the send takes USDT now');
+  assert.equal(await count(s, owner), waiting);
+  operations = await listed(s, owner);
+  assert.equal(operations.find((item) => item.chain?.txid === paid).status, 'needs-classification');
+  console.log('PASS CLS-RECORDED');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -534,6 +637,7 @@ async function main() {
     await invalid(db, s, owner.id, f);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
     await oneTransaction(db, s, owner.id, f);
+    await recordedByHand(db, s, owner.id, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

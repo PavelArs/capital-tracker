@@ -13,6 +13,7 @@ import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
 import { poolMoveUnits } from './chain-pool';
+import { recordGone } from './chain-recorded';
 import {
   type ConnectedLedger,
   type ConnectedLedgerCache,
@@ -119,6 +120,7 @@ const signedLeg = (units: bigint) => ({
 /**
  * D1, CLS-PROVISIONAL: the chain movements that count before anyone answers them. Hidden ones
  * and answers that produced an entry are out; an outgoing "Other" produced none and stays in.
+ * CLS-RECORDED: one already recorded by hand is out while that record counts.
  * A coin the owner has no asset for yet is left out until one exists. SOL-STAKE-MOVE: SOL that
  * went into the wallet's own stake accounts never left it, so only the rest of its leg (the
  * fee) moves; a stake change without a leg of its own and every staking reward count as they
@@ -143,7 +145,7 @@ export async function readChainMoves(
       WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
         AND (v.status IS NULL OR v.status='unclassified' OR (v.status='classified'
           AND v.type='other' AND v."tradeId" IS NULL AND v."rewardId" IS NULL
-          AND v."transferId" IS NULL))
+          AND v."transferId" IS NULL) OR ${recordGone('v', 'w."accountId"')})
       ORDER BY t."blockTime", t.txid, w.id`,
     [owner],
   );
@@ -163,7 +165,7 @@ export async function readChainMoves(
       WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w.network='bybit'
         AND t.raw ? 'quoteAsset'
         AND (v.status IS NULL OR v.status='unclassified'
-          OR (v.status='classified' AND v.type='other'))
+          OR (v.status='classified' AND v.type='other') OR ${recordGone('v', 'w."accountId"')})
       ORDER BY t."blockTime", t.txid`,
     [owner],
   );

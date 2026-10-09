@@ -34,6 +34,7 @@ export const chainTypes = [
   'pool-deposit',
   'pool-withdrawal',
   'pool-reward',
+  'recorded',
 ] as const;
 export type ChainType = (typeof chainTypes)[number];
 
@@ -49,6 +50,7 @@ const incoming: readonly ChainType[] = [
   'swap',
   'pool-withdrawal',
   'pool-reward',
+  'recorded',
 ];
 const outgoing: readonly ChainType[] = [
   'sell',
@@ -59,6 +61,7 @@ const outgoing: readonly ChainType[] = [
   'other',
   'swap',
   'pool-deposit',
+  'recorded',
 ];
 /** POOL-INVALID: an exchange account's records are not the owner's own pool moves. */
 const onChainOnly: readonly ChainType[] = ['pool-deposit', 'pool-withdrawal'];
@@ -119,6 +122,15 @@ export interface PoolWithdrawalClassification {
   deposit: { addressId: string; txid: string };
   valueUsd: string | null;
 }
+/**
+ * CLS-RECORDED: the owner already added this movement by hand or from CSV, as a trade or a swap
+ * in the same account (a purchase paid with these coins, say). It records nothing new and
+ * stops counting on its own, so the coins do not count twice.
+ */
+export interface RecordedClassification {
+  type: 'recorded';
+  operation: { kind: 'trade' | 'swap'; id: string };
+}
 export type Classification =
   | PricedClassification
   | ValuedClassification
@@ -128,7 +140,8 @@ export type Classification =
   | OtherClassification
   | SwapClassification
   | PoolDepositClassification
-  | PoolWithdrawalClassification;
+  | PoolWithdrawalClassification
+  | RecordedClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -228,6 +241,12 @@ function classification(raw: unknown): Classification | null {
       deposit: { addressId: parseUuid(deposit.addressId), txid: deposit.txid },
       valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
     };
+  }
+  if (type === 'recorded') {
+    const row = object(raw, ['type', 'operation']);
+    const operation = object(row.operation, ['kind', 'id']);
+    if (operation.kind !== 'trade' && operation.kind !== 'swap') return bad();
+    return { type, operation: { kind: operation.kind, id: parseUuid(operation.id) } };
   }
   return bad();
 }
@@ -355,7 +374,8 @@ export type PlannedOperation =
   | { journal: 'reward'; fields: Record<string, unknown> }
   /**
    * Outgoing Other: no entry; the coins leave as an unanswered payment does (D1). A pool deposit
-   * (POOL-DEPOSIT) and a withdrawal without a gain record none either: the coins stay held.
+   * (POOL-DEPOSIT) and a withdrawal without a gain record none either: the coins stay held. A
+   * movement already recorded by hand (CLS-RECORDED) records none: that record counts.
    */
   | { journal: 'none' };
 
@@ -439,6 +459,7 @@ export function planOperation(
       };
     }
     case 'pool-deposit':
+    case 'recorded':
       return { journal: 'none' };
     case 'other':
       if (!inbound) return { journal: 'none' };

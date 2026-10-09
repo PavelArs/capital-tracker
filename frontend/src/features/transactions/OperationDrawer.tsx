@@ -10,7 +10,7 @@ import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
-import ClassifyForm, { POOL_DEPOSIT_NAMED } from './ClassifyForm';
+import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import {
   amount,
   day,
@@ -199,7 +199,11 @@ function swapFacts(
   return rows;
 }
 
-function facts(operation: Operation, currency: AccountingCurrency): [string, ReactNode][] {
+function facts(
+  operation: Operation,
+  currency: AccountingCurrency,
+  record?: Operation,
+): [string, ReactNode][] {
   const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
   const { wallet, chain } = operation;
   const walletLink = (place: NonNullable<Operation['account']>) => (
@@ -288,7 +292,14 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     const pooled =
       operation.type === 'pool-deposit' ||
       (operation.type === 'pool-withdrawal' && operation.valueUsd === null);
-    if (operation.status === 'recorded' && !moved && !staking && !pooled) {
+    // CLS-RECORDED: the record added by hand carries the value; the transaction has none.
+    const linked = operation.classification?.value?.type === 'recorded';
+    if (linked && operation.status === 'recorded')
+      rows.push([
+        'Recorded as',
+        record ? recordText(record) : 'A record added by hand or from CSV',
+      ]);
+    if (operation.status === 'recorded' && !moved && !staking && !pooled && !linked) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
       if (
         exchange &&
@@ -387,6 +398,8 @@ interface Props {
   currency?: AccountingCurrency;
   /** The whole list, to name the operation that depends on this one. */
   operations?: Operation[];
+  /** CLS-DUST: the list's dust threshold, kept out of a swap's choices. Null: off. */
+  dustThresholdUsd?: string | null;
   onClose: () => void;
   onEdit?: (operation: Operation) => void;
   onDeleted?: () => void;
@@ -403,6 +416,7 @@ export default function OperationDrawer({
   operation,
   currency = 'USD',
   operations = [],
+  dustThresholdUsd = null,
   onClose,
   onEdit,
   onDeleted,
@@ -419,6 +433,12 @@ export default function OperationDrawer({
   const chain =
     operation.kind === 'chain' && operation.wallet && operation.chain ? operation : null;
   const needs = operation.status === 'needs-classification';
+  // CLS-RECORDED: the trade or swap added by hand this transaction already is.
+  const saved = operation.classification?.value;
+  const record =
+    saved?.type === 'recorded'
+      ? operations.find((item) => item.id === `${saved.operation.kind}:${saved.operation.id}`)
+      : undefined;
   const [classifying, setClassifying] = useState(needs);
   const [toggling, setToggling] = useState<{ busy: boolean; error: string | null }>({
     busy: false,
@@ -637,6 +657,12 @@ export default function OperationDrawer({
                 : '')}
         </p>
       )}
+      {record && operation.status === 'recorded' && (
+        <p className="transactions-notice" role="note">
+          Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
+          coins are not counted twice. Change the classification if it is wrong.
+        </p>
+      )}
       {dust && (
         <p className="transactions-notice" role="note">
           Worth less than your dust threshold, so it doesn't ask to be classified. It still counts
@@ -679,7 +705,7 @@ export default function OperationDrawer({
         )}
       <section aria-label="Details">
         <dl className="transactions-facts">
-          {facts(operation, currency).map(([label, content]) => (
+          {facts(operation, currency, record).map(([label, content]) => (
             <div key={label}>
               <dt>{label}</dt>
               <dd>{content}</dd>
@@ -715,6 +741,7 @@ export default function OperationDrawer({
           <ClassifyForm
             operation={chain}
             operations={operations}
+            dustThresholdUsd={dustThresholdUsd}
             left={Math.max(left - (needs ? 1 : 0), 0)}
             onSaved={(label) => onClassified?.(label)}
             onCancel={needs ? onClose : () => setClassifying(false)}
