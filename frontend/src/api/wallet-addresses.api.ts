@@ -9,7 +9,7 @@ export type ProviderFailure =
   | 'invalid_response'
   | 'not_configured'
   | 'key_rejected';
-export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron';
+export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron' | 'stellar';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {
@@ -113,6 +113,11 @@ export interface WalletAddress {
    * coin; already included in `balances`. Null when there are none or until a sync completes.
    */
   pools?: ChainBalance[] | null;
+  /**
+   * STELLAR-REPORTED: the XLM balance Stellar reports when the history read gives another one;
+   * null when they agree or until a sync completes.
+   */
+  reportedBalance?: string | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */
   accountKey?: AccountKey | null;
   /** Set for a Bybit account: its balances are those Bybit reports. */

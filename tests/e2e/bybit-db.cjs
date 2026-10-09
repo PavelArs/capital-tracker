@@ -190,7 +190,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 48/);
+  assert.match(migrate(database), /Migrations applied: 49/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -549,7 +549,7 @@ async function main() {
     await assert.rejects(() => new ReadBybitEarn1794000000000().down(), /recovery plan/);
     await assert.rejects(() => new ReadBybitConverts1794400000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS BYBIT-MIGRATION fresh 48 applies once; no Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 49 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

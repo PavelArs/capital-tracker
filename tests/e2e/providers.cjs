@@ -6,7 +6,7 @@ const { readFileSync } = require('node:fs');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io']);
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io', 'horizon.stellar.org']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -89,6 +89,15 @@ const initialTron = () => ({ tip: { number: 70000100, timestamp: 1760000300000 }
   internal: new Map(), tokens: new Map(), infos: new Map(), accounts: new Map(), rewards: new Map(),
   pageSize: 200, key: null, fault: null, requests: 0 });
 let tron = initialTron();
+// Synthetic Horizon (track-stellar-wallets): transaction, payment and effect records exactly as
+// the probe posts them, merged by paging token. An account's transactions are those it sourced,
+// paid the fee of, or that hold a payment naming it; its payments those naming it as from, to,
+// funder, account or into. Lists answer oldest first after the cursor, the app's small pages (5
+// transactions, 10 payments) capped by `pageSize`; an account answers its posted balances, else
+// 404 like Horizon. `fault` answers the n-th request after the post with an HTTP status.
+const initialStellar = () => ({ transactions: new Map(), payments: new Map(), effects: new Map(),
+  accounts: new Map(), pageSize: 200, fault: null, requests: 0 });
+let stellar = initialStellar();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
 // raw for the probe to read. Nothing is relayed anywhere.
@@ -500,6 +509,7 @@ function provider(request, response, url) {
   if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);
   if (url.hostname === 'api.trongrid.io') return tronRequest(request, response, url);
+  if (url.hostname === 'horizon.stellar.org') return stellarRequest(response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -537,6 +547,45 @@ function provider(request, response, url) {
 }
 
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+const stellarNames = (payment) => [payment.from, payment.to, payment.funder, payment.account, payment.into]
+  .concat((payment.asset_balance_changes ?? []).flatMap((change) => [change.from, change.to]));
+function stellarRequest(response, url) {
+  stellar.requests++;
+  const fault = stellar.fault;
+  if (fault && fault.onRequest === stellar.requests) {
+    stellar.fault = null;
+    return respond(response, fault.status, { status: fault.status, title: 'Synthetic fault' });
+  }
+  const query = url.searchParams;
+  const records = (items) => respond(response, 200, { _links: {}, _embedded: { records: items } });
+  const effects = /^\/operations\/([0-9]{1,19})\/effects$/.exec(url.pathname);
+  if (effects) return records(stellar.effects.get(effects[1]) ?? []);
+  const path = /^\/accounts\/(G[A-Z2-7]{55})(\/transactions|\/payments)?$/.exec(url.pathname);
+  if (!path) return respond(response, 404, { status: 404, title: 'Resource Missing' });
+  const [, id, list] = path;
+  if (!list) {
+    const account = stellar.accounts.get(id);
+    return account ? respond(response, 200, { id, account_id: id, ...account })
+      : respond(response, 404, { status: 404, title: 'Resource Missing' });
+  }
+  const transactions = list === '/transactions';
+  const cursor = query.get('cursor');
+  if (query.get('order') !== 'asc' || query.get('limit') !== (transactions ? '5' : '10')
+    || (transactions ? query.get('include_failed') !== 'true' : query.has('include_failed'))
+    || (cursor !== null && !/^[0-9]{1,19}$/.test(cursor))) {
+    return respond(response, 400, { status: 400, title: 'Invalid synthetic Horizon request' });
+  }
+  const payments = [...stellar.payments.values()];
+  const named = (payment) => stellarNames(payment).includes(id);
+  const items = (transactions
+    ? [...stellar.transactions.values()].filter((item) => item.source_account === id || item.fee_account === id
+      || payments.some((payment) => payment.transaction_hash === item.hash && named(payment)))
+    : payments.filter((payment) => payment.transaction_successful && named(payment)))
+    .filter((item) => cursor === null || BigInt(item.paging_token) > BigInt(cursor))
+    .sort((left, right) => (BigInt(left.paging_token) < BigInt(right.paging_token) ? -1 : 1));
+  return records(items.slice(0, Math.min(Number(query.get('limit')), stellar.pageSize)));
+}
+
 // The hex form ("41…") of a base58check Tron address, restated from the format.
 function tronHex(value) {
   if (typeof value !== 'string' || !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) return null;
@@ -637,6 +686,7 @@ const server = http.createServer(async (request, response) => {
       solana = initialSolana();
       bybit = initialBybit();
       tron = initialTron();
+      stellar = initialStellar();
       mail = [];
       return respond(response, 200, { ok: true });
     }
@@ -816,6 +866,34 @@ const server = http.createServer(async (request, response) => {
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, limited: fault.limited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, tip: tron.tip });
+    }
+    if (request.method === 'POST' && request.url === '/__control/stellar') {
+      const data = await readJson(request);
+      const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+      const token = (value) => typeof value === 'string' && /^[1-9][0-9]{0,18}$/.test(value);
+      const hash = (value) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+      const items = (value, valid) => value === undefined || (Array.isArray(value) && value.length <= 20 && value.every(valid));
+      const keyed = (value, key, valid) => value === undefined || (object(value) && Object.keys(value).length <= 20
+        && Object.entries(value).every(([name, field]) => key(name) && valid(field)));
+      const fault = data.fault;
+      if (!items(data.transactions, (item) => object(item) && token(item.paging_token) && hash(item.hash))
+        || !items(data.payments, (item) => object(item) && token(item.paging_token) && hash(item.transaction_hash)
+          && typeof item.type === 'string')
+        || !keyed(data.effects, (name) => /^[0-9]{1,19}$/.test(name), (value) => Array.isArray(value) && value.length <= 10)
+        || !keyed(data.accounts, (name) => /^G[A-Z2-7]{55}$/.test(name), (value) => object(value) && Array.isArray(value.balances))
+        || (data.pageSize !== undefined && (!Number.isSafeInteger(data.pageSize) || data.pageSize < 1 || data.pageSize > 200))
+        || (fault !== undefined && fault !== null && (!object(fault) || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || !Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))) {
+        return respond(response, 400, { error: 'Invalid synthetic Stellar fixture' });
+      }
+      for (const item of data.transactions ?? []) stellar.transactions.set(item.paging_token, item);
+      for (const item of data.payments ?? []) stellar.payments.set(item.paging_token, item);
+      for (const [name, value] of Object.entries(data.effects ?? {})) stellar.effects.set(name, value);
+      for (const [name, value] of Object.entries(data.accounts ?? {})) stellar.accounts.set(name, value);
+      if (stellar.transactions.size + stellar.payments.size > 300) return respond(response, 400, { error: 'Synthetic history is bounded' });
+      stellar = { ...stellar, pageSize: data.pageSize ?? stellar.pageSize,
+        fault: fault ? { onRequest: fault.onRequest, status: fault.status } : null, requests: 0 };
+      return respond(response, 200, { ok: true, transactions: stellar.transactions.size });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
       const data = await readJson(request);

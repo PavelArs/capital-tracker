@@ -231,7 +231,7 @@ function services(db, apiKey = null) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 48/);
+  assert.match(migrate(database), /Migrations applied: 49/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -355,7 +355,7 @@ async function main() {
     // Constraints: base58check T-addresses, hex hashes, non-zero stake moves.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'tron',$2)`,
       [owner, wallet.hex]), /wallet_addresses_address_check/);
-    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'stellar',$2)`,
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'dogecoin',$2)`,
       [owner, wallet.address]), /wallet_addresses_(network|address)_check/);
     await assert.rejects(() => db.query(`INSERT INTO wallet_tron_stake_moves("ownerId","addressId",txid,"blockHeight","blockTime",units)
       VALUES ($1,$2,$3,1,now(),0)`, [owner, mainId, hash(99)]), /wallet_tron_stake_moves_units_check/);
@@ -532,7 +532,7 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackTronWallets1793600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS TRON-MIGRATION fresh 48 applies once; the Tron migration refuses down');
+    console.log('PASS TRON-MIGRATION fresh 49 applies once; the Tron migration refuses down');
   } finally {
     await db.destroy();
   }

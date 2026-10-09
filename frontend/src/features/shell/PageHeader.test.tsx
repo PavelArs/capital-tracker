@@ -120,6 +120,7 @@ describe('Asset identity', () => {
     expect(assetIdentity({ symbol: 'SOL', name: 'Solana' }).color).toBe('var(--c-sol)');
     expect(assetIdentity({ symbol: 'ZEC', name: 'Zcash' }).color).toBe('var(--c-zec)');
     expect(assetIdentity({ symbol: 'TRX', name: 'TRON' }).color).toBe('var(--c-trx)');
+    expect(assetIdentity({ symbol: 'XLM', name: 'Stellar' }).color).toBe('var(--c-xlm)');
     expect(assetIdentity({ symbol: 'USDT', name: 'Tether' })).toEqual({
       color: 'var(--c-cash)',
       glyph: '₮',
@@ -128,9 +129,9 @@ describe('Asset identity', () => {
   });
 
   it('falls back to a neutral colour and the first letter', () => {
-    expect(assetIdentity({ symbol: 'XLM', name: 'Stellar' })).toEqual({
+    expect(assetIdentity({ symbol: 'DOGE', name: 'Dogecoin' })).toEqual({
       color: 'var(--c-other)',
-      glyph: 'X',
+      glyph: 'D',
     });
     expect(assetIdentity({ symbol: null, name: 'house' })).toEqual({
       color: 'var(--c-other)',

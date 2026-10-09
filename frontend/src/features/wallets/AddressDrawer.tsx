@@ -324,6 +324,14 @@ export default function AddressDrawer({
           )}
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {address.pools && <PoolsSection pools={address.pools} />}
+          {address.reportedBalance && (
+            <p className="wallets-message wallets-message--warn" role="note">
+              Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
+              read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
+              read offers on the Stellar exchange, claimable balances or liquidity pools, and the
+              public server keeps only recent history.
+            </p>
+          )}
           {exchange && <EarnSection exchange={exchange} />}
           {exchange && <ConvertNote exchange={exchange} />}
           {syncProblem(address, run) && (
