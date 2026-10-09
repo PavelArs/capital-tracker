@@ -18,6 +18,7 @@ import { bybitCoins } from './bybit-records';
 import { HISTORY_DAYS } from './bybit-sync.adapter';
 import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
+import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
 import {
@@ -49,6 +50,8 @@ interface AddressRow {
    * rewards.
    */
   stake: StakeRow[];
+  /** POOL-DEPOSIT: what the address has in liquidity pools per asset, by the owner's answers. */
+  pools: { asset: string | null; units: string }[];
   /** Bitcoin account key (M21): its derived addresses; null for a single address. */
   derived: DerivedSummary | null;
   /** Bybit account (M22): its stored key and what Bybit last reported; null for a wallet. */
@@ -108,12 +111,15 @@ interface TransactionRow {
 // separate wallets (XPUB-OVERLAP), whose coins would then count twice.
 // A Bybit account (M22) adds its key's public facts and the balances Bybit reported; how far it
 // has read is the oldest of its record lists.
+// Coins the owner put into a liquidity pool (POOL-DEPOSIT) are part of the balance too, until a
+// withdrawal returns them.
 const stakeHeld = (table: string, key: string) => `
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
         coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
           WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, bx.exchange,
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.pools, d.derived,
+    bx.exchange,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -128,7 +134,12 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.
           FROM wallet_address_transactions x WHERE x."addressId" = a.id
         UNION ALL SELECT NULL, m.units FROM ${stakeMoves} m WHERE m."addressId" = a.id
         UNION ALL SELECT NULL, r.units FROM ${stakeRewards} r WHERE r."addressId" = a.id
+        UNION ALL SELECT o.asset, o.units FROM ${openPoolDeposits} o WHERE o."addressId" = a.id
       ) z GROUP BY z.asset) y) b
+  CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
+      'units', y.units::text)), '[]'::json) AS pools
+    FROM (SELECT o.asset, sum(o.units) AS units FROM ${openPoolDeposits} o
+      WHERE o."addressId" = a.id GROUP BY o.asset) y) q
   CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('account', w.account,
       'validator', w.validator, 'state', w.state, 'pool', w.pool,
       'units', (w.moved + w.rewarded)::text, 'rewardUnits', w.rewarded::text)
@@ -231,10 +242,21 @@ function stakingOf(row: AddressRow) {
   return { symbol: sol.symbol, quantity: total('units'), rewards: total('rewardUnits'), accounts };
 }
 
+/** POOL-DEPOSIT: the coins in liquidity pools per asset, part of the balance above; null: none. */
+function poolsOf(row: AddressRow) {
+  if (isExchange(row.network)) return null;
+  const pools = networkAssets(row.network).flatMap((asset) => {
+    const units = BigInt(row.pools.find((item) => item.asset === asset.token)?.units ?? '0');
+    return units > 0n ? [{ symbol: asset.symbol, quantity: formatUnits(units, asset) }] : [];
+  });
+  return pools.length === 0 ? null : pools;
+}
+
 function summary(row: AddressRow, now = new Date()) {
   const state = historyState(row);
   const balances = state === 'complete' ? balancesOf(row) : null;
   const staking = state === 'complete' ? stakingOf(row) : null;
+  const pools = state === 'complete' ? poolsOf(row) : null;
   const source = sourceRow(row.source);
   const status = source ? presentSource(source, now) : null;
   return {
@@ -249,6 +271,7 @@ function summary(row: AddressRow, now = new Date()) {
     chainBalance: balances?.[0].quantity ?? null,
     balances,
     staking,
+    pools,
     exchange: row.exchange
       ? {
           // The last four characters of the API key; the secret is never returned.

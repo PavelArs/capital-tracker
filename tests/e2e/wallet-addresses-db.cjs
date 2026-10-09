@@ -159,7 +159,7 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null, accountKey: null, exchange: null,
+      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null, pools: null, accountKey: null, exchange: null,
       sync: { state: 'never', completedAt: null, status: null, lastAttemptAt: null, lastSuccessAt: null, nextRunAt: null, errorMessage: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');

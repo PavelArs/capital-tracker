@@ -3,7 +3,13 @@ import type {
   AssetValuation,
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
-import type { StakeAccount, StakeState, Staking, WalletAddress } from '@api/wallet-addresses.api';
+import type {
+  ChainBalance,
+  StakeAccount,
+  StakeState,
+  Staking,
+  WalletAddress,
+} from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { networkIcon, networkOf, networks } from './networks';
@@ -74,6 +80,13 @@ function stakedPiece(address: WalletAddress): string | null {
   const staking = address.staking;
   if (!staking || Number(staking.quantity) === 0) return null;
   return `${quantity(staking.quantity)} ${staking.symbol} staked`;
+}
+
+/** POOL-DEPOSIT: "1 ETH · 3000 USDC in pools", the part of the balance above in liquidity pools. */
+function pooledPiece(address: WalletAddress): string | null {
+  const pools = (address.pools ?? []).filter((item) => Number(item.quantity) !== 0);
+  if (pools.length === 0) return null;
+  return `${pools.map((item) => `${quantity(item.quantity)} ${item.symbol}`).join(' · ')} in pools`;
 }
 
 const stakeStates: Record<
@@ -166,15 +179,53 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
   );
 }
 
+/**
+ * POOL-DEPOSIT: what the address has in liquidity pools, in its drawer. It is already in the
+ * balance above, by the transactions classified as Pool deposit and not yet withdrawn.
+ */
+export function PoolsSection({ pools }: { pools: ChainBalance[] }) {
+  return (
+    <section aria-labelledby="address-pools">
+      <h3 id="address-pools" className="transactions-section">
+        Liquidity pools
+      </h3>
+      <dl className="transactions-facts">
+        {pools.map((item) => (
+          <div key={item.symbol}>
+            <dt>In pools</dt>
+            <dd className="wallets-num">
+              {quantity(item.quantity)} {item.symbol}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="wallets-muted wallets-stake__note">
+        Coins you put into a liquidity pool stay yours: they count in this balance and in net worth
+        with their purchase price until a pool withdrawal returns them. What comes back above the
+        deposit is pool income; less is a loss.
+      </p>
+    </section>
+  );
+}
+
 /** "1.5 ETH · 250 USDC". */
 export const chainAmounts = (address: WalletAddress): string => chainPieces(address).join(' · ');
 
 // Each coin is one unbreakable piece: a row wraps between coins, a phone stacks them.
-// Staked SOL is already in the SOL amount; a muted line under it says how much.
+// Staked SOL and coins in liquidity pools are already in the amounts; muted lines under them
+// say how much.
 function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
   const pieces = chainPieces(address);
-  const staked = stakedPiece(address);
-  const note = staked && <span className="wallets-muted wallets-amounts__staked">{staked}</span>;
+  const notes = [stakedPiece(address), pooledPiece(address)].filter(
+    (piece): piece is string => piece !== null,
+  );
+  const note =
+    notes.length > 0 &&
+    notes.map((piece) => (
+      <span key={piece} className="wallets-muted wallets-amounts__staked">
+        {piece}
+      </span>
+    ));
   if (stacked)
     return (
       <span className="transactions-item__amount wallets-stack">

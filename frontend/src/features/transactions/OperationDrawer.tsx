@@ -10,7 +10,7 @@ import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
-import ClassifyForm from './ClassifyForm';
+import ClassifyForm, { POOL_DEPOSIT_NAMED } from './ClassifyForm';
 import {
   amount,
   day,
@@ -64,6 +64,18 @@ function stakePlace(operation: Operation): string {
   return operation.wallet?.network === 'ethereum'
     ? 'a staking pool of this wallet'
     : 'a stake account of this wallet';
+}
+
+/** POOL-WITHDRAW: "+400 USDC" above the deposit, "-0.1 ETH" below it. */
+function poolDifference(operation: Operation): { label: string; text: string } | null {
+  const pool = operation.pool;
+  if (!pool) return null;
+  const negative = pool.difference.startsWith('-');
+  const magnitude = pool.difference.replace('-', '');
+  if (Number(magnitude) === 0) return { label: 'Difference', text: 'None' };
+  return negative
+    ? { label: 'Impermanent loss', text: amount(magnitude, operation.asset, '-') }
+    : { label: 'Pool income', text: amount(magnitude, operation.asset, '+') };
 }
 
 function title(operation: Operation): string {
@@ -248,11 +260,29 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
             : 'No stored price',
       ],
     );
+    // POOL-WITHDRAW: what the deposit put in, the difference and the deposit's transaction.
+    const difference = poolDifference(operation);
+    if (operation.pool && difference)
+      rows.push(
+        ['Deposited', amount(operation.pool.deposited, operation.asset)],
+        [difference.label, difference.text],
+      );
+    if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
+      rows.push([
+        'Deposit transaction',
+        <span key="deposit" className="transactions-mono">
+          {hashOf(chain.pairedTxid, wallet.network)}
+        </span>,
+      ]);
     // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
     // value of its own, only the network fee (XFER-CAPITAL).
-    // SOL-STAKE-MOVE: SOL kept in the wallet's own stake account has no value of its own either.
+    // SOL-STAKE-MOVE: SOL kept in the wallet's own stake account has no value of its own either,
+    // nor have coins in a liquidity pool; a withdrawal's value is that of its pool income.
     const staking = operation.type === 'stake' || operation.type === 'unstake';
-    if (operation.status === 'recorded' && !moved && !staking) {
+    const pooled =
+      operation.type === 'pool-deposit' ||
+      (operation.type === 'pool-withdrawal' && operation.valueUsd === null);
+    if (operation.status === 'recorded' && !moved && !staking && !pooled) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
       if (
         exchange &&
@@ -525,11 +555,16 @@ export default function OperationDrawer({
         error:
           dependentOf(error) !== null
             ? 'A later transaction spends these coins, so this one cannot be hidden. Change that transaction first.'
-            : status === undefined
-              ? 'Could not reach the server. Nothing was saved; try again.'
-              : status === 409
-                ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
-                : 'Could not save. Try again.',
+            : status === 422 &&
+                isAxiosError(error) &&
+                (error.response?.data as { message?: unknown } | undefined)?.message ===
+                  POOL_DEPOSIT_NAMED
+              ? 'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.'
+              : status === undefined
+                ? 'Could not reach the server. Nothing was saved; try again.'
+                : status === 409
+                  ? 'This transaction was changed elsewhere. Close this window, reload and try again.'
+                  : 'Could not save. Try again.',
       });
     }
   };
@@ -576,6 +611,24 @@ export default function OperationDrawer({
             ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
             : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
           Only the network fee is a cost.
+        </p>
+      )}
+      {operation.status === 'recorded' && operation.type === 'pool-deposit' && (
+        <p className="transactions-notice" role="note">
+          Moved into a liquidity pool: the coins stay yours and keep their purchase price until a
+          pool withdrawal returns them. Only the network fee is a cost.
+        </p>
+      )}
+      {operation.status === 'recorded' && operation.type === 'pool-withdrawal' && (
+        <p className="transactions-notice" role="note">
+          Returned from a liquidity pool: the deposit comes back as your own coins, not income and
+          not a deposit.
+          {operation.pool &&
+            (operation.pool.difference.startsWith('-')
+              ? ` The ${amount(operation.pool.difference.slice(1), operation.asset)} below it left without a sale price (impermanent loss).`
+              : Number(operation.pool.difference) > 0
+                ? ` The ${amount(operation.pool.difference, operation.asset)} above it is pool income.`
+                : '')}
         </p>
       )}
       {dust && (
