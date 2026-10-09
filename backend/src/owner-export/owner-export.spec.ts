@@ -17,6 +17,7 @@ const walletId = '55555555-5555-4555-8555-555555555555';
 const tradeId = '66666666-6666-4666-8666-666666666666';
 const voidedId = '77777777-7777-4777-8777-777777777777';
 const transferId = '88888888-8888-4888-8888-888888888888';
+const swapId = '99999999-9999-4999-8999-999999999999';
 const address = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
 const txid = 'a'.repeat(64);
 
@@ -25,8 +26,10 @@ const blankOperation = {
   accountName: null,
   toAccountId: null,
   toAccountName: null,
+  assetNetwork: null,
   counterAsset: null,
   counterQuantity: null,
+  counterAssetNetwork: null,
   valueUsd: null,
   costBasisUsd: null,
   feeUsd: null,
@@ -151,6 +154,30 @@ const data: ExportData = {
       version: 1,
       recordedAt: '2025-06-15T02:00:00.000Z',
     },
+    {
+      ...blankOperation,
+      id: `swap:${swapId}`,
+      kind: 'swap',
+      type: 'swap',
+      direction: 'internal',
+      status: 'active',
+      source: 'chain',
+      occurredAt: '2025-06-19T00:00:00.000Z',
+      orderWithinTimestamp: 0,
+      accountId: bybit,
+      accountName: 'Bybit',
+      asset: 'USDT',
+      assetName: 'Tether',
+      assetNetwork: 'ethereum',
+      quantity: '500',
+      counterAsset: 'USDC',
+      counterQuantity: '499.5',
+      counterAssetNetwork: 'solana',
+      valueUsd: '500',
+      chainTxid: txid,
+      version: 1,
+      recordedAt: '2025-06-19T01:00:00.000Z',
+    },
   ],
   chain: [
     {
@@ -248,15 +275,17 @@ describe('owner data export (EXP-CSV)', () => {
     const [header, ...rows] = lines('operations.csv');
     expect(header).toBe(
       'id,kind,type,direction,status,source,occurred_at,order_within_timestamp,account_id,account,' +
-        'to_account_id,to_account,asset,asset_name,quantity,counter_asset,counter_quantity,' +
+        'to_account_id,to_account,asset,asset_name,asset_network,quantity,counter_asset,' +
+        'counter_quantity,counter_asset_network,' +
         'value_usd,cost_basis_usd,fee_usd,fee_asset,fee_quantity,paid_currency,paid_amount,' +
         'paid_fee,paid_per_usd,paid_rate_date,paid_rate_source,settlement_asset,' +
         'settlement_quantity,comment,chain_txid,version,recorded_at',
     );
     expect(rows).toEqual([
-      `trade:${voidedId},trade,buy,in,voided,manual,2025-06-15T00:00:00.000Z,0,${bybit},Bybit,,,BTC,Bitcoin,0.5,,,40000,,0,,,,,,,,,,,,,2,2025-06-15T01:00:00.000Z`,
-      `trade:${tradeId},trade,buy,in,active,csv,2025-06-15T00:00:00.000Z,1,${bybit},Bybit,,,BTC,Bitcoin,0.01,,,1050.5,,1.25,,,RUB,84040,100,80,2025-06-14,cbr,,,"'=1+1 ""note""",,1,2025-06-15T02:00:00.000Z`,
-      `transfer:${transferId},transfer,transfer,internal,active,chain,2025-06-18T00:00:00.000Z,0,${bybit},Bybit,${cold},"Холодный, кошелёк",BTC,Bitcoin,0.005,,,,,,BTC,0.0001,,,,,,,,,,${txid},1,2025-06-18T01:00:00.000Z`,
+      `trade:${voidedId},trade,buy,in,voided,manual,2025-06-15T00:00:00.000Z,0,${bybit},Bybit,,,BTC,Bitcoin,,0.5,,,,40000,,0,,,,,,,,,,,,,2,2025-06-15T01:00:00.000Z`,
+      `trade:${tradeId},trade,buy,in,active,csv,2025-06-15T00:00:00.000Z,1,${bybit},Bybit,,,BTC,Bitcoin,,0.01,,,,1050.5,,1.25,,,RUB,84040,100,80,2025-06-14,cbr,,,"'=1+1 ""note""",,1,2025-06-15T02:00:00.000Z`,
+      `transfer:${transferId},transfer,transfer,internal,active,chain,2025-06-18T00:00:00.000Z,0,${bybit},Bybit,${cold},"Холодный, кошелёк",BTC,Bitcoin,,0.005,,,,,,,BTC,0.0001,,,,,,,,,,${txid},1,2025-06-18T01:00:00.000Z`,
+      `swap:${swapId},swap,swap,internal,active,chain,2025-06-19T00:00:00.000Z,0,${bybit},Bybit,,,USDT,Tether,ethereum,500,USDC,499.5,solana,500,,,,,,,,,,,,,,${txid},1,2025-06-19T01:00:00.000Z`,
     ]);
   });
 

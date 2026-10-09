@@ -29,6 +29,8 @@ export interface OperationAsset {
   instrumentId: string | null;
   symbol: string | null;
   name: string;
+  /** TOKEN-CHAIN: the blockchain a token moved on; absent for a network's own coin. */
+  network?: Exclude<OperationWallet['network'], 'bybit'>;
 }
 
 export interface OperationPlace {
@@ -83,6 +85,10 @@ export interface Operation {
      * the deposit it returns (POOL-WITHDRAW).
      */
     pairedTxid?: string | null;
+    /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
+    call?: { method: string | null };
+    /** SWAP-ONE-TX-SUGGEST: the other leg of the same transaction, as the other side of a swap. */
+    swapWith?: { addressId: string; txid: string };
   } | null;
   /**
    * A pool withdrawal: what its deposit put in, and what came back above it (positive, pool

@@ -7,6 +7,7 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
@@ -190,6 +191,7 @@ export default function WalletPage() {
   const currency = portfolio?.currency ?? 'USD';
   const prices = pricesOf(portfolio);
   const holdings = portfolio ? holdingsOf(portfolio, accountId) : [];
+  const chains = tokenChains(addresses, accountId);
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
   const syncing = own.some((address) => runs[address.id]?.state === 'running');
@@ -322,12 +324,17 @@ export default function WalletPage() {
                           symbol={holding.asset.symbol}
                           name={holding.asset.name}
                           assetType={holding.asset.assetType}
+                          network={onlyChain(holding.asset.symbol, chains)}
                           size="sm"
                         />
                         <span>
                           {holding.asset.name}
                           <span className="portfolio-sub">
-                            {quantity(holding.quantity)} {holding.asset.symbol ?? ''}
+                            {withChains(
+                              `${quantity(holding.quantity)} ${holding.asset.symbol ?? ''}`.trim(),
+                              holding.asset.symbol,
+                              chains,
+                            )}
                           </span>
                         </span>
                       </Link>

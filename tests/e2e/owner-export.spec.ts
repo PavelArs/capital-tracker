@@ -87,7 +87,7 @@ test('EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive a
   const bought = operations.find((line) => line.includes(`,${accountName},`));
   expect(bought).toMatch(
     new RegExp(
-      `^trade:[0-9a-f-]{36},trade,buy,in,active,manual,2025-06-13T00:00:00\\.000Z,0,${account.id},${accountName},,,BTC,EXP-UI bitcoin ${suffix},0\\.00918359,,,1000,`,
+      `^trade:[0-9a-f-]{36},trade,buy,in,active,manual,2025-06-13T00:00:00\\.000Z,0,${account.id},${accountName},,,BTC,EXP-UI bitcoin ${suffix},,0\\.00918359,,,,1000,`,
     ),
   );
   await expect(data.getByText(`Downloaded ${archive.suggestedFilename()}.`)).toBeVisible();
