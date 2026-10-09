@@ -171,6 +171,22 @@ describe('PAID-DERIVE USD amounts come from the Bank of Russia rate of the trade
   });
 });
 
+describe('CUR-RATE-STALE a Bank of Russia rate that stopped coming is not reused for good', () => {
+  const paid = { currency: 'RUB', gross: '1000000', fee: '0' } as const;
+
+  it('uses the latest earlier rate for a holiday gap but not for weeks without one', () => {
+    // 2025-07-01 is the last stored rate: ten days on is a long holiday, forty days is a gap.
+    expect(derivePaidAmounts(paid, rates, '2025-07-11T09:00:00.000Z')).not.toBeNull();
+    expect(derivePaidAmounts(paid, rates, '2025-07-16T09:00:00.000Z')).not.toBeNull();
+    expect(derivePaidAmounts(paid, rates, '2025-07-17T09:00:00.000Z')).toBeNull();
+    expect(derivePaidAmounts(paid, rates, '2025-08-10T09:00:00.000Z')).toBeNull();
+    // The owner's own rate needs no stored one.
+    expect(
+      derivePaidAmounts({ ...paid, perUsd: '82' }, rates, '2025-08-10T09:00:00.000Z'),
+    ).not.toBeNull();
+  });
+});
+
 describe('CUR-PAID-RUB a lot paid in rubles keeps its exact ruble cost', () => {
   const now = new Date('2026-10-04T12:00:00.000Z');
   const btc: PortfolioInstrument = {
