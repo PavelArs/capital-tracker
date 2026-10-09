@@ -405,3 +405,40 @@ describe('BYBIT-KEY: the API key fields (M22)', () => {
     expect(checkApiKey(words, 'secret')).toMatchObject({ ok: false, secret: true });
   });
 });
+
+describe('ZCASH-ADD, WAL-NO-SECRETS: the Zcash address field (M24)', () => {
+  // Base58Check of the SHA-256 of a fixed label: synthetic addresses, never an owner's wallet.
+  const zcash = 't1T2xng63Qs7DtbK4cNwLsjWtMmciMZWTc5';
+  const script = 't3SNXaHvbjJNC9Lv7KimsH8QMsDaAZFUZnq';
+
+  it('accepts a transparent "t1…" or "t3…" address exactly as pasted', () => {
+    expect(checkAddress('zcash', ` ${zcash} `)).toEqual({
+      ok: true,
+      address: zcash,
+      kind: 'Transparent address',
+    });
+    expect(checkAddress('zcash', script)).toMatchObject({ kind: 'Transparent script address' });
+  });
+
+  it.each([
+    [`zs1${'q'.repeat(75)}`, 'This is a shielded address'],
+    [`u1${'q'.repeat(104)}`, 'This is a shielded address'],
+    [`tex1${'q'.repeat(38)}`, 'exchange (TEX) address'],
+    [`tm${zcash.slice(2)}`, 'Testnet addresses are not tracked'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR', 'it looks like a Tron address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    [zcash.slice(0, 30), 'This is not a valid Zcash address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('zcash', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it('points a Zcash address pasted for another network to Zcash', () => {
+    for (const network of ['bitcoin', 'ethereum', 'solana', 'tron', 'stellar'] as const) {
+      const result = checkAddress(network, zcash);
+      expect(result.ok === false && result.message).toContain('Zcash');
+    }
+  });
+});

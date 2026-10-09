@@ -846,6 +846,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M23 | `track-stellar-wallets` | XLM history and balance of a Stellar account from the public Horizon, the balance Horizon reports when the history differs (after D4, section 10) | M11, M12, M13 | — |
 | M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 | M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
+| M24 | `track-zcash-wallets` | ZEC history and balance of a transparent Zcash address from Trezor's public Blockbook; shielded balances cannot be read (after D4, section 10) | M11, M12, M13 | — |
 
 ```mermaid
 flowchart LR
@@ -880,6 +881,9 @@ flowchart LR
   M11 --> M23
   M12 --> M23
   M13 --> M23
+  M11 --> M24
+  M12 --> M24
+  M13 --> M24
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),

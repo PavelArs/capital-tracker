@@ -338,6 +338,12 @@ export default function AddressDrawer({
               public server keeps only recent history.
             </p>
           )}
+          {address.network === 'zcash' && (
+            <p className="wallets-note" role="note">
+              This is the balance of the transparent address. Shielded balances are private and the
+              app cannot read them: ZEC moved to a shielded address shows as sent.
+            </p>
+          )}
           {exchange && <EarnSection exchange={exchange} />}
           {exchange && <ConvertNote exchange={exchange} />}
           {syncProblem(address, run) && (

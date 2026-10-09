@@ -3,12 +3,20 @@
 // wallets also move every other token, which the chain_tokens table describes. A raw chain
 // transaction leg names its token in `asset`: USDT and USDC by ticker, any other token by its
 // contract or mint; null is the network's own coin. Amounts are stored in base units.
-// Stellar wallets move its own coin XLM only (M23).
+// Stellar wallets move its own coin XLM only (M23), and transparent Zcash wallets ZEC only (M24).
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 // BYBIT-ANY-COIN: it holds any coin Bybit lists, not only the ones below.
 
-export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit', 'tron', 'stellar'] as const;
+export const networks = [
+  'bitcoin',
+  'ethereum',
+  'solana',
+  'bybit',
+  'tron',
+  'stellar',
+  'zcash',
+] as const;
 export type Network = (typeof networks)[number];
 
 export interface ChainAsset {
@@ -34,6 +42,7 @@ export const networkNames: Record<Network, string> = {
   bybit: 'Bybit',
   tron: 'Tron',
   stellar: 'Stellar',
+  zcash: 'Zcash',
 };
 
 const bybitCoin = (symbol: string, name: string): ChainAsset => ({
@@ -113,6 +122,15 @@ export const chainAssets: readonly ChainAsset[] = [
     symbol: 'XLM',
     name: 'Stellar',
     decimals: 7,
+    contract: null,
+  },
+  // ZCASH-ADD: the ZEC of transparent addresses; shielded balances are out of public view.
+  {
+    network: 'zcash',
+    token: null,
+    symbol: 'ZEC',
+    name: 'Zcash',
+    decimals: 8,
     contract: null,
   },
   bybitCoin('BTC', 'Bitcoin'),

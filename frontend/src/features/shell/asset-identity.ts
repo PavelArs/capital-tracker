@@ -46,6 +46,7 @@ const networkCoins: Record<Blockchain, string> = {
   solana: 'SOL',
   tron: 'TRX',
   stellar: 'XLM',
+  zcash: 'ZEC',
 };
 
 /** TOKEN-CHAIN: a blockchain looks like its own coin. */

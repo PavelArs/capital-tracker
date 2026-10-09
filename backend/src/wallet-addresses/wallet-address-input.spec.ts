@@ -98,7 +98,7 @@ describe('WAL-ADD: wallet registration input', () => {
     ['a Bitcoin address as Tron', { network: 'tron', address }],
     ['a Tron address as Solana', { network: 'solana', address: tron }],
     ['a Tron address as Ethereum', { network: 'ethereum', address: tron }],
-    ['a network not tracked', { network: 'stellar', address }],
+    ['a network not tracked', { network: 'dogecoin', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],

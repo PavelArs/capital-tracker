@@ -1606,3 +1606,56 @@ describe('M22: Bybit accounts', () => {
     expect(account).toHaveTextContent(`${message} Balances shown are from 3 h ago.`);
   });
 });
+
+describe('Zcash wallets (M24)', () => {
+  // Base58Check of the SHA-256 of a fixed label: a synthetic address, never an owner's wallet.
+  const zcashAddress = 't1T2xng63Qs7DtbK4cNwLsjWtMmciMZWTc5';
+  const zcashWallet = (changes: Partial<WalletAddress>) =>
+    wallet(9, {
+      network: 'zcash',
+      address: zcashAddress,
+      label: 'Main ZEC',
+      chainBalance: '12.50000000',
+      balances: [{ symbol: 'ZEC', quantity: '12.50000000' }],
+      ...changes,
+    });
+
+  it('ZCASH-ADD tracks a transparent address and says shielded balances cannot be read', async () => {
+    setup([]);
+    const added = zcashWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const zcash = within(dialog).getByRole('button', { name: /^Zcash/ });
+    expect(zcash).toHaveTextContent('One transparent address. ZEC');
+    await user.click(zcash);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Zcash wallet address');
+    expect(dialog).toHaveTextContent('Shielded balances are private, so the app cannot read them');
+    await user.type(field, `zs1${'q'.repeat(75)}`);
+    expect(within(dialog).getByText(/This is a shielded address/)).toBeInTheDocument();
+    await user.clear(field);
+    await user.type(field, zcashAddress);
+    expect(within(dialog).getByText('Transparent address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'zcash', address: zcashAddress, accountId: trust });
+  });
+
+  it('shows the ZEC balance and source, and that it is the transparent balance', async () => {
+    setup([zcashWallet({})]);
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: `Main ZEC ${zcashAddress}` });
+    expect(row).toHaveTextContent('12.5 ZEC');
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Zcash' });
+    expect(drawer).toHaveTextContent('Trezor Blockbook');
+    expect(drawer).toHaveTextContent('This is the balance of the transparent address.');
+  });
+});

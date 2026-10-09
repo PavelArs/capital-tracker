@@ -191,7 +191,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 51/);
+  assert.match(migrate(database), /Migrations applied: 52/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
