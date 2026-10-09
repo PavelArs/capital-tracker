@@ -643,6 +643,23 @@ async function main() {
       assert.equal((await db.query(`SELECT count(*)::int AS n FROM price_observations WHERE source='bybit'`))[0].n, 0);
       await post('token-prices', {});
       console.log('PASS TOKEN-ANY-PRICE held tokens are priced by contract from CoinGecko, each run; a token it does not list stays unpriced and unlisted and is asked about once a day; a token no wallet holds is not asked; a failure is named; Bybit never prices a token');
+
+      // A token never takes a ticker an existing market asset (a Bybit coin, say) already uses:
+      // one asset key names one coin only.
+      {
+        const collider = address('xrp-token-holder');
+        const xrpToken = address('xrp-lookalike');
+        await db.query(`INSERT INTO accounting_instruments(id,"ownerId",name,symbol,"requestId","canonicalPayload","assetType","valuationCurrency","priceSource")
+          VALUES($1,$2,'XRP',$3,$4,$5,'crypto','USD','market')`, [randomUUID(), owner, 'XRP', randomUUID(), JSON.stringify({ name: 'XRP', symbol: 'XRP' })]);
+        await post('ethereum', { tip: 20000400, normal: [normal(60, 20000301, outside, collider, ether(1), 21000, 10 ** 9)], internal: [],
+          tokens: [named(token(61, 20000302, xrpToken, 'XRP', outside, collider, 3n * 10n ** 18n, 1), 'Ripple Lookalike', '18')] });
+        const colliderId = (await s.addresses.register(owner, { network: 'ethereum', address: collider, accountId: tokenAccount })).value.id;
+        assert.equal((await s.addresses.sync(owner, colliderId)).outcome, 'complete');
+        const [row] = await db.query(`SELECT symbol, ticker FROM chain_tokens WHERE contract = $1`, [xrpToken]);
+        assert.equal(row.symbol, 'XRP');
+        assert.equal(row.ticker, `XRP${xrpToken.slice(2, 6).toUpperCase()}`, 'The ticker of the market asset XRP is left to it');
+        console.log('PASS TOKEN-TICKER a token named like an existing market asset gets a ticker of its own');
+      }
     }
 
     // Reads stay owner-scoped and per asset.
