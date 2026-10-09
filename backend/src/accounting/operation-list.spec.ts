@@ -191,6 +191,7 @@ describe('list-all-operations projection', () => {
         blockHeight: 800001,
         priceObservedAt: '2026-10-04T11:00:00.000Z',
         direction: 'in',
+        pairedTxid: null,
       },
       status: 'needs-classification',
       source: 'chain',
@@ -989,6 +990,162 @@ describe('list-all-operations projection', () => {
     expect(list.needsClassificationCount).toBe(2);
     const sent = list.operations.find((operation) => operation.wallet?.id === wallet.id);
     expect(sent).toMatchObject({ counterAccount: trust, counterWallet: walletB });
+  });
+
+  describe('CLS-SWAP', () => {
+    // Trust Wallet paid 1000 USDT from its Ethereum address for 0.0125 BTC at its Bitcoin one.
+    const ethWallet = {
+      id: id(22),
+      network: 'ethereum' as const,
+      address: '0x00000000000000000000000000000000000000aa',
+      label: 'Main',
+    };
+    const swapId = id(60);
+    const carryId = id(61);
+    const usdtTxid = `${'d'.repeat(64)}-3`;
+    const swapped = (pairWith: { addressId: string; txid: string }, carried: string | null) => ({
+      version: 1,
+      status: 'classified' as const,
+      type: 'swap' as const,
+      details: { type: 'swap' as const, with: pairWith, valueUsd: null },
+      comment: null,
+      produced: { kind: 'swap' as const, id: swapId },
+      carryTransferId: carried,
+      paired: pairWith,
+    });
+    const paid = (account = trust, carried: string | null = null) =>
+      chain(5, {
+        wallet: ethWallet,
+        account,
+        txid: usdtTxid,
+        asset: 'USDT',
+        blockTime: '2026-09-01T10:00:00.000Z',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '1000000000',
+        feeUnits: '0',
+        classification: swapped({ addressId: wallet.id, txid: txid(6) }, carried),
+      });
+    const bought = (account = trust, carried: string | null = null) =>
+      chain(6, {
+        account,
+        blockTime: '2026-09-01T10:40:00.000Z',
+        direction: 'in',
+        receivedUnits: '1250000',
+        sentUnits: '0',
+        feeUnits: '1400',
+        classification: swapped({ addressId: ethWallet.id, txid: usdtTxid }, carried),
+      });
+    const swap = (account = trust) => ({
+      swapId,
+      version: 1,
+      account,
+      outgoing: usdt,
+      incoming: btc,
+      occurredAt: '2026-09-01T10:40:00.000Z',
+      orderWithinTimestamp: 0,
+      outgoingQuantity: '1000',
+      incomingQuantity: '0.0125',
+      considerationUsd: '1000',
+      fee: null,
+    });
+
+    it('CLS-SWAP-SAME: the two sides are one swap USDT → BTC on the receiving row, listed once', () => {
+      const list = projectOperations(now, sources({ swaps: [swap()], chain: [paid(), bought()] }));
+      expect(list.needsClassificationCount).toBe(0);
+      expect(list.operations.map((operation) => operation.id)).toEqual([
+        `chain:${wallet.id}:${txid(6)}`,
+      ]);
+      expect(list.operations[0]).toMatchObject({
+        kind: 'chain',
+        type: 'swap',
+        direction: 'internal',
+        status: 'recorded',
+        asset: usdt,
+        quantity: '1000',
+        counterAsset: btc,
+        counterQuantity: '0.0125',
+        valueUsd: '1000',
+        costBasisUsd: '1000',
+        estimatedValueUsd: null,
+        fee: null,
+        account: trust,
+        counterAccount: null,
+        wallet,
+        counterWallet: ethWallet,
+        chain: { txid: txid(6), direction: 'in', pairedTxid: usdtTxid },
+        classification: {
+          value: { type: 'swap', with: { addressId: ethWallet.id, txid: usdtTxid } },
+        },
+      });
+    });
+
+    it('CLS-SWAP-CROSS: paid from another wallet, the carrying transfer is not listed apart', () => {
+      const list = projectOperations(
+        now,
+        sources({
+          swaps: [swap(bybit)],
+          transfers: [
+            {
+              transferId: carryId,
+              version: 1,
+              from: trust,
+              to: bybit,
+              asset: usdt,
+              occurredAt: '2026-09-01T10:00:00.000Z',
+              orderWithinTimestamp: 0,
+              quantity: '1000',
+              fee: null,
+            },
+          ],
+          chain: [paid(trust, carryId), bought(bybit, carryId)],
+        }),
+      );
+      expect(list.operations.map((operation) => operation.id)).toEqual([
+        `chain:${wallet.id}:${txid(6)}`,
+      ]);
+      expect(list.operations[0]).toMatchObject({
+        type: 'swap',
+        account: bybit,
+        counterAccount: trust,
+        counterWallet: ethWallet,
+      });
+    });
+
+    it('CLS-SWAP-SAME: a paying leg in the network coin shows its network fee', () => {
+      const ether = chain(7, {
+        wallet: ethWallet,
+        account: trust,
+        txid: 'e'.repeat(64),
+        blockTime: '2026-09-01T10:00:00.000Z',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '502000000000000000',
+        feeUnits: '2000000000000000',
+        classification: swapped({ addressId: wallet.id, txid: txid(6) }, null),
+      });
+      const receipt = bought();
+      const list = projectOperations(
+        now,
+        sources({
+          swaps: [
+            { ...swap(), outgoing: { instrumentId: id(3), symbol: 'ETH', name: 'Ethereum' } },
+          ],
+          chain: [
+            ether,
+            {
+              ...receipt,
+              classification: swapped({ addressId: ethWallet.id, txid: 'e'.repeat(64) }, null),
+            },
+          ],
+        }),
+      );
+      expect(list.operations).toHaveLength(1);
+      expect(list.operations[0].fee).toEqual({
+        asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+        quantity: '0.002',
+      });
+    });
   });
 
   it('OPS-EMPTY: no operations is an empty list', () => {

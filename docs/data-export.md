@@ -31,8 +31,10 @@ number) is written with a leading `'`.
 voided entry shows what it said before it was deleted. `source` is `manual`, `csv` (imported
 from a CSV file) or `chain` (produced by classifying a blockchain transaction, whose txid is
 in `chain_txid`). `id` matches the Transactions list (`trade:<uuid>`, `transfer:<uuid>`, …), and
-`chain-transactions.csv` links to it in `operation_id`. Values are in USD as recorded; a trade
-paid in RUB or EUR also carries `paid_currency`, `paid_amount`, `paid_fee` and the rate.
+`chain-transactions.csv` links to it in `operation_id`; both transactions of a blockchain
+swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt. Values
+are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
+`paid_amount`, `paid_fee` and the rate.
 
 `classification_status` is `unclassified`, `classified` or `hidden`; the computed "Dust"
 status depends on the current price and threshold and is not exported.

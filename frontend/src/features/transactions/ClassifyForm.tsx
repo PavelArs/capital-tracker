@@ -10,7 +10,15 @@ import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { type Account, dependentOf, journalAccounts } from '../portfolio/AddTransactionDialog';
 import { decimal, MAX_COMMENT_LENGTH, positive } from '../portfolio/add-transaction';
-import { amount, day } from './operation-format';
+import {
+  amount,
+  assetKey,
+  day,
+  networkName,
+  rowTime,
+  shortAddress,
+  signedAmount,
+} from './operation-format';
 
 type ChainType = ChainClassification['type'];
 type Currency = Extract<ChainClassification, { currency: string }>['currency'];
@@ -19,10 +27,13 @@ const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 // "What was this transaction?" from the accepted prototype, limited to what the coins did:
 // what arrives can be bought or received, what leaves can be sold, spent or given, and either
 // can move between the owner's own wallets (M13). Other is a movement nobody can name yet.
+// A swap pairs a receipt with a payment in another coin, from any of the wallets (CLS-SWAP).
 const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
+const SWAP: [ChainType, string] = ['swap', 'Swap'];
 const incoming: [ChainType, string][] = [
   TRANSFER,
   ['buy', 'Buy'],
+  SWAP,
   ['income', 'Income'],
   ['reward', 'Reward'],
   ['staking-reward', 'Staking reward'],
@@ -33,6 +44,7 @@ const incoming: [ChainType, string][] = [
 const outgoing: [ChainType, string][] = [
   TRANSFER,
   ['sell', 'Sell'],
+  SWAP,
   ['expense', 'Expense'],
   ['gift', 'Gift sent'],
   ['fee', 'Fee'],
@@ -58,6 +70,8 @@ interface Draft {
   value: string;
   /** Transfer only: the owner's other wallet. */
   account: string;
+  /** Swap only: the transaction on the other side, as "address id|txid". */
+  pair: string;
   comment: string;
   hidden: boolean;
 }
@@ -75,6 +89,7 @@ function draftOf(operation: Operation): Draft {
   const priced = value && (value.type === 'buy' || value.type === 'sell') ? value : null;
   const valued = value && !priced && 'valueUsd' in value ? value : null;
   const moved = value?.type === 'transfer' ? value : null;
+  const swapped = value?.type === 'swap' ? value : null;
   // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
   const suggested = !value && operation.counterWallet && operation.counterAccount;
   return {
@@ -84,18 +99,81 @@ function draftOf(operation: Operation): Draft {
     rate: priced?.perUsd ?? '',
     value: valued?.valueUsd ?? '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
+    pair: swapped ? `${swapped.with.addressId}|${swapped.with.txid}` : '',
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
     hidden: false,
   };
 }
 
-type Problem = 'amount' | 'rate' | 'value' | 'account' | 'comment';
+const WEEK_MS = 7 * 86_400_000;
+const unpaired = new Set(['transfer', 'swap', 'stake', 'unstake']);
+/** The coin this leg moved: a swap row lists what was paid first. */
+const legAsset = (operation: Operation) =>
+  operation.type === 'swap' && operation.counterAsset ? operation.counterAsset : operation.asset;
+const pairKey = (operation: Operation) =>
+  operation.wallet && operation.chain ? `${operation.wallet.id}|${operation.chain.txid}` : '';
+const addressText = (wallet: NonNullable<Operation['wallet']>) =>
+  `${networkName(wallet)} ${wallet.label ?? shortAddress(wallet.address)}`;
+
+/**
+ * CLS-SWAP: the owner's blockchain transactions that can be the other side of this one, from
+ * any wallet: moving the other way, another coin, within a week, nearest first. A saved pair
+ * stays a choice though the list shows it inside the swap.
+ */
+export function swapCandidates(operation: Operation, operations: Operation[]): [string, string][] {
+  const leg = legDirection(operation);
+  const coin = assetKey(legAsset(operation));
+  const at = Date.parse(operation.occurredAt);
+  const found = operations
+    .filter(
+      (item) =>
+        item.kind === 'chain' &&
+        item.id !== operation.id &&
+        pairKey(item) !== '' &&
+        legDirection(item) === (leg === 'in' ? 'out' : 'in') &&
+        !(item.type && unpaired.has(item.type)) &&
+        assetKey(item.asset) !== coin &&
+        Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS,
+    )
+    .sort(
+      (a, b) => Math.abs(Date.parse(a.occurredAt) - at) - Math.abs(Date.parse(b.occurredAt) - at),
+    )
+    .map((item): [string, string] => [
+      pairKey(item),
+      [
+        `${day(item.occurredAt)}, ${rowTime(item)}`,
+        signedAmount(item),
+        item.account?.name ?? 'Not in a wallet yet',
+        addressText(item.wallet!),
+      ].join(' · '),
+    ]);
+  const saved = operation.classification?.value;
+  const pair = saved?.type === 'swap' ? `${saved.with.addressId}|${saved.with.txid}` : '';
+  if (pair && !found.some(([key]) => key === pair)) {
+    const other = operation.counterWallet;
+    const place = operation.counterAccount ?? operation.account;
+    found.unshift([
+      pair,
+      [
+        operation.type === 'swap' ? signedAmount(operation) : 'The saved transaction',
+        ...(place ? [place.name] : []),
+        ...(other ? [addressText(other)] : []),
+      ].join(' · '),
+    ]);
+  }
+  return found;
+}
+
+type Problem = 'amount' | 'rate' | 'value' | 'account' | 'pair' | 'comment';
 
 function problems(draft: Draft): Set<Problem> {
   const found = new Set<Problem>();
   if (draft.type === 'transfer') {
     if (!draft.account) found.add('account');
+  } else if (draft.type === 'swap') {
+    if (!draft.pair) found.add('pair');
+    if (draft.value.trim() && !positive(draft.value)) found.add('value');
   } else if (draft.type === 'buy' || draft.type === 'sell') {
     if (!positive(draft.amount)) found.add('amount');
     if ((draft.currency === 'EUR' || draft.currency === 'RUB') && draft.rate.trim())
@@ -117,6 +195,14 @@ function answer(draft: Draft): ChainClassification | null {
       return null;
     case 'transfer':
       return { type: 'transfer', accountId: draft.account };
+    case 'swap': {
+      const [addressId, txid] = draft.pair.split('|');
+      return {
+        type: 'swap',
+        with: { addressId, txid },
+        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+      };
+    }
     case 'buy':
     case 'sell': {
       const rate =
@@ -155,6 +241,14 @@ function failure(error: unknown): ReactNode {
         classify the transaction.
       </>
     );
+  if (status === 422 && message === 'Choose the account of the other wallet first')
+    return 'The address on the other side is not in a wallet yet. Choose its wallet first.';
+  if (status === 422 && message === 'Choose a transaction that moved coins the other way')
+    return 'The other transaction moved coins the same way. Choose one that moved them the other way.';
+  if (status === 422 && message === 'A swap needs two different coins')
+    return 'Both transactions moved the same coin. Choose a transaction in another coin.';
+  if (status === 422 && message === 'Choose the other side of the swap')
+    return 'Choose the transaction on the other side.';
   if (status === 422 && message === 'Choose an account other than the one of this wallet')
     return 'Choose a wallet other than the one of this address.';
   if (
@@ -175,6 +269,8 @@ function failure(error: unknown): ReactNode {
 
 interface Props {
   operation: Operation;
+  /** The whole list, for the other side of a swap. */
+  operations?: Operation[];
   /** Shown first: the amount and the raw facts. */
   children: ReactNode;
   /** Other transactions still to classify, for the footer. */
@@ -185,7 +281,14 @@ interface Props {
 
 // CLS-BUY, CLS-RECLASSIFY: the drawer's question for a blockchain transaction. Only the fields
 // the chosen type needs appear; the answer is saved as its own version, the raw data untouched.
-export default function ClassifyForm({ operation, children, left, onSaved, onCancel }: Props) {
+export default function ClassifyForm({
+  operation,
+  operations = [],
+  children,
+  left,
+  onSaved,
+  onCancel,
+}: Props) {
   const id = useId();
   const [draft, setDraft] = useState<Draft>(() => draftOf(operation));
   const [tried, setTried] = useState(false);
@@ -213,6 +316,7 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [accountsFailed, setAccountsFailed] = useState(false);
   const transfer = draft.type === 'transfer';
+  const swap = draft.type === 'swap';
   useEffect(() => {
     if (!transfer || accounts) return;
     let live = true;
@@ -255,7 +359,10 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
   const priced = draft.type === 'buy' || draft.type === 'sell';
   const rated = draft.currency === 'EUR' || draft.currency === 'RUB';
   const optional =
-    draft.type === 'reward' || draft.type === 'staking-reward' || draft.type === 'airdrop';
+    draft.type === 'reward' ||
+    draft.type === 'staking-reward' ||
+    draft.type === 'airdrop' ||
+    draft.type === 'swap';
   const other = draft.type === 'other';
   // Other asks only for a comment, so it shows up front rather than under "More options".
   const commentField = (
@@ -416,6 +523,34 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
             </span>
           </div>
         )}
+        {swap && (
+          <div className="transactions-subform">
+            <div className="portfolio-field">
+              <label className="portfolio-field__label" htmlFor={`${id}-pair`}>
+                {legDirection(operation) === 'out' ? 'Received in exchange' : 'Paid with'}
+              </label>
+              <select
+                id={`${id}-pair`}
+                className="portfolio-input"
+                value={draft.pair}
+                onChange={(event) => change({ pair: event.target.value })}
+                {...invalid('pair')}
+              >
+                <option value="">Choose the transaction</option>
+                {swapCandidates(operation, operations).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {fieldError('pair', 'Choose the transaction on the other side') || (
+                <span className="portfolio-field__hint">
+                  Transactions in another coin within a week, from any of your wallets.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {other && (
           <div className="transactions-subform">
             <span className="portfolio-field__hint">
@@ -449,11 +584,15 @@ export default function ClassifyForm({ operation, children, left, onSaved, onCan
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
                 <span className="portfolio-field__hint">
-                  {draft.type === 'expense' || draft.type === 'fee' || operation.direction !== 'in'
-                    ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                    : optional
-                      ? 'Without a value the coins count in net worth, not in profit.'
-                      : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
+                  {swap
+                    ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                    : draft.type === 'expense' ||
+                        draft.type === 'fee' ||
+                        operation.direction !== 'in'
+                      ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
+                      : optional
+                        ? 'Without a value the coins count in net worth, not in profit.'
+                        : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
                 </span>
               )}
             </div>

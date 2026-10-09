@@ -182,6 +182,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
   await expect(question.getByRole('button')).toHaveText([
     'Transfer between my wallets',
     'Sell',
+    'Swap',
     'Expense',
     'Gift sent',
     'Fee',

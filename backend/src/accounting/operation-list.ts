@@ -119,9 +119,13 @@ export interface ChainClassificationInput {
   type: ChainType | null;
   details: Classification | null;
   comment: string | null;
-  produced: { kind: 'trade' | 'reward' | 'transfer'; id: string } | null;
+  produced: { kind: 'trade' | 'reward' | 'transfer' | 'swap'; id: string } | null;
   /** A transfer's other leg among the owner's addresses (M13), or null. */
   linkedAddressId?: string | null;
+  /** CLS-SWAP: the owner's raw transaction on the other side of the swap, or null. */
+  paired?: { addressId: string; txid: string } | null;
+  /** CLS-SWAP-CROSS: the transfer that carried the paid coins to the receiving wallet. */
+  carryTransferId?: string | null;
   /** Linked by the app without asking (D7). */
   automatic?: boolean;
 }
@@ -211,6 +215,8 @@ export interface Operation {
     blockHeight: number;
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
+    /** CLS-SWAP: the paying transaction of a swap listed on its receiving row, or null. */
+    pairedTxid: string | null;
   } | null;
   /**
    * Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). Dust: an
@@ -398,6 +404,7 @@ function chainOperation(
       blockHeight: row.blockHeight,
       priceObservedAt: price?.observedAt ?? null,
       direction: leg,
+      pairedTxid: null,
     },
     status: 'needs-classification',
     source: 'chain',
@@ -449,6 +456,37 @@ function chainOperation(
     return other
       ? { ...operation, counterAccount: other.account, counterWallet: other.wallet }
       : operation;
+  // CLS-SWAP: one swap of the paid coins for these, recorded where they arrived; paid from
+  // another wallet, that one is the counter account. The fee is the paying leg's own.
+  if (produced.kind === 'swap') {
+    const paying = other && netUnits(other) < 0n ? other : null;
+    return {
+      ...operation,
+      type: 'swap',
+      direction: 'internal',
+      status: 'recorded',
+      asset: produced.asset,
+      quantity: produced.quantity,
+      counterAsset: produced.counterAsset,
+      counterQuantity: produced.counterQuantity,
+      valueUsd: produced.valueUsd,
+      costBasisUsd: produced.valueUsd,
+      estimatedValueUsd: null,
+      fee:
+        paying && paying.asset === null && BigInt(paying.feeUnits) > 0n
+          ? {
+              asset: legAsset(paying.wallet.network, null),
+              quantity: amount(BigInt(paying.feeUnits), paying.wallet.network, null),
+            }
+          : null,
+      account: produced.account,
+      counterAccount:
+        paying?.account && paying.account.id !== produced.account?.id ? paying.account : null,
+      counterWallet: paying?.wallet ?? null,
+      chain: operation.chain && { ...operation.chain, pairedTxid: paying?.txid ?? null },
+      orderWithinTimestamp: produced.orderWithinTimestamp,
+    };
+  }
   // XFER-*: one transfer between the two accounts; the fee is the only cost.
   if (produced.kind === 'transfer')
     return {
@@ -490,8 +528,9 @@ export function projectOperations(
   const producedIds = new Set(
     sources.chain.flatMap((row) => {
       const produced = row.classification?.produced;
+      const carried = row.classification?.carryTransferId;
       return row.classification?.status === 'classified' && produced
-        ? [`${produced.kind}:${produced.id}`]
+        ? [`${produced.kind}:${produced.id}`, ...(carried ? [`transfer:${carried}`] : [])]
         : [];
     }),
   );
@@ -628,10 +667,15 @@ export function projectOperations(
   }
   const byTxid = new Map<string, ChainOperationInput[]>();
   for (const row of sources.chain) byTxid.set(row.txid, [...(byTxid.get(row.txid) ?? []), row]);
+  const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
     const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
-    const other = counterpart(row, byTxid.get(row.txid) ?? []);
+    const paired = row.classification?.paired;
+    const pair = paired ? (byLeg.get(`${paired.addressId}:${paired.txid}`) ?? null) : null;
+    // CLS-SWAP: a swap is listed once, on the row of the coins it bought.
+    if (entry?.kind === 'swap' && pair && netUnits(row) < 0n) continue;
+    const other = paired ? pair : counterpart(row, byTxid.get(row.txid) ?? []);
     // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
     // sending leg; the receiving leg is part of it.
     if (

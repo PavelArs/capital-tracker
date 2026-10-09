@@ -572,6 +572,26 @@ network-specific identity:
   "Bybit" **when** the owner links it as a transfer to Bybit **then** Bybit's holdings
   increase and no deposit is recorded.
 
+**US-4.6** As the owner I record buying one coin with another on the chain as one swap.
+
+- CLS-SWAP-SAME: **Given** wallet Trust Wallet sends 1000 USDT from its Ethereum address
+  and receives 0.0125 BTC at its Bitcoin address **when** the owner classifies the BTC
+  receipt as Swap paid with that USDT transaction **then** one swap USDT → BTC is recorded
+  in Trust Wallet at the time the BTC arrived, the USDT leaves by FIFO, the BTC costs
+  1000 USD, both transactions stop asking for a classification, the list shows one row,
+  **and** the network fee is classified on its own row as before.
+- CLS-SWAP-CROSS: **Given** the coins were paid from wallet A and arrived in wallet B
+  **then** the paid coins first move A→B as an own transfer carrying the network fee,
+  and the swap is recorded in B; wallet balances still match the chain.
+- CLS-SWAP-VALUE: **Given** no value is entered **then** USDT and USDC on either side
+  count 1:1 with USD, other coins at the paid coin's stored price at most two days old,
+  otherwise the value stays unknown; a value the owner enters wins.
+- CLS-SWAP-UNDO: **Given** a recorded swap **when** either transaction is classified
+  otherwise or hidden **then** the swap and its transfer are voided and the other
+  transaction asks for a classification again.
+- CLS-SWAP-INVALID: the same coin on both sides, two transactions moving the same way,
+  or a side whose address is not in a wallet are refused with a reason; nothing is saved.
+
 ### E5 Valuation and P&L
 
 **US-5.1** As the owner I see how much my portfolio is worth now.
