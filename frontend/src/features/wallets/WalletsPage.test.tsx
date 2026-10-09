@@ -931,6 +931,157 @@ describe('M15: Solana wallets', () => {
   });
 });
 
+describe('Tron wallets', () => {
+  // Base58check of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const tronAddress = 'TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR';
+  const tronWallet = (changes: Partial<WalletAddress>) =>
+    wallet(7, {
+      network: 'tron',
+      address: tronAddress,
+      label: 'Main TRX',
+      chainBalance: '2012.500000',
+      balances: [
+        { symbol: 'TRX', quantity: '2012.500000' },
+        { symbol: 'USDT', quantity: '300.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+      ],
+      ...changes,
+    });
+
+  it('TRON-ADD tracks a Tron address with TRX, USDT and USDC, case kept', async () => {
+    setup([]);
+    const added = tronWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const tron = within(dialog).getByRole('button', { name: /^Tron/ });
+    expect(tron).toHaveTextContent('One address. TRX, USDT, USDC and staking');
+    await user.click(tron);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Tron wallet address');
+    expect(dialog).toHaveTextContent('tracks TRX, USDT and USDC on Tron mainnet');
+    await user.type(field, tronAddress);
+    expect(within(dialog).getByText('Tron address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'tron', address: tronAddress, accountId: trust });
+  });
+
+  it('WAL-INVALID refuses the hex form and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Tron/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(
+      within(dialog).getByLabelText('Tron wallet address'),
+      '416cc0027fd992863e7472490919d2769e0aa0e8d9',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByText(/the hex form of a Tron address/)).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('TRON-STAKE-BALANCE counts staked TRX and splits it by resource', async () => {
+    const staked = tronWallet({
+      staking: {
+        symbol: 'TRX',
+        quantity: '1100.000000',
+        rewards: '3.200000',
+        reportedQuantity: null,
+        unclaimedRewards: '1.250000',
+        accounts: [
+          {
+            account: 'energy',
+            kind: 'energy',
+            validator: null,
+            pool: null,
+            state: 'active',
+            quantity: '800.000000',
+            rewards: '0.000000',
+            availableAt: null,
+          },
+          {
+            account: 'bandwidth',
+            kind: 'bandwidth',
+            validator: null,
+            pool: null,
+            state: 'active',
+            quantity: '250.000000',
+            rewards: '0.000000',
+            availableAt: null,
+          },
+          {
+            account: 'unstaking-1',
+            kind: 'unstaking',
+            validator: null,
+            pool: null,
+            state: 'deactivating',
+            quantity: '50.000000',
+            rewards: '0.000000',
+            availableAt: '2026-10-20T08:00:00.000Z',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main TRX ${tronAddress}` });
+    expect(row).toHaveTextContent('2,012.5 TRX · 300 USDT1,100 TRX staked');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Tron' });
+    expect(drawer).toHaveTextContent('Tracked assetsTRX, USDT, USDC');
+    expect(drawer).toHaveTextContent('TronGrid');
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available912.5 TRX');
+    expect(staking).toHaveTextContent('Staked1,100 TRX');
+    expect(staking).toHaveTextContent('Rewards claimed3.2 TRX');
+    expect(staking).toHaveTextContent('Not claimed yet1.25 TRX');
+    const list = within(staking).getByRole('list', { name: 'Staked TRX' });
+    const [energy, bandwidth, unstaking] = within(list).getAllByRole('listitem');
+    expect(energy).toHaveTextContent('Staked for energy');
+    expect(energy).toHaveTextContent('800 TRX');
+    expect(energy).toHaveTextContent('Active');
+    expect(bandwidth).toHaveTextContent('Staked for bandwidth');
+    expect(unstaking).toHaveTextContent('Back to the balance on 20 Oct 2026');
+    expect(unstaking).toHaveTextContent('Unstaking');
+    expect(staking).toHaveTextContent('Energy and bandwidth are not assets');
+    expect(staking).toHaveTextContent('rewards not claimed yet are not counted');
+    expect(staking).not.toHaveTextContent('Tron reports');
+  });
+
+  it('says when the chain reports a different staked amount', async () => {
+    const differs = tronWallet({
+      staking: {
+        symbol: 'TRX',
+        quantity: '1100.000000',
+        rewards: '0.000000',
+        reportedQuantity: '1105.000000',
+        unclaimedRewards: null,
+        accounts: [],
+      },
+    });
+    setup([differs]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main TRX ${tronAddress}` }));
+    const staking = within(screen.getByRole('dialog')).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent(
+      "Tron reports 1,105 TRX staked; the wallet's transactions explain 1,100 TRX.",
+    );
+    expect(staking).not.toHaveTextContent('Not claimed yet');
+  });
+});
+
 describe('M21: Bitcoin wallets by account public key', () => {
   // The BIP-84 test vector's account key and its first receiving address, never an owner's wallet.
   const zpub =

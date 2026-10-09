@@ -39,6 +39,8 @@ export const backupTables = [
   'wallet_ether_stake_positions',
   'wallet_ether_stake_moves',
   'wallet_ether_stake_rewards',
+  'wallet_tron_accounts',
+  'wallet_tron_stake_moves',
   'chain_transaction_classifications',
   'chain_transaction_classification_versions',
 ] as const;

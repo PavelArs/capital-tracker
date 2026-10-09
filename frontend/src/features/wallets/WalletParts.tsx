@@ -95,9 +95,32 @@ function stakeDetail(item: StakeAccount, pools: boolean): string {
     : 'Not delegated to a validator';
 }
 
+const dayFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** TRON-STAKE-STATE: staked TRX has no account of its own; the row names what it is for. */
+function tronStake(item: StakeAccount): { name: string; detail: string } {
+  if (item.kind === 'energy')
+    return { name: 'Staked for energy', detail: 'Energy pays for token transfers' };
+  if (item.kind === 'bandwidth')
+    return { name: 'Staked for bandwidth', detail: 'Bandwidth pays for plain transfers' };
+  if (item.kind === 'unstaking')
+    return {
+      name: 'Unstaking',
+      detail: item.availableAt
+        ? `Back to the balance on ${dayFormat.format(new Date(item.availableAt))}`
+        : 'Back to the balance after 14 days',
+    };
+  return { name: 'Staked TRX', detail: 'Split by resource after the next sync' };
+}
+
 /**
- * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE: a Solana address's stake accounts, or an Ethereum
- * address's staking pools, in its drawer. What each holds is already in the balance above;
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE, TRON-STAKE-BALANCE: a Solana address's stake accounts,
+ * an Ethereum address's staking pools, or a Tron address's staked TRX, in its drawer. What each holds is already in the balance above;
  * "available" is the rest.
  */
 export function StakingSection({ address, staking }: { address: WalletAddress; staking: Staking }) {
@@ -105,6 +128,7 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
   const available = own ? sum([own.quantity, `-${staking.quantity}`]) : null;
   const symbol = staking.symbol;
   const pools = address.network === 'ethereum';
+  const tron = address.network === 'tron';
   return (
     <section aria-labelledby="address-staking">
       <h3 id="address-staking" className="transactions-section">
@@ -126,20 +150,38 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
           </dd>
         </div>
         <div>
-          <dt>Rewards so far</dt>
+          <dt>{tron ? 'Rewards claimed' : 'Rewards so far'}</dt>
           <dd className="wallets-num">
             {quantity(staking.rewards)} {symbol}
           </dd>
         </div>
+        {staking.unclaimedRewards && (
+          <div>
+            <dt>Not claimed yet</dt>
+            <dd className="wallets-num">
+              {quantity(staking.unclaimedRewards)} {symbol}
+            </dd>
+          </div>
+        )}
       </dl>
-      <ul className="wallets-stake" aria-label={pools ? 'Staking pools' : 'Stake accounts'}>
+      <ul
+        className="wallets-stake"
+        aria-label={tron ? 'Staked TRX' : pools ? 'Staking pools' : 'Stake accounts'}
+      >
         {staking.accounts.map((item) => {
           const state = item.state ? stakeStates[item.state] : null;
+          const resource = tron ? tronStake(item) : null;
           return (
             <li key={item.account}>
               <span className="wallets-stake__main">
-                <span className="wallets-mono">{shortAddress(item.account)}</span>
-                <span className="wallets-muted">{stakeDetail(item, pools)}</span>
+                {resource ? (
+                  <span>{resource.name}</span>
+                ) : (
+                  <span className="wallets-mono">{shortAddress(item.account)}</span>
+                )}
+                <span className="wallets-muted">
+                  {resource ? resource.detail : stakeDetail(item, pools)}
+                </span>
               </span>
               <span className="wallets-stake__side">
                 <span className="wallets-num">
@@ -157,11 +199,26 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
           );
         })}
       </ul>
-      <p className="wallets-muted wallets-stake__note">
-        Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and moving
-        it into a {pools ? 'staking pool' : 'stake account'} or back is not a sale. Rewards count as
-        received coins without a purchase price, not as deposits.
-      </p>
+      {staking.reportedQuantity && (
+        <p className="wallets-muted wallets-stake__note">
+          Tron reports {quantity(staking.reportedQuantity)} {symbol} staked; the wallet's
+          transactions explain {quantity(staking.quantity)} {symbol}. The balance follows the
+          transactions.
+        </p>
+      )}
+      {tron ? (
+        <p className="wallets-muted wallets-stake__note">
+          Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
+          staking or unstaking is not a sale. Energy and bandwidth are not assets. Claimed vote
+          rewards are recorded as Staking reward income; rewards not claimed yet are not counted.
+        </p>
+      ) : (
+        <p className="wallets-muted wallets-stake__note">
+          Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
+          moving it into a {pools ? 'staking pool' : 'stake account'} or back is not a sale. Rewards
+          count as received coins without a purchase price, not as deposits.
+        </p>
+      )}
     </section>
   );
 }

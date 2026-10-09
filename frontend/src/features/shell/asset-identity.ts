@@ -15,6 +15,7 @@ const known: Record<string, AssetIdentity> = {
   ETH: { color: 'var(--c-eth)', glyph: 'Ξ' },
   SOL: { color: 'var(--c-sol)', glyph: 'S' },
   ZEC: { color: 'var(--c-zec)', glyph: 'Z' },
+  TRX: { color: 'var(--c-trx)', glyph: 'T' },
   USDT: { color: cash, glyph: '₮' },
   USDC: { color: cash, glyph: '$' },
   USD: { color: cash, glyph: '$' },

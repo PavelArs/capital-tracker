@@ -7,6 +7,8 @@ const accountId = '00000000-0000-4000-8000-000000000001';
 const ethereum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
 // The System Program's id: a well-known public key, never an owner's wallet.
 const solana = '11111111111111111111111111111111';
+// The public USDT contract on Tron: a well-known address, never an owner's wallet.
+const tron = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 // Synthetic BIP-39 words in the order of the standard test vector, never a real wallet.
 const seedPhrase =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
@@ -34,6 +36,15 @@ describe('WAL-ADD: wallet registration input', () => {
     expect(parseRegistration({ network: 'solana', address: solana })).toEqual({
       network: 'solana',
       address: solana,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes a Tron address exactly as given', () => {
+    expect(parseRegistration({ network: 'tron', address: tron })).toEqual({
+      network: 'tron',
+      address: tron,
       accountId: null,
       label: null,
     });
@@ -84,7 +95,10 @@ describe('WAL-ADD: wallet registration input', () => {
     ['a Bitcoin address as Solana', { network: 'solana', address }],
     ['an Ethereum address as Solana', { network: 'solana', address: ethereum }],
     ['a Solana address as Ethereum', { network: 'ethereum', address: solana }],
-    ['a network not tracked', { network: 'tron', address }],
+    ['a Bitcoin address as Tron', { network: 'tron', address }],
+    ['a Tron address as Solana', { network: 'solana', address: tron }],
+    ['a Tron address as Ethereum', { network: 'ethereum', address: tron }],
+    ['a network not tracked', { network: 'stellar', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],

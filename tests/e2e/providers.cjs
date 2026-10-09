@@ -6,7 +6,7 @@ const { readFileSync } = require('node:fs');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com']);
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -69,6 +69,19 @@ let solana = initialSolana();
 const initialBybit = () => ({ keys: [], executions: [], deposits: [], internalDeposits: [], withdrawals: [],
   balances: { FUND: [], UNIFIED: [] }, pageSize: null, fault: null, requests: 0, badSignatures: 0 });
 let bybit = initialBybit();
+// Synthetic TronGrid (track-tron-wallets): the newest solidified block and raw items exactly as
+// the probe posts them, merged by id. An account's transactions are those whose contract names
+// it as owner_address or to_address, and the internal transfers naming it; its TRC-20 transfers
+// those naming it as from or to. Lists answer oldest first between min_ and max_timestamp, only
+// up to the solid block, `pageSize` items a page with a fingerprint for the next. The node's
+// record of a transaction, an account (getaccount) and its unclaimed reward answer as posted;
+// anything not yet solid or never posted answers {} like the node. A posted `key` makes every
+// request without that TRON-PRO-API-KEY a 401; `fault` answers the n-th request after the post
+// with an HTTP status (403 with a frequency-limit message when `limited`).
+const initialTron = () => ({ tip: { number: 70000100, timestamp: 1760000300000 }, transactions: new Map(),
+  internal: new Map(), tokens: new Map(), infos: new Map(), accounts: new Map(), rewards: new Map(),
+  pageSize: 200, key: null, fault: null, requests: 0 });
+let tron = initialTron();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
 // raw for the probe to read. Nothing is relayed anywhere.
@@ -436,6 +449,7 @@ function provider(request, response, url) {
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp') return cbrDynamic(response, url);
   if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);
+  if (url.hostname === 'api.trongrid.io') return tronRequest(request, response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -472,6 +486,75 @@ function provider(request, response, url) {
   return respond(response, 501, { error: 'No fixture for outbound destination' });
 }
 
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+// The hex form ("41…") of a base58check Tron address, restated from the format.
+function tronHex(value) {
+  if (typeof value !== 'string' || !/^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value)) return null;
+  let number = 0n;
+  for (const character of value) number = number * 58n + BigInt(BASE58.indexOf(character));
+  const bytes = Buffer.from(number.toString(16).padStart(50, '0'), 'hex');
+  const check = createHash('sha256').update(createHash('sha256').update(bytes.subarray(0, 21)).digest()).digest();
+  return bytes[0] === 0x41 && check.subarray(0, 4).equals(bytes.subarray(21)) ? bytes.subarray(0, 21).toString('hex') : null;
+}
+
+function tronRequest(request, response, url) {
+  const query = url.searchParams;
+  tron.requests++;
+  if (tron.key && request.headers['tron-pro-api-key'] !== tron.key) return respond(response, 401, { Error: 'ApiKey not exists' });
+  const fault = tron.fault;
+  if (fault && fault.onRequest === tron.requests) {
+    tron.fault = null;
+    if (fault.limited) return respond(response, 403, { Error: 'The key exceeds the frequency limit(15), and the query server is suspended for 1s' });
+    return respond(response, fault.status, { Error: 'Synthetic provider fault' });
+  }
+  const solid = (time) => time <= tron.tip.timestamp;
+  if (url.pathname === '/walletsolidity/getnowblock' && !url.search) {
+    return respond(response, 200, { blockID: tron.tip.number.toString(16).padStart(64, '0'),
+      block_header: { raw_data: { number: tron.tip.number, timestamp: tron.tip.timestamp } } });
+  }
+  if (url.pathname === '/walletsolidity/gettransactioninfobyid' && [...query.keys()].join() === 'value') {
+    const info = tron.infos.get(query.get('value'));
+    return respond(response, 200, info && solid(info.blockTimeStamp) ? info : {});
+  }
+  const visible = query.get('visible') === 'true' && [...query.keys()].sort().join() === 'address,visible';
+  if (url.pathname === '/walletsolidity/getaccount' && visible) {
+    return respond(response, 200, tron.accounts.get(query.get('address')) ?? {});
+  }
+  if (url.pathname === '/wallet/getReward' && visible) {
+    const reward = tron.rewards.get(query.get('address'));
+    return respond(response, 200, reward ? { reward } : {});
+  }
+  const list = /^\/v1\/accounts\/(T[1-9A-HJ-NP-Za-km-z]{33})\/transactions(\/trc20)?$/.exec(url.pathname);
+  const from = Number(query.get('min_timestamp'));
+  const to = Number(query.get('max_timestamp'));
+  const expected = ['fingerprint', 'limit', 'max_timestamp', 'min_timestamp', 'only_confirmed', 'order_by', ...(list?.[2] ? ['contract_address'] : [])];
+  if (!list || tronHex(list[1]) === null || query.get('only_confirmed') !== 'true' || query.get('limit') !== '200'
+    || query.get('order_by') !== 'block_timestamp,asc' || !Number.isSafeInteger(from) || !Number.isSafeInteger(to)
+    || ![...query.keys()].every((name) => expected.includes(name))) {
+    return respond(response, 400, { success: false, error: 'Invalid synthetic TronGrid request', statusCode: 400 });
+  }
+  const account = list[1];
+  const hex = tronHex(account);
+  const time = (item) => item.block_timestamp;
+  let items;
+  if (list[2]) {
+    const contract = query.get('contract_address');
+    items = [...tron.tokens.values()].filter((item) => item.token_info.address === contract
+      && (item.from === account || item.to === account));
+  } else {
+    const value = (item) => item.raw_data.contract[0].parameter.value;
+    items = [...tron.transactions.values()].filter((item) => value(item).owner_address === hex || value(item).to_address === hex)
+      .concat([...tron.internal.values()].filter((item) => item.from_address === hex || item.to_address === hex));
+  }
+  items = items.filter((item) => solid(time(item)) && time(item) >= from && time(item) <= to)
+    .sort((left, right) => time(left) - time(right) || (left.txID ?? left.tx_id ?? left.transaction_id).localeCompare(right.txID ?? right.tx_id ?? right.transaction_id));
+  const offset = query.has('fingerprint') ? Number(query.get('fingerprint').replace(/^offset-/, '')) : 0;
+  const page = items.slice(offset, offset + tron.pageSize);
+  const more = offset + page.length < items.length;
+  return respond(response, 200, { data: page, success: true,
+    meta: { at: tron.tip.timestamp, page_size: page.length, ...(more ? { fingerprint: `offset-${offset + page.length}` } : {}) } });
+}
+
 async function solanaRequest(request, response, url) {
   if (requests.length >= 10000) return respond(response, 503, { error: 'Fixture request budget exhausted' });
   let body;
@@ -502,6 +585,7 @@ const server = http.createServer(async (request, response) => {
       ethereum = initialEthereum();
       solana = initialSolana();
       bybit = initialBybit();
+      tron = initialTron();
       mail = [];
       return respond(response, 200, { ok: true });
     }
@@ -633,6 +717,46 @@ const server = http.createServer(async (request, response) => {
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, slot: solana.slot, transactions: solana.transactions.size });
+    }
+    // Items merge by id, so a long history is posted in several calls.
+    if (request.method === 'POST' && request.url === '/__control/tron') {
+      const data = await readJson(request);
+      const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+      const hash = (value) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+      const time = (value) => Number.isSafeInteger(value) && value >= 0;
+      const items = (value, valid) => value === undefined || (Array.isArray(value) && value.length <= 20 && value.every(valid));
+      const transaction = (item) => object(item) && hash(item.txID) && time(item.block_timestamp)
+        && Number.isSafeInteger(item.blockNumber) && Array.isArray(item.raw_data?.contract) && item.raw_data.contract.length === 1
+        && object(item.raw_data.contract[0].parameter?.value);
+      const internal = (item) => object(item) && hash(item.tx_id) && typeof item.internal_tx_id === 'string' && time(item.block_timestamp);
+      const token = (item) => object(item) && hash(item.transaction_id) && time(item.block_timestamp) && object(item.token_info)
+        && tronHex(item.from) !== null && tronHex(item.to) !== null && typeof item.value === 'string';
+      const keyed = (value, key, valid) => value === undefined || (object(value) && Object.keys(value).length <= 20
+        && Object.entries(value).every(([name, field]) => key(name) && valid(field)));
+      const fault = data.fault;
+      if ((data.tip !== undefined && !(object(data.tip) && Number.isSafeInteger(data.tip.number) && time(data.tip.timestamp)))
+        || !items(data.transactions, transaction) || !items(data.internal, internal) || !items(data.tokens, token)
+        || !keyed(data.infos, hash, (info) => object(info) && info.id !== undefined && time(info.blockTimeStamp))
+        || !keyed(data.accounts, (name) => tronHex(name) !== null, object)
+        || !keyed(data.rewards, (name) => tronHex(name) !== null, (value) => Number.isSafeInteger(value) && value > 0)
+        || (data.pageSize !== undefined && (!Number.isSafeInteger(data.pageSize) || data.pageSize < 1 || data.pageSize > 200))
+        || (data.key !== undefined && data.key !== null && (typeof data.key !== 'string' || !/^[a-z-]{1,40}$/.test(data.key)))
+        || (fault !== undefined && fault !== null && (!object(fault) || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || (fault.limited !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+        return respond(response, 400, { error: 'Invalid synthetic Tron fixture' });
+      }
+      for (const item of data.transactions ?? []) tron.transactions.set(item.txID, item);
+      for (const item of data.internal ?? []) tron.internal.set(item.internal_tx_id, item);
+      for (const item of data.tokens ?? []) tron.tokens.set(`${item.transaction_id}:${item.from}:${item.to}:${item.value}`, item);
+      for (const [name, info] of Object.entries(data.infos ?? {})) tron.infos.set(name, info);
+      for (const [name, value] of Object.entries(data.accounts ?? {})) tron.accounts.set(name, value);
+      for (const [name, value] of Object.entries(data.rewards ?? {})) tron.rewards.set(name, value);
+      if (tron.transactions.size + tron.internal.size + tron.tokens.size > 300) return respond(response, 400, { error: 'Synthetic history is bounded' });
+      tron = { ...tron, tip: data.tip ?? tron.tip, pageSize: data.pageSize ?? tron.pageSize,
+        key: data.key === undefined ? tron.key : data.key,
+        fault: fault ? { onRequest: fault.onRequest, status: fault.status, limited: fault.limited === true } : null,
+        requests: 0 };
+      return respond(response, 200, { ok: true, tip: tron.tip });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
       const data = await readJson(request);

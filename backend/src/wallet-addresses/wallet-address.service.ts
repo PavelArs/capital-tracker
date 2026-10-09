@@ -20,6 +20,7 @@ import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from
 import { walletSourceKey } from './chain-sync';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
+import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
   parseRegistration,
@@ -53,6 +54,8 @@ interface AddressRow {
   derived: DerivedSummary | null;
   /** Bybit account (M22): its stored key and what Bybit last reported; null for a wallet. */
   exchange: ExchangeRow | null;
+  /** Tron wallet: its staked TRX by its history, claimed rewards and the chain's last report. */
+  tron: TronRow | null;
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
@@ -67,6 +70,19 @@ interface StakeRow {
   state: StakeState | null;
   units: string;
   rewardUnits: string;
+}
+interface TronRow {
+  staked: string;
+  rewarded: string;
+  reported: TronReported | null;
+}
+/** TRON-STAKE-STATE as stored: sun amounts as text. */
+interface TronReported {
+  balance: string;
+  energy: string;
+  bandwidth: string;
+  unstaking: { units: string; availableAt: string }[];
+  unclaimed: string;
 }
 interface DerivedSummary {
   derived: number;
@@ -108,12 +124,14 @@ interface TransactionRow {
 // separate wallets (XPUB-OVERLAP), whose coins would then count twice.
 // A Bybit account (M22) adds its key's public facts and the balances Bybit reported; how far it
 // has read is the oldest of its record lists.
+// A Tron wallet adds its staked TRX by its history (TRON-STAKE-BALANCE), the vote rewards it
+// claimed (TRON-REWARD) and what the chain last reported (TRON-STAKE-STATE).
 const stakeHeld = (table: string, key: string) => `
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
         coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
           WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, bx.exchange,
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, bx.exchange, tr.tron,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -158,6 +176,13 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.
       'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
         x."internalReadTo", x."withdrawalsReadTo")) AS exchange
     FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
+  LEFT JOIN LATERAL (SELECT json_build_object('reported', x.reported,
+      'staked', (SELECT coalesce(sum(m.units), 0) FROM wallet_tron_stake_moves m
+        WHERE m."addressId" = a.id)::text,
+      'rewarded', (SELECT coalesce(sum(r."receivedUnits"), 0) FROM wallet_address_transactions r
+        WHERE r."addressId" = a.id AND r.asset IS NULL
+          AND r.raw->>'contractType' = '${TRON_REWARD_CONTRACT}')::text) AS tron
+    FROM wallet_tron_accounts x WHERE x."addressId" = a.id) tr ON true
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -210,6 +235,7 @@ function balancesOf(row: AddressRow) {
  */
 function stakingOf(row: AddressRow) {
   if (isExchange(row.network)) return null;
+  if (row.network === 'tron') return tronStakingOf(row);
   const sol = chainAsset(row.network, null);
   const accounts = row.stake
     .filter((item) => item.state !== 'closed' || BigInt(item.units) !== 0n)
@@ -229,6 +255,76 @@ function stakingOf(row: AddressRow) {
       sol,
     );
   return { symbol: sol.symbol, quantity: total('units'), rewards: total('rewardUnits'), accounts };
+}
+
+/**
+ * TRON-STAKE-BALANCE: the TRX the wallet staked by its history, part of its balance above, split
+ * as the chain last reported it: staked for energy, for bandwidth, and each unstake waiting for
+ * its 14 days. Claimed vote rewards are received TRX already in the balance; unclaimed ones are
+ * shown and not counted.
+ */
+function tronStakingOf(row: AddressRow) {
+  const trx = chainAsset('tron', null);
+  const units = (value: string | undefined) => BigInt(value ?? '0');
+  const format = (value: bigint) => formatUnits(value, trx);
+  const staked = units(row.tron?.staked);
+  const rewarded = units(row.tron?.rewarded);
+  const reported = row.tron?.reported ?? null;
+  const unstaking = reported?.unstaking ?? [];
+  const reportedTotal = reported
+    ? units(reported.energy) +
+      units(reported.bandwidth) +
+      unstaking.reduce((sum, item) => sum + units(item.units), 0n)
+    : null;
+  if (staked === 0n && rewarded === 0n && !reportedTotal) return null;
+  const position = (
+    account: string,
+    kind: 'energy' | 'bandwidth' | 'unstaking' | null,
+    state: StakeState | null,
+    quantity: bigint,
+    availableAt: string | null = null,
+  ) => ({
+    account,
+    kind,
+    validator: null,
+    pool: null,
+    state,
+    quantity: format(quantity),
+    rewards: format(0n),
+    availableAt,
+  });
+  const accounts = reported
+    ? [
+        ...(units(reported.energy) > 0n
+          ? [position('energy', 'energy', 'active', units(reported.energy))]
+          : []),
+        ...(units(reported.bandwidth) > 0n
+          ? [position('bandwidth', 'bandwidth', 'active', units(reported.bandwidth))]
+          : []),
+        ...unstaking.map((item, index) =>
+          position(
+            `unstaking-${index + 1}`,
+            'unstaking',
+            'deactivating',
+            units(item.units),
+            item.availableAt,
+          ),
+        ),
+      ]
+    : staked > 0n
+      ? [position('tron', null, null, staked)]
+      : [];
+  return {
+    symbol: trx.symbol,
+    quantity: format(staked),
+    rewards: format(rewarded),
+    accounts,
+    // What the chain reports staked, when it differs from what the history explains.
+    reportedQuantity:
+      reportedTotal !== null && reportedTotal !== staked ? format(reportedTotal) : null,
+    unclaimedRewards:
+      reported && units(reported.unclaimed) > 0n ? format(units(reported.unclaimed)) : null,
+  };
 }
 
 function summary(row: AddressRow, now = new Date()) {

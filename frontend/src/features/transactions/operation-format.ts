@@ -41,17 +41,20 @@ const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> 
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
   solana: 'Solana',
+  tron: 'Tron',
   bybit: 'Bybit',
 };
 
 /**
  * "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO), "Auto:
- * Bybit trade" for a Bybit spot fill it recorded as a Buy or Sell (BYBIT-TRADES).
+ * Bybit trade" for a Bybit spot fill it recorded as a Buy or Sell (BYBIT-TRADES), "Auto: vote
+ * reward" for a Tron vote reward claim (TRON-REWARD).
  */
 export function statusLabel(operation: Operation): string {
   if (!operation.classification?.automatic || operation.status !== 'recorded')
     return statusLabels[operation.status];
-  return operation.type === 'transfer' ? 'Auto: own wallets' : 'Auto: Bybit trade';
+  if (operation.type === 'transfer') return 'Auto: own wallets';
+  return operation.type === 'staking-reward' ? 'Auto: vote reward' : 'Auto: Bybit trade';
 }
 
 /** "Buy", or "Incoming" for a blockchain transaction nobody has classified yet. */
@@ -109,8 +112,8 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
 
 /**
  * The transaction hash as the network's explorers show it: Ethereum's with 0x, Solana's
- * signature as is. A token transfer's record adds its leg number to the hash (M14, M15),
- * which is not part of it.
+ * signature and Tron's hash as is. A token transfer's record adds its leg number to the hash
+ * (M14, M15), which is not part of it.
  */
 export function transactionHash(operation: Operation): string | null {
   if (!operation.chain) return null;
@@ -147,6 +150,7 @@ const explorers: Partial<Record<string, (hash: string) => string>> = {
   bitcoin: (hash) => `https://mempool.space/tx/${hash}`,
   ethereum: (hash) => `https://etherscan.io/tx/${hash}`,
   solana: (hash) => `https://solscan.io/tx/${hash}`,
+  tron: (hash) => `https://tronscan.org/#/transaction/${hash}`,
 };
 
 /** The transaction's page on its network's block explorer, or null when there is none. */

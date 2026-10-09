@@ -19,6 +19,8 @@ export function failureMessage(
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read. Try again later.`;
     case 'not_configured':
+      if (address?.network === 'tron')
+        return 'TronGrid refused the requests. A free TronGrid API key on the server lets the app read Tron wallets.';
       return address?.network === 'bybit'
         ? 'The stored Bybit API key cannot be read on this server. Add the account again with its read-only key.'
         : `${network} sync needs a valid Etherscan API key on the server.`;

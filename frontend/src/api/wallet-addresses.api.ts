@@ -9,7 +9,7 @@ export type ProviderFailure =
   | 'invalid_response'
   | 'not_configured'
   | 'key_rejected';
-export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit';
+export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {
@@ -20,8 +20,8 @@ export interface ChainBalance {
 export type StakeState = 'activating' | 'active' | 'deactivating' | 'inactive' | 'closed';
 
 /**
- * One stake account of a Solana wallet, or one staking pool contract of an Ethereum wallet; its
- * coins are part of the wallet's balance.
+ * One stake account of a Solana wallet, one staking pool contract of an Ethereum wallet, or one
+ * part of a Tron wallet's staked TRX; its coins are part of the wallet's balance.
  */
 export interface StakeAccount {
   account: string;
@@ -29,18 +29,26 @@ export interface StakeAccount {
   validator: string | null;
   /** Ethereum: the pool token's symbol, such as ocsETH; null when it has no plain one. */
   pool?: string | null;
+  /** Tron: what the TRX is staked for, or an unstake waiting; null before the chain was read. */
+  kind?: 'energy' | 'bandwidth' | 'unstaking' | null;
+  /** Tron: when an unstake can be withdrawn, ISO. */
+  availableAt?: string | null;
   /** Null until the chain was read after the account was found. */
   state: StakeState | null;
   quantity: string;
   rewards: string;
 }
 
-/** SOL in stake accounts or ETH in staking pools, already included in the wallet's balance. */
+/** SOL in stake accounts, ETH in staking pools or staked TRX, already in the wallet's balance. */
 export interface Staking {
   symbol: string;
   quantity: string;
   rewards: string;
   accounts: StakeAccount[];
+  /** Tron: what the chain reports staked, when it differs from what the history explains. */
+  reportedQuantity?: string | null;
+  /** Tron: vote rewards not claimed yet; not counted until claimed. */
+  unclaimedRewards?: string | null;
 }
 
 /** A Bitcoin wallet tracked through its account public key (M21) and the addresses it derives. */

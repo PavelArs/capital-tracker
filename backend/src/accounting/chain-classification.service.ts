@@ -13,6 +13,7 @@ import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import { isExchange } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
+import { TRON_REWARD_CONTRACT } from '../wallet-addresses/tron-legs';
 import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
 import { projectRewardVersion, readRewardHead } from './asset-reward.store';
@@ -202,6 +203,14 @@ const sameEntry = (left: Produced, right: Produced) =>
 /** The stored price of a coin counts for a swap only if it is at most two days older. */
 const PRICE_AGE_MS = 2 * 24 * 60 * 60 * 1000;
 
+/** quantity × price in USD, half up to whole cents (TRON-REWARD). */
+export function centsOf(quantity: string, priceUsd: string): string {
+  // Both carry 30 decimals: the product carries 60, a cent is 10^58 of it.
+  const product = canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(priceUsd);
+  const cents = (product + 5n * 10n ** 57n) / 10n ** 58n;
+  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+}
+
 /**
  * What decides the produced entry: same answer, same account, same note keep it as it is. A
  * transfer or a swap carries no note of its own, so its comment changes nothing.
@@ -300,6 +309,8 @@ export class ChainClassificationService {
         const { recognized } = await this.recognizeExchangeTrades(ownerId);
         if (linked + recognized === 0) break;
       }
+      // A claimed reward needs no coins the books must hold first: one pass records them all.
+      await this.recognizeStakingRewards(ownerId);
     } catch {
       this.logger.warn('Own transfers could not be linked now');
     }
@@ -377,6 +388,68 @@ export class ChainClassificationService {
       } catch (error) {
         if (!(error instanceof HttpException || error instanceof FifoHistoryError))
           this.logger.warn('A Bybit trade could not be recorded; it stays to classify');
+      }
+    }
+    return { recognized };
+  }
+
+  /**
+   * TRON-REWARD: records every Tron vote reward claim (a WithdrawBalance the wallet signed) as a
+   * Staking reward without asking, valued at the stored TRX price of its time when there is
+   * one, each in its own transaction. It needs the wallet's account; a claim the owner has
+   * answered is never touched.
+   */
+  async recognizeStakingRewards(ownerId: string): Promise<{ recognized: number }> {
+    const owner = parseUuid(ownerId);
+    const claims: { addressId: string; txid: string }[] = await this.source.query(
+      `SELECT t."addressId", t.txid
+        FROM wallet_address_transactions t
+        JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+        LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+        WHERE t."ownerId"=$1 AND w.network='tron' AND w."accountId" IS NOT NULL
+          AND t.asset IS NULL AND t.raw->>'contractType'=$2 AND h.txid IS NULL
+        ORDER BY t."blockTime", t.txid`,
+      [owner, TRON_REWARD_CONTRACT],
+    );
+    let recognized = 0;
+    for (const claim of claims) {
+      try {
+        const done = await this.source.transaction(async (manager) => {
+          await lockAccountingOwner(manager, owner);
+          const row = await this.readLeg(manager, owner, claim.addressId, claim.txid);
+          const version = await this.lockHead(manager, claim.addressId, claim.txid);
+          if (version !== 0 || row.accountId === null || !fitsDirection(leg(row), 'staking-reward'))
+            return false;
+          const { quantity } = legMovement(leg(row));
+          const occurredAt = row.blockTime.toISOString();
+          const price = await this.storedPrice(manager, chainCoin(row).symbol, occurredAt);
+          const input: ClassificationInput = {
+            requestId: randomUUID(),
+            expectedVersion: 0,
+            hidden: false,
+            classification: {
+              type: 'staking-reward',
+              valueUsd: price === null ? null : centsOf(quantity, price),
+            },
+          };
+          const payload = JSON.stringify({
+            automatic: true,
+            ...JSON.parse(classificationPayload(claim.addressId, claim.txid, input)),
+          });
+          await this.record(
+            manager,
+            owner,
+            { address: claim.addressId, txid: claim.txid, row, version },
+            input,
+            payload,
+            true,
+          );
+          return true;
+        });
+        if (done) recognized += 1;
+      } catch (error) {
+        if (!(error instanceof HttpException || error instanceof FifoHistoryError))
+          this.logger.warn('A Tron reward could not be recorded; it stays to classify');
       }
     }
     return { recognized };
@@ -582,11 +655,11 @@ export class ChainClassificationService {
       comment,
       produced: { ...nothing, ...produced },
       linkedAddressId: produced.transferId ? linked : null,
-      // A note added to a recognised transfer leaves it recognised; a Bybit trade the app
-      // recorded by itself (M22) is recognised too.
+      // A note added to a recognised transfer leaves it recognised; a Bybit trade (M22) or a
+      // Tron reward claim (TRON-REWARD) the app recorded by itself is recognised too.
       automatic: produced.transferId
         ? (keep && live?.automatic) || automatic
-        : automatic && produced.tradeId
+        : automatic && (produced.tradeId || produced.rewardId)
           ? true
           : null,
       paired: null,

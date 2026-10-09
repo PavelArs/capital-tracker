@@ -65,6 +65,7 @@ const legacyChecks = [
   'solana-wallets-db',
   'bitcoin-xpub-db',
   'bybit-db',
+  'tron-wallets-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
