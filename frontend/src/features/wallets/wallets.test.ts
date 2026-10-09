@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   accountNamed,
   checkAddress,
+  checkApiKey,
   checkBitcoinAddress,
   reconcile,
   shortAddress,
@@ -63,7 +64,9 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       reconcile([address(1, {})], portfolio([{ accountId: trust, quantity: '0.0098' }]), trust),
     ).toEqual({
       state: 'differs',
-      assets: [{ symbol: 'BTC', chain: '0.01', recorded: '0.0098', difference: '0.0002' }],
+      assets: [
+        { symbol: 'BTC', chain: '0.01', recorded: '0.0098', difference: '0.0002', exchange: false },
+      ],
     });
   });
 
@@ -145,7 +148,9 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
     } as unknown as PortfolioValuation;
     expect(reconcile([ethereum], held, trust)).toEqual({
       state: 'differs',
-      assets: [{ symbol: 'USDC', chain: '250', recorded: '200', difference: '50' }],
+      assets: [
+        { symbol: 'USDC', chain: '250', recorded: '200', difference: '50', exchange: false },
+      ],
     });
   });
 
@@ -278,5 +283,18 @@ describe('names', () => {
       name: 'Trust Wallet',
     });
     expect(accountNamed([{ name: 'Trust Wallet' }], 'Trezor')).toBeUndefined();
+  });
+});
+
+describe('BYBIT-KEY: the API key fields (M22)', () => {
+  it('takes letters and digits, trimmed, and refuses a seed phrase', () => {
+    expect(checkApiKey(' SyntheticKey0001 ', 'key')).toEqual({
+      ok: true,
+      value: 'SyntheticKey0001',
+    });
+    expect(checkApiKey('', 'secret')).toEqual({ ok: false, message: 'Paste the API secret.' });
+    expect(checkApiKey('not-a-key!', 'key').ok).toBe(false);
+    const words = Array(11).fill('abandon').concat('about').join(' ');
+    expect(checkApiKey(words, 'secret')).toMatchObject({ ok: false, secret: true });
   });
 });

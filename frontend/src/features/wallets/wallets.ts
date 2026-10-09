@@ -73,6 +73,8 @@ export interface AssetDifference {
   chain: string;
   recorded: string;
   difference: string;
+  /** The balance is what an exchange reports (M22, BYBIT-GAPS), not a blockchain. */
+  exchange: boolean;
 }
 
 export type Reconciliation =
@@ -105,7 +107,8 @@ export function reconcile(
     );
     const recorded = recordedCoin(portfolio, accountId, symbol);
     const difference = decimal(units(chain) - units(recorded));
-    return difference === '0' ? [] : [{ symbol, chain, recorded, difference }];
+    const exchange = own.every((address) => networkOf(address).exchange === true);
+    return difference === '0' ? [] : [{ symbol, chain, recorded, difference, exchange }];
   });
   return assets.length === 0 ? { state: 'match' } : { state: 'differs', assets };
 }
@@ -153,6 +156,32 @@ function base58Length(value: string): number | null {
  * WAL-INVALID, WAL-NO-SECRETS: a first check in the browser. The server verifies the
  * checksum; a seed phrase or a private key is refused here and never sent anywhere.
  */
+export type KeyCheck = { ok: true; value: string } | { ok: false; message: string; secret?: true };
+
+/**
+ * BYBIT-KEY (M22): Bybit's API key and secret are letters and digits. A seed phrase or a
+ * private key pasted here is refused like in an address field (WAL-NO-SECRETS).
+ */
+export function checkApiKey(raw: string, part: 'key' | 'secret'): KeyCheck {
+  const value = raw.trim();
+  const name = part === 'key' ? 'API key' : 'API secret';
+  if (!value) return { ok: false, message: `Paste the ${name}.` };
+  const secret = secretCheck(value);
+  if (secret && !secret.ok)
+    return {
+      ok: false,
+      secret: true,
+      message: secret.message.replace('the public address', 'a read-only API key'),
+    };
+  const pattern = part === 'key' ? /^[0-9A-Za-z]{10,64}$/ : /^[0-9A-Za-z]{10,128}$/;
+  if (!pattern.test(value))
+    return {
+      ok: false,
+      message: `This is not a Bybit ${name}: it has only letters and digits. Copy it again from Bybit.`,
+    };
+  return { ok: true, value };
+}
+
 export function checkAddress(network: WalletAddress['network'], raw: string): AddressCheck {
   if (network === 'solana') return checkSolanaAddress(raw);
   return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);

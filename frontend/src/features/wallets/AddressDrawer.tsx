@@ -9,7 +9,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
-import { DASH, quantity } from '../portfolio/format';
+import { age, DASH, quantity } from '../portfolio/format';
 import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
@@ -24,6 +24,13 @@ const directionLabels: Record<AddressTransaction['direction'], string> = {
   out: 'Sent',
   self: 'To itself',
 };
+/** A Bybit record: a spot trade, or a deposit or withdrawal (M22). */
+const recordLabel = (item: AddressTransaction) =>
+  item.txid.startsWith('bybit-trade-')
+    ? 'Trade'
+    : item.direction === 'out'
+      ? 'Withdrawal'
+      : 'Deposit';
 const dayFormat = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
@@ -109,6 +116,8 @@ export default function AddressDrawer({
   const wallet = accounts.find((account) => account.accountId === address.accountId);
   // M21: a Bitcoin account public key and the addresses it derives.
   const key = address.accountKey ?? null;
+  // M22: a Bybit account, its balances as Bybit reports them.
+  const exchange = address.exchange ?? null;
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
@@ -167,7 +176,9 @@ export default function AddressDrawer({
       >
         <div className="transactions-drawer__head">
           <h2 id="address-title">
-            {wallet ? `${wallet.name} · ${network.name}` : `${network.name} address`}
+            {wallet
+              ? `${wallet.name} · ${network.name}`
+              : `${network.name} ${exchange ? 'account' : 'address'}`}
           </h2>
           <button
             ref={closeButton}
@@ -181,7 +192,11 @@ export default function AddressDrawer({
         <div className="transactions-drawer__body">
           <div className="transactions-hero">
             <span className="transactions-hero__amount">
-              {balances === null ? `${DASH} ${network.symbol}` : chainAmounts(address)}
+              {balances === null
+                ? exchange
+                  ? DASH
+                  : `${DASH} ${network.symbol}`
+                : chainAmounts(address)}
             </span>
             <span className="transactions-hero__value">
               {balances === null
@@ -203,7 +218,7 @@ export default function AddressDrawer({
               </div>
             )}
             <div>
-              <dt>{key ? 'Public key' : 'Address'}</dt>
+              <dt>{key ? 'Public key' : exchange ? 'Bybit UID' : 'Address'}</dt>
               <dd>
                 <span className="wallets-mono">{address.address}</span>{' '}
                 <button
@@ -220,6 +235,48 @@ export default function AddressDrawer({
                 <dt>Addresses</dt>
                 <dd>{key.usedAddresses} used · new ones are found automatically</dd>
               </div>
+            )}
+            {exchange && (
+              <>
+                <div>
+                  <dt>API key</dt>
+                  <dd>
+                    <span className="wallets-mono">…{exchange.keyHint}</span> · read-only, stored
+                    encrypted
+                  </dd>
+                </div>
+                <div>
+                  <dt>Key expires</dt>
+                  <dd>
+                    {exchange.ipBound
+                      ? 'Never: bound to an IP address'
+                      : exchange.keyExpiresAt
+                        ? `${dayFormat.format(new Date(exchange.keyExpiresAt))}. Bind it to the server's IP address in Bybit to keep it.`
+                        : 'Unknown'}
+                  </dd>
+                </div>
+                <div>
+                  <dt>History from</dt>
+                  <dd>{dayFormat.format(new Date(exchange.historyFrom))}</dd>
+                </div>
+                {exchange.reportedAt && (
+                  <div>
+                    <dt>Balances</dt>
+                    <dd>As Bybit reported them {age(exchange.reportedAt, new Date())}</dd>
+                  </div>
+                )}
+                {exchange.untracked.length > 0 && (
+                  <div>
+                    <dt>Not tracked</dt>
+                    <dd>
+                      {exchange.untracked
+                        .map((item) => `${quantity(item.quantity)} ${item.symbol}`)
+                        .join(' · ')}
+                      <span className="wallets-muted"> · not counted</span>
+                    </dd>
+                  </div>
+                )}
+              </>
             )}
             <div>
               <dt>Status</dt>
@@ -295,7 +352,8 @@ export default function AddressDrawer({
             )}
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor="address-label">
-                Address name <span className="wallets-muted">(optional)</span>
+                {exchange ? 'Account name' : 'Address name'}{' '}
+                <span className="wallets-muted">(optional)</span>
               </label>
               <input
                 id="address-label"
@@ -323,7 +381,7 @@ export default function AddressDrawer({
           </form>
           <section aria-labelledby="address-transactions">
             <h3 id="address-transactions" className="transactions-section">
-              Blockchain transactions
+              {exchange ? 'Bybit records' : 'Blockchain transactions'}
             </h3>
             {!recent?.length ? (
               <p className="wallets-muted">
@@ -338,7 +396,7 @@ export default function AddressDrawer({
                 {recent.map((item) => (
                   <li key={item.txid}>
                     <span>
-                      {directionLabels[item.direction]}{' '}
+                      {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
                       <span className="wallets-muted">
                         {dayFormat.format(new Date(item.blockTime))}
                       </span>

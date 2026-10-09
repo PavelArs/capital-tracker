@@ -2,14 +2,19 @@ import type { SourceState } from '../sync-status/sync-source';
 import type { ProviderFailure } from './esplora-client';
 
 export type StepOutcome = 'complete' | 'partial' | 'provider_error';
-/** Why a provider gave no history: its own failure, or no API key on this server. */
-export type StepFailure = ProviderFailure | 'not_configured';
+/**
+ * Why a provider gave no history: its own failure, no API key on this server, or (Bybit, M22)
+ * an account key the exchange no longer accepts.
+ */
+export type StepFailure = ProviderFailure | 'not_configured' | 'key_rejected';
 
 /** One bounded pass over a wallet's history; the next pass continues from its cursor. */
 export interface StepResult {
   outcome: StepOutcome;
   reason: StepFailure | null;
   imported: number;
+  /** What the provider itself said about a failure, when that helps the owner (Bybit). */
+  detail?: string | null;
 }
 
 /**
@@ -50,7 +55,11 @@ export function failureMessage(network: string, reason: SyncFailure): string {
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read.`;
     case 'not_configured':
-      return `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
+      return network === 'Bybit'
+        ? 'No usable Bybit API key is stored for this account. Add the account again with a read-only key.'
+        : `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
+    case 'key_rejected':
+      return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
     case 'unsupported':
       return `Syncing ${network} wallets is not supported yet.`;
     case 'error':
@@ -81,10 +90,12 @@ export function outcomeOf(
     return { state: 'syncing', errorCode: null, errorMessage: null, nextRunAt: now };
   }
   const reason = result.reason ?? 'unavailable';
+  const detail = result.detail ? ` ${result.detail}.` : '';
   return {
     state: reason === 'rate_limited' ? 'delayed' : 'failed',
     errorCode: reason,
-    errorMessage: failureMessage(network, reason),
+    // The stored message holds at most 300 characters.
+    errorMessage: `${failureMessage(network, reason)}${detail}`.slice(0, 300),
     nextRunAt: at(RETRY_AFTER_MS),
   };
 }

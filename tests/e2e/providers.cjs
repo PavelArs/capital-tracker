@@ -3,10 +3,10 @@ const http = require('node:http');
 const https = require('node:https');
 const tls = require('node:tls');
 const { readFileSync } = require('node:fs');
-const { createHash } = require('node:crypto');
+const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru']);
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -61,6 +61,14 @@ let ethereum = initialEthereum();
 // for them; an account never posted, or posted as null, does not exist.
 const initialSolana = () => ({ slot: 300000100, epoch: 800, stakes: new Map(), transactions: new Map(), fault: null, requests: 0 });
 let solana = initialSolana();
+// Synthetic Bybit V5 (sync-bybit-account): keys with what /v5/user/query-api says of them, and
+// records posted as { at: <ms>, row: <Bybit's row> }; every private request must carry a valid
+// HMAC-SHA256 signature of the exact query string, checked here independently of the backend.
+// `pageSize` splits lists into smaller pages (cursor "<offset>%3A<n>", sent back raw); `fault`
+// answers the n-th signed request after the post with a retCode or an HTTP status.
+const initialBybit = () => ({ keys: [], executions: [], deposits: [], internalDeposits: [], withdrawals: [],
+  balances: { FUND: [], UNIFIED: [] }, pageSize: null, fault: null, requests: 0, badSignatures: 0 });
+let bybit = initialBybit();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
 // raw for the probe to read. Nothing is relayed anywhere.
@@ -162,6 +170,68 @@ function etherscan(response, url) {
     .slice(0, offset);
   if (items.length === 0) return respond(response, 200, { status: '0', message: 'No transactions found', result: [] });
   return respond(response, 200, { status: '1', message: 'OK', result: items });
+}
+
+const DAY_MS = 86400000;
+function bybitRequest(request, response, url) {
+  const reply = (retCode, retMsg, result = {}) => respond(response, 200, { retCode, retMsg, result, retExtInfo: {}, time: Date.now() });
+  const header = (name) => (typeof request.headers[name] === 'string' ? request.headers[name] : '');
+  const apiKey = header('x-bapi-api-key');
+  const timestamp = header('x-bapi-timestamp');
+  const window = header('x-bapi-recv-window');
+  const query = request.url.includes('?') ? request.url.slice(request.url.indexOf('?') + 1) : '';
+  const key = bybit.keys.find((item) => item.apiKey === apiKey);
+  if (!key) return reply(10003, 'API key is invalid.');
+  const expected = createHmac('sha256', key.apiSecret).update(timestamp + apiKey + window + query).digest();
+  const given = Buffer.from(/^[0-9a-f]{64}$/.test(header('x-bapi-sign')) ? header('x-bapi-sign') : '', 'hex');
+  if (given.length !== 32 || !timingSafeEqual(given, expected)) {
+    bybit.badSignatures++;
+    return reply(10004, 'error sign! origin_string[synthetic]');
+  }
+  if (!/^\d{13}$/.test(timestamp) || Math.abs(Number(timestamp) - Date.now()) > Number(window || 5000)) {
+    return reply(10002, 'invalid request, please check your server timestamp or recv_window param');
+  }
+  bybit.requests++;
+  const fault = bybit.fault;
+  if (fault && fault.onRequest === bybit.requests) {
+    bybit.fault = null;
+    if (fault.status) return respond(response, fault.status, { error: 'Synthetic provider fault' });
+    return reply(fault.retCode, 'Synthetic refusal');
+  }
+  const params = url.searchParams;
+  if (url.pathname === '/v5/user/query-api') return reply(0, '', { ...key.info, apiKey });
+  if (url.pathname === '/v5/asset/transfer/query-account-coins-balance') {
+    const type = params.get('accountType');
+    if (!['FUND', 'UNIFIED'].includes(type)) return reply(10001, 'accountType invalid');
+    return reply(0, 'success', { accountType: type, memberId: key.info.userID, balance: bybit.balances[type] });
+  }
+  const lists = {
+    '/v5/execution/list': ['executions', 'list', 7 * DAY_MS, 100],
+    '/v5/asset/deposit/query-record': ['deposits', 'rows', 30 * DAY_MS, 50],
+    '/v5/asset/deposit/query-internal-record': ['internalDeposits', 'rows', 30 * DAY_MS, 50],
+    '/v5/asset/withdraw/query-record': ['withdrawals', 'rows', 30 * DAY_MS, 50],
+  };
+  const list = lists[url.pathname];
+  if (!list) return reply(10001, 'Unknown synthetic endpoint');
+  const [name, field, longest, largest] = list;
+  if (name === 'executions' && params.get('category') !== 'spot') return reply(10001, 'category invalid');
+  if (name === 'withdrawals' && params.get('withdrawType') !== '2') return reply(10001, 'withdrawType must ask for every withdrawal');
+  const start = Number(params.get('startTime'));
+  const end = Number(params.get('endTime'));
+  const limit = Number(params.get('limit'));
+  // Bybit's own limits: the backend must split history into windows it accepts.
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || end - start > longest
+    || (name !== 'executions' && end - start >= longest)) return reply(10001, 'The time range is too long or invalid');
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > largest) return reply(10001, 'limit invalid');
+  const size = Math.min(limit, bybit.pageSize ?? limit);
+  const cursor = params.get('cursor');
+  const offset = cursor === null ? 0 : Number(/^(\d+):\d+$/.exec(cursor)?.[1] ?? NaN);
+  if (!Number.isSafeInteger(offset)) return reply(10001, 'cursor invalid');
+  // Newest first, as Bybit lists them.
+  const matching = bybit[name].filter(({ at }) => at >= start && at <= end).sort((left, right) => right.at - left.at);
+  const page = matching.slice(offset, offset + size).map(({ row }) => row);
+  const more = offset + size < matching.length;
+  return reply(0, 'OK', { [field]: page, nextPageCursor: more ? `${offset + size}%3A${size}` : '', ...(name === 'executions' ? { category: 'spot' } : {}) });
 }
 
 function solanaKeys(result) {
@@ -365,6 +435,7 @@ function provider(request, response, url) {
   if (url.hostname === 'api.kraken.com' && url.pathname === '/0/public/OHLC') return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp') return cbrDynamic(response, url);
   if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
+  if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -430,6 +501,7 @@ const server = http.createServer(async (request, response) => {
       cbr = null;
       ethereum = initialEthereum();
       solana = initialSolana();
+      bybit = initialBybit();
       mail = [];
       return respond(response, 200, { ok: true });
     }
@@ -472,6 +544,37 @@ const server = http.createServer(async (request, response) => {
         return respond(response, 400, { error: 'Invalid synthetic Bank of Russia fixture' });
       }
       cbr = { base: data.base ?? {}, fail: data.fail ?? {}, broken: data.broken ?? {} };
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'GET' && request.url === '/__control/bybit') {
+      return respond(response, 200, { requests: bybit.requests, badSignatures: bybit.badSignatures });
+    }
+    // Lists replace what was posted before; `append` adds to them instead.
+    if (request.method === 'POST' && request.url === '/__control/bybit') {
+      const data = await readJson(request);
+      const plain = (value) => value && typeof value === 'object' && !Array.isArray(value);
+      const records = (value) => value === undefined || (Array.isArray(value) && value.length <= 60
+        && value.every((item) => plain(item) && Number.isSafeInteger(item.at) && plain(item.row)));
+      const keys = data.keys === undefined || (Array.isArray(data.keys) && data.keys.length <= 10
+        && data.keys.every((item) => plain(item) && /^[0-9A-Za-z]{10,64}$/.test(item.apiKey ?? '')
+          && /^[0-9A-Za-z]{10,128}$/.test(item.apiSecret ?? '') && plain(item.info)));
+      const coins = (value) => value === undefined || (Array.isArray(value) && value.length <= 20 && value.every(plain));
+      const fault = data.fault;
+      if (!keys || !records(data.executions) || !records(data.deposits) || !records(data.internalDeposits)
+        || !records(data.withdrawals) || (data.balances !== undefined && (!plain(data.balances)
+          || !coins(data.balances.FUND) || !coins(data.balances.UNIFIED)))
+        || (data.pageSize !== undefined && data.pageSize !== null && (!Number.isInteger(data.pageSize) || data.pageSize < 1))
+        || (fault !== undefined && (!plain(fault) || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || (!Number.isInteger(fault.retCode) && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+        return respond(response, 400, { error: 'Invalid synthetic Bybit fixture' });
+      }
+      const merge = (name) => (data[name] === undefined ? bybit[name] : data.append ? [...bybit[name], ...data[name]] : data[name]);
+      bybit = { keys: data.keys ?? bybit.keys, executions: merge('executions'), deposits: merge('deposits'),
+        internalDeposits: merge('internalDeposits'), withdrawals: merge('withdrawals'),
+        balances: data.balances ? { FUND: data.balances.FUND ?? [], UNIFIED: data.balances.UNIFIED ?? [] } : bybit.balances,
+        pageSize: data.pageSize === undefined ? bybit.pageSize : data.pageSize,
+        fault: fault ? { onRequest: fault.onRequest, retCode: fault.retCode, status: fault.status } : null,
+        requests: 0, badSignatures: bybit.badSignatures };
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/ethereum') {

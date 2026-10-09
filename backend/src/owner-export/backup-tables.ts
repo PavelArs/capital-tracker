@@ -65,6 +65,7 @@ export const notBackedUp: Record<string, string> = {
   owner_auth: 'password hash',
   owner_mfa: 'TOTP secret',
   owner_mfa_recovery: 'recovery codes',
+  bybit_accounts: 'Bybit API key (encrypted) and sync progress',
   auth_sessions: 'sessions',
   auth_request_limits: 'sign-in rate limits',
   password_reset_tokens: 'password reset links',

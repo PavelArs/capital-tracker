@@ -7,8 +7,9 @@ export type ProviderFailure =
   | 'rate_limited'
   | 'unavailable'
   | 'invalid_response'
-  | 'not_configured';
-export type Network = 'bitcoin' | 'ethereum' | 'solana';
+  | 'not_configured'
+  | 'key_rejected';
+export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {
@@ -53,6 +54,21 @@ export interface AccountKey {
   alsoTracked: { id: string; address: string; label: string | null }[];
 }
 
+/** A Bybit account read with the owner's read-only API key (M22); the key is never returned. */
+export interface ExchangeAccount {
+  /** The last four characters of the API key. */
+  keyHint: string;
+  /** Bound to IP addresses; an unbound key expires after 90 days. */
+  ipBound: boolean;
+  keyExpiresAt: string | null;
+  /** When Bybit last reported the balances shown; null until the history is read. */
+  reportedAt: string | null;
+  /** Coins Bybit holds that the app does not track; they never count. */
+  untracked: ChainBalance[];
+  /** How far back the history is read: Bybit keeps two years of trades. */
+  historyFrom: string;
+}
+
 export interface WalletAddress {
   id: string;
   network: Network;
@@ -70,6 +86,8 @@ export interface WalletAddress {
   staking?: Staking | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */
   accountKey?: AccountKey | null;
+  /** Set for a Bybit account: its balances are those Bybit reports. */
+  exchange?: ExchangeAccount | null;
   sync: {
     /** How much of the history is stored. */
     state: SyncState;
@@ -84,12 +102,9 @@ export interface WalletAddress {
   };
 }
 
-export interface NewWalletAddress {
-  network: Network;
-  address: string;
-  accountId?: string;
-  label?: string;
-}
+export type NewWalletAddress =
+  | { network: Exclude<Network, 'bybit'>; address: string; accountId?: string; label?: string }
+  | { network: 'bybit'; apiKey: string; apiSecret: string; accountId?: string; label?: string };
 
 export interface WalletAddressChanges {
   accountId?: string | null;
@@ -108,7 +123,7 @@ export interface AddressTransaction {
   blockHeight: number;
   blockTime: string;
   direction: 'in' | 'out' | 'self';
-  /** The asset the leg moves; the fee is in the network's own coin. */
+  /** The asset the leg moves; the fee is in the network's own coin (on Bybit in this one). */
   symbol: string;
   received: string;
   sent: string;

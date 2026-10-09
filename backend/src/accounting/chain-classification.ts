@@ -2,7 +2,7 @@ import { BadRequestException, UnprocessableEntityException } from '@nestjs/commo
 import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
 import type { RewardCategory } from './asset-reward-types';
 import { parseDecimal, parseUuid } from './input';
-import { formatAtoms } from './money';
+import { canonicalDecimalToAtoms, formatAtoms } from './money';
 import { isPaidCurrency } from './paid-currency';
 import { parseComment } from './trade-input';
 import type { TradePurpose } from './trade-purpose';
@@ -55,6 +55,8 @@ export interface PricedClassification {
   type: 'buy' | 'sell';
   currency: SettlementCurrency;
   amount: string;
+  /** The trading fee in the same currency, beside the amount (a Bybit trade, M22). */
+  fee?: string;
   /** RUB or EUR only: the rate actually paid, units per 1 USD; otherwise the Bank of Russia's. */
   perUsd?: string;
 }
@@ -111,9 +113,10 @@ const bad = (): never => {
 
 /**
  * A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds its
- * number (M14).
+ * number (M14); a Bybit record off chain has Bybit's own ID (M22).
  */
-export const chainTxid = /^([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?$/;
+export const chainTxid =
+  /^(([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?|bybit-(trade|deposit|withdrawal)-[0-9A-Za-z_-]{1,80})$/;
 
 function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();
@@ -128,13 +131,14 @@ function classification(raw: unknown): Classification | null {
   if (raw === null) return null;
   const type = (raw as Record<string, unknown> | undefined)?.type;
   if (type === 'buy' || type === 'sell') {
-    const row = object(raw, ['type', 'currency', 'amount', 'perUsd']);
+    const row = object(raw, ['type', 'currency', 'amount', 'fee', 'perUsd']);
     const currency = settlementCurrencies.find((code) => code === row.currency) ?? bad();
     if (row.perUsd !== undefined && !isPaidCurrency(currency)) return bad();
     return {
       type,
       currency,
       amount: parseDecimal(row.amount, true),
+      ...(row.fee === undefined ? {} : { fee: parseDecimal(row.fee, false) }),
       ...(row.perUsd === undefined ? {} : { perUsd: parseDecimal(row.perUsd, true) }),
     };
   }
@@ -199,6 +203,54 @@ export function classificationPayload(
     classification: input.classification,
     ...(input.comment === undefined ? {} : { comment: input.comment }),
   });
+}
+
+/**
+ * BYBIT-TRADES (M22): the Buy or Sell a Bybit spot fill is, when it can be told for certain: a
+ * pair of a tracked coin and USDT or USDC, its fee charged in one of the two. The amount is the
+ * fill's value less a fee charged in the bought coin (so price times quantity holds), and the
+ * fee is in the quote coin, valued at the fill's price when charged in the base coin. A buy
+ * then spends value plus a quote fee, a sale keeps value less it. Anything else stays to
+ * classify.
+ */
+export function exchangeTrade(raw: unknown): PricedClassification | null {
+  const trade = (raw as { trade?: Record<string, unknown> } | null)?.trade;
+  if (!trade || typeof trade !== 'object') return null;
+  const text = (key: string) => (typeof trade[key] === 'string' ? (trade[key] as string) : null);
+  const [side, base, quote, price, value, fee, feeCoin] = [
+    'side',
+    'base',
+    'quote',
+    'price',
+    'value',
+    'fee',
+    'feeCoin',
+  ].map(text);
+  if ((side !== 'buy' && side !== 'sell') || !base || !price || !value || !fee) return null;
+  if (quote !== 'USDT' && quote !== 'USDC') return null;
+  const decimal = /^\d+(\.\d+)?$/;
+  if (![price, value, fee].every((item) => decimal.test(item))) return null;
+  const atoms = (item: string) => canonicalDecimalToAtoms(parseDecimal(item, false));
+  const feeAtoms = atoms(fee);
+  let quoteFee: bigint;
+  if (feeAtoms === 0n || feeCoin === quote) quoteFee = feeAtoms;
+  else if (feeCoin === base) quoteFee = roundedProduct(feeAtoms, atoms(price));
+  else return null;
+  const gross = atoms(value) - (feeCoin === base && side === 'buy' ? quoteFee : 0n);
+  const amount = side === 'sell' && feeCoin === base ? atoms(value) + quoteFee : gross;
+  if (amount <= 0n) return null;
+  return {
+    type: side,
+    currency: quote,
+    amount: formatAtoms(amount),
+    fee: formatAtoms(quoteFee),
+  };
+}
+
+/** a × b for two amounts in atoms, half up at the 30 decimals amounts keep. */
+function roundedProduct(left: bigint, right: bigint): bigint {
+  const scale = 10n ** 30n;
+  return (left * right * 2n + scale) / (scale * 2n);
 }
 
 /** One stored chain transaction leg of a wallet address, raw as the provider sent it. */
@@ -278,16 +330,17 @@ export function planOperation(
   switch (value.type) {
     case 'buy':
     case 'sell': {
+      const fee = value.fee ?? '0';
       const amounts = isPaidCurrency(value.currency)
         ? {
             paid: {
               currency: value.currency,
               gross: value.amount,
-              fee: '0',
+              fee,
               ...(value.perUsd === undefined ? {} : { perUsd: value.perUsd }),
             },
           }
-        : { grossUsd: value.amount, feeUsd: '0' };
+        : { grossUsd: value.amount, feeUsd: fee };
       return {
         journal: 'trade',
         fields: {

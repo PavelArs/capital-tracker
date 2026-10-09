@@ -1,6 +1,6 @@
 import type { RewardOperationInput } from '../accounting/operation-list';
 import type { TradePurpose } from '../accounting/trade-purpose';
-import { chainAsset, formatUnits } from '../wallet-addresses/chain-assets';
+import { chainAsset, feeAsset, formatUnits } from '../wallet-addresses/chain-assets';
 import { type CsvCell, csvFile } from './csv';
 import type { ZipFile } from './zip';
 
@@ -182,7 +182,7 @@ const operationColumns: readonly (readonly [string, (row: ExportOperation) => Cs
 
 function coins(row: ExportChainTransaction) {
   const moved = chainAsset(row.network, row.asset);
-  const native = chainAsset(row.network, null);
+  const native = feeAsset(row.network, row.asset);
   return {
     asset: moved.symbol,
     received: formatUnits(BigInt(row.receivedUnits), moved),

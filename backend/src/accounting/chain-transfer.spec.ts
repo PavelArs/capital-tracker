@@ -1,5 +1,11 @@
 import { UnprocessableEntityException } from '@nestjs/common';
-import { type MatchableLeg, type OwnLeg, ownTransferPairs, planTransfer } from './chain-transfer';
+import {
+  type MatchableLeg,
+  type OwnLeg,
+  ownTransferPairs,
+  planTransfer,
+  sameTransaction,
+} from './chain-transfer';
 
 // Synthetic ids and amounts only (link-own-transfers, XFER-*).
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -173,5 +179,63 @@ describe('link-own-transfers automatic matching (D7)', () => {
       [matchable(sent), matchable(received, { txid: txid(2) })],
     ];
     for (const legs of uncertain) expect(ownTransferPairs(legs)).toEqual([]);
+  });
+});
+
+describe('BYBIT-DEPOSIT: a Bybit account and an own wallet in one transaction (M22)', () => {
+  const E18 = 10n ** 18n;
+  const exchange = (units: bigint, overrides: Partial<MatchableLeg> = {}): MatchableLeg => ({
+    addressId: id(20),
+    accountId: bybit,
+    network: 'bybit',
+    asset: 'BTC',
+    receivedUnits: units > 0n ? units.toString() : '0',
+    sentUnits: units < 0n ? (-units).toString() : '0',
+    feeUnits: '0',
+    txid: txid(1),
+    status: null,
+    ...overrides,
+  });
+
+  it('meets a wallet leg by the hash, a token leg by the hash before its log number', () => {
+    const wallet = { network: 'ethereum' as const, txid: `${txid(1)}-17` };
+    expect(sameTransaction({ network: 'bybit', txid: txid(1) }, wallet)).toBe(true);
+    expect(sameTransaction(wallet, { network: 'bybit', txid: txid(1) })).toBe(true);
+    expect(sameTransaction({ network: 'bybit', txid: txid(2) }, wallet)).toBe(false);
+    // Two wallets meet only by the exact leg id.
+    expect(sameTransaction({ network: 'ethereum', txid: txid(1) }, wallet)).toBe(false);
+  });
+
+  it('D7: 0.5001 BTC leaving wallet A and 0.5 BTC credited on Bybit form one transfer', () => {
+    const outgoing = matchable(sent);
+    const incoming = exchange(E18 / 2n);
+    expect(ownTransferPairs([outgoing, incoming])).toEqual([{ outgoing, incoming }]);
+    const plan = planTransfer(sent, bybit, incoming);
+    expect(plan).toMatchObject({
+      fromAccountId: accountA,
+      toAccountId: bybit,
+      quantity: '0.5',
+      feeQuantity: '0.0001',
+    });
+  });
+
+  it('a Bybit withdrawal of 0.5 BTC with its 0.0002 BTC fee arrives as 0.5 BTC in wallet B', () => {
+    const outgoing = exchange(-(5002n * E18) / 10000n, {
+      feeUnits: ((2n * E18) / 10000n).toString(),
+    });
+    const incoming = matchable(received);
+    expect(ownTransferPairs([incoming, outgoing])).toEqual([{ outgoing, incoming }]);
+    expect(planTransfer({ ...outgoing, accountId: bybit }, accountB, received)).toMatchObject({
+      quantity: '0.5',
+      feeQuantity: '0.0002',
+    });
+  });
+
+  it('a Bybit leg of another coin, or a different amount, is never linked', () => {
+    expect(ownTransferPairs([matchable(sent), exchange(E18 / 2n, { asset: 'USDT' })])).toEqual([]);
+    expect(ownTransferPairs([matchable(sent), exchange(E18 / 4n)])).toEqual([]);
+    expect(() => planTransfer(sent, bybit, exchange(E18 / 2n, { asset: 'USDT' }))).toThrow(
+      UnprocessableEntityException,
+    );
   });
 });

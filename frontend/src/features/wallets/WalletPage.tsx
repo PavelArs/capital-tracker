@@ -384,8 +384,9 @@ export default function WalletPage() {
             setAdding(false);
             replace(address);
             void load(true);
-            if (created) void sync(address.id).then(() => void loadOperations());
-            else setOpenId(address.id);
+            if (created || address.network === 'bybit')
+              void sync(address.id).then(() => void loadOperations());
+            if (!created) setOpenId(address.id);
           }}
         />
       )}
