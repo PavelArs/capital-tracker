@@ -24,6 +24,7 @@ const networks = [
   { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH and every token' },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL and every token' },
   { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
+  { key: 'stellar', symbol: 'XLM', name: 'Stellar', detail: 'One address. XLM' },
   {
     key: 'bybit',
     symbol: null,
@@ -391,6 +392,12 @@ export default function AddWalletDialog({
                     Paste the wallet address, not a token account: the app finds its token accounts
                     itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain
                     names them.
+                  </p>
+                ) : network === 'stellar' ? (
+                  <p className="wallets-note">
+                    Paste the account address that starts with G. The app tracks XLM on the Stellar
+                    public network; issued assets such as USDC on Stellar are not read. An exchange
+                    deposit address with a memo is not your wallet.
                   </p>
                 ) : network === 'tron' ? (
                   <p className="wallets-note">
