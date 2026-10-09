@@ -609,7 +609,7 @@ describe('M14: Ethereum wallets', () => {
     };
   };
 
-  it('WAL-ADD tracks an Ethereum address with ETH, USDT and USDC', async () => {
+  it('WAL-ADD tracks an Ethereum address with ETH and every token', async () => {
     setup([]);
     const added = ethWallet({ transactionCount: 0, chainBalance: null, balances: null });
     const add = vi
@@ -621,12 +621,12 @@ describe('M14: Ethereum wallets', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
     const ethereum = within(dialog).getByRole('button', { name: /^Ethereum/ });
     expect(ethereum).toBeEnabled();
-    expect(ethereum).toHaveTextContent('One address. ETH, USDT and USDC');
+    expect(ethereum).toHaveTextContent('One address. ETH and every token');
     await user.click(ethereum);
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     const field = within(dialog).getByLabelText('Ethereum wallet address');
     expect(field).toHaveAttribute('placeholder', '0x…');
-    expect(dialog).toHaveTextContent('tracks ETH, USDT and USDC on Ethereum mainnet');
+    expect(dialog).toHaveTextContent('tracks ETH and every ERC-20 token on Ethereum mainnet');
     await user.type(field, ethAddress.toUpperCase().replace('0X', '0x'));
     expect(within(dialog).getByText('Ethereum address')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
@@ -693,7 +693,7 @@ describe('M14: Ethereum wallets', () => {
     await user.click(row);
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
     expect(drawer).toHaveTextContent('1.5 ETH · 250 USDC');
-    expect(drawer).toHaveTextContent('Tracked assetsETH, USDT, USDC');
+    expect(drawer).toHaveTextContent('Tracked assetsETH, USDT, USDC and every other token');
     expect(drawer).toHaveTextContent('Etherscan');
   });
 
@@ -828,7 +828,7 @@ describe('M15: Solana wallets', () => {
     };
   };
 
-  it('WAL-ADD tracks a Solana address with SOL, USDT and USDC, case kept', async () => {
+  it('WAL-ADD tracks a Solana address with SOL and every token, case kept', async () => {
     setup([]);
     const added = solWallet({ transactionCount: 0, chainBalance: null, balances: null });
     const add = vi
@@ -840,11 +840,11 @@ describe('M15: Solana wallets', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
     const solana = within(dialog).getByRole('button', { name: /^Solana/ });
     expect(solana).toBeEnabled();
-    expect(solana).toHaveTextContent('One address. SOL, USDT and USDC');
+    expect(solana).toHaveTextContent('One address. SOL and every token');
     await user.click(solana);
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     const field = within(dialog).getByLabelText('Solana wallet address');
-    expect(dialog).toHaveTextContent('tracks SOL, USDT and USDC on Solana mainnet');
+    expect(dialog).toHaveTextContent('tracks SOL and every SPL token on Solana mainnet');
     await user.type(field, solAddress);
     expect(within(dialog).getByText('Solana address')).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
@@ -904,7 +904,7 @@ describe('M15: Solana wallets', () => {
     await user.click(row);
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Solana' });
     expect(drawer).toHaveTextContent('12.5 SOL · 40 USDT');
-    expect(drawer).toHaveTextContent('Tracked assetsSOL, USDT, USDC');
+    expect(drawer).toHaveTextContent('Tracked assetsSOL, USDT, USDC and every other token');
     expect(drawer).toHaveTextContent('Solana public RPC');
   });
 
