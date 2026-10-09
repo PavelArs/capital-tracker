@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -22,17 +23,21 @@ import {
   isBybitCoin,
   isExchange,
   isOtherToken,
+  movesAnyToken,
   type Network,
   networkAssets,
+  otherTokenByTicker,
 } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
+import { type HiddenReason, hiddenReason } from './token-visibility';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
   parseRegistration,
+  parseTokenVisibility,
   parseTransactionQuery,
   parseUpdate,
 } from './wallet-address-input';
@@ -48,6 +53,9 @@ interface AddressRow {
   scannedBlock: number | null;
   /** TOKEN-BACKFILL: set while the stored history is read again for other tokens. */
   tokenBackfillTo: number | null;
+  /** TOKEN-HIDE: contracts the owner hid, and ones the app would hide that the owner brought back. */
+  hiddenTokens: string[];
+  shownTokens: string[];
   walkTopTxid: string | null;
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
@@ -266,16 +274,63 @@ function balancesOf(row: AddressRow) {
 }
 
 /**
- * TOKEN-ANY: the other tokens the wallet holds, by ticker, after USDT and USDC. Left out while
- * the stored history is still read again for them (TOKEN-BACKFILL): a part is never a balance.
+ * TOKEN-HIDE: the other tokens the address holds that its balances leave out, by contract, and
+ * why. Empty while the stored history is still read again for tokens (TOKEN-BACKFILL).
+ */
+function leftOut(row: AddressRow): Map<string, HiddenReason> {
+  const found = new Map<string, HiddenReason>();
+  if (row.tokenBackfillTo !== null) return found;
+  for (const item of row.balances) {
+    if (!isOtherToken(row.network, item.asset) || BigInt(item.units) === 0n) continue;
+    const reason = hiddenReason(
+      chainAsset(row.network, item.asset),
+      BigInt(item.units),
+      row.hiddenTokens,
+      row.shownTokens,
+    );
+    if (reason) found.set(item.asset as string, reason);
+  }
+  return found;
+}
+
+/**
+ * TOKEN-ANY: the other tokens the wallet holds, by ticker, after USDT and USDC, except the ones
+ * left out (TOKEN-HIDE). Left out while the stored history is still read again for them
+ * (TOKEN-BACKFILL): a part is never a balance.
  */
 function otherTokens(row: AddressRow, amounts: { asset: string | null; units: string }[]) {
   if (row.tokenBackfillTo !== null) return [];
+  const hidden = leftOut(row);
   return amounts
     .flatMap((item) => {
       if (!isOtherToken(row.network, item.asset) || BigInt(item.units) === 0n) return [];
+      if (hidden.has(item.asset as string)) return [];
       const asset = chainAsset(row.network, item.asset);
-      return [{ symbol: asset.symbol, quantity: formatUnits(BigInt(item.units), asset) }];
+      return [
+        {
+          symbol: asset.symbol,
+          quantity: formatUnits(BigInt(item.units), asset),
+          // The chain's own name for it, and whether a price source lists it.
+          name: asset.name,
+          listed: asset.listed === true,
+        },
+      ];
+    })
+    .sort((left, right) => left.symbol.localeCompare(right.symbol));
+}
+
+/** TOKEN-HIDE: what the address holds of the tokens its balances leave out, and why. */
+function hiddenTokensOf(row: AddressRow) {
+  return [...leftOut(row)]
+    .map(([contract, reason]) => {
+      const asset = chainAsset(row.network, contract);
+      const units = BigInt(row.balances.find((item) => item.asset === contract)?.units ?? '0');
+      return {
+        symbol: asset.symbol,
+        name: asset.name,
+        quantity: formatUnits(units, asset),
+        reason,
+      };
     })
     .sort((left, right) => left.symbol.localeCompare(right.symbol));
 }
@@ -404,7 +459,11 @@ function poolsOf(row: AddressRow) {
     const units = BigInt(row.pools.find((item) => item.asset === asset.token)?.units ?? '0');
     return units > 0n ? [{ symbol: asset.symbol, quantity: formatUnits(units, asset) }] : [];
   });
-  pools.push(...otherTokens(row, row.pools).filter((item) => !item.quantity.startsWith('-')));
+  pools.push(
+    ...otherTokens(row, row.pools)
+      .filter((item) => !item.quantity.startsWith('-'))
+      .map(({ symbol, quantity }) => ({ symbol, quantity })),
+  );
   return pools.length === 0 ? null : pools;
 }
 
@@ -426,6 +485,10 @@ function summary(row: AddressRow, now = new Date()) {
     // SYNC-RECONCILE: known only once the whole history is stored; never a partial sum.
     chainBalance: balances?.[0].quantity ?? null,
     balances,
+    // TOKEN-HIDE: the other tokens left out of the balances, with the reason (Ethereum, Solana).
+    ...(movesAnyToken(row.network)
+      ? { hiddenTokens: state === 'complete' ? hiddenTokensOf(row) : null }
+      : {}),
     staking,
     pools,
     // Tron only: what the chain reports when the history explains a different TRX total.
@@ -656,6 +719,39 @@ export class WalletAddressService {
     // An address now in an account may complete a transfer between own wallets (D7).
     if ('accountId' in changes) await this.walletSync.linkOwnTransfers(owner);
     return result;
+  }
+
+  // TOKEN-HIDE: leaves other tokens out of an address's balances, or brings them back. A ticker
+  // names a token of the address's own network, never one the address does not hold.
+  async setTokenVisibility(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    const { tickers, visibility } = parseTokenVisibility(raw);
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      const row = await this.address(manager, owner, addressId);
+      if (!movesAnyToken(row.network))
+        throw new BadRequestException('Invalid wallet address input');
+      const held = new Set(row.balances.map((item) => item.asset));
+      const contracts = tickers.map((ticker) => {
+        const token = otherTokenByTicker(row.network, ticker);
+        if (!token || !held.has(token.token)) throw new BadRequestException('Unknown token');
+        return token.token as string;
+      });
+      const hide = visibility === 'hidden';
+      // The owner's last word wins: a token is in one list, never both.
+      await manager.query(
+        `UPDATE wallet_addresses SET
+          "hiddenTokens" = ARRAY(SELECT DISTINCT x FROM unnest(
+            CASE WHEN $3 THEN "hiddenTokens" || $4::text[] ELSE "hiddenTokens" END) x
+            WHERE $3 OR x <> ALL($4::text[]) ORDER BY x),
+          "shownTokens" = ARRAY(SELECT DISTINCT x FROM unnest(
+            CASE WHEN $3 THEN "shownTokens" ELSE "shownTokens" || $4::text[] END) x
+            WHERE NOT $3 OR x <> ALL($4::text[]) ORDER BY x)
+          WHERE "ownerId" = $1 AND id = $2`,
+        [owner, addressId, hide, contracts],
+      );
+      return summary(await this.address(manager, owner, addressId));
+    });
   }
 
   async list(ownerId: string) {

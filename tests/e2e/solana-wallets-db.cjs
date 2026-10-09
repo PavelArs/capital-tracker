@@ -231,7 +231,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 50/);
+  assert.match(migrate(database), /Migrations applied: 51/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -491,10 +491,11 @@ async function main() {
         { symbol: 'SOL', quantity: '0.999995000' },
         { symbol: 'USDT', quantity: '0.000000' },
         { symbol: 'USDC', quantity: '0.000000' },
-        { symbol: 'SYN', quantity: '40.000000000' },
-        { symbol: 'TT', quantity: '7.00' },
-        { symbol: fakeTicker, quantity: '5.000000' },
+        { symbol: 'SYN', quantity: '40.000000000', name: 'Synthetic Token', listed: false },
+        { symbol: 'TT', quantity: '7.00', name: 'Twenty Two', listed: false },
       ]);
+      // TOKEN-HIDE: the copy of USDT is left out of the balances.
+      assert.deepEqual(synced.result.address.hiddenTokens, [{ symbol: fakeTicker, name: 'Tether USD', quantity: '5.000000', reason: 'lookalike' }]);
       const rows = async () => {
         const list = (await s.operations.read(owner, {}, now)).operations;
         return [leg(41, synMint), leg(42, fakeMint), leg(43, twentyTwo), leg(44, synMint)].map((txid) => {
@@ -645,7 +646,7 @@ async function main() {
     await assert.rejects(() => new TrackSolanaWallets1792100000000().down(), /recovery plan/);
     await assert.rejects(() => new TrackSolanaStake1792600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS SOL-MIGRATION fresh 50 applies once; both Solana migrations refuse down');
+    console.log('PASS SOL-MIGRATION fresh 51 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }

@@ -845,6 +845,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
 | M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 | M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
+| M28 | `hide-spam-tokens` | other tokens of Ethereum and Solana addresses that cannot be real (a negative balance from forged transfers, a copy of USDT or ETH from another contract) are left out of the address's balances, value and balance check by themselves; the owner hides or restores any other token per address, and an address lists two coins with the rest behind "Show N more" | M25 | — |
 
 ```mermaid
 flowchart LR
@@ -876,6 +877,7 @@ flowchart LR
   M22 --> M26
   M14 --> M25
   M15 --> M25
+  M25 --> M28
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
