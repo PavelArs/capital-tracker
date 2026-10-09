@@ -2,6 +2,7 @@ import type { Operation } from '@api/operations.api';
 import { describe, expect, it } from 'vitest';
 import {
   exchangeRecord,
+  explorerUrl,
   sourceLabel,
   statusLabel,
   transactionHash,
@@ -66,5 +67,20 @@ describe('a Bybit record (M22)', () => {
     expect(sourceLabel(from('bybit'))).toBe('Bybit');
     expect(sourceLabel(from('bitcoin'))).toBe('Blockchain');
     expect(sourceLabel({ source: 'manual', wallet: null } as unknown as Operation)).toBe('Manual');
+  });
+});
+
+describe('the explorer page of a transaction', () => {
+  const hex = 'cd'.repeat(32);
+  it('links Bitcoin, Ethereum and Solana transactions to free public explorers', () => {
+    expect(explorerUrl(hex, 'bitcoin')).toBe(`https://mempool.space/tx/${hex}`);
+    expect(explorerUrl(`0x${hex}`, 'ethereum')).toBe(`https://etherscan.io/tx/0x${hex}`);
+    expect(explorerUrl('5mt57dE8bXAp', 'solana')).toBe('https://solscan.io/tx/5mt57dE8bXAp');
+  });
+
+  it('has none for an exchange account or a record id that is not a hash', () => {
+    expect(explorerUrl('bybit-trade-1', 'bybit')).toBeNull();
+    expect(explorerUrl('bybit-trade-1', 'bitcoin')).toBeNull();
+    expect(explorerUrl(hex, undefined)).toBeNull();
   });
 });
