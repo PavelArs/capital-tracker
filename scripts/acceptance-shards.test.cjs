@@ -67,6 +67,7 @@ const legacyChecks = [
   'bitcoin-xpub-db',
   'bybit-db',
   'tron-wallets-db',
+  'audit-history-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

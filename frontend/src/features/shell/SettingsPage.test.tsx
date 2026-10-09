@@ -102,6 +102,12 @@ describe('SHELL-006 theme setting', () => {
     expect(applied()).toBe('dark');
   });
 
+  it('HIST-LINK: Settings opens the change history', () => {
+    renderSettings();
+    expect(screen.getByRole('heading', { level: 2, name: 'History' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open history' })).toHaveAttribute('href', '/history');
+  });
+
   it('no longer points to the retired legacy settings (M20)', () => {
     renderSettings();
     expect(screen.queryByRole('link', { name: 'Legacy settings' })).toBeNull();
