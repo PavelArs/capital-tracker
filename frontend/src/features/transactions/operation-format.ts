@@ -144,6 +144,19 @@ function recordName(txid: string): string | null {
   return `${kind} ${match[2]}`;
 }
 
+// Free public explorers; a network without one (an exchange account) gets no link.
+const explorers: Partial<Record<string, (hash: string) => string>> = {
+  bitcoin: (hash) => `https://mempool.space/tx/${hash}`,
+  ethereum: (hash) => `https://etherscan.io/tx/${hash}`,
+  solana: (hash) => `https://solscan.io/tx/${hash}`,
+};
+
+/** The transaction's page on its network's block explorer, or null when there is none. */
+export function explorerUrl(hash: string, network: string | undefined): string | null {
+  const page = network ? explorers[network] : undefined;
+  return page && /^(0x)?[0-9A-Za-z]+$/.test(hash) ? page(hash) : null;
+}
+
 /** Where the operation happened: an account, two for a transfer, or a wallet. */
 export function placeLabel(operation: Operation): string {
   // XFER-AUTO: a transfer between wallets names both, a blockchain one included.

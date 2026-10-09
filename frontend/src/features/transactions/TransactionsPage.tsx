@@ -150,20 +150,61 @@ function ValueCell({
   return <span className="transactions-muted">{DASH}</span>;
 }
 
+// Fixed widths: a chip or filter that shows other rows never moves the columns.
+const columns = ['type', 'asset', 'amount', 'value', 'place', 'status'];
+
+/** Status, then where the row came from on a second line: "To classify / Blockchain". */
+function StatusCell({ operation }: { operation: Operation }) {
+  const needs = operation.status === 'needs-classification';
+  const muted = operation.status === 'hidden' || operation.status === 'dust';
+  return (
+    <td>
+      {needs || muted ? (
+        <span
+          className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
+        >
+          {needs ? 'To classify' : statusLabels[operation.status]}
+        </span>
+      ) : (
+        <span className="transactions-status">
+          <Glyph name="check" />
+          {statusLabel(operation)}
+        </span>
+      )}
+      <span className="portfolio-sub transactions-source">
+        {operation.source === 'chain' && <Glyph name="chain" />}
+        {sourceLabel(operation)}
+      </span>
+    </td>
+  );
+}
+
 function OperationRow({
   operation,
   currency,
+  current,
   onOpen,
 }: {
   operation: Operation;
   currency: AccountingCurrency;
+  current: boolean;
   onOpen: () => void;
 }) {
   const needs = operation.status === 'needs-classification';
   const muted = operation.status === 'hidden' || operation.status === 'dust';
   return (
     <tr
-      className={needs ? 'transactions-row--needs' : muted ? 'transactions-row--hidden' : undefined}
+      className={
+        [
+          needs && 'transactions-row--needs',
+          muted && 'transactions-row--hidden',
+          current && 'transactions-row--open',
+        ]
+          .filter(Boolean)
+          .join(' ') || undefined
+      }
+      data-operation={operation.id}
+      aria-current={current || undefined}
       onClick={onOpen}
     >
       <td className="transactions-wrap">
@@ -220,26 +261,7 @@ function OperationRow({
           placeLabel(operation)
         )}
       </td>
-      <td>
-        {needs || muted ? (
-          <span
-            className={`transactions-badge ${needs ? 'transactions-badge--warn' : 'transactions-badge--muted'}`}
-          >
-            {statusLabels[operation.status]}
-          </span>
-        ) : (
-          <span className="transactions-status">
-            <Glyph name="check" />
-            {statusLabel(operation)}
-          </span>
-        )}
-      </td>
-      <td>
-        <span className="transactions-status">
-          {operation.source === 'chain' && <Glyph name="chain" />}
-          {sourceLabel(operation)}
-        </span>
-      </td>
+      <StatusCell operation={operation} />
     </tr>
   );
 }
@@ -266,10 +288,12 @@ function phoneValue(operation: Operation, currency: AccountingCurrency): string 
 function OperationItem({
   operation,
   currency,
+  current,
   onOpen,
 }: {
   operation: Operation;
   currency: AccountingCurrency;
+  current: boolean;
   onOpen: () => void;
 }) {
   const needs = operation.status === 'needs-classification';
@@ -280,10 +304,10 @@ function OperationItem({
       (operation.counterAsset ? ` → ${ticker(operation.counterAsset)}` : ''),
   ].join(' ');
   return (
-    <li>
+    <li data-operation={operation.id} aria-current={current || undefined}>
       <button
         type="button"
-        className={`transactions-item${needs ? ' transactions-item--needs' : ''}`}
+        className={`transactions-item${needs ? ' transactions-item--needs' : ''}${current ? ' transactions-item--open' : ''}`}
         onClick={onOpen}
       >
         <AssetIcon
@@ -315,9 +339,30 @@ function OperationItem({
   );
 }
 
+// OPS-RETURN: the list last shown, so coming back from another page shows it at once while
+// a fresh one loads, instead of a loading card that makes the page jump.
+let lastList: { asked: AccountingCurrency | undefined; list: OperationList } | null = null;
+
+/** Tests start from an empty page. */
+export function forgetLastList() {
+  lastList = null;
+}
+
+/** Brings a row into view unless it is already on screen; the drawer covers only its right. */
+function reveal(row: Element) {
+  const box = row.getBoundingClientRect();
+  if (box.height > 0 && box.top >= 0 && box.bottom <= window.innerHeight) return;
+  const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? true;
+  row.scrollIntoView?.({ block: 'center', behavior: still ? 'auto' : 'smooth' });
+}
+
 // Every operation the app knows in one list (list-all-operations, OPS-4).
 export default function TransactionsPage() {
-  const [list, setList] = useState<OperationList | null>(null);
+  // No currency in the address means the owner's main currency (Settings).
+  const [asked] = useAskedCurrency();
+  const [list, setList] = useState<OperationList | null>(() =>
+    lastList && lastList.asked === asked ? lastList.list : null,
+  );
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
@@ -329,9 +374,8 @@ export default function TransactionsPage() {
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
   const latest = useRef(0);
 
-  // No currency in the address means the owner's main currency (Settings).
-  const [asked] = useAskedCurrency();
   const narrow = useNarrowScreen();
+  const listRef = useRef<HTMLElement>(null);
 
   // A switched currency keeps the rows on screen until its values arrive.
   const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
@@ -341,6 +385,7 @@ export default function TransactionsPage() {
     try {
       const next = await operationsApi.list(currency);
       if (request !== latest.current) return null;
+      lastList = { asked: currency, list: next };
       setList(next);
       return next;
     } catch {
@@ -426,11 +471,27 @@ export default function TransactionsPage() {
     if (last?.heading === heading) last.operations.push(operation);
     else days.push({ heading, operations: [operation] });
   }
+  // OPS-DELETE: an added, changed or deleted transaction keeps the rows on screen until the
+  // new list replaces them, so nothing jumps.
   const changed = () => {
     setDialog(null);
     setOpenId(null);
-    void load(asked, true);
+    void load(asked, false);
   };
+  // CLS-NEXT: the open transaction is marked in the list and brought into view, so the one
+  // opened after a classification can be found when the drawer closes.
+  const rowOf = useCallback(
+    (id: string) =>
+      [...(listRef.current?.querySelectorAll<HTMLElement>('[data-operation]') ?? [])].find(
+        (row) => row.dataset.operation === id,
+      ),
+    [],
+  );
+  useEffect(() => {
+    if (!openId) return;
+    const row = rowOf(openId);
+    if (row) reveal(row);
+  }, [openId, rowOf]);
   const [notice, setNotice] = useState<string | null>(null);
   const open = (id: string) => {
     setNotice(null);
@@ -513,11 +574,14 @@ export default function TransactionsPage() {
           </div>
         </section>
       ) : (
-        <section className="shell-card" aria-label="All transactions">
+        <section className="shell-card" aria-label="All transactions" ref={listRef}>
           <div className="portfolio-toolbar">
             <div className="portfolio-chips" role="group" aria-label="Filter transactions">
               {views.map(([key, label]) => {
-                const count = operations.filter((operation) => inView(operation, key)).length;
+                // OPS-COUNTS: what the chip would show with the other filters as they are.
+                const count = operations.filter(
+                  (operation) => inView(operation, key) && matches(operation),
+                ).length;
                 // The Dust chip appears once a threshold is set or something is dust.
                 if (key === 'dust' && count === 0 && list.dustThresholdUsd === null && view !== key)
                   return null;
@@ -598,6 +662,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
+                        current={operation.id === openId}
                         onOpen={() => open(operation.id)}
                       />
                     ))}
@@ -608,6 +673,11 @@ export default function TransactionsPage() {
           ) : (
             <div className="portfolio-table-wrap">
               <table className="portfolio-table transactions-table" aria-label="Transactions">
+                <colgroup>
+                  {columns.map((column) => (
+                    <col key={column} className={`transactions-col--${column}`} />
+                  ))}
+                </colgroup>
                 <thead>
                   <tr>
                     <th scope="col">Type</th>
@@ -620,13 +690,12 @@ export default function TransactionsPage() {
                     </th>
                     <th scope="col">Account</th>
                     <th scope="col">Status</th>
-                    <th scope="col">Source</th>
                   </tr>
                 </thead>
                 {days.map((group) => (
                   <tbody key={group.heading}>
                     <tr className="transactions-day">
-                      <th scope="rowgroup" colSpan={7}>
+                      <th scope="rowgroup" colSpan={columns.length}>
                         {group.heading}
                       </th>
                     </tr>
@@ -635,6 +704,7 @@ export default function TransactionsPage() {
                         key={operation.id}
                         operation={operation}
                         currency={currency}
+                        current={operation.id === openId}
                         onOpen={() => open(operation.id)}
                       />
                     ))}
@@ -663,8 +733,11 @@ export default function TransactionsPage() {
           currency={currency}
           operations={operations}
           onClose={() => {
+            const closed = opened.id;
             setOpenId(null);
             setNotice(null);
+            // The keyboard comes back to the row the drawer showed last.
+            window.requestAnimationFrame(() => rowOf(closed)?.querySelector('button')?.focus());
           }}
           onEdit={(operation) => {
             setOpenId(null);

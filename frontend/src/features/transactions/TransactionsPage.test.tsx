@@ -7,8 +7,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import TransactionsPage from './TransactionsPage';
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import TransactionsPage, { forgetLastList } from './TransactionsPage';
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -168,6 +168,7 @@ const cellTexts = (row: HTMLElement) =>
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  forgetLastList();
 });
 afterEach(cleanup);
 
@@ -181,7 +182,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       within(table())
         .getAllByRole('columnheader')
         .map((cell) => cell.textContent),
-    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status', 'Source']);
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
     // Grouped under day headings as in the prototype; the time sits under the type.
     expect(dayHeadings()).toEqual([
       'Jun 21, 2025',
@@ -198,8 +199,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       '+0.00918359',
       '≈ $780.10',
       'Bitcoin wallet bc1qsy…f3t4',
-      'Needs classification',
-      'Blockchain',
+      'To classifyBlockchain',
     ]);
     expect(rows[0]).toEqual([
       'Outgoing08:00',
@@ -207,8 +207,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       '-0.0005',
       '—',
       'Bitcoin wallet bc1qsy…f3t4',
-      'Needs classification',
-      'Blockchain',
+      'To classifyBlockchain',
     ]);
     // A transaction entered without a time says so instead of showing midnight.
     expect(rows[2]).toEqual([
@@ -217,18 +216,16 @@ describe('TransactionsPage (list-all-operations)', () => {
       '0.005',
       '—',
       'Bybit → Cold storage',
-      'Recorded',
-      'Manual',
+      'RecordedManual',
     ]);
-    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'Recorded', 'CSV']);
+    expect(rows[4]).toEqual(['Buy10:30', 'BTC', '+0.01', '$1,050.50', 'Bybit', 'RecordedCSV']);
     expect(rows[5]).toEqual([
       'BuyNo time',
       'BTC',
       '+0.00918359',
       '$1,000.00',
       'Bybit',
-      'Recorded',
-      'Manual',
+      'RecordedManual',
     ]);
     expect(screen.getByRole('button', { name: /Needs classification\s*2/ })).toBeInTheDocument();
   });
@@ -259,7 +256,7 @@ describe('TransactionsPage (list-all-operations)', () => {
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
     await user.click(screen.getByRole('button', { name: /^CSV/ }));
-    expect(bodyRows().map((row) => cellTexts(row)[6])).toEqual(['CSV']);
+    expect(bodyRows().map((row) => cellTexts(row)[5])).toEqual(['RecordedCSV']);
     await user.click(screen.getByRole('button', { name: /^All/ }));
     // A transfer belongs to both of its accounts.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), cold.id);
@@ -486,7 +483,7 @@ describe('TransactionsPage (list-all-operations)', () => {
       'href',
       '/wallets',
     );
-    expect(fact('Transaction')).toBe(txid(1));
+    expect(fact('Transaction')).toBe(`${txid(1)}CopyView in explorer`);
     expect(fact('Block')).toBe('800,001');
     expect(fact('Network fee')).toBe('Paid by sender');
     expect(fact('Status')).toBe('Needs classification');
@@ -923,8 +920,7 @@ describe('classify-chain-transactions (M12)', () => {
       '+0.00918359',
       '$1,000.00',
       'Cold storage · bc1qsy…f3t4',
-      'Recorded',
-      'Blockchain',
+      'RecordedBlockchain',
     ]);
   });
 
@@ -1023,7 +1019,7 @@ describe('classify-chain-transactions (M12)', () => {
       within(again).getByRole('button', { name: 'Include in calculations' }),
     ).toBeInTheDocument();
     await user.keyboard('{Escape}');
-    expect(cellTexts(bodyRows()[0])).toContain('Hidden');
+    expect(cellTexts(bodyRows()[0])).toContain('HiddenBlockchain');
     await user.click(screen.getByRole('button', { name: /^Hidden\s*1/ }));
     expect(bodyRows()).toHaveLength(1);
   });
@@ -1079,8 +1075,7 @@ describe('chain dust threshold (CLS-DUST)', () => {
         '+0.00000546',
         '≈ $0.55',
         'Bitcoin wallet bc1qsy…f3t4',
-        'Dust',
-        'Blockchain',
+        'DustBlockchain',
       ],
     ]);
     expect(
@@ -1190,8 +1185,7 @@ describe('link-own-transfers (M13)', () => {
       '0.5',
       '≈ $30,000.00',
       'Cold storage → Bybit',
-      'Auto: own wallets',
-      'Blockchain',
+      'Auto: own walletsBlockchain',
     ]);
     expect(within(drawer).getByRole('note')).toHaveTextContent(
       'Recognised automatically: both addresses belong to your wallets and Bybit received the same amount minus the network fee. Counts as a transfer, not a sale or a deposit.',
@@ -1483,8 +1477,7 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       '-1,000+0.0125 BTC',
       '$1,000.00',
       'Trust Wallet',
-      'Recorded',
-      'Blockchain',
+      'RecordedBlockchain',
     ]);
     const facts = within(drawer).getByRole('region', { name: 'Details' });
     const fact = (label: string) =>
@@ -1492,7 +1485,7 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
     expect(fact('Paid')).toBe('-1,000 USDT');
     expect(fact('Paid from')).toBe('Trust Wallet');
     expect(fact('Paying address')).toBe(`Ethereum · ${ethWallet.address}`);
-    expect(fact('Paying transaction')).toBe(`0x${'d'.repeat(64)}`);
+    expect(fact('Paying transaction')).toBe(`0x${'d'.repeat(64)}CopyView in explorer`);
     expect(fact('Received')).toBe('+0.0125 BTC');
     expect(fact('Received in')).toBe('Trust Wallet');
     expect(fact('Address')).toBe(`Bitcoin · ${wallet.address}`);
@@ -1701,5 +1694,187 @@ describe('swap in one transaction (SWAP-ONE-TX)', () => {
     expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(
       `${ethWallet.id}|${hash}-7`,
     );
+  });
+});
+
+// Owner's notes of 2026-10-09: the list stays put while it changes, the open row is marked,
+// chip counts follow the other filters, and a transaction hash copies and opens its explorer.
+describe('transactions-page-polish', () => {
+  const nextOne = chainOperation(2, {
+    account: cold,
+    direction: 'out',
+    occurredAt: '2025-06-19T08:00:00.000Z',
+    quantity: '0.0005',
+    chain: { txid: txid(2), blockHeight: 800002, priceObservedAt: null, direction: 'out' },
+  });
+  const first = chainOperation(1, {
+    account: cold,
+    occurredAt: '2025-06-20T08:05:00.000Z',
+    quantity: '0.00918359',
+  });
+  const bought = operation({
+    ...first,
+    type: 'buy',
+    status: 'recorded',
+    valueUsd: '1000',
+    costBasisUsd: '1000',
+    feeUsd: '0',
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'buy', currency: 'USDT', amount: '1000' },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const chipCounts = () =>
+    within(screen.getByRole('group', { name: 'Filter transactions' }))
+      .getAllByRole('button')
+      .map((chip) => chip.textContent);
+
+  it('OPS-COUNTS: chip counts follow the asset, account and search filters', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(chipCounts()).toEqual([
+      'All 6',
+      'Needs classification 2',
+      'Hidden 0',
+      'Blockchain 2',
+      'Manual 3',
+      'CSV 1',
+    ]);
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), bybit.id);
+    expect(bodyRows()).toHaveLength(4);
+    expect(chipCounts()).toEqual([
+      'All 4',
+      'Needs classification 0',
+      'Hidden 0',
+      'Blockchain 0',
+      'Manual 3',
+      'CSV 1',
+    ]);
+    await user.type(screen.getByRole('searchbox', { name: 'Search transactions' }), 'tether');
+    expect(chipCounts()).toEqual([
+      'All 1',
+      'Needs classification 0',
+      'Hidden 0',
+      'Blockchain 0',
+      'Manual 1',
+      'CSV 0',
+    ]);
+  });
+
+  it('OPS-COMPACT: status and source share one column, the source under the status', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(
+      within(table())
+        .getAllByRole('columnheader')
+        .map((cell) => cell.textContent),
+    ).toEqual(['Type', 'Asset', 'Amount', 'Value', 'Account', 'Status']);
+    const status = within(bodyRows()[1]).getAllByRole('cell')[5];
+    expect(within(status).getByText('To classify')).toBeInTheDocument();
+    expect(within(status).getByText('Blockchain')).toBeInTheDocument();
+    // Fixed column widths: a chip that shows other rows never moves the columns.
+    expect(table().querySelectorAll('colgroup col')).toHaveLength(6);
+  });
+
+  it('OPS-DELETE keeps the rows on screen while the list reloads', async () => {
+    const user = userEvent.setup();
+    let reloaded: (value: OperationList) => void = () => undefined;
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([tether, manual]))
+      .mockReturnValueOnce(new Promise((resolve) => (reloaded = resolve)));
+    vi.spyOn(tradesApi, 'versions').mockResolvedValue({
+      tradeId: id(30),
+      items: [],
+      nextBeforeVersion: null,
+    });
+    vi.spyOn(tradesApi, 'state').mockResolvedValue({
+      journal: { journalRevision: 2 },
+    } as JournalState);
+    vi.spyOn(tradesApi, 'void').mockResolvedValue({} as TradeReceipt);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Buy' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: 'Delete transaction' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByText('Loading transactions…')).toBeNull();
+    expect(bodyRows()).toHaveLength(2);
+    await act(async () => reloaded(list([tether])));
+    expect(bodyRows()).toHaveLength(1);
+  });
+
+  it('OPS-RETURN: coming back to the page shows the last list at once and refreshes it', async () => {
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(all)
+      .mockReturnValueOnce(new Promise(() => undefined));
+    const page = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    page.unmount();
+    renderPage();
+    expect(screen.queryByText('Loading transactions…')).toBeNull();
+    expect(bodyRows()).toHaveLength(6);
+    expect(operationsApi.list).toHaveBeenCalledTimes(2);
+  });
+
+  it('CLS-NEXT: the next transaction to classify is marked in the list and scrolled into view', async () => {
+    const user = userEvent.setup();
+    const scrolled: Element[] = [];
+    // jsdom has no scrollIntoView; record which element asked to be shown.
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    onTestFinished(() => {
+      Element.prototype.scrollIntoView = original;
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([first, nextOne]))
+      .mockResolvedValue(list([bought, nextOne]));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
+    expect(bodyRows()[0]).toHaveAttribute('aria-current', 'true');
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '1000');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await screen.findByRole('dialog', { name: 'Outgoing transaction · BTC' });
+    expect(bodyRows()[0]).not.toHaveAttribute('aria-current');
+    expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
+    // jsdom lays nothing out, so every row counts as off screen and is scrolled to.
+    expect(scrolled.at(-1)).toBe(bodyRows()[1]);
+    // Closing the drawer leaves the keyboard on the row it showed.
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(within(bodyRows()[1]).getByRole('button', { name: 'Outgoing' })).toHaveFocus(),
+    );
+    expect(bodyRows()[1]).not.toHaveAttribute('aria-current');
+  });
+
+  it('TX-HASH: copies a transaction hash in one click and opens it in the explorer', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Copy transaction hash' }));
+    expect(writeText).toHaveBeenCalledWith(txid(1));
+    expect(within(drawer).getByRole('button', { name: 'Copy transaction hash' })).toHaveTextContent(
+      'Copied',
+    );
+    const explorer = within(drawer).getByRole('link', { name: 'View in explorer' });
+    expect(explorer).toHaveAttribute('href', `https://mempool.space/tx/${txid(1)}`);
+    expect(explorer).toHaveAttribute('target', '_blank');
+    expect(explorer).toHaveAttribute('rel', 'noopener noreferrer');
   });
 });
