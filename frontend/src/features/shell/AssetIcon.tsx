@@ -1,6 +1,5 @@
 import type { AssetType } from '@api/portfolio-assets.api';
-import type { Network } from '@api/wallet-addresses.api';
-import { assetIdentity, networkIdentity } from './asset-identity';
+import { assetIdentity, type Blockchain, networkIdentity } from './asset-identity';
 import './asset-icon.css';
 
 /**
@@ -18,7 +17,7 @@ export default function AssetIcon({
   symbol: string | null;
   name: string;
   assetType?: AssetType;
-  network?: Network;
+  network?: Blockchain;
   size?: 'sm' | 'md' | 'lg';
 }) {
   const { color, glyph } = assetIdentity({ symbol, name, assetType });

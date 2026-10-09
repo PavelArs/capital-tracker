@@ -1209,6 +1209,25 @@ describe('list-all-operations projection', () => {
       expect(ether?.fee?.asset).toEqual({ instrumentId: null, symbol: 'ETH', name: 'Ethereum' });
     });
 
+    it('TOKEN-CHAIN-EXCHANGE: a coin held on an exchange names no blockchain', () => {
+      const exchange = { id: id(25), network: 'bybit' as const, address: 'sub-1', label: null };
+      const list = projectOperations(
+        now,
+        sources({
+          chain: [
+            chain(13, {
+              wallet: exchange,
+              txid: 'deposit-13',
+              asset: 'USDT',
+              receivedUnits: '1000000000000000000000',
+              feeUnits: '0',
+            }),
+          ],
+        }),
+      );
+      expect(list.operations[0].asset).not.toHaveProperty('network');
+    });
+
     it('TOKEN-CHAIN-SWAP: a swap row names the blockchain of each token it moved', () => {
       const swapId = id(62);
       const paidTxid = `${'c'.repeat(64)}-2`;

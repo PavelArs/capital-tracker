@@ -27,7 +27,7 @@ export interface OperationAsset {
   symbol: string | null;
   name: string;
   /** TOKEN-CHAIN: the blockchain a token moved on; absent for a network's own coin. */
-  network?: OperationWallet['network'];
+  network?: Exclude<OperationWallet['network'], 'bybit'>;
 }
 
 export interface OperationPlace {

@@ -22,7 +22,7 @@ export interface OperationAsset {
    * TOKEN-CHAIN: the blockchain a token moved on, as USDT exists on several. Absent for a
    * network's own coin and for what no chain transaction moved.
    */
-  network?: Network;
+  network?: Exclude<Network, 'bybit'>;
 }
 export interface OperationPlace {
   id: string;
@@ -275,11 +275,15 @@ export interface OperationList {
  * (an exchange's in the leg's coin). */
 function legAsset(network: Network, token: string | null): OperationAsset {
   const { symbol, name } = chainAsset(network, token);
-  return { instrumentId: null, symbol, name, ...(token === null ? {} : { network }) };
+  return { instrumentId: null, symbol, name, ...(isToken(network, token) ? { network } : {}) };
+}
+/** TOKEN-CHAIN: a coin a blockchain moves that is not its own; an exchange has no blockchain. */
+function isToken(network: Network, token: string | null): network is Exclude<Network, 'bybit'> {
+  return token !== null && !isExchange(network);
 }
 /** TOKEN-CHAIN: a journal's asset as a chain leg moved it, named with the leg's blockchain. */
 const onChain = (asset: OperationAsset, leg: ChainOperationInput | null): OperationAsset =>
-  leg && leg.asset !== null ? { ...asset, network: leg.wallet.network } : asset;
+  leg && isToken(leg.wallet.network, leg.asset) ? { ...asset, network: leg.wallet.network } : asset;
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
 const purposeTypes: Record<TradePurpose, OperationType> = {
   income: 'income',

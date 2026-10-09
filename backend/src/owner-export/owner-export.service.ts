@@ -55,20 +55,21 @@ const swapProducedBy = `(SELECT x.txid FROM chain_transaction_classification_ver
     ORDER BY t."receivedUnits" > t."sentUnits" DESC, x."createdAt" DESC LIMIT 1)`;
 /**
  * TOKEN-CHAIN: the blockchain of the token the chain transaction that produced the entry moved;
- * null for a network's own coin and for an entry no chain transaction produced. A swap picks
+ * null for a network's own coin, an exchange's coin and an entry no chain transaction produced. A swap picks
  * its paying (`out`) or receiving (`in`) leg.
  */
 const tokenNetwork = (column: string, leg?: 'in' | 'out') =>
   `(SELECT w.network FROM chain_transaction_classification_versions x
     JOIN wallet_address_transactions t ON t."addressId"=x."addressId" AND t.txid=x.txid
     JOIN wallet_addresses w ON w."ownerId"=x."ownerId" AND w.id=x."addressId"
-    WHERE x."ownerId"=h."ownerId" AND x."${column}"=h.id AND t.asset IS NOT NULL${
-      leg === 'in'
-        ? ' AND t."receivedUnits" > t."sentUnits"'
-        : leg === 'out'
-          ? ' AND t."sentUnits" > t."receivedUnits"'
-          : ''
-    }
+    WHERE x."ownerId"=h."ownerId" AND x."${column}"=h.id AND t.asset IS NOT NULL
+      AND w.network<>'bybit'${
+        leg === 'in'
+          ? ' AND t."receivedUnits" > t."sentUnits"'
+          : leg === 'out'
+            ? ' AND t."sentUnits" > t."receivedUnits"'
+            : ''
+      }
     ORDER BY x."createdAt" DESC LIMIT 1)`;
 const named = (alias: string, column: string) =>
   `LEFT JOIN accounting_instruments ${alias} ON ${alias}."ownerId"=h."ownerId" AND ${alias}.id=v."${column}"`;

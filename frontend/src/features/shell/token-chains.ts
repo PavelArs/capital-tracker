@@ -1,14 +1,15 @@
-import { type Network, type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { useEffect, useState } from 'react';
+import type { Blockchain } from './asset-identity';
 
 // TOKEN-CHAIN: USDT and USDC exist on several blockchains, and a portfolio row adds them up,
 // so the row names the blockchains its tokens are on, from the wallets' chain balances.
 
-export type TokenChains = ReadonlyMap<string, readonly Network[]>;
+export type TokenChains = ReadonlyMap<string, readonly Blockchain[]>;
 
-const order: Network[] = ['bitcoin', 'ethereum', 'solana'];
-const ownCoin: Record<Network, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
-export const chainNames: Record<Network, string> = {
+const order: Blockchain[] = ['bitcoin', 'ethereum', 'solana'];
+const ownCoin: Record<Blockchain, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
+export const chainNames: Record<Blockchain, string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
   solana: 'Solana',
@@ -16,19 +17,22 @@ export const chainNames: Record<Network, string> = {
 
 /**
  * The blockchains each token is held on, by upper-case ticker; a network's own coin is not a
- * token. Only the addresses of `accountId` count when it is given.
+ * token, and an exchange account is no blockchain. Only the addresses of `accountId` count
+ * when it is given.
  */
 export function tokenChains(
   addresses: readonly WalletAddress[] | null,
   accountId?: string,
 ): TokenChains {
-  const found = new Map<string, Set<Network>>();
+  const found = new Map<string, Set<Blockchain>>();
   for (const address of addresses ?? []) {
+    const { network } = address;
+    if (network === 'bybit') continue;
     if (accountId !== undefined && address.accountId !== accountId) continue;
     for (const balance of address.balances ?? []) {
       const symbol = balance.symbol.toUpperCase();
-      if (symbol === ownCoin[address.network] || Number(balance.quantity) === 0) continue;
-      found.set(symbol, (found.get(symbol) ?? new Set()).add(address.network));
+      if (symbol === ownCoin[network] || Number(balance.quantity) === 0) continue;
+      found.set(symbol, (found.get(symbol) ?? new Set()).add(network));
     }
   }
   return new Map(
@@ -43,7 +47,7 @@ export function chainsLabel(symbol: string | null, chains: TokenChains): string 
 }
 
 /** The one blockchain a token is held on, for its icon; none when it is on several. */
-export function onlyChain(symbol: string | null, chains: TokenChains): Network | undefined {
+export function onlyChain(symbol: string | null, chains: TokenChains): Blockchain | undefined {
   const networks = symbol ? chains.get(symbol.toUpperCase()) : undefined;
   return networks?.length === 1 ? networks[0] : undefined;
 }
