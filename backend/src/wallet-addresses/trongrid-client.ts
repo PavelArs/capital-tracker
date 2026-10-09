@@ -1,3 +1,5 @@
+import { Agent as HttpAgent } from 'node:http';
+import { Agent as HttpsAgent } from 'node:https';
 import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
@@ -7,7 +9,12 @@ import { tronHex } from './tron-address';
 // node API of its solidity nodes, so everything read is confirmed and never replaced. It
 // answers without a key at a low rate; a free TronGrid key (TRONGRID_API_KEY) raises the limit.
 // Amounts are in sun (1 TRX = 1 000 000 sun) and token base units.
-export const TRONGRID_PAGE_SIZE = 200;
+//
+// Some server networks freeze any download from TronGrid after its first ~16 KB, so every
+// answer is kept small: the block header without its transactions, short pages (a transaction
+// item is ~1.5 KB, a token transfer ~0.4 KB) and a new connection for every request.
+export const TRONGRID_TRANSACTION_PAGE_SIZE = 6;
+export const TRONGRID_TOKEN_PAGE_SIZE = 20;
 const DEFAULT_BASE_URL = 'https://api.trongrid.io';
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 // A refusal is logged with its first characters, never an address, a hash or the key.
@@ -205,11 +212,11 @@ export function parseTokenTransfer(value: unknown): TronTokenTransfer {
 }
 
 /** A v1 list page: its items and the fingerprint of the next page, if there is one. */
-export function parsePage<T>(body: unknown, parse: (item: unknown) => T) {
+export function parsePage<T>(body: unknown, parse: (item: unknown) => T, size: number) {
   const envelope = record(body);
   if (envelope.success !== true) invalid();
   const data = list(envelope.data);
-  if (data.length > TRONGRID_PAGE_SIZE) invalid();
+  if (data.length > size) invalid();
   const meta = envelope.meta === undefined ? {} : record(envelope.meta);
   const fingerprint = meta.fingerprint;
   if (fingerprint !== undefined && (typeof fingerprint !== 'string' || fingerprint.length > 2048))
@@ -286,6 +293,10 @@ export class TronGridClient {
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
+  private readonly agents = {
+    httpAgent: new HttpAgent({ keepAlive: false }),
+    httpsAgent: new HttpsAgent({ keepAlive: false }),
+  };
 
   constructor(
     options: {
@@ -303,7 +314,8 @@ export class TronGridClient {
   }
 
   tip(): Promise<TipResult> {
-    return this.get('/walletsolidity/getnowblock', {}, (body) => ({
+    // The newest solid block's header (~0.5 KB); getnowblock would send all its transactions.
+    return this.get('/walletsolidity/getblock', { detail: 'false' }, (body) => ({
       ok: true as const,
       tip: parseTip(body),
     }));
@@ -311,8 +323,12 @@ export class TronGridClient {
 
   /** The account's transactions with block times in [from, to] ms, oldest first. */
   transactions(address: string, from: number, to: number, fingerprint: string | null) {
-    return this.page(`/v1/accounts/${address}/transactions`, {}, from, to, fingerprint, (item) =>
-      parseAccountItem(item),
+    return this.page(
+      `/v1/accounts/${address}/transactions`,
+      {},
+      TRONGRID_TRANSACTION_PAGE_SIZE,
+      { from, to, fingerprint },
+      parseAccountItem,
     );
   }
 
@@ -327,9 +343,8 @@ export class TronGridClient {
     return this.page(
       `/v1/accounts/${address}/transactions/trc20`,
       { contract_address: contract },
-      from,
-      to,
-      fingerprint,
+      TRONGRID_TOKEN_PAGE_SIZE,
+      { from, to, fingerprint },
       parseTokenTransfer,
     );
   }
@@ -359,23 +374,22 @@ export class TronGridClient {
   private page<T>(
     path: string,
     params: Record<string, string>,
-    from: number,
-    to: number,
-    fingerprint: string | null,
+    size: number,
+    { from, to, fingerprint }: { from: number; to: number; fingerprint: string | null },
     parse: (item: unknown) => T,
   ): Promise<PageResult<T>> {
     return this.get(
       path,
       {
         only_confirmed: 'true',
-        limit: String(TRONGRID_PAGE_SIZE),
+        limit: String(size),
         order_by: 'block_timestamp,asc',
         min_timestamp: String(from),
         max_timestamp: String(to),
         ...params,
         ...(fingerprint ? { fingerprint } : {}),
       },
-      (body) => ({ ok: true as const, ...parsePage(body, parse) }),
+      (body) => ({ ok: true as const, ...parsePage(body, parse, size) }),
     );
   }
 
@@ -394,6 +408,7 @@ export class TronGridClient {
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
         maxRedirects: 0,
+        ...this.agents,
         maxContentLength: MAX_BODY_BYTES,
         responseType: 'text',
         transformResponse: [(data: string) => data],
