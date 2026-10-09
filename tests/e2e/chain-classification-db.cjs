@@ -560,6 +560,80 @@ async function dust(db, s) {
   console.log('PASS CLS-DUST');
 }
 
+async function tokenFee(db, s) {
+  stage = 'TOKEN-FEE a token send and the ether leg that paid its gas are one row';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-token-fee@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const hot = await account(s, owner, 'Hot wallet');
+  const [{ id: address }] = await db.query(
+    `INSERT INTO wallet_addresses(id,"ownerId",network,address,"accountId")
+      VALUES ($1,$2,'ethereum',$3,$4) RETURNING id`,
+    [randomUUID(), owner, `0x${'a1'.repeat(20)}`, hot],
+  );
+  // A leg of the network's own coin carries the bare hash, a token leg the hash and its log.
+  const leg = (txid, asset, direction, received, sent, fee, blockTime) =>
+    db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight",
+        "blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [owner, address, txid, 21000000, blockTime, received, sent, fee, direction, '{}', asset],
+    );
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('ETH','USD','kraken','2026-03-02T07:00:00Z',2500,'hourly-close'),
+      ('ETH','USD','kraken',$1,4000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+  const [received, paid] = [sha256('token-fee:1'), sha256('token-fee:2')];
+  await leg(received, null, 'in', '1000000000000000000', '0', '0', '2026-03-01T08:00:00.000Z');
+  await leg(`${received}-4`, 'USDC', 'in', '1000000000', '0', '0', '2026-03-01T08:00:00.000Z');
+  // 250 USDC sent; 0.00042 ETH paid its gas.
+  await leg(paid, null, 'out', '0', '420000000000000', '420000000000000', '2026-03-02T08:00:00.000Z');
+  await leg(`${paid}-17`, 'USDC', 'out', '0', '250000000', '0', '2026-03-02T08:00:00.000Z');
+  const { findOrCreateInstrument } = require('/app/backend/dist/accounting/trade.service.js');
+  for (const [symbol, name] of [
+    ['ETH', 'Ethereum'],
+    ['USDC', 'USD Coin'],
+  ])
+    await findOrCreateInstrument(db.manager, owner, { assetType: 'crypto', symbol, name }, true);
+  const rawBefore = await rawFingerprint(db, address);
+  assert.equal(await count(s, owner), 3, 'The gas leg is no transaction of its own to classify');
+  const rows = async () =>
+    (await s.operations.read(owner, {}, now)).operations.filter(
+      (operation) => operation.chain?.txid.split('-')[0] === paid,
+    );
+  let [send, ...rest] = await rows();
+  assert.deepEqual(rest, [], 'One row for the send');
+  assert.equal(send.chain.txid, `${paid}-17`);
+  assert.deepEqual(send.fee, {
+    asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+    quantity: '0.00042',
+    // At 2,500 USD, the price stored for the block time, not today's 4,000.
+    valueUsd: '1.05',
+    value: '1.05',
+  });
+  const holdings = async () =>
+    Object.fromEntries(
+      (await s.portfolio.read(owner, { currency: 'USD' }, now)).assets.map((asset) => [
+        asset.symbol,
+        Number(asset.quantity),
+      ]),
+    );
+  assert.deepEqual(await holdings(), { ETH: 0.99958, USDC: 750 }, 'The gas still leaves');
+
+  stage = 'TOKEN-FEE a classified send keeps its fee, and the fee keeps counting';
+  await s.classifications.classify(owner, address, `${paid}-17`, {
+    requestId: randomUUID(),
+    hidden: false,
+    expectedVersion: 0,
+    classification: { type: 'other' },
+  });
+  [send, ...rest] = await rows();
+  assert.deepEqual(rest, []);
+  assert.deepEqual([send.type, send.fee.quantity, send.fee.valueUsd], ['other', '0.00042', '1.05']);
+  assert.equal(await count(s, owner), 2);
+  assert.deepEqual(await holdings(), { ETH: 0.99958, USDC: 750 });
+  assert.equal(await rawFingerprint(db, address), rawBefore, 'Raw chain rows untouched');
+  console.log('PASS TOKEN-FEE');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -607,6 +681,7 @@ async function main() {
     await provisional(db, s);
     await feeValue(db, s, f, made);
     await dust(db, s);
+    await tokenFee(db, s);
     await rejected(() => s.classifications.classify(owner.id, made.address, txid(1), null), 400);
   } finally {
     if (db.isInitialized) await db.destroy();

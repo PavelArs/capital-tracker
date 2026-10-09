@@ -98,6 +98,12 @@ function shown(
   return usd === null ? missing : 'No Bank of Russia rate for this date';
 }
 
+/** TOKEN-FEE: a network fee in its coin and, when known, what it was worth at the time. */
+function networkFee(fee: NonNullable<Operation['fee']>, currency: AccountingCurrency): string {
+  const coins = amount(fee.quantity, fee.asset);
+  return fee.value != null ? `${coins} · ≈ ${money(fee.value, currency)}` : coins;
+}
+
 /** A transaction hash: copied in one click, opened on its network's explorer when it has one. */
 function TxHash({ hash, network }: { hash: string; network: string | undefined }) {
   const [copied, setCopied] = useState(false);
@@ -186,10 +192,7 @@ function swapFacts(
   if (wallet.network !== 'bybit')
     rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
   rows.push(
-    [
-      'Network fee',
-      operation.fee ? amount(operation.fee.quantity, operation.fee.asset) : 'Paid by sender',
-    ],
+    ['Network fee', operation.fee ? networkFee(operation.fee, currency) : 'Paid by sender'],
     ['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')],
     ['Cost basis', shown(operation.costBasis, operation.costBasisUsd, currency, 'Unknown')],
   );
@@ -252,11 +255,7 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     rows.push(
       [
         exchange ? 'Fee' : 'Network fee',
-        operation.fee
-          ? amount(operation.fee.quantity, operation.fee.asset)
-          : exchange
-            ? 'None'
-            : 'Paid by sender',
+        operation.fee ? networkFee(operation.fee, currency) : exchange ? 'None' : 'Paid by sender',
       ],
       [
         'Estimated value',
