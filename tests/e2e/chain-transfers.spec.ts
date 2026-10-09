@@ -149,8 +149,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '0.006',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     `${senderName} → ${receiverName}`,
-    'Auto: own wallets',
-    'Blockchain',
+    'Auto: own walletsBlockchain',
   ]);
   await expect(cells(rows.nth(2))).toHaveText([
     'Buy09:00',
@@ -158,8 +157,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '+0.01',
     '$600.00',
     new RegExp(`^${senderName}`),
-    'Recorded',
-    'Blockchain',
+    'RecordedBlockchain',
   ]);
   await page.screenshot({ path: testInfo.outputPath('transfer-list-1440-dark.png') });
 
@@ -212,8 +210,7 @@ test('XFER-UI: a send between two own wallets is one automatic transfer, and a s
     '0.001',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     `${senderName} → ${exchangeName}`,
-    'Recorded',
-    'Blockchain',
+    'RecordedBlockchain',
   ]);
   // The exchange now holds 0.001 BTC at its cost; nothing was recorded as a deposit.
   expect(await basis(exchange.id)).toBe(60);

@@ -15,6 +15,7 @@ import {
   amount,
   day,
   exchangeRecord,
+  explorerUrl,
   hashOf,
   moment,
   networkName,
@@ -85,6 +86,42 @@ function shown(
   return usd === null ? missing : 'No Bank of Russia rate for this date';
 }
 
+/** A transaction hash: copied in one click, opened on its network's explorer when it has one. */
+function TxHash({ hash, network }: { hash: string; network: string | undefined }) {
+  const [copied, setCopied] = useState(false);
+  const url = explorerUrl(hash, network);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+  return (
+    <span className="transactions-hash">
+      <span className="transactions-mono">{hash}</span>
+      <span className="transactions-hash__actions">
+        <button
+          type="button"
+          className="portfolio-link"
+          aria-label="Copy transaction hash"
+          onClick={() =>
+            void navigator.clipboard?.writeText(hash).then(
+              () => setCopied(true),
+              () => undefined,
+            )
+          }
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+        {url && (
+          <a className="portfolio-link" href={url} target="_blank" rel="noopener noreferrer">
+            View in explorer
+          </a>
+        )}
+      </span>
+    </span>
+  );
+}
+
 const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
   <span className="transactions-mono">
     {networkName(wallet)} · {wallet.label ? `${wallet.label} · ` : ''}
@@ -111,9 +148,11 @@ function swapFacts(
   if (chain.pairedTxid)
     rows.push([
       'Paying transaction',
-      <span key="paid" className="transactions-mono">
-        {hashOf(chain.pairedTxid, other?.network)}
-      </span>,
+      <TxHash
+        key="paid"
+        hash={hashOf(chain.pairedTxid, other?.network)}
+        network={other?.network}
+      />,
     ]);
   if (operation.counterAsset && operation.counterQuantity)
     rows.push(['Received', amount(operation.counterQuantity, operation.counterAsset, '+')]);
@@ -122,9 +161,7 @@ function swapFacts(
     ['Address', addressLine(wallet)],
     [
       'Transaction',
-      <span key="txid" className="transactions-mono">
-        {hashOf(chain.txid, wallet.network)}
-      </span>,
+      <TxHash key="txid" hash={hashOf(chain.txid, wallet.network)} network={wallet.network} />,
     ],
   );
   // A Bybit record has no block (M22).
@@ -186,9 +223,11 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     // A Bybit record has no block; its id stands in for a hash it does not have (M22).
     rows.push([
       exchange && !transactionHash(operation) ? 'Bybit record' : 'Transaction',
-      <span key="txid" className="transactions-mono">
-        {transactionHash(operation) ?? exchangeRecord(operation)}
-      </span>,
+      <TxHash
+        key="txid"
+        hash={transactionHash(operation) ?? exchangeRecord(operation) ?? chain.txid}
+        network={wallet.network}
+      />,
     ]);
     if (!exchange) rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
     rows.push(
