@@ -39,7 +39,12 @@ export function assetIdentity(asset: {
 }
 
 export type Blockchain = Exclude<Network, 'bybit'>;
-const networkCoins: Record<Blockchain, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
+const networkCoins: Record<Blockchain, string> = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  solana: 'SOL',
+  tron: 'TRX',
+};
 
 /** TOKEN-CHAIN: a blockchain looks like its own coin. */
 export function networkIdentity(network: Blockchain): AssetIdentity {
