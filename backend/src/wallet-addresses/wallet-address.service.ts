@@ -14,7 +14,7 @@ import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
-import { bybitCoins } from './bybit-records';
+import { bybitCoins, gapLeg, toUnits, UnreadableAmount } from './bybit-records';
 import { type EarnHolding, HISTORY_DAYS } from './bybit-sync.adapter';
 import {
   chainAsset,
@@ -32,6 +32,7 @@ import { stakeMoves, stakeRewards } from './stake-tables';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
+  parseBalanceGap,
   parseRegistration,
   parseTransactionQuery,
   parseUpdate,
@@ -702,6 +703,55 @@ export class WalletAddressService {
       imported: result.step?.imported ?? 0,
       address: summary(await this.read((manager) => this.address(manager, owner, addressId))),
     };
+  }
+
+  /**
+   * BYBIT-COUNT-GAP: counts what Bybit holds beyond (or short of) the account's records as one
+   * more record of the account, so the wallet's total follows Bybit. The owner sees the
+   * difference and its coin in the balance notice; the balance Bybit reported then must still be
+   * the one stored. Sending the same request again stores nothing more.
+   */
+  async countGap(ownerId: string, id: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    const gap = parseBalanceGap(raw);
+    const value = await this.source.transaction('READ COMMITTED', async (manager) => {
+      const row = await this.address(manager, owner, addressId);
+      if (!row.exchange || row.accountId === null)
+        throw new UnprocessableEntityException('Only a Bybit account in a wallet can count a gap');
+      try {
+        const reported = row.exchange.balances?.find((item) => item.coin === gap.coin)?.quantity;
+        if (toUnits(reported ?? '0') !== toUnits(gap.reported))
+          throw new ConflictException('Bybit reports another balance now');
+        if (gap.direction === 'in' && toUnits(gap.quantity) > toUnits(gap.reported))
+          throw new UnprocessableEntityException('The difference exceeds the balance Bybit holds');
+      } catch (error) {
+        if (error instanceof UnreadableAmount) throw new ConflictException('Reload the balances');
+        throw error;
+      }
+      const leg = gapLeg(gap, new Date());
+      await manager.query(
+        `INSERT INTO wallet_address_transactions ("ownerId", "addressId", txid, "blockHeight",
+          "blockHash", "blockTime", "receivedUnits", "sentUnits", "feeUnits", direction, raw, asset)
+          VALUES ($1, $2, $3, 0, NULL, $4, $5::numeric, $6::numeric, 0, $7, $8::jsonb, $9)
+          ON CONFLICT ("addressId", txid) DO NOTHING`,
+        [
+          owner,
+          addressId,
+          leg.txid,
+          leg.blockTime,
+          leg.receivedUnits.toString(),
+          leg.sentUnits.toString(),
+          leg.direction,
+          JSON.stringify({ ...leg.raw, txid: leg.txid }),
+          leg.asset,
+        ],
+      );
+      return summary(await this.address(manager, owner, addressId));
+    });
+    // The new record's coin needs its asset before it counts (D1).
+    await this.walletSync.linkOwnTransfers(owner);
+    return value;
   }
 
   async transactions(ownerId: string, id: string, raw: unknown) {

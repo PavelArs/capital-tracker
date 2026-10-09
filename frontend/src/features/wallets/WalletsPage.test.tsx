@@ -1478,6 +1478,63 @@ describe('M22: Bybit accounts', () => {
     );
   });
 
+  it('BYBIT-COUNT-GAP counts the difference as records of the account, one request per coin', async () => {
+    const valuation = withBybit();
+    const doge = asset({
+      instrumentId: id(8),
+      name: 'DOGE',
+      symbol: 'DOGE',
+      quantity: '40',
+      value: null,
+      holdings: [{ accountId: bybit, accountName: 'Bybit', quantity: '40', value: null }],
+    });
+    setup([exchangeAccount({})], { ...valuation, assets: [...valuation.assets, doge] });
+    const count = vi.spyOn(walletAddressesApi, 'countGap').mockResolvedValue(exchangeAccount({}));
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    const user = userEvent.setup();
+    expect(within(account).getByRole('note')).toHaveTextContent(
+      'each coin becomes one record of this account, without a purchase price',
+    );
+    await user.click(within(account).getByRole('button', { name: 'Count the difference' }));
+    const uuid = expect.stringMatching(/^[0-9a-f-]{36}$/);
+    await waitFor(() => expect(count).toHaveBeenCalledTimes(2));
+    expect(count.mock.calls).toEqual([
+      [
+        exchangeAccount({}).id,
+        { requestId: uuid, coin: 'USDT', direction: 'in', quantity: '200', reported: '599' },
+      ],
+      [
+        exchangeAccount({}).id,
+        { requestId: uuid, coin: 'DOGE', direction: 'out', quantity: '40', reported: '0' },
+      ],
+    ]);
+    // The wallets are read again, so the counted records show.
+    await waitFor(() => expect(walletAddressesApi.list).toHaveBeenCalledTimes(2));
+  });
+
+  it('BYBIT-COUNT-GAP keeps the request id for a retry and says when a coin could not be counted', async () => {
+    setup([exchangeAccount({})], withBybit());
+    const count = vi
+      .spyOn(walletAddressesApi, 'countGap')
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValue(exchangeAccount({}));
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    const user = userEvent.setup();
+    await user.click(within(account).getByRole('button', { name: 'Count the difference' }));
+    expect(await within(account).findByRole('alert')).toHaveTextContent(
+      'Could not count every coin',
+    );
+    await user.click(within(account).getByRole('button', { name: 'Count the difference' }));
+    await waitFor(() => expect(count).toHaveBeenCalledTimes(2));
+    expect(count.mock.calls[1][1].requestId).toBe(count.mock.calls[0][1].requestId);
+  });
+
+  it('BYBIT-COUNT-GAP is not offered for a wallet that is not one Bybit account', async () => {
+    setup([wallet(1, { chainBalance: '0.5' })], withBybit());
+    expect(await screen.findByRole('note')).toHaveTextContent('Balance differs');
+    expect(screen.queryByRole('button', { name: 'Count the difference' })).toBeNull();
+  });
+
   it('shows the key, its expiry and the untracked coins in the drawer, never the secret', async () => {
     setup([exchangeAccount({})], withBybit());
     const user = userEvent.setup();

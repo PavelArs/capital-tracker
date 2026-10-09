@@ -12,6 +12,9 @@ import type {
   Staking,
   WalletAddress,
 } from '@api/wallet-addresses.api';
+import { walletAddressesApi } from '@api/wallet-addresses.api';
+import { useRef, useState } from 'react';
+import { newRequestId } from '../accounting/feedback';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
@@ -564,7 +567,20 @@ export function ManualRow({
   );
 }
 
-export function ReconcileNote({ result }: { result: Reconciliation }) {
+export function ReconcileNote({
+  result,
+  target = null,
+  onCounted,
+}: {
+  result: Reconciliation;
+  /** The Bybit account whose difference can be counted (BYBIT-COUNT-GAP); null for any other. */
+  target?: WalletAddress | null;
+  onCounted?: () => void;
+}) {
+  const [counting, setCounting] = useState(false);
+  const [failed, setFailed] = useState(false);
+  // One request id per coin and difference, kept for a retry after a lost answer.
+  const attempts = useRef(new Map<string, string>());
   if (result.state !== 'differs') return null;
   const lines = result.assets.map(({ symbol, chain, recorded, difference, exchange }) => {
     const by = quantity(difference.replace(/^-/, ''));
@@ -575,10 +591,61 @@ export function ReconcileNote({ result }: { result: Reconciliation }) {
   const advice = result.assets.every((item) => item.exchange)
     ? 'Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.'
     : 'Add the missing transactions or check that every address belongs here.';
+  const countable = target && result.assets.every((item) => item.exchange);
+  const count = async () => {
+    if (!target) return;
+    setCounting(true);
+    setFailed(false);
+    try {
+      for (const { symbol, chain, difference } of result.assets) {
+        const key = `${symbol}:${difference}`;
+        const requestId = attempts.current.get(key) ?? newRequestId();
+        attempts.current.set(key, requestId);
+        await walletAddressesApi.countGap(target.id, {
+          requestId,
+          coin: symbol,
+          direction: difference.startsWith('-') ? 'out' : 'in',
+          quantity: difference.replace(/^-/, ''),
+          reported: chain,
+        });
+        attempts.current.delete(key);
+      }
+      onCounted?.();
+    } catch {
+      setFailed(true);
+      onCounted?.();
+    } finally {
+      setCounting(false);
+    }
+  };
   return (
-    <p className="wallets-message wallets-message--warn" role="note">
-      {lines.join(' ')} {advice}
-    </p>
+    <div className="wallets-message wallets-message--warn" role="note">
+      <p>
+        {lines.join(' ')} {advice}
+      </p>
+      {countable && (
+        <>
+          <p>
+            Or count the difference now: each coin becomes one record of this account, without a
+            purchase price, that you can answer later as a purchase, a deposit or anything else.
+          </p>
+          <button
+            type="button"
+            className="shell-button shell-button--secondary"
+            disabled={counting}
+            onClick={() => void count()}
+          >
+            {counting ? 'Counting…' : 'Count the difference'}
+          </button>
+          {failed && (
+            <p role="alert">
+              Could not count every coin. Bybit may have reported another balance; reload and try
+              again.
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

@@ -57,6 +57,10 @@ describe('a Bybit record (M22)', () => {
     expect(exchangeRecord(leg('bybit', 'bybit-trade-convert-10100108106409343501030232064'))).toBe(
       'Convert 10100108106409343501030232064',
     );
+    // BYBIT-COUNT-GAP: a difference the owner counted has no Bybit record behind it.
+    const gap = '00000000-0000-4000-8000-0000000000aa';
+    expect(exchangeRecord(leg('bybit', `bybit-deposit-gap-${gap}`))).toBe('Balance difference');
+    expect(exchangeRecord(leg('bybit', `bybit-withdrawal-gap-${gap}`))).toBe('Balance difference');
   });
 
   it('names the account by its user ID and an automatic fill as a Bybit trade', () => {

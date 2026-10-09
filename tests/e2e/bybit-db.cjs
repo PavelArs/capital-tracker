@@ -639,6 +639,53 @@ async function main() {
       VALUES ('XRP','USD','binance',now(),1,'spot')`), /price_observations_source_check/);
     console.log('PASS BYBIT-ANY-COIN-PRICE the coins no catalog provider is asked for get Bybit\'s last closed hourly candle and, once, its daily candles against USDT, without a key; a coin without a Bybit market stays unpriced and is named; the source check admits bybit only besides kraken and coingecko');
 
+    // BYBIT-COUNT-GAP: Bybit holds 3 DOT no record explains (a purchase the API never lists)
+    // and 5 TON fewer than the records. The owner counts each difference: one more record of the
+    // account, unanswered, counted at once; the same request twice stores one record.
+    const gapBalances = {
+      FUND: [{ coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' }, { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+        { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' }, { coin: 'TON', walletBalance: '35', transferBalance: '35', bonus: '' }],
+      UNIFIED: [...balances.UNIFIED, { coin: 'XRP', walletBalance: '15', transferBalance: '15', bonus: '' },
+        { coin: 'NOPE', walletBalance: '7', transferBalance: '7', bonus: '' }, { coin: 'DOT', walletBalance: '3', transferBalance: '3', bonus: '' }],
+    };
+    await post('bybit', { append: true, balances: gapBalances });
+    const reported = await s.addresses.sync(owner, wallet);
+    assert.equal(reported.outcome, 'complete');
+    assert.deepEqual(reported.address.balances.filter((item) => ['DOT', 'TON'].includes(item.symbol)),
+      [{ symbol: 'DOT', quantity: '3' }, { symbol: 'TON', quantity: '35' }]);
+    const gapsBefore = (await legsOf(db, wallet)).length;
+    const heldBefore = await held(db, owner, exchange);
+    assert.equal(heldBefore.DOT, undefined);
+    assert.equal(heldBefore.TON, '40');
+    const dotGap = { requestId: randomUUID(), coin: 'DOT', direction: 'in', quantity: '3', reported: '3' };
+    const counted3 = await s.addresses.countGap(owner, wallet, dotGap);
+    assert.equal(counted3.transactionCount, gapsBefore + 1);
+    const repeated = await s.addresses.countGap(owner, wallet, dotGap);
+    assert.equal(repeated.transactionCount, gapsBefore + 1, 'The same request stores one record');
+    const tonGap = { requestId: randomUUID(), coin: 'TON', direction: 'out', quantity: '5', reported: '35' };
+    await s.addresses.countGap(owner, wallet, tonGap);
+    const gapLegs = (await legsOf(db, wallet)).filter((row) => row.txid.includes('-gap-'));
+    assert.deepEqual(gapLegs.map((row) => [row.txid, row.asset, row.received, row.sent, row.direction, row.raw.balanceGap]).sort(),
+      [[`bybit-deposit-gap-${dotGap.requestId}`, 'DOT', '3000000000000000000', '0', 'in', true],
+        [`bybit-withdrawal-gap-${tonGap.requestId}`, 'TON', '0', '5000000000000000000', 'out', true]].sort());
+    assert.deepEqual(await held(db, owner, exchange), { ...heldBefore, DOT: '3', TON: '35' });
+    const dot = await db.query(`SELECT "priceSource" FROM accounting_instruments WHERE "ownerId"=$1 AND symbol='DOT'`, [owner]);
+    assert.deepEqual(dot.map((row) => row.priceSource), ['market']);
+    // Left unanswered, a counted record is a deposit or withdrawal in the account's list.
+    const unanswered = await db.query(`SELECT count(*)::int AS n FROM chain_transaction_classification_versions
+      WHERE "addressId"=$1 AND txid LIKE '%-gap-%'`, [wallet]);
+    assert.equal(unanswered[0].n, 0);
+    // A balance Bybit no longer reports, a larger difference than the balance, another owner's
+    // or a missing address, and malformed input store nothing.
+    const refusedGap = (input, id = wallet) => s.addresses.countGap(owner, id, input);
+    await assert.rejects(() => refusedGap({ ...dotGap, requestId: randomUUID(), reported: '2.5' }), /another balance/);
+    await assert.rejects(() => refusedGap({ ...dotGap, requestId: randomUUID(), quantity: '3.5' }), /exceeds/);
+    await assert.rejects(() => refusedGap({ ...dotGap, requestId: randomUUID() }, randomUUID()), /Not Found/);
+    await assert.rejects(() => refusedGap({ ...dotGap, requestId: randomUUID(), coin: 'EUR' }), /Invalid wallet address input/);
+    await assert.rejects(() => refusedGap({ ...dotGap, requestId: randomUUID(), extra: 1 }), /Invalid wallet address input/);
+    assert.equal((await legsOf(db, wallet)).filter((row) => row.txid.includes('-gap-')).length, 2);
+    console.log('PASS BYBIT-COUNT-GAP a difference between Bybit\'s balance and the records is counted as one more record of the account: 3 DOT Bybit holds without a record become a deposit, 5 TON it holds fewer a withdrawal, both counting at once without a purchase price and with a market-priced asset; the same request stores one record; a balance Bybit no longer reports, a difference larger than the balance and bad input store nothing');
+
     // BYBIT-KEY on every pass: a key the owner later lets withdraw (or trade) in Bybit is
     // deleted at the next sync before anything else is asked; a read-only key added again resumes.
     const widened = { ...replacement, info: { ...replacement.info,

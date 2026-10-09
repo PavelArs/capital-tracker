@@ -154,6 +154,17 @@ export interface SyncResult {
   address: WalletAddress;
 }
 
+/** BYBIT-COUNT-GAP: one coin's difference between Bybit's balance and the account's records. */
+export interface BalanceGap {
+  requestId: string;
+  coin: string;
+  direction: 'in' | 'out';
+  /** The difference, positive. */
+  quantity: string;
+  /** The balance Bybit reported, as shown to the owner. */
+  reported: string;
+}
+
 export interface AddressTransaction {
   txid: string;
   blockHeight: number;
@@ -201,6 +212,10 @@ export const walletAddressesApi = {
         timeout: 60_000,
       })
     ).data,
+  /** Counts the difference as one more record of the Bybit account; the same request is safe to repeat. */
+  countGap: async (id: string, gap: BalanceGap): Promise<WalletAddress> =>
+    (await apiClient.post<WalletAddress>(`${path}/${encodeURIComponent(id)}/balance-gap`, gap))
+      .data,
   transactions: async (id: string, offset = 0): Promise<TransactionPage> =>
     (
       await apiClient.get<TransactionPage>(`${path}/${encodeURIComponent(id)}/transactions`, {

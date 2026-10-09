@@ -16,7 +16,7 @@ import RenameWalletDialog from './RenameWalletDialog';
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
 import { AddressRow, holdingsOf, ReconcileNote, subtitle } from './WalletParts';
-import { pricesOf, reconcile } from './wallets';
+import { gapAddress, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -274,7 +274,11 @@ export default function WalletPage() {
                 <LastSync addresses={own} runs={runs} />
               </Stat>
             </dl>
-            <ReconcileNote result={reconcile(list, portfolio, accountId)} />
+            <ReconcileNote
+              result={reconcile(list, portfolio, accountId)}
+              target={gapAddress(list, accountId)}
+              onCounted={() => void load(true)}
+            />
           </section>
           {own.length > 0 && (
             <section className="shell-card wallets-card" aria-labelledby="wallet-addresses">
