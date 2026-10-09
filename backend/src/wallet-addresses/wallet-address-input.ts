@@ -7,6 +7,7 @@ import { isApiKey, isApiSecret } from './bybit-key-box';
 import { isNetwork, type Network } from './chain-assets';
 import { normalizeEthereumAddress } from './ethereum-address';
 import { normalizeSolanaAddress } from './solana-address';
+import { normalizeStellarAddress } from './stellar-address';
 import { normalizeTronAddress } from './tron-address';
 
 export const LABEL_MAX_LENGTH = 40;
@@ -60,9 +61,11 @@ const normalizers: Record<Exclude<Network, 'bybit'>, (value: unknown) => string>
   ethereum: normalizeEthereumAddress,
   solana: normalizeSolanaAddress,
   tron: normalizeTronAddress,
+  stellar: normalizeStellarAddress,
 };
 
-// Bitcoin (the default of the legacy body), Ethereum (M14), Solana (M15), Bybit (M22) and Tron.
+// Bitcoin (the default of the legacy body), Ethereum (M14), Solana (M15), Bybit (M22), Tron and
+// Stellar (M23).
 export function parseRegistration(raw: unknown): Registration | ExchangeRegistration {
   if ((raw as Record<string, unknown> | null)?.network === 'bybit') {
     const row = object(raw, ['network', 'apiKey', 'apiSecret', 'accountId', 'label']);

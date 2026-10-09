@@ -9,7 +9,7 @@ export type ProviderFailure =
   | 'invalid_response'
   | 'not_configured'
   | 'key_rejected';
-export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron';
+export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron' | 'stellar';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {
@@ -135,8 +135,9 @@ export interface WalletAddress {
    */
   pools?: ChainBalance[] | null;
   /**
-   * A Tron address: all the TRX the chain last reported (liquid, staked and unstaking) when it
-   * differs from what the transactions explain; shown, never counted. Null otherwise.
+   * A Tron address: all the TRX the chain last reported (liquid, staked and unstaking), or a
+   * Stellar account: the XLM Stellar reports, when it differs from what the transactions
+   * explain; shown, never counted. Null otherwise.
    */
   reportedBalance?: string | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */

@@ -1142,6 +1142,62 @@ describe('Tron wallets', () => {
   });
 });
 
+describe('Stellar wallets (M23)', () => {
+  // StrKey of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const stellarAddress = 'GDVAYF5L5VO3TB4443DGK74NKBY547UED3O3537NINFDO4TBNHIUV3HD';
+  const stellarWallet = (changes: Partial<WalletAddress>) =>
+    wallet(8, {
+      network: 'stellar',
+      address: stellarAddress,
+      label: 'Main XLM',
+      chainBalance: '1250.5000000',
+      balances: [{ symbol: 'XLM', quantity: '1250.5000000' }],
+      ...changes,
+    });
+
+  it('STELLAR-ADD tracks a "G…" account with its XLM', async () => {
+    setup([]);
+    const added = stellarWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const stellar = within(dialog).getByRole('button', { name: /^Stellar/ });
+    expect(stellar).toHaveTextContent('One address. XLM');
+    await user.click(stellar);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Stellar wallet address');
+    expect(dialog).toHaveTextContent('issued assets such as USDC on Stellar are not read');
+    await user.type(field, stellarAddress);
+    expect(within(dialog).getByText('Stellar account')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({
+      network: 'stellar',
+      address: stellarAddress,
+      accountId: trust,
+    });
+  });
+
+  it('shows the XLM balance and source, and says when Stellar reports another one', async () => {
+    setup([stellarWallet({ reportedBalance: '1300.0000000' })]);
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: `Main XLM ${stellarAddress}` });
+    expect(row).toHaveTextContent('1,250.5 XLM');
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Stellar' });
+    expect(drawer).toHaveTextContent('Stellar Horizon');
+    expect(drawer).toHaveTextContent(
+      'Stellar reports 1,300 XLM; the transactions read give 1,250.5 XLM.',
+    );
+  });
+});
+
 describe('M21: Bitcoin wallets by account public key', () => {
   // The BIP-84 test vector's account key and its first receiving address, never an owner's wallet.
   const zpub =

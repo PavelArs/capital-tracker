@@ -17,6 +17,7 @@ const known: Record<string, AssetIdentity> = {
   SOL: { color: 'var(--c-sol)', glyph: 'S' },
   ZEC: { color: 'var(--c-zec)', glyph: 'Z' },
   TRX: { color: 'var(--c-trx)', glyph: 'T' },
+  XLM: { color: 'var(--c-xlm)', glyph: 'X' },
   USDT: { color: cash, glyph: '₮' },
   USDC: { color: cash, glyph: '$' },
   USD: { color: cash, glyph: '$' },
@@ -44,6 +45,7 @@ const networkCoins: Record<Blockchain, string> = {
   ethereum: 'ETH',
   solana: 'SOL',
   tron: 'TRX',
+  stellar: 'XLM',
 };
 
 /** TOKEN-CHAIN: a blockchain looks like its own coin. */

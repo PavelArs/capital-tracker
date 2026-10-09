@@ -130,7 +130,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 51/);
+  assert.match(migrate(database), /Migrations applied: 52/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -159,7 +159,7 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null, pools: null, accountKey: null, exchange: null,
+      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null, pools: null, reportedBalance: null, accountKey: null, exchange: null,
       sync: { state: 'never', completedAt: null, status: null, lastAttemptAt: null, lastSuccessAt: null, nextRunAt: null, errorMessage: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');
@@ -368,9 +368,9 @@ async function main() {
       FROM wallet_address_transactions WHERE "addressId"=$1 AND txid=$2`, [pages, stored.txid]), (error) => error.code === '23505');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
       VALUES (gen_random_uuid(),$1,'bitcoin',$2)`, [owner, addresses.pages]), (error) => error.code === '23505');
-    // M14 allows Ethereum, stored lower case only, M15 Solana and Tron its own addresses; any other network is still refused.
+    // M14 allows Ethereum, stored lower case only, M15 Solana, Tron and Stellar (M23) their own addresses; any other network is still refused.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
-      VALUES (gen_random_uuid(),$1,'stellar','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
+      VALUES (gen_random_uuid(),$1,'dogecoin','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
       VALUES (gen_random_uuid(),$1,'solana','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)

@@ -340,6 +340,46 @@ describe('TRON-ADD, WAL-NO-SECRETS: the Tron address field', () => {
   });
 });
 
+describe('STELLAR-ADD, WAL-NO-SECRETS: the Stellar address field (M23)', () => {
+  // StrKey of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const stellar = 'GDVAYF5L5VO3TB4443DGK74NKBY547UED3O3537NINFDO4TBNHIUV3HD';
+
+  it('accepts a "G…" account exactly as pasted', () => {
+    expect(checkAddress('stellar', ` ${stellar} `)).toEqual({
+      ok: true,
+      address: stellar,
+      kind: 'Stellar account',
+    });
+  });
+
+  it.each([
+    ['MDZJJ4ZBLLGQPC2IPM5AHTNFJQOP3UMC2M6JNHVNK2SJO4TFUS3C4AAAAAAAAAAAAAL44', 'muxed address'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR', 'it looks like a Tron address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    [stellar.slice(0, 40), 'This is not a valid Stellar address.'],
+    [stellar.toLowerCase(), 'This is not a valid Stellar address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('stellar', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it('points a Stellar address pasted for another network to Stellar', () => {
+    for (const network of ['bitcoin', 'ethereum', 'solana', 'tron'] as const) {
+      const result = checkAddress(network, stellar);
+      expect(result.ok === false && result.message).toContain('Stellar');
+    }
+  });
+
+  it('marks a Stellar secret seed as a secret on any network', () => {
+    for (const network of ['stellar', 'bitcoin'] as const)
+      expect(
+        checkAddress(network, 'SAPRFEI6OHGMDPWC44RAWNDFCCPYODWT5XXCT4XO6K77HGLCMPI63P26'),
+      ).toMatchObject({ ok: false, secret: true });
+  });
+});
+
 describe('names', () => {
   it('shortens an address to its start and end', () => {
     expect(shortAddress('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe('bc1qar0s…wf5mdq');

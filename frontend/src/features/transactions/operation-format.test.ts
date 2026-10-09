@@ -93,11 +93,12 @@ describe('a Bybit record (M22)', () => {
 
 describe('the explorer page of a transaction', () => {
   const hex = 'cd'.repeat(32);
-  it('links Bitcoin, Ethereum, Solana and Tron transactions to free public explorers', () => {
+  it('links Bitcoin, Ethereum, Solana, Tron and Stellar transactions to free public explorers', () => {
     expect(explorerUrl(hex, 'bitcoin')).toBe(`https://mempool.space/tx/${hex}`);
     expect(explorerUrl(`0x${hex}`, 'ethereum')).toBe(`https://etherscan.io/tx/0x${hex}`);
     expect(explorerUrl('5mt57dE8bXAp', 'solana')).toBe('https://solscan.io/tx/5mt57dE8bXAp');
     expect(explorerUrl(hex, 'tron')).toBe(`https://tronscan.org/#/transaction/${hex}`);
+    expect(explorerUrl(hex, 'stellar')).toBe(`https://stellar.expert/explorer/public/tx/${hex}`);
   });
 
   it('has none for an exchange account or a record id that is not a hash', () => {

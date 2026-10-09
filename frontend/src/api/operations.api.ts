@@ -40,7 +40,7 @@ export interface OperationPlace {
 
 export interface OperationWallet {
   id: string;
-  network: 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron';
+  network: 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron' | 'stellar';
   address: string;
   label: string | null;
 }

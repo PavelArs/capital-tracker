@@ -3,11 +3,12 @@
 // wallets also move every other token, which the chain_tokens table describes. A raw chain
 // transaction leg names its token in `asset`: USDT and USDC by ticker, any other token by its
 // contract or mint; null is the network's own coin. Amounts are stored in base units.
+// Stellar wallets move its own coin XLM only (M23).
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 // BYBIT-ANY-COIN: it holds any coin Bybit lists, not only the ones below.
 
-export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit', 'tron'] as const;
+export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit', 'tron', 'stellar'] as const;
 export type Network = (typeof networks)[number];
 
 export interface ChainAsset {
@@ -37,6 +38,7 @@ export const networkNames: Record<Network, string> = {
   solana: 'Solana',
   bybit: 'Bybit',
   tron: 'Tron',
+  stellar: 'Stellar',
 };
 
 const bybitCoin = (symbol: string, name: string): ChainAsset => ({
@@ -108,6 +110,15 @@ export const chainAssets: readonly ChainAsset[] = [
     name: 'USD Coin',
     decimals: 6,
     contract: 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8',
+  },
+  // STELLAR-ADD: lumens only; Stellar's issued assets (its USDC among them) are not read.
+  {
+    network: 'stellar',
+    token: null,
+    symbol: 'XLM',
+    name: 'Stellar',
+    decimals: 7,
+    contract: null,
   },
   bybitCoin('BTC', 'Bitcoin'),
   bybitCoin('ETH', 'Ethereum'),
