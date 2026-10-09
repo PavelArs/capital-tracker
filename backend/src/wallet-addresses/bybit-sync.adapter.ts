@@ -197,6 +197,19 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       // BYBIT-EARN: whether the key may read Earn now, asked on every pass, so turning the
       // permission on in Bybit counts from the next sync without adding the account again.
       const info = await call(() => this.client.keyInfo(key));
+      // BYBIT-KEY: a key the owner later lets trade or withdraw in Bybit is deleted before
+      // anything else is asked; the account then waits for a read-only key again.
+      if (!info.readOnly || info.canWithdraw) {
+        await this.source.query(
+          `UPDATE bybit_accounts SET credentials = '{}'::jsonb WHERE "walletId" = $1`,
+          [account.id],
+        );
+        return finish(
+          'provider_error',
+          'key_rejected',
+          'The key can now trade or withdraw, so the app deleted it',
+        );
+      }
       let earn = await this.keyFacts(account, info, now);
       for (const stream of this.streams) {
         if (stream.earn && !earn) continue;
