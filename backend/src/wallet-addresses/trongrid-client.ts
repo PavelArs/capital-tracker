@@ -16,6 +16,10 @@ import { tronHex } from './tron-address';
 export const TRONGRID_TRANSACTION_PAGE_SIZE = 6;
 export const TRONGRID_TOKEN_PAGE_SIZE = 20;
 const DEFAULT_BASE_URL = 'https://api.trongrid.io';
+// TRON-INTERNAL: Tronscan's list of the TRX contracts sent an account, which TronGrid's account
+// list leaves out. Only hashes and block times are taken from it; amounts come from TronGrid.
+const DEFAULT_TRONSCAN_URL = 'https://apilist.tronscanapi.com';
+export const TRONSCAN_PAGE_SIZE = 10;
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 // A refusal is logged with its first characters, never an address, a hash or the key.
 const LOGGED_CHARS = 160;
@@ -87,6 +91,8 @@ export interface TronTransactionInfo {
   unfreezeAmount: bigint;
   /** Unstaked TRX past its waiting period that went back to the balance (Stake 2.0). */
   withdrawExpireAmount: bigint;
+  /** TRX contracts moved inside the transaction, as the node recorded them. */
+  internal: TronInternal[];
   raw: Record<string, unknown>;
 }
 
@@ -114,6 +120,15 @@ export type PageResult<T> = { ok: true; items: T[]; next: string | null } | Fail
 export type InfoResult = { ok: true; info: TronTransactionInfo } | Failure;
 export type AccountResult = { ok: true; account: TronAccountState } | Failure;
 export type RewardResult = { ok: true; units: bigint } | Failure;
+export type InternalListResult = { ok: true; items: TronscanInternal[] } | Failure;
+
+/** TRON-INTERNAL: one TRX transfer Tronscan lists for the account, by hash and block time. */
+export interface TronscanInternal {
+  txid: string;
+  timestamp: number;
+  /** The receiver, hex. */
+  to: string | null;
+}
 
 class InvalidResponse extends Error {}
 
@@ -232,17 +247,57 @@ export function parseInfo(body: unknown, txid: string): TronTransactionInfo {
   const failed =
     item.result === 'FAILED' ||
     (receipt.result !== undefined && receipt.result !== 'SUCCESS' && receipt.result !== 'DEFAULT');
+  const timestamp = time(item.blockTimeStamp);
   return {
     txid,
     blockNumber: block(item.blockNumber),
-    timestamp: time(item.blockTimeStamp),
+    timestamp,
     fee: amount(item.fee),
     failed,
     withdrawAmount: amount(item.withdraw_amount),
     unfreezeAmount: amount(item.unfreeze_amount),
     withdrawExpireAmount: amount(item.withdraw_expire_amount),
+    internal: (item.internal_transactions === undefined
+      ? []
+      : list(item.internal_transactions)
+    ).map((value) => parseInfoInternal(value, txid, timestamp)),
     raw: item,
   };
+}
+
+/** One internal transaction of the node's record; only its TRX (no token id) is counted. */
+function parseInfoInternal(value: unknown, txid: string, timestamp: number): TronInternal {
+  const item = record(value);
+  if (item.rejected !== undefined && typeof item.rejected !== 'boolean') invalid();
+  const values = item.callValueInfo === undefined ? [] : list(item.callValueInfo);
+  const units = values
+    .map(record)
+    .filter((entry) => entry.tokenId === undefined)
+    .reduce((sum, entry) => sum + amount(entry.callValue), 0n);
+  return {
+    kind: 'internal',
+    txid,
+    timestamp,
+    from: tronHex(item.caller_address),
+    to: tronHex(item.transferTo_address),
+    units,
+    rejected: item.rejected === true,
+    raw: item,
+  };
+}
+
+/**
+ * Tronscan's /api/internal-transaction: a page of the TRX transfers contracts made to an
+ * account. Only the confirmed ones that were not rejected or reverted are kept, by hash, block
+ * time (ms) and receiver; their amounts are read from the node's record of the transaction.
+ */
+export function parseInternalList(body: unknown): TronscanInternal[] {
+  const items = record(body).data === undefined ? [] : list(record(body).data);
+  return items.flatMap((value) => {
+    const item = record(value);
+    if (item.confirmed !== true || item.rejected === true || item.revert === true) return [];
+    return [{ txid: hash(item.hash), timestamp: time(item.timestamp), to: tronHex(item.to) }];
+  });
 }
 
 /** getaccount with visible addresses; an account never activated is answered with {}. */
@@ -290,6 +345,7 @@ export class TronGridClient {
   private readonly logger = new Logger(TronGridClient.name);
   private readonly apiKey: string | null;
   private readonly baseUrl: string;
+  private readonly tronscanUrl: string;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
@@ -302,12 +358,14 @@ export class TronGridClient {
     options: {
       apiKey?: string | null;
       baseUrl?: string;
+      tronscanUrl?: string;
       timeoutMs?: number;
       pauseMs?: number;
     } = {},
   ) {
     this.apiKey = options.apiKey?.trim() || null;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
+    this.tronscanUrl = options.tronscanUrl ?? DEFAULT_TRONSCAN_URL;
     this.timeoutMs = options.timeoutMs ?? 10_000;
     // Without a key TronGrid allows only a few calls a second; with one, more.
     this.pauseMs = options.pauseMs ?? (this.apiKey ? 150 : 400);
@@ -371,6 +429,19 @@ export class TronGridClient {
     }));
   }
 
+  /**
+   * TRON-INTERNAL: one page of the TRX transfers contracts made to the account, newest first, as
+   * Tronscan lists them; `start` counts the items before the page.
+   */
+  internalTransfers(address: string, start: number): Promise<InternalListResult> {
+    return this.get(
+      '/api/internal-transaction',
+      { address, start: String(start), limit: String(TRONSCAN_PAGE_SIZE) },
+      (body) => ({ ok: true as const, items: parseInternalList(body) }),
+      'Tronscan',
+    );
+  }
+
   private page<T>(
     path: string,
     params: Record<string, string>,
@@ -397,12 +468,14 @@ export class TronGridClient {
     path: string,
     params: Record<string, string>,
     parse: (body: unknown) => T,
+    provider: 'TronGrid' | 'Tronscan' = 'TronGrid',
   ): Promise<T | Failure> {
+    const tronscan = provider === 'Tronscan';
     const wait = this.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let response: { status: number; data: string };
     try {
-      response = await axios.get<string>(`${this.baseUrl}${path}`, {
+      response = await axios.get<string>(`${tronscan ? this.tronscanUrl : this.baseUrl}${path}`, {
         params,
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
@@ -415,17 +488,18 @@ export class TronGridClient {
         validateStatus: () => true,
         headers: {
           Accept: 'application/json',
-          ...(this.apiKey ? { 'TRON-PRO-API-KEY': this.apiKey } : {}),
+          // The TronGrid key is TronGrid's alone; Tronscan is asked without one.
+          ...(this.apiKey && !tronscan ? { 'TRON-PRO-API-KEY': this.apiKey } : {}),
         },
       });
     } catch (error) {
-      this.logRefusal(path, 'failed', errorCode(error));
+      this.logRefusal(provider, path, 'failed', errorCode(error));
       return { ok: false, reason: 'unavailable' };
     } finally {
       this.lastRequestAt = Date.now();
     }
     if (response.status !== 200)
-      this.logRefusal(path, `answered ${response.status}`, String(response.data));
+      this.logRefusal(provider, path, `answered ${response.status}`, String(response.data));
     // TronGrid answers 403 both to a key it refuses and to calls over its rate, keyed ("exceeds
     // the frequency limit") or not ("request rate exceeded … suspended").
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
@@ -445,7 +519,7 @@ export class TronGridClient {
   }
 
   /** The sync status shows only a summary; the log keeps what TronGrid actually said. */
-  private logRefusal(path: string, outcome: string, detail: string) {
+  private logRefusal(provider: string, path: string, outcome: string, detail: string) {
     const redact = (text: string) =>
       (this.apiKey ? text.split(this.apiKey).join('<key>') : text).replace(ADDRESS_OR_HASH, '<id>');
     // Redacted before the cut, so no identifier is left half-shown at the end.
@@ -453,7 +527,7 @@ export class TronGridClient {
       .slice(0, LOGGED_CHARS)
       .replace(/\s+/g, ' ')
       .trim();
-    this.logger.warn(`TronGrid ${redact(path)} ${outcome}${said ? `: ${said}` : ''}`);
+    this.logger.warn(`${provider} ${redact(path)} ${outcome}${said ? `: ${said}` : ''}`);
   }
 }
 

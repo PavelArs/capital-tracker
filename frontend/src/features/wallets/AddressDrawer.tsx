@@ -20,6 +20,7 @@ import {
   EarnSection,
   PoolsSection,
   type Prices,
+  ReportedBalanceNote,
   StakingSection,
 } from './WalletParts';
 import { chainBalances, shortAddress } from './wallets';
@@ -326,9 +327,10 @@ export default function AddressDrawer({
               ), so their coins count twice.
             </p>
           )}
+          {address.network === 'tron' && <ReportedBalanceNote address={address} />}
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {address.pools && <PoolsSection pools={address.pools} />}
-          {address.reportedBalance && (
+          {address.network === 'stellar' && address.reportedBalance && (
             <p className="wallets-message wallets-message--warn" role="note">
               Stellar reports {quantity(address.reportedBalance)} {network.symbol}; the transactions
               read give {quantity(address.chainBalance ?? '0')} {network.symbol}. The app does not
@@ -433,7 +435,7 @@ export default function AddressDrawer({
                     </span>
                     <span className="wallets-num">
                       {item.net.startsWith('-') ? '-' : '+'}
-                      {quantity(item.net)} {item.symbol}
+                      {quantity(item.net.replace(/^-/, ''))} {item.symbol}
                     </span>
                   </li>
                 ))}

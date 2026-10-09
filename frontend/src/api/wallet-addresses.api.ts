@@ -115,8 +115,9 @@ export interface WalletAddress {
    */
   pools?: ChainBalance[] | null;
   /**
-   * STELLAR-REPORTED: the XLM balance Stellar reports when the history read gives another one;
-   * null when they agree or until a sync completes.
+   * A Tron address: all the TRX the chain last reported (liquid, staked and unstaking), or a
+   * Stellar account: the XLM Stellar reports, when it differs from what the transactions
+   * explain; shown, never counted. Null otherwise.
    */
   reportedBalance?: string | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */

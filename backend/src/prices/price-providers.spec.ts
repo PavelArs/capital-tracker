@@ -300,6 +300,66 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
     });
   });
 
+  describe('TOKEN-ANY-PRICE CoinGecko token price by contract', () => {
+    const now = new Date('2026-10-04T15:05:00Z');
+    const updated = seconds('2026-10-04T15:04:30Z');
+    const mixed = `0x${'Ab'.repeat(20)}`;
+    const other = `0x${'cd'.repeat(20)}`;
+
+    it('asks for the contracts and matches an Ethereum contract without regard to case', async () => {
+      handler = () => ({
+        status: 200,
+        body: { [mixed.toLowerCase()]: { usd: 0.0123, last_updated_at: updated } },
+      });
+      const answer = await new CoinGeckoClient({ baseUrl, demoKey: 'demo' }).tokens(
+        'ethereum',
+        [mixed, other],
+        now,
+      );
+      expect(answer).toEqual({
+        ok: true,
+        prices: new Map([[mixed, { price: '0.0123', observedAt: '2026-10-04T15:04:30.000Z' }]]),
+      });
+      expect(requests[0].url.pathname).toBe('/api/v3/simple/token_price/ethereum');
+      expect(requests[0].url.searchParams.get('contract_addresses')).toBe(`${mixed},${other}`);
+      expect(requests[0].headers['x-cg-demo-api-key']).toBe('demo');
+    });
+
+    it('matches a Solana mint exactly, so a mint differing in case is another token', async () => {
+      handler = () => ({
+        status: 200,
+        body: { MintAaaa: { usd: 2, last_updated_at: updated } },
+      });
+      const answer = await new CoinGeckoClient({ baseUrl }).tokens(
+        'solana',
+        ['MintAaaa', 'minTaaaa'],
+        now,
+      );
+      expect(answer).toEqual({
+        ok: true,
+        prices: new Map([['MintAaaa', { price: '2', observedAt: '2026-10-04T15:04:30.000Z' }]]),
+      });
+    });
+
+    it('knows no token when CoinGecko lists none, and reports failures and nonsense', async () => {
+      handler = () => ({ status: 200, body: {} });
+      await expect(
+        new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed], now),
+      ).resolves.toEqual({ ok: true, prices: new Map() });
+      handler = () => ({ status: 429, body: {} });
+      await expect(
+        new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed], now),
+      ).resolves.toEqual({ ok: false, reason: 'rate_limited' });
+      handler = () => ({
+        status: 200,
+        body: { [mixed.toLowerCase()]: { usd: -1, last_updated_at: updated } },
+      });
+      await expect(
+        new CoinGeckoClient({ baseUrl }).tokens('ethereum', [mixed], now),
+      ).resolves.toEqual({ ok: false, reason: 'invalid_response' });
+    });
+  });
+
   describe('CoinGecko simple price', () => {
     const now = new Date('2026-10-04T15:05:00Z');
     const updated = seconds('2026-10-04T15:04:30Z');

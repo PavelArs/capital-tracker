@@ -12,8 +12,10 @@ import {
 } from './tron-legs';
 import {
   type PageResult,
+  TRONSCAN_PAGE_SIZE,
   type TronAccountItem,
   TronGridClient,
+  type TronscanInternal,
   type TronTokenTransfer,
   type TronTransactionInfo,
 } from './trongrid-client';
@@ -66,9 +68,10 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     const after = state.readTo?.getTime() ?? 0;
     if (after >= target) {
       await this.commit(state, [], [], after, tip.tip.number, true);
+      const imported = await this.readInternal(state, hex, after);
       const refused = await this.refreshState(state);
-      if (refused) return failed(refused);
-      return { outcome: 'complete', reason: null, imported: 0 };
+      if (refused) return { outcome: 'provider_error', reason: refused, imported };
+      return { outcome: 'complete', reason: null, imported };
     }
 
     const started = Date.now();
@@ -158,14 +161,68 @@ export class TronSyncAdapter implements ChainSyncAdapter {
     const caughtUp = failure === null && position === ordered.length && end === target;
     // Everything listed is read: the cursor moves to the end of what the lists covered.
     if (failure === null && position === ordered.length) done = end;
-    const imported =
+    let imported =
       done === after ? 0 : await this.commit(state, legs, stake, done, tip.tip.number, caughtUp);
     if (failure) return { outcome: 'provider_error', reason: failure, imported };
     if (caughtUp) {
+      imported += await this.readInternal(state, hex, done);
       const refused = await this.refreshState(state);
       if (refused) return { outcome: 'provider_error', reason: refused, imported };
     }
     return { outcome: caughtUp ? 'complete' : 'partial', reason: null, imported };
+  }
+
+  /**
+   * TRON-INTERNAL: TRX a contract sent the wallet inside another account's transaction (an
+   * exchange's payout, say), which TronGrid's account list leaves out. Tronscan's list of such
+   * transfers names them; each is then read from TronGrid's record of the transaction, whose
+   * amounts are the ones stored, as a TRX leg like any other. Only block times the history has
+   * already read (up to `readTo`) are taken, and a hash already stored is skipped, so no leg is
+   * ever stored twice. When Tronscan or the record cannot be read, the history stays as it is
+   * until a later pass; the wallet shows the chain's total beside it meanwhile.
+   */
+  private async readInternal(state: ScanRow, hex: string, readTo: number): Promise<number> {
+    const listed: TronscanInternal[] = [];
+    for (let page = 0; page < MAX_TRON_PAGES; page++) {
+      const found = await this.client.internalTransfers(state.address, page * TRONSCAN_PAGE_SIZE);
+      if (!found.ok) return 0;
+      listed.push(...found.items);
+      if (found.items.length < TRONSCAN_PAGE_SIZE) break;
+    }
+    const wanted = new Map<string, TronscanInternal>();
+    for (const item of listed)
+      if (item.to === hex && item.timestamp <= readTo) wanted.set(item.txid, item);
+    if (wanted.size === 0) return 0;
+    const stored: { txid: string }[] = await this.source.query(
+      `SELECT txid FROM wallet_address_transactions WHERE "addressId" = $1 AND txid = ANY($2)`,
+      [state.id, [...wanted.keys()]],
+    );
+    for (const { txid } of stored) wanted.delete(txid);
+    const missing = [...wanted.values()]
+      .sort(
+        (left, right) => left.timestamp - right.timestamp || left.txid.localeCompare(right.txid),
+      )
+      .slice(0, MAX_INFO_PER_SYNC);
+    const legs: TronLeg[] = [];
+    for (const item of missing) {
+      const found = await this.client.info(item.txid);
+      if (!found.ok) break;
+      const { info } = found;
+      if (info.timestamp > readTo) continue;
+      const effect = tronLegs(state.address, hex, {
+        txid: item.txid,
+        timestamp: info.timestamp,
+        transaction: null,
+        internal: info.internal,
+        tokens: [],
+        info,
+      });
+      legs.push(...effect.legs);
+    }
+    if (legs.length === 0) return 0;
+    return this.source.transaction('READ COMMITTED', (manager) =>
+      this.insert(manager, state, legs),
+    );
   }
 
   /**

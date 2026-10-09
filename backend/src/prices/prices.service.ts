@@ -2,11 +2,19 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
+import { loadChainTokens } from '../wallet-addresses/chain-tokens';
 import { BybitMarketClient, type BybitMarketMiss } from './bybit-market';
 import { extraMarketCodes } from './market-codes';
 import { latestMarketPrices } from './market-price.store';
 import { MARKET_ASSETS, QUOTE_CURRENCY } from './price-catalog';
-import { freshness, gatherQuotes, isDue, nextRunAt, type SourceOutcome } from './price-collection';
+import {
+  failureMessage,
+  freshness,
+  gatherQuotes,
+  isDue,
+  nextRunAt,
+  type SourceOutcome,
+} from './price-collection';
 import { CoinGeckoClient, KrakenClient, type PriceFailure, type Quote } from './price-providers';
 
 export type CollectionResult =
@@ -18,6 +26,12 @@ export const BACKFILL_FROM = new Date('2025-01-01T00:00:00Z');
 const BACKFILL_KEY = 'prices:backfill';
 const PROVIDER_KEYS = { kraken: 'prices:kraken', coingecko: 'prices:coingecko' } as const;
 const BYBIT_KEY = 'prices:bybit';
+const TOKENS_KEY = 'prices:tokens';
+// TOKEN-ANY-PRICE: tokens asked of CoinGecko in one run, in requests of TOKENS_PER_REQUEST.
+const MAX_TOKENS = 120;
+const TOKENS_PER_REQUEST = 30;
+// A token CoinGecko did not know is asked about again after this long.
+const UNLISTED_RECHECK_MS = 24 * 3_600_000;
 // BYBIT-ANY-COIN: coins asked of Bybit's market in one run, two requests each at most.
 const MAX_BYBIT_COINS = 50;
 const BYBIT_MISS_TEXT: Record<BybitMarketMiss, string> = {
@@ -93,9 +107,10 @@ export class PricesService {
         const backfilled = await this.backfill(now);
         const stored = await this.collectLatest(now);
         const bybit = await this.collectBybit(now);
+        const tokens = await this.collectTokens(now);
         return {
           outcome: 'collected',
-          stored: stored + bybit.stored,
+          stored: stored + bybit.stored + tokens,
           backfilled: backfilled + bybit.backfilled,
         };
       } finally {
@@ -181,6 +196,88 @@ export class PricesService {
       await this.record(manager, BYBIT_KEY, outcome, now);
       return { stored, backfilled };
     });
+  }
+
+  /**
+   * TOKEN-ANY-PRICE: the tokens of Ethereum and Solana wallets that wallets hold now (a balance
+   * above zero) are priced by contract from CoinGecko, hourly. A token CoinGecko does not list
+   * gets no price and is asked about once a day; its value stays unknown. At most MAX_TOKENS are
+   * asked per run, those checked longest ago first, so hundreds of unknown tokens cost a few
+   * requests and never the whole run.
+   */
+  private async collectTokens(now: Date): Promise<number> {
+    const due: { network: 'ethereum' | 'solana'; contract: string; ticker: string }[] =
+      await this.source.query(
+        `SELECT t.network, t.contract, t.ticker FROM chain_tokens t
+          WHERE t.network IN ('ethereum', 'solana')
+            AND (t."coingeckoId" IS NOT NULL OR t."priceCheckedAt" IS NULL
+                 OR t."priceCheckedAt" <= $1)
+            AND EXISTS (
+              SELECT 1 FROM wallet_address_transactions x
+                JOIN wallet_addresses a ON a.id = x."addressId"
+               WHERE a.network = t.network AND x.asset = t.contract
+               GROUP BY a.id
+              HAVING sum(x."receivedUnits") - sum(x."sentUnits") > 0)
+          ORDER BY t."priceCheckedAt" NULLS FIRST, t.network, t.contract
+          LIMIT $2`,
+        [new Date(now.getTime() - UNLISTED_RECHECK_MS), MAX_TOKENS],
+      );
+    if (due.length === 0) return 0;
+    const quotes: Quote[] = [];
+    const priced: { network: string; contract: string }[] = [];
+    const asked: { network: string; contract: string }[] = [];
+    let failure: PriceFailure | null = null;
+    for (const network of ['ethereum', 'solana'] as const) {
+      const own = due.filter((token) => token.network === network);
+      for (let start = 0; start < own.length && !failure; start += TOKENS_PER_REQUEST) {
+        const batch = own.slice(start, start + TOKENS_PER_REQUEST);
+        const answer = await this.coingecko.tokens(
+          network,
+          batch.map(({ contract }) => contract),
+          now,
+        );
+        if (!answer.ok) {
+          failure = answer.reason;
+          break;
+        }
+        for (const token of batch) {
+          asked.push(token);
+          const found = answer.prices.get(token.contract);
+          if (!found) continue;
+          priced.push(token);
+          quotes.push({
+            asset: token.ticker,
+            price: found.price,
+            observedAt: found.observedAt,
+            kind: 'spot',
+            source: 'coingecko',
+          });
+        }
+      }
+    }
+    const outcome: SourceOutcome = failure
+      ? { state: 'failed', errorCode: failure, errorMessage: failureMessage('coingecko', failure) }
+      : { state: 'synced', errorCode: null, errorMessage: null };
+    const stored = await this.source.transaction(async (manager) => {
+      const stored = await this.insert(manager, quotes);
+      // The contract itself marks a token CoinGecko lists: the lookup key that found it.
+      for (const token of asked) {
+        const found = priced.some(
+          (item) => item.network === token.network && item.contract === token.contract,
+        );
+        await manager.query(
+          `UPDATE chain_tokens SET "priceCheckedAt" = $3,
+             "coingeckoId" = CASE WHEN $4 THEN contract ELSE "coingeckoId" END
+           WHERE network = $1 AND contract = $2`,
+          [token.network, token.contract, now, found],
+        );
+      }
+      await this.record(manager, TOKENS_KEY, outcome, now);
+      return stored;
+    });
+    // What the app remembers of the tokens (whether a source lists one) follows the table.
+    await loadChainTokens(this.source.manager);
+    return stored;
   }
 
   // Kraken daily candles from 2025-01-01, until every catalog asset succeeded once.

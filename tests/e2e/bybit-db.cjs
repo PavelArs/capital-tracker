@@ -639,6 +639,23 @@ async function main() {
       VALUES ('XRP','USD','binance',now(),1,'spot')`), /price_observations_source_check/);
     console.log('PASS BYBIT-ANY-COIN-PRICE the coins no catalog provider is asked for get Bybit\'s last closed hourly candle and, once, its daily candles against USDT, without a key; a coin without a Bybit market stays unpriced and is named; the source check admits bybit only besides kraken and coingecko');
 
+    // BYBIT-KEY on every pass: a key the owner later lets withdraw (or trade) in Bybit is
+    // deleted at the next sync before anything else is asked; a read-only key added again resumes.
+    const widened = { ...replacement, info: { ...replacement.info,
+      permissions: { ...replacement.info.permissions, Wallet: ['AccountTransfer', 'Withdraw'] } } };
+    await post('bybit', { keys: [readOnly, widened] });
+    const wide = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([wide.result.outcome, wide.result.reason], ['provider_error', 'key_rejected']);
+    assert.match(wide.result.address.sync.errorMessage, /^Bybit did not accept the API key: .*The key can now trade or withdraw, so the app deleted it\.$/);
+    assert.deepEqual(wide.urls.map((url) => url.pathname), ['/v5/user/query-api'], 'Nothing else is asked with that key');
+    assert.deepEqual((await db.query('SELECT credentials FROM bybit_accounts WHERE "walletId"=$1', [wallet]))[0].credentials, {});
+    const keyless = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([keyless.result.outcome, keyless.result.reason, keyless.urls.length], ['provider_error', 'not_configured', 0]);
+    await post('bybit', { keys: [readOnly, replacement] });
+    await s.addresses.register(owner, { network: 'bybit', apiKey: replacement.apiKey, apiSecret: replacement.apiSecret });
+    assert.equal((await s.addresses.sync(owner, wallet)).outcome, 'complete');
+    console.log('PASS BYBIT-KEY a key later given the Withdraw permission is deleted at the next sync before anything else is asked; the account then has no key until a read-only one is added again, which resumes it');
+
     // Constraints and privacy.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'bybit','not-a-uid')`,
       [owner]), /wallet_addresses_address_check/);
