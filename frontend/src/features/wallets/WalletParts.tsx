@@ -153,6 +153,21 @@ export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
   );
 }
 
+/**
+ * BYBIT-CONVERT: a key that cannot read convert history says how to let it; coins converted on
+ * Bybit are missing from the records until then.
+ */
+export function ConvertNote({ exchange }: { exchange: ExchangeAccount }) {
+  if (exchange.convertAllowed !== false) return null;
+  return (
+    <p className="wallets-message wallets-message--warn" role="note">
+      This key cannot read convert history, so coins converted on Bybit are missing from the
+      records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no
+      need to add the account again.
+    </p>
+  );
+}
+
 const stakeStates: Record<
   StakeState,
   { label: string; tone: 'pos' | 'info' | 'warn' | 'neutral' }

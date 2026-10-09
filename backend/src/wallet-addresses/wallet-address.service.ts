@@ -107,6 +107,8 @@ interface ExchangeRow {
   earnAllowed: boolean | null;
   /** BYBIT-EARN: what Earn held on the last complete pass, already inside `balances`. */
   earn: EarnHolding[] | null;
+  /** BYBIT-CONVERT: whether the key may read convert history; null before a pass asked. */
+  convertAllowed: boolean | null;
 }
 interface TransactionRow {
   txid: string;
@@ -190,7 +192,7 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
       'keyExpiresAt', x."keyExpiresAt", 'balances', x.balances, 'balancesAt', x."balancesAt",
       'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
         x."internalReadTo", x."withdrawalsReadTo"), 'earnAllowed', x."earnAllowed",
-      'earn', x.earn) AS exchange
+      'earn', x.earn, 'convertAllowed', x."convertAllowed") AS exchange
     FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
   LEFT JOIN LATERAL (SELECT json_build_object('reported', x.reported,
       'staked', (SELECT coalesce(sum(m.units), 0) FROM wallet_tron_stake_moves m
@@ -393,6 +395,7 @@ function summary(row: AddressRow, now = new Date()) {
               : [],
           historyFrom: new Date(row.exchange.historyFrom).toISOString(),
           earnAllowed: row.exchange.earnAllowed,
+          convertAllowed: row.exchange.convertAllowed,
           // BYBIT-EARN: the tracked coins in each Earn product, already in the balances.
           earn:
             state === 'complete' && row.exchange.earn

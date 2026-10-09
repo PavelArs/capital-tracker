@@ -1,6 +1,13 @@
-import type { BybitDeposit, BybitEarnYield, BybitExecution, BybitWithdrawal } from './bybit-client';
+import type {
+  BybitConvert,
+  BybitDeposit,
+  BybitEarnYield,
+  BybitExecution,
+  BybitWithdrawal,
+} from './bybit-client';
 import {
   chainTxid,
+  convertLeg,
   depositLeg,
   earnLeg,
   splitSymbol,
@@ -194,5 +201,84 @@ describe('BYBIT-EARN: Earn yield as records', () => {
     expect(earnLeg(paid({ state: 'failed' }), 'FlexibleSaving')).toBeNull();
     expect(earnLeg(paid({ amount: '0' }), 'FlexibleSaving')).toBeNull();
     expect(earnLeg(paid({ coin: 'MNT' }), 'FlexibleSaving')).toBeNull();
+  });
+});
+
+describe('BYBIT-CONVERT: a convert as a trade of the account', () => {
+  const convert = (overrides: Partial<BybitConvert> = {}): BybitConvert => ({
+    id: '10100108106409343501030232064',
+    fromCoin: 'BTC',
+    fromAmount: '0.01',
+    toCoin: 'USDT',
+    toAmount: '650.5',
+    state: 'done',
+    time: Date.UTC(2026, 6, 4, 5, 44, 59),
+    raw: { accountType: 'funding' },
+    ...overrides,
+  });
+
+  it('a convert into USDT sells the coin given, at the quoted price and no fee', () => {
+    expect(convertLeg(convert(), 'convert')).toEqual({
+      txid: 'bybit-trade-convert-10100108106409343501030232064',
+      kind: 'trade',
+      asset: 'BTC',
+      blockTime: '2026-07-04T05:44:59.000Z',
+      receivedUnits: 0n,
+      sentUnits: E18 / 100n,
+      feeUnits: 0n,
+      direction: 'out',
+      raw: {
+        kind: 'trade',
+        trade: {
+          side: 'sell',
+          base: 'BTC',
+          quote: 'USDT',
+          price: '65050',
+          quantity: '0.01',
+          value: '650.5',
+          fee: '0',
+          feeCoin: '',
+        },
+        quoteAsset: 'USDT',
+        quoteUnits: ((6505n * E18) / 10n).toString(),
+        convert: 'convert',
+        record: { accountType: 'funding' },
+        txid: 'bybit-trade-convert-10100108106409343501030232064',
+      },
+    });
+  });
+
+  it('a convert from USDT buys the coin received; BTC is the quote of a convert with SOL', () => {
+    const buy = convertLeg(
+      convert({ fromCoin: 'USDT', fromAmount: '100', toCoin: 'SOL', toAmount: '0.6' }),
+      'exchange',
+    );
+    expect(buy).toMatchObject({ asset: 'SOL', direction: 'in', receivedUnits: (6n * E18) / 10n });
+    expect(buy?.raw).toMatchObject({
+      trade: { side: 'buy', base: 'SOL', quote: 'USDT', price: '166.666666666666666667' },
+      quoteUnits: (-100n * E18).toString(),
+      convert: 'exchange',
+    });
+    const swap = convertLeg(convert({ fromCoin: 'SOL', toCoin: 'BTC' }), 'convert');
+    expect(swap?.raw).toMatchObject({ trade: { side: 'sell', base: 'SOL', quote: 'BTC' } });
+    expect(swap).toMatchObject({ asset: 'SOL', direction: 'out' });
+  });
+
+  it('a coin the app does not track moves only the tracked side; neither tracked is left out', () => {
+    const sold = convertLeg(convert({ fromCoin: 'XRP', fromAmount: '1000' }), 'convert');
+    expect(sold).toMatchObject({
+      asset: 'USDT',
+      direction: 'in',
+      receivedUnits: (6505n * E18) / 10n,
+    });
+    expect(sold?.raw).not.toHaveProperty('quoteAsset');
+    expect(convertLeg(convert({ fromCoin: 'XRP', toCoin: 'MNT' }), 'convert')).toBeNull();
+  });
+
+  it('leaves out a convert still processing, failed or of nothing', () => {
+    expect(convertLeg(convert({ state: 'pending' }), 'convert')).toBeNull();
+    expect(convertLeg(convert({ state: 'failed' }), 'convert')).toBeNull();
+    expect(convertLeg(convert({ toAmount: '0' }), 'convert')).toBeNull();
+    expect(convertLeg(convert({ fromAmount: '0' }), 'convert')).toBeNull();
   });
 });

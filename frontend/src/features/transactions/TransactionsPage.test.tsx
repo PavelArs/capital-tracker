@@ -1249,6 +1249,43 @@ describe('link-own-transfers (M13)', () => {
     );
   });
 
+  it('BYBIT-CONVERT: a convert into USDT is a sale recognised from the convert history', async () => {
+    const converted = chainOperation(6, {
+      type: 'sell',
+      direction: 'out',
+      occurredAt: '2025-06-24T06:00:00.000Z',
+      quantity: '0.01',
+      valueUsd: '650',
+      estimatedValueUsd: '650',
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-trade-convert-5100000000000000000000000001',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'out',
+      },
+      status: 'recorded',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'sell', currency: 'USDT', amount: '650' },
+        comment: null,
+        automatic: true,
+      },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([converted]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(drawer).toHaveTextContent('Convert 5100000000000000000000000001');
+    expect(within(drawer).getAllByRole('note')[0]).toHaveTextContent(
+      "Recognised automatically from Bybit's convert history: the coins sold were already in this account, so it counts as a sale, not a deposit. Change the classification if it is wrong.",
+    );
+  });
+
   it('XFER-AUTO: a pair between own wallets is one transfer A → B, recognised automatically', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
     const { drawer } = await openRow(0, 'Transfer · BTC');
