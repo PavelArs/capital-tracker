@@ -356,9 +356,10 @@ async function main() {
     assert.deepEqual([transfer[0].type, transfer[0].asset.symbol, transfer[0].quantity, transfer[0].fee?.asset.symbol, transfer[0].fee?.quantity],
       ['transfer', 'SOL', '0.5', 'SOL', '0.000005']);
     const usdcSend = byTx(`${sig(4)}-2`)[0];
-    assert.deepEqual([usdcSend.asset.symbol, usdcSend.quantity, usdcSend.fee, usdcSend.status], ['USDC', '25', null, 'needs-classification']);
-    const fee = byTx(sig(4))[0];
-    assert.deepEqual([fee.asset.symbol, fee.quantity, fee.direction], ['SOL', '0.000005', 'out']);
+    // TOKEN-FEE: the SOL leg that paid the fee is the USDC send's fee, not a row of its own.
+    assert.deepEqual([usdcSend.asset.symbol, usdcSend.quantity, usdcSend.fee?.asset.symbol, usdcSend.fee?.quantity, usdcSend.status],
+      ['USDC', '25', 'SOL', '0.000005', 'needs-classification']);
+    assert.deepEqual(byTx(sig(4)), []);
     console.log('PASS SOL-LINK a 0.5 SOL send between own accounts auto-links into one transfer with its SOL fee; token legs list as USDC and USDT');
 
     // SYNC-ISOLATION and SYNC-BG: the hourly job runs Bitcoin and Solana; a busy Solana RPC

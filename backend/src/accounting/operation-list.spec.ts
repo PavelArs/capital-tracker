@@ -213,55 +213,222 @@ describe('list-all-operations projection', () => {
     });
   });
 
-  it('ETH-IDENTITY: an Ethereum hash lists its ether fee and its USDC transfer apart (M14)', () => {
+  describe('TOKEN-FEE', () => {
     const ethereumWallet = {
       id: id(21),
       network: 'ethereum' as const,
       address: `0x${'a1'.repeat(20)}`,
       label: null,
     };
-    const list = projectOperations(
-      now,
-      sources({
-        chain: [
-          chain(3, {
-            wallet: ethereumWallet,
-            direction: 'out',
-            receivedUnits: '0',
-            sentUnits: '420000000000000',
-            feeUnits: '420000000000000',
-          }),
-          chain(3, {
-            wallet: ethereumWallet,
-            txid: `${txid(3)}-17`,
-            asset: 'USDC',
-            direction: 'out',
-            receivedUnits: '0',
-            sentUnits: '250000000',
-            feeUnits: '0',
-          }),
+    const gas = (overrides: Partial<ChainOperationInput> = {}) =>
+      chain(3, {
+        wallet: ethereumWallet,
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '420000000000000',
+        feeUnits: '420000000000000',
+        ...overrides,
+      });
+    const send = (overrides: Partial<ChainOperationInput> = {}) =>
+      chain(3, {
+        wallet: ethereumWallet,
+        txid: `${txid(3)}-17`,
+        asset: 'USDC',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '250000000',
+        feeUnits: '0',
+        ...overrides,
+      });
+    const prices: OperationSources['marketPrices'] = new Map([
+      ['USDC', [{ priceUsd: '1', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
+      [
+        'ETH',
+        [
+          { priceUsd: '2500', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' },
+          // Today's price never values the fee of a transaction in the past.
+          { priceUsd: '4000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' },
         ],
-        marketPrices: new Map([
-          ['USDC', [{ priceUsd: '1', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
-        ]),
-      }),
-    );
-    expect(list.needsClassificationCount).toBe(2);
-    const [fee, usdc] = [...list.operations].sort((left, right) => left.id.localeCompare(right.id));
-    expect(fee).toMatchObject({
-      id: `chain:${id(21)}:${txid(3)}`,
-      asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
-      quantity: '0.00042',
-      fee: { asset: { symbol: 'ETH' }, quantity: '0.00042' },
-      estimatedValueUsd: null,
+      ],
+    ]);
+
+    it('TOKEN-FEE: a USDC send and the ether leg that paid its gas are one row with an ether fee', () => {
+      const list = projectOperations(
+        now,
+        sources({ chain: [gas(), send()], marketPrices: prices }),
+      );
+      expect(list.needsClassificationCount).toBe(1);
+      expect(list.operations).toHaveLength(1);
+      expect(list.operations[0]).toMatchObject({
+        id: `chain:${id(21)}:${txid(3)}-17`,
+        asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin' },
+        quantity: '250',
+        estimatedValueUsd: '250',
+        // 0.00042 ETH at 2,500 USD, the price stored for the block time.
+        fee: {
+          asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+          quantity: '0.00042',
+          valueUsd: '1.05',
+          value: '1.05',
+        },
+        chain: { txid: `${txid(3)}-17`, priceObservedAt: '2025-06-20T07:00:00.000Z' },
+        status: 'needs-classification',
+      });
     });
-    expect(usdc).toMatchObject({
-      id: `chain:${id(21)}:${txid(3)}-17`,
-      asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin' },
-      quantity: '250',
-      fee: null,
-      estimatedValueUsd: '250',
-      chain: { txid: `${txid(3)}-17`, priceObservedAt: '2025-06-20T07:00:00.000Z' },
+
+    it('TOKEN-FEE: the fee value is in the asked currency at the Bank of Russia rate of the date', () => {
+      const rub = projectOperations(
+        now,
+        sources({ chain: [gas(), send()], marketPrices: prices }),
+        new FxConverter(
+          {
+            USD: [
+              { date: '2025-06-20', rubPerUnit: '80' },
+              { date: '2026-10-04', rubPerUnit: '95' },
+            ],
+            EUR: [],
+          },
+          'RUB',
+        ),
+      );
+      expect(rub.operations[0].fee).toMatchObject({ valueUsd: '1.05', value: '84' });
+    });
+
+    it('TOKEN-FEE: without a price stored for its time the fee keeps its ether and no value', () => {
+      const list = projectOperations(
+        now,
+        sources({
+          chain: [gas(), send()],
+          marketPrices: new Map([
+            [
+              'ETH',
+              [{ priceUsd: '4000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+            ],
+          ]),
+        }),
+      );
+      expect(list.operations[0].fee).toEqual({
+        asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+        quantity: '0.00042',
+        valueUsd: null,
+        value: null,
+      });
+    });
+
+    it('TOKEN-FEE: a classified send keeps the ether fee on its row', () => {
+      const list = projectOperations(
+        now,
+        sources({
+          chain: [
+            gas(),
+            send({
+              account: trust,
+              classification: {
+                version: 1,
+                status: 'classified',
+                type: 'other',
+                details: { type: 'other' },
+                comment: null,
+                produced: null,
+              },
+            }),
+          ],
+          marketPrices: prices,
+        }),
+      );
+      expect(list.operations).toHaveLength(1);
+      expect(list.operations[0]).toMatchObject({
+        type: 'other',
+        status: 'recorded',
+        fee: { quantity: '0.00042', valueUsd: '1.05' },
+      });
+    });
+
+    it('TOKEN-FEE: a fee leg already answered, a receipt or another address stays its own row', () => {
+      const answered = gas({
+        classification: {
+          version: 1,
+          status: 'hidden',
+          type: null,
+          details: null,
+          comment: null,
+          produced: null,
+        },
+      });
+      const other = { ...ethereumWallet, id: id(22), address: `0x${'b2'.repeat(20)}` };
+      for (const rows of [
+        [answered, send()],
+        [gas(), send({ direction: 'in', receivedUnits: '250000000', sentUnits: '0' })],
+        [gas(), send({ wallet: other })],
+      ]) {
+        const list = projectOperations(now, sources({ chain: rows, marketPrices: prices }));
+        expect(list.operations).toHaveLength(2);
+      }
+    });
+
+    it('TOKEN-FEE: a Tron USDT send pays its fee in TRX, a Solana one in SOL', () => {
+      const tron = {
+        id: id(23),
+        network: 'tron' as const,
+        address: 'TSyntheticTronWalletAddress000000',
+        label: null,
+      };
+      const solana = {
+        id: id(24),
+        network: 'solana' as const,
+        address: 'So1anaSyntheticWa11etAddress111111111111111',
+        label: null,
+      };
+      const list = projectOperations(
+        now,
+        sources({
+          chain: [
+            chain(6, {
+              wallet: tron,
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '13844000',
+              feeUnits: '13844000',
+            }),
+            chain(6, {
+              wallet: tron,
+              txid: `${txid(6)}-0`,
+              asset: 'USDT',
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '100000000',
+              feeUnits: '0',
+            }),
+            chain(7, {
+              wallet: solana,
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '5000',
+              feeUnits: '5000',
+            }),
+            chain(7, {
+              wallet: solana,
+              txid: `${txid(7)}-0`,
+              asset: 'USDT',
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '50000000',
+              feeUnits: '0',
+            }),
+          ],
+        }),
+      );
+      expect(list.operations.map((operation) => [operation.id, operation.fee?.quantity])).toEqual(
+        expect.arrayContaining([
+          [`chain:${id(23)}:${txid(6)}-0`, '13.844'],
+          [`chain:${id(24)}:${txid(7)}-0`, '0.000005'],
+        ]),
+      );
+      expect(list.operations).toHaveLength(2);
+      expect(list.operations.map((operation) => operation.fee?.asset.symbol).sort()).toEqual([
+        'SOL',
+        'TRX',
+      ]);
     });
   });
 
@@ -1229,6 +1396,8 @@ describe('list-all-operations projection', () => {
       expect(list.operations[0].fee).toEqual({
         asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
         quantity: '0.002',
+        valueUsd: null,
+        value: null,
       });
     });
   });
@@ -1602,7 +1771,9 @@ describe('list-all-operations projection', () => {
         addressId: id(26),
         txid: `${hash}-9`,
       });
-      expect(list.get(`chain:${id(26)}:${hash}`)?.chain).not.toHaveProperty('swapWith');
+      // TOKEN-FEE: the ether leg is the fee of the USDT sent, not a row of its own.
+      expect(list.has(`chain:${id(26)}:${hash}`)).toBe(false);
+      expect(list.get(`chain:${id(26)}:${hash}-3`)?.fee?.quantity).toBe('0.002');
       // The token legs are part of the contract call the ether leg made.
       expect(list.get(`chain:${id(26)}:${hash}-9`)?.chain?.call).toEqual(call);
     });
