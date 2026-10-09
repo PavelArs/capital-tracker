@@ -263,8 +263,8 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
         operation.estimatedValue !== null && chain.priceObservedAt
           ? `≈ ${money(operation.estimatedValue, currency)} at the price stored ${moment(chain.priceObservedAt)}`
           : operation.estimatedValueUsd !== null
-            ? 'No Bank of Russia rate for today'
-            : 'No stored price',
+            ? 'No Bank of Russia rate for that date'
+            : 'No stored price for that time',
       ],
     );
     // POOL-WITHDRAW: what the deposit put in, the difference and the deposit's transaction.
@@ -583,7 +583,7 @@ export default function OperationDrawer({
     operation.value !== null
       ? money(operation.value, currency)
       : operation.estimatedValue !== null
-        ? `≈ ${money(operation.estimatedValue, currency)} at the latest stored price`
+        ? `≈ ${money(operation.estimatedValue, currency)} at the price at the time`
         : null;
   const purchase = operation.type === 'buy';
   // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool

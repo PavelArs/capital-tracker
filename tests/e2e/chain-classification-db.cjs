@@ -495,7 +495,10 @@ async function dust(db, s) {
   const hot = await account(s, owner, 'Hot wallet');
   const address = await wallet(db, owner, hot, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
   await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-    VALUES ('BTC','USD','kraken',$1,100000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+    VALUES ('BTC','USD','kraken','2026-02-01T07:00:00Z',100000,'hourly-close'),
+      ('BTC','USD','kraken','2026-02-04T07:00:00Z',100000,'hourly-close'),
+      ('BTC','USD','kraken',$1,1000000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+  // EST-AT-TIME: dust is judged at the price of each receipt's time, not today's ten times higher.
   // 546 sat and 100 sat at 100,000 USD: 0.546 and 0.1 USD; a real receipt; a tiny send.
   await raw(db, owner, address, 31, 'in', '546', '0', '200', '2026-02-01T08:00:00.000Z');
   await raw(db, owner, address, 32, 'in', '1000000', '0', '300', '2026-02-02T08:00:00.000Z');

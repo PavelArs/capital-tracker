@@ -1,4 +1,5 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
+import { priceAt } from '../prices/market-price.store';
 import {
   chainAsset,
   isExchange,
@@ -175,8 +176,11 @@ export interface OperationSources {
   openings: readonly OpeningOperationInput[];
   flows: readonly FlowOperationInput[];
   chain: readonly ChainOperationInput[];
-  /** Latest stored USD price by upper-case ticker. */
-  marketPrices: ReadonlyMap<string, StoredMarketPrice>;
+  /**
+   * Stored USD prices by upper-case ticker; a chain transaction is valued at the one priceAt
+   * picks for its time (EST-AT-TIME).
+   */
+  marketPrices: ReadonlyMap<string, readonly StoredMarketPrice[]>;
   /** CLS-DUST: the owner's dust threshold in USD; absent or null: off. */
   dustThresholdUsd?: string | null;
 }
@@ -216,7 +220,7 @@ export interface Operation {
   counterQuantity: string | null;
   /** The value the owner recorded; missing stays null, never 0. */
   valueUsd: string | null;
-  /** Chain only: quantity at the latest stored price, an estimate. */
+  /** Chain only: quantity at the price stored for the transaction's time, an estimate. */
   estimatedValueUsd: string | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
@@ -280,7 +284,7 @@ export interface Operation {
   /** Position among operations at the same instant; an edit at the same time keeps it. */
   orderWithinTimestamp: number;
   // The amounts above in the list's quote currency at the Bank of Russia rate of the
-  // operation's Moscow date (an estimate: of today); null without an amount or a rate.
+  // operation's Moscow date; null without an amount or a rate.
   value: string | null;
   estimatedValue: string | null;
   costBasis: string | null;
@@ -354,7 +358,7 @@ function productAtoms(value: string): bigint {
 
 /** Adds the amounts in the asked currency (CUR-*); a trade paid in RUB or EUR converts from
  * the amounts as paid, so 30,000 RUB stays exactly 30,000 RUB. */
-function inCurrency(operation: Projected, fx: FxConverter, today: string): Operation {
+function inCurrency(operation: Projected, fx: FxConverter): Operation {
   const date = moscowDate(operation.occurredAt);
   const paid = fx.currency === 'USD' ? null : operation.paid;
   const convert = (usd: string | null, native: string | undefined) => {
@@ -368,7 +372,7 @@ function inCurrency(operation: Projected, fx: FxConverter, today: string): Opera
   const estimate =
     operation.estimatedValueUsd === null
       ? null
-      : fx.convert(productAtoms(operation.estimatedValueUsd), 'USD', today);
+      : fx.convert(productAtoms(operation.estimatedValueUsd), 'USD', date);
   return {
     ...operation,
     value: convert(operation.valueUsd, paid?.gross),
@@ -385,7 +389,7 @@ function amount(units: bigint, network: Network, token: string | null): string {
 
 const netUnits = (row: ChainOperationInput) => BigInt(row.receivedUnits) - BigInt(row.sentUnits);
 
-/** Quantity at the latest stored price, an estimate. */
+/** Quantity at a stored price, an estimate. */
 export function estimate(quantity: string, price: StoredMarketPrice | undefined): string | null {
   return price
     ? formatProduct(canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(price.priceUsd))
@@ -423,7 +427,8 @@ function chainOperation(
   const net = netUnits(row);
   const magnitude = net < 0n ? -net : net;
   const quantity = amount(magnitude, network, row.asset);
-  const price = asset.symbol ? prices.get(asset.symbol) : undefined;
+  // EST-AT-TIME: valued at the price stored for the block time, never today's.
+  const price = asset.symbol ? priceAt(prices.get(asset.symbol), row.blockTime) : undefined;
   const answer = row.classification ?? null;
   const leg = row.direction === 'self' ? 'internal' : row.direction;
   const operation: Projected = {
@@ -866,8 +871,7 @@ export function projectOperations(
       right.order - left.order ||
       left.operation.id.localeCompare(right.operation.id),
   );
-  const today = moscowDate(at);
-  const operations = entries.map((entry) => inCurrency(entry.operation, fx, today));
+  const operations = entries.map((entry) => inCurrency(entry.operation, fx));
   return {
     at: at.toISOString(),
     quoteCurrency: fx.currency,

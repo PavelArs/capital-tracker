@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
+import { marketPricesAt, priceAt, storedPricesAt } from '../prices/market-price.store';
 import { isExchange } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { TRON_REWARD_CONTRACT } from '../wallet-addresses/tron-legs';
@@ -215,9 +215,6 @@ const sameEntry = (left: Produced, right: Produced) =>
   left.rewardId === right.rewardId &&
   left.transferId === right.transferId &&
   left.swapId === right.swapId;
-/** The stored price of a coin counts for a swap only if it is at most two days older. */
-const PRICE_AGE_MS = 2 * 24 * 60 * 60 * 1000;
-
 /** quantity × price in USD, half up to whole cents (TRON-REWARD). */
 export function centsOf(quantity: string, priceUsd: string): string {
   // Both carry 30 decimals: the product carries 60, a cent is 10^58 of it.
@@ -558,10 +555,11 @@ export class ChainClassificationService {
 
   /**
    * CLS-COUNT: chain transactions nobody has classified or hidden, less the receipts worth
-   * less than the owner's dust threshold at the latest stored price (CLS-DUST); a stake move
+   * less than the owner's dust threshold at the price stored for their time (CLS-DUST,
+   * EST-AT-TIME); a stake move
    * needs none.
    */
-  async needsClassificationCount(ownerId: string, now = new Date()): Promise<{ count: number }> {
+  async needsClassificationCount(ownerId: string): Promise<{ count: number }> {
     const owner = parseUuid(ownerId);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
@@ -580,17 +578,17 @@ export class ChainClassificationService {
       );
       const threshold = await readDustThreshold(manager, owner);
       if (threshold === null || rows.length === 0) return { count: rows.length };
-      const symbols = [...new Set(rows.map((row) => chainCoin(row).symbol))];
-      const prices = new Map(
-        (await latestMarketPrices(manager, symbols, now)).map((row) => [
-          row.asset,
-          { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-        ]),
+      const prices = await storedPricesAt(
+        manager,
+        rows.map((row) => ({ asset: chainCoin(row).symbol, at: row.blockTime })),
       );
       const dust = rows.filter((row) =>
         isDust(
           row.direction,
-          estimate(legMovement(row).quantity, prices.get(chainCoin(row).symbol)),
+          estimate(
+            legMovement(row).quantity,
+            priceAt(prices.get(chainCoin(row).symbol), row.blockTime),
+          ),
           threshold,
         ),
       );
@@ -918,10 +916,8 @@ export class ChainClassificationService {
   /** CLS-SWAP-VALUE: the paid coin's stored USD price at the swap, if it is recent enough. */
   private async storedPrice(manager: EntityManager, symbol: string | null, at: string) {
     if (!symbol) return null;
-    const [price] = await latestMarketPrices(manager, [symbol.toUpperCase()], new Date(at));
-    return price && Date.parse(at) - Date.parse(price.observedAt) <= PRICE_AGE_MS
-      ? price.price
-      : null;
+    const [price] = await marketPricesAt(manager, [{ asset: symbol.toUpperCase(), at }]);
+    return price?.price ?? null;
   }
 
   /** The planned entry must parse as its journal takes it, with placeholder pins. */

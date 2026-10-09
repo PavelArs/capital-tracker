@@ -101,7 +101,10 @@ describe('list-all-operations projection', () => {
         ],
         chain: [chain(1)],
         marketPrices: new Map([
-          ['BTC', { priceUsd: '84945', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+          [
+            'BTC',
+            [{ priceUsd: '84945', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }],
+          ],
         ]),
       }),
     );
@@ -176,7 +179,7 @@ describe('list-all-operations projection', () => {
       quantity: '0.00918359',
       counterAsset: null,
       counterQuantity: null,
-      // Raw chain data has no recorded value; only an estimate at the latest stored price.
+      // Raw chain data has no recorded value; only an estimate at the price stored for its time.
       valueUsd: null,
       estimatedValueUsd: '780.10005255',
       costBasisUsd: null,
@@ -190,7 +193,7 @@ describe('list-all-operations projection', () => {
       chain: {
         txid: txid(1),
         blockHeight: 800001,
-        priceObservedAt: '2026-10-04T11:00:00.000Z',
+        priceObservedAt: '2025-06-20T07:00:00.000Z',
         direction: 'in',
         pairedTxid: null,
       },
@@ -239,7 +242,7 @@ describe('list-all-operations projection', () => {
           }),
         ],
         marketPrices: new Map([
-          ['USDC', { priceUsd: '1', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+          ['USDC', [{ priceUsd: '1', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
         ]),
       }),
     );
@@ -258,7 +261,7 @@ describe('list-all-operations projection', () => {
       quantity: '250',
       fee: null,
       estimatedValueUsd: '250',
-      chain: { txid: `${txid(3)}-17`, priceObservedAt: '2026-10-04T11:00:00.000Z' },
+      chain: { txid: `${txid(3)}-17`, priceObservedAt: '2025-06-20T07:00:00.000Z' },
     });
   });
 
@@ -315,7 +318,7 @@ describe('list-all-operations projection', () => {
           }),
         ],
         marketPrices: new Map([
-          ['SOL', { priceUsd: '150', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+          ['SOL', [{ priceUsd: '150', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
         ]),
       }),
     );
@@ -340,6 +343,87 @@ describe('list-all-operations projection', () => {
       fee: { asset: { symbol: 'SOL' }, quantity: '0.000005' },
     });
     expect(hidden).toMatchObject({ type: null, status: 'hidden' });
+  });
+
+  it('EST-AT-TIME: a chain transaction is valued at the price stored for its time, not the latest', () => {
+    const price = (priceUsd: string, observedAt: string) => ({
+      priceUsd,
+      observedAt,
+      source: 'kraken',
+    });
+    const list = projectOperations(
+      now,
+      sources({
+        chain: [
+          // 0.01 BTC on 2025-06-20 08:00 and on 2025-09-01 12:30.
+          chain(1, { receivedUnits: '1000000', feeUnits: '0' }),
+          chain(2, {
+            receivedUnits: '1000000',
+            feeUnits: '0',
+            blockTime: '2025-09-01T12:30:00.000Z',
+          }),
+          // Nothing stored within two days before it: unknown, never another day's price.
+          chain(3, {
+            receivedUnits: '1000000',
+            feeUnits: '0',
+            blockTime: '2025-08-01T12:00:00.000Z',
+          }),
+        ],
+        marketPrices: new Map([
+          [
+            'BTC',
+            [
+              price('60000', '2025-06-19T08:00:00.000Z'),
+              price('61000', '2025-06-20T08:00:00.000Z'),
+              // After the transaction: not yet known at its time.
+              price('62000', '2025-06-20T09:00:00.000Z'),
+              price('70000', '2025-09-01T12:00:00.000Z'),
+              price('70500', '2025-09-01T13:00:00.000Z'),
+              price('99000', '2025-07-29T23:00:00.000Z'),
+              // Today's price must not value any of them.
+              price('120000', '2026-10-04T11:00:00.000Z'),
+            ],
+          ],
+        ]),
+      }),
+    );
+    const byTxid = new Map(list.operations.map((operation) => [operation.chain?.txid, operation]));
+    expect(byTxid.get(txid(1))).toMatchObject({
+      estimatedValueUsd: '610',
+      estimatedValue: '610',
+      chain: { priceObservedAt: '2025-06-20T08:00:00.000Z' },
+    });
+    expect(byTxid.get(txid(2))).toMatchObject({
+      estimatedValueUsd: '700',
+      chain: { priceObservedAt: '2025-09-01T12:00:00.000Z' },
+    });
+    expect(byTxid.get(txid(3))).toMatchObject({
+      estimatedValueUsd: null,
+      estimatedValue: null,
+      chain: { priceObservedAt: null },
+    });
+  });
+
+  it('EST-AT-TIME: dust is judged at the price stored for the time of the receipt', () => {
+    const list = projectOperations(
+      now,
+      sources({
+        dustThresholdUsd: '1',
+        // 546 sat: 0.546 USD at 100,000 then, 1.092 USD at today's 200,000.
+        chain: [chain(1, { receivedUnits: '546', feeUnits: '0' })],
+        marketPrices: new Map([
+          [
+            'BTC',
+            [
+              { priceUsd: '100000', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' },
+              { priceUsd: '200000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' },
+            ],
+          ],
+        ]),
+      }),
+    );
+    expect(list.operations[0]).toMatchObject({ status: 'dust', estimatedValueUsd: '0.546' });
+    expect(list.needsClassificationCount).toBe(0);
   });
 
   it('OPS-STATUS: a chain transaction without a stored price has no value, never zero', () => {
@@ -543,11 +627,13 @@ describe('list-all-operations projection', () => {
       USD: [
         { date: '2025-06-13', rubPerUnit: '80' },
         { date: '2025-06-14', rubPerUnit: '79' },
+        { date: '2025-06-20', rubPerUnit: '78' },
         { date: '2026-10-03', rubPerUnit: '95' },
       ],
       EUR: [
         { date: '2025-06-13', rubPerUnit: '92' },
         { date: '2025-06-14', rubPerUnit: '90' },
+        { date: '2025-06-20', rubPerUnit: '91' },
         { date: '2026-10-03', rubPerUnit: '110' },
       ],
     };
@@ -606,7 +692,7 @@ describe('list-all-operations projection', () => {
       ],
       chain: [chain(1)],
       marketPrices: new Map([
-        ['BTC', { priceUsd: '84945', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+        ['BTC', [{ priceUsd: '84945', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
       ]),
     });
     const rub = projectOperations(now, input, new FxConverter(rates, 'RUB'));
@@ -620,8 +706,8 @@ describe('list-all-operations projection', () => {
         operation.feeValue,
       ]);
     expect(values(rub)).toEqual([
-      // An estimate at the latest price uses today's rate (Moscow date 2026-10-04).
-      ['chain', null, '74109.50499225', null, null],
+      // EST-AT-TIME: an estimate uses the rate of its own Moscow date (2025-06-20), not today's.
+      ['chain', null, '60847.8040989', null, null],
       // Paid in rubles: the amounts as paid, not a round trip through USD.
       ['trade', '83000', null, null, '100'],
       ['trade', '80000', null, null, '200'],
@@ -634,13 +720,7 @@ describe('list-all-operations projection', () => {
     const eur = projectOperations(now, input, new FxConverter(rates, 'EUR'));
     expect(eur.quoteCurrency).toBe('EUR');
     expect(values(eur)).toEqual([
-      [
-        'chain',
-        null,
-        '673.722772656818181818181818181818181818181818181818181818181818',
-        null,
-        null,
-      ],
+      ['chain', null, '668.6571879', null, null],
       [
         'trade',
         '922.222222222222222222222222222222',
@@ -757,7 +837,7 @@ describe('list-all-operations projection', () => {
 
   it('CLS-DUST: an unanswered receipt worth less than the threshold is dust, out of the count', () => {
     const prices = new Map([
-      ['BTC', { priceUsd: '100000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+      ['BTC', [{ priceUsd: '100000', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }]],
     ]);
     const list = projectOperations(
       now,
@@ -952,7 +1032,10 @@ describe('list-all-operations projection', () => {
         ],
         chain: [sending(linked(walletB.id)), receiving(linked(wallet.id))],
         marketPrices: new Map([
-          ['BTC', { priceUsd: '60000', observedAt: '2026-10-04T11:00:00.000Z', source: 'kraken' }],
+          [
+            'BTC',
+            [{ priceUsd: '60000', observedAt: '2025-06-20T07:00:00.000Z', source: 'kraken' }],
+          ],
         ]),
       }),
     );

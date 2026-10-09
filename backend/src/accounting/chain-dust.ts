@@ -10,8 +10,8 @@ function scale60(value: string): bigint {
 
 /**
  * Whether a chain leg nobody has answered is dust: incoming, priced, and worth less than the
- * threshold at the latest stored price. Without a threshold or a price nothing is dust, and
- * what the owner sent always asks, however small.
+ * threshold at the price stored for its time (EST-AT-TIME). Without a threshold or a price
+ * nothing is dust, and what the owner sent always asks, however small.
  */
 export function isDust(
   direction: 'in' | 'out' | 'self',
