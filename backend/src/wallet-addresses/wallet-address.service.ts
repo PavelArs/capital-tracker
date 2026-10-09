@@ -378,6 +378,25 @@ function tronStakingOf(row: AddressRow) {
   };
 }
 
+/**
+ * TRON-STAKE-STATE: all the TRX the chain last reported for a Tron address (liquid, staked for
+ * either resource, and unstaking), when it differs from what the stored transactions explain.
+ * TronGrid does not list every way TRX arrives, so the difference is shown, never counted.
+ */
+function tronReportedBalance(row: AddressRow) {
+  const reported = row.tron?.reported;
+  if (!reported) return null;
+  const trx = chainAsset('tron', null);
+  const units = (value: string | undefined) => BigInt(value ?? '0');
+  const total =
+    units(reported.balance) +
+    units(reported.energy) +
+    units(reported.bandwidth) +
+    reported.unstaking.reduce((sum, item) => sum + units(item.units), 0n);
+  const explained = units(row.balances.find((item) => item.asset === trx.token)?.units);
+  return total === explained ? null : formatUnits(total, trx);
+}
+
 /** POOL-DEPOSIT: the coins in liquidity pools per asset, part of the balance above; null: none. */
 function poolsOf(row: AddressRow) {
   if (isExchange(row.network)) return null;
@@ -409,6 +428,10 @@ function summary(row: AddressRow, now = new Date()) {
     balances,
     staking,
     pools,
+    // Tron only: what the chain reports when the history explains a different TRX total.
+    ...(row.network === 'tron'
+      ? { reportedBalance: state === 'complete' ? tronReportedBalance(row) : null }
+      : {}),
     exchange: row.exchange
       ? {
           // The last four characters of the API key; the secret is never returned.

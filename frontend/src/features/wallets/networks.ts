@@ -53,7 +53,7 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     name: 'Tron',
     symbol: 'TRX',
     assets: ['TRX', 'USDT', 'USDC'],
-    source: 'TronGrid',
+    source: 'TronGrid and Tronscan',
     placeholder: 'T…, 34 characters',
     defaultWallet: 'Tron wallet',
     labelExample: 'Main TRX',

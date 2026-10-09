@@ -211,6 +211,27 @@ function tronStake(item: StakeAccount): { name: string; detail: string } {
 }
 
 /**
+ * TRON-STAKE-STATE: the chain reports a different TRX total than the transactions explain, as
+ * when TRX arrived in a way TronGrid does not list. The balance keeps the transactions.
+ */
+export function ReportedBalanceNote({ address }: { address: WalletAddress }) {
+  const reported = address.reportedBalance;
+  if (!reported || address.chainBalance === null) return null;
+  const symbol = networkOf(address).symbol;
+  const missing = sum([reported, `-${address.chainBalance}`]);
+  const more = !missing.startsWith('-');
+  return (
+    <p className="wallets-message wallets-message--warn">
+      Tron reports {quantity(reported)} {symbol} at this address, staked included; its transactions
+      explain {quantity(address.chainBalance)} {symbol}.{' '}
+      {more
+        ? `${quantity(missing)} ${symbol} arrived in transfers TronGrid does not list, such as a payout made by a contract, so they are not in the balance or net worth.`
+        : `${quantity(missing.slice(1))} ${symbol} left in transfers TronGrid does not list, so the balance and net worth still count them.`}
+    </p>
+  );
+}
+
+/**
  * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE, TRON-STAKE-BALANCE: a Solana address's stake accounts,
  * an Ethereum address's staking pools, or a Tron address's staked TRX, in its drawer. What each holds is already in the balance above;
  * "available" is the rest.

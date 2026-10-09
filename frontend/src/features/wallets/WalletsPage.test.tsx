@@ -1102,6 +1102,44 @@ describe('Tron wallets', () => {
     );
     expect(staking).not.toHaveTextContent('Not claimed yet');
   });
+
+  it('TRON-STAKE-STATE shows TRX the transactions do not explain and keeps a negative minus', async () => {
+    // More was staked than the listed receipts explain: TRX also arrived in a way TronGrid
+    // does not list.
+    const missing = tronWallet({
+      chainBalance: '1000.000000',
+      balances: [
+        { symbol: 'TRX', quantity: '1000.000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+      ],
+      reportedBalance: '1150.000000',
+      staking: {
+        symbol: 'TRX',
+        quantity: '1100.000000',
+        rewards: '0.000000',
+        reportedQuantity: null,
+        unclaimedRewards: null,
+        accounts: [],
+      },
+    });
+    setup([missing]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main TRX ${tronAddress}` }));
+    const drawer = screen.getByRole('dialog');
+    expect(drawer).toHaveTextContent(
+      'Tron reports 1,150 TRX at this address, staked included; its transactions explain 1,000 TRX. 150 TRX arrived in transfers TronGrid does not list',
+    );
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available-100 TRX');
+  });
+
+  it('says nothing about the chain total when it matches the transactions', async () => {
+    setup([tronWallet({ reportedBalance: null })]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main TRX ${tronAddress}` }));
+    expect(screen.getByRole('dialog')).not.toHaveTextContent('Tron reports');
+  });
 });
 
 describe('M21: Bitcoin wallets by account public key', () => {

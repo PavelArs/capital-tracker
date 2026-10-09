@@ -20,6 +20,7 @@ import {
   EarnSection,
   PoolsSection,
   type Prices,
+  ReportedBalanceNote,
   StakingSection,
 } from './WalletParts';
 import { chainBalances, shortAddress } from './wallets';
@@ -326,6 +327,7 @@ export default function AddressDrawer({
               ), so their coins count twice.
             </p>
           )}
+          <ReportedBalanceNote address={address} />
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {address.pools && <PoolsSection pools={address.pools} />}
           {exchange && <EarnSection exchange={exchange} />}
@@ -425,7 +427,7 @@ export default function AddressDrawer({
                     </span>
                     <span className="wallets-num">
                       {item.net.startsWith('-') ? '-' : '+'}
-                      {quantity(item.net)} {item.symbol}
+                      {quantity(item.net.replace(/^-/, ''))} {item.symbol}
                     </span>
                   </li>
                 ))}
