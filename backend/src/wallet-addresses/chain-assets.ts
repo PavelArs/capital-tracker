@@ -3,6 +3,7 @@
 // `asset`; null is the network's own coin. Amounts are stored in the asset's base units.
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
+// BYBIT-ANY-COIN: it holds any coin Bybit lists, not only the ones below.
 
 export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit', 'tron'] as const;
 export type Network = (typeof networks)[number];
@@ -110,11 +111,24 @@ export function isNetwork(value: unknown): value is Network {
   return networks.includes(value as Network);
 }
 
+// Fiat Bybit quotes some pairs in: money, not a coin the account holds.
+const fiat = ['USD', 'EUR', 'GBP', 'RUB', 'BRL', 'TRY', 'PLN', 'KZT', 'UAH'];
+
+/**
+ * BYBIT-ANY-COIN: whether a Bybit account's records can hold this coin: any coin Bybit lists
+ * with a ticker the stored records and prices can name (2 to 8 capitals or digits), except fiat.
+ */
+export function isBybitCoin(code: string): boolean {
+  return /^[A-Z0-9]{2,8}$/.test(code) && !fiat.includes(code);
+}
+
 /** The asset a stored leg moves; an unknown pair is a programming error, never guessed. */
 export function chainAsset(network: string, token: string | null): ChainAsset {
   const found = chainAssets.find((item) => item.network === network && item.token === token);
-  if (!found) throw new Error('Unknown chain asset');
-  return found;
+  if (found) return found;
+  // Any other coin of a Bybit account is named by its ticker.
+  if (network === 'bybit' && token !== null && isBybitCoin(token)) return bybitCoin(token, token);
+  throw new Error('Unknown chain asset');
 }
 
 /** Whether the network names its coin in every leg: an exchange account has no coin of its own. */
@@ -125,7 +139,10 @@ export function feeAsset(network: string, token: string | null): ChainAsset {
   return chainAsset(network, isExchange(network) ? token : null);
 }
 
-/** Every asset a network's wallet can hold, its own coin first. */
+/**
+ * Every asset a network's wallet can hold, its own coin first; for Bybit the coins it always
+ * shows (BYBIT-ANY-COIN: it can hold any other too).
+ */
 export function networkAssets(network: Network): ChainAsset[] {
   return chainAssets.filter((item) => item.network === network);
 }

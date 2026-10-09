@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { BybitMarketClient } from './bybit-market';
 import { CoinGeckoClient, KrakenClient } from './price-providers';
 import { PricesController } from './prices.controller';
 import { PricesService } from './prices.service';
@@ -9,6 +10,7 @@ import { PricesService } from './prices.service';
   providers: [
     PricesService,
     { provide: KrakenClient, useFactory: () => new KrakenClient() },
+    { provide: BybitMarketClient, useFactory: () => new BybitMarketClient() },
     {
       provide: CoinGeckoClient,
       inject: [ConfigService],

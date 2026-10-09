@@ -14,7 +14,7 @@ import type {
 } from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
-import { networkIcon, networkOf, networks } from './networks';
+import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import { chainBalances, keyAddresses, type Reconciliation, shortAddress, sum } from './wallets';
 
@@ -583,5 +583,5 @@ export function subtitle(addresses: WalletAddress[]): string {
 
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
-  return new Set(addresses.flatMap((address) => networkOf(address).assets));
+  return new Set(addresses.flatMap(addressAssets));
 }

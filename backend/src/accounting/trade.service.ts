@@ -194,7 +194,13 @@ export async function findOrCreateInstrument(
   );
   if (found || !create) return found ?? null;
   const value = { requestId: randomUUID(), ...asset };
-  const classification = classifyAsset(value);
+  // BYBIT-ANY-COIN: a chain coin is always market-priced, so this lookup finds it again; one no
+  // provider quotes yet shows no price rather than becoming an asset priced by hand.
+  const classified = classifyAsset(value);
+  const classification =
+    classified.assetType === 'crypto'
+      ? { ...classified, priceSource: 'market' as const }
+      : classified;
   const [created]: { id: string; name: string; symbol: string | null }[] = await manager.query(
     `INSERT INTO accounting_instruments
     (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")

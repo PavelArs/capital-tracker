@@ -843,6 +843,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
+| M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 
 ```mermaid
 flowchart LR
@@ -871,6 +872,7 @@ flowchart LR
   M9 --> M22
   M11 --> M22
   M13 --> M22
+  M22 --> M26
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
