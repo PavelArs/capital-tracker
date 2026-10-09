@@ -51,8 +51,14 @@ strings so 30-place amounts stay exact; times are ISO 8601 in UTC.
 
 Never in the backup: password hashes, the TOTP secret, recovery codes, sessions, password
 reset links and sign-in limits. Market prices, Bank of Russia rates, portfolio snapshots and
-sync state are left out too: they are collected or rebuilt again. The legacy screens' tables
-are exported by the change that retires them (M20). The owner-export probe fails when a new
-table is neither backed up nor listed as left out with its reason.
+sync state are left out too: they are collected or rebuilt again.
+
+The legacy tables behind the screens retired in M20 (old assets, liabilities, crypto wallets
+and currency visibility) and the capitals, reports and subscriptions no screen used stay in
+the database untouched; their rows join the backup under the same `tables` key, listed in
+`legacyTables`. They belong to the owner by `userId`, which is left out like `ownerId`; the
+shared legacy currency list contributes only the currencies those rows name (`currencies`).
+The owner-export probe fails when a new table is neither backed up nor listed as left out
+with its reason.
 
 Restoring from the backup is not built yet; `formatVersion` changes when the layout does.

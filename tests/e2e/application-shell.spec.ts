@@ -204,20 +204,13 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
-  // SHELL-001-A: current screens stay reachable under the open Legacy group.
+  // SHELL-001-A: only the screens no new section covers yet stay under the open Legacy group.
   const legacy = nav.locator('details', { has: page.getByText('Legacy', { exact: true }) });
   await expect(legacy).toHaveAttribute('open', '');
+  await expect(legacy.getByRole('link')).toHaveCount(2);
   for (const [name, path] of [
     ['Ручные счета', '/manual-accounts'],
-    ['Переводы между счетами', '/owned-transfers'],
-    ['Вводы и выводы', '/capital-flows'],
     ['Ручные цены', '/manual-prices'],
-    ['Адреса кошельков', '/wallet-addresses'],
-    ['Прибыль за период', '/period-profit'],
-    ['Настройки', '/settings'],
-    ['Прежний обзор', '/legacy-overview'],
-    ['Активы', '/assets'],
-    ['Криптокошельки', '/crypto'],
   ] as const) {
     await expect(legacy.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
   }
@@ -285,23 +278,22 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await skip.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('main')).toBeFocused();
-  await nav.getByRole('link', { name: 'Прежний обзор', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/legacy-overview`);
-  await expect(page.getByRole('note', { name: 'Область прежнего обзора' })).toContainText(
-    'не включает ручные счета',
-  );
-  // Router-major compatibility: the retained assets splat and fixed absolute tab paths.
-  await nav.locator('a[href="/assets"]').click();
-  await expect(page).toHaveURL(`${origin}/assets/overview`);
-  for (const [label, path] of [
-    ['Балансовые активы', '/assets/stock'],
-    ['Потоковые активы', '/assets/flow'],
-    ['Обзор', '/assets/overview'],
+  // LEGACY-RETIRE: a bookmark of a retired screen opens the section that replaced it.
+  for (const [retired, replacement, heading] of [
+    ['/legacy-overview', '/dashboard', 'Dashboard'],
+    ['/liabilities', '/portfolio', 'Portfolio'],
+    ['/crypto', '/wallets', 'Wallets'],
+    ['/wallet-addresses', '/wallets', 'Wallets'],
+    ['/owned-transfers', '/transactions', 'Transactions'],
+    ['/capital-flows', '/dashboard', 'Dashboard'],
+    ['/period-profit', '/dashboard', 'Dashboard'],
+    ['/settings', '/preferences', 'Settings'],
   ] as const) {
-    const tab = page.getByRole('button', { name: label, exact: true });
-    await tab.click();
-    await expect(page).toHaveURL(`${origin}${path}`);
-    await expect(tab).toHaveAttribute('aria-current', 'page');
+    await page.goto(retired);
+    await expect(page).toHaveURL(`${origin}${replacement}`);
+    await expect(
+      page.getByRole('heading', { level: 1, name: heading, exact: true }),
+    ).toBeVisible();
   }
 
   // SHELL-006-A: with no stored choice System follows a dark device, then a light one.

@@ -9,25 +9,17 @@ import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
 import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
 import AssetPage from '@features/portfolio/AssetPage';
 import PortfolioPage from '@features/portfolio/PortfolioPage';
+import { retiredPaths } from '@features/shell/navigation';
 import SettingsPage from '@features/shell/SettingsPage';
 import TransactionsPage from '@features/transactions/TransactionsPage';
 import WalletPage from '@features/wallets/WalletPage';
 import WalletsPage from '@features/wallets/WalletsPage';
-import Assets from '@pages/Assets';
-import CapitalFlows from '@pages/CapitalFlows';
-import Crypto from '@pages/Crypto';
-import Dashboard from '@pages/Dashboard';
 import Login from '@pages/Login';
 import ManualAccountDetail from '@pages/ManualAccountDetail';
 import ManualAccounts from '@pages/ManualAccounts';
 import ManualPrices from '@pages/ManualPrices';
-import PeriodProfit from '@pages/PeriodProfit';
-import RetiredLiabilities from '@pages/RetiredLiabilities';
-import Settings from '@pages/Settings';
-import WalletAddresses from '@pages/WalletAddresses';
 import React, { useEffect } from 'react';
-import { Link, Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
-import OwnedTransfers from './features/accounting/OwnedTransfers';
+import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 
 interface PrivateRouteProps {
   children: React.ReactNode;
@@ -72,29 +64,12 @@ function AppRoutes() {
         <Route path="wallets" element={<WalletsPage />} />
         <Route path="wallets/:accountId" element={<WalletPage />} />
         <Route path="preferences" element={<SettingsPage />} />
-        <Route
-          path="legacy-overview"
-          element={
-            <>
-              <aside className="legacy-scope-note" role="note" aria-label="Область прежнего обзора">
-                Этот обзор показывает прежние активы и кошельки и не включает ручные счета. Для
-                учета операций и оценки перейдите в <Link to="/manual-accounts">ручные счета</Link>.
-              </aside>
-              <Dashboard />
-            </>
-          }
-        />
-        <Route path="assets/*" element={<Assets />} />
-        <Route path="liabilities/*" element={<RetiredLiabilities />} />
-        <Route path="crypto" element={<Crypto />} />
-        <Route path="settings" element={<Settings />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
-        <Route path="owned-transfers" element={<OwnedTransfers />} />
-        <Route path="manual-prices" element={<ManualPrices />} />
-        <Route path="wallet-addresses" element={<WalletAddresses />} />
-        <Route path="capital-flows" element={<CapitalFlows />} />
-        <Route path="period-profit" element={<PeriodProfit />} />
         <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
+        <Route path="manual-prices" element={<ManualPrices />} />
+        {retiredPaths.map(([from, to]) => (
+          <Route key={from} path={`${from.slice(1)}/*`} element={<Navigate to={to} replace />} />
+        ))}
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>

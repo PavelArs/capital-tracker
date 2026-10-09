@@ -1,5 +1,7 @@
 # External USD cash flows
 
+> **Retired screen (M20, 2026-10-08):** `/capital-flows` now opens the Dashboard. Declared flows count nowhere since M7 (deposits come from operations); their rows stay listed, read-only, in Transactions and the API stays until a separate removal.
+
 This slice records explicit contributions to and withdrawals from the owner's
 tracked portfolio. It keeps investor cash flows separate from investment operations:
 a trade, swap, transfer between owned accounts, opening holding, reward, fee or

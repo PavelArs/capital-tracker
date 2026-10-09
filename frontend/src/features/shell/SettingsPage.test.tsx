@@ -102,12 +102,10 @@ describe('SHELL-006 theme setting', () => {
     expect(applied()).toBe('dark');
   });
 
-  it('points to the legacy settings that are still separate', () => {
+  it('no longer points to the retired legacy settings (M20)', () => {
     renderSettings();
-    expect(screen.getByRole('link', { name: 'Legacy settings' })).toHaveAttribute(
-      'href',
-      '/settings',
-    );
+    expect(screen.queryByRole('link', { name: 'Legacy settings' })).toBeNull();
+    expect(screen.queryByText(/old display rates/)).toBeNull();
   });
 });
 

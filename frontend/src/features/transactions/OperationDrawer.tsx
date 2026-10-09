@@ -44,11 +44,13 @@ export const editable = (operation: Operation) =>
     ((operation.kind === 'transfer' || operation.kind === 'reward') &&
       entryKind(operation) !== null));
 
-/** Where other operations can be changed today; blockchain rows are classified here (M12). */
+/**
+ * Where other operations can be changed today; blockchain rows are classified here (M12). The
+ * legacy declared deposits and withdrawals count nowhere since M7 and their screen is retired
+ * (M20), so they are only shown.
+ */
 function editLink(operation: Operation): [string, string] | null {
-  if (editable(operation) || operation.kind === 'chain') return null;
-  if (operation.kind === 'transfer') return ['/owned-transfers', 'Open transfers'];
-  if (operation.kind === 'flow') return ['/capital-flows', 'Open deposits and withdrawals'];
+  if (editable(operation) || operation.kind === 'chain' || operation.kind === 'flow') return null;
   return operation.account
     ? [`/manual-accounts/${operation.account.id}`, `Open in ${operation.account.name}`]
     : null;

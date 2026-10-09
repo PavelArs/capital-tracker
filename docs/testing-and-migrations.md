@@ -487,11 +487,11 @@ database and a populated18 upgrade preserving prior rows, schema, sequences and
 session data. The migration fixture also checks replay and refuses unsafe legacy
 histories.
 
-The scoped unit/browser commands are:
+The scoped unit/browser commands are (the Settings panel and its DFX-UI case were retired in
+M20):
 
 ```sh
 pnpm --dir backend test --runInBand --coverage=false display-fx-domain display-fx-provider
-pnpm --dir frontend exec vitest run --coverage.enabled=false src/features/display-fx/display-fx-view.test.ts
 pnpm exec playwright test tests/e2e/display-fx.spec.ts tests/e2e/valuation-history.spec.ts --grep 'DFX-|VCH-UI:' --workers=1
 ```
 

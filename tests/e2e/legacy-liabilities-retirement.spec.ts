@@ -13,7 +13,7 @@ import {
 
 const bookmarks = ['/liabilities', '/liabilities/legacy-bookmark'];
 
-test('LIR-UI: retired bookmarks preserve private legacy records and lead to manual accounts', async ({
+test('LIR-UI: retired bookmarks preserve private legacy records and open Portfolio', async ({
   page,
   browser,
 }) => {
@@ -54,32 +54,20 @@ test('LIR-UI: retired bookmarks preserve private legacy records and lead to manu
       (SELECT id FROM currencies WHERE code = 'USD'), '2025-02-03', 'Private foreign record', 'yearly', NULL)`);
   const before = fingerprint(['auth_sessions', 'auth_request_limits']);
   const providersBefore = providerRequests();
-  const businessRequests: string[] = [];
-  page.on('request', (request) => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith('/api/') && !path.startsWith('/api/auth/')) businessRequests.push(path);
-  });
 
   for (const path of bookmarks) {
+    // The legacy notice is retired with the other old screens (M20): Portfolio replaces it.
     await page.goto(path);
-    // Intended RED: the predecessor still renders the legacy editor at /liabilities.
+    await expect(page).toHaveURL(`${origin}/portfolio`);
     await expect(
-      page.getByRole('heading', { name: 'Раздел обязательств закрыт', exact: true }),
+      page.getByRole('heading', { level: 1, name: 'Portfolio', exact: true }),
     ).toBeVisible();
-    await expect(page.getByText('Сохранённые записи не удалены.', { exact: true })).toBeVisible();
     await expect(page.getByRole('navigation').locator('a[href^="/liabilities"]')).toHaveCount(0);
     const main = page.getByRole('main');
-    await expect(main.locator('form, input, select, textarea, canvas, table, button')).toHaveCount(
-      0,
-    );
     await expect(main.getByText(ownName, { exact: true })).toHaveCount(0);
     await expect(main.getByText(foreignName, { exact: true })).toHaveCount(0);
-    await expect(
-      main.getByRole('link', { name: 'Перейти к ручным счетам', exact: true }),
-    ).toHaveAttribute('href', '/manual-accounts');
     await page.waitForLoadState('networkidle');
   }
-  expect(businessRequests).toEqual([]);
   expect(providerRequests()).toEqual(providersBefore);
 
   const list = await page.request.get('/api/liabilities');
@@ -108,10 +96,6 @@ test('LIR-UI: retired bookmarks preserve private legacy records and lead to manu
   noStore(foreign);
   expect(await foreign.text()).not.toContain(foreignName);
 
-  await page.getByRole('link', { name: 'Перейти к ручным счетам', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/manual-accounts`);
-  await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
-  await page.waitForLoadState('networkidle');
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
   expect(providerRequests()).toEqual(providersBefore);
 });

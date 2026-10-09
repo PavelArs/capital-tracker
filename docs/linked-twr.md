@@ -1,5 +1,7 @@
 # Связанный TWR за период
 
+> **Retired screen (M20, 2026-10-08):** the linked TWR preview lived on `/period-profit`, which now opens the Dashboard; it is hidden in the new interface (Q10) and its API stays until a separate removal.
+
 Ручной предварительный расчёт доходности с оценками в моменты внешних потоков.
 
 Связанный TWR рассчитывается по двум ручным оценкам всего отслеживаемого портфеля

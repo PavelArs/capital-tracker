@@ -15,14 +15,14 @@ const commit = 'a'.repeat(40);
 
 test('critical profile selects every exact declared file and title once', () => {
   const selection = profile.select(manifest, listing);
-  assert.equal(selection.cases.length, 33);
+  assert.equal(selection.cases.length, 28);
   assert.equal(selection.cases.filter((item) => item.title.startsWith('CSV-006-B regression')).length, 1);
-  assert.equal(selection.matches.length, 33);
+  assert.equal(selection.matches.length, 28);
   const routed = JSON.parse(execFileSync('pnpm', ['exec', 'playwright', 'test', ...selection.files,
     '--grep', selection.grep, '--list', '--reporter=json'], {
     cwd: resolve(__dirname, '..'), encoding: 'utf8', env: { ...process.env, CI: 'true' },
   }));
-  assert.equal(profile.assertRouted(selection, routed).length, 33);
+  assert.equal(profile.assertRouted(selection, routed).length, 28);
 });
 
 test('critical profile refuses empty, duplicate, missing, and ambiguous selections', () => {
@@ -92,7 +92,7 @@ test('a failed cleanup or preservation clears stale evidence and never publishes
 
 test('ENG-007-C partition splits the manifest deterministically by index modulo shard count', () => {
   const parts = [0, 1, 2].map((index) => profile.partition(manifest, index, 3));
-  assert.deepEqual(parts.map((part) => part.length), [11, 11, 11]);
+  assert.deepEqual(parts.map((part) => part.length), [10, 9, 9]);
   parts.forEach((part, index) => {
     assert.deepEqual(part, manifest.filter((_item, position) => position % 3 === index));
     // Each subset is itself a valid exact selection against actual Playwright discovery.
@@ -116,7 +116,7 @@ test('ENG-007-D merge combines shard results into the unchanged receipt and reje
   const merged = profile.merge(manifest, parts(), commit, '123');
   const whole = profile.receipt(profile.select(manifest, listing), run(manifest), commit, '123');
   assert.deepEqual(merged, whole);
-  assert.equal(profile.verify(merged, manifest, commit, '123').cases.length, 33);
+  assert.equal(profile.verify(merged, manifest, commit, '123').cases.length, 28);
   const reject = (value) => assert.throws(() => profile.merge(manifest, value, commit, '123'));
   reject([]);
   reject(parts().slice(1));
