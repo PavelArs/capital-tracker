@@ -110,5 +110,9 @@
   {
     "file": "tests/e2e/owner-export.spec.ts",
     "title": "EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive and a JSON backup without secrets"
+  },
+  {
+    "file": "tests/e2e/security-settings.spec.ts",
+    "title": "SEC-TOTP: Settings sets the authenticator up again after a fresh code; other browsers sign out and the new app signs in"
   }
 ]

@@ -90,15 +90,15 @@ test('CARRY-005-A: original accepted command survives lost delivery, real401, MF
       'SELECT "codeHash","usedAt" FROM owner_mfa_recovery ORDER BY "codeHash"',
     );
     await page.getByLabel('Email', { exact: true }).fill(owner.email);
-    await page.getByLabel('Пароль', { exact: true }).fill(owner.password);
+    await page.getByLabel('Password', { exact: true }).fill(owner.password);
     const login = page.waitForResponse(
       (response) =>
         new URL(response.url()).pathname === '/api/auth/login' &&
         response.request().method() === 'POST',
     );
-    await page.getByRole('button', { name: 'Вход', exact: true }).click();
+    await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     expect((await login).status()).toBe(200);
-    await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Code from your authenticator app', { exact: true })).toBeVisible();
     await completeFactor(page, recoveryFactor());
     await navigateToAccount(page, account.id);
     await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();

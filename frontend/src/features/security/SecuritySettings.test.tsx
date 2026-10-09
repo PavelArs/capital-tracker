@@ -218,4 +218,116 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(await screen.findByText('Only this browser is signed in.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log out everywhere' })).toBeVisible();
   });
+  it('SEC-TOTP: a current code, the new key and its first code set the authenticator up again', async () => {
+    const setup = {
+      uri: 'otpauth://totp/Capital%20Tracker:Owner?issuer=Capital%20Tracker&secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&algorithm=SHA1&digits=6&period=30',
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      candidateId: '33333333-3333-4333-8333-333333333333',
+      expiresAt: '2026-10-09T12:10:00.000Z',
+    };
+    const prepare = vi
+      .spyOn(securityApi, 'prepareAuthenticator')
+      .mockRejectedValueOnce(failure(422))
+      .mockResolvedValueOnce(setup);
+    const confirm = vi
+      .spyOn(securityApi, 'confirmAuthenticator')
+      .mockRejectedValueOnce(failure(422))
+      .mockResolvedValueOnce(newCodes);
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    const field = within(dialog).getByLabelText('Code from your authenticator app');
+    expect(field).toHaveFocus();
+    const next = within(dialog).getByRole('button', { name: 'Continue' });
+    await userEvent.click(next);
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'Enter the 6-digit code from your authenticator app.',
+    );
+    await userEvent.type(field, '123456');
+    await userEvent.click(next);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'That code is not valid. Enter the current code from your authenticator app.',
+    );
+    await userEvent.type(field, '234567');
+    await userEvent.click(next);
+    expect(prepare).toHaveBeenLastCalledWith({ kind: 'totp', code: '234567' });
+
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    expect(
+      within(scan).getByRole('img', { name: 'QR code for your authenticator app' }),
+    ).toBeVisible();
+    expect(scan).toHaveTextContent('JBSW Y3DP EHPK 3PXP JBSW Y3DP EHPK 3PXP');
+    const first = within(scan).getByLabelText('Code from the new app');
+    await userEvent.type(first, '345678');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent(
+      'That code is not valid. Enter the current code from the new app.',
+    );
+    await userEvent.type(first, '456789');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(confirm).toHaveBeenLastCalledWith(setup.candidateId, '456789');
+
+    const shown = await screen.findByRole('dialog', { name: 'Save your new recovery codes' });
+    expect(shown).toHaveTextContent('other browsers were signed out');
+    expect(
+      within(within(shown).getByRole('list', { name: 'Recovery codes' })).getAllByRole('listitem'),
+    ).toHaveLength(10);
+    // The overview reloads behind the dialog: new codes and only this browser.
+    await waitFor(() => expect(securityApi.get).toHaveBeenCalledTimes(2));
+    await userEvent.click(within(shown).getByLabelText('I have saved these codes'));
+    await userEvent.click(within(shown).getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByText(setup.secret)).toBeNull();
+  });
+
+  it('SEC-TOTP: a lost phone proves the owner with a recovery code instead', async () => {
+    const prepare = vi.spyOn(securityApi, 'prepareAuthenticator').mockRejectedValue(failure(429));
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Lost the phone? Use a recovery code' }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Set up authenticator again' });
+    const field = within(dialog).getByLabelText('Recovery code');
+    expect(field).toHaveFocus();
+    await userEvent.type(field, 'not-a-code');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Recovery codes look like');
+    expect(prepare).not.toHaveBeenCalled();
+    await userEvent.clear(field);
+    await userEvent.type(field, ' AAAAAAAA-bbbbbbbb-cccccccc-dddddddd ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(prepare).toHaveBeenCalledWith({
+      kind: 'recovery',
+      code: 'AAAAAAAA-bbbbbbbb-cccccccc-dddddddd',
+    });
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Wait 10 minutes and try again.',
+    );
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('SEC-TOTP: an expired setup starts again and keeps the current authenticator', async () => {
+    vi.spyOn(securityApi, 'prepareAuthenticator').mockResolvedValue({
+      uri: 'otpauth://totp/Capital%20Tracker:Owner?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+      candidateId: '33333333-3333-4333-8333-333333333333',
+      expiresAt: '2026-10-09T12:10:00.000Z',
+    });
+    vi.spyOn(securityApi, 'confirmAuthenticator').mockRejectedValue(failure(410));
+    render(<SecuritySettings />);
+    await userEvent.click(await within(region()).findByRole('button', { name: 'Set up again' }));
+    await userEvent.type(screen.getByLabelText('Code from your authenticator app'), '123456');
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    const scan = await screen.findByRole('dialog', { name: 'Scan the new code' });
+    await userEvent.type(within(scan).getByLabelText('Code from the new app'), '234567');
+    await userEvent.click(within(scan).getByRole('button', { name: 'Verify and continue' }));
+    expect(await within(scan).findByRole('alert')).toHaveTextContent(
+      'your current authenticator still works',
+    );
+    expect(within(scan).getByLabelText('Code from the new app')).toBeDisabled();
+    await userEvent.click(within(scan).getByRole('button', { name: 'Start again' }));
+    expect(screen.getByRole('dialog', { name: 'Set up authenticator again' })).toBeInTheDocument();
+  });
 });

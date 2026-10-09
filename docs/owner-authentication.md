@@ -4,7 +4,8 @@ The current change requires a password and a confirmed second factor before priv
 access. Operator enrollment, replacement and password recovery use trusted CLIs;
 the owner can also reset a forgotten password through an emailed single-use link
 (see [Password reset by email](#password-reset-by-email)). There is no public signup or
-MFA setup route. The MFA implementation
+first-time MFA setup route; a signed-in owner can set the authenticator up again from
+Settings → Security after a fresh factor (see [Security settings](#security-settings)). The MFA implementation
 passed local release-image PostgreSQL and55 HTTPS Chromium checks. Consult the
 archived `enforce-owner-second-factor` verification record for exact execution
 evidence and limitations. Production rollout has not occurred.
@@ -296,11 +297,13 @@ its `/api` prefix.
 | `POST /auth/password-reset/confirm` | Public with Origin and CSRF, plus `{ token, password }`. Sets the password and answers 204; an expired or used link answers 410 with `error: 'expired' \| 'invalid'`, a password outside 15–128 characters 400. |
 | `GET /auth/security` | Full session. Answers `{ recoveryCodes: { unused, total }, sessions: [{ id, device, signedInAt, lastActiveAt, current }] }` for Settings → Security. |
 | `POST /auth/security/recovery-codes` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ code }` (a fresh TOTP). Answers `{ recoveryCodes }` once; see [Security settings](#security-settings). |
+| `POST /auth/security/authenticator` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ kind: 'totp' \| 'recovery', code }` (a fresh factor). Answers `{ uri, secret, candidateId, expiresAt }` for a new authenticator that waits ten minutes for its first code; see [Security settings](#security-settings). |
+| `POST /auth/security/authenticator/confirm` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ candidateId, code }` (the new app's first code). Activates it and answers `{ recoveryCodes }` once; 422 for a wrong code, 410 once the setup expired or had five wrong codes. |
 | `DELETE /auth/security/sessions/:id` | Full session, Origin and CSRF. Logs out one other signed-in browser (204); this browser or an unknown id answers 404. |
 | `POST /auth/security/logout-everywhere` | Full session, Origin and CSRF. Deletes every pending and full owner session, this one included, clears the cookie and answers 204. |
 
-The Russian login form separates password and factor steps and offers recovery-code
-entry. Full user/navigation state appears only after factor verification. Reloading
+The English sign-in screens (prototype "Sign-in" tab) separate password and factor steps and
+offer recovery-code entry. Full user/navigation state appears only after factor verification. Reloading
 a pending login may return to the password form. Re-entering the password can replace
 pending state. Every successful rotation installs the new in-memory CSRF token.
 
@@ -383,6 +386,18 @@ counts toward the owner's ten-per-ten-minutes cooldown and the hundred-failure l
 reached), and a malformed code answers 400 without spending a guess. Success consumes the step
 and, in one transaction, replaces all recovery codes with ten new ones that the browser shows
 once; only their hashes are stored. Sessions, password and the TOTP secret stay as they are.
+
+Setting the authenticator up again (SEC-TOTP) starts with a fresh factor: a TOTP from the
+current app, checked exactly as above, or an unused recovery code, which is spent, for an owner
+whose phone is lost. A wrong, replayed or used code answers 422 and counts toward the same owner
+limits. Success stores a new encrypted candidate secret for ten minutes, the same candidate the
+MFA CLI's `prepare` creates, and the browser draws its QR code locally and shows the key once;
+the current factor and recovery codes keep working meanwhile. The first code from the new app
+confirms it in one transaction: the candidate becomes the active factor with that step consumed,
+ten new recovery codes replace every old one, the credential revision rotates and every other
+pending or full session of the owner ends, while this browser's session moves to the new revision.
+Five wrong confirmation codes or expiry retire the candidate (410). Two-factor authentication
+itself cannot be turned off, and the first enrollment of a new installation stays with the CLI.
 
 The session list names each browser by a fixed label such as "Safari on iPhone", derived from
 the User-Agent when the factor completes and stored in `auth_sessions.device` (migration
