@@ -1209,7 +1209,7 @@ describe('M22: Bybit accounts', () => {
         ipBound: false,
         keyExpiresAt: '2027-01-01T00:00:00.000Z',
         reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-        untracked: [{ symbol: 'XRP', quantity: '5' }],
+        untracked: [{ symbol: 'S', quantity: '5' }],
         historyFrom: '2024-10-10T00:00:00.000Z',
       },
       ...changes,
@@ -1241,7 +1241,9 @@ describe('M22: Bybit accounts', () => {
     const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
     const option = within(dialog).getByRole('button', { name: /^Bybit/ });
     expect(option).toBeEnabled();
-    expect(option).toHaveTextContent('Read-only API key. Spot trades, deposits and withdrawals');
+    expect(option).toHaveTextContent(
+      'Read-only API key. Every coin: trades, deposits and withdrawals',
+    );
     await user.click(option);
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     return dialog;
@@ -1334,6 +1336,54 @@ describe('M22: Bybit accounts', () => {
     );
   });
 
+  it('BYBIT-ANY-COIN compares any coin Bybit reports or the records hold', async () => {
+    const valuation = withBybit();
+    const ton = (accountId: string, quantity: string) =>
+      asset({
+        instrumentId: id(7),
+        name: 'TON',
+        symbol: 'TON',
+        price: { value: '3', observedAt: null, source: 'bybit', status: 'fresh' },
+        quantity,
+        value: null,
+        holdings: [{ accountId, accountName: 'Bybit', quantity, value: null }],
+      });
+    const doge = asset({
+      instrumentId: id(8),
+      name: 'DOGE',
+      symbol: 'DOGE',
+      quantity: '40',
+      value: null,
+      holdings: [{ accountId: bybit, accountName: 'Bybit', quantity: '40', value: null }],
+    });
+    setup(
+      [
+        exchangeAccount({
+          balances: [
+            { symbol: 'BTC', quantity: '0.50999' },
+            { symbol: 'ETH', quantity: '0' },
+            { symbol: 'SOL', quantity: '0' },
+            { symbol: 'USDT', quantity: '399' },
+            { symbol: 'USDC', quantity: '0' },
+            { symbol: 'TON', quantity: '12.5' },
+          ],
+        }),
+      ],
+      { ...valuation, assets: [...valuation.assets, ton(bybit, '10'), doge] },
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    expect(within(account).getByRole('button', { name: 'Bybit 123456789' })).toHaveTextContent(
+      '0.50999 BTC · 399 USDT · 12.5 TON',
+    );
+    const note = within(account).getByRole('note');
+    expect(note).toHaveTextContent(
+      'Bybit reports 12.5 TON; your transactions in this wallet give 10 TON',
+    );
+    expect(note).toHaveTextContent(
+      'Bybit reports 0 DOGE; your transactions in this wallet give 40 DOGE',
+    );
+  });
+
   it('shows the key, its expiry and the untracked coins in the drawer, never the secret', async () => {
     setup([exchangeAccount({})], withBybit());
     const user = userEvent.setup();
@@ -1343,7 +1393,10 @@ describe('M22: Bybit accounts', () => {
     expect(drawer).toHaveTextContent('API key…0001 · read-only, stored encrypted');
     expect(drawer).toHaveTextContent('Key expires1 Jan 2027');
     expect(drawer).toHaveTextContent('As Bybit reported them 5 min ago');
-    expect(drawer).toHaveTextContent('Not tracked5 XRP · not counted');
+    expect(drawer).toHaveTextContent('Not tracked5 S · not counted');
+    expect(drawer).toHaveTextContent(
+      'Tracked assetsEvery coin the account holds; Bybit prices the ones Kraken does not list',
+    );
     expect(drawer).toHaveTextContent('Bybit records');
   });
 

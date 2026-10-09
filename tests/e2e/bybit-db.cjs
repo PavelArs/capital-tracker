@@ -22,6 +22,7 @@ const { BybitSyncAdapter } = require(`${dist}/wallet-addresses/bybit-sync.adapte
 const { SyncBybitAccount1793300000000 } = require(`${dist}/migrations/1793300000000-SyncBybitAccount.js`);
 const { ReadBybitEarn1794000000000 } = require(`${dist}/migrations/1794000000000-ReadBybitEarn.js`);
 const { ReadBybitConverts1794400000000 } = require(`${dist}/migrations/1794400000000-ReadBybitConverts.js`);
+const { PriceBybitCoins1794500000000 } = require(`${dist}/migrations/1794500000000-PriceBybitCoins.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_bybit_e2e';
@@ -71,8 +72,8 @@ const fill = { symbol: 'BTCUSDT', orderId: '1000000000000000001', orderLinkId: '
   indexPrice: '', underlyingPrice: '', blockTradeId: '', closedSize: '', seq: 1, extraFees: '' };
 const executions = [
   { at: T1, row: fill },
-  // Neither coin is tracked: nothing is stored.
-  { at: T1 + 60_000, row: { ...fill, symbol: 'XRPEUR', execId: '2100000000000000002', execTime: String(T1 + 60_000), feeCurrency: 'XRP' } },
+  // Neither coin can be recorded (a one-letter ticker, fiat): nothing is stored.
+  { at: T1 + 60_000, row: { ...fill, symbol: 'SEUR', execId: '2100000000000000002', execTime: String(T1 + 60_000), feeCurrency: 'S' } },
 ];
 const deposit = (at, overrides) => ({ at, row: { id: '', coin: 'USDT', chain: 'ETH', amount: '1000', txID: `0x${txid(10)}`,
   status: 3, toAddress: 'synthetic-deposit-address', tag: '', depositFee: '', successAt: String(at), confirmations: '64',
@@ -92,7 +93,7 @@ const withdrawal = { at: ago(3 * DAY), row: { coin: 'USDT', chain: 'TRX', amount
 const balances = {
   FUND: [{ coin: 'USDT', walletBalance: '349', transferBalance: '349', bonus: '' }, { coin: 'BTC', walletBalance: '0.2', transferBalance: '0.2', bonus: '' }],
   UNIFIED: [{ coin: 'USDT', walletBalance: '250', transferBalance: '250', bonus: '' }, { coin: 'BTC', walletBalance: '0.50999', transferBalance: '0.50999', bonus: '' },
-    { coin: 'XRP', walletBalance: '5', transferBalance: '5', bonus: '' }],
+    { coin: 'S', walletBalance: '5', transferBalance: '5', bonus: '' }],
 };
 
 async function post(path, body) {
@@ -190,7 +191,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 48/);
+  assert.match(migrate(database), /Migrations applied: 49/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -344,7 +345,7 @@ async function main() {
       { symbol: 'BTC', quantity: '0.70999' }, { symbol: 'ETH', quantity: '0' }, { symbol: 'SOL', quantity: '0' },
       { symbol: 'USDT', quantity: '599' }, { symbol: 'USDC', quantity: '0' },
     ]);
-    assert.deepEqual(summary.exchange.untracked, [{ symbol: 'XRP', quantity: '5' }]);
+    assert.deepEqual(summary.exchange.untracked, [{ symbol: 'S', quantity: '5' }]);
     assert.ok(Date.parse(summary.exchange.reportedAt) >= started);
     assert.equal(summary.sync.state, 'complete');
     const usdt = (await db.query("SELECT id FROM accounting_instruments WHERE \"ownerId\"=$1 AND symbol='USDT'", [owner]))[0].id;
@@ -353,7 +354,7 @@ async function main() {
       instrumentId: usdt, side: 'buy', occurredAt: new Date(ago(DAY)).toISOString(), orderWithinTimestamp: 0,
       quantity: '200', grossUsd: '200', feeUsd: '0' });
     assert.deepEqual(await held(db, owner, exchange), { BTC: '0.70999', USDT: '599' });
-    console.log('PASS BYBIT-GAPS Bybit reports 599 USDT against 399 recorded; the 200 USDT P2P purchase entered by hand closes the gap; 5 XRP shown as untracked');
+    console.log('PASS BYBIT-GAPS Bybit reports 599 USDT against 399 recorded; the 200 USDT P2P purchase entered by hand closes the gap; 5 S shown as untracked (BYBIT-ANY-COIN: a one-letter ticker cannot be recorded)');
 
     // A key Bybit stops accepting fails the sync with its reason; a new key replaces it and
     // keeps what was read.
@@ -397,10 +398,10 @@ async function main() {
         FlexibleSaving: [{ coin: 'USDT', productId: '428', amount: '300', totalPnl: '', claimableYield: '0.01' },
           { coin: 'USDC', productId: '429', amount: '0', totalPnl: '', claimableYield: '0' }],
         OnChain: [{ coin: 'BTC', productId: '8', amount: '0.1', totalPnl: '0', claimableYield: '', id: '326', status: 'Active' }],
-        fixed: [{ positionId: '4064', productId: '724', category: 'FixedTermSaving', coin: 'MNT', amount: '10', status: 'Active' }],
+        fixed: [{ positionId: '4064', productId: '724', category: 'FixedTermSaving', coin: 'W', amount: '10', status: 'Active' }],
       },
       flexibleYield: [paid('FlexibleSaving', 1, yieldAt, 'USDT', '0.5'), paid('FlexibleSaving', 2, ago(100 * DAY), 'USDT', '9'),
-        paid('FlexibleSaving', 3, ago(2 * DAY), 'USDT', '0.25', 'Pending'), paid('FlexibleSaving', 4, ago(20 * DAY), 'MNT', '1')],
+        paid('FlexibleSaving', 3, ago(2 * DAY), 'USDT', '0.25', 'Pending'), paid('FlexibleSaving', 4, ago(20 * DAY), 'W', '1')],
       onchainYield: [paid('OnChain', 5, ago(10 * DAY), 'BTC', '0.0001')],
     });
     const earnPasses = await syncUntilComplete(s, owner, wallet);
@@ -445,7 +446,7 @@ async function main() {
       { symbol: 'USDT', quantity: '300', product: 'flexible' },
       { symbol: 'BTC', quantity: '0.1', product: 'onchain' },
     ]]);
-    assert.deepEqual(earned.address.exchange.untracked, [{ symbol: 'MNT', quantity: '10' }, { symbol: 'XRP', quantity: '5' }]);
+    assert.deepEqual(earned.address.exchange.untracked, [{ symbol: 'S', quantity: '5' }, { symbol: 'W', quantity: '10' }]);
     assert.deepEqual(await held(db, owner, exchange), { BTC: '0.71009', USDT: '599.5' });
     const earnAgain = await newRequests(() => s.addresses.sync(owner, wallet));
     assert.deepEqual([earnAgain.result.outcome, earnAgain.result.imported], ['complete', 0]);
@@ -465,7 +466,7 @@ async function main() {
     assert.ok(!noConvert.urls.some((url) => url.pathname.startsWith('/v5/asset/exchange/')), 'No convert request without the permission');
     // The owner ticks Exchange History on the same key. Bybit lists a convert of 0.01 BTC into
     // 650 USDT, one of 100 USDT into 0.6 SOL, one still processing, one failed and one between
-    // two untracked coins; the older coin exchange records add 20 XRP sold for 10 USDT before
+    // two untracked coins; the older coin exchange records add 20 S sold for 10 USDT before
     // converts were listed in full, and one made after that date, which the convert history
     // would list instead.
     const convertKey = { ...replacement, info: { ...replacement.info, permissions: { ...replacement.info.permissions, Exchange: ['ExchangeHistory'] } } };
@@ -485,8 +486,8 @@ async function main() {
         converted('5100000000000000000000000002', ago(4 * DAY), 'USDT', '100', 'SOL', '0.6'),
         converted('5100000000000000000000000003', ago(60 * 60_000), 'USDT', '50', 'ETH', '0.02', 'processing'),
         converted('5100000000000000000000000004', ago(3 * DAY), 'USDT', '70', 'ETH', '0.03', 'failure'),
-        converted('5100000000000000000000000005', ago(2 * DAY), 'XRP', '3', 'MNT', '1')],
-      coinExchanges: [exchanged('5200000000000000001', Date.UTC(2025, 7, 1), 'XRP', '20', 'USDT', '10'),
+        converted('5100000000000000000000000005', ago(2 * DAY), 'S', '3', 'W', '1')],
+      coinExchanges: [exchanged('5200000000000000001', Date.UTC(2025, 7, 1), 'S', '20', 'USDT', '10'),
         exchanged('5200000000000000002', ago(30 * DAY), 'USDT', '5', 'ETH', '0.002')],
     });
     const convertPass = await newRequests(() => s.addresses.sync(owner, wallet));
@@ -527,6 +528,117 @@ async function main() {
     assert.equal((await legsOf(db, wallet)).filter((row) => row.txid.startsWith('bybit-trade-convert-')).length, 3);
     console.log('PASS BYBIT-CONVERT without Exchange History no convert is asked; once ticked on the same key, a convert into USDT is a Sell and one from USDT a Buy, recorded without asking; processing, failed and untracked converts are left out; older coin exchanges count, newer ones come from the convert history only; Bybit\'s balance then matches the records');
 
+    // BYBIT-ANY-COIN: an account read while the app tracked only BTC, ETH, SOL, USDT and USDC.
+    // It stored 15 XRP bought for 30 USDT as the 30 USDT spent, and 8 DOGE sold for 4 USDT as
+    // the 4 USDT received, which the owner answered as Other; 40 TON and 7 NOPE deposited long
+    // ago were left out. Bybit now reports all of them; it lists XRP and TON against USDT only.
+    const [{ everyCoinAt }] = await db.query('SELECT "everyCoinAt" FROM bybit_accounts WHERE "walletId"=$1', [wallet]);
+    assert.ok(everyCoinAt instanceof Date, 'An account added now counts every coin from the start');
+    const legacyAt = ago(6 * DAY);
+    const xrpFill = { ...fill, symbol: 'XRPUSDT', execId: '2100000000000000101', execPrice: '2', execQty: '15', execValue: '30',
+      execFee: '0', feeCurrency: 'XRP', execTime: String(legacyAt) };
+    const dogeFill = { ...fill, symbol: 'DOGEUSDT', side: 'Sell', execId: '2100000000000000102', execPrice: '0.5', execQty: '8',
+      execValue: '4', execFee: '0', feeCurrency: 'USDT', execTime: String(legacyAt + 60_000) };
+    const legacy = (row, side, base, units) => {
+      const id = `bybit-trade-${row.execId}`;
+      const raw = { kind: 'trade', trade: { side, base, quote: 'USDT', price: row.execPrice, quantity: row.execQty, value: row.execValue,
+        fee: row.execFee, feeCoin: row.feeCurrency }, record: row, txid: id };
+      return db.query(`INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
+        VALUES ($1,$2,$3,0,$4,$5,$6,0,$7,$8,'USDT')`, [owner, wallet, id, new Date(Number(row.execTime)),
+        units > 0n ? String(units) : '0', units < 0n ? String(-units) : '0', units > 0n ? 'in' : 'out', JSON.stringify(raw)]);
+    };
+    const E18 = 10n ** 18n;
+    await legacy(xrpFill, 'buy', 'XRP', -30n * E18);
+    await legacy(dogeFill, 'sell', 'DOGE', 4n * E18);
+    await s.classifications.classify(owner, wallet, 'bybit-trade-2100000000000000102', { requestId: randomUUID(), hidden: false,
+      expectedVersion: 0, classification: { type: 'other' } });
+    await db.query('UPDATE bybit_accounts SET "everyCoinAt"=NULL WHERE "walletId"=$1', [wallet]);
+    const legsBefore = (await legsOf(db, wallet)).length;
+    const oldDeposit = (at, coin, amount, n) => deposit(at, { coin, chain: coin, amount, txID: txid(n) });
+    await post('bybit', {
+      append: true,
+      executions: [{ at: legacyAt, row: xrpFill }, { at: legacyAt + 60_000, row: dogeFill }],
+      deposits: [oldDeposit(ago(100 * DAY), 'TON', '40', 20), oldDeposit(ago(200 * DAY), 'NOPE', '7', 21)],
+      balances: {
+        FUND: [{ coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' }, { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+          { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' }, { coin: 'TON', walletBalance: '40', transferBalance: '40', bonus: '' }],
+        UNIFIED: [...balances.UNIFIED, { coin: 'XRP', walletBalance: '15', transferBalance: '15', bonus: '' },
+          { coin: 'NOPE', walletBalance: '7', transferBalance: '7', bonus: '' }],
+      },
+      markets: { XRP: '2.5', TON: '3' },
+    });
+    const everyPasses = await syncUntilComplete(s, owner, wallet);
+    const counted = everyPasses.at(-1).result;
+    assert.equal(counted.outcome, 'complete');
+    assert.ok(everyPasses.length > 1, 'The whole history is read again');
+    const legsAfter = await legsOf(db, wallet);
+    assert.equal(legsAfter.length, legsBefore + 2, 'Only the two coins left out are added; nothing is stored twice');
+    const legOf = (id) => legsAfter.find((row) => row.txid === id);
+    const xrpLeg = legOf('bybit-trade-2100000000000000101');
+    assert.deepEqual([xrpLeg.asset, xrpLeg.received, xrpLeg.sent, xrpLeg.direction, xrpLeg.raw.quoteAsset, xrpLeg.raw.quoteUnits,
+      xrpLeg.raw.record.execId, xrpLeg.raw.txid], ['XRP', '15000000000000000000', '0', 'in', 'USDT', '-30000000000000000000',
+      '2100000000000000101', 'bybit-trade-2100000000000000101']);
+    const dogeLeg = legOf('bybit-trade-2100000000000000102');
+    assert.deepEqual([dogeLeg.asset, dogeLeg.received, dogeLeg.raw.quoteAsset ?? null], ['USDT', '4000000000000000000', null],
+      'A trade the owner answered stays as it was answered');
+    assert.deepEqual(legsAfter.filter((row) => ['TON', 'NOPE'].includes(row.asset)).map((row) => [row.asset, row.received]),
+      [['NOPE', '7000000000000000000'], ['TON', '40000000000000000000']]);
+    const xrpAnswer = await db.query(`SELECT type, automatic FROM chain_transaction_classification_versions
+      WHERE "addressId"=$1 AND txid='bybit-trade-2100000000000000101'`, [wallet]);
+    assert.deepEqual(xrpAnswer.map((row) => [row.type, row.automatic]), [['buy', true]]);
+    // 1159.5 USDT − 30 for the XRP + 4 for the DOGE.
+    assert.deepEqual(await held(db, owner, exchange), { BTC: '0.70009', NOPE: '7', SOL: '0.6', TON: '40', USDT: '1133.5', XRP: '15' });
+    assert.deepEqual(counted.address.balances, [
+      { symbol: 'BTC', quantity: '0.70009' }, { symbol: 'ETH', quantity: '0' }, { symbol: 'SOL', quantity: '0.6' },
+      { symbol: 'USDT', quantity: '1159.5' }, { symbol: 'USDC', quantity: '0' },
+      { symbol: 'NOPE', quantity: '7' }, { symbol: 'TON', quantity: '40' }, { symbol: 'XRP', quantity: '15' },
+    ]);
+    assert.deepEqual(counted.address.exchange.untracked, [{ symbol: 'S', quantity: '5' }]);
+    const coins = await db.query(`SELECT symbol, "priceSource", count(*)::int AS n FROM accounting_instruments
+      WHERE "ownerId"=$1 AND symbol IN ('NOPE','TON','XRP') GROUP BY symbol, "priceSource" ORDER BY symbol`, [owner]);
+    assert.deepEqual(coins.map((row) => [row.symbol, row.priceSource, row.n]), [['NOPE', 'market', 1], ['TON', 'market', 1], ['XRP', 'market', 1]]);
+    const recounted = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([recounted.result.outcome, recounted.result.imported], ['complete', 0]);
+    assert.ok(recounted.urls.length <= 12, 'The history is read again once only');
+    console.log(`PASS BYBIT-ANY-COIN an account read for five coins counts every coin: in ${everyPasses.length} passes its history is read again; the XRP bought for USDT moves 15 XRP and is recorded as an automatic Buy, the DOGE sale the owner answered stays as answered, 40 TON and 7 NOPE deposited long ago are added, nothing twice; one market-priced asset each; a one-letter ticker stays untracked`);
+
+    // BYBIT-ANY-COIN prices: the coins no catalog provider is asked for are priced from Bybit's
+    // spot market, hourly and once from its daily candles; NOPE has no market there.
+    const { PricesService } = require(`${dist}/prices/prices.service.js`);
+    const { BybitMarketClient } = require(`${dist}/prices/bybit-market.js`);
+    const { CoinGeckoClient, KrakenClient } = require(`${dist}/prices/price-providers.js`);
+    const { latestMarketPrices } = require(`${dist}/prices/market-price.store.js`);
+    const prices = new PricesService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: 'true' }),
+      new KrakenClient({ pauseMs: 0, retryPauseMs: 0 }), new CoinGeckoClient(), new BybitMarketClient());
+    const klines = (urls, interval) => urls.filter((url) => url.pathname === '/v5/market/kline' && url.searchParams.get('interval') === interval)
+      .map((url) => url.searchParams.get('symbol'));
+    const collected = await newRequests(() => prices.collect(new Date()));
+    assert.equal(collected.result.outcome, 'collected');
+    assert.deepEqual(klines(collected.urls, '60'), ['NOPEUSDT', 'TONUSDT', 'XRPUSDT']);
+    assert.deepEqual(klines(collected.urls, 'D'), ['TONUSDT', 'XRPUSDT']);
+    assert.ok(collected.urls.every((url) => url.pathname === '/v5/market/kline'), 'Market prices need no key');
+    const hour = new Date(Math.floor(Date.now() / 3_600_000) * 3_600_000);
+    const observed = await db.query(`SELECT asset, kind, count(*)::int AS n, max("observedAt") AS last,
+        trim_scale(min(price))::text AS low, trim_scale(max(price))::text AS high
+      FROM price_observations WHERE source='bybit' GROUP BY asset, kind ORDER BY asset, kind`);
+    assert.deepEqual(observed.map((row) => [row.asset, row.kind, row.n, row.low, row.high]), [
+      ['TON', 'daily-close', 39, '3', '3'], ['TON', 'hourly-close', 1, '3', '3'],
+      ['XRP', 'daily-close', 39, '2.5', '2.5'], ['XRP', 'hourly-close', 1, '2.5', '2.5'],
+    ]);
+    assert.equal(observed.find((row) => row.kind === 'hourly-close').last.toISOString(), hour.toISOString());
+    const [bybitSource] = await db.query("SELECT state, \"errorCode\", \"errorMessage\" FROM sync_sources WHERE key='prices:bybit'");
+    assert.deepEqual(bybitSource, { state: 'delayed', errorCode: 'missing_assets', errorMessage: 'Bybit has no USDT market for NOPE' });
+    const latest = await latestMarketPrices(db.manager, ['NOPE', 'TON', 'XRP'], new Date());
+    assert.deepEqual(latest.map((row) => [row.asset, row.price, row.source]), [['TON', '3', 'bybit'], ['XRP', '2.5', 'bybit']]);
+    const view = await prices.read(new Date());
+    assert.deepEqual(view.assets.slice(-3).map((row) => [row.asset, row.price, row.source, row.status]),
+      [['NOPE', null, null, 'none'], ['TON', '3', 'bybit', 'fresh'], ['XRP', '2.5', 'bybit', 'fresh']]);
+    const recollected = await newRequests(() => prices.collect(new Date()));
+    assert.deepEqual(klines(recollected.urls, 'D'), [], 'Daily history is read once per coin');
+    await assert.rejects(() => db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+      VALUES ('XRP','USD','binance',now(),1,'spot')`), /price_observations_source_check/);
+    console.log('PASS BYBIT-ANY-COIN-PRICE the coins no catalog provider is asked for get Bybit\'s last closed hourly candle and, once, its daily candles against USDT, without a key; a coin without a Bybit market stays unpriced and is named; the source check admits bybit only besides kraken and coingecko');
+
     // Constraints and privacy.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'bybit','not-a-uid')`,
       [owner]), /wallet_addresses_address_check/);
@@ -548,8 +660,9 @@ async function main() {
     await assert.rejects(() => new SyncBybitAccount1793300000000().down(), /recovery plan/);
     await assert.rejects(() => new ReadBybitEarn1794000000000().down(), /recovery plan/);
     await assert.rejects(() => new ReadBybitConverts1794400000000().down(), /recovery plan/);
+    await assert.rejects(() => new PriceBybitCoins1794500000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS BYBIT-MIGRATION fresh 48 applies once; no Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 49 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

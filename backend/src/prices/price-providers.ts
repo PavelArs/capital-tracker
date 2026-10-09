@@ -9,7 +9,8 @@ export interface Quote {
   price: string;
   observedAt: string;
   kind: QuoteKind;
-  source: ProviderSource;
+  /** BYBIT-ANY-COIN: Bybit's spot market prices the coins the two providers are not asked for. */
+  source: ProviderSource | 'bybit';
 }
 export type QuoteResult =
   | { ok: true; quotes: Quote[]; missing: string[] }
@@ -29,15 +30,15 @@ const CLOCK_SKEW_S = 600;
 const MAX_BODY_BYTES = 1024 * 1024;
 
 class InvalidResponse extends Error {}
-function invalid(): never {
+export function invalid(): never {
   throw new InvalidResponse();
 }
-function record(value: unknown): Record<string, unknown> {
+export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : invalid();
 }
-function positiveDecimal(value: unknown): string {
+export function positiveDecimal(value: unknown): string {
   if (typeof value !== 'string' || !/^[0-9]{1,30}(\.[0-9]{1,30})?$/.test(value)) invalid();
   const [whole, fraction = ''] = value.split('.');
   const integer = whole.replace(/^0+/, '') || '0';
@@ -54,7 +55,7 @@ function instant(value: unknown, nowSeconds: number): number {
 }
 
 type Fetched = { ok: true; body: unknown } | { ok: false; reason: PriceFailure };
-async function getJson(
+export async function getJson(
   url: string,
   timeoutMs: number,
   headers: Record<string, string> = {},
@@ -265,7 +266,7 @@ export class CoinGeckoClient implements PriceProvider {
       const quotes: Quote[] = [];
       const missing: string[] = [];
       for (const asset of assets) {
-        if (!Object.prototype.hasOwnProperty.call(body, asset.coingeckoId)) {
+        if (!Object.hasOwn(body, asset.coingeckoId)) {
           missing.push(asset.code);
           continue;
         }
