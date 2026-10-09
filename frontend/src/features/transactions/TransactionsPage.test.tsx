@@ -2100,3 +2100,64 @@ describe('liquidity-pool-chain-legs (POOL-*)', () => {
     });
   });
 });
+
+// Owner's note of 2026-10-09 15:34Z: after a classification the drawer moves to the
+// transaction next to the one just answered, not back to the newest one.
+describe('CLS-ADJACENT: the next transaction is the neighbour in time', () => {
+  const waitingAt = (n: number, occurredAt: string) =>
+    chainOperation(n, {
+      account: cold,
+      occurredAt,
+      quantity: `0.00${n}`,
+      chain: { txid: txid(n), blockHeight: 800000 + n, priceObservedAt: null, direction: 'in' },
+    });
+  const newest = waitingAt(1, '2025-06-22T08:00:00.000Z');
+  const middle = waitingAt(2, '2025-06-21T08:00:00.000Z');
+  const oldest = waitingAt(3, '2025-06-20T08:00:00.000Z');
+  const answered = (row: Operation) =>
+    operation({
+      ...row,
+      type: 'buy',
+      status: 'recorded',
+      valueUsd: '10',
+      costBasisUsd: '10',
+      feeUsd: '0',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'buy', currency: 'USDT', amount: '10' },
+        comment: null,
+        automatic: false,
+      },
+    });
+  const classifyRow = async (index: number, after: Operation[]) => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([newest, middle, oldest]))
+      .mockResolvedValue(list(after));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    await user.click(within(bodyRows()[index]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '10');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(screen.getByText('Saved as Buy. Here is the next one.')).toBeVisible(),
+    );
+    return screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+  };
+
+  it('opens the next older transaction below the one just classified', async () => {
+    const next = await classifyRow(1, [newest, answered(middle), oldest]);
+    expect(within(next).getByText('+0.003 BTC')).toBeInTheDocument();
+    expect(bodyRows()[2]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('at the oldest one, opens the newer neighbour above it', async () => {
+    const next = await classifyRow(2, [newest, middle, answered(oldest)]);
+    expect(within(next).getByText('+0.002 BTC')).toBeInTheDocument();
+    expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
+  });
+});

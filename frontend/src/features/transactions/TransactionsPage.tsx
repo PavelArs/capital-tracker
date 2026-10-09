@@ -513,8 +513,17 @@ export default function TransactionsPage() {
     const waiting = next.operations.filter(
       (item) => item.status === 'needs-classification' && item.id !== was.id,
     );
-    // The next one comes from the rows the filters show, so a wallet is finished first.
-    const following = was.status === 'needs-classification' ? waiting.find(matches) : undefined;
+    // CLS-ADJACENT: the next one is the neighbour in time among the rows the filters show:
+    // the next older one below it in the list, or at the end the next newer one above it.
+    const open = new Map(waiting.filter(matches).map((item) => [item.id, item]));
+    const at = operations.findIndex((item) => item.id === was.id);
+    const older = operations.slice(at + 1).find((item) => open.has(item.id));
+    const newer = operations
+      .slice(0, Math.max(at, 0))
+      .reverse()
+      .find((item) => open.has(item.id));
+    const neighbour = was.status === 'needs-classification' ? (older ?? newer) : undefined;
+    const following = neighbour && open.get(neighbour.id);
     if (following) {
       setOpenId(following.id);
       setNotice(`${said} Here is the next one.`);
