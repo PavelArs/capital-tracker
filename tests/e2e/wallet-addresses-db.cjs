@@ -130,7 +130,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 33/);
+  assert.match(migrate(database), /Migrations applied: 49/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -159,7 +159,7 @@ async function main() {
     assert.equal(added.result.again.value.id, added.result.first.value.id);
     assert.deepEqual({ ...added.result.first.value, id: undefined, createdAt: undefined }, {
       id: undefined, createdAt: undefined, network: 'bitcoin', address: addresses.pages,
-      accountId: null, label: null, transactionCount: 0, chainBalance: null,
+      accountId: null, label: null, transactionCount: 0, chainBalance: null, balances: null, staking: null, pools: null, accountKey: null, exchange: null,
       sync: { state: 'never', completedAt: null, status: null, lastAttemptAt: null, lastSuccessAt: null, nextRunAt: null, errorMessage: null },
     });
     assert.deepEqual(added.urls, [], 'Registration never calls the provider');
@@ -266,6 +266,7 @@ async function main() {
     assert.deepEqual([reconciled.sync.state, reconciled.transactionCount, reconciled.chainBalance],
       ['complete', 63, balance(addresses.pages, 63)]);
     assert.notEqual(reconciled.chainBalance, '0.00000000');
+    assert.deepEqual(reconciled.balances, [{ symbol: 'BTC', quantity: reconciled.chainBalance }]);
     console.log(`PASS SYNC-RECONCILE complete history of 63 gives chain balance ${reconciled.chainBalance}`);
 
     // ADDR-SYNC-RESUME
@@ -367,8 +368,15 @@ async function main() {
       FROM wallet_address_transactions WHERE "addressId"=$1 AND txid=$2`, [pages, stored.txid]), (error) => error.code === '23505');
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
       VALUES (gen_random_uuid(),$1,'bitcoin',$2)`, [owner, addresses.pages]), (error) => error.code === '23505');
+    // M14 allows Ethereum, stored lower case only, M15 Solana and Tron its own addresses; any other network is still refused.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
-      VALUES (gen_random_uuid(),$1,'ethereum','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
+      VALUES (gen_random_uuid(),$1,'stellar','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
+      VALUES (gen_random_uuid(),$1,'solana','0xabc0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
+      VALUES (gen_random_uuid(),$1,'ethereum','0xABC0000000000000000000000000000000000000')`, [owner]), (error) => error.code === '23514');
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address)
+      VALUES (gen_random_uuid(),$1,'ethereum',$2)`, [owner, addresses.trust]), (error) => error.code === '23514');
     const race = (await service.register(owner, { address: addresses.race })).value.id;
     await post('bitcoin-history', { address: addresses.race, count: 60 });
     const settled = await Promise.allSettled([service.sync(owner, race), service.sync(owner, race)]);
@@ -398,9 +406,12 @@ async function main() {
       total: 63, offset: 1, limit: 2, nextOffset: 3, missingUsdValueCount: 63,
       items: [61, 60].map((i) => {
         const oracle = expected(addresses.pages, i);
+        const amounts = { received: btc(oracle.receivedSats), sent: btc(oracle.sentSats), fee: btc(oracle.feeSats),
+          net: btc(BigInt(oracle.receivedSats) - BigInt(oracle.sentSats)) };
+        // M14 names the amounts per asset; the Bitcoin screen keeps its *Btc names.
         return { txid: oracle.txid, blockHeight: oracle.blockHeight, blockTime: oracle.blockTime, direction: oracle.direction,
-          receivedBtc: btc(oracle.receivedSats), sentBtc: btc(oracle.sentSats), feeBtc: btc(oracle.feeSats),
-          netBtc: btc(BigInt(oracle.receivedSats) - BigInt(oracle.sentSats)), usdValue: null, usdValueStatus: 'missing' };
+          symbol: 'BTC', ...amounts, receivedBtc: amounts.received, sentBtc: amounts.sent, feeBtc: amounts.fee,
+          netBtc: amounts.net, usdValue: null, usdValueStatus: 'missing' };
       }),
     });
     assert.equal(page.items[0].netBtc, '-0.00051300');

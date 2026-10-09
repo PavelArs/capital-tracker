@@ -487,36 +487,9 @@ database and a populated18 upgrade preserving prior rows, schema, sequences and
 session data. The migration fixture also checks replay and refuses unsafe legacy
 histories.
 
-The scoped unit/browser commands are:
-
-```sh
-pnpm --dir backend test --runInBand --coverage=false display-fx-domain display-fx-provider
-pnpm --dir frontend exec vitest run --coverage.enabled=false src/features/display-fx/display-fx-view.test.ts
-pnpm exec playwright test tests/e2e/display-fx.spec.ts tests/e2e/valuation-history.spec.ts --grep 'DFX-|VCH-UI:' --workers=1
-```
-
-In the already-started isolated Compose environment, the real PostgreSQL fixture
-can be run separately:
-
-```sh
-docker compose -p capital-tracker-e2e -f tests/e2e/compose.yml run --rm --no-deps \
-  -v "$PWD/tests/e2e:/tests:ro" -e NODE_PATH=/app/backend/node_modules migrate \
-  env -u TRUSTED_PROXY_IPS node /tests/display-fx-db.cjs
-```
-
-It creates its fixed synthetic fixture database only after proving that database
-does not exist. Do not point it at an owner database or reuse an existing fixture.
-
-The exact-domain/provider tests cover parsing, conversion, timestamp, freshness
-and cooldown boundaries. The view test covers exact rows, zero/unavailable/stale
-states and collection availability; the browser case covers late-result handling.
-`display-fx-db.cjs` exercises the compiled production adapter against
-real PostgreSQL and the synthetic outbound HTTPS provider, including atomic
-storage, lease/budget coordination, failures and last-good preservation. DFX-API
-and DFX-UI use real password/MFA/backend/PostgreSQL for route privacy, strict
-validation, no provider request on reads, explicit collection, exact EUR/RUB
-values and stale-response handling. Retained VCH-UI protects separation from
-historical USD accounting.
+M20 removed the display FX module with the other legacy modules (assets, liabilities, crypto,
+currencies, metrics). Its unit tests, DFX-API case and `display-fx-db` probe went with it; the
+migration and its tables stay, and the migration fixtures keep checking them.
 
 These focused command examples assume the isolated acceptance environment is
 initialized where required; they do not provision it. Actual selected PostgreSQL

@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
+  GoneException,
   HttpException,
   Injectable,
   OnModuleInit,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource, EntityManager } from 'typeorm';
@@ -17,6 +19,7 @@ import {
   recoveryHash,
   recoveryPattern,
 } from './mfa-crypto';
+import { recordFailure, streakLocked } from './mfa-failures';
 import { SessionService } from './session.service';
 
 interface FactorRow {
@@ -31,6 +34,7 @@ interface FactorRow {
   failedAttempts: number;
   failureWindowStart: Date | null;
   blockedUntil: Date | null;
+  consecutiveFailures: number;
 }
 interface OwnerRow {
   userId: string;
@@ -48,7 +52,21 @@ export interface EnrollmentOutput {
 export interface RecoveryOutput {
   recoveryCodes: string[];
 }
-const WINDOW_MS = 10 * 60 * 1000;
+export interface RecoveryStatus {
+  unused: number;
+  total: number;
+}
+// SEC-TOTP: a new authenticator waiting for its first code; the key is shown only now.
+export interface ReplacementOutput extends EnrollmentOutput {
+  secret: string;
+}
+
+const validFactor = (input: FactorInput | undefined): input is FactorInput =>
+  !!input &&
+  typeof input.code === 'string' &&
+  (input.kind === 'totp'
+    ? /^[0-9]{6}$/.test(input.code)
+    : input.kind === 'recovery' && recoveryPattern.test(input.code));
 
 @Injectable()
 export class MfaService implements OnModuleInit {
@@ -158,7 +176,8 @@ export class MfaService implements OnModuleInit {
       await manager.query(
         `UPDATE owner_mfa SET "activeVersion" = "candidateId", "activeEnvelope" = "candidateEnvelope", "lastCounter" = $1,
         "candidateId" = NULL, "candidateEnvelope" = NULL, "candidateExpiresAt" = NULL, "candidateAttempts" = 0,
-        "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL WHERE id = 1`,
+        "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
         [counter],
       );
       await manager.query('DELETE FROM owner_mfa_recovery WHERE "userId" = $1', [userId]);
@@ -186,15 +205,9 @@ export class MfaService implements OnModuleInit {
   async complete(
     hash: string,
     input: FactorInput,
+    device: string | null = null,
   ): Promise<{ token: string; csrfToken: string; user: UserWithoutPassword }> {
-    if (
-      !input ||
-      typeof input.code !== 'string' ||
-      !(input.kind === 'totp'
-        ? /^[0-9]{6}$/.test(input.code)
-        : input.kind === 'recovery' && recoveryPattern.test(input.code))
-    )
-      throw new BadRequestException();
+    if (!validFactor(input)) throw new BadRequestException();
     const outcome = await this.source.transaction(async (manager) => {
       const owner = await this.owner(manager);
       const factor = await this.factor(manager, owner.userId);
@@ -225,7 +238,10 @@ export class MfaService implements OnModuleInit {
         );
       const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
       if (pending.expiresAt.getTime() <= now.getTime()) throw new UnauthorizedException();
-      if (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+      if (
+        streakLocked(factor) ||
+        (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+      )
         return { status: 429 } as const;
       let accepted = false;
       try {
@@ -260,17 +276,15 @@ export class MfaService implements OnModuleInit {
         accepted = rows[0].length === 1;
       }
       if (!accepted) {
-        const currentWindow =
-          factor.failureWindowStart &&
-          now.getTime() - factor.failureWindowStart.getTime() < WINDOW_MS &&
-          !factor.blockedUntil;
-        const failures = currentWindow ? factor.failedAttempts + 1 : 1;
+        const failure = recordFailure(factor, now);
         await manager.query(
-          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3 WHERE id = 1`,
+          `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
+          "consecutiveFailures" = $4 WHERE id = 1`,
           [
-            failures,
-            currentWindow ? factor.failureWindowStart : now,
-            failures >= 10 ? new Date(now.getTime() + WINDOW_MS) : null,
+            failure.next.failedAttempts,
+            failure.next.failureWindowStart,
+            failure.next.blockedUntil,
+            failure.next.consecutiveFailures,
           ],
         );
         if (pending.failedAttempts + 1 >= 5)
@@ -280,20 +294,23 @@ export class MfaService implements OnModuleInit {
             'UPDATE auth_sessions SET "failedAttempts" = "failedAttempts" + 1 WHERE "tokenHash" = $1',
             [hash],
           );
-        return { status: failures >= 10 ? 429 : 401 } as const;
+        return { status: failure.status } as const;
       }
       await manager.query(
-        'UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL WHERE id = 1',
+        `UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
       );
       const [user]: UserWithoutPassword[] = await manager.query(
         'SELECT id, email, "firstName", "lastName", "createdAt", "updatedAt" FROM users WHERE id = $1',
         [owner.userId],
       );
       return {
-        session: await this.sessions.issueAuthenticated(manager, pending, {
-          user,
-          credentialVersion: owner.credentialVersion,
-        }),
+        session: await this.sessions.issueAuthenticated(
+          manager,
+          pending,
+          { user, credentialVersion: owner.credentialVersion },
+          device,
+        ),
       };
     });
     if ('status' in outcome)
@@ -302,5 +319,219 @@ export class MfaService implements OnModuleInit {
         outcome.status!,
       );
     return outcome.session;
+  }
+
+  // SEC-CODES: unused codes of the active factor, as Settings shows them.
+  async recoveryStatus(userId: string): Promise<RecoveryStatus> {
+    const [row] = await this.source.query(
+      `SELECT count(*) FILTER (WHERE r."usedAt" IS NULL)::int AS unused, count(r."codeHash")::int AS total
+      FROM owner_mfa m LEFT JOIN owner_mfa_recovery r
+        ON r."userId" = m."userId" AND r."enrollmentVersion" = m."activeVersion"
+      WHERE m.id = 1 AND m."userId" = $1`,
+      [userId],
+    );
+    return { unused: row?.unused ?? 0, total: row?.total ?? 0 };
+  }
+
+  // A fresh factor from the signed-in owner: a TOTP step newer than the last one accepted, or an
+  // unused recovery code, which is spent. Wrong codes count against the same limits as sign-in,
+  // so a stolen cookie cannot guess; they answer 422, not 401, so the browser stays signed in.
+  private async proveFactor(
+    manager: EntityManager,
+    factor: FactorRow & { activeVersion: string },
+    input: FactorInput,
+    now: Date,
+  ): Promise<'accepted' | 422 | 429> {
+    if (
+      streakLocked(factor) ||
+      (factor.blockedUntil && factor.blockedUntil.getTime() > now.getTime())
+    )
+      return 429;
+    let accepted = false;
+    if (input.kind === 'totp') {
+      const counter = this.counter(
+        factor.activeEnvelope,
+        factor.userId,
+        factor.activeVersion,
+        input.code,
+        now,
+      );
+      if (counter !== null && BigInt(counter) > BigInt(factor.lastCounter!)) {
+        await manager.query('UPDATE owner_mfa SET "lastCounter" = $1 WHERE id = 1', [counter]);
+        accepted = true;
+      }
+    } else {
+      const rows = await manager.query(
+        `UPDATE owner_mfa_recovery SET "usedAt" = $1
+        WHERE "codeHash" = $2 AND "userId" = $3 AND "enrollmentVersion" = $4 AND "usedAt" IS NULL RETURNING "codeHash"`,
+        [
+          now,
+          recoveryHash(input.code, factor.userId, factor.activeVersion),
+          factor.userId,
+          factor.activeVersion,
+        ],
+      );
+      accepted = rows[0].length === 1;
+    }
+    if (accepted) {
+      await manager.query(
+        `UPDATE owner_mfa SET "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
+      );
+      return 'accepted';
+    }
+    const failure = recordFailure(factor, now);
+    await manager.query(
+      `UPDATE owner_mfa SET "failedAttempts" = $1, "failureWindowStart" = $2, "blockedUntil" = $3,
+      "consecutiveFailures" = $4 WHERE id = 1`,
+      [
+        failure.next.failedAttempts,
+        failure.next.failureWindowStart,
+        failure.next.blockedUntil,
+        failure.next.consecutiveFailures,
+      ],
+    );
+    return failure.status === 429 ? 429 : 422;
+  }
+
+  private async activeFactor(
+    manager: EntityManager,
+    userId: string,
+  ): Promise<FactorRow & { activeVersion: string }> {
+    const owner = await this.owner(manager);
+    if (owner.userId !== userId) throw new UnauthorizedException();
+    const factor = await this.factor(manager, userId);
+    if (!factor?.activeVersion) throw new UnauthorizedException();
+    return factor as FactorRow & { activeVersion: string };
+  }
+
+  private async replaceRecoveryCodes(
+    manager: EntityManager,
+    userId: string,
+    version: string,
+  ): Promise<string[]> {
+    const recoveryCodes = newRecoveryCodes();
+    await manager.query('DELETE FROM owner_mfa_recovery WHERE "userId" = $1', [userId]);
+    for (const value of recoveryCodes)
+      await manager.query(
+        `INSERT INTO owner_mfa_recovery ("codeHash", "userId", "enrollmentVersion") VALUES ($1, $2, $3)`,
+        [recoveryHash(value, userId, version), userId, version],
+      );
+    return recoveryCodes;
+  }
+
+  // SEC-CODES: a fresh TOTP from the signed-in owner replaces every recovery code at once.
+  async regenerateRecoveryCodes(userId: string, code: unknown): Promise<string[]> {
+    if (typeof code !== 'string' || !/^[0-9]{6}$/.test(code)) throw new BadRequestException();
+    const outcome = await this.source.transaction(async (manager) => {
+      const factor = await this.activeFactor(manager, userId);
+      const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
+      const proof = await this.proveFactor(manager, factor, { kind: 'totp', code }, now);
+      if (proof !== 'accepted') return { status: proof } as const;
+      return {
+        recoveryCodes: await this.replaceRecoveryCodes(manager, userId, factor.activeVersion),
+      };
+    });
+    if ('status' in outcome) throw this.proofFailure(outcome.status!);
+    return outcome.recoveryCodes;
+  }
+
+  // SEC-TOTP: after a fresh factor, a new authenticator secret waits ten minutes for its first
+  // code. The current authenticator and recovery codes keep working until then.
+  async prepareReplacement(userId: string, input: FactorInput): Promise<ReplacementOutput> {
+    if (!validFactor(input)) throw new BadRequestException();
+    const outcome = await this.source.transaction(async (manager) => {
+      const factor = await this.activeFactor(manager, userId);
+      const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
+      const proof = await this.proveFactor(manager, factor, input, now);
+      if (proof !== 'accepted') return { status: proof } as const;
+      const totp = createTotp();
+      const candidateId = randomUUID();
+      const envelope = this.cipher.encrypt(totp.secret.base32, userId, candidateId);
+      // An UPDATE answers [rows, count].
+      const [rows] = await manager.query(
+        `UPDATE owner_mfa SET "candidateId" = $1, "candidateEnvelope" = $2,
+          "candidateExpiresAt" = clock_timestamp() + interval '10 minutes', "candidateAttempts" = 0
+        WHERE id = 1 RETURNING "candidateExpiresAt"`,
+        [candidateId, envelope],
+      );
+      return {
+        replacement: {
+          uri: totp.toString(),
+          secret: totp.secret.base32,
+          candidateId,
+          expiresAt: rows[0].candidateExpiresAt.toISOString(),
+        },
+      };
+    });
+    if ('status' in outcome) throw this.proofFailure(outcome.status!);
+    return outcome.replacement;
+  }
+
+  // SEC-TOTP: the first code from the new authenticator activates it, replaces every recovery
+  // code and signs out every other browser; this browser stays signed in.
+  async confirmReplacement(
+    userId: string,
+    currentHash: string,
+    candidateId: unknown,
+    code: unknown,
+  ): Promise<string[]> {
+    if (
+      typeof candidateId !== 'string' ||
+      !/^[0-9a-f-]{36}$/i.test(candidateId) ||
+      typeof code !== 'string' ||
+      !/^[0-9]{6}$/.test(code)
+    )
+      throw new BadRequestException();
+    const outcome = await this.source.transaction(async (manager) => {
+      const factor = await this.activeFactor(manager, userId);
+      await this.sessions.creationLock(manager);
+      const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
+      if (
+        factor.candidateId !== candidateId ||
+        !factor.candidateExpiresAt ||
+        factor.candidateExpiresAt.getTime() <= now.getTime() ||
+        factor.candidateAttempts >= 5
+      )
+        return { status: 410 } as const;
+      const counter = this.counter(factor.candidateEnvelope, userId, candidateId, code, now);
+      if (counter === null) {
+        await manager.query(
+          'UPDATE owner_mfa SET "candidateAttempts" = "candidateAttempts" + 1 WHERE id = 1',
+        );
+        return { status: factor.candidateAttempts + 1 >= 5 ? 410 : 422 } as const;
+      }
+      await manager.query(
+        `UPDATE owner_mfa SET "activeVersion" = "candidateId", "activeEnvelope" = "candidateEnvelope", "lastCounter" = $1,
+        "candidateId" = NULL, "candidateEnvelope" = NULL, "candidateExpiresAt" = NULL, "candidateAttempts" = 0,
+        "failedAttempts" = 0, "failureWindowStart" = NULL, "blockedUntil" = NULL,
+        "consecutiveFailures" = 0 WHERE id = 1`,
+        [counter],
+      );
+      const recoveryCodes = await this.replaceRecoveryCodes(manager, userId, candidateId);
+      // A new credential revision ends every other session; this one moves to it.
+      const version = randomUUID();
+      await manager.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [version]);
+      await manager.query('DELETE FROM auth_sessions WHERE "userId" = $1 AND "tokenHash" <> $2', [
+        userId,
+        currentHash,
+      ]);
+      await manager.query(
+        'UPDATE auth_sessions SET "credentialVersion" = $1 WHERE "tokenHash" = $2',
+        [version, currentHash],
+      );
+      return { recoveryCodes };
+    });
+    if ('status' in outcome) {
+      if (outcome.status === 410) throw new GoneException('Setup expired');
+      throw new UnprocessableEntityException('Invalid code');
+    }
+    return outcome.recoveryCodes;
+  }
+
+  private proofFailure(status: 422 | 429): HttpException {
+    return status === 429
+      ? new HttpException('Too many attempts', 429)
+      : new UnprocessableEntityException('Invalid code');
   }
 }

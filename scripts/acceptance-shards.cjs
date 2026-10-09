@@ -44,7 +44,6 @@ const CHECKS = [
   { name: 'manual-usd-prices-db', shard: 'probes-1' },
   { name: 'historical-valuation-db', shard: 'probes-2' },
   { name: 'valuation-history-db', shard: 'probes-2' },
-  { name: 'display-fx-db', shard: 'probes-2' },
   { name: 'manual-portfolio-valuation-db', shard: 'probes-2' },
   { name: 'owned-transfers-db', shard: 'probes-2' },
   { name: 'owned-transfers-bounds-db', shard: 'probes-1' }, // 67
@@ -62,10 +61,21 @@ const CHECKS = [
   { name: 'capital-flows-db', shard: 'probes-1' },
   { name: 'manual-operations-db', shard: 'probes-2' },
   { name: 'chain-classification-db', shard: 'probes-1' },
+  { name: 'chain-transfers-db', shard: 'probes-1' },
+  { name: 'chain-swaps-db', shard: 'probes-2' },
+  { name: 'chain-pools-db', shard: 'probes-1' },
+  { name: 'ethereum-wallets-db', shard: 'probes-1' },
+  { name: 'solana-wallets-db', shard: 'probes-2' },
+  { name: 'bitcoin-xpub-db', shard: 'probes-2' },
+  { name: 'bybit-db', shard: 'probes-1' },
+  { name: 'tron-wallets-db', shard: 'probes-2' },
   { name: 'owner-cli', shard: 'probes-1' }, // 25
   { name: 'sessions-db', shard: 'probes-1' }, // 34
   { name: 'mfa-db', shard: 'probes-2' }, // 42
   { name: 'mfa-expiry', shard: 'probes-2' }, // 20
+  { name: 'password-reset-db', shard: 'probes-1' },
+  { name: 'security-settings-db', shard: 'probes-2' },
+  { name: 'owner-export-db', shard: 'probes-1' },
   // Needs the migrated and seeded main database, so its shard migrates and seeds first.
   { name: 'client-source-startup', shard: 'probes-2' }, // 44
 ];

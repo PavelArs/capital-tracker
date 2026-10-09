@@ -60,7 +60,7 @@ async function main(): Promise<void> {
       await runner.query('SELECT 1 FROM owner_mfa WHERE id = 1 FOR UPDATE');
       await runner.query(`UPDATE owner_mfa SET "candidateId" = NULL, "candidateEnvelope" = NULL,
         "candidateExpiresAt" = NULL, "candidateAttempts" = 0, "failedAttempts" = 0,
-        "failureWindowStart" = NULL, "blockedUntil" = NULL WHERE id = 1`);
+        "failureWindowStart" = NULL, "blockedUntil" = NULL, "consecutiveFailures" = 0 WHERE id = 1`);
       await runner.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [
         randomUUID(),
       ]);
@@ -72,6 +72,12 @@ async function main(): Promise<void> {
       [hash, userId],
     );
     await runner.query('DELETE FROM auth_sessions WHERE "userId" = $1', [userId]);
+    // A password set by the operator also ends any emailed reset link still outstanding.
+    await runner.query(
+      `UPDATE password_reset_tokens SET "revokedAt" = clock_timestamp()
+      WHERE "userId" = $1 AND "usedAt" IS NULL AND "revokedAt" IS NULL`,
+      [userId],
+    );
     await runner.commitTransaction();
     console.log(
       command.action === 'bootstrap'

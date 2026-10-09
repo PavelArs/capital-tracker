@@ -2,6 +2,7 @@ import { accountingApi } from '@api/accounting.api';
 import { fxRatesApi } from '@api/fx-rates.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
+import { securityApi } from '@api/security.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -12,13 +13,20 @@ import { MainCurrencyProvider } from './main-currency';
 import PageHeader from './PageHeader';
 import SettingsPage from './SettingsPage';
 
+// Settings → Security has its own tests; here it only has to render.
+vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
+
 beforeEach(() => {
   vi.restoreAllMocks();
-  vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'EUR' });
+  vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
   // The Add transaction window only has to open here; its form has its own tests.
   vi.spyOn(portfolioAssetsApi, 'listAll').mockReturnValue(new Promise(() => {}));
   vi.spyOn(accountingApi, 'listAccounts').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
 });
 
 afterEach(cleanup);
@@ -78,8 +86,14 @@ describe('Shared page header', () => {
   });
 
   it('follows a main currency saved in Settings at once', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'USD' });
-    vi.spyOn(ownerSettingsApi, 'update').mockResolvedValue({ mainCurrency: 'RUB' });
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    vi.spyOn(ownerSettingsApi, 'update').mockResolvedValue({
+      mainCurrency: 'RUB',
+      dustThresholdUsd: null,
+    });
     renderAt('/preferences', <SettingsPage />);
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
     await waitFor(() =>
@@ -105,6 +119,7 @@ describe('Asset identity', () => {
     });
     expect(assetIdentity({ symbol: 'SOL', name: 'Solana' }).color).toBe('var(--c-sol)');
     expect(assetIdentity({ symbol: 'ZEC', name: 'Zcash' }).color).toBe('var(--c-zec)');
+    expect(assetIdentity({ symbol: 'TRX', name: 'TRON' }).color).toBe('var(--c-trx)');
     expect(assetIdentity({ symbol: 'USDT', name: 'Tether' })).toEqual({
       color: 'var(--c-cash)',
       glyph: '₮',
@@ -113,9 +128,9 @@ describe('Asset identity', () => {
   });
 
   it('falls back to a neutral colour and the first letter', () => {
-    expect(assetIdentity({ symbol: 'TRX', name: 'TRON' })).toEqual({
+    expect(assetIdentity({ symbol: 'XLM', name: 'Stellar' })).toEqual({
       color: 'var(--c-other)',
-      glyph: 'T',
+      glyph: 'X',
     });
     expect(assetIdentity({ symbol: null, name: 'house' })).toEqual({
       color: 'var(--c-other)',

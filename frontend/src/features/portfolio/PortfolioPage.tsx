@@ -8,10 +8,11 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
-import { assetIdentity, assetTypeColors } from '../shell/asset-identity';
 import PageHeader from '../shell/PageHeader';
+import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
+import Allocation from './Allocation';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { DASH, missingLabel, money, percent, price, priceNote, quantity, tone } from './format';
 import '../shell/shell-page.css';
@@ -29,16 +30,17 @@ const filters: [Filter, string][] = [
   ['fiat', 'Cash'],
   ['manual', 'Manual'],
 ];
-type Grouping = 'byAsset' | 'byType' | 'byAccount';
-const groupings: [Grouping, string][] = [
-  ['byAsset', 'Asset'],
-  ['byType', 'Type'],
-  ['byAccount', 'Account'],
-];
 
-/** "BTC · Crypto · USD": ticker, type and value currency of an asset. */
-export function assetCaption(asset: AssetValuation): string {
-  return [asset.symbol, typeLabels[asset.assetType], asset.valuationCurrency]
+/**
+ * "BTC · Crypto · USD": ticker, type and value currency of an asset; a token held in tracked
+ * wallets names their blockchains, "USDT on Ethereum, Solana" (TOKEN-CHAIN).
+ */
+export function assetCaption(asset: AssetValuation, chains: TokenChains = new Map()): string {
+  return [
+    asset.symbol && withChains(asset.symbol, asset.symbol, chains),
+    typeLabels[asset.assetType],
+    asset.valuationCurrency,
+  ]
     .filter(Boolean)
     .join(' · ');
 }
@@ -179,111 +181,18 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   );
 }
 
-/** Slice colour: the asset's own or its type's; accounts keep the positional palette. */
-function sliceColor(
-  portfolio: PortfolioValuation,
-  grouping: Grouping,
-  key: string,
-): string | undefined {
-  if (grouping === 'byType') return assetTypeColors[key as AssetType];
-  if (grouping !== 'byAsset') return undefined;
-  const asset = portfolio.assets.find((item) => item.instrumentId === key);
-  return asset ? assetIdentity(asset).color : undefined;
-}
-
-function Allocation({ portfolio }: { portfolio: PortfolioValuation }) {
-  const [grouping, setGrouping] = useState<Grouping>('byAsset');
-  const slices = portfolio.allocation[grouping].map((slice, index) => {
-    const color = sliceColor(portfolio, grouping, slice.key);
-    const asset =
-      grouping === 'byAsset'
-        ? portfolio.assets.find((item) => item.instrumentId === slice.key)
-        : undefined;
-    // An asset is shown as "Bitcoin BTC" when its ticker differs from its name.
-    const ticker = asset?.symbol && asset.symbol !== slice.label ? asset.symbol : undefined;
-    return { ...slice, ticker, color, tone: color ? undefined : index % 6 };
-  });
-  return (
-    <section className="shell-card" aria-labelledby="portfolio-allocation">
-      <div className="portfolio-toolbar">
-        <h2 id="portfolio-allocation">Allocation</h2>
-        <div className="shell-seg" role="radiogroup" aria-label="Group allocation by">
-          {groupings.map(([value, label]) => (
-            <label key={value}>
-              <input
-                type="radio"
-                name="allocation-grouping"
-                value={value}
-                checked={grouping === value}
-                onChange={() => setGrouping(value)}
-              />
-              {label}
-            </label>
-          ))}
-        </div>
-      </div>
-      {slices.length === 0 ? (
-        <p className="portfolio-none">Nothing with a price yet.</p>
-      ) : (
-        <>
-          <div className="portfolio-bar" aria-hidden="true">
-            {slices.map((slice) => (
-              <span
-                key={slice.key}
-                style={{ width: `${slice.percent ?? 0}%`, background: slice.color }}
-                data-tone={slice.tone}
-              />
-            ))}
-          </div>
-          <ul
-            className="portfolio-slices"
-            aria-label={`Allocation by ${grouping.slice(2).toLowerCase()}`}
-          >
-            {slices.map((slice) => (
-              <li key={slice.key}>
-                <span
-                  className="portfolio-swatch"
-                  style={{ background: slice.color }}
-                  data-tone={slice.tone}
-                  aria-hidden="true"
-                />
-                <span className="portfolio-slices__label">
-                  {slice.label}
-                  {slice.ticker && (
-                    <span className="portfolio-slices__ticker"> {slice.ticker}</span>
-                  )}
-                </span>
-                <span className="portfolio-slices__value">
-                  {money(slice.value, portfolio.currency)}
-                </span>
-                <span className="portfolio-slices__percent">{percent(slice.percent, false)}</span>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      {!portfolio.allocation.complete && (
-        <p className="shell-note portfolio-note">
-          {portfolio.missingPriceCount > 0 && 'Assets without a price are not included.'}
-          {portfolio.missingPriceCount > 0 && portfolio.unavailableAccountCount > 0 && ' '}
-          {portfolio.unavailableAccountCount > 0 &&
-            'Accounts whose history starts later are not included.'}
-        </p>
-      )}
-    </section>
-  );
-}
-
 function AssetsTable({
   assets,
   currency,
   asked,
   now,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
+  chains: TokenChains;
 }) {
   return (
     <div className="portfolio-table-wrap">
@@ -319,7 +228,12 @@ function AssetsTable({
             <tr key={asset.instrumentId}>
               <td>
                 <span className="portfolio-asset">
-                  <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+                  <AssetIcon
+                    symbol={asset.symbol}
+                    name={asset.name}
+                    assetType={asset.assetType}
+                    network={onlyChain(asset.symbol, chains)}
+                  />
                   <span>
                     <Link
                       className="portfolio-asset__name"
@@ -327,7 +241,7 @@ function AssetsTable({
                     >
                       {asset.name}
                     </Link>
-                    <span className="portfolio-asset__ticker">{assetCaption(asset)}</span>
+                    <span className="portfolio-asset__ticker">{assetCaption(asset, chains)}</span>
                   </span>
                 </span>
               </td>
@@ -365,10 +279,12 @@ function AssetsList({
   assets,
   currency,
   asked,
+  chains,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
+  chains: TokenChains;
 }) {
   return (
     <ul className="portfolio-list">
@@ -378,12 +294,20 @@ function AssetsList({
             className="portfolio-list__row"
             to={withCurrency(`/portfolio/${asset.instrumentId}`, asked)}
           >
-            <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} />
+            <AssetIcon
+              symbol={asset.symbol}
+              name={asset.name}
+              assetType={asset.assetType}
+              network={onlyChain(asset.symbol, chains)}
+            />
             <span className="portfolio-list__name">{asset.name}</span>
             <span className="portfolio-list__value">{money(asset.value, currency)}</span>
             <span className="portfolio-list__detail">
-              {quantity(asset.quantity)}
-              {asset.symbol && ` ${asset.symbol}`}
+              {withChains(
+                `${quantity(asset.quantity)}${asset.symbol ? ` ${asset.symbol}` : ''}`,
+                asset.symbol,
+                chains,
+              )}
             </span>
             <span
               className={`portfolio-list__pnl${tone(asset.unrealizedPnl) ? ` portfolio-${tone(asset.unrealizedPnl)}` : ''}`}
@@ -414,6 +338,7 @@ export default function PortfolioPage() {
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [asked] = useAskedCurrency();
+  const chains = useTokenChains();
   const latest = useRef(0);
 
   // Only the newest request may change the page; a quiet refresh keeps what is shown.
@@ -548,10 +473,17 @@ export default function PortfolioPage() {
                   assets={sortAssets(visible, sortKey)}
                   currency={portfolio.currency}
                   asked={asked}
+                  chains={chains}
                 />
               </>
             ) : (
-              <AssetsTable assets={visible} currency={portfolio.currency} asked={asked} now={now} />
+              <AssetsTable
+                assets={visible}
+                currency={portfolio.currency}
+                asked={asked}
+                now={now}
+                chains={chains}
+              />
             )}
             {visible.length === 0 && (
               <p className="portfolio-none">

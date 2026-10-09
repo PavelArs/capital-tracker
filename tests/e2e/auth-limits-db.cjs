@@ -54,6 +54,22 @@ const expectedMigrationNames = [
   'TradePurposes1791400000000',
   'BindWalletsToAccounts1791600000000',
   'ClassifyChainTransactions1791700000000',
+  'LinkOwnTransfers1791800000000',
+  'TrackEthereumWallets1792000000000',
+  'TrackSolanaWallets1792100000000',
+  'CapMfaFailureStreak1792200000000',
+  'AddPasswordResetTokens1792500000000',
+  'TrackSolanaStake1792600000000',
+  'ChainDustThreshold1792700000000',
+  'AddSessionDevice1792800000000',
+  'ScanBitcoinXpub1792900000000',
+  'LinkChainSwaps1793100000000',
+  'TrackEthereumStake1793200000000',
+  'SyncBybitAccount1793300000000',
+  'TrackTronWallets1793600000000',
+  'ReadBybitEarn1794000000000',
+  'ReadBybitConverts1794400000000',
+  'PriceBybitCoins1794500000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -571,7 +587,7 @@ async function main() {
     assert.deepEqual(
       (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current thirty-three-migration ledger',
+      'The actual migration CLI must build the complete current forty-nine-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {

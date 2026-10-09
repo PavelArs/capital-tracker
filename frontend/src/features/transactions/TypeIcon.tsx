@@ -55,9 +55,14 @@ function glyph(operation: Operation): Glyph {
       return operation.type;
     case 'transfer':
     case 'swap':
+    case 'stake':
+    case 'unstake':
+    case 'pool-deposit':
+    case 'pool-withdrawal':
       return 'move';
     case 'reward':
     case 'staking-reward':
+    case 'pool-reward':
       return 'reward';
     case 'airdrop':
       return 'airdrop';
@@ -72,6 +77,7 @@ function glyph(operation: Operation): Glyph {
     case 'gift':
     case 'fee':
       return operation.type;
+    // Other: just the direction the coins went.
     default:
       return operation.direction === 'internal' ? 'move' : operation.direction;
   }

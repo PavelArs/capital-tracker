@@ -31,6 +31,7 @@ const wallet = (n: number, changes: Partial<WalletAddress>): WalletAddress => ({
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
+  balances: null,
   sync: {
     state: 'complete',
     completedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
@@ -558,5 +559,956 @@ describe('M11: wallets sync in the background', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('M14: Ethereum wallets', () => {
+  const ethAddress = `0x${'5e'.repeat(20)}`;
+  const ethWallet = (changes: Partial<WalletAddress>) =>
+    wallet(5, {
+      network: 'ethereum',
+      address: ethAddress,
+      label: 'Main ETH',
+      chainBalance: '1.500000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.500000000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '250.000000' },
+      ],
+      ...changes,
+    });
+  const withEther = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: [
+        ...valuation.assets,
+        asset({
+          instrumentId: id(3),
+          name: 'Ethereum',
+          symbol: 'ETH',
+          price: { value: '2000', observedAt: null, source: 'kraken', status: 'fresh' },
+          quantity: '1.5',
+          value: '3000',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '1.5', value: '3000' },
+          ],
+        }),
+        asset({
+          instrumentId: id(4),
+          name: 'USD Coin',
+          symbol: 'USDC',
+          price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+          quantity: '250',
+          value: '250',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '250', value: '250' },
+          ],
+        }),
+      ],
+    };
+  };
+
+  it('WAL-ADD tracks an Ethereum address with ETH, USDT and USDC', async () => {
+    setup([]);
+    const added = ethWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const ethereum = within(dialog).getByRole('button', { name: /^Ethereum/ });
+    expect(ethereum).toBeEnabled();
+    expect(ethereum).toHaveTextContent('One address. ETH, USDT and USDC');
+    await user.click(ethereum);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Ethereum wallet address');
+    expect(field).toHaveAttribute('placeholder', '0x…');
+    expect(dialog).toHaveTextContent('tracks ETH, USDT and USDC on Ethereum mainnet');
+    await user.type(field, ethAddress.toUpperCase().replace('0X', '0x'));
+    expect(within(dialog).getByText('Ethereum address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(within(dialog).getByText(ethAddress)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({
+      network: 'ethereum',
+      address: ethAddress,
+      accountId: trust,
+    });
+  });
+
+  it('WAL-INVALID refuses a Bitcoin address picked as Ethereum and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Ethereum/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText('Ethereum wallet address'), addresses.trust);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(
+      within(dialog).getByText(/This is not an Ethereum address: it looks like a Bitcoin address/),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText('Step 2 of 3')).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('WAL-NO-SECRETS drops a private key pasted as an Ethereum address', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Ethereum/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Ethereum wallet address');
+    await user.click(field);
+    await user.paste(`0x${'4c'.repeat(32)}`);
+    expect(field).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('It was not saved.');
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('shows the coin and the held tokens, values them and checks each against the records', async () => {
+    setup([wallet(1, {}), ethWallet({})], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(within(trustCard).getByText('Bitcoin, Ethereum · 2 addresses')).toBeInTheDocument();
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC');
+    expect(row).not.toHaveTextContent('USDT');
+    // 1.5 ETH at $2,000 plus 250 USDC at $1.
+    expect(row).toHaveTextContent('$3,250.00');
+    // The tracked tokens are no longer listed as kept by hand.
+    expect(trustCard).not.toHaveTextContent('USDT tracked by hand');
+    expect(within(trustCard).getByRole('note')).toHaveTextContent(
+      'The blockchain shows 0 USDT; your transactions in this wallet give 1,000 USDT.',
+    );
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    expect(drawer).toHaveTextContent('1.5 ETH · 250 USDC');
+    expect(drawer).toHaveTextContent('Tracked assetsETH, USDT, USDC');
+    expect(drawer).toHaveTextContent('Etherscan');
+  });
+
+  it('ETH-STAKE-BALANCE counts ETH in a staking pool in the balance and names the pool', async () => {
+    // A synthetic pool contract.
+    const pool = `0x${'7c'.repeat(20)}`;
+    const staked = ethWallet({
+      staking: {
+        symbol: 'ETH',
+        quantity: '1.002000000000000000',
+        rewards: '0.002000000000000000',
+        accounts: [
+          {
+            account: pool,
+            validator: null,
+            pool: 'ocsETH',
+            state: 'active',
+            quantity: '1.002000000000000000',
+            rewards: '0.002000000000000000',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC1.002 ETH staked');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available0.498 ETH');
+    expect(staking).toHaveTextContent('Staked1.002 ETH');
+    expect(staking).toHaveTextContent('Rewards so far0.002 ETH');
+    const list = within(staking).getByRole('list', { name: 'Staking pools' });
+    const [item] = within(list).getAllByRole('listitem');
+    expect(item).toHaveTextContent('0x7c7c7c…7c7c7c');
+    expect(item).toHaveTextContent('ocsETH staking pool');
+    expect(item).toHaveTextContent('Active');
+    expect(staking).toHaveTextContent('moving it into a staking pool or back is not a sale');
+  });
+
+  it('POOL-DEPOSIT counts coins in liquidity pools in the balance and lists them', async () => {
+    const pooled = ethWallet({
+      pools: [
+        { symbol: 'ETH', quantity: '1' },
+        { symbol: 'USDC', quantity: '3000' },
+      ],
+    });
+    setup([wallet(1, {}), pooled], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC1 ETH · 3,000 USDC in pools');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    const pools = within(drawer).getByRole('region', { name: 'Liquidity pools' });
+    expect(pools).toHaveTextContent('In pools1 ETH');
+    expect(pools).toHaveTextContent('In pools3,000 USDC');
+    expect(pools).toHaveTextContent('until a pool withdrawal returns them');
+    expect(within(drawer).queryByRole('region', { name: 'Staking' })).not.toBeInTheDocument();
+  });
+
+  it('stacks the assets of an Ethereum row on a phone', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    setup([ethWallet({})], withEther());
+    const row = await screen.findByRole('button', { name: `Main ETH ${ethAddress}` });
+    const amounts = within(row).getByText('1.5 ETH').parentElement;
+    expect(amounts).toHaveClass('wallets-stack');
+    expect([...(amounts?.children ?? [])].map((piece) => piece.textContent)).toEqual([
+      '1.5 ETH',
+      '250 USDC',
+    ]);
+  });
+
+  it('SYNC-STATUS names the missing Etherscan key', async () => {
+    const stale = ethWallet({});
+    setup([stale], withEther());
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue({
+      ...synced(stale, 'provider_error'),
+      reason: 'not_configured',
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    await user.click(within(drawer).getByRole('button', { name: 'Sync now' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Etherscan');
+  });
+});
+
+describe('M15: Solana wallets', () => {
+  // Base58 of the SHA-256 of a fixed label: a synthetic key, never an owner's wallet.
+  const solAddress = '74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf';
+  const solWallet = (changes: Partial<WalletAddress>) =>
+    wallet(6, {
+      network: 'solana',
+      address: solAddress,
+      label: 'Main SOL',
+      chainBalance: '12.500000000',
+      balances: [
+        { symbol: 'SOL', quantity: '12.500000000' },
+        { symbol: 'USDT', quantity: '40.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+      ],
+      ...changes,
+    });
+  const withSol = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: [
+        ...valuation.assets,
+        asset({
+          instrumentId: id(5),
+          name: 'Solana',
+          symbol: 'SOL',
+          price: { value: '150', observedAt: null, source: 'kraken', status: 'fresh' },
+          quantity: '12.5',
+          value: '1875',
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '12.5', value: '1875' },
+          ],
+        }),
+      ],
+    };
+  };
+
+  it('WAL-ADD tracks a Solana address with SOL, USDT and USDC, case kept', async () => {
+    setup([]);
+    const added = solWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const solana = within(dialog).getByRole('button', { name: /^Solana/ });
+    expect(solana).toBeEnabled();
+    expect(solana).toHaveTextContent('One address. SOL, USDT and USDC');
+    await user.click(solana);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Solana wallet address');
+    expect(dialog).toHaveTextContent('tracks SOL, USDT and USDC on Solana mainnet');
+    await user.type(field, solAddress);
+    expect(within(dialog).getByText('Solana address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(within(dialog).getByText(solAddress)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'solana', address: solAddress, accountId: trust });
+  });
+
+  it('WAL-INVALID refuses an Ethereum address picked as Solana and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Solana/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(within(dialog).getByLabelText('Solana wallet address'), `0x${'5e'.repeat(20)}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(
+      within(dialog).getByText(/This is not a Solana address: it looks like an Ethereum address/),
+    ).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('WAL-NO-SECRETS drops a Solana keypair pasted as an address', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Solana/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Solana wallet address');
+    await user.click(field);
+    await user.paste(`[${Array(64).fill('7').join(',')}]`);
+    expect(field).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('It was not saved.');
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('shows SOL and the held tokens, values them and checks each against the records', async () => {
+    setup([wallet(1, {}), solWallet({})], withSol());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(within(trustCard).getByText('Bitcoin, Solana · 2 addresses')).toBeInTheDocument();
+    const row = within(trustCard).getByRole('button', { name: `Main SOL ${solAddress}` });
+    expect(row).toHaveTextContent('12.5 SOL · 40 USDT');
+    expect(row).not.toHaveTextContent('USDC');
+    // 12.5 SOL at $150 plus 40 USDT at $1.
+    expect(row).toHaveTextContent('$1,915.00');
+    expect(within(trustCard).getByRole('note')).toHaveTextContent(
+      'The blockchain shows 40 USDT; your transactions in this wallet give 1,000 USDT.',
+    );
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Solana' });
+    expect(drawer).toHaveTextContent('12.5 SOL · 40 USDT');
+    expect(drawer).toHaveTextContent('Tracked assetsSOL, USDT, USDC');
+    expect(drawer).toHaveTextContent('Solana public RPC');
+  });
+
+  it('SOL-STAKE-BALANCE counts staked SOL in the balance and lists each stake account', async () => {
+    // Synthetic stake and vote account keys.
+    const stakeAccount = 'StakeAccSynthetic8Key8Number8Two11111111111';
+    const validator = 'Vote8Synthetic8Validator8Key8Three11111111';
+    const staked = solWallet({
+      staking: {
+        symbol: 'SOL',
+        quantity: '10.040000000',
+        rewards: '0.040000000',
+        accounts: [
+          {
+            account: stakeAccount,
+            validator,
+            state: 'active',
+            quantity: '10.040000000',
+            rewards: '0.040000000',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked], withSol());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main SOL ${solAddress}` });
+    expect(row).toHaveTextContent('12.5 SOL · 40 USDT10.04 SOL staked');
+    // The records hold 12.5 SOL like the chain, stake included: SOL is not reported as differing.
+    expect(within(trustCard).getByRole('note')).not.toHaveTextContent('SOL');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Solana' });
+    // The headline balance is the whole balance; the Staking section breaks it down.
+    expect(within(drawer).getByText('12.5 SOL · 40 USDT')).toBeInTheDocument();
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available2.46 SOL');
+    expect(staking).toHaveTextContent('Staked10.04 SOL');
+    expect(staking).toHaveTextContent('Rewards so far0.04 SOL');
+    const [item] = within(staking).getAllByRole('listitem');
+    expect(item).toHaveTextContent('StakeAcc…111111');
+    expect(item).toHaveTextContent('Validator Vote8Syn…111111');
+    expect(item).toHaveTextContent('10.04 SOL');
+    expect(item).toHaveTextContent('Active');
+    expect(staking).toHaveTextContent('moving it into a stake account or back is not a sale');
+  });
+});
+
+describe('Tron wallets', () => {
+  // Base58check of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const tronAddress = 'TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR';
+  const tronWallet = (changes: Partial<WalletAddress>) =>
+    wallet(7, {
+      network: 'tron',
+      address: tronAddress,
+      label: 'Main TRX',
+      chainBalance: '2012.500000',
+      balances: [
+        { symbol: 'TRX', quantity: '2012.500000' },
+        { symbol: 'USDT', quantity: '300.000000' },
+        { symbol: 'USDC', quantity: '0.000000' },
+      ],
+      ...changes,
+    });
+
+  it('TRON-ADD tracks a Tron address with TRX, USDT and USDC, case kept', async () => {
+    setup([]);
+    const added = tronWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const tron = within(dialog).getByRole('button', { name: /^Tron/ });
+    expect(tron).toHaveTextContent('One address. TRX, USDT, USDC and staking');
+    await user.click(tron);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Tron wallet address');
+    expect(dialog).toHaveTextContent('tracks TRX, USDT and USDC on Tron mainnet');
+    await user.type(field, tronAddress);
+    expect(within(dialog).getByText('Tron address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'tron', address: tronAddress, accountId: trust });
+  });
+
+  it('WAL-INVALID refuses the hex form and saves nothing', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: /^Tron/ }));
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.type(
+      within(dialog).getByLabelText('Tron wallet address'),
+      '416cc0027fd992863e7472490919d2769e0aa0e8d9',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByText(/the hex form of a Tron address/)).toBeInTheDocument();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('TRON-STAKE-BALANCE counts staked TRX and splits it by resource', async () => {
+    const staked = tronWallet({
+      staking: {
+        symbol: 'TRX',
+        quantity: '1100.000000',
+        rewards: '3.200000',
+        reportedQuantity: null,
+        unclaimedRewards: '1.250000',
+        accounts: [
+          {
+            account: 'energy',
+            kind: 'energy',
+            validator: null,
+            pool: null,
+            state: 'active',
+            quantity: '800.000000',
+            rewards: '0.000000',
+            availableAt: null,
+          },
+          {
+            account: 'bandwidth',
+            kind: 'bandwidth',
+            validator: null,
+            pool: null,
+            state: 'active',
+            quantity: '250.000000',
+            rewards: '0.000000',
+            availableAt: null,
+          },
+          {
+            account: 'unstaking-1',
+            kind: 'unstaking',
+            validator: null,
+            pool: null,
+            state: 'deactivating',
+            quantity: '50.000000',
+            rewards: '0.000000',
+            availableAt: '2026-10-20T08:00:00.000Z',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked]);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main TRX ${tronAddress}` });
+    expect(row).toHaveTextContent('2,012.5 TRX · 300 USDT1,100 TRX staked');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Tron' });
+    expect(drawer).toHaveTextContent('Tracked assetsTRX, USDT, USDC');
+    expect(drawer).toHaveTextContent('TronGrid');
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available912.5 TRX');
+    expect(staking).toHaveTextContent('Staked1,100 TRX');
+    expect(staking).toHaveTextContent('Rewards claimed3.2 TRX');
+    expect(staking).toHaveTextContent('Not claimed yet1.25 TRX');
+    const list = within(staking).getByRole('list', { name: 'Staked TRX' });
+    const [energy, bandwidth, unstaking] = within(list).getAllByRole('listitem');
+    expect(energy).toHaveTextContent('Staked for energy');
+    expect(energy).toHaveTextContent('800 TRX');
+    expect(energy).toHaveTextContent('Active');
+    expect(bandwidth).toHaveTextContent('Staked for bandwidth');
+    expect(unstaking).toHaveTextContent('Back to the balance on 20 Oct 2026');
+    expect(unstaking).toHaveTextContent('Unstaking');
+    expect(staking).toHaveTextContent('Energy and bandwidth are not assets');
+    expect(staking).toHaveTextContent('rewards not claimed yet are not counted');
+    expect(staking).not.toHaveTextContent('Tron reports');
+  });
+
+  it('says when the chain reports a different staked amount', async () => {
+    const differs = tronWallet({
+      staking: {
+        symbol: 'TRX',
+        quantity: '1100.000000',
+        rewards: '0.000000',
+        reportedQuantity: '1105.000000',
+        unclaimedRewards: null,
+        accounts: [],
+      },
+    });
+    setup([differs]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main TRX ${tronAddress}` }));
+    const staking = within(screen.getByRole('dialog')).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent(
+      "Tron reports 1,105 TRX staked; the wallet's transactions explain 1,100 TRX.",
+    );
+    expect(staking).not.toHaveTextContent('Not claimed yet');
+  });
+});
+
+describe('M21: Bitcoin wallets by account public key', () => {
+  // The BIP-84 test vector's account key and its first receiving address, never an owner's wallet.
+  const zpub =
+    'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+  const first = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
+  const keyed = wallet(5, {
+    address: zpub,
+    label: 'Trezor BTC',
+    accountKey: {
+      prefix: 'zpub',
+      derivedAddresses: 47,
+      usedAddresses: 5,
+      alsoTracked: [{ id: id(30), address: first, label: 'Old Trezor address' }],
+    },
+  });
+
+  it('XPUB-LIST shows how many addresses of the key were used', async () => {
+    setup([keyed]);
+    const row = await within(
+      await screen.findByRole('region', { name: 'Trust Wallet' }),
+    ).findByRole('button', { name: `Trezor BTC ${zpub}` });
+    expect(row).toHaveTextContent('5 addresses');
+    expect(row).toHaveTextContent('0.01 BTC');
+  });
+
+  it('XPUB-LIST names the used addresses instead of the key on a phone', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    setup([keyed]);
+    const row = await screen.findByRole('button', { name: `Trezor BTC ${zpub}` });
+    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveTextContent('5 addresses · Synced');
+    expect(row).not.toHaveTextContent('zpub');
+  });
+
+  it('XPUB-OVERLAP shows the key in the drawer and warns about addresses tracked twice', async () => {
+    setup([keyed]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Trezor BTC ${zpub}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
+    expect(drawer).toHaveTextContent(`Public key${zpub}`);
+    expect(drawer).toHaveTextContent('5 used · new ones are found automatically');
+    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+      'One address of this key is also tracked as its own wallet (Old Trezor address), so their coins count twice.',
+    );
+  });
+
+  it('XPUB-ADD tracks a zpub and refuses a private or testnet key', async () => {
+    setup([]);
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: { ...keyed, accountKey: null } });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(keyed));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    const field = within(dialog).getByLabelText('Bitcoin wallet address');
+    await user.click(field);
+    await user.paste(`tpub${zpub.slice(4)}`);
+    expect(within(dialog).getByText(/Testnet keys are not tracked/)).toBeInTheDocument();
+    await user.clear(field);
+    await user.paste(`zprv${zpub.slice(4)}`);
+    expect(field).toHaveValue('');
+    expect(add).not.toHaveBeenCalled();
+
+    await user.paste(zpub);
+    expect(
+      within(dialog).getByText(/every address of this account will be tracked/),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(dialog).toHaveTextContent(`Public key${zpub}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'bitcoin', address: zpub, accountId: trust });
+  });
+});
+
+describe('M22: Bybit accounts', () => {
+  // Synthetic key, secret and user ID; never an owner's.
+  const apiKey = 'SyntheticKey0001';
+  const apiSecret = 'SyntheticSecret000000000000001';
+  const bybit = id(12);
+  const exchangeAccount = (changes: Partial<WalletAddress>) =>
+    wallet(6, {
+      network: 'bybit',
+      address: '123456789',
+      accountId: bybit,
+      label: 'Bybit',
+      chainBalance: '0.50999',
+      balances: [
+        { symbol: 'BTC', quantity: '0.50999' },
+        { symbol: 'ETH', quantity: '0' },
+        { symbol: 'SOL', quantity: '0' },
+        { symbol: 'USDT', quantity: '599' },
+        { symbol: 'USDC', quantity: '0' },
+      ],
+      exchange: {
+        keyHint: '0001',
+        ipBound: false,
+        keyExpiresAt: '2027-01-01T00:00:00.000Z',
+        reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+        untracked: [{ symbol: 'S', quantity: '5' }],
+        historyFrom: '2024-10-10T00:00:00.000Z',
+      },
+      ...changes,
+    });
+  const withBybit = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: valuation.assets.map((item) => ({
+        ...item,
+        holdings: [
+          ...item.holdings,
+          {
+            accountId: bybit,
+            accountName: 'Bybit',
+            quantity: item.symbol === 'BTC' ? '0.50999' : '399',
+            value: null,
+          },
+        ],
+      })),
+      accounts: [
+        ...valuation.accounts,
+        { ...valuation.accounts[0], accountId: bybit, name: 'Bybit' },
+      ],
+    };
+  };
+  const openBybit = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const option = within(dialog).getByRole('button', { name: /^Bybit/ });
+    expect(option).toBeEnabled();
+    expect(option).toHaveTextContent(
+      'Read-only API key. Every coin: trades, deposits and withdrawals',
+    );
+    await user.click(option);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    return dialog;
+  };
+
+  it('BYBIT-KEY adds an account with a read-only key; the secret is a password field', async () => {
+    setup([]);
+    const added = exchangeAccount({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({ id: bybit } as never);
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    expect(dialog).toHaveTextContent(
+      'Set permissions to Read-Only and tick Earn and Exchange History under it, so coins in Earn and converts count. Tick nothing that trades or withdraws.',
+    );
+    expect(dialog).toHaveTextContent('Bind it to this server');
+    const secret = within(dialog).getByLabelText('API secret');
+    expect(secret).toHaveAttribute('type', 'password');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByText('Paste the API key.')).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('API key'), ` ${apiKey}`);
+    await user.click(secret);
+    await user.paste(apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByLabelText('Wallet (optional)')).toHaveAttribute(
+      'placeholder',
+      'Bybit',
+    );
+    expect(dialog).toHaveTextContent('API key…0001');
+    expect(dialog).not.toHaveTextContent(apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'bybit', apiKey, apiSecret, accountId: bybit });
+    expect(sync).toHaveBeenCalledWith(added.id);
+  });
+
+  it('BYBIT-KEY shows why the server refused a key and keeps the form', async () => {
+    setup([]);
+    const refusal = Object.assign(new Error('Unprocessable'), {
+      isAxiosError: true,
+      response: {
+        status: 422,
+        data: {
+          message:
+            'This key can trade or withdraw. Create a read-only API key in Bybit and paste that one.',
+        },
+      },
+    });
+    vi.spyOn(walletAddressesApi, 'add').mockRejectedValue(refusal);
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    await user.type(within(dialog).getByLabelText('API key'), apiKey);
+    await user.type(within(dialog).getByLabelText('API secret'), apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This key can trade or withdraw. Create a read-only API key in Bybit and paste that one.',
+    );
+  });
+
+  it('WAL-NO-SECRETS drops a seed phrase pasted as the API secret', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    const secret = within(dialog).getByLabelText('API secret');
+    await user.click(secret);
+    await user.paste(seedPhrase);
+    expect(secret).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'This looks like a seed phrase. Never share it: the app needs only a read-only API key. It was not saved.',
+    );
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('BYBIT-GAPS lists the coins Bybit reports and the difference from the records', async () => {
+    setup([exchangeAccount({})], withBybit());
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    const row = within(account).getByRole('button', { name: 'Bybit 123456789' });
+    expect(row).toHaveTextContent('UID 123456789');
+    expect(row).toHaveTextContent('0.50999 BTC · 599 USDT');
+    expect(row).not.toHaveTextContent('ETH');
+    expect(account).toHaveTextContent('Bybit · 1 account');
+    expect(within(account).getByRole('note')).toHaveTextContent(
+      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.',
+    );
+  });
+
+  it('BYBIT-ANY-COIN compares any coin Bybit reports or the records hold', async () => {
+    const valuation = withBybit();
+    const ton = (accountId: string, quantity: string) =>
+      asset({
+        instrumentId: id(7),
+        name: 'TON',
+        symbol: 'TON',
+        price: { value: '3', observedAt: null, source: 'bybit', status: 'fresh' },
+        quantity,
+        value: null,
+        holdings: [{ accountId, accountName: 'Bybit', quantity, value: null }],
+      });
+    const doge = asset({
+      instrumentId: id(8),
+      name: 'DOGE',
+      symbol: 'DOGE',
+      quantity: '40',
+      value: null,
+      holdings: [{ accountId: bybit, accountName: 'Bybit', quantity: '40', value: null }],
+    });
+    setup(
+      [
+        exchangeAccount({
+          balances: [
+            { symbol: 'BTC', quantity: '0.50999' },
+            { symbol: 'ETH', quantity: '0' },
+            { symbol: 'SOL', quantity: '0' },
+            { symbol: 'USDT', quantity: '399' },
+            { symbol: 'USDC', quantity: '0' },
+            { symbol: 'TON', quantity: '12.5' },
+          ],
+        }),
+      ],
+      { ...valuation, assets: [...valuation.assets, ton(bybit, '10'), doge] },
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    expect(within(account).getByRole('button', { name: 'Bybit 123456789' })).toHaveTextContent(
+      '0.50999 BTC · 399 USDT · 12.5 TON',
+    );
+    const note = within(account).getByRole('note');
+    expect(note).toHaveTextContent(
+      'Bybit reports 12.5 TON; your transactions in this wallet give 10 TON',
+    );
+    expect(note).toHaveTextContent(
+      'Bybit reports 0 DOGE; your transactions in this wallet give 40 DOGE',
+    );
+  });
+
+  it('shows the key, its expiry and the untracked coins in the drawer, never the secret', async () => {
+    setup([exchangeAccount({})], withBybit());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    const drawer = screen.getByRole('dialog', { name: 'Bybit · Bybit' });
+    expect(drawer).toHaveTextContent('Bybit UID123456789');
+    expect(drawer).toHaveTextContent('API key…0001 · read-only, stored encrypted');
+    expect(drawer).toHaveTextContent('Key expires1 Jan 2027');
+    expect(drawer).toHaveTextContent('As Bybit reported them 5 min ago');
+    expect(drawer).toHaveTextContent('Not tracked5 S · not counted');
+    expect(drawer).toHaveTextContent(
+      'Tracked assetsEvery coin the account holds; Bybit prices the ones Kraken does not list',
+    );
+    expect(drawer).toHaveTextContent('Bybit records');
+  });
+
+  it('BYBIT-EARN shows the coins in Earn, already in the balance, in the row and the drawer', async () => {
+    setup(
+      [
+        exchangeAccount({
+          exchange: {
+            keyHint: '0001',
+            ipBound: true,
+            keyExpiresAt: null,
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+            earnAllowed: true,
+            earn: [
+              { symbol: 'USDT', quantity: '200', product: 'flexible' },
+              { symbol: 'SOL', quantity: '0.5', product: 'onchain' },
+              { symbol: 'USDC', quantity: '100', product: 'fixed' },
+            ],
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: 'Bybit 123456789' });
+    expect(row).toHaveTextContent('200 USDT · 0.5 SOL · 100 USDC in Earn');
+    await user.click(row);
+    const earn = within(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).getByRole('region', {
+      name: 'Earn',
+    });
+    expect(earn).toHaveTextContent('Flexible Savings200 USDT');
+    expect(earn).toHaveTextContent('On-chain Earn0.5 SOL');
+    expect(earn).toHaveTextContent('Fixed-term savings100 USDC');
+    expect(earn).toHaveTextContent(
+      'Coins in Bybit Earn stay yours: they count in this balance and in net worth. Yield Bybit paid in the last three months is recorded as staking income by itself; Bybit lists no older yield.',
+    );
+  });
+
+  it('BYBIT-EARN says how to let a key read Earn', async () => {
+    setup(
+      [
+        exchangeAccount({
+          exchange: {
+            keyHint: '0001',
+            ipBound: true,
+            keyExpiresAt: null,
+            reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            untracked: [],
+            historyFrom: '2024-10-10T00:00:00.000Z',
+            earnAllowed: false,
+            earn: null,
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    const drawer = screen.getByRole('dialog', { name: 'Bybit · Bybit' });
+    expect(within(drawer).queryByRole('region', { name: 'Earn' })).toBeNull();
+    expect(drawer).toHaveTextContent(
+      'This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key, tick Earn under Read-Only and press Sync now; no need to add the account again.',
+    );
+  });
+
+  it('BYBIT-CONVERT says how to let a key read convert history', async () => {
+    const exchange = {
+      keyHint: '0001',
+      ipBound: true,
+      keyExpiresAt: null,
+      reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      untracked: [],
+      historyFrom: '2024-10-10T00:00:00.000Z',
+      earnAllowed: true,
+      earn: [],
+    };
+    const note =
+      'This key cannot read convert history, so coins converted on Bybit are missing from the records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no need to add the account again.';
+    setup([exchangeAccount({ exchange: { ...exchange, convertAllowed: false } })], withBybit());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    expect(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).toHaveTextContent(note);
+    cleanup();
+    setup([exchangeAccount({ exchange: { ...exchange, convertAllowed: true } })], withBybit());
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    expect(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).not.toHaveTextContent(
+      'cannot read convert history',
+    );
+  });
+
+  it('SYNC-STATUS says a key Bybit stopped accepting must be added again', async () => {
+    const message =
+      'Bybit did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.';
+    setup(
+      [
+        exchangeAccount({
+          sync: {
+            state: 'complete',
+            completedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+            status: 'failed',
+            lastAttemptAt: null,
+            lastSuccessAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+            nextRunAt: null,
+            errorMessage: message,
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    expect(account).toHaveTextContent(`${message} Balances shown are from 3 h ago.`);
   });
 });

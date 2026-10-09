@@ -1,16 +1,37 @@
 import type { ProviderFailure, WalletAddress } from '@api/wallet-addresses.api';
 import { age } from '../portfolio/format';
+import { networkOf } from './networks';
 
 /** A sync this page started: still running, or its last attempt failed. */
 export type SyncRun = { state: 'running' } | { state: 'failed'; message: string };
 
-export const failureMessages: Record<ProviderFailure | 'server' | 'busy', string> = {
-  rate_limited: 'The Bitcoin data source is busy. Try again in a few minutes.',
-  unavailable: 'Bitcoin data is temporarily unavailable.',
-  invalid_response: 'The Bitcoin data source sent an answer the app cannot read. Try again later.',
-  server: 'Could not reach the server. Try again.',
-  busy: 'Another sync of this address is running. Try again in a moment.',
-};
+/** Why the page's own sync stopped, naming the network's data ("Bitcoin data …"). */
+export function failureMessage(
+  reason: ProviderFailure | 'server' | 'busy',
+  address?: Pick<WalletAddress, 'network'>,
+): string {
+  const network = address ? networkOf(address).name : 'Blockchain';
+  switch (reason) {
+    case 'rate_limited':
+      return `The ${network} data source is busy. Try again in a few minutes.`;
+    case 'unavailable':
+      return `${network} data is temporarily unavailable.`;
+    case 'invalid_response':
+      return `The ${network} data source sent an answer the app cannot read. Try again later.`;
+    case 'not_configured':
+      if (address?.network === 'tron')
+        return 'TronGrid refused the requests. A free TronGrid API key on the server lets the app read Tron wallets.';
+      return address?.network === 'bybit'
+        ? 'The stored Bybit API key cannot be read on this server. Add the account again with its read-only key.'
+        : `${network} sync needs a valid Etherscan API key on the server.`;
+    case 'key_rejected':
+      return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
+    case 'server':
+      return 'Could not reach the server. Try again.';
+    case 'busy':
+      return 'Another sync of this address is running. Try again in a moment.';
+  }
+}
 
 type Badge = { label: string; tone: 'pos' | 'info' | 'warn' | 'neg' | 'neutral' };
 
@@ -64,7 +85,7 @@ export function syncProblem(
     run?.state === 'failed'
       ? run.message
       : address.sync.status === 'failed' || address.sync.status === 'delayed'
-        ? (address.sync.errorMessage ?? failureMessages.unavailable)
+        ? (address.sync.errorMessage ?? failureMessage('unavailable', address))
         : null;
   if (reason === null) return null;
   const last = lastSynced(address);

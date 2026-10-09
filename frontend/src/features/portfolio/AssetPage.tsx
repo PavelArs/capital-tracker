@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import { onlyChain, useTokenChains } from '../shell/token-chains';
 import {
   assetKey,
   day,
@@ -68,11 +69,16 @@ const periodNames: Record<HistoryPeriod, string> = {
 const keyOf = (asset: AssetValuation) =>
   assetKey({ instrumentId: asset.instrumentId, symbol: asset.symbol, name: asset.name });
 
-/** Operations that move this asset, newest first (as the Transactions page filters them). */
+/**
+ * Operations that move this asset, newest first (as the Transactions page filters them); dust
+ * stays under its own filter there.
+ */
 export function assetOperations(operations: readonly Operation[], key: string): Operation[] {
   return operations
-    .filter((operation) =>
-      [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
+    .filter(
+      (operation) =>
+        operation.status !== 'dust' &&
+        [operation.asset, operation.counterAsset].some((item) => item && assetKey(item) === key),
     )
     .sort(
       (left, right) =>
@@ -294,16 +300,23 @@ function AssetDetails({
 }) {
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
+  const chains = useTokenChains();
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
   const missingRate = Number(asset.missingRateQuantity) > 0;
   return (
     <>
       <div className="portfolio-head">
-        <AssetIcon symbol={asset.symbol} name={asset.name} assetType={asset.assetType} size="lg" />
+        <AssetIcon
+          symbol={asset.symbol}
+          name={asset.name}
+          assetType={asset.assetType}
+          network={onlyChain(asset.symbol, chains)}
+          size="lg"
+        />
         <div className="portfolio-head__title">
           <h2>{asset.name}</h2>
-          <span className="portfolio-sub">{assetCaption(asset)}</span>
+          <span className="portfolio-sub">{assetCaption(asset, chains)}</span>
         </div>
         <div className="portfolio-head__price">
           <b>{asset.price ? price(asset.price.value, currency) : missingLabel(asset)}</b>

@@ -1,8 +1,10 @@
-import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
+import { ChainClassificationService } from '../accounting/chain-classification.service';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
+import { isNetwork, networkNames } from './chain-assets';
 import {
   CHAIN_SYNC_ADAPTERS,
   type ChainSyncAdapter,
@@ -20,7 +22,6 @@ export type WalletTickResult =
 const LOCK_KEY = 7_340_600_011;
 // Wallets per tick; the rest wait for the next minute.
 const WALLETS_PER_TICK = 20;
-const NETWORK_NAMES: Record<string, string> = { bitcoin: 'Bitcoin' };
 
 interface DueWallet {
   id: string;
@@ -37,6 +38,7 @@ export class WalletSyncService {
     private readonly source: DataSource,
     private readonly config: ConfigService,
     @Inject(CHAIN_SYNC_ADAPTERS) adapters: ChainSyncAdapter[],
+    @Optional() private readonly classifications?: ChainClassificationService,
   ) {
     this.adapters = new Map(adapters.map((adapter) => [adapter.network, adapter]));
   }
@@ -108,7 +110,8 @@ export class WalletSyncService {
   ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
     const key = walletSourceKey(wallet.id);
     const adapter = this.adapters.get(wallet.network);
-    const name = adapter?.name ?? NETWORK_NAMES[wallet.network] ?? wallet.network;
+    const name =
+      adapter?.name ?? (isNetwork(wallet.network) ? networkNames[wallet.network] : wallet.network);
     if (!adapter) {
       const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
       await this.record(key, outcome, now);
@@ -137,7 +140,14 @@ export class WalletSyncService {
     }
     const outcome = outcomeOf(name, step, now);
     await this.record(key, outcome, now);
+    // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets.
+    if (step.outcome !== 'provider_error') await this.linkOwnTransfers(wallet.ownerId);
     return { ...outcome, step };
+  }
+
+  /** Links the owner's certain own transfers; a failure never fails the sync. */
+  async linkOwnTransfers(ownerId: string): Promise<void> {
+    await this.classifications?.linkQuietly(ownerId);
   }
 
   private record(key: string, outcome: SourceOutcome, now: Date): Promise<void> {

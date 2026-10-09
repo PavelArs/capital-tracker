@@ -3,13 +3,70 @@ import { parseRegistration, parseUpdate } from './wallet-address-input';
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
+// An EIP-55 test vector, not an owner's address.
+const ethereum = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+// The System Program's id: a well-known public key, never an owner's wallet.
+const solana = '11111111111111111111111111111111';
+// The public USDT contract on Tron: a well-known address, never an owner's wallet.
+const tron = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 // Synthetic BIP-39 words in the order of the standard test vector, never a real wallet.
 const seedPhrase =
   'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
 
 describe('WAL-ADD: wallet registration input', () => {
-  it('keeps the legacy address-only body', () => {
-    expect(parseRegistration({ address })).toEqual({ address, accountId: null, label: null });
+  it('keeps the legacy address-only body as a Bitcoin address', () => {
+    expect(parseRegistration({ address })).toEqual({
+      network: 'bitcoin',
+      address,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes an Ethereum address in lower case (M14)', () => {
+    expect(parseRegistration({ network: 'ethereum', address: ethereum, accountId })).toEqual({
+      network: 'ethereum',
+      address: ethereum.toLowerCase(),
+      accountId,
+      label: null,
+    });
+  });
+
+  it('takes a Solana address exactly as given (M15)', () => {
+    expect(parseRegistration({ network: 'solana', address: solana })).toEqual({
+      network: 'solana',
+      address: solana,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes a Tron address exactly as given', () => {
+    expect(parseRegistration({ network: 'tron', address: tron })).toEqual({
+      network: 'tron',
+      address: tron,
+      accountId: null,
+      label: null,
+    });
+  });
+
+  it('takes a Bitcoin account public key exactly as given (M21)', () => {
+    // The BIP-84 test vector's account key, never an owner's wallet.
+    const zpub =
+      'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+    expect(parseRegistration({ network: 'bitcoin', address: zpub, accountId })).toEqual({
+      network: 'bitcoin',
+      address: zpub,
+      accountId,
+      label: null,
+    });
+    // The key is a Bitcoin one only.
+    expect(() => parseRegistration({ network: 'solana', address: zpub })).toThrow(
+      BadRequestException,
+    );
+    expect(() =>
+      parseRegistration({ network: 'bitcoin', address: `${zpub.slice(0, -1)}t` }),
+    ).toThrow(BadRequestException);
   });
 
   it('binds the address to an account with a trimmed label', () => {
@@ -20,11 +77,12 @@ describe('WAL-ADD: wallet registration input', () => {
         accountId: accountId.toUpperCase(),
         label: '  Trust Wallet BTC ',
       }),
-    ).toEqual({ address, accountId, label: 'Trust Wallet BTC' });
+    ).toEqual({ network: 'bitcoin', address, accountId, label: 'Trust Wallet BTC' });
   });
 
   it('treats a blank label as none', () => {
     expect(parseRegistration({ address, label: '   ' })).toEqual({
+      network: 'bitcoin',
       address,
       accountId: null,
       label: null,
@@ -32,7 +90,15 @@ describe('WAL-ADD: wallet registration input', () => {
   });
 
   it.each([
-    ['another network', { network: 'ethereum', address }],
+    ['WAL-INVALID: a Bitcoin address as Ethereum', { network: 'ethereum', address }],
+    ['an Ethereum address as Bitcoin', { network: 'bitcoin', address: ethereum }],
+    ['a Bitcoin address as Solana', { network: 'solana', address }],
+    ['an Ethereum address as Solana', { network: 'solana', address: ethereum }],
+    ['a Solana address as Ethereum', { network: 'ethereum', address: solana }],
+    ['a Bitcoin address as Tron', { network: 'tron', address }],
+    ['a Tron address as Solana', { network: 'solana', address: tron }],
+    ['a Tron address as Ethereum', { network: 'ethereum', address: tron }],
+    ['a network not tracked', { network: 'stellar', address }],
     ['a label over 40 characters', { address, label: 'x'.repeat(41) }],
     ['a label with a control character', { address, label: 'Cold\nwallet' }],
     ['a label that is not text', { address, label: 7 }],
@@ -41,6 +107,40 @@ describe('WAL-ADD: wallet registration input', () => {
     ['a seed phrase field', { address, seed: seedPhrase }],
   ])('refuses %s', (_case, input) => {
     expect(() => parseRegistration(input)).toThrow(BadRequestException);
+  });
+});
+
+describe('BYBIT-KEY: adding a Bybit account (M22)', () => {
+  // Synthetic key and secret, never an owner's.
+  const apiKey = 'SyntheticKey0001';
+  const apiSecret = 'SyntheticSecret000000000000001';
+
+  it('takes a read-only API key and secret, trimmed of the spaces a copy adds', () => {
+    expect(
+      parseRegistration({
+        network: 'bybit',
+        apiKey: ` ${apiKey} `,
+        apiSecret: `${apiSecret}\n`,
+        accountId,
+        label: ' Bybit ',
+      }),
+    ).toEqual({
+      network: 'bybit',
+      credentials: { apiKey, apiSecret },
+      accountId,
+      label: 'Bybit',
+    });
+  });
+
+  it('refuses an address, a missing secret, unknown fields or a key that is not plain text', () => {
+    const bad = [
+      { network: 'bybit', address: '123456789' },
+      { network: 'bybit', apiKey },
+      { network: 'bybit', apiKey, apiSecret, address: '123456789' },
+      { network: 'bybit', apiKey: 'key with spaces', apiSecret },
+      { network: 'bybit', apiKey, apiSecret: 'short' },
+    ];
+    for (const body of bad) expect(() => parseRegistration(body)).toThrow(BadRequestException);
   });
 });
 

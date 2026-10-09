@@ -100,12 +100,17 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   const drawer = page.getByRole('dialog', { name: 'Incoming transaction · BTC' });
   const question = drawer.getByRole('group', { name: 'What was this transaction?' });
   await expect(question.getByRole('button')).toHaveText([
+    'Transfer between my wallets',
     'Buy',
+    'Swap',
     'Income',
     'Reward',
     'Staking reward',
     'Airdrop',
     'Gift received',
+    'Pool reward',
+    'Pool withdrawal',
+    'Other',
   ]);
   await expect(drawer.getByText(`${before - 1} left to classify`)).toBeVisible();
   await expect(drawer.getByRole('button', { name: 'Save' })).toBeDisabled();
@@ -124,7 +129,16 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
   await expect(next.getByRole('status')).toHaveText('Saved as Buy. Here is the next one.');
   await expect(
     next.getByRole('group', { name: 'What was this transaction?' }).getByRole('button'),
-  ).toHaveText(['Sell', 'Expense', 'Gift sent', 'Fee']);
+  ).toHaveText([
+    'Transfer between my wallets',
+    'Sell',
+    'Swap',
+    'Expense',
+    'Gift sent',
+    'Fee',
+    'Pool deposit',
+    'Other',
+  ]);
   await expect(nav.getByLabel(`${before - 1} to classify`, { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('classify-next-1440-dark.png') });
 
@@ -149,8 +163,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     '-0.000513',
     /^(≈ \$[\d,]+\.\d{2}|—)$/,
     new RegExp(`^${accountName}`),
-    'Hidden',
-    'Blockchain',
+    'HiddenBlockchain',
   ]);
   await expect(cells(rows.nth(1))).toHaveText([
     'Buy22:13',
@@ -158,8 +171,7 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     '+0.001',
     '$1,000.00',
     new RegExp(`^${accountName}`),
-    'Recorded',
-    'Blockchain',
+    'RecordedBlockchain',
   ]);
   await page.screenshot({ path: testInfo.outputPath('classified-list-1440-dark.png') });
 

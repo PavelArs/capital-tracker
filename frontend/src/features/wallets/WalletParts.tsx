@@ -3,11 +3,20 @@ import type {
   AssetValuation,
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
-import type { WalletAddress } from '@api/wallet-addresses.api';
+import type {
+  ChainBalance,
+  EarnHolding,
+  ExchangeAccount,
+  StakeAccount,
+  StakeState,
+  Staking,
+  WalletAddress,
+} from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
+import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
-import { type Reconciliation, shortAddress, sum } from './wallets';
+import { chainBalances, keyAddresses, type Reconciliation, shortAddress, sum } from './wallets';
 
 // Rows shared by the Wallets list and a wallet's own page (prototype "wallets", srcRow).
 
@@ -27,21 +36,360 @@ export function holdingsOf(portfolio: PortfolioValuation, accountId: string): Ho
 
 const ticker = (asset: AssetValuation) => asset.symbol ?? asset.name;
 
+/** Latest price of each crypto ticker, in the shown currency. */
+export type Prices = ReadonlyMap<string, string>;
+
 export function addressValue(
   address: WalletAddress,
-  btcPrice: string | null,
+  prices: Prices,
   currency: AccountingCurrency,
 ): string {
-  // Display only: the exact chain balance is the BTC amount next to it.
-  if (address.chainBalance === null || btcPrice === null) return DASH;
-  return money(String(Number(address.chainBalance) * Number(btcPrice)), currency);
+  // Display only: the exact chain balances are the amounts next to it. A held asset without a
+  // price leaves the value unknown rather than too low.
+  const balances = chainBalances(address);
+  if (balances === null) return DASH;
+  const held = balances.filter((balance) => Number(balance.quantity) !== 0);
+  if (held.some((balance) => !prices.has(balance.symbol))) return DASH;
+  const total = held.reduce(
+    (value, balance) => value + Number(balance.quantity) * Number(prices.get(balance.symbol)),
+    0,
+  );
+  return money(String(total), currency);
+}
+
+/**
+ * ["1.5 ETH", "250 USDC"]: the network's coin always, a token when the wallet holds it. An
+ * exchange account has no coin of its own: the coins it holds, or "0 USDT".
+ */
+function chainPieces(address: WalletAddress): string[] {
+  const balances = chainBalances(address);
+  if (balances === null) return [DASH];
+  const network = networkOf(address);
+  const held = balances.filter((balance, index) =>
+    network.exchange
+      ? Number(balance.quantity) !== 0
+      : index === 0 || Number(balance.quantity) !== 0,
+  );
+  const shown = held.length > 0 ? held : [{ symbol: network.symbol, quantity: '0' }];
+  return shown.map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
+}
+
+/**
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE: "14.5 SOL staked", the part of the balance above held in
+ * stake accounts or staking pools.
+ */
+function stakedPiece(address: WalletAddress): string | null {
+  const staking = address.staking;
+  if (!staking || Number(staking.quantity) === 0) return null;
+  return `${quantity(staking.quantity)} ${staking.symbol} staked`;
+}
+
+/** POOL-DEPOSIT: "1 ETH · 3000 USDC in pools", the part of the balance above in liquidity pools. */
+function pooledPiece(address: WalletAddress): string | null {
+  const pools = (address.pools ?? []).filter((item) => Number(item.quantity) !== 0);
+  if (pools.length === 0) return null;
+  return `${pools.map((item) => `${quantity(item.quantity)} ${item.symbol}`).join(' · ')} in pools`;
+}
+
+/** BYBIT-EARN: "200 USDT · 0.5 SOL in Earn", the part of a Bybit account's balance in Earn. */
+function earnPiece(address: WalletAddress): string | null {
+  const coins = earnByCoin(address.exchange?.earn ?? []);
+  if (coins.length === 0) return null;
+  return `${coins.map((item) => `${quantity(item.quantity)} ${item.symbol}`).join(' · ')} in Earn`;
+}
+
+/** One line per coin, the products added up, in Bybit's order. */
+function earnByCoin(earn: EarnHolding[]): ChainBalance[] {
+  const coins: ChainBalance[] = [];
+  for (const item of earn) {
+    const known = coins.find((coin) => coin.symbol === item.symbol);
+    if (known) known.quantity = sum([known.quantity, item.quantity]);
+    else coins.push({ symbol: item.symbol, quantity: item.quantity });
+  }
+  return coins.filter((item) => Number(item.quantity) !== 0);
+}
+
+const earnProducts: Record<EarnHolding['product'], string> = {
+  flexible: 'Flexible Savings',
+  onchain: 'On-chain Earn',
+  fixed: 'Fixed-term savings',
+};
+
+/**
+ * BYBIT-EARN: the coins a Bybit account holds in Earn, per product, in its drawer; already in
+ * the balance above. A key that cannot read Earn says how to let it.
+ */
+export function EarnSection({ exchange }: { exchange: ExchangeAccount }) {
+  if (exchange.earnAllowed === false)
+    return (
+      <p className="wallets-message wallets-message--warn" role="note">
+        This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key,
+        tick Earn under Read-Only and press Sync now; no need to add the account again.
+      </p>
+    );
+  const earn = (exchange.earn ?? []).filter((item) => Number(item.quantity) !== 0);
+  if (earn.length === 0) return null;
+  return (
+    <section aria-labelledby="address-earn">
+      <h3 id="address-earn" className="transactions-section">
+        Earn
+      </h3>
+      <dl className="transactions-facts">
+        {earn.map((item) => (
+          <div key={`${item.product}-${item.symbol}`}>
+            <dt>{earnProducts[item.product]}</dt>
+            <dd className="wallets-num">
+              {quantity(item.quantity)} {item.symbol}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="wallets-muted wallets-stake__note">
+        Coins in Bybit Earn stay yours: they count in this balance and in net worth. Yield Bybit
+        paid in the last three months is recorded as staking income by itself; Bybit lists no older
+        yield.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * BYBIT-CONVERT: a key that cannot read convert history says how to let it; coins converted on
+ * Bybit are missing from the records until then.
+ */
+export function ConvertNote({ exchange }: { exchange: ExchangeAccount }) {
+  if (exchange.convertAllowed !== false) return null;
+  return (
+    <p className="wallets-message wallets-message--warn" role="note">
+      This key cannot read convert history, so coins converted on Bybit are missing from the
+      records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no
+      need to add the account again.
+    </p>
+  );
+}
+
+const stakeStates: Record<
+  StakeState,
+  { label: string; tone: 'pos' | 'info' | 'warn' | 'neutral' }
+> = {
+  activating: { label: 'Activating', tone: 'info' },
+  active: { label: 'Active', tone: 'pos' },
+  deactivating: { label: 'Unstaking', tone: 'warn' },
+  inactive: { label: 'Not staked', tone: 'neutral' },
+  closed: { label: 'Closed', tone: 'neutral' },
+};
+
+/** What one stake account or pool is: its validator, or the pool's token. */
+function stakeDetail(item: StakeAccount, pools: boolean): string {
+  if (pools) return item.pool ? `${item.pool} staking pool` : 'Staking pool';
+  return item.validator
+    ? `Validator ${shortAddress(item.validator)}`
+    : 'Not delegated to a validator';
+}
+
+const dayFormat = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** TRON-STAKE-STATE: staked TRX has no account of its own; the row names what it is for. */
+function tronStake(item: StakeAccount): { name: string; detail: string } {
+  if (item.kind === 'energy')
+    return { name: 'Staked for energy', detail: 'Energy pays for token transfers' };
+  if (item.kind === 'bandwidth')
+    return { name: 'Staked for bandwidth', detail: 'Bandwidth pays for plain transfers' };
+  if (item.kind === 'unstaking')
+    return {
+      name: 'Unstaking',
+      detail: item.availableAt
+        ? `Back to the balance on ${dayFormat.format(new Date(item.availableAt))}`
+        : 'Back to the balance after 14 days',
+    };
+  return { name: 'Staked TRX', detail: 'Split by resource after the next sync' };
+}
+
+/**
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE, TRON-STAKE-BALANCE: a Solana address's stake accounts,
+ * an Ethereum address's staking pools, or a Tron address's staked TRX, in its drawer. What each holds is already in the balance above;
+ * "available" is the rest.
+ */
+export function StakingSection({ address, staking }: { address: WalletAddress; staking: Staking }) {
+  const own = chainBalances(address)?.find((balance) => balance.symbol === staking.symbol);
+  const available = own ? sum([own.quantity, `-${staking.quantity}`]) : null;
+  const symbol = staking.symbol;
+  const pools = address.network === 'ethereum';
+  const tron = address.network === 'tron';
+  return (
+    <section aria-labelledby="address-staking">
+      <h3 id="address-staking" className="transactions-section">
+        Staking
+      </h3>
+      <dl className="transactions-facts">
+        {available !== null && (
+          <div>
+            <dt>Available</dt>
+            <dd className="wallets-num">
+              {quantity(available)} {symbol}
+            </dd>
+          </div>
+        )}
+        <div>
+          <dt>Staked</dt>
+          <dd className="wallets-num">
+            {quantity(staking.quantity)} {symbol}
+          </dd>
+        </div>
+        <div>
+          <dt>{tron ? 'Rewards claimed' : 'Rewards so far'}</dt>
+          <dd className="wallets-num">
+            {quantity(staking.rewards)} {symbol}
+          </dd>
+        </div>
+        {staking.unclaimedRewards && (
+          <div>
+            <dt>Not claimed yet</dt>
+            <dd className="wallets-num">
+              {quantity(staking.unclaimedRewards)} {symbol}
+            </dd>
+          </div>
+        )}
+      </dl>
+      <ul
+        className="wallets-stake"
+        aria-label={tron ? 'Staked TRX' : pools ? 'Staking pools' : 'Stake accounts'}
+      >
+        {staking.accounts.map((item) => {
+          const state = item.state ? stakeStates[item.state] : null;
+          const resource = tron ? tronStake(item) : null;
+          return (
+            <li key={item.account}>
+              <span className="wallets-stake__main">
+                {resource ? (
+                  <span>{resource.name}</span>
+                ) : (
+                  <span className="wallets-mono">{shortAddress(item.account)}</span>
+                )}
+                <span className="wallets-muted">
+                  {resource ? resource.detail : stakeDetail(item, pools)}
+                </span>
+              </span>
+              <span className="wallets-stake__side">
+                <span className="wallets-num">
+                  {quantity(item.quantity)} {symbol}
+                </span>
+                {state ? (
+                  <span className={`wallets-badge wallets-badge--${state.tone}`}>
+                    {state.label}
+                  </span>
+                ) : (
+                  <span className="wallets-muted">Checked on the next sync</span>
+                )}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+      {staking.reportedQuantity && (
+        <p className="wallets-muted wallets-stake__note">
+          Tron reports {quantity(staking.reportedQuantity)} {symbol} staked; the wallet's
+          transactions explain {quantity(staking.quantity)} {symbol}. The balance follows the
+          transactions.
+        </p>
+      )}
+      {tron ? (
+        <p className="wallets-muted wallets-stake__note">
+          Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
+          staking or unstaking is not a sale. Energy and bandwidth are not assets. Claimed vote
+          rewards are recorded as Staking reward income; rewards not claimed yet are not counted.
+        </p>
+      ) : (
+        <p className="wallets-muted wallets-stake__note">
+          Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and
+          moving it into a {pools ? 'staking pool' : 'stake account'} or back is not a sale. Rewards
+          count as received coins without a purchase price, not as deposits.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * POOL-DEPOSIT: what the address has in liquidity pools, in its drawer. It is already in the
+ * balance above, by the transactions classified as Pool deposit and not yet withdrawn.
+ */
+export function PoolsSection({ pools }: { pools: ChainBalance[] }) {
+  return (
+    <section aria-labelledby="address-pools">
+      <h3 id="address-pools" className="transactions-section">
+        Liquidity pools
+      </h3>
+      <dl className="transactions-facts">
+        {pools.map((item) => (
+          <div key={item.symbol}>
+            <dt>In pools</dt>
+            <dd className="wallets-num">
+              {quantity(item.quantity)} {item.symbol}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="wallets-muted wallets-stake__note">
+        Coins you put into a liquidity pool stay yours: they count in this balance and in net worth
+        with their purchase price until a pool withdrawal returns them. What comes back above the
+        deposit is pool income; less is a loss.
+      </p>
+    </section>
+  );
+}
+
+/** "1.5 ETH · 250 USDC". */
+export const chainAmounts = (address: WalletAddress): string => chainPieces(address).join(' · ');
+
+// Each coin is one unbreakable piece: a row wraps between coins, a phone stacks them.
+// Staked SOL and coins in liquidity pools are already in the amounts; muted lines under them
+// say how much.
+function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
+  const pieces = chainPieces(address);
+  const notes = [stakedPiece(address), pooledPiece(address), earnPiece(address)].filter(
+    (piece): piece is string => piece !== null,
+  );
+  const note =
+    notes.length > 0 &&
+    notes.map((piece) => (
+      <span key={piece} className="wallets-muted wallets-amounts__staked">
+        {piece}
+      </span>
+    ));
+  if (stacked)
+    return (
+      <span className="transactions-item__amount wallets-stack">
+        {pieces.map((piece) => (
+          <span key={piece}>{piece}</span>
+        ))}
+        {note}
+      </span>
+    );
+  return (
+    <span className="wallets-amounts">
+      {pieces.flatMap((piece, index) => [
+        index ? ' ' : null,
+        <span key={piece} className="wallets-num">
+          {piece}
+          {index < pieces.length - 1 && ' ·'}
+        </span>,
+      ])}
+      {note}
+    </span>
+  );
 }
 
 export function AddressRow({
   address,
   run,
   narrow,
-  btcPrice,
+  prices,
   currency,
   onOpen,
   onSync,
@@ -49,13 +397,13 @@ export function AddressRow({
   address: WalletAddress;
   run: SyncRun | undefined;
   narrow: boolean;
-  btcPrice: string | null;
+  prices: Prices;
   currency: AccountingCurrency;
   onOpen: () => void;
   onSync: () => void;
 }) {
-  const name = address.label ?? 'Bitcoin';
-  const amount = address.chainBalance === null ? DASH : `${quantity(address.chainBalance)} BTC`;
+  const network = networkOf(address);
+  const name = address.label ?? network.name;
   const when = syncAge(address, run);
   const problem = syncProblem(address, run);
   const loading =
@@ -86,21 +434,23 @@ export function AddressRow({
     </div>
   ) : null;
   const label = `${name} ${address.address}`;
+  // M21: an account key stands for many addresses; the row says how many were used.
+  const derived = keyAddresses(address);
   if (narrow) {
     return (
       <li className="wallets-source">
         <button type="button" className="transactions-item" aria-label={label} onClick={onOpen}>
-          <AssetIcon symbol="BTC" name="Bitcoin" assetType="crypto" />
+          <AssetIcon {...networkIcon(network)} />
           <span className="transactions-item__main">
             <span className="transactions-item__title">{name}</span>
             <span className="transactions-item__detail">
-              {shortAddress(address.address)} · {syncBadge(address, run).label}
+              {derived ?? place(address)} · {syncBadge(address, run).label}
             </span>
           </span>
           <span className="transactions-item__side">
-            <span className="transactions-item__amount">{amount}</span>
+            <ChainAmounts address={address} stacked />
             <span className="transactions-item__value">
-              {addressValue(address, btcPrice, currency)}
+              {addressValue(address, prices, currency)}
             </span>
           </span>
         </button>
@@ -112,14 +462,15 @@ export function AddressRow({
     <li className="wallets-source">
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
-          <AssetIcon symbol="BTC" name="Bitcoin" assetType="crypto" size="sm" />
-          <span className="wallets-asset__name">{name}</span>
+          <AssetIcon {...networkIcon(network)} size="sm" />
+          <span className="wallets-asset__text">
+            <span className="wallets-asset__name">{name}</span>
+            {derived && <span className="portfolio-sub">{derived}</span>}
+          </span>
         </span>
-        <span className="wallets-mono wallets-soft">{shortAddress(address.address)}</span>
-        <span className="wallets-num">{amount}</span>
-        <span className="wallets-num wallets-right">
-          {addressValue(address, btcPrice, currency)}
-        </span>
+        <span className="wallets-mono wallets-soft">{place(address)}</span>
+        <ChainAmounts address={address} stacked={false} />
+        <span className="wallets-num wallets-right">{addressValue(address, prices, currency)}</span>
         <span className="wallets-right wallets-status">
           <SyncBadge address={address} run={run} />
           {when && <span className="wallets-muted">{when}</span>}
@@ -194,17 +545,43 @@ export function ManualRow({
 
 export function ReconcileNote({ result }: { result: Reconciliation }) {
   if (result.state !== 'differs') return null;
-  const difference = result.difference.replace(/^-/, '');
+  const lines = result.assets.map(({ symbol, chain, recorded, difference, exchange }) => {
+    const by = quantity(difference.replace(/^-/, ''));
+    const source = exchange ? 'Bybit reports' : 'The blockchain shows';
+    return `Balance differs by ${by} ${symbol}. ${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
+  });
+  // BYBIT-GAPS: what the API never lists, such as P2P purchases, is entered by hand.
+  const advice = result.assets.every((item) => item.exchange)
+    ? 'Add what Bybit does not report, such as P2P purchases or Earn yield older than three months, as transactions by hand.'
+    : 'Add the missing transactions or check that every address belongs here.';
   return (
     <p className="wallets-message wallets-message--warn" role="note">
-      Balance differs by {quantity(difference)} BTC. The blockchain shows {quantity(result.chain)}{' '}
-      BTC; your transactions in this wallet give {quantity(result.recorded)} BTC. Add the missing
-      transactions or check that every address belongs here.
+      {lines.join(' ')} {advice}
     </p>
   );
 }
 
+/** Where a row's coins are: an address, or a Bybit account by its user ID. */
+function place(address: WalletAddress): string {
+  return networkOf(address).exchange ? `UID ${address.address}` : shortAddress(address.address);
+}
+
 export function subtitle(addresses: WalletAddress[]): string {
   if (addresses.length === 0) return 'Tracked by hand';
-  return addresses.length === 1 ? 'Bitcoin · 1 address' : `Bitcoin · ${addresses.length} addresses`;
+  const names = (Object.keys(networks) as WalletAddress['network'][])
+    .filter((network) => addresses.some((address) => address.network === network))
+    .map((network) => networks[network].name)
+    .join(', ');
+  if (addresses.every((address) => networkOf(address).exchange))
+    return addresses.length === 1
+      ? `${names} · 1 account`
+      : `${names} · ${addresses.length} accounts`;
+  return addresses.length === 1
+    ? `${names} · 1 address`
+    : `${names} · ${addresses.length} addresses`;
+}
+
+/** Holdings the account's addresses already show from the chain are not listed again. */
+export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
+  return new Set(addresses.flatMap(addressAssets));
 }

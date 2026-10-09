@@ -8,7 +8,12 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import type { Network } from '../wallet-addresses/chain-assets';
+import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
 import type { PriceSource } from './asset-classification';
+import { chainCoin, legMovement } from './chain-classification';
+import { poolMoveUnits } from './chain-pool';
+import { recordGone } from './chain-recorded';
 import {
   type ConnectedLedger,
   type ConnectedLedgerCache,
@@ -27,6 +32,8 @@ import {
   projectPortfolio,
   type StoredPrice,
 } from './portfolio-valuation';
+import { applyChainMoves, type ChainMove } from './provisional-chain';
+import { findOrCreateInstrument } from './trade.service';
 
 export interface AccountRow {
   accountId: string;
@@ -89,6 +96,163 @@ export interface ValuationInputs {
   instruments: PortfolioInstrument[];
   accounts: AccountRow[];
   ledgers: ConnectedLedgerCache;
+  /** D1: each account's unanswered chain movements and outgoing "Other" answers. */
+  chainMoves: ReadonlyMap<string, readonly ChainMove[]>;
+}
+
+interface ChainMoveRow {
+  accountId: string;
+  network: Network;
+  asset: string | null;
+  blockTime: Date;
+  receivedUnits: string;
+  sentUnits: string;
+  /** SOL-STAKE-MOVE: the part of the leg that went into (or came from) own stake accounts. */
+  stakeUnits: string;
+}
+
+/** A signed amount as a leg: positive arrives, negative leaves. */
+const signedLeg = (units: bigint) => ({
+  receivedUnits: (units > 0n ? units : 0n).toString(),
+  sentUnits: (units < 0n ? -units : 0n).toString(),
+});
+
+/**
+ * D1, CLS-PROVISIONAL: the chain movements that count before anyone answers them. Hidden ones
+ * and answers that produced an entry are out; an outgoing "Other" produced none and stays in.
+ * CLS-RECORDED: one already recorded by hand is out while that record counts.
+ * A coin the owner has no asset for yet is left out until one exists. SOL-STAKE-MOVE: SOL that
+ * went into the wallet's own stake accounts never left it, so only the rest of its leg (the
+ * fee) moves; a stake change without a leg of its own and every staking reward count as they
+ * are (SOL-STAKE-REWARD: received without a purchase price, not a deposit).
+ */
+export async function readChainMoves(
+  manager: EntityManager,
+  owner: string,
+): Promise<Map<string, ChainMove[]>> {
+  const rows: ChainMoveRow[] = await manager.query(
+    `SELECT w."accountId", w.network, t.asset, t."blockTime",
+        t."receivedUnits"::text AS "receivedUnits",
+        t."sentUnits"::text AS "sentUnits",
+        coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
+          AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits"
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
+        AND h.txid=t.txid
+      LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+        AND (v.status IS NULL OR v.status='unclassified' OR (v.status='classified'
+          AND v.type='other' AND v."tradeId" IS NULL AND v."rewardId" IS NULL
+          AND v."transferId" IS NULL) OR ${recordGone('v', 'w."accountId"')})
+      ORDER BY t."blockTime", t.txid, w.id`,
+    [owner],
+  );
+  // BYBIT-TRADES (M22): a Bybit trade nobody has answered moved its quote coin as well (USDT
+  // spent on a buy, received on a sale). So does one answered "Other", which records nothing
+  // for that side. A recognised Buy or Sell settles the quote coin itself.
+  const quotes: ChainMoveRow[] = await manager.query(
+    `SELECT w."accountId", w.network, t.raw->>'quoteAsset' AS asset, t."blockTime",
+        greatest((t.raw->>'quoteUnits')::numeric, 0)::text AS "receivedUnits",
+        greatest(-(t.raw->>'quoteUnits')::numeric, 0)::text AS "sentUnits", '0' AS "stakeUnits"
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
+        AND h.txid=t.txid
+      LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w.network='bybit'
+        AND t.raw ? 'quoteAsset'
+        AND (v.status IS NULL OR v.status='unclassified'
+          OR (v.status='classified' AND v.type='other') OR ${recordGone('v', 'w."accountId"')})
+      ORDER BY t."blockTime", t.txid`,
+    [owner],
+  );
+  rows.push(...quotes);
+  const stake: (Omit<ChainMoveRow, 'receivedUnits' | 'sentUnits'> & { units: string })[] =
+    await manager.query(
+      `SELECT w."accountId", w.network, NULL AS asset, m."blockTime", m.units::text AS units,
+          '0' AS "stakeUnits"
+        FROM wallet_addresses w
+        JOIN ${stakeMoves} m ON m."ownerId"=w."ownerId" AND m."addressId"=w.id
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM wallet_address_transactions t
+            WHERE t."addressId"=m."addressId" AND t.txid=m.txid)
+      UNION ALL
+      SELECT w."accountId", w.network, NULL, r."observedAt", r.units::text, '0'
+        FROM wallet_addresses w
+        JOIN ${stakeRewards} r ON r."ownerId"=w."ownerId" AND r."addressId"=w.id
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL`,
+      [owner],
+    );
+  for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
+  // POOL-DEPOSIT, POOL-WITHDRAW: coins in a liquidity pool stay held; a deposit and a withdrawal
+  // spend their network fee, and a withdrawal that returned less than its deposit the rest.
+  const pools: (Omit<ChainMoveRow, 'stakeUnits'> & {
+    feeUnits: string;
+    deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
+  })[] = await manager.query(
+    `SELECT w."accountId", w.network, t.asset, t."blockTime",
+        t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
+        t."feeUnits"::text AS "feeUnits",
+        CASE WHEN p.txid IS NULL THEN NULL ELSE json_build_object(
+          'receivedUnits', p."receivedUnits"::text, 'sentUnits', p."sentUnits"::text,
+          'feeUnits', p."feeUnits"::text) END AS deposit
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+      JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      LEFT JOIN wallet_address_transactions p ON v.type='pool-withdrawal'
+        AND p."addressId"=v."pairedAddressId" AND p.txid=v."pairedTxid"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND v.status='classified'
+        AND v.type IN ('pool-deposit', 'pool-withdrawal')
+      ORDER BY t."blockTime", t.txid, w.id`,
+    [owner],
+  );
+  for (const { deposit, feeUnits, ...row } of pools) {
+    const units = poolMoveUnits({ ...row, feeUnits }, deposit && { ...row, ...deposit });
+    rows.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
+  }
+  const coins = new Map<string, string | null>();
+  const moves = new Map<string, ChainMove[]>();
+  for (const row of rows) {
+    const key = `${row.network}:${row.asset ?? ''}`;
+    if (!coins.has(key))
+      coins.set(
+        key,
+        (await findOrCreateInstrument(manager, owner, chainCoin(row), false))?.id ?? null,
+      );
+    const instrumentId = coins.get(key);
+    const occurredAt = row.blockTime.toISOString();
+    const net = BigInt(row.receivedUnits) - BigInt(row.sentUnits) + BigInt(row.stakeUnits);
+    const { inbound, quantity } = legMovement({ ...row, ...signedLeg(net), blockTime: occurredAt });
+    if (!instrumentId || quantity === '0') continue;
+    const list = moves.get(row.accountId) ?? [];
+    list.push({ instrumentId, occurredAt, inbound, quantity });
+    moves.set(row.accountId, list);
+  }
+  return moves;
+}
+
+/**
+ * D1: creates the asset of every coin or token a wallet in an account moved, so its unanswered
+ * movements count. The caller holds the owner's accounting lock.
+ */
+export async function ensureChainCoins(manager: EntityManager, owner: string): Promise<void> {
+  // A Bybit trade (M22) also moves its quote coin.
+  const rows: { network: Network; asset: string | null }[] = await manager.query(
+    `SELECT DISTINCT w.network, x.asset
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      CROSS JOIN LATERAL (SELECT t.asset UNION ALL
+        SELECT t.raw->>'quoteAsset' WHERE w.network='bybit' AND t.raw ? 'quoteAsset') x
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+      ORDER BY w.network, x.asset`,
+    [owner],
+  );
+  for (const row of rows) await findOrCreateInstrument(manager, owner, chainCoin(row), true);
 }
 
 /**
@@ -124,7 +288,7 @@ export async function readValuationInputs(
   } catch (error) {
     rethrowAccountingHistory(error);
   }
-  return { instruments, accounts, ledgers };
+  return { instruments, accounts, ledgers, chainMoves: await readChainMoves(manager, owner) };
 }
 
 /**
@@ -143,6 +307,17 @@ export function accountsAt(
     for (const row of inputs.accounts) {
       const identity = { accountId: row.accountId, name: row.name };
       const ledger = inputs.ledgers.get(row.accountId);
+      const moves = inputs.chainMoves.get(row.accountId) ?? [];
+      // D1: a wallet account with no operation of its own holds what the chain moved.
+      if (!row.coverageFrom && moves.length > 0) {
+        accounts.push({
+          ...identity,
+          coverage: 'covered',
+          lots: applyChainMoves([], moves, at),
+          realizations: [],
+        });
+        continue;
+      }
       const started = !!row.coverageFrom && row.coverageFrom.toISOString() <= at;
       const empty =
         options.emptyBeforeCoverage &&
@@ -158,17 +333,16 @@ export function accountsAt(
       }
       const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
       projections.set(ledger, projection);
-      accounts.push(
-        portfolioAccount(
-          identity,
-          projection.accounts.get(row.accountId)!,
-          {
-            ...ledger.accounts.get(row.accountId)!,
-            linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
-          },
-          projection.swapAllocations,
-        ),
+      const valued = portfolioAccount(
+        identity,
+        projection.accounts.get(row.accountId)!,
+        {
+          ...ledger.accounts.get(row.accountId)!,
+          linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+        },
+        projection.swapAllocations,
       );
+      accounts.push({ ...valued, lots: applyChainMoves(valued.lots, moves, at) });
     }
   } catch (error) {
     rethrowAccountingHistory(error);

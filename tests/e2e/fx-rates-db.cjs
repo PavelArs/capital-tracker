@@ -305,11 +305,11 @@ async function ownerSettings(db) {
     ('currency-owner@example.invalid','synthetic-not-a-hash',true),
     ('currency-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
   const service = new OwnerSettingsService(db);
-  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'USD' }, 'No saved row means USD');
-  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'EUR' }), { mainCurrency: 'EUR' });
-  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), { mainCurrency: 'RUB' });
-  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'RUB' });
-  assert.deepEqual(await service.read(other.id), { mainCurrency: 'USD' }, 'One owner never changes another');
+  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'USD', dustThresholdUsd: null }, 'No saved row means USD');
+  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'EUR' }), { mainCurrency: 'EUR', dustThresholdUsd: null });
+  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), { mainCurrency: 'RUB', dustThresholdUsd: null });
+  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'RUB', dustThresholdUsd: null });
+  assert.deepEqual(await service.read(other.id), { mainCurrency: 'USD', dustThresholdUsd: null }, 'One owner never changes another');
   const before = await fingerprint(db);
   for (const input of [{ mainCurrency: 'GBP' }, { mainCurrency: 'rub' }, { mainCurrency: 'EUR', theme: 'dark' }, {}, [], null, 'EUR']) {
     await rejected(() => service.update(owner.id, input), 400);
@@ -492,7 +492,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 33/);
+    assert.match(migrate(name), /Migrations applied: 49/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -504,7 +504,7 @@ async function main() {
   await broken.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 33);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 49);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);

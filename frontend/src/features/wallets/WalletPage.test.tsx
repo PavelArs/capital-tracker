@@ -28,6 +28,7 @@ const wallet = (n: number, changes: Partial<WalletAddress> = {}): WalletAddress 
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
+  balances: null,
   sync: {
     state: 'complete',
     completedAt: new Date(Date.now() - 8 * 60_000).toISOString(),
@@ -151,6 +152,7 @@ const operation = (n: number, changes: Partial<Operation>): Operation => ({
   account: { id: trust, name: 'Trust Wallet' },
   counterAccount: null,
   wallet: null,
+  counterWallet: null,
   chain: null,
   status: 'recorded',
   source: 'manual',
@@ -161,6 +163,7 @@ const operations = (items: Operation[]): OperationList => ({
   at: '2026-10-05T12:00:00.000Z',
   quoteCurrency: 'USD',
   needsClassificationCount: 0,
+  dustThresholdUsd: null,
   operations: items,
 });
 
@@ -174,7 +177,7 @@ const chainReceipt = operation(2, {
   value: null,
   valueUsd: null,
   wallet: { id: id(21), network: 'bitcoin', address: wallet(1).address, label: 'Savings' },
-  chain: { txid: 'a'.repeat(64), blockHeight: 800000, priceObservedAt: null },
+  chain: { txid: 'a'.repeat(64), blockHeight: 800000, priceObservedAt: null, direction: 'in' },
   status: 'needs-classification',
   source: 'chain',
   version: null,
@@ -376,7 +379,7 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const summary = screen.getByRole('region', { name: 'Summary' });
     expect(within(summary).getByText('None')).toBeInTheDocument();
     expect(within(summary).getByText('Tracked by hand')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add a Bitcoin address' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add a wallet address' })).toBeInTheDocument();
   });
 
   it('says when the wallet does not exist', async () => {

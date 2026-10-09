@@ -1,11 +1,15 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
+import { securityApi } from '@api/security.api';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from './SettingsPage';
+
+// Settings → Security has its own tests; here it only has to render.
+vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
 
 // A controllable device colour scheme behind window.matchMedia.
 let deviceDark = false;
@@ -24,6 +28,7 @@ beforeEach(() => {
   // Theme cases do not depend on the server settings; they stay pending.
   vi.spyOn(ownerSettingsApi, 'get').mockReturnValue(new Promise(() => {}));
   vi.spyOn(fxRatesApi, 'get').mockReturnValue(new Promise(() => {}));
+  vi.spyOn(securityApi, 'get').mockReturnValue(new Promise(() => {}));
   stored.clear();
   listeners.clear();
   vi.mocked(window.localStorage.getItem).mockImplementation((key) => stored.get(key) ?? null);
@@ -97,12 +102,10 @@ describe('SHELL-006 theme setting', () => {
     expect(applied()).toBe('dark');
   });
 
-  it('points to the legacy settings that are still separate', () => {
+  it('no longer points to the retired legacy settings (M20)', () => {
     renderSettings();
-    expect(screen.getByRole('link', { name: 'Legacy settings' })).toHaveAttribute(
-      'href',
-      '/settings',
-    );
+    expect(screen.queryByRole('link', { name: 'Legacy settings' })).toBeNull();
+    expect(screen.queryByText(/old display rates/)).toBeNull();
   });
 });
 
@@ -118,10 +121,15 @@ describe('CUR-SWITCH main currency setting', () => {
   };
 
   it('loads the saved currency, saves a new one and shows the stored rates', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'USD' });
-    const update = vi
-      .spyOn(ownerSettingsApi, 'update')
-      .mockImplementation(async (settings) => settings);
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+      ...settings,
+    }));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates);
     const user = userEvent.setup();
     renderSettings();
@@ -139,7 +147,10 @@ describe('CUR-SWITCH main currency setting', () => {
   });
 
   it('keeps the saved currency when saving fails and says so', async () => {
-    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({ mainCurrency: 'RUB' });
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'RUB',
+      dustThresholdUsd: null,
+    });
     vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
     vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
       ...rates,
@@ -168,5 +179,76 @@ describe('CUR-SWITCH main currency setting', () => {
       'Could not save the main currency; nothing changed.',
     );
     expect(within(group).getByRole('radio', { name: 'RUB' })).toBeChecked();
+  });
+});
+
+describe('dust threshold (CLS-DUST)', () => {
+  it('saves a threshold, refuses a bad one and turns it off when emptied', async () => {
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+    });
+    const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
+      mainCurrency: 'USD',
+      dustThresholdUsd: null,
+      ...settings,
+    }));
+    const user = userEvent.setup();
+    renderSettings();
+    const input = await screen.findByRole('textbox', { name: 'Dust threshold' });
+    await waitFor(() => expect(input).toBeEnabled());
+    expect(
+      screen.getByText('Off: every incoming wallet transaction asks to be classified.'),
+    ).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: 'Save' });
+
+    await user.type(input, '0');
+    await user.click(save);
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Enter an amount in USD above 0 and up to 1,000,000, or leave it empty to turn it off.',
+    );
+    expect(update).not.toHaveBeenCalled();
+
+    await user.clear(input);
+    await user.type(input, '1.5');
+    await user.click(save);
+    expect(update).toHaveBeenCalledWith({ dustThresholdUsd: '1.5' });
+    expect(
+      await screen.findByText(
+        'Saved. Smaller incoming transactions are under Transactions → Dust.',
+      ),
+    ).toBeInTheDocument();
+
+    await user.clear(input);
+    await user.click(save);
+    expect(update).toHaveBeenLastCalledWith({ dustThresholdUsd: null });
+    expect(
+      await screen.findByText(
+        'Saved. Every incoming wallet transaction asks to be classified again.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the saved threshold and keeps it when saving fails', async () => {
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'USD',
+      dustThresholdUsd: '2',
+    });
+    vi.spyOn(ownerSettingsApi, 'update').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    renderSettings();
+    const input = await screen.findByRole('textbox', { name: 'Dust threshold' });
+    await waitFor(() => expect(input).toHaveValue('2'));
+    expect(
+      screen.getByText(
+        "Incoming wallet transactions worth less than $2.00 at the latest price don't ask to be classified.",
+      ),
+    ).toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, '5');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Could not save the dust threshold; nothing changed.',
+    );
   });
 });

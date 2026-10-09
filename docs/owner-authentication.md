@@ -2,7 +2,10 @@
 
 The current change requires a password and a confirmed second factor before private
 access. Operator enrollment, replacement and password recovery use trusted CLIs;
-there is no public signup, email reset or MFA setup route. The MFA implementation
+the owner can also reset a forgotten password through an emailed single-use link
+(see [Password reset by email](#password-reset-by-email)). There is no public signup or
+first-time MFA setup route; a signed-in owner can set the authenticator up again from
+Settings → Security after a fresh factor (see [Security settings](#security-settings)). The MFA implementation
 passed local release-image PostgreSQL and55 HTTPS Chromium checks. Consult the
 archived `enforce-owner-second-factor` verification record for exact execution
 evidence and limitations. Production rollout has not occurred.
@@ -289,16 +292,25 @@ its `/api` prefix.
 | `POST /auth/mfa` | Requires a password-derived pending cookie, exact Origin and its CSRF token, plus `{ kind: 'totp' \| 'recovery', code: string }`. Success consumes pending state and issues a new full cookie with `{ user, csrfToken }`. |
 | `GET /auth/me` | Requires full authentication. Pending/anonymous cookies cannot restore a profile. Browser startup removes the obsolete localStorage `token` key. |
 | `POST /auth/logout` | Requires a pending or full cookie, Origin and CSRF. Deletes that session and clears the cookie, returning 204. The UI clears full user state only after success. |
+| `POST /auth/password-reset` | Public with exact Origin, a session cookie and CSRF, plus `{ email }`. Always answers 202 with no body; only the owner's email gets a link. |
+| `POST /auth/password-reset/status` | Public with Origin and CSRF, plus `{ token }`. Answers `{ state: 'valid' \| 'expired' \| 'invalid' }` without changing anything. |
+| `POST /auth/password-reset/confirm` | Public with Origin and CSRF, plus `{ token, password }`. Sets the password and answers 204; an expired or used link answers 410 with `error: 'expired' \| 'invalid'`, a password outside 15–128 characters 400. |
+| `GET /auth/security` | Full session. Answers `{ recoveryCodes: { unused, total }, sessions: [{ id, device, signedInAt, lastActiveAt, current }] }` for Settings → Security. |
+| `POST /auth/security/recovery-codes` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ code }` (a fresh TOTP). Answers `{ recoveryCodes }` once; see [Security settings](#security-settings). |
+| `POST /auth/security/authenticator` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ kind: 'totp' \| 'recovery', code }` (a fresh factor). Answers `{ uri, secret, candidateId, expiresAt }` for a new authenticator that waits ten minutes for its first code; see [Security settings](#security-settings). |
+| `POST /auth/security/authenticator/confirm` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ candidateId, code }` (the new app's first code). Activates it and answers `{ recoveryCodes }` once; 422 for a wrong code, 410 once the setup expired or had five wrong codes. |
+| `DELETE /auth/security/sessions/:id` | Full session, Origin and CSRF. Logs out one other signed-in browser (204); this browser or an unknown id answers 404. |
+| `POST /auth/security/logout-everywhere` | Full session, Origin and CSRF. Deletes every pending and full owner session, this one included, clears the cookie and answers 204. |
 
-The Russian login form separates password and factor steps and offers recovery-code
-entry. Full user/navigation state appears only after factor verification. Reloading
+The English sign-in screens (prototype "Sign-in" tab) separate password and factor steps and
+offer recovery-code entry. Full user/navigation state appears only after factor verification. Reloading
 a pending login may return to the password form. Re-entering the password can replace
 pending state. Every successful rotation installs the new in-memory CSRF token.
 
 Every matched state-changing route requires Origin and CSRF. Failed CSRF writes are
 rejected; the client refreshes CSRF for a later explicit retry and never automatically
 replays the mutation. Controller routes are private by default; explicit public
-endpoints are CSRF retrieval, password login and minimal `GET /health`
+endpoints are CSRF retrieval, password login, the three password-reset routes and minimal `GET /health`
 (`{"status":"ok"}`). MFA completion and logout explicitly allow pending state without
 bypassing authentication or CSRF. Detailed health and the backend root require full
 authentication. Auth/private responses use `Cache-Control: no-store`. There is no
@@ -327,19 +339,84 @@ window begin a ten-minute cooldown; the tenth and blocked completion attempts re
 Renewing a challenge, restarting the backend or spoofing forwarding headers cannot
 reset the persisted owner block. Blocked attempts do not extend its deadline. Expiry,
 successful factor completion, trusted confirmation or password recovery clears the
-relevant failure state. The shared source and claimed-account admissions
+relevant failure state. Window expiry does not clear the owner's separate count of
+consecutive failures: the hundredth failure since the last success locks TOTP and
+recovery-code completion (429) until successful trusted confirmation or CLI password
+recovery, so guesses paced below the window cooldown cannot continue indefinitely. The shared source and claimed-account admissions
 are separate from this persistent owner/challenge cooldown. Do not reset either
 ledger during a test case to make a later factor phase pass; use the real
 two-replica path and record the expected ledger deltas.
+
+## Password reset by email
+
+BR 2.2 / PR-AUTH-3. "Forgot password?" on the login page opens `/password-reset`, which
+asks for an email and always shows "Check your email". When the email is the owner's,
+the backend stores only the SHA-256 digest of a new random 256-bit token
+(`password_reset_tokens`, migration `1792500000000`) and emails
+`FRONTEND_URL/password-reset/new#token=…`. The token sits in the fragment, so it never
+reaches a server or proxy log; the page posts it back and removes it from the address
+bar once the link is spent. The answer never waits for SMTP, so neither its content nor
+its timing says whether an email went out, and an unknown email sends nothing.
+
+A link lives exactly 30 minutes (a table check) and works once. A newer link, a used
+link and CLI `recover` revoke every other outstanding link. Confirming sets the new
+Argon2id password, rotates the credential revision and deletes every owner session in
+one transaction; the TOTP factor and recovery codes stay as they are, so the new
+password still leads only to the pending state. The owner gets at most three links
+per hour; past that a request still answers 202 and sends nothing. All three routes
+also share the `reset-ip` source budget of 5 requests per 60 seconds, refused with
+429 and `Retry-After` before any lookup. Links older than a day are pruned.
+
+Mail goes through Yandex SMTP with implicit TLS on `smtp.yandex.ru:465`, signed in with
+`SMTP_USER` and an app password in `SMTP_PASSWORD` from `.env.release` (optional
+`SMTP_HOST`, `SMTP_PORT` and `SMTP_FROM`). Without them the request still answers 202
+and the backend logs that email is not configured. Failure logs name only the SMTP
+error code, never the address, link or credentials. Acceptance replaces only the mail
+provider with the providers fixture's synthetic SMTP sink.
+
+## Security settings
+
+BR 2.3 / PR-AUTH-4 (M18). Settings → Security shows that two-factor authentication is on
+(it cannot be turned off), how many recovery codes of the active factor are unused, and every
+signed-in browser of the owner, newest activity first.
+
+New recovery codes need a fresh TOTP from the authenticator, checked like a sign-in factor:
+the step must be newer than the last accepted one, a wrong or replayed code answers 422 and
+counts toward the owner's ten-per-ten-minutes cooldown and the hundred-failure lock (429 once
+reached), and a malformed code answers 400 without spending a guess. Success consumes the step
+and, in one transaction, replaces all recovery codes with ten new ones that the browser shows
+once; only their hashes are stored. Sessions, password and the TOTP secret stay as they are.
+
+Setting the authenticator up again (SEC-TOTP) starts with a fresh factor: a TOTP from the
+current app, checked exactly as above, or an unused recovery code, which is spent, for an owner
+whose phone is lost. A wrong, replayed or used code answers 422 and counts toward the same owner
+limits. Success stores a new encrypted candidate secret for ten minutes, the same candidate the
+MFA CLI's `prepare` creates, and the browser draws its QR code locally and shows the key once;
+the current factor and recovery codes keep working meanwhile. The first code from the new app
+confirms it in one transaction: the candidate becomes the active factor with that step consumed,
+ten new recovery codes replace every old one, the credential revision rotates and every other
+pending or full session of the owner ends, while this browser's session moves to the new revision.
+Five wrong confirmation codes or expiry retire the candidate (410). Two-factor authentication
+itself cannot be turned off, and the first enrollment of a new installation stays with the CLI.
+
+The session list names each browser by a fixed label such as "Safari on iPhone", derived from
+the User-Agent when the factor completes and stored in `auth_sessions.device` (migration
+`1792800000000`); the header itself is never kept, and sessions from before the migration
+show "Unknown device". A session's id is a digest of its token hash, so the list exposes no
+cookie, token digest or CSRF token. Logging out one session or everywhere locks the owner row
+first, as factor completion does, so no sign-in completes past it; "everywhere" also ends
+half-finished password steps and leaves anonymous visitors alone. Neither changes the password
+or the factor.
 
 ## Threat model and remaining controls
 
 | Threat | Current boundary | Still required |
 |---|---|---|
-| Anonymous account creation/email recovery | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
+| Anonymous account creation | Removed routes/forms; CLI-only owner provisioning and enrollment | Complete route audit, distributed request limits and DAST |
+| Email reset abuse or a leaked link | Same answer for any email, hashed single-use 30-minute links, three per hour, source budget, every session revoked, TOTP still required | Mailbox compromise still yields a password reset |
 | Retained non-owner, expired cookie or legacy bearer | Owner/revision checks, protected opaque cookie, server expiry/revocation; no bearer fallback | Full ASVS mapping and broader negative acceptance |
 | Stolen owner password | Password produces only pending state; mandatory TOTP or single-use recovery code | Phishing-resistant options and distributed abuse controls |
-| Stolen full cookie | One-day absolute lifetime, server logout and CLI revocation | Recent-MFA checks for sensitive settings, XSS/CSP hardening |
+| Stolen full cookie | One-day absolute lifetime, server logout, "Log out everywhere" and per-session logout in Settings, CLI revocation; new recovery codes need a fresh TOTP that counts toward the factor limits | XSS/CSP hardening |
 | Replayed factor or concurrent recovery code | Monotonic TOTP counter and transactional code/session consumption | Continuing concurrency and availability review |
 | Cross-site writes | Exact configured HTTPS Origin and bound CSRF, no implicit proxy trust | Broader browser/proxy review and XSS defenses |
 | Guessing or session exhaustion | Persisted owner/challenge MFA limits and transactional session caps | Shared password/IP limits and operational capacity tests |

@@ -66,7 +66,11 @@ export function age(observedAt: string, now: Date): string {
   return `${Math.floor(hours / 24)} d ago`;
 }
 
-const sourceNames: Record<string, string> = { kraken: 'Kraken', coingecko: 'CoinGecko' };
+const sourceNames: Record<string, string> = {
+  kraken: 'Kraken',
+  coingecko: 'CoinGecko',
+  bybit: 'Bybit',
+};
 
 export const sourceLabels: Record<PriceSource, string> = {
   market: 'Market price',

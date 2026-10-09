@@ -1,6 +1,13 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
+import { isExtendedKey, normalizeExtendedKey } from './bitcoin-xpub';
+import type { BybitCredentials } from './bybit-client';
+import { isApiKey, isApiSecret } from './bybit-key-box';
+import { isNetwork, type Network } from './chain-assets';
+import { normalizeEthereumAddress } from './ethereum-address';
+import { normalizeSolanaAddress } from './solana-address';
+import { normalizeTronAddress } from './tron-address';
 
 export const LABEL_MAX_LENGTH = 40;
 
@@ -33,17 +40,49 @@ function account(value: unknown): string | null {
 }
 
 export interface Registration {
+  network: Exclude<Network, 'bybit'>;
   address: string;
   accountId: string | null;
   label: string | null;
 }
+/** BYBIT-KEY (M22): an exchange account is added by its read-only API key, not an address. */
+export interface ExchangeRegistration {
+  network: 'bybit';
+  credentials: BybitCredentials;
+  accountId: string | null;
+  label: string | null;
+}
 
-// Only Bitcoin is tracked so far; Ethereum and Solana join with their own sync (M14, M15).
-export function parseRegistration(raw: unknown): Registration {
+const normalizers: Record<Exclude<Network, 'bybit'>, (value: unknown) => string> = {
+  // One address, or an account public key that stands for all of its addresses (M21).
+  bitcoin: (value) =>
+    isExtendedKey(value) ? normalizeExtendedKey(value) : normalizeBitcoinAddress(value),
+  ethereum: normalizeEthereumAddress,
+  solana: normalizeSolanaAddress,
+  tron: normalizeTronAddress,
+};
+
+// Bitcoin (the default of the legacy body), Ethereum (M14), Solana (M15), Bybit (M22) and Tron.
+export function parseRegistration(raw: unknown): Registration | ExchangeRegistration {
+  if ((raw as Record<string, unknown> | null)?.network === 'bybit') {
+    const row = object(raw, ['network', 'apiKey', 'apiSecret', 'accountId', 'label']);
+    // Surrounding spaces from a copy are dropped; anything else must be exactly the key.
+    const apiKey = typeof row.apiKey === 'string' ? row.apiKey.trim() : row.apiKey;
+    const apiSecret = typeof row.apiSecret === 'string' ? row.apiSecret.trim() : row.apiSecret;
+    if (!isApiKey(apiKey) || !isApiSecret(apiSecret)) return bad();
+    return {
+      network: 'bybit',
+      credentials: { apiKey, apiSecret },
+      accountId: account(row.accountId),
+      label: label(row.label),
+    };
+  }
   const row = object(raw, ['network', 'address', 'accountId', 'label']);
-  if (row.network !== undefined && row.network !== 'bitcoin') return bad();
+  const network = row.network ?? 'bitcoin';
+  if (!isNetwork(network) || network === 'bybit') return bad();
   return {
-    address: normalizeBitcoinAddress(row.address),
+    network,
+    address: normalizers[network](row.address),
     accountId: account(row.accountId),
     label: label(row.label),
   };

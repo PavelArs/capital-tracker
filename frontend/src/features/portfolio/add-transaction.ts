@@ -159,6 +159,19 @@ export function problems(
 export const occurredAt = (entry: Pick<TransactionEntry, 'date' | 'time'>) =>
   `${entry.date}T${entry.time || '00:00'}:00.000Z`;
 
+/**
+ * A new entry dated today (UTC) without a time stands for the current minute, so it follows
+ * today's earlier operations, such as an asset added with an amount a moment ago.
+ */
+export function withDefaultTime<T extends Pick<TransactionEntry, 'date' | 'time'>>(
+  entry: T,
+  now: Date,
+): T {
+  const instant = now.toISOString();
+  if (entry.time || entry.date !== instant.slice(0, 10)) return entry;
+  return { ...entry, time: instant.slice(11, 16) };
+}
+
 /** Two nonnegative decimal strings as integers of the same scale, and that scale. */
 function scaledPair(left: string, right: string): [bigint, bigint, number] {
   const [leftWhole, leftFraction = ''] = left.split('.');

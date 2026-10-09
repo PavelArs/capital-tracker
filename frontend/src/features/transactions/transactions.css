@@ -53,7 +53,34 @@
   background: transparent;
 }
 
-/* Seven columns fit 1280 px: tighter cells; long types, assets and accounts wrap. */
+/* Six columns of fixed shares fit 1280 px: a chip or filter that shows other rows never
+   moves them (OPS-STABLE). Long types, assets and accounts wrap; narrower screens scroll. */
+.transactions-table {
+  min-width: 820px;
+  table-layout: fixed;
+}
+
+.transactions-col--type {
+  width: 19%;
+}
+
+.transactions-col--asset {
+  width: 12%;
+}
+
+.transactions-col--amount,
+.transactions-col--value {
+  width: 14%;
+}
+
+.transactions-col--place {
+  width: 24%;
+}
+
+.transactions-col--status {
+  width: 17%;
+}
+
 .transactions-table th,
 .transactions-table td {
   padding-inline: 8px;
@@ -108,14 +135,14 @@
 }
 
 .transactions-table td.transactions-wrap {
-  max-width: 130px;
   white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.transactions-table td.transactions-place {
-  min-width: 110px;
-  max-width: 170px;
-  overflow-wrap: break-word;
+/* Room between the value and the account, both edges of their columns. */
+.transactions-table td.transactions-place,
+.transactions-table th:nth-child(5) {
+  padding-left: 20px;
 }
 
 .transactions-row--needs td:first-child {
@@ -324,6 +351,24 @@
   font-size: 12px;
 }
 
+/* TX-HASH: the hash, then Copy and the explorer link on a line of their own. */
+.transactions-hash {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.transactions-hash .transactions-mono {
+  overflow-wrap: anywhere;
+}
+
+.transactions-hash__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: var(--fs-sm);
+}
+
 .transactions-info {
   margin: 0;
   padding: 10px 12px;
@@ -520,6 +565,11 @@
   background: var(--raised);
 }
 
+/* M13: "Transfer between my wallets" spans the row (accepted prototype). */
+.transactions-option--wide {
+  grid-column: 1 / -1;
+}
+
 .transactions-option[aria-pressed="true"] {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -640,4 +690,34 @@
 
 .transactions-classify__warn {
   margin: 0;
+}
+
+/* The source sits under the status (OPS-COMPACT). */
+.transactions-source {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.transactions-source .transactions-glyph {
+  width: 12px;
+  height: 12px;
+}
+
+/* CLS-NEXT: the open row stands above the drawer's scrim, so the list shows which it is. */
+.transactions-table tr.transactions-row--open td {
+  position: relative;
+  z-index: 81;
+  background: var(--raised);
+}
+
+.transactions-table tr.transactions-row--open td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.transactions-item--open {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 10px;
+  background: var(--raised);
 }

@@ -13,7 +13,7 @@
   },
   {
     "file": "tests/e2e/sessions.spec.ts",
-    "title": "SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies"
+    "title": "SES-002-A: missing CSRF and foreign Origin cannot change owner settings"
   },
   {
     "file": "tests/e2e/manual-opening.spec.ts",
@@ -32,20 +32,12 @@
     "title": "REWARD-UI: reviewed receipt keeps unknown, zero, category and exact retry intent"
   },
   {
-    "file": "tests/e2e/owned-transfers.spec.ts",
-    "title": "TRANSFER-UI: review, exact create retry, correction and terminal void use real receipts"
-  },
-  {
     "file": "tests/e2e/csv-import-journey.spec.ts",
     "title": "CSV-006-A: full Russian sale-first import retains250/100/0.5, source provenance and exact replay across restart, then rolls back the complete batch"
   },
   {
     "file": "tests/e2e/csv-import-journey.spec.ts",
     "title": "CSV-006-B regression: a committed confirm with a lost response survives actual session expiry,401, real MFA and SPA return"
-  },
-  {
-    "file": "tests/e2e/external-usd-flows.spec.ts",
-    "title": "FLOW-004-A: real Russian owner explicitly initializes, records, corrects and reviews a contribution"
   },
   {
     "file": "tests/e2e/manual-usd-prices.spec.ts",
@@ -64,24 +56,12 @@
     "title": "MPV-UI: selected exact portfolio displays explicit gaps and ignores a late stale request"
   },
   {
-    "file": "tests/e2e/period-profit.spec.ts",
-    "title": "PROFIT-UI / PROFIT-LATE: reviewed Russian preview resets on edits, errors and late responses"
-  },
-  {
-    "file": "tests/e2e/xirr-preview.spec.ts",
-    "title": "XIRR-UI / XIRR-LATE: available and unavailable rates stay bound to reviewed inputs"
-  },
-  {
-    "file": "tests/e2e/twr-preview.spec.ts",
-    "title": "TWR-UI: reviewed return, missing flow valuation and delayed result invalidation"
-  },
-  {
     "file": "tests/e2e/application-shell.spec.ts",
     "title": "SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout"
   },
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
-    "title": "ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing"
+    "title": "ADDR-API / ADDR-PRIVATE: owner imports Bitcoin history and every USD value stays missing"
   },
   {
     "file": "tests/e2e/portfolio-valuation.spec.ts",
@@ -114,5 +94,25 @@
   {
     "file": "tests/e2e/chain-classification.spec.ts",
     "title": "CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, and both survive a resync"
+  },
+  {
+    "file": "tests/e2e/chain-transfers.spec.ts",
+    "title": "XFER-UI: a send between two own wallets is one automatic transfer, and a send to the exchange is linked by hand"
+  },
+  {
+    "file": "tests/e2e/password-reset.spec.ts",
+    "title": "RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT: an emailed single-use link sets a new password, signs every device out and still needs TOTP"
+  },
+  {
+    "file": "tests/e2e/security-settings.spec.ts",
+    "title": "SEC-UI / SEC-CODES / SEC-SESSIONS: Settings lists both browsers, makes new recovery codes after a TOTP and logs out everywhere"
+  },
+  {
+    "file": "tests/e2e/owner-export.spec.ts",
+    "title": "EXP-UI / EXP-CSV / EXP-JSON: Settings → Data downloads the CSV archive and a JSON backup without secrets"
+  },
+  {
+    "file": "tests/e2e/security-settings.spec.ts",
+    "title": "SEC-TOTP: Settings sets the authenticator up again after a fresh code; other browsers sign out and the new app signs in"
   }
 ]

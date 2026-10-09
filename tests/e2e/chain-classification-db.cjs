@@ -41,11 +41,13 @@ function services(db) {
     trades,
     rewards,
     operations: make('operation-list.service', 'OperationListService'),
+    portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     classifications: make(
       'chain-classification.service',
       'ChainClassificationService',
       trades,
       rewards,
+      make('owned-transfer.service', 'OwnedTransferService'),
     ),
   };
 }
@@ -228,7 +230,13 @@ async function hide(db, s, f, { address }) {
   assert.equal(await count(s, owner), 0);
   const row = await listed(s, owner, 4);
   assert.deepEqual([row.status, row.type, row.comment], ['hidden', null, 'Dust']);
-  assert.deepEqual(row.classification, { version: 1, hidden: true, value: null, comment: 'Dust' });
+  assert.deepEqual(row.classification, {
+    version: 1,
+    hidden: true,
+    value: null,
+    comment: 'Dust',
+    automatic: false,
+  });
 
   stage = 'CLS-HIDE hiding a classified receipt voids its entry; including restores it';
   const income = await classify(s, owner, address, 4, {
@@ -257,6 +265,117 @@ async function hide(db, s, f, { address }) {
   assert.notEqual(back.value.operation.id, rewardId);
   assert.equal((await listed(s, owner, 4)).type, 'reward');
   console.log('PASS CLS-HIDE');
+
+  stage = 'CLS-OTHER a receipt nobody can name counts without a purchase price or a deposit';
+  const other = await classify(s, owner, address, 4, {
+    expectedVersion: 4,
+    classification: { type: 'other' },
+    comment: 'Unknown origin',
+  });
+  assert.equal(other.value.operation.kind, 'reward');
+  const [entry] = await db.query(
+    `SELECT v.kind, v.category, v."acquisitionBasisUsd", v."incomeValueUsd"
+      FROM account_rewards r JOIN account_reward_versions v ON v."rewardId"=r.id
+        AND v.version=r."currentVersion" WHERE r.id=$1`,
+    [other.value.operation.id],
+  );
+  assert.deepEqual(entry, {
+    kind: 'create',
+    category: 'unclassified',
+    acquisitionBasisUsd: null,
+    incomeValueUsd: null,
+  });
+  const otherRow = await listed(s, owner, 4);
+  assert.deepEqual(
+    [otherRow.type, otherRow.status, otherRow.valueUsd, otherRow.costBasisUsd, otherRow.comment],
+    ['other', 'recorded', null, null, 'Unknown origin'],
+  );
+  assert.deepEqual(otherRow.classification.value, { type: 'other' });
+  assert.equal(await count(s, owner), 0);
+  console.log('PASS CLS-OTHER');
+}
+
+async function provisional(db, s) {
+  stage = 'CLS-PROVISIONAL an unanswered receipt counts at its price, cost unknown, no deposit';
+  const { capitalFlows } = require('/app/backend/dist/portfolio-snapshots/capital-flows.js');
+  const { readValuationInputs } = require(
+    '/app/backend/dist/accounting/portfolio-valuation.service.js',
+  );
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-provisional@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const cold = await account(s, owner, 'Cold storage');
+  const address = await wallet(db, owner, cold, 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  // Binding an address to an account creates its coin's asset (WalletAddressService).
+  await require('/app/backend/dist/accounting/trade.service.js').findOrCreateInstrument(
+    db.manager,
+    owner,
+    { assetType: 'crypto', symbol: 'BTC', name: 'Bitcoin' },
+    true,
+  );
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken',$1,80000,'hourly-close')`, [new Date(now.getTime() - 600000)]);
+  await raw(db, owner, address, 21, 'in', '1000000', '0', '300', '2026-01-10T08:00:00.000Z');
+  const btc = async () => {
+    const report = await s.portfolio.read(owner, { currency: 'USD' }, now);
+    return report.assets.find((asset) => asset.symbol === 'BTC');
+  };
+  const flows = () =>
+    db.transaction(async (manager) => capitalFlows(await readValuationInputs(manager, owner)));
+  let asset = await btc();
+  assert.deepEqual(
+    [Number(asset.quantity), Number(asset.value), asset.costBasis, Number(asset.unknownCostQuantity)],
+    [0.01, 800, null, 0.01],
+  );
+  assert.deepEqual(await flows(), [], 'No deposit before the receipt is classified');
+  assert.equal(await count(s, owner), 1);
+
+  stage = 'CLS-PROVISIONAL an unanswered payment leaves too, without a withdrawal';
+  await raw(db, owner, address, 22, 'out', '596000', '1000000', '4000', '2026-02-10T08:00:00.000Z');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.value)], [0.00596, 476.8]);
+  assert.deepEqual(await flows(), []);
+
+  stage = 'CLS-OTHER a payment nobody can name stays out of the balance with no entry';
+  const answered = await classify(s, owner, address, 22, {
+    expectedVersion: 0,
+    classification: { type: 'other' },
+    comment: 'Lost card',
+  });
+  assert.deepEqual([answered.value.status, answered.value.operation], ['classified', null]);
+  const row = await listed(s, owner, 22);
+  assert.deepEqual(
+    [row.type, row.status, row.direction, row.valueUsd, row.comment],
+    ['other', 'recorded', 'out', null, 'Lost card'],
+  );
+  assert.equal(await count(s, owner), 1, 'Only the receipt still waits');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.value)], [0.00596, 476.8]);
+
+  stage = 'CLS-PROVISIONAL classifying the receipt as a buy gives the rest its cost';
+  await classify(s, owner, address, 21, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '700' },
+  });
+  asset = await btc();
+  // The 0.00404 BTC that left takes 404/1000 of the 700 USD cost with it; nothing is realised.
+  assert.deepEqual(
+    [Number(asset.quantity), Number(asset.costBasis), Number(asset.unknownCostQuantity)],
+    [0.00596, 417.2, 0],
+  );
+  const deposits = await flows();
+  assert.equal(deposits.length, 1, 'The buy is the only flow; the Other payment is none');
+  assert.equal(deposits[0].usd, 700n * 10n ** 30n);
+  assert.equal(await count(s, owner), 0);
+
+  stage = 'CLS-RECLASSIFY the payment changed from Other to a sale becomes an entry';
+  await classify(s, owner, address, 22, {
+    expectedVersion: 1,
+    classification: { type: 'sell', currency: 'USD', amount: '300' },
+  });
+  assert.equal((await listed(s, owner, 22)).type, 'sell');
+  asset = await btc();
+  assert.deepEqual([Number(asset.quantity), Number(asset.costBasis)], [0.00596, 417.2]);
+  console.log('PASS CLS-PROVISIONAL/CLS-OTHER-OUT');
 }
 
 async function reclassify(db, s, f, { trust, address }) {
@@ -315,6 +434,206 @@ async function reclassify(db, s, f, { trust, address }) {
   console.log('PASS CLS-RECLASSIFY/CLS-RESYNC');
 }
 
+async function feeValue(db, s, f, { address }) {
+  stage = 'FEE-VALUE a fee without a value is worth its coins at the stored price';
+  const { owner } = f;
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken','2025-07-01T07:00:00Z',60000,'hourly-close')`);
+  // 1300 sat leave as the network fee alone; 0.000013 BTC at 60,000 USD is 0.78 USD.
+  await raw(db, owner, address, 40, 'out', '0', '1300', '1300', '2025-07-01T08:00:00.000Z');
+  const fee = await classify(s, owner, address, 40, {
+    expectedVersion: 0,
+    classification: { type: 'fee', valueUsd: null },
+  });
+  assert.equal(fee.value.type, 'fee');
+  assert.deepEqual(
+    (await tradeVersions(db, fee.value.operation.id)).map((row) => [
+      row.kind,
+      row.side,
+      row.quantity,
+      row.grossUsd,
+    ]),
+    [['create', 'sell', '0.000013', '0.78']],
+  );
+  const [saved] = await db.query(
+    `SELECT details FROM chain_transaction_classification_versions WHERE txid=$1`,
+    [txid(40)],
+  );
+  assert.equal(saved.details.valueUsd, null, 'The answer stays empty; only the entry is priced');
+  assert.deepEqual(
+    [(await listed(s, owner, 40)).type, (await listed(s, owner, 40)).valueUsd],
+    ['fee', '0.78'],
+  );
+
+  stage = 'FEE-VALUE without a stored price the owner enters the value; an entered one is kept';
+  await raw(db, owner, address, 41, 'out', '0', '1300', '1300', '2025-07-10T08:00:00.000Z');
+  await rejected(
+    () =>
+      classify(s, owner, address, 41, {
+        expectedVersion: 0,
+        classification: { type: 'fee', valueUsd: null },
+      }),
+    422,
+  );
+  const entered = await classify(s, owner, address, 41, {
+    expectedVersion: 0,
+    classification: { type: 'fee', valueUsd: '2' },
+  });
+  assert.deepEqual(
+    (await tradeVersions(db, entered.value.operation.id)).map((row) => row.grossUsd),
+    ['2'],
+  );
+  console.log('PASS FEE-VALUE');
+}
+
+async function dust(db, s) {
+  stage = 'CLS-DUST receipts below the threshold leave the count, keep counting, stay unanswered';
+  const { OwnerSettingsService } = require('/app/backend/dist/owner-settings/owner-settings.service.js');
+  const ownerSettings = new OwnerSettingsService(db);
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-dust@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const hot = await account(s, owner, 'Hot wallet');
+  const address = await wallet(db, owner, hot, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('BTC','USD','kraken','2026-02-01T07:00:00Z',100000,'hourly-close'),
+      ('BTC','USD','kraken','2026-02-04T07:00:00Z',100000,'hourly-close'),
+      ('BTC','USD','kraken',$1,1000000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+  // EST-AT-TIME: dust is judged at the price of each receipt's time, not today's ten times higher.
+  // 546 sat and 100 sat at 100,000 USD: 0.546 and 0.1 USD; a real receipt; a tiny send.
+  await raw(db, owner, address, 31, 'in', '546', '0', '200', '2026-02-01T08:00:00.000Z');
+  await raw(db, owner, address, 32, 'in', '1000000', '0', '300', '2026-02-02T08:00:00.000Z');
+  await raw(db, owner, address, 33, 'out', '0', '546', '200', '2026-02-03T08:00:00.000Z');
+  await raw(db, owner, address, 34, 'in', '100', '0', '200', '2026-02-04T08:00:00.000Z');
+  const btc = async () =>
+    (await s.portfolio.read(owner, { currency: 'USD' }, now)).assets.find(
+      (asset) => asset.symbol === 'BTC',
+    );
+  const status = async (n) => (await listed(s, owner, n)).status;
+  const before = await btc();
+  const rawBefore = await rawFingerprint(db, address);
+  assert.equal(await count(s, owner), 4, 'No threshold: every unanswered transaction asks');
+  assert.deepEqual(await ownerSettings.read(owner), { mainCurrency: 'USD', dustThresholdUsd: null });
+
+  assert.deepEqual(await ownerSettings.update(owner, { mainCurrency: 'EUR' }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
+  assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: '1.00' }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: '1',
+  });
+  await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '0' }), 400);
+  await rejected(() => ownerSettings.update(owner, { dustThresholdUsd: '2000000' }), 400);
+  assert.equal(await count(s, owner), 2, 'The two receipts under 1 USD leave the count');
+  assert.deepEqual(
+    [await status(31), await status(32), await status(33), await status(34)],
+    ['dust', 'needs-classification', 'needs-classification', 'dust'],
+  );
+  const list = await s.operations.read(owner, {}, now);
+  assert.equal(list.dustThresholdUsd, '1');
+  assert.equal(list.needsClassificationCount, 2);
+  assert.deepEqual(await btc(), before, 'Dust still counts in the balance and value');
+  assert.equal(await rawFingerprint(db, address), rawBefore, 'Raw chain rows untouched');
+  assert.deepEqual(
+    await db.query('SELECT txid FROM chain_transaction_classifications WHERE "addressId"=$1', [
+      address,
+    ]),
+    [],
+    'Nothing is answered on the owner\'s behalf',
+  );
+
+  // The owner can still answer a dust receipt; the answer stands over the threshold.
+  const answered = await classify(s, owner, address, 31, {
+    expectedVersion: 0,
+    classification: { type: 'other' },
+  });
+  assert.equal(answered.value.status, 'classified');
+  assert.equal(await status(31), 'recorded');
+
+  // Turned off, the unanswered small receipt asks again.
+  assert.deepEqual(await ownerSettings.update(owner, { dustThresholdUsd: null }), {
+    mainCurrency: 'EUR',
+    dustThresholdUsd: null,
+  });
+  assert.equal(await status(34), 'needs-classification');
+  assert.equal(await count(s, owner), 3);
+  console.log('PASS CLS-DUST');
+}
+
+async function tokenFee(db, s) {
+  stage = 'TOKEN-FEE a token send and the ether leg that paid its gas are one row';
+  const [{ id: owner }] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('classification-token-fee@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const hot = await account(s, owner, 'Hot wallet');
+  const [{ id: address }] = await db.query(
+    `INSERT INTO wallet_addresses(id,"ownerId",network,address,"accountId")
+      VALUES ($1,$2,'ethereum',$3,$4) RETURNING id`,
+    [randomUUID(), owner, `0x${'a1'.repeat(20)}`, hot],
+  );
+  // A leg of the network's own coin carries the bare hash, a token leg the hash and its log.
+  const leg = (txid, asset, direction, received, sent, fee, blockTime) =>
+    db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight",
+        "blockTime","receivedUnits","sentUnits","feeUnits",direction,raw,asset)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [owner, address, txid, 21000000, blockTime, received, sent, fee, direction, '{}', asset],
+    );
+  await db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+    VALUES ('ETH','USD','kraken','2026-03-02T07:00:00Z',2500,'hourly-close'),
+      ('ETH','USD','kraken',$1,4000,'hourly-close')`, [new Date(now.getTime() - 300000)]);
+  const [received, paid] = [sha256('token-fee:1'), sha256('token-fee:2')];
+  await leg(received, null, 'in', '1000000000000000000', '0', '0', '2026-03-01T08:00:00.000Z');
+  await leg(`${received}-4`, 'USDC', 'in', '1000000000', '0', '0', '2026-03-01T08:00:00.000Z');
+  // 250 USDC sent; 0.00042 ETH paid its gas.
+  await leg(paid, null, 'out', '0', '420000000000000', '420000000000000', '2026-03-02T08:00:00.000Z');
+  await leg(`${paid}-17`, 'USDC', 'out', '0', '250000000', '0', '2026-03-02T08:00:00.000Z');
+  const { findOrCreateInstrument } = require('/app/backend/dist/accounting/trade.service.js');
+  for (const [symbol, name] of [
+    ['ETH', 'Ethereum'],
+    ['USDC', 'USD Coin'],
+  ])
+    await findOrCreateInstrument(db.manager, owner, { assetType: 'crypto', symbol, name }, true);
+  const rawBefore = await rawFingerprint(db, address);
+  assert.equal(await count(s, owner), 3, 'The gas leg is no transaction of its own to classify');
+  const rows = async () =>
+    (await s.operations.read(owner, {}, now)).operations.filter(
+      (operation) => operation.chain?.txid.split('-')[0] === paid,
+    );
+  let [send, ...rest] = await rows();
+  assert.deepEqual(rest, [], 'One row for the send');
+  assert.equal(send.chain.txid, `${paid}-17`);
+  assert.deepEqual(send.fee, {
+    asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+    quantity: '0.00042',
+    // At 2,500 USD, the price stored for the block time, not today's 4,000.
+    valueUsd: '1.05',
+    value: '1.05',
+  });
+  const holdings = async () =>
+    Object.fromEntries(
+      (await s.portfolio.read(owner, { currency: 'USD' }, now)).assets.map((asset) => [
+        asset.symbol,
+        Number(asset.quantity),
+      ]),
+    );
+  assert.deepEqual(await holdings(), { ETH: 0.99958, USDC: 750 }, 'The gas still leaves');
+
+  stage = 'TOKEN-FEE a classified send keeps its fee, and the fee keeps counting';
+  await s.classifications.classify(owner, address, `${paid}-17`, {
+    requestId: randomUUID(),
+    hidden: false,
+    expectedVersion: 0,
+    classification: { type: 'other' },
+  });
+  [send, ...rest] = await rows();
+  assert.deepEqual(rest, []);
+  assert.deepEqual([send.type, send.fee.quantity, send.fee.valueUsd], ['other', '0.00042', '1.05']);
+  assert.equal(await count(s, owner), 2);
+  assert.deepEqual(await holdings(), { ETH: 0.99958, USDC: 750 });
+  assert.equal(await rawFingerprint(db, address), rawBefore, 'Raw chain rows untouched');
+  console.log('PASS TOKEN-FEE');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -350,7 +669,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 33);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 49);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('classification-owner@example.invalid','synthetic-not-a-hash',true),
       ('classification-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
@@ -359,6 +678,10 @@ async function main() {
     const made = await buyAndCount(db, s, f);
     await hide(db, s, f, made);
     await reclassify(db, s, f, made);
+    await provisional(db, s);
+    await feeValue(db, s, f, made);
+    await dust(db, s);
+    await tokenFee(db, s);
     await rejected(() => s.classifications.classify(owner.id, made.address, txid(1), null), 400);
   } finally {
     if (db.isInitialized) await db.destroy();

@@ -27,13 +27,13 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await page.screenshot({ path: testInfo.outputPath('login-360.png'), fullPage: true });
 
   await page.getByLabel('Email', { exact: true }).fill(owner.email);
-  await page.getByLabel('Пароль', { exact: true }).fill('incorrect-synthetic-password');
+  await page.getByLabel('Password', { exact: true }).fill('incorrect-synthetic-password');
   const refusedLogin = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/login' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Вход', exact: true }).click();
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   expect((await refusedLogin).status()).toBe(401);
   await expect(page.getByRole('alert')).toBeVisible();
   await fitsViewport(page);
@@ -43,20 +43,20 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('mfa-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код восстановления', exact: true }).click();
-  await expect(page.getByLabel('Код восстановления', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Use a recovery code instead', exact: true }).click();
+  await expect(page.getByLabel('Recovery code', { exact: true })).toBeVisible();
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('recovery-360.png'), fullPage: true });
-  await page.getByRole('button', { name: 'Использовать код из приложения', exact: true }).click();
+  await page.getByRole('button', { name: 'Back to authenticator code', exact: true }).click();
   const factor = nextFactor();
   expect(factor.kind).toBe('totp');
-  await page.getByLabel('Код из приложения', { exact: true }).fill(factor.code);
+  await page.getByLabel('Code from your authenticator app', { exact: true }).fill(factor.code);
   const pendingFactor = page.waitForResponse(
     (response) =>
       new URL(response.url()).pathname === '/api/auth/mfa' &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+  await page.getByRole('button', { name: 'Verify', exact: true }).click();
   const factorResponse = await pendingFactor;
   expect(factorResponse.status()).toBe(200);
   expect((await factorResponse.json()).user.email).toBe(owner.email);
@@ -204,20 +204,13 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
-  // SHELL-001-A: current screens stay reachable under the open Legacy group.
+  // SHELL-001-A: only the screens no new section covers yet stay under the open Legacy group.
   const legacy = nav.locator('details', { has: page.getByText('Legacy', { exact: true }) });
   await expect(legacy).toHaveAttribute('open', '');
+  await expect(legacy.getByRole('link')).toHaveCount(2);
   for (const [name, path] of [
     ['Ручные счета', '/manual-accounts'],
-    ['Переводы между счетами', '/owned-transfers'],
-    ['Вводы и выводы', '/capital-flows'],
     ['Ручные цены', '/manual-prices'],
-    ['Адреса кошельков', '/wallet-addresses'],
-    ['Прибыль за период', '/period-profit'],
-    ['Настройки', '/settings'],
-    ['Прежний обзор', '/legacy-overview'],
-    ['Активы', '/assets'],
-    ['Криптокошельки', '/crypto'],
   ] as const) {
     await expect(legacy.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
   }
@@ -285,23 +278,22 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await skip.focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('main')).toBeFocused();
-  await nav.getByRole('link', { name: 'Прежний обзор', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/legacy-overview`);
-  await expect(page.getByRole('note', { name: 'Область прежнего обзора' })).toContainText(
-    'не включает ручные счета',
-  );
-  // Router-major compatibility: the retained assets splat and fixed absolute tab paths.
-  await nav.locator('a[href="/assets"]').click();
-  await expect(page).toHaveURL(`${origin}/assets/overview`);
-  for (const [label, path] of [
-    ['Балансовые активы', '/assets/stock'],
-    ['Потоковые активы', '/assets/flow'],
-    ['Обзор', '/assets/overview'],
+  // LEGACY-RETIRE: a bookmark of a retired screen opens the section that replaced it.
+  for (const [retired, replacement, heading] of [
+    ['/legacy-overview', '/dashboard', 'Dashboard'],
+    ['/liabilities', '/portfolio', 'Portfolio'],
+    ['/crypto', '/wallets', 'Wallets'],
+    ['/wallet-addresses', '/wallets', 'Wallets'],
+    ['/owned-transfers', '/transactions', 'Transactions'],
+    ['/capital-flows', '/dashboard', 'Dashboard'],
+    ['/period-profit', '/dashboard', 'Dashboard'],
+    ['/settings', '/preferences', 'Settings'],
   ] as const) {
-    const tab = page.getByRole('button', { name: label, exact: true });
-    await tab.click();
-    await expect(page).toHaveURL(`${origin}${path}`);
-    await expect(tab).toHaveAttribute('aria-current', 'page');
+    await page.goto(retired);
+    await expect(page).toHaveURL(`${origin}${replacement}`);
+    await expect(
+      page.getByRole('heading', { level: 1, name: heading, exact: true }),
+    ).toBeVisible();
   }
 
   // SHELL-006-A: with no stored choice System follows a dark device, then a light one.
@@ -346,7 +338,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await expect(page.getByRole('navigation')).toHaveCount(0);
   await page.goto('/mvp-unknown-route');
   await expect(page).toHaveURL(`${origin}/login`);
-  await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect(errors).toEqual([]);
 });

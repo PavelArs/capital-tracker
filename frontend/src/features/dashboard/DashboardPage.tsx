@@ -4,15 +4,21 @@ import {
   type PortfolioHistory,
   portfolioHistoryApi,
 } from '@api/portfolio-history.api';
+import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
+import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
-import { useNeedsClassification } from '../transactions/useNeedsClassification';
+import { tokenChains } from '../shell/token-chains';
+import AttentionCard from './AttentionCard';
+import { collectAttention } from './attention';
 import HistoryChart from './HistoryChart';
+import TopAssets from './TopAssets';
+import { useAttentionSources } from './useAttentionSources';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
@@ -200,7 +206,8 @@ function AboutChart() {
 }
 
 // Net worth, change for the period and the capital chart from portfolio snapshots
-// (record-portfolio-snapshots). Allocation and attention arrive with M16.
+// (record-portfolio-snapshots); what needs the owner, top assets and allocation from the
+// current valuation and sync status (show-dashboard-attention).
 export default function DashboardPage() {
   const [history, setHistory] = useState<PortfolioHistory | null>(null);
   const [failed, setFailed] = useState(false);
@@ -208,7 +215,10 @@ export default function DashboardPage() {
   const [adding, setAdding] = useState(false);
   const [asked] = useAskedCurrency();
   const latest = useRef(0);
-  const toClassify = useNeedsClassification();
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
+  const [portfolioFailed, setPortfolioFailed] = useState(false);
+  const latestPortfolio = useRef(0);
+  const status = useAttentionSources();
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
@@ -225,6 +235,42 @@ export default function DashboardPage() {
     void load();
   }, [load]);
 
+  // Top assets, allocation and old prices come from today's valuation; a failure there
+  // leaves the net worth and the chart in place.
+  const loadPortfolio = useCallback(async () => {
+    const request = ++latestPortfolio.current;
+    setPortfolioFailed(false);
+    try {
+      const next = await portfolioValuationApi.get(asked);
+      if (request === latestPortfolio.current) setPortfolio(next);
+    } catch {
+      if (request === latestPortfolio.current) setPortfolioFailed(true);
+    }
+  }, [asked]);
+  useEffect(() => {
+    void loadPortfolio();
+  }, [loadPortfolio]);
+  const reload = () => {
+    void load();
+    void loadPortfolio();
+  };
+
+  const attention = collectAttention({
+    toClassify: status.toClassify,
+    sources: status.sources,
+    wallets: status.wallets,
+    portfolio: portfolioFailed ? null : portfolio,
+    now: status.now,
+  });
+  const attentionCard = (
+    <AttentionCard
+      attention={attention}
+      loaded={status.loaded && (portfolio !== null || portfolioFailed)}
+      asked={asked}
+      now={status.now}
+    />
+  );
+
   const shown = history;
   const chartLabel = shown
     ? `Portfolio value, ${periodLabels[shown.period]}, from ${money(
@@ -235,24 +281,11 @@ export default function DashboardPage() {
 
   return (
     <div className="shell-page">
-      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={load} />
-      {/* CLS-COUNT: until classified, these transactions are left out of the numbers below. */}
-      {toClassify !== null && toClassify > 0 && (
-        <section className="dashboard-attention" aria-label="Needs attention">
-          <span className="dashboard-attention__dot" aria-hidden="true" />
-          <span className="dashboard-attention__text">
-            {toClassify === 1
-              ? '1 blockchain transaction needs classification'
-              : `${toClassify} blockchain transactions need classification`}
-          </span>
-          <Link
-            className="shell-button"
-            to={`/transactions?status=needs-classification${asked ? `&currency=${asked}` : ''}`}
-          >
-            Review
-          </Link>
-        </section>
-      )}
+      <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={reload} />
+      {/* Off the main layout, the block appears only when something needs the owner. */}
+      {(failed || shown === null || isEmptyPortfolio(shown)) &&
+        attention.items.length > 0 &&
+        attentionCard}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
@@ -266,7 +299,10 @@ export default function DashboardPage() {
         <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
-          <NetWorth history={shown} />
+          <div className="dashboard-top">
+            <NetWorth history={shown} />
+            {attentionCard}
+          </div>
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"
@@ -317,6 +353,18 @@ export default function DashboardPage() {
               label={chartLabel}
             />
           </section>
+          <div className="dashboard-bottom">
+            <TopAssets
+              chains={tokenChains(status.wallets)}
+              portfolio={portfolio}
+              failed={portfolioFailed}
+              onRetry={() => void loadPortfolio()}
+              asked={asked}
+            />
+            {portfolio !== null && !portfolioFailed && (
+              <Allocation portfolio={portfolio} limit={6} />
+            )}
+          </div>
         </>
       )}
       {adding && (
@@ -324,7 +372,7 @@ export default function DashboardPage() {
           onClose={() => setAdding(false)}
           onSaved={() => {
             setAdding(false);
-            void load();
+            reload();
           }}
         />
       )}

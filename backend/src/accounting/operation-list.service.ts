@@ -6,8 +6,10 @@ import {
   isAccountingCurrency,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
-import { readMainCurrency } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
+import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
+import { storedPricesAt } from '../prices/market-price.store';
+import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
+import { stakeMoves } from '../wallet-addresses/stake-tables';
 import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -98,18 +100,23 @@ interface FlowRow {
 }
 interface ChainRow {
   addressId: string;
-  network: 'bitcoin';
+  network: Network;
   address: string;
   label: string | null;
   accountId: string | null;
   accountName: string | null;
   txid: string;
+  asset: string | null;
   blockHeight: number;
   blockTime: Date;
   direction: ChainOperationInput['direction'];
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  stakeUnits: string;
+  /** SWAP-ONE-TX: the owner's Ethereum transaction called a contract; its decoded method. */
+  contractCall: boolean | null;
+  callMethod: string | null;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -117,6 +124,12 @@ interface ChainRow {
   classificationComment: string | null;
   producedTradeId: string | null;
   producedRewardId: string | null;
+  producedTransferId: string | null;
+  producedSwapId: string | null;
+  linkedAddressId: string | null;
+  automatic: boolean | null;
+  pairedAddressId: string | null;
+  pairedTxid: string | null;
 }
 
 // Current versions only: a voided operation has left the books (its history keeps it).
@@ -275,13 +288,23 @@ export class OperationListService {
       );
       const chain: ChainRow[] = await manager.query(
         `SELECT w.id AS "addressId", w.network, w.address, w.label, a.id AS "accountId",
-            a.name AS "accountName", t.txid, t."blockHeight", t."blockTime",
+            a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime",
             t.direction, t."receivedUnits"::text AS "receivedUnits",
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
+            coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
+              AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits",
+            (w.network='ethereum' AND t.asset IS NULL
+              AND lower(t.raw->'transaction'->>'from')=lower(w.address)
+              AND coalesce(t.raw->'transaction'->>'input', '0x') NOT IN ('', '0x'))
+              AS "contractCall",
+            nullif(split_part(t.raw->'transaction'->>'functionName', '(', 1), '')
+              AS "callMethod",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
-            c."rewardId" AS "producedRewardId"
+            c."rewardId" AS "producedRewardId", c."transferId" AS "producedTransferId",
+            c."swapId" AS "producedSwapId", c."linkedAddressId", c.automatic,
+            c."pairedAddressId", c."pairedTxid"
           FROM wallet_addresses w
           JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
           LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -292,7 +315,14 @@ export class OperationListService {
           WHERE w."ownerId"=$1`,
         [owner],
       );
-      const market = await latestMarketPrices(manager, chain.length > 0 ? ['BTC'] : [], now);
+      // EST-AT-TIME: each chain transaction is valued at the price stored for its own time.
+      const marketPrices = await storedPricesAt(
+        manager,
+        chain.map((row) => ({
+          asset: chainAsset(row.network, row.asset).symbol,
+          at: row.blockTime.toISOString(),
+        })),
+      );
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
@@ -397,12 +427,15 @@ export class OperationListService {
                 ? { id: row.accountId, name: row.accountName }
                 : null,
             txid: row.txid,
+            asset: row.asset,
             blockHeight: row.blockHeight,
             blockTime: row.blockTime.toISOString(),
             direction: row.direction,
             receivedUnits: row.receivedUnits,
             sentUnits: row.sentUnits,
             feeUnits: row.feeUnits,
+            stakeUnits: row.stakeUnits,
+            call: row.contractCall ? { method: row.callMethod } : null,
             classification:
               row.classificationVersion === null || row.classificationStatus === null
                 ? null
@@ -412,19 +445,26 @@ export class OperationListService {
                     type: row.classificationType,
                     details: row.classificationDetails,
                     comment: row.classificationComment,
-                    produced: row.producedTradeId
-                      ? { kind: 'trade', id: row.producedTradeId }
-                      : row.producedRewardId
-                        ? { kind: 'reward', id: row.producedRewardId }
+                    produced: row.producedSwapId
+                      ? { kind: 'swap', id: row.producedSwapId }
+                      : row.producedTradeId
+                        ? { kind: 'trade', id: row.producedTradeId }
+                        : row.producedRewardId
+                          ? { kind: 'reward', id: row.producedRewardId }
+                          : row.producedTransferId
+                            ? { kind: 'transfer', id: row.producedTransferId }
+                            : null,
+                    linkedAddressId: row.linkedAddressId,
+                    automatic: row.automatic === true,
+                    paired:
+                      row.pairedAddressId && row.pairedTxid
+                        ? { addressId: row.pairedAddressId, txid: row.pairedTxid }
                         : null,
+                    carryTransferId: row.producedSwapId ? row.producedTransferId : null,
                   },
           })),
-          marketPrices: new Map(
-            market.map((row) => [
-              row.asset,
-              { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-            ]),
-          ),
+          marketPrices,
+          dustThresholdUsd: await readDustThreshold(manager, owner),
         },
         fx,
       );

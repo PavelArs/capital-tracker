@@ -154,7 +154,7 @@ async function expectPrivateDenial(
   token: string,
   legacyBearer = false,
 ): Promise<void> {
-  for (const path of ['/api/auth/me', '/api/crypto']) {
+  for (const path of ['/api/auth/me', '/api/wallet-addresses']) {
     const headers: Record<string, string> = legacyBearer
       ? { Authorization: `Bearer ${token}` }
       : { Cookie: `${cookieName}=${token}` };
@@ -223,17 +223,20 @@ for (const path of [
   test(`OWN-004-B: ${path} exposes only owner login`, async ({ page }) => {
     await page.goto(path);
     await expect(page).toHaveURL('https://127.0.0.1:8443/login');
-    await expect(page.getByRole('heading', { name: 'Вход', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
     await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Пароль', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Вход', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
     await expect(
-      page.getByRole('link', { name: /регистраци|забыли пароль|верификаци/i }),
+      page.getByRole('link', { name: /регистраци|верификаци|sign up|register|verif/i }),
     ).toHaveCount(0);
+    // BR 2.2 replaced the retired token routes with the emailed single-use reset link.
+    await expect(page.getByRole('link', { name: 'Forgot password?', exact: true })).toHaveAttribute(
+      'href',
+      '/password-reset',
+    );
     await expect(
-      page.getByText('Доступ владельца создаёт и восстанавливает оператор сервера.', {
-        exact: true,
-      }),
+      page.getByText('Only the owner account can sign in.', { exact: true }),
     ).toBeVisible();
   });
 }

@@ -29,6 +29,13 @@ x-backend: &backend
     HTTP_PROXY: http://providers:8080
     NO_PROXY: localhost,127.0.0.1,postgres,redis,backend,frontend,providers
     NODE_EXTRA_CA_CERTS: /run/acceptance/provider-ca.pem
+    # Synthetic key the providers fixture accepts for its Etherscan stub; never a real one.
+    ETHERSCAN_API_KEY: acceptance-etherscan-key
+    # Synthetic mailbox the providers fixture accepts for its Yandex SMTP stub (smtp.yandex.ru
+    # is that fixture's alias on the isolated network); an unprivileged port, same implicit TLS.
+    SMTP_PORT: "2465"
+    SMTP_USER: acceptance-mailer@example.invalid
+    SMTP_PASSWORD: acceptance-smtp-password
   # Keep the image health command and failure policy; observe readiness sooner.
   healthcheck:
     interval: 2s
@@ -80,7 +87,9 @@ services:
     volumes:
       - ./providers.cjs:/tests/providers.cjs:ro
       - ./.runtime/provider-tls:/tests/tls:ro
-    networks: [isolated]
+    networks:
+      isolated:
+        aliases: [smtp.yandex.ru]
     read_only: true
     # PID 1 is plain node without a SIGTERM handler: stopping it only ever ends in SIGKILL,
     # so skip the default 10 s grace period at every teardown.

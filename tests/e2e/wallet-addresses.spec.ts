@@ -35,6 +35,9 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
           RAISE EXCEPTION 'Refuse wallet-address fixture outside synthetic acceptance';
         END IF;
         TRUNCATE chain_transaction_classification_versions, chain_transaction_classifications,
+          wallet_stake_rewards, wallet_stake_moves, wallet_stake_accounts, wallet_stake_scans, wallet_xpub_addresses,
+          wallet_ether_stake_rewards, wallet_ether_stake_moves, wallet_ether_stake_positions, bybit_accounts,
+          wallet_tron_stake_moves, wallet_tron_accounts,
           wallet_address_transactions, wallet_addresses;
         INSERT INTO wallet_addresses(id, "ownerId", network, address)
           VALUES ('${foreignAddressId}', '22222222-2222-4222-8222-222222222222', 'bitcoin', '${address}');
@@ -47,7 +50,7 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
 });
 
 isolated(
-  'ADDR-UI / ADDR-PRIVATE: owner imports Bitcoin history and sees every USD value as missing',
+  'ADDR-API / ADDR-PRIVATE: owner imports Bitcoin history and every USD value stays missing',
   async ({ page, playwright }) => {
     const anonymous = await playwright.request.newContext({
       baseURL: origin,
@@ -83,53 +86,70 @@ isolated(
     expect(query('SELECT count(*) FROM wallet_addresses')).toBe('1');
     expect(chainRequests()).toEqual([]);
 
+    // The legacy address screen is retired (M20); WAL-UI drives the Wallets screen, and the
+    // same import is asserted here through the API the screens use.
     bitcoinHistory({ address, count: 60 });
-    await page.goto('/wallet-addresses');
-    await expect(page.getByRole('heading', { name: 'Адреса кошельков', exact: true })).toBeVisible();
-    await expect(page.getByText('Адресов пока нет.', { exact: true })).toBeVisible();
-
-    await page.getByLabel('Адрес Bitcoin', { exact: true }).fill(address.toUpperCase());
-    await page.getByRole('button', { name: 'Добавить адрес', exact: true }).click();
-    const card = page.getByRole('region', { name: `Адрес ${address}`, exact: true });
-    await expect(card.getByText('Не загружено', { exact: true })).toBeVisible();
+    const headers = { Origin: origin, 'X-CSRF-Token': csrfToken };
+    const created = await api.post('/api/wallet-addresses', {
+      data: { network: 'bitcoin', address: address.toUpperCase() },
+      headers,
+    });
+    expect(created.status()).toBe(201);
+    const added = await created.json();
+    expect(added).toMatchObject({ network: 'bitcoin', address, transactionCount: 0 });
+    expect(added.sync.state).toBe('never');
     expect(chainRequests()).toEqual([]);
 
-    await card.getByRole('button', { name: 'Загрузить транзакции', exact: true }).click();
-    await expect(card.getByText('Загружено полностью', { exact: true })).toBeVisible();
-    await expect(card.getByText('Транзакций: 60', { exact: true })).toBeVisible();
+    const synced = await api.post(`/api/wallet-addresses/${added.id}/sync`, { headers });
+    expect(synced.status()).toBe(200);
+    expect(await synced.json()).toMatchObject({
+      outcome: 'complete',
+      reason: null,
+      imported: 60,
+      address: { id: added.id, transactionCount: 60, sync: { state: 'complete' } },
+    });
     expect(chainRequests().map(({ url }) => url)).toEqual([
       `https://blockstream.info/api/address/${address}/txs/chain`,
       `https://blockstream.info/api/address/${address}/txs/chain/${txid(35)}`,
       `https://blockstream.info/api/address/${address}/txs/chain/${txid(10)}`,
     ]);
 
-    const table = page.getByRole('table', { name: `Транзакции ${address}`, exact: true });
+    type HistoryPage = {
+      total: number;
+      nextOffset: number | null;
+      missingUsdValueCount: number;
+      items: { direction: string; netBtc: string; blockTime: string; usdValue: unknown }[];
+    };
+    const history = async (offset: number): Promise<HistoryPage> => {
+      const response = await api.get(
+        `/api/wallet-addresses/${added.id}/transactions?offset=${offset}&limit=50`,
+      );
+      expect(response.status()).toBe(200);
+      return response.json();
+    };
     const assertHistory = async () => {
-      await expect(page.getByText('Без стоимости в USD: 60 из 60', { exact: true })).toBeVisible();
-      const rows = table.getByRole('row');
-      await expect(rows).toHaveCount(51);
-      await expect(rows.nth(1)).toContainText('3.12500059');
-      await expect(rows.nth(1)).toContainText('Поступление');
-      await expect(rows.nth(1)).toContainText('2023-11-15');
-      await expect(rows.nth(2)).toContainText('-0.00000200');
-      await expect(rows.nth(2)).toContainText('Перевод себе');
-      await expect(rows.nth(3)).toContainText('-0.00051300');
-      await expect(rows.nth(3)).toContainText('Списание');
-      await expect(rows.nth(4)).toContainText('0.00156000');
-      for (let index = 1; index <= 4; index++) {
-        await expect(rows.nth(index).getByRole('cell').last()).toHaveText('не указана');
+      const first = await history(0);
+      expect(first).toMatchObject({ total: 60, nextOffset: 50, missingUsdValueCount: 60 });
+      expect(first.items).toHaveLength(50);
+      expect(first.items.slice(0, 4).map(({ direction, netBtc }) => [direction, netBtc])).toEqual([
+        ['in', '3.12500059'],
+        ['self', '-0.00000200'],
+        ['out', '-0.00051300'],
+        ['in', '0.00156000'],
+      ]);
+      expect(first.items[0].blockTime.slice(0, 10)).toBe('2023-11-15');
+      const rest = await history(50);
+      expect(rest).toMatchObject({ total: 60, nextOffset: null, missingUsdValueCount: 60 });
+      expect(rest.items).toHaveLength(10);
+      // Every USD value is missing, never zero.
+      for (const item of [...first.items, ...rest.items]) {
+        expect(item).toMatchObject({ usdValue: null, usdValueStatus: 'missing' });
       }
-      await expect(table.getByRole('cell', { name: '0', exact: true })).toHaveCount(0);
-      await expect(table.getByText('$0', { exact: false })).toHaveCount(0);
     };
     await assertHistory();
-    await page.getByRole('button', { name: 'Показать ещё', exact: true }).click();
-    await expect(table.getByRole('row')).toHaveCount(61);
-    await expect(page.getByRole('button', { name: 'Показать ещё', exact: true })).toHaveCount(0);
 
     const before = chainRequests().length;
     await page.reload();
-    await expect(card.getByText('Загружено полностью', { exact: true })).toBeVisible();
     await assertHistory();
     expect(chainRequests()).toHaveLength(before);
     expect(
@@ -209,9 +229,23 @@ isolated(
     await expect(row).toContainText('Synced');
     await expect(row).toContainText('46.88647965 BTC');
     await expect(card.getByText('Bitcoin · 1 address', { exact: true })).toBeVisible();
-    await expect(card.getByRole('note')).toContainText(
-      'Balance differs by 46.88647965 BTC. The blockchain shows 46.88647965 BTC; your transactions in this wallet give 0 BTC.',
-    );
+    // CLS-PROVISIONAL: the unclassified history already counts, so the wallet holds what the
+    // chain shows and no difference is reported.
+    const walletBitcoin = async () => {
+      const portfolio = (await (await page.request.get('/api/accounting/portfolio')).json()) as {
+        assets: {
+          symbol: string | null;
+          holdings: { accountName: string; quantity: string }[];
+        }[];
+      };
+      return portfolio.assets
+        .filter((asset) => asset.symbol === 'BTC')
+        .flatMap((asset) => asset.holdings)
+        .filter((holding) => holding.accountName === walletName)
+        .map((holding) => holding.quantity);
+    };
+    await expect.poll(walletBitcoin).toEqual(['46.88647965']);
+    await expect(card.getByRole('note')).toHaveCount(0);
     expect(
       query(`SELECT a.name || '|' || w.label FROM wallet_addresses w
         JOIN manual_accounts a ON a.id = w."accountId" AND a."ownerId" = w."ownerId"
@@ -318,8 +352,27 @@ isolated(
       query(`DELETE FROM sync_sources WHERE key = 'prices:kraken'`);
     }
 
-    // WAL-PAGE: the wallet's own page lists its address, assets and chain transactions.
+    // A hidden transaction leaves the books, so the wallet now differs from the chain by it.
     await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.goto('/transactions?status=needs-classification');
+    await main.getByRole('combobox', { name: 'Account', exact: true }).selectOption({
+      label: walletName,
+    });
+    await main
+      .getByRole('table', { name: 'Transactions', exact: true })
+      .locator('tbody tr:not(.transactions-day)')
+      .first()
+      .getByRole('button', { name: /^(Incoming|Outgoing)$/ })
+      .click();
+    const hide = page.getByRole('dialog', { name: /transaction · BTC$/ });
+    await hide.getByText('More options').click();
+    await hide.getByText('Hide from calculations').click();
+    await hide.getByRole('button', { name: 'Save' }).click();
+    await expect.poll(walletBitcoin).not.toEqual(['46.88647965']);
+    await page.keyboard.press('Escape');
+    await page.goto('/wallets');
+
+    // WAL-PAGE: the wallet's own page lists its address, assets and chain transactions.
     await card.getByRole('link', { name: walletName, exact: true }).click();
     await expect(page).toHaveURL(/\/wallets\/[0-9a-f-]{36}$/);
     await expect(
@@ -327,7 +380,9 @@ isolated(
     ).toBeVisible();
     // The chain check spans the summary under its figures; Last sync starts under its label.
     const summary = main.getByRole('region', { name: 'Summary', exact: true });
-    await expect(summary.getByRole('note')).toContainText('Balance differs by 46.88647965 BTC.');
+    await expect(summary.getByRole('note')).toContainText(
+      /Balance differs by [\d.]+ BTC\. The blockchain shows 46\.88647965 BTC;/,
+    );
     const misplaced = await summary.evaluate((card) => {
       const box = (element: Element | null) => element?.getBoundingClientRect();
       const grid = box(card.querySelector('dl'));

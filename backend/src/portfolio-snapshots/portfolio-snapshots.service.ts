@@ -89,10 +89,25 @@ const INPUT_TABLES = [
   'owned_transfers',
   'owned_transfer_versions',
   'manual_usd_price_versions',
+  // D1: unanswered chain movements count, so new ones and new answers change the history.
+  'wallet_address_transactions',
+  'chain_transaction_classifications',
+  // SOL-STAKE-*, ETH-STAKE-*, TRON-STAKE-*: what stayed in a wallet's stake accounts, pools or
+  // Tron staking, and their rewards. A last read balance changes no value by itself.
+  'wallet_stake_moves',
+  'wallet_stake_rewards',
+  'wallet_ether_stake_moves',
+  'wallet_ether_stake_rewards',
+  'wallet_tron_stake_moves',
 ] as const;
-const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revision FROM (${INPUT_TABLES.map(
-  (table) =>
-    `SELECT '${table}:' || coalesce(md5(string_agg(t::text, ',' ORDER BY t::text)), '') AS part
+// Only which account an address belongs to; its sync progress changes no value.
+const INPUT_PARTS: readonly [string, string][] = [
+  ...INPUT_TABLES.map((table): [string, string] => [table, 't::text']),
+  ['wallet_addresses', `t.id::text || ':' || coalesce(t."accountId"::text, '')`],
+];
+const INPUTS_REVISION = `SELECT md5(string_agg(part, '|' ORDER BY part)) AS revision FROM (${INPUT_PARTS.map(
+  ([table, row]) =>
+    `SELECT '${table}:' || coalesce(md5(string_agg(${row}, ',' ORDER BY ${row})), '') AS part
       FROM ${table} t WHERE t."ownerId"=$1`,
 ).join(' UNION ALL ')}) parts`;
 const INSERT_BATCH = 1000;
@@ -133,7 +148,7 @@ function valuesAt(
   at: number,
   prices: PortfolioPrices,
   converters: readonly FxConverter[],
-): SnapshotValue[] {
+): (SnapshotValue & { unpriced: boolean })[] {
   const instant = new Date(at);
   const accounts = accountsAt(valuation, instant.toISOString(), { emptyBeforeCoverage: true });
   return converters.map((fx) => {
@@ -145,6 +160,8 @@ function valuesAt(
       currency: fx.currency,
       value: rated ? report.pricedSubtotal : null,
       complete: rated && report.completeness === 'complete',
+      // The value leaves out a held asset without a price (not an account yet to start).
+      unpriced: rated && report.missingPriceCount > 0,
     };
   });
 }
@@ -319,7 +336,12 @@ export class PortfolioSnapshotsService {
       const [current] = valuesAt(valuation, now.getTime(), prices, [fx]);
       const series = [
         ...stored,
-        { at: now.getTime(), value: current.value, complete: current.complete },
+        {
+          at: now.getTime(),
+          value: current.value,
+          complete: current.complete,
+          unpriced: current.unpriced,
+        },
       ];
       // Deposits and withdrawals come from the operations themselves, in this currency at the
       // rate of each one's date (split-market-and-flows).
@@ -346,7 +368,7 @@ export class PortfolioSnapshotsService {
         ...periodChange(start?.value ?? null, current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
-        ...profitToDate(current.value, invested.at(-1) ?? null),
+        ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),
         ...splitChange(start, series.at(-1)!, flows),
         points,
       };

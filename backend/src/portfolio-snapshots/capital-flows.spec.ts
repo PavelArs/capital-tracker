@@ -77,6 +77,7 @@ function inputs(
     instruments: [],
     accounts: [],
     ledgers: new Map(accounts.map((account) => [account.id, ledger])),
+    chainMoves: new Map(),
   };
 }
 const shown = (flows: CapitalFlow[]) =>
@@ -404,5 +405,24 @@ describe('capital flows: market versus flows (split-market-and-flows)', () => {
     // Unknown value or net invested: unknown, never zero.
     expect(profitToDate(null, '80000')).toEqual({ profit: null, profitPercent: null });
     expect(profitToDate('95000', null)).toEqual({ profit: null, profitPercent: null });
+  });
+
+  it('VAL-UNPRICED a held asset without a price is no market loss and no profit or loss', () => {
+    // 50000 of BTC bought from outside; BTC has no price, so the value leaves it out.
+    const start = { at: at('2026-09-07T00:00:00.000Z'), value: '0' };
+    const end = { at: at('2026-10-07T00:00:00.000Z'), value: '0', unpriced: true };
+    const flows = [{ at: at('2026-10-07T00:00:00.000Z'), amount: usd(50000) }];
+    expect(splitChange(start, end, flows)).toEqual({
+      deposits: '50000',
+      withdrawals: '0',
+      netFlow: '50000',
+      marketEffect: null,
+      marketReturnPercent: null,
+    });
+    expect(
+      splitChange({ ...start, unpriced: true }, { ...end, unpriced: false }, flows),
+    ).toMatchObject({ netFlow: '50000', marketEffect: null });
+    expect(profitToDate('0', '50000', true)).toEqual({ profit: null, profitPercent: null });
+    expect(profitToDate('50000', '50000', false)).toEqual({ profit: '0', profitPercent: '0.00' });
   });
 });

@@ -1,7 +1,15 @@
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { describe, expect, it } from 'vitest';
-import { accountNamed, checkBitcoinAddress, reconcile, shortAddress, sum } from './wallets';
+import {
+  accountNamed,
+  checkAddress,
+  checkApiKey,
+  checkBitcoinAddress,
+  reconcile,
+  shortAddress,
+  sum,
+} from './wallets';
 
 // Synthetic ids and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -17,6 +25,7 @@ const address = (n: number, changes: Partial<WalletAddress>): WalletAddress => (
   createdAt: '2026-10-01T00:00:00.000Z',
   transactionCount: 3,
   chainBalance: '0.01000000',
+  balances: null,
   sync: {
     state: 'complete',
     completedAt: '2026-10-05T10:00:00.000Z',
@@ -55,9 +64,9 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       reconcile([address(1, {})], portfolio([{ accountId: trust, quantity: '0.0098' }]), trust),
     ).toEqual({
       state: 'differs',
-      chain: '0.01',
-      recorded: '0.0098',
-      difference: '0.0002',
+      assets: [
+        { symbol: 'BTC', chain: '0.01', recorded: '0.0098', difference: '0.0002', exchange: false },
+      ],
     });
   });
 
@@ -75,7 +84,7 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
         ]),
         trust,
       ),
-    ).toEqual({ state: 'match', chain: '0.015' });
+    ).toEqual({ state: 'match' });
   });
 
   it('is negative when the records hold more than the chain', () => {
@@ -84,7 +93,10 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
       portfolio([{ accountId: trust, quantity: '0.000000001' }]),
       trust,
     );
-    expect(result).toMatchObject({ state: 'differs', difference: '-0.000000001' });
+    expect(result).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'BTC', difference: '-0.000000001' }],
+    });
   });
 
   it('waits while any address has no complete history', () => {
@@ -117,6 +129,31 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
     });
   });
 
+  it('compares an Ethereum address asset by asset: ETH, USDT and USDC (M14)', () => {
+    const ethereum = address(4, {
+      network: 'ethereum',
+      address: `0x${'a1'.repeat(20)}`,
+      chainBalance: '1.500000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.500000000000000000' },
+        { symbol: 'USDT', quantity: '0.000000' },
+        { symbol: 'USDC', quantity: '250.000000' },
+      ],
+    });
+    const held = {
+      assets: [
+        { symbol: 'ETH', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '1.5' }] },
+        { symbol: 'USDC', assetType: 'crypto', holdings: [{ accountId: trust, quantity: '200' }] },
+      ],
+    } as unknown as PortfolioValuation;
+    expect(reconcile([ethereum], held, trust)).toEqual({
+      state: 'differs',
+      assets: [
+        { symbol: 'USDC', chain: '250', recorded: '200', difference: '50', exchange: false },
+      ],
+    });
+  });
+
   it('sums exact decimals', () => {
     expect(sum(['0.1', '0.2'])).toBe('0.3');
     expect(sum([])).toBe('0');
@@ -136,6 +173,12 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
       'Legacy address',
     ],
     ['3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', 'Script address'],
+    // M21: the BIP-84 test vector's account key, kept exactly as pasted.
+    [
+      ' zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs ',
+      'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs',
+      'Account public key · every address of this account will be tracked',
+    ],
   ])('accepts %s', (input, normalized, kind) => {
     expect(checkBitcoinAddress(input)).toEqual({ ok: true, address: normalized, kind });
   });
@@ -143,9 +186,10 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
   it.each([
     ['', 'Paste the wallet address.'],
     ['0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31', 'This looks like an Ethereum address.'],
-    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'This looks like a Solana address.'],
+    ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'pick Solana to track it'],
     ['bitcoin', 'This is not a valid Bitcoin address.'],
-    [`zpub${'6'.repeat(107)}`, 'Account public keys (xpub, zpub) are not supported yet.'],
+    [`zpub${'6'.repeat(90)}`, 'This is not a valid Bitcoin address.'],
+    [`tpub${'6'.repeat(107)}`, 'Testnet keys are not tracked'],
   ])('refuses %j', (input, message) => {
     const result = checkBitcoinAddress(input);
     expect(result.ok).toBe(false);
@@ -157,8 +201,115 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
     ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
     ['a 24-word phrase', Array(23).fill('abandon').concat('art').join('\n')],
     ['a private key', `5${'H'.repeat(50)}`],
+    ['an account private key', `zprv${'6'.repeat(107)}`],
+    ['an extended private key', `xprv${'9'.repeat(107)}`],
   ])('marks %s as a secret', (_case, input) => {
     expect(checkBitcoinAddress(input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
+describe('WAL-INVALID, WAL-NO-SECRETS: the Ethereum address field (M14)', () => {
+  it('accepts an address in any case and keeps it in lower case', () => {
+    expect(checkAddress('ethereum', ' 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed ')).toEqual({
+      ok: true,
+      address: '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed',
+      kind: 'Ethereum address',
+    });
+  });
+
+  it.each([
+    ['bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'This is not an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'looks like a Bitcoin address'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeA', 'This is not a valid Ethereum address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('ethereum', input);
+    expect(result.ok === false && result.message).toContain(message);
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    ['a hex private key', `0x${'4c'.repeat(32)}`],
+    ['a bare hex private key', '4c'.repeat(32)],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('ethereum', input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
+describe('WAL-INVALID, WAL-NO-SECRETS: the Solana address field (M15)', () => {
+  // Base58 of the SHA-256 of a fixed label: a synthetic key, never an owner's wallet.
+  const solana = '74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf';
+
+  it('accepts a 32-byte base58 address exactly as pasted', () => {
+    expect(checkAddress('solana', ` ${solana} `)).toEqual({
+      ok: true,
+      address: solana,
+      kind: 'Solana address',
+    });
+    expect(checkAddress('solana', '11111111111111111111111111111111')).toMatchObject({ ok: true });
+  });
+
+  it.each([
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    ['bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', 'it looks like a Bitcoin address'],
+    [solana.slice(0, 40), 'This is not a valid Solana address.'],
+    [`${solana.slice(0, -1)}0`, 'This is not a valid Solana address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('solana', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    [
+      'a base58 secret key',
+      '5mt57dE8bXApgQb9YsEisaZkJaHfQmgG9ugpng2gLKLryJRStLK6TLUFTExTAzvU99cipvEgBuo39t1yHVLcXxYB',
+    ],
+    ['a keypair file', `[${Array(64).fill('17').join(',')}]`],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('solana', input)).toMatchObject({ ok: false, secret: true });
+    expect(checkAddress('bitcoin', input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
+describe('TRON-ADD, WAL-NO-SECRETS: the Tron address field', () => {
+  // Base58check of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const tron = 'TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR';
+
+  it('accepts a "T…" address exactly as pasted', () => {
+    expect(checkAddress('tron', ` ${tron} `)).toEqual({
+      ok: true,
+      address: tron,
+      kind: 'Tron address',
+    });
+  });
+
+  it.each([
+    ['416cc0027fd992863e7472490919d2769e0aa0e8d9', 'the hex form of a Tron address'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    ['74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf', 'it looks like a Solana address'],
+    [tron.slice(0, 30), 'This is not a valid Tron address.'],
+    [`${tron.slice(0, -1)}0`, 'This is not a valid Tron address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('tron', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it('points a Tron address pasted for another network to Tron', () => {
+    for (const network of ['bitcoin', 'ethereum', 'solana'] as const) {
+      const result = checkAddress(network, tron);
+      expect(result.ok === false && result.message).toContain('Tron');
+    }
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    ['a hex private key', '4c'.repeat(32)],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('tron', input)).toMatchObject({ ok: false, secret: true });
   });
 });
 
@@ -172,5 +323,18 @@ describe('names', () => {
       name: 'Trust Wallet',
     });
     expect(accountNamed([{ name: 'Trust Wallet' }], 'Trezor')).toBeUndefined();
+  });
+});
+
+describe('BYBIT-KEY: the API key fields (M22)', () => {
+  it('takes letters and digits, trimmed, and refuses a seed phrase', () => {
+    expect(checkApiKey(' SyntheticKey0001 ', 'key')).toEqual({
+      ok: true,
+      value: 'SyntheticKey0001',
+    });
+    expect(checkApiKey('', 'secret')).toEqual({ ok: false, message: 'Paste the API secret.' });
+    expect(checkApiKey('not-a-key!', 'key').ok).toBe(false);
+    const words = Array(11).fill('abandon').concat('about').join(' ');
+    expect(checkApiKey(words, 'secret')).toMatchObject({ ok: false, secret: true });
   });
 });

@@ -11,7 +11,8 @@
   --line-strong: rgba(214, 224, 255, 0.15);
   --ink: #eef1f8;
   --ink-2: #a9b1c3;
-  --ink-3: #727a8e;
+  /* Hints, captions and table headers people must read: 4.5:1 or better on every surface. */
+  --ink-3: #8a92a6;
   --accent: #8c9bff;
   --accent-hover: #a3afff;
   --accent-ink: #0d1016;
@@ -19,6 +20,9 @@
   --pos: #3dd68c;
   --pos-soft: rgba(61, 214, 140, 0.12);
   --neg: #ff6b6b;
+  --neg-soft: rgba(255, 107, 107, 0.12);
+  /* Text on a --neg fill (the danger button). */
+  --neg-ink: #0d1016;
   --warn: #f2b544;
   --warn-soft: rgba(242, 181, 68, 0.12);
   --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
@@ -27,6 +31,7 @@
   --c-eth: #3987e5;
   --c-sol: #d55181;
   --c-zec: #199e70;
+  --c-trx: #dd3442;
   --c-cash: #9085e9;
   --c-other: #4a5161;
 
@@ -59,14 +64,16 @@
   --line-strong: rgba(20, 28, 52, 0.15);
   --ink: #121726;
   --ink-2: #4f586b;
-  --ink-3: #7d8599;
+  --ink-3: #5f677b;
   --accent: #4b55d6;
   --accent-hover: #3c46c4;
   --accent-ink: #ffffff;
   --accent-soft: rgba(75, 85, 214, 0.1);
-  --pos: #0b8a4a;
+  --pos: #0a7f44;
   --pos-soft: rgba(11, 138, 74, 0.1);
   --neg: #cc3340;
+  --neg-soft: rgba(204, 51, 64, 0.09);
+  --neg-ink: #ffffff;
   --warn: #9a6200;
   --warn-soft: rgba(214, 150, 20, 0.14);
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
@@ -74,6 +81,7 @@
   --c-eth: #2a78d6;
   --c-sol: #e87ba4;
   --c-zec: #1baf7a;
+  --c-trx: #e5404d;
   --c-cash: #4a3aa7;
   --c-other: #c4c8d2;
 }

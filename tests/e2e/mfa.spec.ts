@@ -114,7 +114,7 @@ async function assertPending(page: Page, token: string) {
     AND "expiresAt" <= "createdAt" + interval '5 minutes'
     FROM auth_sessions WHERE "tokenHash" = '${hashToken(token)}'`),
   ).toBe('t');
-  await expect(page.getByLabel('Код из приложения', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Code from your authenticator app', { exact: true })).toBeVisible();
   await expect(page.getByRole('navigation')).toHaveCount(0);
 }
 
@@ -133,11 +133,11 @@ test('MFA-002-A: real password submission grants only five-minute pending state 
   await assertPending(page, pending.token);
   for (const path of [
     '/api/auth/me',
-    '/api/crypto',
-    '/api/assets',
-    '/api/liabilities',
-    '/api/metrics',
-    '/api/currencies/list',
+    '/api/accounting/portfolio',
+    '/api/accounting/operations',
+    '/api/wallet-addresses',
+    '/api/owner-settings',
+    '/api/export/backup',
   ]) {
     const response = await page.context().request.get(path);
     expect(response.status(), path).toBe(401);

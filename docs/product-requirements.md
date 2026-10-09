@@ -572,6 +572,68 @@ network-specific identity:
   "Bybit" **when** the owner links it as a transfer to Bybit **then** Bybit's holdings
   increase and no deposit is recorded.
 
+**US-4.6** As the owner I record buying one coin with another on the chain as one swap.
+
+- CLS-SWAP-SAME: **Given** wallet Trust Wallet sends 1000 USDT from its Ethereum address
+  and receives 0.0125 BTC at its Bitcoin address **when** the owner classifies the BTC
+  receipt as Swap paid with that USDT transaction **then** one swap USDT → BTC is recorded
+  in Trust Wallet at the time the BTC arrived, the USDT leaves by FIFO, the BTC costs
+  1000 USD, both transactions stop asking for a classification, the list shows one row,
+  **and** the network fee is classified on its own row as before.
+- CLS-SWAP-CROSS: **Given** the coins were paid from wallet A and arrived in wallet B
+  **then** the paid coins first move A→B as an own transfer carrying the network fee,
+  and the swap is recorded in B; wallet balances still match the chain.
+- CLS-SWAP-VALUE: **Given** no value is entered **then** USDT and USDC on either side
+  count 1:1 with USD, other coins at the paid coin's stored price at most two days old,
+  otherwise the value stays unknown; a value the owner enters wins.
+- CLS-SWAP-UNDO: **Given** a recorded swap **when** either transaction is classified
+  otherwise or hidden **then** the swap and its transfer are voided and the other
+  transaction asks for a classification again.
+- CLS-SWAP-INVALID: the same coin on both sides, two transactions moving the same way,
+  or a side whose address is not in a wallet are refused with a reason; nothing is saved.
+- CLS-SWAP-DUST: **Given** a dust threshold of 1 USD **then** the transactions offered as
+  the other side leave out dust, hidden ones, and any worth less than the threshold at the
+  price stored for their time, in either direction.
+- CLS-RECORDED: **Given** the owner added "Buy 0.0125 BTC for 1000 USDT" in Trust Wallet by
+  hand or from CSV, and Trust Wallet's address sent the 1000 USDT **when** the owner picks
+  that buy under "Added by you or from CSV" in the Swap choices **then** the transaction is
+  that record: nothing new is recorded, it stops counting on its own (the USDT leave once),
+  and it leaves "Needs classification". Offered are trades and swaps of the same wallet within
+  a week that moved this coin the same way (a buy's coin or its cash, a sale's coin or its
+  proceeds, a swap's sides). A record of another wallet, one a blockchain transaction
+  produced, or one that moved another coin is refused. **Given** the record is deleted later
+  **then** the transaction counts again and asks for a classification.
+
+**US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
+take back out, and the rewards it pays.
+
+- POOL-DEPOSIT: **Given** Trust Wallet's Ethereum address sends 1 ETH (network fee 0.001
+  ETH) and 3000 USDC to a pool **when** the owner classifies both legs as Pool deposit
+  **then** the coins stay in holdings with their purchase price, only the network fee
+  leaves, nothing is realised and no withdrawal is recorded; both legs stop asking for a
+  classification, the list shows them as Pool deposit, **and** the address card lists them
+  under "Liquidity pools" as part of its balance, which still matches the books. A pool
+  token received for the deposit is not valued on its own.
+- POOL-WITHDRAW: **Given** that deposit **when** the pool returns 0.9 ETH and 3400 USDC
+  and the owner classifies each receipt as Pool withdrawal of its deposit **then** the
+  principal comes back without a deposit or income; the 400 USDC above the deposit is pool
+  income with that value as its cost basis (USDT and USDC 1:1, another coin at its stored
+  price at most two days old, a value the owner enters wins, otherwise unknown); the 0.1
+  ETH below it leaves holdings without a sale price (impermanent loss); the network fee of
+  the withdrawal leaves; **and** the deposits no longer show under "Liquidity pools".
+- POOL-REWARD: **Given** 25 USDC of pool fees or a reward token arrive on their own **when**
+  classified as Pool reward **then** they are income with the value entered as cost basis,
+  or count without a purchase price when none is entered, like a Reward.
+- POOL-UNDO: **Given** a deposit that a withdrawal names **when** the owner hides the
+  deposit or classifies it otherwise **then** this is refused until the withdrawal is
+  changed; **when** the withdrawal is classified otherwise or hidden **then** its pool
+  income is voided and the deposit is in the pool again.
+- POOL-INVALID: a withdrawal naming a leg that is not a Pool deposit, another coin, a
+  deposit made after it, one in another wallet, or one another withdrawal already names is
+  refused with a reason, and so is a Pool deposit or withdrawal on an exchange account;
+  nothing is saved. One withdrawal returns one deposit of each coin; partial withdrawals
+  are not covered yet.
+
 ### E5 Valuation and P&L
 
 **US-5.1** As the owner I see how much my portfolio is worth now.
@@ -781,6 +843,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
+| M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 
 ```mermaid
 flowchart LR
@@ -809,6 +872,7 @@ flowchart LR
   M9 --> M22
   M11 --> M22
   M13 --> M22
+  M22 --> M26
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),

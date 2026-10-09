@@ -12,45 +12,63 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 29 manifest entries: the original 19 browser cases,
-CSV-006-B session-renewal recovery, since 2026-10-03 ADDR-UI wallet-address import and,
-since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
+The reviewed selection contains 28 manifest entries: 14 of the original 19 browser cases,
+CSV-006-B session-renewal recovery, since 2026-10-03 the wallet-address import (ADDR-API since
+M20) and, since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
 and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
 list, FLOW-SPLIT-UI market versus flows and MANUAL-OPS-UI manual operations, WAL-UI wallets
-bound to accounts and CLS-UI blockchain transaction classification. Each entry may cover more than one scenario ID; these are
-browser journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
+bound to accounts, CLS-UI blockchain transaction classification, since 2026-10-06, XFER-UI
+transfers between own wallets and, since 2026-10-08, RESET-UI password reset by email, SEC-UI security settings and EXP-UI data export.
+M20 (2026-10-08) retired the legacy transfer, capital-flow, period-profit and address screens,
+so TRANSFER-UI, FLOW-004-A, PROFIT-UI, XIRR-UI and TWR-UI left the selection; see "Retired
+with their screens" below. Each entry may cover more than one scenario ID; these are browser
+journeys over the actual frontend, proxy, backend and isolated PostgreSQL,
 using synthetic owner data and provider fixtures.
 
 | Scenario IDs | Critical assertion retained |
 |---|---|
 | MFA-002-A/B | Password alone leaves private data denied; TOTP plus CSRF establishes the owner session. |
 | SES-001-B | Logout revokes a copied session credential and replay fails. |
-| SES-002-A | Missing CSRF or foreign Origin cannot read owner currencies or change preferences. |
+| SES-002-A | Missing CSRF or foreign Origin cannot change owner settings (main currency, dust threshold); every table stays unchanged. |
 | OPEN-001-A / OPEN-002-A | Opening amounts preserve the distinction between unknown and zero cost across restart/history. |
 | TRADE-003-A / TRADE-006-A | FIFO proceeds, cost and profit stay exact; pending edits lock; restart and correction history remain consistent. |
 | SWAP-UI | A committed exchange survives lost response and SPA remount without duplicate posting. |
 | REWARD-UI | Unknown basis and zero remain distinct; category and receipt-bound retry intent persist. |
-| TRANSFER-UI | Review, retry, correction and terminal void preserve transfer receipts and basis. |
 | CSV-006-A | Sale-first import preserves FIFO/provenance and replay safety; whole-batch rollback works. |
-| FLOW-004-A | Flow initialization, contribution, correction and review remain distinct from trades. |
 | PRICE-UI / PRICE-RECOVERY | Price retry preserves a committed command; late responses cannot overwrite newer state. |
 | VAL-UI | Account totals remain exact and refresh/late replies preserve the trade draft. |
 | VCH-UI | Empty and zero chart history render correctly; late period replies do not lose drafts or show stale data. |
 | MPV-UI | Selected portfolio totals and missing-price gaps are accurate; stale replies are ignored. |
-| PROFIT-UI / PROFIT-LATE | Profit preview stays tied to reviewed inputs after edits, errors and delayed replies. |
-| XIRR-UI / XIRR-LATE | Available/unavailable rates stay tied to reviewed inputs. |
-| TWR-UI | Return handles missing flow valuation and invalidates delayed stale results. |
-| SHELL-UI | Owner MFA login/logout, responsive keyboard access and honest legacy scope. |
+| SHELL-UI | Owner MFA login/logout, responsive keyboard access, only the uncovered legacy screens under Legacy and retired bookmarks opening their replacement. |
 | CSV-006-B | A committed CSV confirm survives session expiry, 401, MFA reauthentication and SPA return without duplicate posting. |
-| ADDR-UI / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every USD value is shown as missing, never zero. |
+| ADDR-API / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every one of the 60 stored transactions has its USD value missing, never zero, across a reload. |
 | PORTFOLIO-UI | Whole-portfolio value, average buy price, cost basis, unrealized and realized P&L and allocation come from real accounts and a stored price; anonymous and query-carrying reads are refused. |
 | CURRENCY-UI | The main currency saved in Settings survives logout and MFA login; the Portfolio and Asset screens show value, cost and P&L in EUR and RUB from stored Bank of Russia rates, cost at the purchase date's rate; anonymous, missing-CSRF and unknown-currency requests are refused. |
-| CHART-PERIODS / SNAP-REBUILD / DASH-MAIN | The dashboard opens on one month and shows the net worth, change and chart the backend returned; each period 24H, 7D, 1M, 3M, 1Y and ALL asks once and stays inside its range; ALL starts on Jan 1, 2025; a backdated buy rebuilds later daily snapshots by exactly its value; anonymous and unknown-query reads are refused. |
+| CHART-PERIODS / SNAP-REBUILD / DASH-MAIN | The dashboard opens on one month and shows the net worth, change and chart the backend returned, the five largest held assets and the allocation the valuation returned, and the attention block once its checks answered; each period 24H, 7D, 1M, 3M, 1Y and ALL asks once and stays inside its range; ALL starts on Jan 1, 2025; a backdated buy rebuilds later daily snapshots by exactly its value; anonymous and unknown-query reads are refused. |
 | OPS-UI | A manual buy, a CSV-imported buy and an Esplora-fixture chain receipt appear in one Transactions list with date, type, asset, amount, value, account, status and source; asset and status filters leave only matching rows; the drawer shows the raw chain facts; anonymous and query-carrying reads are refused. |
 | FLOW-SPLIT-UI / FLOW-SPLIT-DEPOSIT / FLOW-SPLIT-MIXED / PROFIT-ALL-TIME | A buy paid from outside adds its gross plus fee to the month's deposits and a sale its net proceeds to withdrawals; market effect is the change minus net flow; net invested steps by exactly those amounts; profit to date is net worth minus all-time net invested in every period; the dashboard shows that profit line, the period's market and net-deposit split and the net invested line the backend returned. |
 | MANUAL-OPS-UI / OPS-ADD-BUY / OPS-OVERSPEND / OPS-DELETE-GUARD / OPS-DELETE | A buy saved in the Add transaction window starts the journal of an account that had none; a sale shows what the account holds on its date, refuses more and fills it with Use all; deleting the purchase later sales spend is refused naming the sale and changes nothing; a confirmed deletion removes the sale from the list and its history keeps the void. |
 | WAL-UI / WAL-NO-SECRETS / WAL-DUP / WAL-ACCOUNT / WAL-PAGE / WAL-RENAME / SYNC-RECONCILE / SYNC-STATUS | Add wallet clears a pasted seed phrase without sending it and refuses an Ethereum address; a Bitcoin address joins a new wallet with a name, its whole Esplora-fixture history loads, the chain balance shows and differs from the wallet's recorded transactions; adding it again opens the wallet that tracks it; renaming it in the drawer is stored; at 390 px the rows fit without horizontal scroll; with prices synced 12 minutes ago, a sync refused by the provider (503) is stored as failed, so after a reload the row says "Sync failed" with the reason and the age of the shown balance, and the sidebar says "1 source needs attention" and "Others synced 12 min ago"; the wallet's own page lists the address and its chain transactions, renaming the wallet keeps the address in it, and Transactions names the wallet and address on its chain rows. |
 | CLS-UI / CLS-COUNT / CLS-BUY / CLS-HIDE / CLS-RESYNC / CLS-RECLASSIFY | The sidebar and the Dashboard count blockchain transactions to classify and Review opens them; a receipt of a wallet bound to an account is classified as a buy paid in USDT with only the fields a buy needs, and the next one of that wallet opens with only outgoing types; a payment is hidden without a type; the list shows the buy's value and the Hidden status without a second row for the recorded buy; a resync keeps both answers; changing the buy to income starts from the saved answer; at 390 px the rows fit without horizontal scroll. |
+| XFER-UI / XFER-AUTO / XFER-CAPITAL / XFER-MANUAL | Two addresses in two wallets share one transaction: once the receipt that funded the sender is a buy, the send and the receipt are one transfer between the wallets that nobody had to classify, listed once as sender → receiver with "Auto: own wallets" and the drawer note; the receiver's coins keep the sender's cost basis and only the network fee leaves; a send to an unregistered address is linked by hand to a manual exchange wallet, which then holds the coins at their cost with no deposit; at 390 px the rows fit without horizontal scroll. |
+| SEC-UI / SEC-CODES / SEC-SESSIONS | Two browsers signed in with recovery codes appear in Settings → Security as "Chrome on Windows" (this browser) and "Safari on iPhone" with 8 of 10 codes unused; a TOTP from the authenticator makes ten new codes shown once, the dialog closes only after "I have saved these codes", the count reads 10 of 10 after a reload and an old code no longer completes a sign-in; "Log out everywhere" ends both browsers, this one returns to the login page and no owner session remains. |
+| RESET-UI / RESET-REQUEST / RESET-USE / RESET-REUSE / RESET-LIMIT | "Forgot password?" on the login page asks for an email; an unknown and the owner's email get the same 202, body and "Check your email" page, and only the owner's request delivers one message through the synthetic Yandex SMTP fixture with a link that lives 30 minutes; the link sets a new password, the other browser's session is signed out, the used link is refused, the old password fails and the new one still needs the TOTP code; past the per-client limit a request is refused with Retry-After and no link is made or sent. |
+| EXP-UI / EXP-CSV / EXP-JSON | Export requests without a session are refused; Settings → Data downloads one ZIP archive holding assets.csv, accounts.csv, wallets.csv, operations.csv and chain-transactions.csv, with the owner's new account and its buy among them, and a JSON backup with format version 1 holding that account and buy; the backup has no users, owner_auth, owner_mfa, recovery-code or session table and contains neither the owner's email, password, session cookie, its hash nor the CSRF token; responses are no-store and at 390 px the page fits without horizontal scroll. |
+
+## Retired with their screens (M20)
+
+| Former case | Why it left | What keeps the invariant |
+|---|---|---|
+| TRANSFER-UI | The legacy transfer screen is gone; transfers are added, edited and deleted in Add transaction and the Transactions drawer. | `owned-transfers-db` and `owned-transfers-bounds-db` probes, TRANSFER-API, MANUAL-OPS-UI and XFER-UI. |
+| FLOW-004-A | The declared deposit and withdrawal journal counts nowhere since M7; its screen is gone and its rows stay listed, read-only, in Transactions. | `external-usd-flows-db` probe and FLOW-001-A / FLOW-002-A (API); FLOW-SPLIT-UI covers deposits as M7 counts them. |
+| PROFIT-UI / XIRR-UI / TWR-UI | Hidden in the new interface (Q10); the backend previews stay until a separate removal. | `period-profit-db`, `xirr-preview-db`, `twr-preview-db` and `linked-twr-db` probes and the API cases in the same files. |
+
+The second M20 step removed the legacy backend modules (assets, liabilities, crypto,
+currencies, display FX, metrics) and with them the `display-fx-db` probe, which only exercised
+the removed display FX service. Their tables and rows stay and leave with the JSON backup
+(EXP-JSON, `owner-export-db`); LIR-UI and ISO-004-C check that the old APIs answer 404 and
+leave the legacy rows untouched. SES-002-A now writes `PUT /owner-settings` instead of the
+removed currency visibility endpoint.
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout
