@@ -273,6 +273,46 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the Solana address field (M15)', () => {
   });
 });
 
+describe('TRON-ADD, WAL-NO-SECRETS: the Tron address field', () => {
+  // Base58check of the SHA-256 of a fixed label: a synthetic account, never an owner's wallet.
+  const tron = 'TKtDzrC3Hw7WVmzzeQtkvSknuV16HZGafR';
+
+  it('accepts a "T…" address exactly as pasted', () => {
+    expect(checkAddress('tron', ` ${tron} `)).toEqual({
+      ok: true,
+      address: tron,
+      kind: 'Tron address',
+    });
+  });
+
+  it.each([
+    ['416cc0027fd992863e7472490919d2769e0aa0e8d9', 'the hex form of a Tron address'],
+    ['0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed', 'it looks like an Ethereum address'],
+    ['1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2', 'it looks like a Bitcoin address'],
+    ['74jkuZyPNbBxRF7N6TgmYPi4jTtnk93yH9kpFyNQHypf', 'it looks like a Solana address'],
+    [tron.slice(0, 30), 'This is not a valid Tron address.'],
+    [`${tron.slice(0, -1)}0`, 'This is not a valid Tron address.'],
+  ])('refuses %j', (input, message) => {
+    const result = checkAddress('tron', input);
+    expect(result.ok === false && result.message).toContain(message);
+    expect(result.ok === false && result.secret).toBeUndefined();
+  });
+
+  it('points a Tron address pasted for another network to Tron', () => {
+    for (const network of ['bitcoin', 'ethereum', 'solana'] as const) {
+      const result = checkAddress(network, tron);
+      expect(result.ok === false && result.message).toContain('Tron');
+    }
+  });
+
+  it.each([
+    ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
+    ['a hex private key', '4c'.repeat(32)],
+  ])('marks %s as a secret', (_case, input) => {
+    expect(checkAddress('tron', input)).toMatchObject({ ok: false, secret: true });
+  });
+});
+
 describe('names', () => {
   it('shortens an address to its start and end', () => {
     expect(shortAddress('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe('bc1qar0s…wf5mdq');

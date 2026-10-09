@@ -51,6 +51,8 @@ services:
       PRICE_COLLECTION_ENABLED: "true"
       # Free Etherscan key for Ethereum wallets (M14); without it they report a missing key.
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      # Optional free TronGrid key for Tron wallets; without it TronGrid's lower keyless rate applies.
+      TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
       # Yandex mailbox and app password for password reset emails (M17); without them reset
       # requests are answered as usual but no email is sent.
       SMTP_USER: ${SMTP_USER:-}

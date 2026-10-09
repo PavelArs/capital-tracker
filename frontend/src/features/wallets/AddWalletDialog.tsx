@@ -23,6 +23,7 @@ const networks = [
   },
   { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH, USDT and USDC' },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL, USDT and USDC' },
+  { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
   {
     key: 'bybit',
     symbol: null,
@@ -386,6 +387,12 @@ export default function AddWalletDialog({
                     Paste the wallet address, not a token account: the app finds its USDT and USDC
                     accounts itself. It tracks SOL, USDT and USDC on Solana mainnet; other tokens
                     are not read.
+                  </p>
+                ) : network === 'tron' ? (
+                  <p className="wallets-note">
+                    Paste the address that starts with T. The app tracks TRX, USDT and USDC on Tron
+                    mainnet and the TRX you staked for energy or bandwidth; other tokens are not
+                    read.
                   </p>
                 ) : (
                   <p className="wallets-note">
