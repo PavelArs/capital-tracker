@@ -37,6 +37,8 @@ const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 // kraken: { hourly: { XBTUSD: '84945.1' }, daily: { XBTUSD: 90000 }, fail: { XBTUSD: 500 }, dailyFail: {...} }
 // coingecko: { status, prices: { bitcoin: 84950.5 }, updatedAt }
 let marketPrices = null;
+// CoinGecko token prices by contract (TOKEN-ANY-PRICE): { status, ethereum: { <lower-case contract>: usd }, solana: { <mint>: usd } }.
+let tokenPrices = { status: 200, ethereum: {}, solana: {} };
 const krakenKeys = { XBTUSD: 'XXBTZUSD', ETHUSD: 'XETHZUSD', ZECUSD: 'XZECZUSD', XLMUSD: 'XXLMZUSD', USDTUSD: 'USDTZUSD' };
 const DAY = 86400;
 const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
@@ -533,9 +535,17 @@ function provider(request, response, url) {
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price') {
     return respond(response, 200, { bitcoin: { usd: 60000 }, ethereum: { usd: 3000 } });
   }
-  if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/token_price/ethereum') {
+  const tokenRoute = /^\/api\/v3\/simple\/token_price\/(ethereum|solana)$/.exec(url.hostname === 'api.coingecko.com' ? url.pathname : '');
+  if (tokenRoute) {
+    if (tokenPrices.status !== 200) return respond(response, tokenPrices.status, { status: { error_code: tokenPrices.status } });
+    const table = tokenPrices[tokenRoute[1]];
+    const at = Math.floor(Date.now() / 1000) - 30;
     const contracts = (url.searchParams.get('contract_addresses') || '').split(',').filter(Boolean);
-    return respond(response, 200, Object.fromEntries(contracts.map((contract) => [contract.toLowerCase(), { usd: 1 }])));
+    // Ethereum answers by lower-case contract, Solana by mint.
+    return respond(response, 200, Object.fromEntries(contracts.flatMap((contract) => {
+      const key = tokenRoute[1] === 'ethereum' ? contract.toLowerCase() : contract;
+      return table[key] === undefined ? [] : [[key, { usd: table[key], last_updated_at: at }]];
+    })));
   }
   if (url.hostname === 'api.exchangerate-api.com' && url.pathname === '/v4/latest/USD') {
     return respond(response, 200, { base: 'USD', date: '2026-09-21', rates: { USD: 1, EUR: 0.9, RUB: 90 } });
@@ -653,6 +663,7 @@ const server = http.createServer(async (request, response) => {
       bitcoinHistories = new Map();
       bitcoinChain = null;
       marketPrices = null;
+      tokenPrices = { status: 200, ethereum: {}, solana: {} };
       cbr = null;
       ethereum = initialEthereum();
       solana = initialSolana();
@@ -688,6 +699,17 @@ const server = http.createServer(async (request, response) => {
         return respond(response, 400, { error: 'Invalid synthetic price fixture' });
       }
       marketPrices = { kraken, coingecko: data.coingecko ? coingecko : null };
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/token-prices') {
+      const data = await readJson(request);
+      const table = (value) => value === undefined || (value && typeof value === 'object' && !Array.isArray(value)
+        && Object.entries(value).every(([key, item]) => /^[A-Za-z0-9]{20,64}$/.test(key) && typeof item === 'number' && item > 0));
+      if (!table(data.ethereum) || !table(data.solana)
+        || (data.status !== undefined && !(Number.isInteger(data.status) && data.status >= 200 && data.status <= 599))) {
+        return respond(response, 400, { error: 'Invalid synthetic token price fixture' });
+      }
+      tokenPrices = { status: data.status ?? 200, ethereum: data.ethereum ?? {}, solana: data.solana ?? {} };
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/cbr') {
