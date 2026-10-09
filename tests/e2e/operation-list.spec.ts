@@ -160,21 +160,25 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
     'Value',
     'Account',
     'Status',
-    'Source',
   ]);
 
   const accountFilter = main.getByRole('combobox', { name: 'Account', exact: true });
   await accountFilter.selectOption({ label: accountName });
   await expect(rows).toHaveCount(2);
   await expect(table.getByRole('rowheader')).toHaveText(['Jun 14, 2025', 'Jun 13, 2025']);
+  // OPS-COUNTS: the chips count what they would show with the account filter as it is.
+  const chips = main.getByRole('group', { name: 'Filter transactions' });
+  await expect(chips.getByRole('button', { name: /^All/ })).toHaveText('All 2');
+  await expect(chips.getByRole('button', { name: /^Needs classification/ })).toHaveText(
+    'Needs classification 0',
+  );
   await expect(cells(rows.nth(0))).toHaveText([
     'Buy10:30',
     'BTC',
     '+0.01',
     '$1,050.50',
     accountName,
-    'Recorded',
-    'CSV',
+    'RecordedCSV',
   ]);
   await expect(cells(rows.nth(1))).toHaveText([
     'BuyNo time',
@@ -182,8 +186,7 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
     '+0.00918359',
     '$1,000.00',
     accountName,
-    'Recorded',
-    'Manual',
+    'RecordedManual',
   ]);
   // OPS-CURRENCY: the list switches to RUB at Bank of Russia rates and keeps the filter.
   await main.getByRole('radio', { name: 'RUB', exact: true }).check();
@@ -228,25 +231,32 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   // A raw chain row has no recorded value: an estimate at a stored price, or none at all.
   await expect(receipt.nth(3)).toHaveText(/^(≈ \$[\d,]+\.\d{2}|—)$/);
   await expect(receipt.nth(4)).toHaveText(walletLabel);
-  await expect(receipt.nth(5)).toHaveText('Needs classification');
-  await expect(receipt.nth(6)).toHaveText('Blockchain');
+  // OPS-COMPACT: the source sits under the status in one column.
+  await expect(receipt.nth(5)).toHaveText('To classifyBlockchain');
   await page.screenshot({ path: testInfo.outputPath('transactions-wallet-1440-dark.png') });
 
   // OPS-FILTER: asset BTC and status "Needs classification" leave only matching rows.
   await accountFilter.selectOption({ label: 'All accounts' });
   await main.getByRole('combobox', { name: 'Asset', exact: true }).selectOption({ label: 'BTC' });
+  // OPS-STABLE: another chip shows other rows in columns that stay where they were.
+  const columnsAt = () =>
+    table
+      .getByRole('columnheader')
+      .evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().x)));
+  const before = await columnsAt();
   await main.getByRole('button', { name: /^Needs classification/ }).click();
   await expect(main.getByRole('button', { name: /^Needs classification/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   );
+  expect(await columnsAt()).toEqual(before);
   await expect(page).toHaveURL(/status=needs-classification/);
   await expect(rows.filter({ hasText: walletLabel })).toHaveCount(1);
   await expect(rows.filter({ hasText: accountName })).toHaveCount(0);
   const count = await rows.count();
   for (let index = 0; index < count; index++) {
     await expect(cells(rows.nth(index)).nth(1)).toHaveText(/^BTC/);
-    await expect(cells(rows.nth(index)).nth(5)).toHaveText('Needs classification');
+    await expect(cells(rows.nth(index)).nth(5)).toHaveText(/^To classify/);
   }
   await page.screenshot({ path: testInfo.outputPath('transactions-filter-1440-dark.png') });
 
@@ -260,7 +270,8 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
     // WAL-ACCOUNT: the address is in no wallet yet; the address has its own line.
     ['Wallet', 'Not in a wallet yet'],
     ['Address', address],
-    ['Transaction', txid],
+    // TX-HASH: the hash copies in one click and opens on a public explorer.
+    ['Transaction', `${txid}CopyView in explorer`],
     ['Network fee', 'Paid by sender'],
     ['Status', 'Needs classification'],
     ['Source', 'Blockchain'],
