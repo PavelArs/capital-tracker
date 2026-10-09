@@ -67,4 +67,41 @@ describe('provisional chain movements (D1)', () => {
       lot('0.7', null, at),
     ]);
   });
+
+  describe('a payment whose coins a later sale by hand already spent', () => {
+    // Buy 1 BTC (Jan), unanswered send of 1 BTC (Feb), buy 1 BTC (Mar), sale by hand of 1 BTC
+    // (Apr). FIFO gives the sale the January coins, so only the March lot is left.
+    const march = lot('1', '80000', '2026-03-01T00:00:00.000Z');
+    const send = move(false, '1', '2026-02-01T00:00:00.000Z');
+    const journal = (held: Record<string, string>) => (instrumentId: string, at: string) =>
+      instrumentId === BTC ? BigInt(held[at] ?? '0') : 0n;
+    const atoms = (units: string) => units + '0'.repeat(30);
+
+    it('still leaves the wallet with nothing', () => {
+      const held = journal({ '2026-02-01T00:00:00.000Z': atoms('1') });
+      expect(applyChainMoves([march], [send], 'z', held)).toEqual([]);
+    });
+
+    it('takes no more than the wallet held at the payment', () => {
+      const held = journal({ '2026-02-01T00:00:00.000Z': atoms('1') });
+      const twice = move(false, '2', '2026-02-01T00:00:00.000Z');
+      const later = lot('3', '90000', '2026-03-02T00:00:00.000Z');
+      expect(applyChainMoves([march, later], [twice], 'z', held)).toEqual([later]);
+    });
+
+    it('takes what it owes from a later unanswered receipt as well', () => {
+      // The March coins arrived on chain instead of being bought by hand.
+      const held = journal({ '2026-02-01T00:00:00.000Z': atoms('1') });
+      const receipt = move(true, '1', '2026-03-01T00:00:00.000Z');
+      expect(applyChainMoves([], [send, receipt], 'z', held)).toEqual([]);
+    });
+
+    it('is valued as held between the payment and the sale', () => {
+      const january = lot('1', '60000', '2026-01-01T00:00:00.000Z');
+      // On 15 March the January and March lots are both still held: the send takes January's.
+      expect(applyChainMoves([january, march], [send], '2026-03-15T00:00:00.000Z')).toEqual([
+        march,
+      ]);
+    });
+  });
 });
