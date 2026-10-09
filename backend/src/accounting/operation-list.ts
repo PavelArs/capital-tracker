@@ -19,6 +19,11 @@ export interface OperationAsset {
   instrumentId: string | null;
   symbol: string | null;
   name: string;
+  /**
+   * TOKEN-CHAIN: the blockchain a token moved on, as USDT exists on several. Absent for a
+   * network's own coin and for what no chain transaction moved.
+   */
+  network?: Exclude<Network, 'bybit'>;
 }
 export interface OperationPlace {
   id: string;
@@ -154,7 +159,13 @@ export interface ChainOperationInput {
    * came back from them (negative); absent or "0" for every other leg.
    */
   stakeUnits?: string;
+  /** SWAP-ONE-TX: the owner's own transaction called a contract (Ethereum), on its ether leg. */
+  call?: ContractCall | null;
   classification?: ChainClassificationInput | null;
+}
+/** SWAP-ONE-TX: a contract call, named by its method as the explorer decodes it, or null. */
+export interface ContractCall {
+  method: string | null;
 }
 export interface OperationSources {
   trades: readonly TradeOperationInput[];
@@ -230,6 +241,13 @@ export interface Operation {
      * deposit a withdrawal returns. Null otherwise.
      */
     pairedTxid: string | null;
+    /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
+    call?: ContractCall;
+    /**
+     * SWAP-ONE-TX-SUGGEST: the one leg of the same transaction that moved another coin the
+     * other way, as the suggested other side of a swap; only while both are unanswered.
+     */
+    swapWith?: { addressId: string; txid: string };
   } | null;
   /**
    * POOL-WITHDRAW: what the deposit put into the pool and what came back above it (positive,
@@ -282,8 +300,15 @@ export interface OperationList {
  * (an exchange's in the leg's coin). */
 function legAsset(network: Network, token: string | null): OperationAsset {
   const { symbol, name } = chainAsset(network, token);
-  return { instrumentId: null, symbol, name };
+  return { instrumentId: null, symbol, name, ...(isToken(network, token) ? { network } : {}) };
 }
+/** TOKEN-CHAIN: a coin a blockchain moves that is not its own; an exchange has no blockchain. */
+function isToken(network: Network, token: string | null): network is Exclude<Network, 'bybit'> {
+  return token !== null && !isExchange(network);
+}
+/** TOKEN-CHAIN: a journal's asset as a chain leg moved it, named with the leg's blockchain. */
+const onChain = (asset: OperationAsset, leg: ChainOperationInput | null): OperationAsset =>
+  leg && isToken(leg.wallet.network, leg.asset) ? { ...asset, network: leg.wallet.network } : asset;
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
 const purposeTypes: Record<TradePurpose, OperationType> = {
   income: 'income',
@@ -527,9 +552,9 @@ function chainOperation(
       type: 'swap',
       direction: 'internal',
       status: 'recorded',
-      asset: produced.asset,
+      asset: onChain(produced.asset, paying),
       quantity: produced.quantity,
-      counterAsset: produced.counterAsset,
+      counterAsset: produced.counterAsset && onChain(produced.counterAsset, row),
       counterQuantity: produced.counterQuantity,
       valueUsd: produced.valueUsd,
       costBasisUsd: produced.valueUsd,
@@ -575,6 +600,51 @@ function chainOperation(
     paid: produced.paid,
     settlement: produced.settlement,
     orderWithinTimestamp: produced.orderWithinTimestamp,
+  };
+}
+
+/** SWAP-ONE-TX: the transaction a leg belongs to; a token leg adds its number to the hash. */
+const hashKey = (row: ChainOperationInput) => `${row.wallet.network}:${row.txid.split('-')[0]}`;
+const unanswered = (row: ChainOperationInput) =>
+  !row.classification || row.classification.status === 'unclassified';
+/** A leg of the network's own coin that only paid the transaction's fee. */
+const feeOnly = (row: ChainOperationInput) =>
+  row.asset === null &&
+  BigInt(row.receivedUnits) === 0n &&
+  BigInt(row.sentUnits) === BigInt(row.feeUnits);
+const swappable = (row: ChainOperationInput) =>
+  unanswered(row) && !feeOnly(row) && netUnits(row) !== 0n && BigInt(row.stakeUnits ?? '0') === 0n;
+const coin = (row: ChainOperationInput) => chainAsset(row.wallet.network, row.asset).symbol;
+
+/**
+ * SWAP-ONE-TX: a transaction that took one coin from the owner and gave another back called a
+ * contract (a DEX on Ethereum, a program on Solana) that swapped them. The leg names the call
+ * the owner's transaction made and, while both are unanswered, suggests the one leg of the
+ * same transaction that moved another coin the other way as the other side of a swap. The
+ * leg that only paid the network fee is no side of it.
+ */
+function oneTransactionSwap(
+  operation: Projected,
+  row: ChainOperationInput,
+  legs: readonly ChainOperationInput[],
+): Projected {
+  if (!operation.chain) return operation;
+  const call = legs.find((leg) => leg.call)?.call ?? null;
+  const sides = swappable(row)
+    ? legs.filter(
+        (leg) =>
+          leg !== row &&
+          swappable(leg) &&
+          coin(leg) !== coin(row) &&
+          netUnits(leg) > 0n !== netUnits(row) > 0n,
+      )
+    : [];
+  const swapWith =
+    sides.length === 1 ? { addressId: sides[0].wallet.id, txid: sides[0].txid } : null;
+  if (!call && !swapWith) return operation;
+  return {
+    ...operation,
+    chain: { ...operation.chain, ...(call ? { call } : {}), ...(swapWith ? { swapWith } : {}) },
   };
 }
 
@@ -760,6 +830,11 @@ export function projectOperations(
     ];
   };
   const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
+  // SWAP-ONE-TX: every leg of one blockchain transaction, across the owner's addresses.
+  const byHash = new Map<string, ChainOperationInput[]>();
+  for (const row of sources.chain)
+    if (!isExchange(row.wallet.network))
+      byHash.set(hashKey(row), [...(byHash.get(hashKey(row)) ?? []), row]);
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
     const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
@@ -777,7 +852,11 @@ export function projectOperations(
       netUnits(row) > 0n
     )
       continue;
-    const operation = chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd);
+    const operation = oneTransactionSwap(
+      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd),
+      row,
+      byHash.get(hashKey(row)) ?? [],
+    );
     entries.push({ operation, order: operation.orderWithinTimestamp });
   }
 

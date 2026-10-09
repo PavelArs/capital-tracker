@@ -114,6 +114,9 @@ interface ChainRow {
   sentUnits: string;
   feeUnits: string;
   stakeUnits: string;
+  /** SWAP-ONE-TX: the owner's Ethereum transaction called a contract; its decoded method. */
+  contractCall: boolean | null;
+  callMethod: string | null;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -290,6 +293,12 @@ export class OperationListService {
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
             coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
               AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits",
+            (w.network='ethereum' AND t.asset IS NULL
+              AND lower(t.raw->'transaction'->>'from')=lower(w.address)
+              AND coalesce(t.raw->'transaction'->>'input', '0x') NOT IN ('', '0x'))
+              AS "contractCall",
+            nullif(split_part(t.raw->'transaction'->>'functionName', '(', 1), '')
+              AS "callMethod",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
@@ -420,6 +429,7 @@ export class OperationListService {
             sentUnits: row.sentUnits,
             feeUnits: row.feeUnits,
             stakeUnits: row.stakeUnits,
+            call: row.contractCall ? { method: row.callMethod } : null,
             classification:
               row.classificationVersion === null || row.classificationStatus === null
                 ? null

@@ -1,4 +1,5 @@
 import type { AssetType } from '@api/portfolio-assets.api';
+import type { Network } from '@api/wallet-addresses.api';
 
 /** The colour and glyph an asset keeps on every screen (prototype "aico"). */
 export interface AssetIdentity {
@@ -34,6 +35,14 @@ export function assetIdentity(asset: {
     color: asset.assetType === 'fiat' ? cash : other,
     glyph: (ticker || asset.name.trim()).slice(0, 1).toUpperCase() || '?',
   };
+}
+
+export type Blockchain = Exclude<Network, 'bybit'>;
+const networkCoins: Record<Blockchain, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
+
+/** TOKEN-CHAIN: a blockchain looks like its own coin. */
+export function networkIdentity(network: Blockchain): AssetIdentity {
+  return known[networkCoins[network]];
 }
 
 /** Allocation by type: crypto in the prototype's blue, cash in the cash colour. */

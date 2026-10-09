@@ -48,9 +48,12 @@ export interface ExportOperation {
   toAccountName: string | null;
   asset: string | null;
   assetName: string;
+  /** TOKEN-CHAIN: the blockchain of a token a chain transaction moved; null otherwise. */
+  assetNetwork: string | null;
   quantity: string;
   counterAsset: string | null;
   counterQuantity: string | null;
+  counterAssetNetwork: string | null;
   valueUsd: string | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
@@ -153,9 +156,11 @@ const operationColumns: readonly (readonly [string, (row: ExportOperation) => Cs
   ['to_account', (row) => row.toAccountName],
   ['asset', (row) => row.asset],
   ['asset_name', (row) => row.assetName],
+  ['asset_network', (row) => row.assetNetwork],
   ['quantity', (row) => row.quantity],
   ['counter_asset', (row) => row.counterAsset],
   ['counter_quantity', (row) => row.counterQuantity],
+  ['counter_asset_network', (row) => row.counterAssetNetwork],
   ['value_usd', (row) => row.valueUsd],
   ['cost_basis_usd', (row) => row.costBasisUsd],
   ['fee_usd', (row) => row.feeUsd],
