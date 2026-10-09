@@ -21,8 +21,8 @@ const networks = [
     name: 'Bitcoin',
     detail: 'Address or account public key (xpub, zpub)',
   },
-  { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH, USDT and USDC' },
-  { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL, USDT and USDC' },
+  { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH and every token' },
+  { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL and every token' },
   { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
   {
     key: 'bybit',
@@ -381,14 +381,15 @@ export default function AddWalletDialog({
                 </div>
                 {network === 'ethereum' ? (
                   <p className="wallets-note">
-                    One Ethereum address holds ETH and tokens. The app tracks ETH, USDT and USDC on
-                    Ethereum mainnet; other tokens and networks such as Arbitrum are not read.
+                    One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20
+                    token on Ethereum mainnet, named as the chain names them; networks such as
+                    Arbitrum are not read.
                   </p>
                 ) : network === 'solana' ? (
                   <p className="wallets-note">
-                    Paste the wallet address, not a token account: the app finds its USDT and USDC
-                    accounts itself. It tracks SOL, USDT and USDC on Solana mainnet; other tokens
-                    are not read.
+                    Paste the wallet address, not a token account: the app finds its token accounts
+                    itself. It tracks SOL and every SPL token on Solana mainnet, named as the chain
+                    names them.
                   </p>
                 ) : network === 'tron' ? (
                   <p className="wallets-note">

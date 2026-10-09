@@ -229,7 +229,10 @@ export default function AddressDrawer({
             {network.assets.length > 1 && (
               <div>
                 <dt>Tracked assets</dt>
-                <dd>{network.assets.join(', ')}</dd>
+                <dd>
+                  {network.assets.join(', ')}
+                  {network.anyToken && ' and every other token'}
+                </dd>
               </div>
             )}
             <div>

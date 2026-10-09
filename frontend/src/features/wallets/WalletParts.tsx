@@ -583,5 +583,11 @@ export function subtitle(addresses: WalletAddress[]): string {
 
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
-  return new Set(addresses.flatMap((address) => networkOf(address).assets));
+  return new Set(
+    addresses.flatMap((address) => [
+      ...networkOf(address).assets,
+      // TOKEN-ANY: the other tokens an address holds.
+      ...(chainBalances(address) ?? []).map((balance) => balance.symbol),
+    ]),
+  );
 }

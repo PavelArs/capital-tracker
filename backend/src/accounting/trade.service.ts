@@ -194,7 +194,12 @@ export async function findOrCreateInstrument(
   );
   if (found || !create) return found ?? null;
   const value = { requestId: randomUUID(), ...asset };
-  const classification = classifyAsset(value);
+  // A coin a wallet or exchange moves is priced from the market even when no source quotes it
+  // yet (TOKEN-ANY): as 'manual' it would never be found again and be created on each call.
+  const classification = {
+    ...classifyAsset(value),
+    ...(asset.assetType === 'crypto' ? { priceSource: 'market' as const } : {}),
+  };
   const [created]: { id: string; name: string; symbol: string | null }[] = await manager.query(
     `INSERT INTO accounting_instruments
     (id,"ownerId","requestId","canonicalPayload",name,symbol,"assetType","valuationCurrency","priceSource")

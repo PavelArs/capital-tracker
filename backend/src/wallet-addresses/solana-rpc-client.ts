@@ -25,6 +25,8 @@ export interface TokenBalance {
   /** The wallet that owns the token account; older transactions may not report it. */
   owner: string | null;
   amount: bigint;
+  /** The mint's decimals as the transaction reports them; NaN when it does not. */
+  decimals: number;
 }
 
 /** What getTransaction reports about a finalized transaction, in lamports and token units. */
@@ -130,7 +132,7 @@ function tokenBalances(value: unknown, accounts: number): TokenBalance[] {
   if (value === null || value === undefined) return [];
   return list(value).map((entry) => {
     const item = record(entry);
-    const amount = record(item.uiTokenAmount).amount;
+    const { amount, decimals } = record(item.uiTokenAmount);
     if (typeof amount !== 'string' || !/^(0|[1-9][0-9]{0,38})$/.test(amount)) invalid();
     const accountIndex = integer(item.accountIndex, accounts - 1);
     return {
@@ -138,6 +140,10 @@ function tokenBalances(value: unknown, accounts: number): TokenBalance[] {
       mint: key(item.mint),
       owner: item.owner === undefined || item.owner === null ? null : key(item.owner),
       amount: BigInt(amount),
+      decimals:
+        Number.isSafeInteger(decimals) && (decimals as number) >= 0 && (decimals as number) <= 255
+          ? (decimals as number)
+          : Number.NaN,
     };
   });
 }
@@ -212,13 +218,19 @@ export class SolanaRpcClient {
     }));
   }
 
-  /** The wallet's token accounts of one mint; their history is not the wallet's own. */
-  tokenAccounts(owner: string, mint: string): Promise<AccountsResult> {
+  /**
+   * The wallet's token accounts of one mint, or (TOKEN-ANY) of every mint of one token program;
+   * their history is not the wallet's own.
+   */
+  tokenAccounts(
+    owner: string,
+    filter: { mint: string } | { programId: string },
+  ): Promise<AccountsResult> {
     return this.call(
       'getTokenAccountsByOwner',
       [
         owner,
-        { mint },
+        filter,
         { commitment: COMMITMENT, encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
       ],
       (result) => ({ ok: true, accounts: parseTokenAccounts(result) }),

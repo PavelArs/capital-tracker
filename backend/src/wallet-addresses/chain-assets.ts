@@ -1,6 +1,8 @@
 // What the tracked networks move (Q6, Q7): Bitcoin, and Ethereum, Solana and Tron each with
-// exactly the USDT and USDC tokens (ERC-20, SPL and TRC-20). A raw chain transaction leg names its token in
-// `asset`; null is the network's own coin. Amounts are stored in the asset's base units.
+// the USDT and USDC tokens (ERC-20, SPL and TRC-20). Since M25 (TOKEN-ANY) Ethereum and Solana
+// wallets also move every other token, which the chain_tokens table describes. A raw chain
+// transaction leg names its token in `asset`: USDT and USDC by ticker, any other token by its
+// contract or mint; null is the network's own coin. Amounts are stored in base units.
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 
@@ -19,6 +21,8 @@ export interface ChainAsset {
    * network's own coin.
    */
   contract: string | null;
+  /** TOKEN-ANY: whether a price source lists one of the other tokens; absent for the rest. */
+  listed?: boolean;
 }
 
 export const networkNames: Record<Network, string> = {
@@ -110,9 +114,50 @@ export function isNetwork(value: unknown): value is Network {
   return networks.includes(value as Network);
 }
 
+/** TOKEN-ANY: the networks whose wallets move any token, not only USDT and USDC. */
+export const anyTokenNetworks = ['ethereum', 'solana'] as const;
+export type AnyTokenNetwork = (typeof anyTokenNetworks)[number];
+export const movesAnyToken = (network: string): network is AnyTokenNetwork =>
+  anyTokenNetworks.includes(network as AnyTokenNetwork);
+
+// TOKEN-ANY: the other tokens the wallets moved, as chain_tokens stores them, by network and
+// contract. The sync adds a token here before any leg naming it is stored, and the app reads
+// the table once at start, so every stored leg's token is known.
+const discovered = new Map<string, ChainAsset>();
+const tokenKey = (network: string, contract: string) => `${network}:${contract}`;
+
+/** Remembers tokens read from chain_tokens; a token already remembered is replaced. */
+export function rememberTokens(tokens: readonly ChainAsset[]): void {
+  for (const token of tokens) {
+    if (token.contract === null || !movesAnyToken(token.network)) continue;
+    discovered.set(tokenKey(token.network, token.contract), token);
+  }
+}
+
+/** Forgets every remembered token (tests). */
+export function forgetTokens(): void {
+  discovered.clear();
+}
+
+/** Whether a leg's token is one of the other tokens (TOKEN-ANY), not the network's own coin,
+ * USDT or USDC. */
+export function isOtherToken(network: string, token: string | null): boolean {
+  return token !== null && discovered.has(tokenKey(network, token));
+}
+
+/**
+ * TOKEN-ANY: whether a leg moves one of the other tokens that no price source lists, so its
+ * value stays unknown.
+ */
+export function isUnlistedToken(network: string, token: string | null): boolean {
+  return token !== null && discovered.get(tokenKey(network, token))?.listed === false;
+}
+
 /** The asset a stored leg moves; an unknown pair is a programming error, never guessed. */
 export function chainAsset(network: string, token: string | null): ChainAsset {
-  const found = chainAssets.find((item) => item.network === network && item.token === token);
+  const found =
+    chainAssets.find((item) => item.network === network && item.token === token) ??
+    (token === null ? undefined : discovered.get(tokenKey(network, token)));
   if (!found) throw new Error('Unknown chain asset');
   return found;
 }

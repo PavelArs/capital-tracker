@@ -843,6 +843,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M20 | `retire-legacy-screens` | remove "Legacy" and legacy modules after export; hide XIRR/TWR | M4–M19 accepted by the owner | Q10 |
 | M21 | `scan-bitcoin-xpub` | Trezor-style HD wallets | M11, M12 | Q8 |
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
+| M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
 
 ```mermaid
 flowchart LR
@@ -871,6 +872,8 @@ flowchart LR
   M9 --> M22
   M11 --> M22
   M13 --> M22
+  M14 --> M25
+  M15 --> M25
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
