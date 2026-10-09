@@ -118,10 +118,21 @@ export function poolGainValueUsd(
   gain: string,
   priceUsd: string | null,
 ): string | null {
-  if (chosen !== null) return chosen;
-  if (stablecoins.has(symbol)) return gain;
+  return chosen ?? storedValueUsd(symbol, gain, priceUsd);
+}
+
+/**
+ * What a quantity of a coin was worth in USD when nobody said: USDT and USDC count 1:1;
+ * otherwise the coin's stored price, rounded to cents. Unknown stays null, never 0.
+ */
+export function storedValueUsd(
+  symbol: string,
+  quantity: string,
+  priceUsd: string | null,
+): string | null {
+  if (stablecoins.has(symbol)) return quantity;
   if (priceUsd === null) return null;
-  const product = canonicalDecimalToAtoms(gain) * canonicalDecimalToAtoms(priceUsd);
+  const product = canonicalDecimalToAtoms(quantity) * canonicalDecimalToAtoms(priceUsd);
   // Atoms carry 30 places, so the product carries 60; cents keep 2, half away from zero.
   const unit = 10n ** 58n;
   const cents = (product + unit / 2n) / unit;

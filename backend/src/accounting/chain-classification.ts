@@ -73,10 +73,15 @@ export interface PricedClassification {
   /** RUB or EUR only: the rate actually paid, units per 1 USD; otherwise the Bank of Russia's. */
   perUsd?: string;
 }
-/** Income, expense, gift or fee: its value in USD at the time. */
+/** Income, expense or gift: its value in USD at the time. */
 export interface ValuedClassification {
-  type: 'income' | 'expense' | 'gift' | 'fee';
+  type: 'income' | 'expense' | 'gift';
   valueUsd: string;
+}
+/** FEE-VALUE: a fee's value in USD at the time; without one, its coins' stored price. */
+export interface FeeClassification {
+  type: 'fee';
+  valueUsd: string | null;
 }
 /** A reward, staking reward, airdrop or liquidity pool reward; its value may be unknown. */
 export interface RewardClassification {
@@ -117,6 +122,7 @@ export interface PoolWithdrawalClassification {
 export type Classification =
   | PricedClassification
   | ValuedClassification
+  | FeeClassification
   | RewardClassification
   | TransferClassification
   | OtherClassification
@@ -174,9 +180,13 @@ function classification(raw: unknown): Classification | null {
     const row = object(raw, ['type', 'accountId']);
     return { type, accountId: parseUuid(row.accountId) };
   }
-  if (type === 'income' || type === 'expense' || type === 'gift' || type === 'fee') {
+  if (type === 'income' || type === 'expense' || type === 'gift') {
     const row = object(raw, ['type', 'valueUsd']);
     return { type, valueUsd: parseDecimal(row.valueUsd, true) };
+  }
+  if (type === 'fee') {
+    const row = object(raw, ['type', 'valueUsd']);
+    return { type, valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true) };
   }
   if (
     type === 'reward' ||
@@ -411,6 +421,8 @@ export function planOperation(
     case 'expense':
     case 'gift':
     case 'fee': {
+      // FEE-VALUE: the service fills an empty fee's value from the stored price first.
+      if (value.valueUsd === null) throw new Error('A fee without a value takes its stored price');
       const purpose =
         value.type === 'gift' ? (inbound ? 'gift-received' : 'gift-sent') : purposes[value.type];
       return {

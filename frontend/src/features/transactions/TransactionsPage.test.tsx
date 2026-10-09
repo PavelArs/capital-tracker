@@ -986,6 +986,39 @@ describe('classify-chain-transactions (M12)', () => {
     expect(classify.mock.calls[0][2].classification).toEqual({ type: 'other' });
   });
 
+  it('FEE-VALUE: a fee may be saved without a value; the stored price then counts', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([nextOne]));
+    const noPrice = new AxiosError('unprocessable', '422', undefined, undefined, {
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data: { message: 'No stored price for this coin at that time' },
+    });
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(noPrice)
+      .mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Fee' }));
+    const value = within(drawer).getByLabelText('Value at the time (optional)');
+    expect(
+      within(drawer).getByText(
+        /^Empty: USDT and USDC count 1:1, other coins at their stored price/,
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'fee', valueUsd: null });
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'There is no stored price for this coin at that time. Enter the value in USD.',
+    );
+    await user.type(value, '1.25');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1][2].classification).toEqual({ type: 'fee', valueUsd: '1.25' });
+  });
+
   it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {
     const hidden = { ...bought, type: null, status: 'hidden' as const };
     vi.spyOn(operationsApi, 'list')
@@ -2098,5 +2131,66 @@ describe('liquidity-pool-chain-legs (POOL-*)', () => {
     expect(classify.mock.calls[0][2]).toMatchObject({
       classification: { type: 'pool-reward', valueUsd: '25' },
     });
+  });
+});
+
+// Owner's note of 2026-10-09 15:34Z: after a classification the drawer moves to the
+// transaction next to the one just answered, not back to the newest one.
+describe('CLS-ADJACENT: the next transaction is the neighbour in time', () => {
+  const waitingAt = (n: number, occurredAt: string) =>
+    chainOperation(n, {
+      account: cold,
+      occurredAt,
+      quantity: `0.00${n}`,
+      chain: { txid: txid(n), blockHeight: 800000 + n, priceObservedAt: null, direction: 'in' },
+    });
+  const newest = waitingAt(1, '2025-06-22T08:00:00.000Z');
+  const middle = waitingAt(2, '2025-06-21T08:00:00.000Z');
+  const oldest = waitingAt(3, '2025-06-20T08:00:00.000Z');
+  const answered = (row: Operation) =>
+    operation({
+      ...row,
+      type: 'buy',
+      status: 'recorded',
+      valueUsd: '10',
+      costBasisUsd: '10',
+      feeUsd: '0',
+      classification: {
+        version: 1,
+        hidden: false,
+        value: { type: 'buy', currency: 'USDT', amount: '10' },
+        comment: null,
+        automatic: false,
+      },
+    });
+  const classifyRow = async (index: number, after: Operation[]) => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([newest, middle, oldest]))
+      .mockResolvedValue(list(after));
+    vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(3));
+    await user.click(within(bodyRows()[index]).getByRole('button', { name: 'Incoming' }));
+    const drawer = screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+    await user.click(within(drawer).getByRole('button', { name: 'Buy' }));
+    await user.type(within(drawer).getByLabelText('You paid'), '10');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() =>
+      expect(screen.getByText('Saved as Buy. Here is the next one.')).toBeVisible(),
+    );
+    return screen.getByRole('dialog', { name: 'Incoming transaction · BTC' });
+  };
+
+  it('opens the next older transaction below the one just classified', async () => {
+    const next = await classifyRow(1, [newest, answered(middle), oldest]);
+    expect(within(next).getByText('+0.003 BTC')).toBeInTheDocument();
+    expect(bodyRows()[2]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('at the oldest one, opens the newer neighbour above it', async () => {
+    const next = await classifyRow(2, [newest, middle, answered(oldest)]);
+    expect(within(next).getByText('+0.002 BTC')).toBeInTheDocument();
+    expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
   });
 });
