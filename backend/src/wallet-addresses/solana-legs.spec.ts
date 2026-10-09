@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { type SolanaLeg, solanaLegs, solanaMints } from './solana-legs';
+import {
+  type SolanaLeg,
+  solanaLegs,
+  solanaMints,
+  solanaTokenFacts,
+  tokenLegNumber,
+} from './solana-legs';
 import type { SolanaTransaction, TokenBalance } from './solana-rpc-client';
 
 const ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
@@ -48,7 +54,8 @@ const balance = (
   mint: string,
   owner: string | null,
   amount: bigint,
-): TokenBalance => ({ accountIndex, mint, owner, amount });
+  decimals = 6,
+): TokenBalance => ({ accountIndex, mint, owner, amount, decimals });
 const summary = (legs: SolanaLeg[]) =>
   legs.map(({ txid, asset, receivedUnits, sentUnits, feeUnits, direction }) => ({
     txid,
@@ -214,15 +221,71 @@ describe('SOL-IDENTITY: legs of a Solana wallet', () => {
     expect(solanaLegs(wallet, new Set(), old)).toEqual([]);
   });
 
-  it('ignores other tokens and transactions that change nothing for the wallet', () => {
+  it('ignores transactions that change nothing for the wallet', () => {
     const otherMint = key('other-mint');
+    const elsewhere = tx({
+      accounts: [other, otherUsdc, wallet, token],
+      preBalances: [SOL, 1n, 0n, 1n],
+      postBalances: [SOL - 5000n, 1n, 0n, 1n],
+      preTokenBalances: [balance(1, otherMint, other, 0n)],
+      postTokenBalances: [balance(1, otherMint, other, 1_000n)],
+    });
+    expect(solanaLegs(wallet, new Set(), elsewhere)).toEqual([]);
+  });
+
+  it('TOKEN-ANY reads any other token, named by its mint, with a number both sides share', () => {
+    const otherMint = key('other-mint');
+    const walletOther = key('wallet-other-mint');
     const airdrop = tx({
-      accounts: [other, walletUsdc, wallet, token],
+      accounts: [other, walletOther, wallet, token],
       preBalances: [SOL, 1n, 0n, 1n],
       postBalances: [SOL - 5000n, 1n, 0n, 1n],
       preTokenBalances: [balance(1, otherMint, wallet, 0n)],
       postTokenBalances: [balance(1, otherMint, wallet, 1_000n)],
     });
-    expect(solanaLegs(wallet, new Set(), airdrop)).toEqual([]);
+    const number = tokenLegNumber(otherMint);
+    expect(number).toBeGreaterThan(2);
+    expect(number).toBeLessThan(1_000_000_000);
+    expect(tokenLegNumber(otherMint)).toBe(number);
+    expect(summary(solanaLegs(wallet, new Set(), airdrop))).toEqual([
+      {
+        txid: `${airdrop.signature}-${number}`,
+        asset: otherMint,
+        received: 1_000n,
+        sent: 0n,
+        fee: 0n,
+        direction: 'in',
+      },
+    ]);
+    // The sender's leg of the same transfer carries the same txid.
+    const sender = solanaLegs(other, new Set(), {
+      ...airdrop,
+      preTokenBalances: [balance(1, otherMint, other, 5_000n)],
+      postTokenBalances: [balance(1, otherMint, other, 4_000n)],
+    });
+    expect(sender.map((leg) => leg.txid)).toContain(`${airdrop.signature}-${number}`);
+    expect([tokenLegNumber(USDT), tokenLegNumber(USDC)]).toEqual([1, 2]);
+  });
+
+  it('TOKEN-ANY takes the decimals of each other token the wallet moved from the transactions', () => {
+    const otherMint = key('other-mint');
+    const strangerMint = key('stranger-mint');
+    const stranger = key('stranger');
+    const swap = tx({
+      preTokenBalances: [
+        balance(1, USDC, wallet, 5n),
+        balance(1, otherMint, wallet, 0n, 9),
+        balance(2, strangerMint, stranger, 9n, 4),
+      ],
+      postTokenBalances: [
+        balance(1, otherMint, wallet, 7n, 9),
+        balance(2, strangerMint, stranger, 1n, 4),
+      ],
+    });
+    const legs = solanaLegs(wallet, new Set(), swap);
+    // Another owner's token in the same transaction is not named.
+    expect(solanaTokenFacts([swap, swap], legs)).toEqual([
+      { network: 'solana', contract: otherMint, symbol: null, name: null, decimals: 9 },
+    ]);
   });
 });

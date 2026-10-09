@@ -1,17 +1,20 @@
+import { createHash } from 'node:crypto';
 import { networkAssets } from './chain-assets';
+import type { TokenFacts } from './chain-tokens';
 import type { Direction } from './esplora-client';
 import type { SolanaTransaction, TokenBalance } from './solana-rpc-client';
 
 // track-solana-wallets (M15, SOL-IDENTITY): what one finalized transaction changed for a wallet.
-// The SOL leg is the wallet's lamport change with the fee it paid as fee payer; each USDT or
-// USDC leg is the change of every token account the wallet owns in that mint. Balances, not
-// instructions, decide the amounts, so a failed transaction keeps only its fee.
+// The SOL leg is the wallet's lamport change with the fee it paid as fee payer; each token leg
+// is the change of every token account the wallet owns in one mint: USDT, USDC and, since M25
+// (TOKEN-ANY), any other token. Balances, not instructions, decide the amounts, so a failed
+// transaction keeps only its fee.
 
 /** One raw leg as wallet_address_transactions stores it. */
 export interface SolanaLeg {
-  /** The signature; a token leg adds "-" and the token's number (1 USDT, 2 USDC). */
+  /** The signature; a token leg adds "-" and the token's number (tokenLegNumber). */
   txid: string;
-  /** Null for SOL, else the token's ticker. */
+  /** Null for SOL, the ticker of USDT or USDC, else the token's mint. */
   asset: string | null;
   /** The slot. */
   blockHeight: number;
@@ -24,14 +27,53 @@ export interface SolanaLeg {
   raw: Record<string, unknown>;
 }
 
-// The token's position among the network's assets is its leg number: both sides of a transfer
-// between own wallets name the same movement alike (M13 links legs by identity).
 const tokens = networkAssets('solana').flatMap((asset, number) =>
   asset.token && asset.contract ? [{ token: asset.token, mint: asset.contract, number }] : [],
 );
 
-/** The SPL mints the sync follows: USDT and USDC (Q7). */
+/** The SPL mints followed before M25: USDT and USDC (Q7). */
 export const solanaMints = tokens.map((token) => token.mint);
+
+/** What a leg names its token by: USDT and USDC by ticker, any other token by its mint. */
+export const solanaTokenAsset = (mint: string): string =>
+  tokens.find((token) => token.mint === mint)?.token ?? mint;
+
+/**
+ * The number a token's leg adds to the signature. Both sides of a transfer between own wallets
+ * name the same movement alike (M13 links legs by identity): USDT and USDC keep their position
+ * among the network's assets (1, 2); any other mint takes a number from its own bytes, from 3
+ * up to nine digits, which the stored txid accepts.
+ */
+export function tokenLegNumber(mint: string): number {
+  const builtIn = tokens.find((token) => token.mint === mint);
+  if (builtIn) return builtIn.number;
+  return 3 + (createHash('sha256').update(mint).digest().readUInt32BE(0) % 999_999_996);
+}
+
+/** TOKEN-ANY: the decimals each token other than USDT and USDC shows in the transactions. */
+export function solanaTokenFacts(
+  transactions: readonly SolanaTransaction[],
+  legs: readonly SolanaLeg[],
+): TokenFacts[] {
+  // Only the tokens the wallet itself moved: others' balances in the same transaction are not
+  // its business.
+  const moved = new Set(legs.map((leg) => leg.asset));
+  const facts = new Map<string, TokenFacts>();
+  for (const tx of transactions) {
+    for (const balance of [...tx.preTokenBalances, ...tx.postTokenBalances]) {
+      if (!moved.has(balance.mint) || solanaMints.includes(balance.mint) || facts.has(balance.mint))
+        continue;
+      facts.set(balance.mint, {
+        network: 'solana',
+        contract: balance.mint,
+        symbol: null,
+        name: null,
+        decimals: balance.decimals,
+      });
+    }
+  }
+  return [...facts.values()];
+}
 
 function held(
   balances: readonly TokenBalance[],
@@ -80,13 +122,16 @@ export function solanaLegs(
   const owns = (balance: TokenBalance) =>
     balance.owner === address ||
     (balance.owner === null && tokenAccounts.has(tx.accounts[balance.accountIndex]));
-  for (const { token, mint, number } of tokens) {
+  const mints = [
+    ...new Set([...tx.preTokenBalances, ...tx.postTokenBalances].map((item) => item.mint)),
+  ].sort((left, right) => tokenLegNumber(left) - tokenLegNumber(right));
+  for (const mint of mints) {
     const delta = held(tx.postTokenBalances, mint, owns) - held(tx.preTokenBalances, mint, owns);
     if (delta === 0n) continue;
-    const txid = `${tx.signature}-${number}`;
+    const txid = `${tx.signature}-${tokenLegNumber(mint)}`;
     legs.push({
       txid,
-      asset: token,
+      asset: solanaTokenAsset(mint),
       blockHeight: tx.slot,
       blockHash: null,
       blockTime,
