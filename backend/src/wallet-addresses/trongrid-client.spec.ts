@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { Logger } from '@nestjs/common';
 import { tronHex } from './tron-address';
 import {
   parseAccount,
@@ -228,6 +229,7 @@ describe('TRON-SYNC TronGrid client', () => {
   let baseUrl: string;
   let replies: { status: number; body: string }[];
   let requests: { url: URL; headers: IncomingHttpHeaders }[];
+  let warn: jest.SpyInstance;
   const client = (apiKey: string | null = key) =>
     new TronGridClient({ apiKey, baseUrl, timeoutMs: 500, pauseMs: 0 });
   const json = (body: unknown, status = 200) => ({ status, body: JSON.stringify(body) });
@@ -253,7 +255,9 @@ describe('TRON-SYNC TronGrid client', () => {
   beforeEach(() => {
     replies = [];
     requests = [];
+    warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
   });
+  afterEach(() => warn.mockRestore());
 
   it('asks for one time window of confirmed transactions oldest first, with the key', async () => {
     replies.push(json({ success: true, data: [transfer, internal], meta: { fingerprint: 'f2' } }));
@@ -344,6 +348,24 @@ describe('TRON-SYNC TronGrid client', () => {
     await expect(client().transactions(wallet, 0, 1, null)).resolves.toEqual({ ok: false, reason });
   });
 
+  it('TRON-SYNC-LOG: logs what TronGrid said without the address or the key', async () => {
+    replies.push({
+      status: 503,
+      body: `{"Error":"service down for ${wallet} using ${key}"}`,
+    });
+    await expect(client().transactions(wallet, 0, 1, null)).resolves.toEqual({
+      ok: false,
+      reason: 'unavailable',
+    });
+    replies.push(json({ success: true, data: [] }));
+    await client().transactions(wallet, 0, 1, null);
+    expect(warn.mock.calls).toEqual([
+      [
+        'TronGrid /v1/accounts/<id>/transactions answered 503: {"Error":"service down for <id> using <key>"}',
+      ],
+    ]);
+  });
+
   it('reports an unreachable API as unavailable', async () => {
     const closed = new TronGridClient({
       baseUrl: 'http://127.0.0.1:1',
@@ -351,5 +373,6 @@ describe('TRON-SYNC TronGrid client', () => {
       pauseMs: 0,
     });
     await expect(closed.tip()).resolves.toEqual({ ok: false, reason: 'unavailable' });
+    expect(warn).toHaveBeenCalledWith('TronGrid /walletsolidity/getnowblock failed: ECONNREFUSED');
   });
 });
