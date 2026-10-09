@@ -21,6 +21,7 @@ import {
   formatUnits,
   isBybitCoin,
   isExchange,
+  isOtherToken,
   type Network,
   networkAssets,
 } from './chain-assets';
@@ -45,6 +46,8 @@ interface AddressRow {
   accountId: string | null;
   label: string | null;
   scannedBlock: number | null;
+  /** TOKEN-BACKFILL: set while the stored history is read again for other tokens. */
+  tokenBackfillTo: number | null;
   walkTopTxid: string | null;
   walkCursorTxid: string | null;
   completedTopTxid: string | null;
@@ -255,10 +258,26 @@ function balancesOf(row: AddressRow) {
       quantity: reported.find((item) => item.coin === symbol)?.quantity ?? '0',
     }));
   }
-  return networkAssets(row.network).map((asset) => {
+  const tracked = networkAssets(row.network).map((asset) => {
     const units = row.balances.find((item) => item.asset === asset.token)?.units ?? '0';
     return { symbol: asset.symbol, quantity: formatUnits(BigInt(units), asset) };
   });
+  return [...tracked, ...otherTokens(row, row.balances)];
+}
+
+/**
+ * TOKEN-ANY: the other tokens the wallet holds, by ticker, after USDT and USDC. Left out while
+ * the stored history is still read again for them (TOKEN-BACKFILL): a part is never a balance.
+ */
+function otherTokens(row: AddressRow, amounts: { asset: string | null; units: string }[]) {
+  if (row.tokenBackfillTo !== null) return [];
+  return amounts
+    .flatMap((item) => {
+      if (!isOtherToken(row.network, item.asset) || BigInt(item.units) === 0n) return [];
+      const asset = chainAsset(row.network, item.asset);
+      return [{ symbol: asset.symbol, quantity: formatUnits(BigInt(item.units), asset) }];
+    })
+    .sort((left, right) => left.symbol.localeCompare(right.symbol));
 }
 
 /**
@@ -366,6 +385,7 @@ function poolsOf(row: AddressRow) {
     const units = BigInt(row.pools.find((item) => item.asset === asset.token)?.units ?? '0');
     return units > 0n ? [{ symbol: asset.symbol, quantity: formatUnits(units, asset) }] : [];
   });
+  pools.push(...otherTokens(row, row.pools).filter((item) => !item.quantity.startsWith('-')));
   return pools.length === 0 ? null : pools;
 }
 

@@ -1,7 +1,8 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
 
 // The tracked networks as the Wallets screens present them (M10, M14, M15, Tron): the coin, the tokens a
-// wallet on it can hold (USDT and USDC only, Q7) and where its history comes from.
+// wallet on it can hold (USDT and USDC, Q7; every token on Ethereum and Solana, M25) and where its
+// history comes from.
 export interface NetworkInfo {
   name: string;
   /** The network's own coin. */
@@ -12,6 +13,8 @@ export interface NetworkInfo {
   placeholder: string;
   defaultWallet: string;
   labelExample: string;
+  /** TOKEN-ANY (M25): every other token the address moves is read too, named from the chain. */
+  anyToken?: true;
   /** An exchange account (M22): read with an API key, its balances as the exchange reports. */
   exchange?: true;
 }
@@ -30,6 +33,7 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     name: 'Ethereum',
     symbol: 'ETH',
     assets: ['ETH', 'USDT', 'USDC'],
+    anyToken: true,
     source: 'Etherscan',
     placeholder: '0x…',
     defaultWallet: 'Ethereum wallet',
@@ -39,6 +43,7 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     name: 'Solana',
     symbol: 'SOL',
     assets: ['SOL', 'USDT', 'USDC'],
+    anyToken: true,
     source: 'Solana public RPC',
     placeholder: 'Base58 address, 32 to 44 characters',
     defaultWallet: 'Solana wallet',
@@ -76,13 +81,14 @@ export const networkOf = (address: Pick<WalletAddress, 'network'>): NetworkInfo 
 
 /**
  * The coins an address's balances are compared with and shown for: the network's assets; an
- * exchange account (BYBIT-ANY-COIN) also any other coin it reports.
+ * exchange account (BYBIT-ANY-COIN) or an Ethereum or Solana wallet (TOKEN-ANY) also any other
+ * coin it reports.
  */
 export function addressAssets(
   address: Pick<WalletAddress, 'network' | 'balances'>,
 ): readonly string[] {
   const network = networkOf(address);
-  if (!network.exchange) return network.assets;
+  if (!network.exchange && !network.anyToken) return network.assets;
   const others = (address.balances ?? [])
     .map((balance) => balance.symbol)
     .filter((symbol) => !network.assets.includes(symbol));

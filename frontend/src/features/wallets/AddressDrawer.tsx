@@ -232,7 +232,7 @@ export default function AddressDrawer({
                 <dd>
                   {exchange
                     ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
-                    : network.assets.join(', ')}
+                    : `${network.assets.join(', ')}${network.anyToken ? ' and every other token' : ''}`}
                 </dd>
               </div>
             )}

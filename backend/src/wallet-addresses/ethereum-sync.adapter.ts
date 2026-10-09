@@ -1,8 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
-import { networkAssets } from './chain-assets';
 import type { ChainSyncAdapter, StepFailure, StepResult } from './chain-sync';
-import { type EthereumLeg, ethereumLegs, rangeEnd } from './ethereum-legs';
+import { countableLegs, registerChainTokens, type TokenFacts } from './chain-tokens';
+import { type EthereumLeg, ethereumLegs, ethereumTokenFacts, rangeEnd } from './ethereum-legs';
 import {
   balanceOfUnderlyingCall,
   type EtherStakeMove,
@@ -23,16 +23,19 @@ export const CONFIRMATIONS = 64;
 // Bounds for one pass; the next pass continues from the committed block.
 export const MAX_RANGES_PER_SYNC = 10;
 const SYNC_TIME_BUDGET_MS = 25_000;
-const contracts = networkAssets('ethereum').flatMap((asset) =>
-  asset.contract ? [asset.contract] : [],
-);
 
 interface ScanRow {
   id: string;
   ownerId: string;
   address: string;
   scannedBlock: number | null;
+  /** TOKEN-BACKFILL: the last block of the history stored before every token was read. */
+  tokenBackfillTo: number | null;
+  /** TOKEN-BACKFILL: how far that history has been read again for the other tokens. */
+  tokenBackfillAt: number | null;
 }
+
+const scanColumns = `id, "ownerId", address, "scannedBlock", "tokenBackfillTo", "tokenBackfillAt"`;
 
 type Pools = { ok: true; pools: Set<string> } | { ok: false; reason: StepFailure };
 
@@ -78,17 +81,23 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
     const target = tip.block - CONFIRMATIONS;
     const backfill = await this.backfillStake(state, target);
     if (backfill) return finish('provider_error', backfill);
+    const started = Date.now();
+    // TOKEN-BACKFILL: the stored history is read again for other tokens before anything new.
+    const tokens = await this.backfillTokens(state, started);
+    imported += tokens.imported;
+    if (tokens.reason) return finish('provider_error', tokens.reason);
+    if (tokens.state.tokenBackfillTo !== null) return finish('partial', null);
+    state = tokens.state;
     // The pools are read as of the block the stored history ends at.
     const complete = async (at: ScanRow) => {
       const refused = await this.refreshStake(at, at.scannedBlock ?? target);
       return refused ? finish('provider_error', refused) : finish('complete', null);
     };
-    const started = Date.now();
-    for (let ranges = 0; ; ranges++) {
+    for (let ranges = tokens.ranges; ; ranges++) {
       const from = (state.scannedBlock ?? -1) + 1;
       // Nothing final since the last pass: the stored history is complete as it is.
       if (from > target) {
-        const committed = await this.commit(state, [], [], state.scannedBlock ?? target, true);
+        const committed = await this.commit(state, [], [], [], state.scannedBlock ?? target, true);
         return complete(committed.state);
       }
       if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS) {
@@ -98,23 +107,31 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
       if (!normal.ok) return finish('provider_error', normal.reason);
       const internal = await this.etherscan.internal(state.address, from, target);
       if (!internal.ok) return finish('provider_error', internal.reason);
-      const tokens = await this.etherscan.tokens(state.address, from, target);
-      if (!tokens.ok) return finish('provider_error', tokens.reason);
-      const end = rangeEnd(from, target, [normal.items, internal.items, tokens.items]);
+      const read = await this.etherscan.tokens(state.address, from, target);
+      if (!read.ok) return finish('provider_error', read.reason);
+      const end = rangeEnd(from, target, [normal.items, internal.items, read.items]);
       if (end === null) return finish('provider_error', 'invalid_response');
       const within = <T extends { blockNumber: number }>(items: T[]) =>
         items.filter((item) => item.blockNumber >= from && item.blockNumber <= end);
+      const transfers = within(read.items);
       const legs = ethereumLegs(
         state.address,
         within(normal.items),
         within(internal.items),
-        within(tokens.items).filter((item) => contracts.includes(item.contract)),
+        transfers,
       );
       const sent = etherTransactions(state.address, within(normal.items), within(internal.items));
       const pools = await this.pools(state, sent, target);
       if (!pools.ok) return finish('provider_error', pools.reason);
       const moves = etherStakeMoves(state.address, sent, pools.pools);
-      const committed = await this.commit(state, legs, moves, end, end === target);
+      const committed = await this.commit(
+        state,
+        legs,
+        ethereumTokenFacts(transfers),
+        moves,
+        end,
+        end === target,
+      );
       imported += committed.inserted;
       if (end === target) return complete(committed.state);
       state = committed.state;
@@ -123,7 +140,7 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
 
   private async scan(owner: string, id: string): Promise<ScanRow> {
     const [row]: ScanRow[] = await this.source.query(
-      `SELECT id, "ownerId", address, "scannedBlock"
+      `SELECT ${scanColumns}
         FROM wallet_addresses WHERE "ownerId" = $1 AND id = $2 AND network = 'ethereum'`,
       [owner, id],
     );
@@ -135,21 +152,22 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
   private commit(
     expected: ScanRow,
     legs: EthereumLeg[],
+    facts: TokenFacts[],
     moves: EtherStakeMove[],
     end: number,
     caughtUp: boolean,
   ) {
     return this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
-        `SELECT id, "ownerId", address, "scannedBlock" FROM wallet_addresses
+        `SELECT ${scanColumns} FROM wallet_addresses
           WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
         [expected.ownerId, expected.id],
       );
       if (!current || current.scannedBlock !== expected.scannedBlock) {
         throw new ConflictException('Another sync advanced this address');
       }
-      const inserted = await this.insert(manager, current, legs);
       await this.insertStake(manager, current, moves);
+      const inserted = await this.insertLegs(manager, current, legs, facts);
       // "completedAt" marks a history read up to a final block: the balance can be shown.
       await manager.query(
         `UPDATE wallet_addresses SET "scannedBlock" = $3,
@@ -159,6 +177,102 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
       );
       return { inserted, state: { ...current, scannedBlock: end } };
     });
+  }
+
+  /**
+   * TOKEN-BACKFILL: an address read before every token was followed has the token transfers of
+   * its stored history read again, range by range, oldest first; ether and the legs already
+   * stored stay as they are. Shares the pass's budget; returns how far it got.
+   */
+  private async backfillTokens(
+    initial: ScanRow,
+    started: number,
+  ): Promise<{ state: ScanRow; ranges: number; imported: number; reason: StepFailure | null }> {
+    let state = initial;
+    let imported = 0;
+    let ranges = 0;
+    const result = (reason: StepFailure | null = null) => ({ state, ranges, imported, reason });
+    while (state.tokenBackfillTo !== null) {
+      const to = state.tokenBackfillTo;
+      const from = (state.tokenBackfillAt ?? -1) + 1;
+      let end = to;
+      let transfers: Parameters<typeof ethereumLegs>[3] = [];
+      if (from <= to) {
+        if (ranges >= MAX_RANGES_PER_SYNC || Date.now() - started > SYNC_TIME_BUDGET_MS)
+          return result();
+        ranges++;
+        const read = await this.etherscan.tokens(state.address, from, to);
+        if (!read.ok) return result(read.reason);
+        const last = rangeEnd(from, to, [read.items]);
+        if (last === null) return result('invalid_response');
+        end = last;
+        transfers = read.items.filter(
+          (item) => item.blockNumber >= from && item.blockNumber <= end,
+        );
+      }
+      const expected = state;
+      const committed = await this.source.transaction('READ COMMITTED', async (manager) => {
+        const [current]: ScanRow[] = await manager.query(
+          `SELECT ${scanColumns} FROM wallet_addresses
+            WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
+          [expected.ownerId, expected.id],
+        );
+        if (
+          !current ||
+          current.tokenBackfillTo !== expected.tokenBackfillTo ||
+          current.tokenBackfillAt !== expected.tokenBackfillAt
+        )
+          throw new ConflictException('Another sync advanced this address');
+        const legs = ethereumLegs(current.address, [], [], transfers);
+        const inserted = await this.insertLegs(
+          manager,
+          current,
+          legs,
+          ethereumTokenFacts(transfers),
+        );
+        const done = end === to;
+        await manager.query(
+          `UPDATE wallet_addresses SET "tokenBackfillTo" = $3, "tokenBackfillAt" = $4
+            WHERE "ownerId" = $1 AND id = $2`,
+          [current.ownerId, current.id, done ? null : to, done ? null : end],
+        );
+        return {
+          inserted,
+          state: {
+            ...current,
+            tokenBackfillTo: done ? null : to,
+            tokenBackfillAt: done ? null : end,
+          },
+        };
+      });
+      imported += committed.inserted;
+      state = committed.state;
+    }
+    return result();
+  }
+
+  /**
+   * TOKEN-ANY: stores the legs with the tokens they name. A token a staking pool of the address
+   * issues for its deposit is that pool's share, already the wallet's staked ether
+   * (ETH-STAKE-BALANCE): it is left out, so the stake never counts twice.
+   */
+  private async insertLegs(
+    manager: EntityManager,
+    address: ScanRow,
+    legs: EthereumLeg[],
+    facts: TokenFacts[],
+  ) {
+    const pools: { contract: string }[] = await manager.query(
+      'SELECT contract FROM wallet_ether_stake_positions WHERE "addressId" = $1',
+      [address.id],
+    );
+    const shares = new Set(pools.map((row) => row.contract));
+    const countable = await registerChainTokens(
+      manager,
+      'ethereum',
+      facts.filter((item) => !shares.has(item.contract)),
+    );
+    return this.insert(manager, address, countableLegs('ethereum', legs, countable));
   }
 
   private async insert(manager: EntityManager, address: ScanRow, legs: EthereumLeg[]) {
@@ -284,7 +398,7 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
     if (!verified.ok) return verified.reason;
     await this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
-        `SELECT id, "ownerId", address, "scannedBlock" FROM wallet_addresses
+        `SELECT ${scanColumns} FROM wallet_addresses
           WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
         [state.ownerId, state.id],
       );
@@ -352,7 +466,7 @@ export class EthereumSyncAdapter implements ChainSyncAdapter {
     if (readings.length === 0) return null;
     await this.source.transaction('READ COMMITTED', async (manager) => {
       const [current]: ScanRow[] = await manager.query(
-        `SELECT id, "ownerId", address, "scannedBlock" FROM wallet_addresses
+        `SELECT ${scanColumns} FROM wallet_addresses
           WHERE "ownerId" = $1 AND id = $2 FOR UPDATE`,
         [state.ownerId, state.id],
       );
