@@ -227,11 +227,10 @@ Swagger/documentation endpoint is mounted, including in development.
 | Group       | Endpoints                                                                                                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
-| Assets      | `GET/POST /assets`, `GET/PATCH/DELETE /assets/:id`                                                                                  |
-| Liabilities | `GET/POST /liabilities`, `GET/PATCH/DELETE /liabilities/:id`                                                                        |
-| Crypto      | `GET/POST /crypto`, `GET/DELETE /crypto/:id`, `PATCH /crypto/:id/update-balance`, `GET /crypto/prices`, `POST /crypto/token-prices` |
-| Currencies  | `GET /currencies/list`, `GET /currencies/convert`, `POST /currencies/hide`, `POST /currencies/show`                                 |
-| Metrics     | `GET /metrics?currency=USD`, `GET /metrics/history?days=30&currency=USD`                                                            |
+| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, CSV imports, manual prices, portfolio value and history    |
+| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/transactions` |
+| Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
+| Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
 | Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
@@ -252,10 +251,14 @@ guessable identifiers.
 
 ## External APIs
 
-- **Exchange rates:** [ExchangeRate-API](https://api.exchangerate-api.com) (free tier)
-- **ETH balances/tokens:** Public RPC endpoints (LlamaRPC, Ankr, PublicNode)
-- **BTC balances:** [Blockstream API](https://blockstream.info/api)
-- **Crypto prices:** [CoinGecko API](https://api.coingecko.com) (free tier)
+- **Crypto prices (hourly):** [Kraken](https://api.kraken.com), then [CoinGecko](https://api.coingecko.com) (free tier)
+- **USD/EUR/RUB rates:** [Bank of Russia](https://www.cbr.ru) daily rates
+- **Bitcoin history:** [Blockstream Esplora](https://blockstream.info/api)
+- **Ethereum history:** [Etherscan](https://api.etherscan.io) (free key)
+- **Solana history:** public RPC `https://api.mainnet-beta.solana.com`
+
+The old asset, liability, crypto wallet, currency, display-rate and metrics APIs were removed
+in M20; their tables and rows stay in the database and leave with the JSON backup.
 
 ## License
 

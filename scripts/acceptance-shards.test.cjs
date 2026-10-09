@@ -42,7 +42,6 @@ const legacyChecks = [
   'manual-usd-prices-db',
   'historical-valuation-db',
   'valuation-history-db',
-  'display-fx-db',
   'manual-portfolio-valuation-db',
   'owned-transfers-db',
   'owned-transfers-bounds-db',
