@@ -68,6 +68,7 @@ const legacyChecks = [
   'bybit-db',
   'tron-wallets-db',
   'audit-history-db',
+  'stellar-wallets-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',
