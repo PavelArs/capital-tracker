@@ -8,10 +8,12 @@ import {
   parseAccount,
   parseAccountItem,
   parseInfo,
+  parseInternalList,
   parsePage,
   parseTokenTransfer,
   TRONGRID_TOKEN_PAGE_SIZE,
   TRONGRID_TRANSACTION_PAGE_SIZE,
+  TRONSCAN_PAGE_SIZE,
   TronGridClient,
 } from './trongrid-client';
 
@@ -177,6 +179,7 @@ describe('TRON-SYNC TronGrid responses', () => {
       withdrawAmount: 3_200_000n,
       unfreezeAmount: 0n,
       withdrawExpireAmount: 50_000_000n,
+      internal: [],
       raw: info,
     });
     expect(parseInfo({ ...info, receipt: { result: 'OUT_OF_ENERGY' } }, hash('5')).failed).toBe(
@@ -186,6 +189,70 @@ describe('TRON-SYNC TronGrid responses', () => {
     // An unknown or unconfirmed transaction is answered with {}.
     expect(() => parseInfo({}, hash('5'))).toThrow();
     expect(() => parseInfo(info, hash('6'))).toThrow();
+  });
+
+  it('TRON-INTERNAL: reads the TRX a contract moved inside a transaction from the node record', () => {
+    const sent = (to: string, callValue: number, extra: object = {}) => ({
+      caller_address: hex(other),
+      transferTo_address: hex(to),
+      callValueInfo: [{ callValue }],
+      note: '',
+      ...extra,
+    });
+    const info = {
+      id: hash('5'),
+      blockNumber: 70_000_002,
+      blockTimeStamp: 1_760_000_012_000,
+      internal_transactions: [
+        sent(wallet, 92_314_559),
+        sent(wallet, 3_000_000, { callValueInfo: [{ callValue: 3_000_000, tokenId: '1002000' }] }),
+        sent(other, 5_000_000, { rejected: true }),
+        sent(wallet, 1_000_000, {
+          callValueInfo: [{ callValue: 400_000 }, { callValue: 600_000 }],
+        }),
+      ],
+    };
+    expect(
+      parseInfo(info, hash('5')).internal.map((item) => [item.to, item.units, item.rejected]),
+    ).toEqual([
+      [hex(wallet), 92_314_559n, false],
+      [hex(wallet), 0n, false],
+      [hex(other), 5_000_000n, true],
+      [hex(wallet), 1_000_000n, false],
+    ]);
+    expect(() =>
+      parseInfo({ ...info, internal_transactions: [{ rejected: 'no' }] }, hash('5')),
+    ).toThrow();
+  });
+
+  it('TRON-INTERNAL: keeps only the confirmed Tronscan transfers that were neither rejected nor reverted', () => {
+    const row = (id: string, extra: object = {}) => ({
+      from: other,
+      to: wallet,
+      block: 70_000_002,
+      hash: hash(id),
+      internal_hash: hash('9'),
+      timestamp: 1_760_000_012_000,
+      rejected: false,
+      confirmed: true,
+      result: 'SUCCESS',
+      revert: false,
+      ...extra,
+    });
+    expect(
+      parseInternalList({
+        total: -1,
+        data: [
+          row('5'),
+          row('6', { rejected: true }),
+          row('7', { revert: true }),
+          row('8', { confirmed: false }),
+        ],
+      }),
+    ).toEqual([{ txid: hash('5'), timestamp: 1_760_000_012_000, to: hex(wallet) }]);
+    expect(parseInternalList({ total: 0 })).toEqual([]);
+    expect(() => parseInternalList({ data: [row('a', { hash: 'nope' })] })).toThrow();
+    expect(() => parseInternalList({ data: 'x' })).toThrow();
   });
 
   it('TRON-STAKE-STATE: sums staked TRX by resource and lists pending unstakes', () => {
@@ -383,6 +450,50 @@ describe('TRON-SYNC TronGrid client', () => {
         'TronGrid /v1/accounts/<id>/transactions answered 503: {"Error":"service down for <id> using <key>"}',
       ],
     ]);
+  });
+
+  it('TRON-INTERNAL: asks Tronscan for a page of transfers, never with the TronGrid key', async () => {
+    const row = {
+      to: wallet,
+      hash: hash('5'),
+      timestamp: 1_760_000_012_000,
+      rejected: false,
+      confirmed: true,
+      revert: false,
+    };
+    replies.push(json({ total: -1, data: [row] }));
+    await expect(
+      new TronGridClient({
+        apiKey: key,
+        baseUrl: 'http://127.0.0.1:1',
+        tronscanUrl: baseUrl,
+        timeoutMs: 500,
+        pauseMs: 0,
+      }).internalTransfers(wallet, 20),
+    ).resolves.toEqual({
+      ok: true,
+      items: [{ txid: hash('5'), timestamp: 1_760_000_012_000, to: hex(wallet) }],
+    });
+    const [{ url, headers }] = requests;
+    expect(url.pathname).toBe('/api/internal-transaction');
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      address: wallet,
+      start: '20',
+      limit: String(TRONSCAN_PAGE_SIZE),
+    });
+    expect(headers['tron-pro-api-key']).toBeUndefined();
+  });
+
+  it('TRON-INTERNAL: logs a Tronscan refusal under its own name', async () => {
+    replies.push({ status: 503, body: `{"error":"down for ${wallet}"}` });
+    const result = await new TronGridClient({ tronscanUrl: baseUrl, pauseMs: 0 }).internalTransfers(
+      wallet,
+      0,
+    );
+    expect(result).toEqual({ ok: false, reason: 'unavailable' });
+    expect(warn).toHaveBeenCalledWith(
+      'Tronscan /api/internal-transaction answered 503: {"error":"down for <id>"}',
+    );
   });
 
   it('reports an unreachable API as unavailable', async () => {

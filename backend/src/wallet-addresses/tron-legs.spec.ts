@@ -67,6 +67,7 @@ function info(changes: Partial<TronTransactionInfo> = {}): TronTransactionInfo {
     withdrawAmount: 0n,
     unfreezeAmount: 0n,
     withdrawExpireAmount: 0n,
+    internal: [],
     raw: { id: txid },
     ...changes,
   };

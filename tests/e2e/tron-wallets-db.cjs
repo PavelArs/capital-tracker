@@ -53,6 +53,8 @@ const busy = account('busy');
 const staker = account('staker');
 const outside = account('outside');
 const witness = account('witness');
+const receiver = account('receiver');
+const payer = account('contract-payer');
 // The public TRC-20 contracts of USDT and USDC on Tron, and a look-alike token.
 const USDT = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
 const USDC = 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8';
@@ -137,10 +139,11 @@ async function post(path, body) {
   return response.json();
 }
 // Few items per call keep each control body small.
-async function postTron({ transactions = [], internal: inner = [], tokens = [], infos = {} }, extra = {}) {
+async function postTron({ transactions = [], internal: inner = [], tokens = [], infos = {}, tronscan }, extra = {}) {
   for (let index = 0; index < transactions.length; index += 3) await post('tron', { transactions: transactions.slice(index, index + 3) });
   for (let index = 0; index < tokens.length; index += 4) await post('tron', { tokens: tokens.slice(index, index + 4) });
   if (inner.length) await post('tron', { internal: inner });
+  if (tronscan) await post('tron', { tronscan });
   const entries = Object.entries(infos);
   for (let index = 0; index < entries.length; index += 4) await post('tron', { infos: Object.fromEntries(entries.slice(index, index + 4)) });
   return post('tron', extra);
@@ -164,6 +167,7 @@ const call = ({ method, url }) => {
   if (parsed.pathname === '/walletsolidity/gettransactioninfobyid') return ['info', query.get('value')];
   if (parsed.pathname === '/walletsolidity/getaccount') return ['account', query.get('address')];
   if (parsed.pathname === '/wallet/getReward') return ['reward', query.get('address')];
+  if (parsed.pathname === '/api/internal-transaction') return ['internal', query.get('address'), Number(query.get('start'))];
   const list = /^\/v1\/accounts\/([^/]+)\/transactions(\/trc20)?$/.exec(parsed.pathname);
   assert.ok(list, `Unexpected TronGrid call ${parsed.pathname}`);
   return [list[2] ? 'trc20' : 'transactions', list[1], ...(list[2] ? [query.get('contract_address')] : []),
@@ -533,6 +537,75 @@ async function main() {
     // 912.5 liquid and 1105 staked or unstaking: 2017.5 TRX reported against 2012.5 explained.
     assert.deepEqual([laterSummary.balances[0].quantity, laterSummary.reportedBalance], ['2012.500000', '2017.500000']);
     console.log('PASS TRON-STAKE-STATE unstakes waiting their 14 days list with their dates; 1105 staked and 2017.5 TRX in all reported against 1100 and 2012.5 explained are shown, the balance keeps the history');
+
+    // TRON-INTERNAL: TRX a contract sent into the wallet inside another account's transaction is
+    // missing from TronGrid's account list. Tronscan's list names its hash; the node's record of
+    // the transaction gives the amount. Only this wallet's TRX counts (not what went to others, a
+    // token, a rejected, reverted or unconfirmed one), once, and a Tronscan fault changes nothing.
+    const tronscanCalls = async () => (await (await fetch(`${control}/requests`)).json())
+      .filter(({ url }) => new URL(url).hostname === 'apilist.tronscanapi.com').map(({ url }) => call({ method: 'GET', url }));
+    const scanned = (id, n, extra = {}) => ({ from: payer.address, to: receiver.address, block: block(n), hash: hash(id),
+      internal_hash: hash(`internal-hash:${id}`), timestamp: at(n), rejected: false, confirmed: true, result: 'SUCCESS',
+      revert: false, note: '', token_list: { token_id: '_', call_value: 1 }, valueInfoList: [{ callValue: 1 }], ...extra });
+    const sent = (to, callValue, extra = {}) => ({ caller_address: payer.hex, transferTo_address: to.hex, callValueInfo: [{ callValue }], note: '', ...extra });
+    const receiverAccount = await newAccount('Receiver');
+    const receiverId = (await s.addresses.register(owner, { network: 'tron', address: receiver.address, accountId: receiverAccount })).value.id;
+    await postTron({
+      transactions: [
+        transfer('r1', 350, outside, receiver, 1000 * SUN),
+        // Signed by someone else; TronGrid lists it for neither account.
+        tx('r2', 360, 'TriggerSmartContract', { owner_address: outside.hex, contract_address: payer.hex, data: '4782f779' }),
+      ],
+      infos: {
+        [hash('r2')]: info('r2', 360, { internal_transactions: [
+          sent(receiver, 92_314_559),
+          // To another account, a token, and a rejected transfer move none of the wallet's TRX.
+          sent(outside, 5 * SUN),
+          { ...sent(receiver, 3 * SUN), callValueInfo: [{ callValue: 3 * SUN, tokenId: '1002000' }] },
+          { ...sent(receiver, 4 * SUN), rejected: true },
+        ] }),
+        [hash('r1')]: info('r1', 350),
+      },
+      tronscan: { [receiver.address]: [
+        scanned('r2', 360),
+        scanned('r5', 361, { revert: true }),
+        scanned('r6', 362, { confirmed: false }),
+        scanned('r7', 363, { rejected: true }),
+      ] },
+    }, { tip: tip(400) });
+    await post('tron', { accounts: { [receiver.address]: { address: receiver.address, balance: Math.round(1092.314559 * SUN) } } });
+    const internalSync = await newRequests(() => s.addresses.sync(owner, receiverId));
+    assert.deepEqual([internalSync.result.outcome, internalSync.result.imported], ['complete', 2]);
+    assert.deepEqual((await tronscanCalls()).at(-1), ['internal', receiver.address, 0]);
+    assert.deepEqual(internalSync.calls.map(call).filter(([kind]) => kind === 'info'), [['info', hash('r2')]]);
+    const receiverLegs = await db.query(`SELECT txid, "blockHeight", "receivedUnits"::text AS received, "sentUnits"::text AS sent,
+      "feeUnits"::text AS fee, direction, asset FROM wallet_address_transactions WHERE "addressId"=$1 ORDER BY "blockHeight"`, [receiverId]);
+    assert.deepEqual(receiverLegs.map((row) => [row.txid, row.blockHeight, row.received, row.sent, row.fee, row.direction, row.asset]), [
+      [hash('r1'), block(350), String(1000 * SUN), '0', '0', 'in', null],
+      [hash('r2'), block(360), '92314559', '0', '0', 'in', null],
+    ]);
+    const receiverSummary = (await s.addresses.list(owner)).find((item) => item.id === receiverId);
+    assert.equal(receiverSummary.balances[0].quantity, '1092.314559');
+    // The chain's report equals the history now: nothing to explain.
+    assert.equal(receiverSummary.reportedBalance, null);
+    // A second pass stores nothing and does not read the transaction again.
+    const internalAgain = await newRequests(() => s.addresses.sync(owner, receiverId));
+    assert.deepEqual([internalAgain.result.outcome, internalAgain.result.imported], ['complete', 0]);
+    assert.deepEqual(internalAgain.calls.map(call).filter(([kind]) => kind === 'info'), []);
+    // Tronscan failing leaves the history as it was and the sync complete; the next pass adds the new one.
+    await postTron({
+      infos: { [hash('r8')]: info('r8', 370, { internal_transactions: [sent(receiver, 7 * SUN)] }) },
+      transactions: [tx('r8', 370, 'TriggerSmartContract', { owner_address: outside.hex, contract_address: payer.hex, data: '4782f779' })],
+      tronscan: { [receiver.address]: [scanned('r8', 370), scanned('r2', 360)] },
+    }, { tronscanFault: true });
+    const faulted = await s.addresses.sync(owner, receiverId);
+    assert.deepEqual([faulted.outcome, faulted.imported], ['complete', 0]);
+    const recovered = await s.addresses.sync(owner, receiverId);
+    assert.deepEqual([recovered.outcome, recovered.imported], ['complete', 1]);
+    assert.equal((await s.addresses.list(owner)).find((item) => item.id === receiverId).balances[0].quantity, '1099.314559');
+    // Its history says 1099.314559 while the chain reports 1092.314559: the difference is shown, never counted.
+    assert.equal((await s.addresses.list(owner)).find((item) => item.id === receiverId).reportedBalance, '1092.314559');
+    console.log('PASS TRON-INTERNAL 92.314559 TRX a contract sent inside another account\'s transaction are found through Tronscan and read from the node, once; transfers to others, tokens, rejected, reverted and unconfirmed ones and a Tronscan fault change nothing');
 
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackTronWallets1793600000000().down(), /recovery plan/);
