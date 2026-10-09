@@ -206,7 +206,8 @@ async function setup(db, s, owner) {
     expectedVersion: 0,
     classification: { type: 'buy', currency: 'USD', amount: '2500' },
   });
-  assert.equal(await count(s, owner), 6);
+  // TOKEN-FEE: the gas leg is the fee of the USDT send, not a transaction to classify.
+  assert.equal(await count(s, owner), 5);
   return { trust, cold, eth, btc, vault };
 }
 
@@ -230,7 +231,7 @@ async function sameWallet(db, s, owner, f) {
     [1, 'classified', 'swap', bought.swapId, f.btc, legs.btcIn],
   );
   assert.deepEqual(paid.details, { type: 'swap', with: { addressId: f.btc, txid: legs.btcIn }, valueUsd: null });
-  assert.equal(await count(s, owner), 4, 'The gas, the BTC send, the ETH send and the cold receipt');
+  assert.equal(await count(s, owner), 3, 'The BTC send, the ETH send and the cold receipt');
 
   stage = 'CLS-SWAP-SAME the books: USDT leaves at its cost, BTC costs 1000 USD, nothing realised';
   const books = await journal(s, owner, f.trust);
@@ -263,7 +264,9 @@ async function sameWallet(db, s, owner, f) {
     0,
     'The produced swap is shown on its chain row only',
   );
-  assert.equal(operations.find((operation) => operation.chain?.txid === legs.gas).status, 'needs-classification');
+  // TOKEN-FEE: the gas the USDT send paid is the swap's fee, not a row of its own.
+  same(row.fee.quantity, '0.001');
+  assert.equal(operations.find((operation) => operation.chain?.txid === legs.gas), undefined);
 
   stage = 'CLS-SWAP-SAME the export lists the swap as produced by the receipt, and both legs name it';
   const exported = (await s.exports.operations(db.manager, owner)).find((entry) => entry.id === `swap:${bought.swapId}`);
@@ -288,7 +291,7 @@ async function reclassify(db, s, owner, f, swapId) {
   assert.equal(await swapKind(db, swapId), 'void');
   const freed = await answer(db, f.eth, legs.usdtOut);
   assert.deepEqual([freed.version, freed.status, freed.swapId], [2, 'unclassified', null]);
-  assert.equal(await count(s, owner), 5);
+  assert.equal(await count(s, owner), 4);
   same((await journal(s, owner, f.trust)).summary.remainingCostUsd, '5500', '3000 USDT and 1 ETH again');
 
   stage = 'CLS-SWAP-UNDO the old way round: BTC bought with the wallet\'s USDT, the send hidden';
@@ -321,7 +324,7 @@ async function reclassify(db, s, owner, f, swapId) {
   same(books.swapSummary.realizedUsd, '10', 'The value entered realises 10 USD on the USDT');
   assert.equal(await held(s, owner, 'USDT', f.trust), coins('2000'), 'USDT is not spent twice');
   assert.equal(await held(s, owner, 'BTC', f.trust), coins('0.0075'));
-  assert.equal(await count(s, owner), 3);
+  assert.equal(await count(s, owner), 2);
   assert.equal((await listed(s, owner)).filter((row) => row.type === 'buy' && row.chain?.txid === legs.btcIn).length, 0);
   console.log('PASS CLS-SWAP-UNDO');
 }
