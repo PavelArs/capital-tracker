@@ -154,7 +154,7 @@ async function expectPrivateDenial(
   token: string,
   legacyBearer = false,
 ): Promise<void> {
-  for (const path of ['/api/auth/me', '/api/crypto']) {
+  for (const path of ['/api/auth/me', '/api/wallet-addresses']) {
     const headers: Record<string, string> = legacyBearer
       ? { Authorization: `Bearer ${token}` }
       : { Cookie: `${cookieName}=${token}` };

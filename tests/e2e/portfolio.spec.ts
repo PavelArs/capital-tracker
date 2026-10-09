@@ -109,13 +109,16 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
   await expect(page.getByRole('heading', { name: 'Вход', exact: true })).toBeVisible();
   const endpoints = [
     { method: 'GET', path: '/api/auth/me' },
-    { method: 'GET', path: '/api/crypto' },
-    { method: 'GET', path: `/api/crypto/${foreignWalletId}` },
-    { method: 'POST', path: '/api/crypto', data: { type: 'bitcoin', address: bitcoinAddress } },
-    { method: 'PATCH', path: `/api/crypto/${foreignWalletId}/update-balance` },
-    { method: 'DELETE', path: `/api/crypto/${foreignWalletId}` },
-    { method: 'GET', path: '/api/crypto/prices' },
-    { method: 'POST', path: '/api/crypto/token-prices', data: { contractAddresses: [] } },
+    { method: 'GET', path: '/api/wallet-addresses' },
+    {
+      method: 'POST',
+      path: '/api/wallet-addresses',
+      data: { network: 'bitcoin', address: bitcoinAddress },
+    },
+    { method: 'POST', path: `/api/wallet-addresses/${foreignWalletId}/sync` },
+    { method: 'GET', path: `/api/wallet-addresses/${foreignWalletId}/transactions` },
+    { method: 'GET', path: '/api/accounting/portfolio' },
+    { method: 'GET', path: '/api/prices' },
   ];
   const foreignBefore = walletRows(foreignWalletId);
   expect(foreignBefore).toHaveLength(1);
@@ -142,8 +145,10 @@ test('ISO-003-B: the browser authenticates using the real seeded password', asyn
   await expect(page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true })).toBeVisible();
 });
 
-test("ISO-004-C: another owner's wallet cannot be read, deleted or refreshed", async ({ page }) => {
-  // The legacy screen is retired (M20); its API stays until the module goes.
+test('ISO-004-C: the retired wallet API is gone and leaves legacy wallets untouched', async ({
+  page,
+}) => {
+  // The legacy crypto module is retired (M20); its rows stay and leave with the JSON backup.
   const csrfToken = await loginThroughBrowser(page);
   const before = walletRows(foreignWalletId);
   expect(before).toHaveLength(1);
@@ -151,11 +156,12 @@ test("ISO-004-C: another owner's wallet cannot be read, deleted or refreshed", a
   const providerBefore = walletProviderRequests(foreignAddress);
 
   for (const [method, path] of [
+    ['GET', '/api/crypto'],
     ['GET', `/api/crypto/${foreignWalletId}`],
     ['DELETE', `/api/crypto/${foreignWalletId}`],
     ['PATCH', `/api/crypto/${foreignWalletId}/update-balance`],
   ]) {
-    await test.step(`${method} rejects foreign ownership without mutation or provider access`, async () => {
+    await test.step(`${method} ${path} no longer exists`, async () => {
       // Share the real browser cookie jar; never inject a cookie or token to establish access.
       const response = await page.context().request.fetch(path, {
         method,

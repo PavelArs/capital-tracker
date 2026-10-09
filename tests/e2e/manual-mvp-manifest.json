@@ -13,7 +13,7 @@
   },
   {
     "file": "tests/e2e/sessions.spec.ts",
-    "title": "SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies"
+    "title": "SES-002-A: missing CSRF and foreign Origin cannot change owner settings"
   },
   {
     "file": "tests/e2e/manual-opening.spec.ts",
