@@ -6,7 +6,7 @@ const { readFileSync } = require('node:fs');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io']);
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io', 'apilist.tronscanapi.com']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -89,7 +89,7 @@ let bybit = initialBybit();
 // with an HTTP status (403 with a frequency-limit message when `limited`).
 const initialTron = () => ({ tip: { number: 70000100, timestamp: 1760000300000 }, transactions: new Map(),
   internal: new Map(), tokens: new Map(), infos: new Map(), accounts: new Map(), rewards: new Map(),
-  pageSize: 200, key: null, fault: null, requests: 0 });
+  tronscan: new Map(), tronscanFault: false, pageSize: 200, key: null, fault: null, requests: 0 });
 let tron = initialTron();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
@@ -521,6 +521,7 @@ function provider(request, response, url) {
   if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);
   if (url.hostname === 'api.trongrid.io') return tronRequest(request, response, url);
+  if (url.hostname === 'apilist.tronscanapi.com') return tronscanRequest(request, response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -566,6 +567,24 @@ function tronHex(value) {
   const bytes = Buffer.from(number.toString(16).padStart(50, '0'), 'hex');
   const check = createHash('sha256').update(createHash('sha256').update(bytes.subarray(0, 21)).digest()).digest();
   return bytes[0] === 0x41 && check.subarray(0, 4).equals(bytes.subarray(21)) ? bytes.subarray(0, 21).toString('hex') : null;
+}
+
+// Synthetic Tronscan (TRON-INTERNAL): only the list of TRX transfers contracts made to an account,
+// newest first, as the probe posts them in `tronscan` (items keyed by account); `limit` items from
+// `start`. Nothing else of Tronscan is answered.
+function tronscanRequest(request, response, url) {
+  const query = url.searchParams;
+  if (url.pathname !== '/api/internal-transaction' || [...query.keys()].sort().join() !== 'address,limit,start'
+    || tronHex(query.get('address')) === null || !/^[0-9]{1,6}$/.test(query.get('start')) || query.get('limit') !== '10') {
+    return respond(response, 400, { error: 'Invalid synthetic Tronscan request' });
+  }
+  if (tron.tronscanFault) {
+    tron.tronscanFault = false;
+    return respond(response, 503, { error: 'Synthetic Tronscan fault' });
+  }
+  const start = Number(query.get('start'));
+  const items = tron.tronscan.get(query.get('address')) ?? [];
+  return respond(response, 200, { total: -1, data: items.slice(start, start + 10) });
 }
 
 function tronRequest(request, response, url) {
@@ -823,6 +842,8 @@ const server = http.createServer(async (request, response) => {
         || !keyed(data.rewards, (name) => tronHex(name) !== null, (value) => Number.isSafeInteger(value) && value > 0)
         || (data.pageSize !== undefined && (!Number.isSafeInteger(data.pageSize) || data.pageSize < 1 || data.pageSize > 200))
         || (data.key !== undefined && data.key !== null && (typeof data.key !== 'string' || !/^[a-z-]{1,40}$/.test(data.key)))
+        || !keyed(data.tronscan, (name) => tronHex(name) !== null, (value) => Array.isArray(value) && value.length <= 60 && value.every(object))
+        || (data.tronscanFault !== undefined && typeof data.tronscanFault !== 'boolean')
         || (fault !== undefined && fault !== null && (!object(fault) || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
           || (fault.limited !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
         return respond(response, 400, { error: 'Invalid synthetic Tron fixture' });
@@ -833,9 +854,10 @@ const server = http.createServer(async (request, response) => {
       for (const [name, info] of Object.entries(data.infos ?? {})) tron.infos.set(name, info);
       for (const [name, value] of Object.entries(data.accounts ?? {})) tron.accounts.set(name, value);
       for (const [name, value] of Object.entries(data.rewards ?? {})) tron.rewards.set(name, value);
+      for (const [name, value] of Object.entries(data.tronscan ?? {})) tron.tronscan.set(name, value);
       if (tron.transactions.size + tron.internal.size + tron.tokens.size > 300) return respond(response, 400, { error: 'Synthetic history is bounded' });
       tron = { ...tron, tip: data.tip ?? tron.tip, pageSize: data.pageSize ?? tron.pageSize,
-        key: data.key === undefined ? tron.key : data.key,
+        key: data.key === undefined ? tron.key : data.key, tronscanFault: data.tronscanFault ?? tron.tronscanFault,
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, limited: fault.limited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, tip: tron.tip });
