@@ -647,7 +647,11 @@ export default function OperationDrawer({
         operation.status === 'recorded' &&
         (operation.type === 'buy' || operation.type === 'sell') && (
           <p className="transactions-notice" role="note">
-            Recognised automatically from Bybit's trade history:{' '}
+            Recognised automatically from Bybit's{' '}
+            {operation.chain?.txid.startsWith('bybit-trade-convert-')
+              ? 'convert history'
+              : 'trade history'}
+            :{' '}
             {operation.type === 'buy'
               ? 'paid from the USDT or USDC this account already held'
               : 'the coins sold were already in this account'}

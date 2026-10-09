@@ -53,6 +53,10 @@ describe('a Bybit record (M22)', () => {
     expect(transactionHash(earned)).toBeNull();
     expect(exchangeRecord(earned)).toBe('Earn yield 1002096');
     expect(exchangeRecord(leg('bybit', 'bybit-earn-onchain-1002097'))).toBe('Earn yield 1002097');
+    // BYBIT-CONVERT: a convert, stored as a trade.
+    expect(exchangeRecord(leg('bybit', 'bybit-trade-convert-10100108106409343501030232064'))).toBe(
+      'Convert 10100108106409343501030232064',
+    );
   });
 
   it('names the account by its user ID and an automatic fill as a Bybit trade', () => {

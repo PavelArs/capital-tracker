@@ -151,12 +151,16 @@ const recordKinds: Record<string, string> = {
   withdrawal: 'Withdrawal',
   // BYBIT-EARN: a paid yield, named by its product kind and Bybit's id.
   earn: 'Earn yield',
+  // BYBIT-CONVERT: a convert, stored as a trade.
+  convert: 'Convert',
 };
 
 function recordName(txid: string): string | null {
   const match =
-    /^bybit-(trade|deposit|withdrawal|earn)-(?:internal-|flexible-|onchain-)?(.+)$/.exec(txid);
-  return match ? `${recordKinds[match[1]]} ${match[2]}` : null;
+    /^bybit-(?:trade-(convert)-|(trade|deposit|withdrawal|earn)-(?:internal-|flexible-|onchain-)?)(.+)$/.exec(
+      txid,
+    );
+  return match ? `${recordKinds[match[1] ?? match[2]]} ${match[3]}` : null;
 }
 
 // Free public explorers; a network without one (an exchange account) gets no link.

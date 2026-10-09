@@ -4,6 +4,8 @@ import { createServer, type IncomingHttpHeaders, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import {
   BybitClient,
+  parseCoinExchange,
+  parseConvertHistory,
   parseDeposit,
   parseEarnPositions,
   parseEarnYield,
@@ -61,6 +63,15 @@ describe('BYBIT-KEY: what Bybit says about a key', () => {
       ipBound: false,
       expiresAt: '2026-12-31T00:00:00.000Z',
       earn: false,
+      convert: false,
+    });
+  });
+
+  it('knows whether the key may read convert history', () => {
+    const permissions = { ...readOnlyKey.permissions, Exchange: ['ExchangeHistory'] };
+    expect(parseKeyInfo({ ...readOnlyKey, permissions })).toMatchObject({ convert: true });
+    expect(parseKeyInfo({ ...readOnlyKey, permissions: { Wallet: [] } })).toMatchObject({
+      convert: false,
     });
   });
 
@@ -273,6 +284,67 @@ describe('BYBIT-EARN: Earn positions and yield', () => {
   });
 });
 
+describe('BYBIT-CONVERT: converts and coin exchanges', () => {
+  const convert = {
+    accountType: 'funding',
+    exchangeTxId: '10100108106409343501030232064',
+    userId: '123456789',
+    fromCoin: 'BTC',
+    fromCoinType: 'crypto',
+    fromAmount: '0.01',
+    toCoin: 'USDT',
+    toCoinType: 'crypto',
+    toAmount: '650.5',
+    exchangeStatus: 'success',
+    extInfo: {},
+    convertRate: '65050',
+    createdAt: '1720071899995',
+  };
+
+  it('reads a convert with its state and time', () => {
+    expect(parseConvertHistory({ list: [convert] })).toEqual([
+      {
+        id: '10100108106409343501030232064',
+        fromCoin: 'BTC',
+        fromAmount: '0.01',
+        toCoin: 'USDT',
+        toAmount: '650.5',
+        state: 'done',
+        time: 1720071899995,
+        raw: convert,
+      },
+    ]);
+    const states = ['init', 'processing', 'failure'].map(
+      (exchangeStatus) => parseConvertHistory({ list: [{ ...convert, exchangeStatus }] })[0].state,
+    );
+    expect(states).toEqual(['pending', 'pending', 'failed']);
+    expect(parseConvertHistory({})).toEqual([]);
+    expect(() => parseConvertHistory({ list: [{ ...convert, exchangeStatus: 'odd' }] })).toThrow();
+    expect(() =>
+      parseConvertHistory({ list: [{ ...convert, exchangeTxId: 'x'.repeat(61) }] }),
+    ).toThrow();
+  });
+
+  it('reads an older coin exchange, whose time is in seconds', () => {
+    const exchange = {
+      fromCoin: 'USDT',
+      fromAmount: '100',
+      toCoin: 'SOL',
+      toAmount: '0.6',
+      exchangeRate: '0.006',
+      createdTime: '1700000000',
+      exchangeTxId: '300000000000000001',
+    };
+    expect(parseCoinExchange(exchange)).toMatchObject({
+      id: '300000000000000001',
+      fromCoin: 'USDT',
+      toCoin: 'SOL',
+      state: 'done',
+      time: 1700000000000,
+    });
+  });
+});
+
 describe('Bybit client', () => {
   let server: Server;
   let baseUrl: string;
@@ -407,6 +479,26 @@ describe('Bybit client', () => {
     expect(requests[2].url.search).toBe(
       '?category=OnChain&startTime=1&endTime=2&limit=100&cursor=page2',
     );
+  });
+
+  it('asks for converts page by page and coin exchanges by cursor', async () => {
+    replies.push(ok({ list: [] }));
+    replies.push(ok({ orderBody: [], nextPageCursor: '' }));
+    replies.push(ok({}));
+    expect(await client().convertHistory(key, 2)).toEqual({ ok: true, value: [] });
+    expect(await client().coinExchanges(key, 'page2')).toEqual({
+      ok: true,
+      value: { items: [], cursor: null },
+    });
+    expect(await client().coinExchanges(key, null)).toEqual({
+      ok: true,
+      value: { items: [], cursor: null },
+    });
+    expect(requests[0].url.pathname).toBe('/v5/asset/exchange/query-convert-history');
+    expect(requests[0].url.search).toBe('?index=2&limit=100');
+    expect(requests[1].url.pathname).toBe('/v5/asset/exchange/order-record');
+    expect(requests[1].url.search).toBe('?limit=50&cursor=page2');
+    expect(requests[2].url.search).toBe('?limit=50');
   });
 
   it('says why nothing came back', async () => {

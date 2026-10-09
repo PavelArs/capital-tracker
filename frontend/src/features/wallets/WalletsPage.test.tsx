@@ -1258,7 +1258,7 @@ describe('M22: Bybit accounts', () => {
     const user = userEvent.setup();
     const dialog = await openBybit(user);
     expect(dialog).toHaveTextContent(
-      'Set permissions to Read-Only and tick Earn under it, so coins in Earn count. Tick nothing that trades or withdraws.',
+      'Set permissions to Read-Only and tick Earn and Exchange History under it, so coins in Earn and converts count. Tick nothing that trades or withdraws.',
     );
     expect(dialog).toHaveTextContent('Bind it to this server');
     const secret = within(dialog).getByLabelText('API secret');
@@ -1408,6 +1408,31 @@ describe('M22: Bybit accounts', () => {
     expect(within(drawer).queryByRole('region', { name: 'Earn' })).toBeNull();
     expect(drawer).toHaveTextContent(
       'This key cannot read Earn, so coins in Bybit Earn are not counted. In Bybit, edit the key, tick Earn under Read-Only and press Sync now; no need to add the account again.',
+    );
+  });
+
+  it('BYBIT-CONVERT says how to let a key read convert history', async () => {
+    const exchange = {
+      keyHint: '0001',
+      ipBound: true,
+      keyExpiresAt: null,
+      reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      untracked: [],
+      historyFrom: '2024-10-10T00:00:00.000Z',
+      earnAllowed: true,
+      earn: [],
+    };
+    const note =
+      'This key cannot read convert history, so coins converted on Bybit are missing from the records. In Bybit, edit the key, tick Exchange History under Read-Only and press Sync now; no need to add the account again.';
+    setup([exchangeAccount({ exchange: { ...exchange, convertAllowed: false } })], withBybit());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    expect(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).toHaveTextContent(note);
+    cleanup();
+    setup([exchangeAccount({ exchange: { ...exchange, convertAllowed: true } })], withBybit());
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    expect(screen.getByRole('dialog', { name: 'Bybit · Bybit' })).not.toHaveTextContent(
+      'cannot read convert history',
     );
   });
 
