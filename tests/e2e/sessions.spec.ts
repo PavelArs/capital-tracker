@@ -171,9 +171,9 @@ async function deniedReplay(request: APIRequestContext, token: string): Promise<
   expect((await response.text()).includes(ownerEmail)).toBe(false);
 }
 
-function preferences(): string {
-  return query(`SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY p.id)::text, '[]')
-    FROM user_currency_preferences p WHERE "userId" = '${ownerId}'::uuid`);
+function settings(): string {
+  return query(`SELECT COALESCE(jsonb_agg(to_jsonb(s))::text, '[]')
+    FROM owner_settings s WHERE "ownerId" = '${ownerId}'::uuid`);
 }
 
 test('SES-001-B: real browser logout revokes a copied issued credential', async ({
@@ -255,19 +255,13 @@ test('SES-001-A: successful browser login exposes no bearer or browser-storage c
   expect(fingerprint(false, true)).toBe(before);
 });
 
-test('SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies', async ({
+test('SES-002-A: missing CSRF and foreign Origin cannot change owner settings', async ({
   page,
   request,
 }) => {
   const { csrfToken } = await browserLogin(page);
   const foreignCsrf = await csrf(request);
-  const currencies = JSON.parse(
-    query(`SELECT json_agg(c) FROM (
-    SELECT id, code FROM currencies WHERE "isSystem" = true AND code IN ('USD', 'EUR') ORDER BY code
-  ) c`),
-  ) as { id: string; code: string }[];
-  expect(currencies).toHaveLength(2);
-  const preferencesBefore = preferences();
+  const settingsBefore = settings();
   const before = fingerprint(true);
   const cases: { name: string; headers: Record<string, string> }[] = [
     { name: 'missing CSRF', headers: { Origin: origin } },
@@ -297,14 +291,14 @@ test('SES-002-A: missing CSRF and foreign Origin cannot hide owner currencies', 
     },
   ];
   for (const example of cases) {
-    const response = await page.context().request.post('/api/currencies/hide', {
+    const response = await page.context().request.put('/api/owner-settings', {
       headers: example.headers,
-      data: { currencyId: currencies[0].id, isHidden: true },
+      data: { mainCurrency: 'EUR', dustThresholdUsd: '5' },
     });
     expect(response.status(), example.name).toBe(403);
     noStore(response);
-    expect(preferences(), `${example.name}: denied write preserves existing preferences`).toBe(
-      preferencesBefore,
+    expect(settings(), `${example.name}: denied write preserves existing settings`).toBe(
+      settingsBefore,
     );
     expect(fingerprint(true), `${example.name}: denied write leaves all state unchanged`).toBe(
       before,
@@ -316,12 +310,12 @@ test('SES-004-A: backend root is private by default', async ({ request }) => {
   for (const path of [
     '/api/',
     '/api/auth/me',
-    '/api/assets',
-    '/api/liabilities',
-    '/api/crypto',
-    '/api/currencies/list',
-    '/api/metrics',
-    '/api/metrics/history',
+    '/api/accounting/portfolio',
+    '/api/accounting/portfolio/history',
+    '/api/accounting/operations',
+    '/api/wallet-addresses',
+    '/api/owner-settings',
+    '/api/export/backup',
     '/api/health/details',
   ]) {
     const response = await request.get(path);
@@ -552,7 +546,7 @@ test('SES-004-B: auth/private responses are no-store and logs redact captured cr
   request,
 }) => {
   const { token, csrfToken } = await browserLogin(page);
-  for (const path of ['/api/auth/me', '/api/crypto']) {
+  for (const path of ['/api/auth/me', '/api/wallet-addresses']) {
     const response = await page.context().request.get(path);
     expect(response.status()).toBe(200);
     noStore(response);

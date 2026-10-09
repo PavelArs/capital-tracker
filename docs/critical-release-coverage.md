@@ -29,7 +29,7 @@ using synthetic owner data and provider fixtures.
 |---|---|
 | MFA-002-A/B | Password alone leaves private data denied; TOTP plus CSRF establishes the owner session. |
 | SES-001-B | Logout revokes a copied session credential and replay fails. |
-| SES-002-A | Missing CSRF or foreign Origin cannot read owner currencies or change preferences. |
+| SES-002-A | Missing CSRF or foreign Origin cannot change owner settings (main currency, dust threshold); every table stays unchanged. |
 | OPEN-001-A / OPEN-002-A | Opening amounts preserve the distinction between unknown and zero cost across restart/history. |
 | TRADE-003-A / TRADE-006-A | FIFO proceeds, cost and profit stay exact; pending edits lock; restart and correction history remain consistent. |
 | SWAP-UI | A committed exchange survives lost response and SPA remount without duplicate posting. |
@@ -62,6 +62,13 @@ using synthetic owner data and provider fixtures.
 | TRANSFER-UI | The legacy transfer screen is gone; transfers are added, edited and deleted in Add transaction and the Transactions drawer. | `owned-transfers-db` and `owned-transfers-bounds-db` probes, TRANSFER-API, MANUAL-OPS-UI and XFER-UI. |
 | FLOW-004-A | The declared deposit and withdrawal journal counts nowhere since M7; its screen is gone and its rows stay listed, read-only, in Transactions. | `external-usd-flows-db` probe and FLOW-001-A / FLOW-002-A (API); FLOW-SPLIT-UI covers deposits as M7 counts them. |
 | PROFIT-UI / XIRR-UI / TWR-UI | Hidden in the new interface (Q10); the backend previews stay until a separate removal. | `period-profit-db`, `xirr-preview-db`, `twr-preview-db` and `linked-twr-db` probes and the API cases in the same files. |
+
+The second M20 step removed the legacy backend modules (assets, liabilities, crypto,
+currencies, display FX, metrics) and with them the `display-fx-db` probe, which only exercised
+the removed display FX service. Their tables and rows stay and leave with the JSON backup
+(EXP-JSON, `owner-export-db`); LIR-UI and ISO-004-C check that the old APIs answer 404 and
+leave the legacy rows untouched. SES-002-A now writes `PUT /owner-settings` instead of the
+removed currency visibility endpoint.
 
 The separate inventory identifies additional browser coverage not selected here:
 two-replica competing-sale/initialization journeys, browser-visible persistent lockout

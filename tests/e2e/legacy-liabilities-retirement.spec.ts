@@ -13,7 +13,7 @@ import {
 
 const bookmarks = ['/liabilities', '/liabilities/legacy-bookmark'];
 
-test('LIR-UI: retired bookmarks preserve private legacy records and open Portfolio', async ({
+test('LIR-UI: retired bookmarks open Portfolio and legacy records leave only through the backup', async ({
   page,
   browser,
 }) => {
@@ -22,7 +22,7 @@ test('LIR-UI: retired bookmarks preserve private legacy records and open Portfol
     const visitor = await unauthenticated.newPage();
     for (const state of ['anonymous', 'password-only']) {
       if (state === 'password-only') await passwordStep(visitor);
-      const denied = await unauthenticated.request.get('/api/liabilities');
+      const denied = await unauthenticated.request.get('/api/export/backup');
       expect(denied.status(), state).toBe(401);
       noStore(denied);
       for (const path of bookmarks) {
@@ -70,19 +70,26 @@ test('LIR-UI: retired bookmarks preserve private legacy records and open Portfol
   }
   expect(providerRequests()).toEqual(providersBefore);
 
-  const list = await page.request.get('/api/liabilities');
-  expect(list.status()).toBe(200);
-  noStore(list);
-  const liabilities = await list.json();
-  expect(liabilities.map((row: { id: string }) => row.id)).toContain(ownId);
-  expect(liabilities.every((row: { userId: string }) => row.userId === owner.id)).toBe(true);
-  expect(liabilities.map((row: { id: string }) => row.id)).not.toContain(foreignId);
-  const own = await page.request.get(`/api/liabilities/${ownId}`);
-  expect(own.status()).toBe(200);
-  noStore(own);
-  expect(await own.json()).toMatchObject({
+  // The legacy API is retired (M20): its rows stay in the database and leave with the backup.
+  for (const path of [
+    '/api/liabilities',
+    `/api/liabilities/${ownId}`,
+    `/api/liabilities/${foreignId}`,
+  ]) {
+    const gone = await page.request.get(path);
+    expect(gone.status(), path).toBe(404);
+    expect(await gone.text()).not.toContain(foreignName);
+  }
+  const backup = await page.request.get('/api/export/backup');
+  expect(backup.status()).toBe(200);
+  noStore(backup);
+  const text = await backup.text();
+  expect(text).not.toContain(foreignName);
+  const liabilities: { id: string }[] = JSON.parse(text).tables.liabilities;
+  expect(liabilities.map((row) => row.id)).toContain(ownId);
+  expect(liabilities.map((row) => row.id)).not.toContain(foreignId);
+  expect(liabilities.find((row) => row.id === ownId)).toMatchObject({
     id: ownId,
-    userId: owner.id,
     name: ownName,
     category: 'loans',
     amount: '123.45678901',
@@ -91,10 +98,6 @@ test('LIR-UI: retired bookmarks preserve private legacy records and open Portfol
     frequency: 'monthly',
     deadline: '2027-01-02',
   });
-  const foreign = await page.request.get(`/api/liabilities/${foreignId}`);
-  expect(foreign.status()).toBe(404);
-  noStore(foreign);
-  expect(await foreign.text()).not.toContain(foreignName);
 
   expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(before);
   expect(providerRequests()).toEqual(providersBefore);
