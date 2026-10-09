@@ -1012,18 +1012,21 @@ describe('ENG-010: Docker Hub pulls go through a mirror so the shared runner add
     ['full-acceptance', workflow('full-acceptance').jobs['full-acceptance']],
   ];
 
-  it.each(jobs)('%s sets the mirror up on hosted runners before its first image is used', (_, job) => {
-    const steps = job.steps ?? [];
-    const mirror = steps.findIndex((step) => step.name === mirrorStep);
-    expect(mirror).toBeGreaterThan(-1);
-    expect(steps[mirror].run?.trim()).toBe('bash scripts/ci-docker-mirror.sh');
-    expect(expression(steps[mirror].if)).toBe("runner.environment == 'github-hosted'");
-    expect(steps[mirror]['continue-on-error'] ?? false).toBe(false);
-    const firstImage = steps.findIndex(
-      (step) => step.name !== mirrorStep && /docker|acceptance|test:e2e/.test(step.run ?? ''),
-    );
-    expect(firstImage).toBeGreaterThan(mirror);
-  });
+  it.each(jobs)(
+    '%s sets the mirror up on hosted runners before its first image is used',
+    (_, job) => {
+      const steps = job.steps ?? [];
+      const mirror = steps.findIndex((step) => step.name === mirrorStep);
+      expect(mirror).toBeGreaterThan(-1);
+      expect(steps[mirror].run?.trim()).toBe('bash scripts/ci-docker-mirror.sh');
+      expect(expression(steps[mirror].if)).toBe("runner.environment == 'github-hosted'");
+      expect(steps[mirror]['continue-on-error'] ?? false).toBe(false);
+      const firstImage = steps.findIndex(
+        (step) => step.name !== mirrorStep && /docker|acceptance|test:e2e/.test(step.run ?? ''),
+      );
+      expect(firstImage).toBeGreaterThan(mirror);
+    },
+  );
 
   it('keeps the pinned digests and uses a public pull-through mirror with no credentials', () => {
     const script = readFileSync(resolve(repositoryRoot, 'scripts/ci-docker-mirror.sh'), 'utf8');
