@@ -357,6 +357,9 @@ async function everyJournal(db, s, f) {
   assert.deepEqual(out.fee, {
     asset: { instrumentId: null, symbol: 'BTC', name: 'Bitcoin' },
     quantity: '0.000003',
+    // TOKEN-FEE: at 84,945 USD, the price stored for its time, to the cent.
+    valueUsd: '0.25',
+    value: '0.25',
   });
   assert.equal(transfer.counterAccount.name, 'Cold storage');
   assert.deepEqual(transfer.fee, {

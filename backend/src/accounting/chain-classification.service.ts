@@ -209,6 +209,15 @@ const namedDeposit = () =>
   new UnprocessableEntityException(
     'A pool withdrawal names this deposit; change the withdrawal first',
   );
+/**
+ * TOKEN-FEE: the leg `t` only paid the network fee of a token send from the same address in the
+ * same transaction; the operations list shows it as that send's fee (gasOnly there).
+ */
+const tokenSendGas = `t.asset IS NULL AND w.network<>'bybit' AND t."receivedUnits"=0
+  AND t."feeUnits">0 AND t."sentUnits"=t."feeUnits"
+  AND EXISTS (SELECT 1 FROM wallet_address_transactions k WHERE k."ownerId"=t."ownerId"
+    AND k."addressId"=t."addressId" AND k.asset IS NOT NULL AND k.txid<>t.txid
+    AND split_part(k.txid, '-', 1)=t.txid AND k."sentUnits">k."receivedUnits")`;
 const inbound = (row: LegRow) => legMovement(leg(row)).inbound;
 const sameEntry = (left: Produced, right: Produced) =>
   left.tradeId === right.tradeId &&
@@ -557,8 +566,8 @@ export class ChainClassificationService {
   /**
    * CLS-COUNT: chain transactions nobody has classified or hidden, less the receipts worth
    * less than the owner's dust threshold at the price stored for their time (CLS-DUST,
-   * EST-AT-TIME); a stake move
-   * needs none.
+   * EST-AT-TIME); a stake move needs none, nor does the leg that only paid a token send's
+   * fee (TOKEN-FEE).
    */
   async needsClassificationCount(ownerId: string): Promise<{ count: number }> {
     const owner = parseUuid(ownerId);
@@ -574,7 +583,8 @@ export class ChainClassificationService {
             AND v.txid=h.txid AND v.version=h."currentVersion"
           WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified')
             AND NOT EXISTS (SELECT 1 FROM ${stakeMoves} m WHERE t.asset IS NULL
-              AND m."addressId"=t."addressId" AND m.txid=t.txid)`,
+              AND m."addressId"=t."addressId" AND m.txid=t.txid)
+            AND NOT (${tokenSendGas})`,
         [owner],
       );
       const threshold = await readDustThreshold(manager, owner);

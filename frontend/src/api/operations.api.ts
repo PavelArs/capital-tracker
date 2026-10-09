@@ -60,7 +60,16 @@ export interface Operation {
   estimatedValueUsd: string | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
-  fee: { asset: OperationAsset; quantity: string } | null;
+  /**
+   * A chain transaction's network fee also carries its value in USD at the price stored for its
+   * time and in the list's quote currency (TOKEN-FEE); null when unknown.
+   */
+  fee: {
+    asset: OperationAsset;
+    quantity: string;
+    valueUsd?: string | null;
+    value?: string | null;
+  } | null;
   account: OperationPlace | null;
   /**
    * A transfer's other account; for a blockchain transaction to classify, the account of the

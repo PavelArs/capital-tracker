@@ -315,10 +315,11 @@ async function main() {
     assert.deepEqual([transfer[0].type, transfer[0].asset.symbol, transfer[0].quantity, transfer[0].fee?.asset.symbol],
       ['transfer', 'ETH', '0.5', 'ETH']);
     const usdtSend = byTx(`${bare(2)}-3`)[0];
-    assert.deepEqual([usdtSend.asset.symbol, usdtSend.quantity, usdtSend.fee], ['USDT', '100', null]);
-    const gas = byTx(bare(2))[0];
-    assert.deepEqual([gas.asset.symbol, gas.quantity, gas.direction], ['ETH', '0.0001', 'out']);
-    console.log('PASS ETH-LINK a 0.5 ETH send between own accounts auto-links into one transfer; token legs list as USDC and USDT, gas as ETH');
+    // TOKEN-FEE: the ether leg that paid the gas is the USDT send's fee, not a row of its own.
+    assert.deepEqual([usdtSend.asset.symbol, usdtSend.quantity, usdtSend.fee?.asset.symbol, usdtSend.fee?.quantity],
+      ['USDT', '100', 'ETH', '0.0001']);
+    assert.deepEqual(byTx(bare(2)), []);
+    console.log('PASS ETH-LINK a 0.5 ETH send between own accounts auto-links into one transfer; token legs list as USDC and USDT, the USDT send with its ETH gas as the fee');
 
     // SYNC-ISOLATION and SYNC-BG: the hourly job runs both networks; one network failing
     // leaves the other synced, and a server without the key says so without calling Etherscan.

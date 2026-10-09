@@ -8,7 +8,7 @@ import {
 } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { isDust } from './chain-dust';
-import { poolCoins, poolDepositUnits, poolReturnUnits } from './chain-pool';
+import { poolCoins, poolDepositUnits, poolReturnUnits, storedValueUsd } from './chain-pool';
 import { coinOf, sameTransaction } from './chain-transfer';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
@@ -40,7 +40,14 @@ export interface OperationWallet {
 export interface OperationFee {
   asset: OperationAsset;
   quantity: string;
+  /**
+   * TOKEN-FEE: a chain transaction's network fee in USD at the price stored for its time;
+   * null without one. Absent on fees the owner recorded.
+   */
+  valueUsd?: string | null;
 }
+/** A fee with its value in the list's quote currency at the Bank of Russia rate of the date. */
+export type ListedFee = OperationFee & { value?: string | null };
 export interface StoredMarketPrice {
   priceUsd: string;
   observedAt: string;
@@ -224,7 +231,7 @@ export interface Operation {
   estimatedValueUsd: string | null;
   costBasisUsd: string | null;
   feeUsd: string | null;
-  fee: OperationFee | null;
+  fee: ListedFee | null;
   account: OperationPlace | null;
   /**
    * A transfer's other account; for a chain transaction to classify, the account of the
@@ -379,6 +386,10 @@ function inCurrency(operation: Projected, fx: FxConverter): Operation {
     estimatedValue: estimate === null ? null : formatProduct(estimate),
     costBasis: convert(operation.costBasisUsd, undefined),
     feeValue: convert(operation.feeUsd, paid?.fee),
+    fee:
+      operation.fee && operation.fee.valueUsd !== undefined
+        ? { ...operation.fee, value: convert(operation.fee.valueUsd, undefined) }
+        : operation.fee,
   };
 }
 const recorded = { status: 'recorded', source: 'manual' } as const;
@@ -413,17 +424,41 @@ function counterpart(
   return opposite.length === 1 ? opposite[0] : null;
 }
 
+/**
+ * The network fee a leg paid, in the network's own coin (an exchange's in the coin withdrawn),
+ * valued at the price stored for its block time (TOKEN-FEE); null when it paid none.
+ */
+function networkFee(
+  row: ChainOperationInput,
+  prices: OperationSources['marketPrices'],
+): OperationFee | null {
+  const units = BigInt(row.feeUnits);
+  if (units === 0n) return null;
+  const { network } = row.wallet;
+  const token = isExchange(network) ? row.asset : null;
+  const asset = legAsset(network, token);
+  const quantity = amount(units, network, token);
+  const price = asset.symbol ? priceAt(prices.get(asset.symbol), row.blockTime) : undefined;
+  return {
+    asset,
+    quantity,
+    valueUsd: asset.symbol ? storedValueUsd(asset.symbol, quantity, price?.priceUsd ?? null) : null,
+  };
+}
+
 function chainOperation(
   row: ChainOperationInput,
   prices: OperationSources['marketPrices'],
   produced: Projected | undefined,
   other: ChainOperationInput | null,
   dustThresholdUsd: string | null,
+  gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
-  // An exchange account pays a withdrawal's fee in the coin withdrawn.
-  const feeToken = isExchange(network) ? row.asset : null;
+  // TOKEN-FEE: a token send's fee is the leg of the network's own coin that paid it.
+  const gas = gasOf(row);
+  const fee = gas ? networkFee(gas, prices) : networkFee(row, prices);
   const net = netUnits(row);
   const magnitude = net < 0n ? -net : net;
   const quantity = amount(magnitude, network, row.asset);
@@ -442,13 +477,7 @@ function chainOperation(
     quantity,
     estimatedValueUsd: estimate(quantity, price),
     // The sender pays an incoming transaction's fee.
-    fee:
-      row.direction === 'in' || BigInt(row.feeUnits) === 0n
-        ? null
-        : {
-            asset: legAsset(network, feeToken),
-            quantity: amount(BigInt(row.feeUnits), network, feeToken),
-          },
+    fee: row.direction === 'in' ? null : fee,
     account: row.account,
     wallet: row.wallet,
     chain: {
@@ -484,13 +513,7 @@ function chainOperation(
       status: 'recorded',
       quantity: moved,
       estimatedValueUsd: estimate(moved, price),
-      fee:
-        BigInt(row.feeUnits) === 0n
-          ? null
-          : {
-              asset: legAsset(network, feeToken),
-              quantity: amount(BigInt(row.feeUnits), network, feeToken),
-            },
+      fee,
     };
   }
   // CLS-DUST: nobody has answered it and it is worth too little to ask about.
@@ -514,7 +537,7 @@ function chainOperation(
       deposit ? poolDepositUnits(units(row)) : poolReturnUnits(units(row)),
       units(row),
     );
-    const fee = BigInt(row.feeUnits) > 0n && row.asset === null && !isExchange(network);
+    const ownFee = row.asset === null && !isExchange(network);
     const paired = deposit ? null : other;
     const deposited = paired && poolCoins(poolDepositUnits(units(paired)), units(paired));
     return {
@@ -525,9 +548,7 @@ function chainOperation(
       quantity: moved,
       estimatedValueUsd: estimate(moved, price),
       // The owner sent both: the fee of each is theirs.
-      fee: fee
-        ? { asset: legAsset(network, null), quantity: amount(BigInt(row.feeUnits), network, null) }
-        : null,
+      fee: ownFee || gas ? fee : null,
       valueUsd: produced?.valueUsd ?? null,
       costBasisUsd: produced?.costBasisUsd ?? null,
       chain: operation.chain && { ...operation.chain, pairedTxid: paired?.txid ?? null },
@@ -564,13 +585,7 @@ function chainOperation(
       valueUsd: produced.valueUsd,
       costBasisUsd: produced.valueUsd,
       estimatedValueUsd: null,
-      fee:
-        paying && paying.asset === null && BigInt(paying.feeUnits) > 0n
-          ? {
-              asset: legAsset(paying.wallet.network, null),
-              quantity: amount(BigInt(paying.feeUnits), paying.wallet.network, null),
-            }
-          : null,
+      fee: paying ? swapFee(paying, prices, gasOf) : null,
       account: produced.account,
       counterAccount:
         paying?.account && paying.account.id !== produced.account?.id ? paying.account : null,
@@ -588,7 +603,7 @@ function chainOperation(
       status: 'recorded',
       quantity: produced.quantity,
       estimatedValueUsd: estimate(produced.quantity, price),
-      fee: produced.fee,
+      fee: gas ? fee : produced.fee,
       account: produced.account,
       counterAccount: produced.counterAccount,
       counterWallet: answer.linkedAddressId ? (other?.wallet ?? null) : null,
@@ -608,6 +623,18 @@ function chainOperation(
   };
 }
 
+/** CLS-SWAP: the paying leg's own network fee, or for a token the fee its transaction paid. */
+function swapFee(
+  paying: ChainOperationInput,
+  prices: OperationSources['marketPrices'],
+  gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
+): OperationFee | null {
+  if (paying.asset === null && !isExchange(paying.wallet.network))
+    return networkFee(paying, prices);
+  const gas = gasOf(paying);
+  return gas ? networkFee(gas, prices) : null;
+}
+
 /** SWAP-ONE-TX: the transaction a leg belongs to; a token leg adds its number to the hash. */
 const hashKey = (row: ChainOperationInput) => `${row.wallet.network}:${row.txid.split('-')[0]}`;
 const unanswered = (row: ChainOperationInput) =>
@@ -617,6 +644,16 @@ const feeOnly = (row: ChainOperationInput) =>
   row.asset === null &&
   BigInt(row.receivedUnits) === 0n &&
   BigInt(row.sentUnits) === BigInt(row.feeUnits);
+/**
+ * TOKEN-FEE: the leg that only paid the fee of a token send from the same address, while
+ * nobody has answered it: it is that send's fee, not a transaction of its own.
+ */
+export const gasOnly = (row: ChainOperationInput) =>
+  !isExchange(row.wallet.network) &&
+  feeOnly(row) &&
+  BigInt(row.feeUnits) > 0n &&
+  unanswered(row) &&
+  BigInt(row.stakeUnits ?? '0') === 0n;
 const swappable = (row: ChainOperationInput) =>
   unanswered(row) && !feeOnly(row) && netUnits(row) !== 0n && BigInt(row.stakeUnits ?? '0') === 0n;
 const coin = (row: ChainOperationInput) => chainAsset(row.wallet.network, row.asset).symbol;
@@ -840,7 +877,22 @@ export function projectOperations(
   for (const row of sources.chain)
     if (!isExchange(row.wallet.network))
       byHash.set(hashKey(row), [...(byHash.get(hashKey(row)) ?? []), row]);
+  // TOKEN-FEE: a token send pays its network fee in the network's own coin (ETH, SOL, TRX),
+  // which the chain records as a leg of its own. That leg is listed as the fee of the send
+  // from the same address (the first, when one transaction sent several tokens), not as a
+  // transaction to classify; the coins it spent still count (D1).
+  const gas = new Map<ChainOperationInput, ChainOperationInput>();
   for (const row of sources.chain) {
+    if (!gasOnly(row)) continue;
+    const [send] = (byHash.get(hashKey(row)) ?? [])
+      .filter((leg) => leg.wallet.id === row.wallet.id && leg.asset !== null && netUnits(leg) < 0n)
+      .sort((left, right) => left.txid.localeCompare(right.txid, 'en', { numeric: true }));
+    if (send) gas.set(send, row);
+  }
+  const folded = new Set(gas.values());
+  const gasOf = (leg: ChainOperationInput) => gas.get(leg);
+  for (const row of sources.chain) {
+    if (folded.has(row)) continue;
     const ref = row.classification?.produced;
     const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
     const paired = row.classification?.paired;
@@ -858,7 +910,7 @@ export function projectOperations(
     )
       continue;
     const operation = oneTransactionSwap(
-      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd),
+      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd, gasOf),
       row,
       byHash.get(hashKey(row)) ?? [],
     );

@@ -381,9 +381,10 @@ async function main() {
     assert.deepEqual([moved[0].type, moved[0].asset.symbol, moved[0].quantity, moved[0].fee?.asset.symbol, moved[0].fee?.quantity],
       ['transfer', 'TRX', '50', 'TRX', '0.27']);
     const tokenSend = byTx(`${hash(4)}-1`)[0];
-    assert.deepEqual([tokenSend.asset.symbol, tokenSend.quantity, tokenSend.fee, tokenSend.status], ['USDT', '200', null, 'needs-classification']);
-    const energy = byTx(hash(4))[0];
-    assert.deepEqual([energy.asset.symbol, energy.quantity, energy.direction], ['TRX', '13.8', 'out']);
+    // TOKEN-FEE: the TRX burnt for energy is the USDT send's fee, not a row of its own.
+    assert.deepEqual([tokenSend.asset.symbol, tokenSend.quantity, tokenSend.fee?.asset.symbol, tokenSend.fee?.quantity, tokenSend.status],
+      ['USDT', '200', 'TRX', '13.8', 'needs-classification']);
+    assert.deepEqual(byTx(hash(4)), []);
     console.log('PASS TRON-LINK a 50 TRX send between own accounts auto-links into one transfer with its TRX fee; token legs list as USDT and USDC');
 
     // SYNC-ISOLATION and SYNC-BG: the hourly job runs Bitcoin and Tron; a TronGrid over its call
