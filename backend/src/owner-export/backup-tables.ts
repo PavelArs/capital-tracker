@@ -32,6 +32,7 @@ export const backupTables = [
   'portfolio_flow_versions',
   'wallet_addresses',
   'wallet_address_transactions',
+  'wallet_xpub_addresses',
   'wallet_stake_accounts',
   'wallet_stake_moves',
   'wallet_stake_rewards',

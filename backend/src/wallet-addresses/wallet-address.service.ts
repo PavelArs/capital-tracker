@@ -28,6 +28,8 @@ interface AddressRow {
   balances: { asset: string | null; units: string }[];
   /** Solana: the wallet's stake accounts, what each holds by its history and its rewards. */
   stake: StakeRow[];
+  /** Bitcoin account key (M21): its derived addresses; null for a single address. */
+  derived: DerivedSummary | null;
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
@@ -40,6 +42,13 @@ interface StakeRow {
   state: StakeState | null;
   units: string;
   rewardUnits: string;
+}
+interface DerivedSummary {
+  derived: number;
+  used: number;
+  walking: boolean;
+  /** The owner's single-address wallets that this key also derives. */
+  alsoTracked: { id: string; address: string; label: string | null }[];
 }
 interface TransactionRow {
   txid: string;
@@ -57,7 +66,10 @@ interface TransactionRow {
 // balance. A Solana wallet's stake accounts are part of it (SOL-STAKE-BALANCE): what moved
 // into them stays the wallet's SOL, and so do their rewards. The wallet's background source
 // (PR-SYN-1) comes along; null until its first pass.
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake,
+// A Bitcoin account key (M21) adds what its derived addresses tell: how many there are, how many
+// were ever used, whether one's walk is unfinished, and which of them the owner also tracks as
+// separate wallets (XPUB-OVERLAP), whose coins would then count twice.
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -82,6 +94,16 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake,
         coalesce((SELECT sum(r.units) FROM wallet_stake_rewards r
           WHERE r."addressId" = sa."addressId" AND r.account = sa.account), 0) AS rewarded
       FROM wallet_stake_accounts sa WHERE sa."addressId" = a.id) w) k
+  LEFT JOIN LATERAL (SELECT json_build_object('derived', count(*)::int,
+      'used', (count(*) FILTER (WHERE x."txCount" > 0))::int,
+      'walking', coalesce(bool_or(x."walkTopTxid" IS NOT NULL), false),
+      'alsoTracked', (SELECT coalesce(json_agg(json_build_object('id', o.id, 'address', o.address,
+          'label', o.label) ORDER BY o."createdAt", o.id), '[]'::json)
+        FROM wallet_addresses o WHERE o."ownerId" = a."ownerId" AND o.network = 'bitcoin'
+          AND o.address IN (SELECT y.address FROM wallet_xpub_addresses y
+            WHERE y."walletId" = a.id))) AS derived
+    FROM wallet_xpub_addresses x WHERE x."walletId" = a.id
+    HAVING a.address ~ '^[xyz]pub') d ON true
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -97,6 +119,11 @@ function sourceRow(raw: AddressRow['source']): SourceRow | null {
 
 /** How much of the history is stored: Bitcoin walks newest first, Ethereum oldest first. */
 function historyState(row: AddressRow): 'never' | 'partial' | 'complete' {
+  // An account key is complete once a whole round has counted and stored its addresses.
+  if (row.derived) {
+    if (row.derived.walking) return 'partial';
+    return row.completedAt ? 'complete' : row.derived.derived > 0 ? 'partial' : 'never';
+  }
   if (row.network === 'bitcoin')
     return row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
   return row.completedAt ? 'complete' : row.scannedBlock !== null ? 'partial' : 'never';
@@ -153,6 +180,15 @@ function summary(row: AddressRow, now = new Date()) {
     chainBalance: balances?.[0].quantity ?? null,
     balances,
     staking,
+    accountKey: row.derived
+      ? {
+          prefix: row.address.slice(0, 4),
+          // Derived so far; the used ones are those with any confirmed transaction.
+          derivedAddresses: row.derived.derived,
+          usedAddresses: row.derived.used,
+          alsoTracked: row.derived.alsoTracked,
+        }
+      : null,
     sync: {
       state,
       completedAt: state === 'complete' ? row.completedAt!.toISOString() : null,

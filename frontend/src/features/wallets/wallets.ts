@@ -124,7 +124,12 @@ function secretCheck(value: string): AddressCheck | null {
   const words = value.split(/\s+/);
   if (words.length >= 12 && words.every((word) => /^[a-z]+$/i.test(word)))
     return { ok: false, secret: true, message: SEED_PHRASE };
-  if (/^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value) || /^(0x)?[0-9a-f]{64}$/i.test(value))
+  if (
+    /^[5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/.test(value) ||
+    /^(0x)?[0-9a-f]{64}$/i.test(value) ||
+    // An extended private key (xprv, yprv, zprv and their testnet forms) can spend the account.
+    /^[xyztuv]prv[1-9A-HJ-NP-Za-km-z]{100,112}$/.test(value)
+  )
     return { ok: false, secret: true, message: PRIVATE_KEY };
   // A Solana secret key: 64 bytes in base58, or the byte array a keypair file holds.
   if (base58Length(value) === 64 || /^\[\s*\d{1,3}(\s*,\s*\d{1,3}){63}\s*\]$/.test(value))
@@ -210,11 +215,18 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
       message: 'This looks like an Ethereum address. Go back and pick Ethereum to track it.',
     };
   }
-  if (/^[xyz]pub[1-9A-HJ-NP-Za-km-z]{100,112}$/.test(value)) {
+  // M21: the server verifies the key's checksum and derives the account's addresses.
+  if (/^[xyz]pub[1-9A-HJ-NP-Za-km-z]{107,108}$/.test(value)) {
+    return {
+      ok: true,
+      address: value,
+      kind: 'Account public key · every address of this account will be tracked',
+    };
+  }
+  if (/^[tuv]pub[1-9A-HJ-NP-Za-km-z]{107,108}$/.test(value)) {
     return {
       ok: false,
-      message:
-        'Account public keys (xpub, zpub) are not supported yet. Paste one receiving address for now.',
+      message: 'Testnet keys are not tracked. Paste the key of a Bitcoin mainnet account.',
     };
   }
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value)) {
@@ -242,6 +254,13 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
     ok: false,
     message: 'This is not a valid Bitcoin address. Check that it was copied in full.',
   };
+}
+
+/** "5 addresses": how many addresses of an account key have been used; null for one address. */
+export function keyAddresses(address: Pick<WalletAddress, 'accountKey'>): string | null {
+  const used = address.accountKey?.usedAddresses;
+  if (used === undefined) return null;
+  return `${used} address${used === 1 ? '' : 'es'}`;
 }
 
 /** "bc1qar…mdq" keeps the start and end an owner compares with their wallet app. */

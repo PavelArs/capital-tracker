@@ -24,6 +24,12 @@ const initialFx = () => {
 let fx = initialFx();
 // Synthetic Esplora address histories: address -> { count, fault, requests }.
 let bitcoinHistories = new Map();
+// Synthetic Bitcoin chain (scan-bitcoin-xpub): transactions posted in a compact form, built into
+// Esplora's shape here. Once posted, an address without a synthetic history above has the
+// posted transactions naming it as its history (newest first) and their number as its count,
+// so an account's derived addresses answer as the chain would. `fault` answers the n-th
+// history page request after the post with [] (a lagging backend) or an HTTP status.
+let bitcoinChain = null;
 // Never one of the addresses whose history the acceptance tests import.
 const historyCounterparty = '1BoatSLRHtKNngkdXEeobR76b53LETtpyT';
 const sha256 = (value) => createHash('sha256').update(value).digest('hex');
@@ -244,8 +250,40 @@ function historyTx(address, i) {
       block_hash: sha256(`ct-e2e-block:${height}`), block_time: 1700000000 + i * 600 } };
 }
 
+function chainTx({ txid, height, inputs, outputs, fee }) {
+  const out = (owner, value) => ({ scriptpubkey: '0014' + sha256(owner).slice(0, 40),
+    scriptpubkey_asm: 'OP_0 OP_PUSHBYTES_20', scriptpubkey_type: 'v0_p2wpkh', scriptpubkey_address: owner, value });
+  return { txid, version: 2, locktime: 0,
+    vin: inputs.map(([owner, value], n) => ({ txid: sha256(`ct-e2e-chain-prev:${txid}:${n}`), vout: n,
+      prevout: out(owner, value), scriptsig: '', scriptsig_asm: '', witness: ['30440220', '02ab'],
+      is_coinbase: false, sequence: 4294967293 })),
+    vout: outputs.map(([owner, value]) => out(owner, value)), fee, size: 222, weight: 561,
+    status: { confirmed: true, block_height: height, block_hash: sha256(`ct-e2e-block:${height}`),
+      block_time: 1700000000 + (height - 800000) * 600 } };
+}
+
+// Newest first, as Esplora lists an address's confirmed history.
+function chainHistory(address) {
+  const names = (tx) => tx.vout.some((output) => output.scriptpubkey_address === address)
+    || tx.vin.some((input) => input.prevout.scriptpubkey_address === address);
+  return bitcoinChain.transactions.filter(names).reverse();
+}
+
 function bitcoinHistory(response, address, afterTxid) {
   const history = bitcoinHistories.get(address);
+  if (!history && bitcoinChain) {
+    bitcoinChain.requests++;
+    const fault = bitcoinChain.fault;
+    if (fault && fault.onRequest === bitcoinChain.requests) {
+      bitcoinChain.fault = null;
+      if (fault.empty) return respond(response, 200, []);
+      return respond(response, fault.status, { error: 'Synthetic provider fault' });
+    }
+    const list = chainHistory(address);
+    const start = afterTxid === null ? 0 : list.findIndex((tx) => tx.txid === afterTxid) + 1;
+    if (afterTxid !== null && start === 0) return respond(response, 200, []);
+    return respond(response, 200, list.slice(start, start + 25));
+  }
   if (!history) return respond(response, 200, []);
   history.requests++;
   if (history.fault && history.fault.onRequest === history.requests) {
@@ -330,7 +368,8 @@ function provider(request, response, url) {
     return respond(response, 200, {
       address,
       chain_stats: { funded_txo_sum: bitcoin.funded, spent_txo_sum: bitcoin.spent,
-        tx_count: bitcoinHistories.get(address)?.count ?? 2 },
+        tx_count: bitcoinHistories.get(address)?.count
+          ?? (bitcoinChain ? chainHistory(address).length : 2) },
       mempool_stats: { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 },
     });
   }
@@ -361,6 +400,7 @@ const server = http.createServer(async (request, response) => {
       requests = [];
       fx = initialFx();
       bitcoinHistories = new Map();
+      bitcoinChain = null;
       marketPrices = null;
       cbr = null;
       ethereum = initialEthereum();
@@ -476,6 +516,29 @@ const server = http.createServer(async (request, response) => {
       const next = { count, fault: fault ? { onRequest: fault.onRequest, status: fault.status, invalid: fault.invalid === true, empty: fault.empty === true } : null, requests: 0 };
       bitcoinHistories.set(data.address, next);
       return respond(response, 200, { address: data.address, count, newestTxid: count ? historyTx(data.address, count - 1).txid : null });
+    }
+    if (request.method === 'POST' && request.url === '/__control/bitcoin-chain') {
+      const data = await readJson(request);
+      const address = (value) => typeof value === 'string' && /^[a-zA-Z0-9]{14,90}$/.test(value);
+      const amount = (value) => Number.isSafeInteger(value) && value >= 0;
+      const parts = (list) => Array.isArray(list) && list.length >= 1 && list.length <= 8
+        && list.every((part) => Array.isArray(part) && part.length === 2 && address(part[0]) && amount(part[1]));
+      const fault = data.fault;
+      if (!Array.isArray(data.transactions) || !data.transactions.every((tx) => tx && /^[0-9a-f]{64}$/.test(tx.txid)
+          && Number.isSafeInteger(tx.height) && tx.height >= 800000 && tx.height < 900000
+          && parts(tx.inputs) && parts(tx.outputs) && amount(tx.fee))
+        || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || (fault.empty !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
+        return respond(response, 400, { error: 'Invalid synthetic Bitcoin chain fixture' });
+      }
+      const transactions = [...(data.append ? bitcoinChain?.transactions ?? [] : []), ...data.transactions.map(chainTx)];
+      if (transactions.length > 200 || new Set(transactions.map(({ txid }) => txid)).size !== transactions.length) {
+        return respond(response, 400, { error: 'Synthetic chain is bounded and names each transaction once' });
+      }
+      transactions.sort((left, right) => left.status.block_height - right.status.block_height);
+      bitcoinChain = { transactions, requests: 0,
+        fault: fault ? { onRequest: fault.onRequest, status: fault.status, empty: fault.empty === true } : null };
+      return respond(response, 200, { ok: true, transactions: transactions.length });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin') {
       const data = await readJson(request);
