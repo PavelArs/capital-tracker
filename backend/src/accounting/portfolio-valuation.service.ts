@@ -22,11 +22,13 @@ import {
   rethrowAccountingHistory,
 } from './connected-accounting.store';
 import { parseDecimal, parseUuid } from './input';
+import { canonicalDecimalToAtoms } from './money';
 import type { OwnedProjection } from './owned-transfer-fifo';
 import {
   DAY_MS,
   type PortfolioAccountInput,
   type PortfolioInstrument,
+  type PortfolioLot,
   type PortfolioPrices,
   portfolioAccount,
   projectPortfolio,
@@ -331,18 +333,31 @@ export function accountsAt(
         });
         continue;
       }
+      const journal = {
+        ...ledger.accounts.get(row.accountId)!,
+        linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
+      };
+      const lotsAt = (projection: OwnedProjection) =>
+        portfolioAccount(
+          identity,
+          projection.accounts.get(row.accountId)!,
+          journal,
+          projection.swapAllocations,
+        );
       const projection = projections.get(ledger) ?? projectConnectedLedger(ledger, { at });
       projections.set(ledger, projection);
-      const valued = portfolioAccount(
-        identity,
-        projection.accounts.get(row.accountId)!,
-        {
-          ...ledger.accounts.get(row.accountId)!,
-          linkedTrades: [...ledger.accounts.values()].flatMap((account) => account.trades),
-        },
-        projection.swapAllocations,
-      );
-      accounts.push({ ...valued, lots: applyChainMoves(valued.lots, moves, at) });
+      const valued = lotsAt(projection);
+      // A chain payment whose coins a later sale by hand already spent asks what the journal
+      // held at the payment's time; that replay runs only then.
+      const earlier = new Map<string, readonly PortfolioLot[]>();
+      const journalHeld = (instrumentId: string, time: string) => {
+        const lots = earlier.get(time) ?? lotsAt(projectConnectedLedger(ledger, { at: time })).lots;
+        earlier.set(time, lots);
+        return lots
+          .filter((lot) => lot.instrumentId === instrumentId)
+          .reduce((sum, lot) => sum + canonicalDecimalToAtoms(lot.quantity), 0n);
+      };
+      accounts.push({ ...valued, lots: applyChainMoves(valued.lots, moves, at, journalHeld) });
     }
   } catch (error) {
     rethrowAccountingHistory(error);
