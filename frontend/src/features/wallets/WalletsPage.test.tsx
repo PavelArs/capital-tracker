@@ -737,6 +737,28 @@ describe('M14: Ethereum wallets', () => {
     expect(staking).toHaveTextContent('moving it into a staking pool or back is not a sale');
   });
 
+  it('POOL-DEPOSIT counts coins in liquidity pools in the balance and lists them', async () => {
+    const pooled = ethWallet({
+      pools: [
+        { symbol: 'ETH', quantity: '1' },
+        { symbol: 'USDC', quantity: '3000' },
+      ],
+    });
+    setup([wallet(1, {}), pooled], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC1 ETH · 3,000 USDC in pools');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    const pools = within(drawer).getByRole('region', { name: 'Liquidity pools' });
+    expect(pools).toHaveTextContent('In pools1 ETH');
+    expect(pools).toHaveTextContent('In pools3,000 USDC');
+    expect(pools).toHaveTextContent('until a pool withdrawal returns them');
+    expect(within(drawer).queryByRole('region', { name: 'Staking' })).not.toBeInTheDocument();
+  });
+
   it('stacks the assets of an Ethereum row on a phone', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,

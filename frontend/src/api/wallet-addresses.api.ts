@@ -92,6 +92,11 @@ export interface WalletAddress {
   balances: ChainBalance[] | null;
   /** Solana stake accounts or Ethereum pools; null when there are none or until a sync completes. */
   staking?: Staking | null;
+  /**
+   * POOL-DEPOSIT: coins the owner put into liquidity pools and no withdrawal returned yet, per
+   * coin; already included in `balances`. Null when there are none or until a sync completes.
+   */
+  pools?: ChainBalance[] | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */
   accountKey?: AccountKey | null;
   /** Set for a Bybit account: its balances are those Bybit reports. */

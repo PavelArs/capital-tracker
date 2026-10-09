@@ -32,12 +32,14 @@ import {
   fitsDirection,
   legMovement,
   type PlannedOperation,
+  type PoolWithdrawalClassification,
   parseClassification,
   planOperation,
   type SwapClassification,
   unfit,
 } from './chain-classification';
 import { isDust } from './chain-dust';
+import { type PoolLeg, planPoolWithdrawal, poolDepositUnits, poolGainValueUsd } from './chain-pool';
 import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 import {
   coinOf,
@@ -194,6 +196,12 @@ const side = (address: string, txid: string, row: LegRow): SwapSide => ({
   txid,
   blockTime: row.blockTime.toISOString(),
 });
+const poolLeg = (address: string, txid: string, row: LegRow): PoolLeg => side(address, txid, row);
+/** POOL-UNDO: a deposit cannot change while a withdrawal returns it. */
+const namedDeposit = () =>
+  new UnprocessableEntityException(
+    'A pool withdrawal names this deposit; change the withdrawal first',
+  );
 const inbound = (row: LegRow) => legMovement(leg(row)).inbound;
 const sameEntry = (left: Produced, right: Produced) =>
   left.tradeId === right.tradeId &&
@@ -254,9 +262,12 @@ export class ChainClassificationService {
     // malformed amount is a 400 here, not a conflict inside the journal.
     const before = await this.readLeg(this.source.manager, owner, address, txid);
     const value = input.hidden ? null : input.classification;
-    if (value?.type === 'transfer' || value?.type === 'swap') {
+    if (value?.type === 'transfer' || value?.type === 'swap' || value?.type === 'pool-withdrawal') {
       if (!fitsDirection(leg(before), value.type)) throw unfit();
     } else if (value) this.check(planOperation(leg(before), value, input.comment));
+    // POOL-DEPOSIT: a leg that moved only its network fee put nothing into a pool.
+    if (value?.type === 'pool-deposit' && poolDepositUnits(own(address, before)) <= 0n)
+      throw unfit();
     let result: { created: boolean; value: ReturnType<typeof classificationView> };
     try {
       result = await this.source.transaction(async (manager) => {
@@ -588,11 +599,18 @@ export class ChainClassificationService {
   ): Promise<ClassificationRow> {
     const { address, txid, row } = target;
     const value = input.hidden ? null : input.classification;
-    if (value?.type === 'swap')
-      return this.recordSwap(manager, owner, target, input, payload, value);
     const current = target.version
       ? await this.version(manager, address, txid, target.version)
       : null;
+    if (
+      current?.status === 'classified' &&
+      current.type === 'pool-deposit' &&
+      value?.type !== 'pool-deposit' &&
+      (await this.withdrawalOf(manager, owner, address, txid, null))
+    )
+      throw namedDeposit();
+    if (value?.type === 'swap')
+      return this.recordSwap(manager, owner, target, input, payload, value);
     const live = current && (await this.active(manager, owner, current)) ? current : null;
     const comment = input.comment ?? null;
     const accountId = row.accountId;
@@ -602,8 +620,12 @@ export class ChainClassificationService {
     const partner = transfer
       ? await this.partner(manager, owner, target, transfer.accountId)
       : null;
-    const planned =
-      value && value.type !== 'transfer' ? planOperation(leg(row), value, input.comment) : null;
+    const withdrawal = value?.type === 'pool-withdrawal' ? value : null;
+    const planned = withdrawal
+      ? await this.planWithdrawal(manager, owner, target, withdrawal)
+      : value && value.type !== 'transfer'
+        ? planOperation(leg(row), value, input.comment)
+        : null;
     const movement =
       transfer && accountId
         ? planTransfer(
@@ -662,7 +684,7 @@ export class ChainClassificationService {
         : automatic && (produced.tradeId || produced.rewardId)
           ? true
           : null,
-      paired: null,
+      paired: withdrawal?.deposit ?? null,
     });
     if (partner && !keep && produced.transferId && accountId)
       await this.append(manager, owner, {
@@ -977,8 +999,77 @@ export class ChainClassificationService {
       const head = await readTransferHead(manager, owner, row.transferId);
       return head !== undefined && head.kind !== 'void';
     }
-    // An outgoing Other produced no entry: the answer itself is what counts (D1).
-    return row.status === 'classified' && row.type === 'other';
+    // An outgoing Other, a pool deposit and a withdrawal without a gain produced no entry: the
+    // answer itself is what counts (D1, POOL-*).
+    return (
+      row.status === 'classified' &&
+      (row.type === 'other' || row.type === 'pool-deposit' || row.type === 'pool-withdrawal')
+    );
+  }
+
+  /**
+   * POOL-WITHDRAW, POOL-INVALID: the gain a withdrawal records over the deposit it names, as pool
+   * income at the time it came back; a loss or no difference records nothing. The deposit must
+   * be answered as one, and no other withdrawal may name it.
+   */
+  private async planWithdrawal(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    value: PoolWithdrawalClassification,
+  ): Promise<PlannedOperation> {
+    const { addressId, txid } = value.deposit;
+    const row = await this.readLeg(manager, owner, addressId, txid);
+    const version = await this.lockHead(manager, addressId, txid);
+    const answer = version ? await this.version(manager, addressId, txid, version) : null;
+    if (answer?.status !== 'classified' || answer.type !== 'pool-deposit')
+      throw new UnprocessableEntityException('Choose a pool deposit');
+    const plan = planPoolWithdrawal(
+      poolLeg(target.address, target.txid, target.row),
+      poolLeg(addressId, txid, row),
+    );
+    if (await this.withdrawalOf(manager, owner, addressId, txid, target))
+      throw new UnprocessableEntityException('That pool deposit was already withdrawn');
+    if (plan.gain === '0') return { journal: 'none' };
+    const { symbol } = chainCoin(target.row);
+    const valueUsd = poolGainValueUsd(
+      value.valueUsd,
+      symbol,
+      plan.gain,
+      value.valueUsd === null ? await this.storedPrice(manager, symbol, plan.occurredAt) : null,
+    );
+    return {
+      journal: 'reward',
+      fields: {
+        occurredAt: plan.occurredAt,
+        quantity: plan.gain,
+        assertReward: true,
+        category: 'other',
+        acquisitionBasisUsd: valueUsd,
+        incomeValueUsd: valueUsd,
+      },
+    };
+  }
+
+  /** The withdrawal whose current answer names this deposit, other than `except`; if any. */
+  private async withdrawalOf(
+    manager: EntityManager,
+    owner: string,
+    address: string,
+    txid: string,
+    except: Pick<Leg, 'address' | 'txid'> | null,
+  ): Promise<boolean> {
+    const rows: unknown[] = await manager.query(
+      `SELECT 1 FROM chain_transaction_classifications h
+        JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+          AND v.txid=h.txid AND v.version=h."currentVersion"
+        WHERE h."ownerId"=$1 AND v.status='classified' AND v.type='pool-withdrawal'
+          AND v."pairedAddressId"=$2 AND v."pairedTxid"=$3
+          AND NOT (h."addressId"=$4 AND h.txid=$5)
+        LIMIT 1`,
+      [owner, address, txid, except?.address ?? address, except?.txid ?? txid],
+    );
+    return rows.length > 0;
   }
 
   private async revision(manager: EntityManager, owner: string, accountId: string) {

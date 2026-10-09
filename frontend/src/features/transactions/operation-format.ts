@@ -20,6 +20,9 @@ export const typeLabels: Record<OperationType, string> = {
   gift: 'Gift',
   fee: 'Fee',
   other: 'Other',
+  'pool-deposit': 'Pool deposit',
+  'pool-withdrawal': 'Pool withdrawal',
+  'pool-reward': 'Pool reward',
 };
 const directionLabels: Record<Operation['direction'], string> = {
   in: 'Incoming',

@@ -20,7 +20,10 @@ export type OperationType =
   | 'expense'
   | 'gift'
   | 'fee'
-  | 'other';
+  | 'other'
+  | 'pool-deposit'
+  | 'pool-withdrawal'
+  | 'pool-reward';
 
 export interface OperationAsset {
   instrumentId: string | null;
@@ -75,9 +78,17 @@ export interface Operation {
     blockHeight: number;
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
-    /** A swap listed on its receiving row: the paying transaction (CLS-SWAP). */
+    /**
+     * A swap listed on its receiving row: the paying transaction (CLS-SWAP); a pool withdrawal:
+     * the deposit it returns (POOL-WITHDRAW).
+     */
     pairedTxid?: string | null;
   } | null;
+  /**
+   * A pool withdrawal: what its deposit put in, and what came back above it (positive, pool
+   * income) or below it (negative, impermanent loss). Null or absent for every other row.
+   */
+  pool?: { deposited: string; difference: string } | null;
   /**
    * Hidden: a blockchain transaction left out of every calculation (M12). Dust: an unanswered
    * receipt worth less than the dust threshold; it counts but does not ask to be classified.
@@ -132,7 +143,7 @@ export type ChainClassification =
       perUsd?: string;
     }
   | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
-  | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null }
+  | { type: 'reward' | 'staking-reward' | 'airdrop' | 'pool-reward'; valueUsd: string | null }
   /** Received, nothing more known: counts without a purchase price and no deposit. */
   | { type: 'other' }
   /**
@@ -140,7 +151,18 @@ export type ChainClassification =
    * the other side's transaction; without a value stablecoins count 1:1, other coins at their
    * stored price then.
    */
-  | { type: 'swap'; with: { addressId: string; txid: string }; valueUsd: string | null };
+  | { type: 'swap'; with: { addressId: string; txid: string }; valueUsd: string | null }
+  /** Coins put into a liquidity pool: they stay the owner's (POOL-DEPOSIT). */
+  | { type: 'pool-deposit' }
+  /**
+   * Coins a liquidity pool returned: the deposit of the same coin they return; the value of a
+   * gain above it is optional (POOL-WITHDRAW).
+   */
+  | {
+      type: 'pool-withdrawal';
+      deposit: { addressId: string; txid: string };
+      valueUsd: string | null;
+    };
 
 export interface ClassificationCommand {
   requestId: string;

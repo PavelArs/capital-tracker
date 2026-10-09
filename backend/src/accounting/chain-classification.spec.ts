@@ -198,6 +198,44 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'transfer', accountId, valueUsd: '1' });
   });
 
+  it('POOL-*: a pool deposit records nothing, a pool reward is income, a withdrawal names its deposit', () => {
+    const deposit = parse({ classification: { type: 'pool-deposit' } }).classification!;
+    expect(deposit).toEqual({ type: 'pool-deposit' });
+    expect(planOperation(payment, deposit, 'Uniswap')).toEqual({ journal: 'none' });
+    expect(fitsDirection(receipt, 'pool-deposit')).toBe(false);
+    expect(plan(receipt, { type: 'pool-reward', valueUsd: '25' }, undefined).fields).toMatchObject({
+      category: 'other',
+      acquisitionBasisUsd: '25',
+      incomeValueUsd: '25',
+    });
+    expect(fitsDirection(payment, 'pool-reward')).toBe(false);
+    const addressId = '00000000-0000-4000-8000-000000000010';
+    const txid = 'd'.repeat(64);
+    const withdrawal = parse({
+      classification: { type: 'pool-withdrawal', deposit: { addressId, txid }, valueUsd: null },
+    }).classification!;
+    expect(withdrawal).toEqual({
+      type: 'pool-withdrawal',
+      deposit: { addressId, txid },
+      valueUsd: null,
+    });
+    expect(fitsDirection(receipt, 'pool-withdrawal')).toBe(true);
+    expect(fitsDirection(payment, 'pool-withdrawal')).toBe(false);
+    expect(() => planOperation(receipt, withdrawal, undefined)).toThrow(
+      'A pool withdrawal records the gain over its deposit instead',
+    );
+    // POOL-INVALID: an exchange account's records are no pool moves of the owner's.
+    const exchange: ChainLeg = { ...payment, network: 'bybit', asset: 'USDC' };
+    expect(fitsDirection(exchange, 'pool-deposit')).toBe(false);
+    expect(fitsDirection({ ...exchange, sentUnits: '0' }, 'pool-withdrawal')).toBe(false);
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'pool-deposit', valueUsd: '1' });
+    refused({ type: 'pool-withdrawal', deposit: { addressId }, valueUsd: null });
+    refused({ type: 'pool-withdrawal', deposit: { addressId, txid: 'x' }, valueUsd: null });
+    refused({ type: 'pool-withdrawal', deposit: { addressId, txid }, valueUsd: '0' });
+  });
+
   it('CLS-HIDE: hiding or resetting needs no type; the answer is kept while hidden', () => {
     expect(parse({ hidden: true, classification: null })).toMatchObject({
       hidden: true,

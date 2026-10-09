@@ -1,5 +1,10 @@
 import { BadRequestException, UnprocessableEntityException } from '@nestjs/common';
-import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
+import {
+  chainAsset,
+  isExchange,
+  type Network,
+  unitsToAtoms,
+} from '../wallet-addresses/chain-assets';
 import type { RewardCategory } from './asset-reward-types';
 import { parseDecimal, parseUuid } from './input';
 import { canonicalDecimalToAtoms, formatAtoms } from './money';
@@ -26,6 +31,9 @@ export const chainTypes = [
   'airdrop',
   'other',
   'swap',
+  'pool-deposit',
+  'pool-withdrawal',
+  'pool-reward',
 ] as const;
 export type ChainType = (typeof chainTypes)[number];
 
@@ -39,6 +47,8 @@ const incoming: readonly ChainType[] = [
   'airdrop',
   'other',
   'swap',
+  'pool-withdrawal',
+  'pool-reward',
 ];
 const outgoing: readonly ChainType[] = [
   'sell',
@@ -48,7 +58,10 @@ const outgoing: readonly ChainType[] = [
   'fee',
   'other',
   'swap',
+  'pool-deposit',
 ];
+/** POOL-INVALID: an exchange account's records are not the owner's own pool moves. */
+const onChainOnly: readonly ChainType[] = ['pool-deposit', 'pool-withdrawal'];
 
 /** Buy or sell: what was paid or received, in the currency it was paid in. */
 export interface PricedClassification {
@@ -65,9 +78,9 @@ export interface ValuedClassification {
   type: 'income' | 'expense' | 'gift' | 'fee';
   valueUsd: string;
 }
-/** A reward, staking reward or airdrop; its value may be unknown. */
+/** A reward, staking reward, airdrop or liquidity pool reward; its value may be unknown. */
 export interface RewardClassification {
-  type: 'reward' | 'staking-reward' | 'airdrop';
+  type: 'reward' | 'staking-reward' | 'airdrop' | 'pool-reward';
   valueUsd: string | null;
 }
 /** A move between the owner's own accounts (M13): the account on the other side. */
@@ -88,13 +101,28 @@ export interface SwapClassification {
   with: { addressId: string; txid: string };
   valueUsd: string | null;
 }
+/** POOL-DEPOSIT: coins put into a liquidity pool; they stay the owner's. */
+export interface PoolDepositClassification {
+  type: 'pool-deposit';
+}
+/**
+ * POOL-WITHDRAW: coins a liquidity pool returned; `deposit` names the owner's raw transaction
+ * that put the same coin in. The value in USD of a gain above the deposit is optional.
+ */
+export interface PoolWithdrawalClassification {
+  type: 'pool-withdrawal';
+  deposit: { addressId: string; txid: string };
+  valueUsd: string | null;
+}
 export type Classification =
   | PricedClassification
   | ValuedClassification
   | RewardClassification
   | TransferClassification
   | OtherClassification
-  | SwapClassification;
+  | SwapClassification
+  | PoolDepositClassification
+  | PoolWithdrawalClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -150,7 +178,12 @@ function classification(raw: unknown): Classification | null {
     const row = object(raw, ['type', 'valueUsd']);
     return { type, valueUsd: parseDecimal(row.valueUsd, true) };
   }
-  if (type === 'reward' || type === 'staking-reward' || type === 'airdrop') {
+  if (
+    type === 'reward' ||
+    type === 'staking-reward' ||
+    type === 'airdrop' ||
+    type === 'pool-reward'
+  ) {
     const row = object(raw, ['type', 'valueUsd']);
     return {
       type,
@@ -168,6 +201,20 @@ function classification(raw: unknown): Classification | null {
     return {
       type,
       with: { addressId: parseUuid(other.addressId), txid: other.txid },
+      valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
+    };
+  }
+  if (type === 'pool-deposit') {
+    object(raw, ['type']);
+    return { type };
+  }
+  if (type === 'pool-withdrawal') {
+    const row = object(raw, ['type', 'deposit', 'valueUsd']);
+    const deposit = object(row.deposit, ['addressId', 'txid']);
+    if (typeof deposit.txid !== 'string' || !chainTxid.test(deposit.txid)) return bad();
+    return {
+      type,
+      deposit: { addressId: parseUuid(deposit.addressId), txid: deposit.txid },
       valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
     };
   }
@@ -266,6 +313,7 @@ export interface ChainLeg {
 /** Whether the type fits what the coins did: what arrives cannot be sold, and so on. */
 export function fitsDirection(leg: ChainLeg, type: ChainType): boolean {
   const { inbound, quantity } = legMovement(leg);
+  if (onChainOnly.includes(type) && isExchange(leg.network)) return false;
   return quantity !== '0' && (inbound ? incoming : outgoing).includes(type);
 }
 
@@ -294,7 +342,10 @@ export const unfit = () =>
 export type PlannedOperation =
   | { journal: 'trade'; fields: Record<string, unknown> }
   | { journal: 'reward'; fields: Record<string, unknown> }
-  /** Outgoing Other: no entry; the coins leave as an unanswered payment does (D1). */
+  /**
+   * Outgoing Other: no entry; the coins leave as an unanswered payment does (D1). A pool deposit
+   * (POOL-DEPOSIT) and a withdrawal without a gain record none either: the coins stay held.
+   */
   | { journal: 'none' };
 
 const purposes: Record<'income' | 'expense' | 'fee', TradePurpose> = {
@@ -306,6 +357,8 @@ const categories: Record<RewardClassification['type'], RewardCategory> = {
   reward: 'other',
   'staking-reward': 'staking',
   airdrop: 'airdrop',
+  // POOL-REWARD: the journal knows no category of its own for it; the answer names it.
+  'pool-reward': 'other',
 };
 
 /**
@@ -325,6 +378,8 @@ export function planOperation(
   if (!fitsDirection(leg, value.type)) throw unfit();
   if (value.type === 'transfer') throw new Error('A transfer records an owned transfer instead');
   if (value.type === 'swap') throw new Error('A swap records a swap of both legs instead');
+  if (value.type === 'pool-withdrawal')
+    throw new Error('A pool withdrawal records the gain over its deposit instead');
   const common = { occurredAt: leg.blockTime, quantity };
   const note = comment === undefined ? {} : { comment };
   switch (value.type) {
@@ -370,6 +425,8 @@ export function planOperation(
         },
       };
     }
+    case 'pool-deposit':
+      return { journal: 'none' };
     case 'other':
       if (!inbound) return { journal: 'none' };
       return {
