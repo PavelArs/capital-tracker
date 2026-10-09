@@ -1,5 +1,6 @@
 import {
   DAY_MS,
+  firstValuedPoint,
   HISTORY_FROM_MS,
   HOUR_MS,
   latestAtOrBefore,
@@ -175,5 +176,14 @@ describe('portfolio snapshot series (record-portfolio-snapshots)', () => {
 
   it('keeps hour arithmetic exact', () => {
     expect(HOUR_MS * 24).toBe(DAY_MS);
+  });
+  it('HIST-START the period starts at its first valued point', () => {
+    const series = [
+      { at: 1, value: null },
+      { at: 2, value: '5000' },
+      { at: 3, value: '105000' },
+    ];
+    expect(firstValuedPoint(series)).toEqual({ at: 2, value: '5000' });
+    expect(firstValuedPoint([{ at: 1, value: null }])).toBeNull();
   });
 });
