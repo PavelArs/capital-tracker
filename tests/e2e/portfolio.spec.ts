@@ -106,7 +106,7 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
 }) => {
   await page.goto('/login');
   await expect(page).toHaveURL('https://127.0.0.1:8443/login');
-  await expect(page.getByRole('heading', { name: 'Вход', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
   const endpoints = [
     { method: 'GET', path: '/api/auth/me' },
     { method: 'GET', path: '/api/wallet-addresses' },

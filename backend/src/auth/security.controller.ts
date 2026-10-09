@@ -2,9 +2,10 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Post, Request, Res } fr
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
-import { RecoveryCodesDto } from './dto/security.dto';
+import { FactorDto } from './dto/factor.dto';
+import { AuthenticatorConfirmDto, RecoveryCodesDto } from './dto/security.dto';
 import { SessionRequest } from './guards/session.guard';
-import { MfaService, RecoveryStatus } from './mfa.service';
+import { MfaService, RecoveryStatus, ReplacementOutput } from './mfa.service';
 import { AuthRequestLimit } from './request-limit.decorator';
 import { COOKIE_OPTIONS, ListedSession, SESSION_COOKIE, SessionService } from './session.service';
 
@@ -39,6 +40,39 @@ export class SecurityController {
     @Body() body: RecoveryCodesDto,
   ): Promise<{ recoveryCodes: string[] }> {
     return { recoveryCodes: await this.factors.regenerateRecoveryCodes(user.userId, body.code) };
+  }
+
+  // SEC-TOTP: a fresh TOTP or recovery code starts a new authenticator; its key is shown once.
+  @AuthRequestLimit('mfa-ip')
+  @Post('authenticator')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Start replacing the authenticator after a fresh factor' })
+  async prepareAuthenticator(
+    @CurrentUser() user: OwnerIdentity,
+    @Body() body: FactorDto,
+  ): Promise<ReplacementOutput> {
+    return this.factors.prepareReplacement(user.userId, body);
+  }
+
+  @AuthRequestLimit('mfa-ip')
+  @Post('authenticator/confirm')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Activate the new authenticator with its first code; new recovery codes shown once',
+  })
+  async confirmAuthenticator(
+    @CurrentUser() user: OwnerIdentity,
+    @Request() req: SessionRequest,
+    @Body() body: AuthenticatorConfirmDto,
+  ): Promise<{ recoveryCodes: string[] }> {
+    return {
+      recoveryCodes: await this.factors.confirmReplacement(
+        user.userId,
+        req.authSession.hash,
+        body.candidateId,
+        body.code,
+      ),
+    };
   }
 
   @Delete('sessions/:id')

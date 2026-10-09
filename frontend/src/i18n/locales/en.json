@@ -28,23 +28,7 @@
     "saving": "Saving..."
   },
   "auth": {
-    "login": "Login",
-    "logout": "Logout",
-    "loginFailed": "Login failed",
-    "confirmLogin": "Confirm sign-in",
-    "confirm": "Confirm",
-    "authenticatorCode": "Authenticator code",
-    "recoveryCode": "Recovery code",
-    "authenticatorGuidance": "Enter the six-digit code from your authenticator app.",
-    "recoveryGuidance": "Enter one of your saved recovery codes. Each code can be used once.",
-    "useRecoveryCode": "Use a recovery code",
-    "useAuthenticator": "Use an authenticator code",
-    "backToPassword": "Back to password",
-    "factorFailed": "Unable to confirm sign-in. Check the code or return to the password step.",
-    "tooManyAttempts": "Too many attempts. Try again later.",
     "sessionExpired": "Your session has changed. Please try again.",
-    "logoutFailed": "Unable to log out. Please try again.",
-    "forgotPassword": "Forgot password?",
-    "ownerAccessGuidance": "The server operator provisions and recovers owner access."
+    "logoutFailed": "Unable to log out. Please try again."
   }
 }

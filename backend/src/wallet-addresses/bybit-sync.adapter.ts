@@ -5,7 +5,9 @@ import {
   BybitClient,
   type BybitCredentials,
   type BybitDeposit,
+  type BybitEarnYield,
   type BybitExecution,
+  type BybitKeyInfo,
   type BybitPage,
   type BybitResult,
   type BybitWithdrawal,
@@ -15,6 +17,7 @@ import {
   type BybitLeg,
   bybitCoins,
   depositLeg,
+  earnLeg,
   tradeLeg,
   UnreadableAmount,
   withdrawalLeg,
@@ -35,8 +38,16 @@ export const MAX_REQUESTS_PER_SYNC = 40;
 const PENDING_HOLD_MS = 7 * DAY_MS;
 const MAX_PAGES_PER_WINDOW = 30;
 const SYNC_TIME_BUDGET_MS = 25_000;
+/** BYBIT-EARN: Bybit lists the last three months of Earn yield; a day less stays inside them. */
+export const EARN_HISTORY_DAYS = 89;
 
-type Column = 'tradesReadTo' | 'depositsReadTo' | 'internalReadTo' | 'withdrawalsReadTo';
+type EarnColumn = 'flexibleReadTo' | 'onchainReadTo';
+type Column =
+  | 'tradesReadTo'
+  | 'depositsReadTo'
+  | 'internalReadTo'
+  | 'withdrawalsReadTo'
+  | EarnColumn;
 
 interface AccountRow {
   id: string;
@@ -46,11 +57,23 @@ interface AccountRow {
   depositsReadTo: Date;
   internalReadTo: Date;
   withdrawalsReadTo: Date;
+  /** BYBIT-EARN: null until the key could read Earn. */
+  flexibleReadTo: Date | null;
+  onchainReadTo: Date | null;
+}
+
+/** BYBIT-EARN: what one Earn product holds of a coin, as stored with the balances. */
+export interface EarnHolding {
+  coin: string;
+  quantity: string;
+  product: 'flexible' | 'onchain' | 'fixed';
 }
 
 /** One of Bybit's record lists, read window by window from where the last pass stopped. */
 interface Stream<T> {
   column: Column;
+  /** An Earn yield list: read only with the key's Earn permission, three months back at most. */
+  earn?: boolean;
   window: number;
   read: (
     key: BybitCredentials,
@@ -72,6 +95,8 @@ class Failed extends Error {
   }
 }
 class OutOfBudget extends Error {}
+/** Bybit refused the request for the key: for Earn, the key lacks its permission. */
+const refused = (error: unknown) => error instanceof Failed && error.reason === 'key_rejected';
 
 // sync-bybit-account (M22, PR-EXC-1): the account's spot trades, deposits and withdrawals as
 // raw legs, then the balances Bybit reports, all read with the owner's read-only key.
@@ -117,6 +142,17 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
         leg: (item) => withdrawalLeg(item as BybitWithdrawal),
         pendingAt: (item, start) => pending(item as BybitWithdrawal, start),
       },
+      ...(['FlexibleSaving', 'OnChain'] as const).map((category) => ({
+        column: category === 'FlexibleSaving' ? 'flexibleReadTo' : 'onchainReadTo',
+        earn: true,
+        window: TRADE_WINDOW_MS,
+        read: (key: BybitCredentials, start: number, end: number, cursor: string | null) =>
+          this.client.earnYield(key, category, start, end, cursor),
+        leg: (item: unknown) => earnLeg(item as BybitEarnYield, category),
+        // A yield paid only when the position is redeemed stays pending until then.
+        pendingAt: (item: unknown) =>
+          (item as BybitEarnYield).state === 'pending' ? (item as BybitEarnYield).time : null,
+      })),
     ] as Stream<unknown>[];
   }
 
@@ -142,44 +178,78 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       return result.value;
     };
     try {
+      // BYBIT-EARN: whether the key may read Earn now, asked on every pass, so turning the
+      // permission on in Bybit counts from the next sync without adding the account again.
+      let earn = await this.keyFacts(account, await call(() => this.client.keyInfo(key)), now);
       for (const stream of this.streams) {
-        let start = account[stream.column].getTime();
+        if (stream.earn && !earn) continue;
+        const cursor = account[stream.column];
+        if (cursor === null) continue;
+        // Bybit lists the last three months of yield only.
+        let start = stream.earn
+          ? Math.max(cursor.getTime(), now - EARN_HISTORY_DAYS * DAY_MS)
+          : cursor.getTime();
         let held = Number.POSITIVE_INFINITY;
-        for (;;) {
-          const end = Math.min(start + stream.window, now);
-          const items: unknown[] = [];
-          let cursor: string | null = null;
-          for (let pages = 0; ; pages++) {
-            if (pages >= MAX_PAGES_PER_WINDOW) throw new Failed('invalid_response', null);
-            const from = start;
-            const page: BybitPage<unknown> = await call(() => stream.read(key, from, end, cursor));
-            items.push(...page.items);
-            cursor = page.cursor;
-            if (cursor === null || page.items.length === 0) break;
+        try {
+          for (;;) {
+            const end = Math.min(start + stream.window, now);
+            const items: unknown[] = [];
+            let page: string | null = null;
+            for (let pages = 0; ; pages++) {
+              if (pages >= MAX_PAGES_PER_WINDOW) throw new Failed('invalid_response', null);
+              const from = start;
+              const at = page;
+              const read: BybitPage<unknown> = await call(() => stream.read(key, from, end, at));
+              items.push(...read.items);
+              page = read.cursor;
+              if (page === null || read.items.length === 0) break;
+            }
+            const legs = items.flatMap((item) => stream.leg(item) ?? []);
+            // A record still to settle is read again from its time on, unless it has waited a
+            // week: then it no longer holds the list back (a late completion shows as a gap).
+            for (const item of items) {
+              const at = stream.pendingAt(item, start);
+              if (at !== null && at >= now - PENDING_HOLD_MS) held = Math.min(held, at);
+            }
+            // The cursor never passes a record still to settle, nor the last hour.
+            const next = Math.max(cursor.getTime(), Math.min(end, now - REREAD_MS, held));
+            imported += await this.commit(account, stream.column, legs, new Date(next));
+            account[stream.column] = new Date(next);
+            if (end >= now) break;
+            start = end;
           }
-          const legs = items.flatMap((item) => stream.leg(item) ?? []);
-          // A record still to settle is read again from its time on, unless it has waited a
-          // week: then it no longer holds the list back (a late completion shows as a gap).
-          for (const item of items) {
-            const at = stream.pendingAt(item, start);
-            if (at !== null && at >= now - PENDING_HOLD_MS) held = Math.min(held, at);
-          }
-          // The cursor never passes a record still to settle, nor the last hour.
-          const next = Math.max(
-            account[stream.column].getTime(),
-            Math.min(end, now - REREAD_MS, held),
-          );
-          imported += await this.commit(account, stream.column, legs, new Date(next));
-          account[stream.column] = new Date(next);
-          if (end >= now) break;
-          start = end;
+        } catch (error) {
+          if (!(stream.earn && refused(error))) throw error;
+          earn = await this.denyEarn(account);
         }
       }
       const balances = [
         ...(await call(() => this.client.balances(key, 'FUND'))),
         ...(await call(() => this.client.balances(key, 'UNIFIED'))),
       ];
-      await this.complete(account, balances);
+      let holdings: EarnHolding[] | null = null;
+      if (earn) {
+        try {
+          holdings = [
+            ...(await call(() => this.client.earnPositions(key, 'FlexibleSaving'))).map((item) => ({
+              ...item,
+              product: 'flexible' as const,
+            })),
+            ...(await call(() => this.client.earnPositions(key, 'OnChain'))).map((item) => ({
+              ...item,
+              product: 'onchain' as const,
+            })),
+            ...(await call(() => this.client.fixedTermPositions(key))).map((item) => ({
+              ...item,
+              product: 'fixed' as const,
+            })),
+          ];
+        } catch (error) {
+          if (!refused(error)) throw error;
+          await this.denyEarn(account);
+        }
+      }
+      await this.complete(account, balances, holdings);
       return finish('complete', null);
     } catch (error) {
       if (error instanceof OutOfBudget) return finish('partial', null);
@@ -189,10 +259,50 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     }
   }
 
+  /**
+   * BYBIT-EARN: stores the key's public facts as Bybit tells them now, its Earn permission
+   * included; a yield list not read yet starts three months back, as far as Bybit keeps it.
+   * Whether Earn is read on this pass.
+   */
+  private async keyFacts(account: AccountRow, info: BybitKeyInfo, now: number) {
+    if (!info.earn) {
+      await this.source.query(
+        `UPDATE bybit_accounts SET "ipBound" = $2, "keyExpiresAt" = $3 WHERE "walletId" = $1`,
+        [account.id, info.ipBound, info.expiresAt],
+      );
+      return this.denyEarn(account);
+    }
+    const from = new Date(now - EARN_HISTORY_DAYS * DAY_MS);
+    await this.source.query(
+      `UPDATE bybit_accounts SET "earnAllowed" = true, "ipBound" = $2, "keyExpiresAt" = $3,
+          "flexibleReadTo" = coalesce("flexibleReadTo", $4),
+          "onchainReadTo" = coalesce("onchainReadTo", $4)
+        WHERE "walletId" = $1`,
+      [account.id, info.ipBound, info.expiresAt, from],
+    );
+    const [row]: Pick<AccountRow, EarnColumn>[] = await this.source.query(
+      `SELECT "flexibleReadTo", "onchainReadTo" FROM bybit_accounts WHERE "walletId" = $1`,
+      [account.id],
+    );
+    if (!row?.flexibleReadTo || !row.onchainReadTo) return false;
+    account.flexibleReadTo = row.flexibleReadTo;
+    account.onchainReadTo = row.onchainReadTo;
+    return true;
+  }
+
+  /** BYBIT-EARN: the key cannot read Earn; its positions are not counted until it can. */
+  private async denyEarn(account: AccountRow) {
+    await this.source.query(
+      `UPDATE bybit_accounts SET "earnAllowed" = false, earn = NULL WHERE "walletId" = $1`,
+      [account.id],
+    );
+    return false;
+  }
+
   private async account(owner: string, id: string): Promise<AccountRow | null> {
     const [row]: AccountRow[] = await this.source.query(
       `SELECT w.id, w."ownerId", b.credentials, b."tradesReadTo", b."depositsReadTo",
-          b."internalReadTo", b."withdrawalsReadTo"
+          b."internalReadTo", b."withdrawalsReadTo", b."flexibleReadTo", b."onchainReadTo"
         FROM wallet_addresses w JOIN bybit_accounts b ON b."walletId" = w.id
         WHERE w."ownerId" = $1 AND w.id = $2 AND w.network = 'bybit'`,
       [owner, id],
@@ -207,7 +317,7 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
         `SELECT "${column}" FROM bybit_accounts WHERE "walletId" = $1 FOR UPDATE`,
         [expected.id],
       );
-      if (!current || current[column].getTime() !== expected[column].getTime())
+      if (!current || current[column]?.getTime() !== expected[column]?.getTime())
         throw new ConflictException('Another sync advanced this account');
       const inserted = await this.insert(manager, expected, legs);
       await manager.query(`UPDATE bybit_accounts SET "${column}" = $2 WHERE "walletId" = $1`, [
@@ -249,14 +359,20 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   }
 
   /**
-   * BYBIT-GAPS: what Bybit holds now in the funding and trading accounts together, every coin
-   * (the tracked ones are compared with the records). "completedAt" marks a history read up
-   * to the last hour.
+   * BYBIT-GAPS: what Bybit holds now in the funding and trading accounts and in Earn together,
+   * every coin (the tracked ones are compared with the records). Coins in Earn stay the
+   * account's (BYBIT-EARN); null when the key cannot read Earn. "completedAt" marks a history
+   * read up to the last hour.
    */
-  private async complete(account: AccountRow, balances: BybitBalance[]) {
+  private async complete(
+    account: AccountRow,
+    balances: BybitBalance[],
+    earn: EarnHolding[] | null,
+  ) {
     const totals = new Map<string, bigint>();
     const scale = 10n ** 30n;
-    for (const { coin, quantity } of balances) {
+    const held = (earn ?? []).filter((item) => /[1-9]/.test(item.quantity));
+    for (const { coin, quantity } of [...balances, ...held]) {
       const [whole, fraction = ''] = quantity.split('.');
       totals.set(
         coin,
@@ -274,9 +390,10 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
       .map(([coin, value]) => ({ coin, quantity: format(value) }));
     await this.source.transaction('READ COMMITTED', async (manager) => {
       await manager.query(
-        `UPDATE bybit_accounts SET balances = $2::jsonb, "balancesAt" = clock_timestamp()
+        `UPDATE bybit_accounts SET balances = $2::jsonb, earn = $3::jsonb,
+            "balancesAt" = clock_timestamp()
           WHERE "walletId" = $1`,
-        [account.id, JSON.stringify(rows)],
+        [account.id, JSON.stringify(rows), earn && JSON.stringify(held)],
       );
       await manager.query(
         `UPDATE wallet_addresses SET "completedAt" = clock_timestamp()

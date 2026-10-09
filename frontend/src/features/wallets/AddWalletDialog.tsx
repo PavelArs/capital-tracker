@@ -266,8 +266,8 @@ export default function AddWalletDialog({
                     <b>System-generated API Keys</b> and <b>API Transaction</b>.
                   </li>
                   <li>
-                    Set permissions to <b>Read-Only</b> and tick nothing else: no trading, no
-                    withdrawals.
+                    Set permissions to <b>Read-Only</b> and tick <b>Earn</b> under it, so coins in
+                    Earn count. Tick nothing that trades or withdraws.
                   </li>
                   <li>
                     Bind it to this server's IP address: an unbound key stops working after 90 days.
@@ -324,9 +324,9 @@ export default function AddWalletDialog({
                 </div>
                 <p className="wallets-note">
                   The app checks with Bybit that the key is read-only and refuses one that can trade
-                  or withdraw. It reads spot trades, deposits and withdrawals of the last two years
-                  and the balances Bybit reports. P2P purchases and Earn are not in the API: add
-                  them by hand.
+                  or withdraw. It reads spot trades, deposits and withdrawals of the last two years,
+                  the balances Bybit reports, and with Earn ticked the coins in Earn and three
+                  months of their yield. P2P purchases are not in the API: add them by hand.
                 </p>
               </>
             )}

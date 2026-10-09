@@ -5,8 +5,11 @@ import type { AddressInfo } from 'node:net';
 import {
   BybitClient,
   parseDeposit,
+  parseEarnPositions,
+  parseEarnYield,
   parseEnvelope,
   parseExecution,
+  parseFixedTermPositions,
   parseInternalDeposit,
   parseKeyInfo,
   parseWalletBalance,
@@ -57,7 +60,16 @@ describe('BYBIT-KEY: what Bybit says about a key', () => {
       master: true,
       ipBound: false,
       expiresAt: '2026-12-31T00:00:00.000Z',
+      earn: false,
     });
+  });
+
+  it('knows whether the key may read Earn', () => {
+    const permissions = { ...readOnlyKey.permissions, Earn: ['Earn'] };
+    expect(parseKeyInfo({ ...readOnlyKey, permissions })).toMatchObject({ earn: true });
+    expect(
+      parseKeyInfo({ ...readOnlyKey, permissions: { ...permissions, Earn: [] } }),
+    ).toMatchObject({ earn: false });
   });
 
   it('notices a trading key, a withdrawal permission, a sub-account and an IP binding', () => {
@@ -200,6 +212,67 @@ describe('Bybit records', () => {
   });
 });
 
+describe('BYBIT-EARN: Earn positions and yield', () => {
+  it('reads what each Flexible Savings or On-chain position holds', () => {
+    expect(
+      parseEarnPositions({
+        list: [
+          { coin: 'USDT', productId: '428', amount: '1000.5', totalPnl: '', claimableYield: '0.1' },
+          { coin: 'SOL', productId: '8', amount: '0', id: '326', status: 'Active' },
+        ],
+      }),
+    ).toEqual([
+      { coin: 'USDT', quantity: '1000.5' },
+      { coin: 'SOL', quantity: '0' },
+    ]);
+    expect(() => parseEarnPositions({ list: [{ coin: 'USDT', amount: '-1' }] })).toThrow();
+  });
+
+  it('reads the active fixed-term positions', () => {
+    expect(
+      parseFixedTermPositions({
+        list: [{ positionId: '4064', category: 'FixedTermSaving', coin: 'USDC', amount: '201' }],
+      }),
+    ).toEqual([{ coin: 'USDC', quantity: '201' }]);
+  });
+
+  it('reads yield records, under either name Bybit gives the list', () => {
+    const item = {
+      productId: '428',
+      coin: 'USDT',
+      id: '1002096',
+      amount: '0.0608',
+      yieldType: 'Normal',
+      distributionMode: 'Auto',
+      effectiveStakingAmount: '1000',
+      orderId: '',
+      status: 'Success',
+      createdAt: '1759993805000',
+    };
+    const read = {
+      id: '1002096',
+      coin: 'USDT',
+      amount: '0.0608',
+      state: 'done',
+      time: 1759993805000,
+    };
+    expect(parseEarnYield({ list: [item], nextPageCursor: 'next' })).toEqual({
+      items: [{ ...read, raw: item }],
+      cursor: 'next',
+    });
+    expect(
+      parseEarnYield({
+        yield: [
+          { ...item, status: 'Pending' },
+          { ...item, id: '1002097', status: 'Fail' },
+        ],
+        nextPageCursor: '',
+      }),
+    ).toMatchObject({ items: [{ state: 'pending' }, { state: 'failed' }], cursor: null });
+    expect(() => parseEarnYield({ list: [{ ...item, amount: 'lots' }] })).toThrow();
+  });
+});
+
 describe('Bybit client', () => {
   let server: Server;
   let baseUrl: string;
@@ -315,6 +388,25 @@ describe('Bybit client', () => {
     });
     expect(requests[0].url.pathname).toBe('/v5/account/wallet-balance');
     expect(requests[0].url.search).toBe('?accountType=UNIFIED');
+  });
+
+  it('asks for Earn positions per product and yield in seven-day windows', async () => {
+    replies.push(ok({ list: [{ coin: 'USDT', amount: '10' }] }));
+    replies.push(ok({ list: [] }));
+    replies.push(ok({ list: [], nextPageCursor: '' }));
+    expect(await client().earnPositions(key, 'FlexibleSaving')).toEqual({
+      ok: true,
+      value: [{ coin: 'USDT', quantity: '10' }],
+    });
+    await client().fixedTermPositions(key);
+    await client().earnYield(key, 'OnChain', 1, 2, 'page2');
+    expect(requests[0].url.pathname).toBe('/v5/earn/position');
+    expect(requests[0].url.search).toBe('?category=FlexibleSaving');
+    expect(requests[1].url.pathname).toBe('/v5/earn/fixed-term/position');
+    expect(requests[2].url.pathname).toBe('/v5/earn/yield');
+    expect(requests[2].url.search).toBe(
+      '?category=OnChain&startTime=1&endTime=2&limit=100&cursor=page2',
+    );
   });
 
   it('says why nothing came back', async () => {

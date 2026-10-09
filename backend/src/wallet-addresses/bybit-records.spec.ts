@@ -1,7 +1,8 @@
-import type { BybitDeposit, BybitExecution, BybitWithdrawal } from './bybit-client';
+import type { BybitDeposit, BybitEarnYield, BybitExecution, BybitWithdrawal } from './bybit-client';
 import {
   chainTxid,
   depositLeg,
+  earnLeg,
   splitSymbol,
   toUnits,
   tradeLeg,
@@ -154,5 +155,44 @@ describe('BYBIT-DEPOSIT: deposits and withdrawals keep the chain hash', () => {
     expect(withdrawalLeg({ ...withdrawal, internal: true, txID: '' })?.txid).toBe(
       'bybit-withdrawal-7000001',
     );
+  });
+});
+
+describe('BYBIT-EARN: Earn yield as records', () => {
+  const paid = (overrides: Partial<BybitEarnYield> = {}): BybitEarnYield => ({
+    id: '1002096',
+    coin: 'USDT',
+    amount: '0.0608',
+    state: 'done',
+    time: Date.UTC(2026, 8, 1, 0, 30),
+    raw: { productId: '428' },
+    ...overrides,
+  });
+
+  it('a paid yield adds its coin, named by its product kind and Bybit id', () => {
+    expect(earnLeg(paid(), 'FlexibleSaving')).toEqual({
+      txid: 'bybit-earn-flexible-1002096',
+      kind: 'earn',
+      asset: 'USDT',
+      blockTime: '2026-09-01T00:30:00.000Z',
+      receivedUnits: (608n * E18) / 10000n,
+      sentUnits: 0n,
+      feeUnits: 0n,
+      direction: 'in',
+      raw: {
+        kind: 'earn',
+        product: 'flexible',
+        record: { productId: '428' },
+        txid: 'bybit-earn-flexible-1002096',
+      },
+    });
+    expect(earnLeg(paid({ coin: 'SOL' }), 'OnChain')?.txid).toBe('bybit-earn-onchain-1002096');
+  });
+
+  it('leaves out yield not paid yet, failed, zero, or of an untracked coin', () => {
+    expect(earnLeg(paid({ state: 'pending' }), 'FlexibleSaving')).toBeNull();
+    expect(earnLeg(paid({ state: 'failed' }), 'FlexibleSaving')).toBeNull();
+    expect(earnLeg(paid({ amount: '0' }), 'FlexibleSaving')).toBeNull();
+    expect(earnLeg(paid({ coin: 'MNT' }), 'FlexibleSaving')).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 import { securityApi } from '@api/security.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, type ReactNode, useState } from 'react';
 import { Icon } from '../shell/icons';
 import SecurityDialog from './SecurityDialog';
 
@@ -32,8 +32,6 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [codes, setCodes] = useState<string[] | null>(null);
-  const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   const generate = async (event: FormEvent) => {
     event.preventDefault();
@@ -56,68 +54,15 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
     }
   };
 
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText((codes ?? []).join('\n'));
-      setCopied(true);
-    } catch {
-      setCopied(false);
-    }
-  };
-
-  const done = () => {
-    if (!saved) {
-      setError('Confirm that you saved the codes.');
-      return;
-    }
-    onClose();
-  };
-
   if (codes) {
-    // Shown once: no Escape, the owner confirms the codes are saved.
     return (
-      <SecurityDialog key="codes" title="New recovery codes" titleId="security-codes-new">
-        <div className="portfolio-dialog__body">
-          <p className="security-note security-note--warn">
-            <Icon name="alert" className="shell-icon shell-icon--sm" />
-            These replace your old codes and are shown only now. Each works once.
-          </p>
-          <ul className="security-codes" aria-label="Recovery codes">
-            {codes.map((value) => (
-              <li key={value}>{value}</li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            className="shell-button shell-button--secondary security-copy"
-            onClick={() => void copy()}
-          >
-            <Icon name={copied ? 'check' : 'copy'} className="shell-icon shell-icon--sm" />
-            {copied ? 'Copied' : 'Copy codes'}
-          </button>
-          <label className="security-check">
-            <input
-              type="checkbox"
-              checked={saved}
-              onChange={(event) => {
-                setSaved(event.target.checked);
-                if (event.target.checked) setError(null);
-              }}
-            />
-            I have saved these codes
-          </label>
-          {error && (
-            <p className="portfolio-dialog__error" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        <div className="portfolio-dialog__foot">
-          <button type="button" className="shell-button shell-button--primary" onClick={done}>
-            Done
-          </button>
-        </div>
-      </SecurityDialog>
+      <ShownCodes
+        codes={codes}
+        title="New recovery codes"
+        titleId="security-codes-new"
+        note="These replace your old codes and are shown only now. Each works once."
+        onDone={onClose}
+      />
     );
   }
 
@@ -170,6 +115,86 @@ export default function RecoveryCodesDialog({ unused, onGenerated, onClose }: Pr
           </button>
         </div>
       </form>
+    </SecurityDialog>
+  );
+}
+
+interface ShownCodesProps {
+  codes: string[];
+  title: string;
+  titleId: string;
+  note: string;
+  /** A line above the note, such as the step of a longer flow. */
+  lead?: ReactNode;
+  onDone: () => void;
+}
+
+// Shown once: no Escape, the owner confirms the codes are saved.
+export function ShownCodes({ codes, title, titleId, note, lead, onDone }: ShownCodesProps) {
+  const [saved, setSaved] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(codes.join('\n'));
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  const done = () => {
+    if (!saved) {
+      setError('Confirm that you saved the codes.');
+      return;
+    }
+    onDone();
+  };
+
+  return (
+    <SecurityDialog title={title} titleId={titleId}>
+      <div className="portfolio-dialog__body">
+        {lead}
+        <p className="security-note security-note--warn">
+          <Icon name="alert" className="shell-icon shell-icon--sm" />
+          {note}
+        </p>
+        <ul className="security-codes" aria-label="Recovery codes">
+          {codes.map((value) => (
+            <li key={value}>{value}</li>
+          ))}
+        </ul>
+        <button
+          type="button"
+          className="shell-button shell-button--secondary security-copy"
+          onClick={() => void copy()}
+        >
+          <Icon name={copied ? 'check' : 'copy'} className="shell-icon shell-icon--sm" />
+          {copied ? 'Copied' : 'Copy codes'}
+        </button>
+        <label className="security-check">
+          <input
+            type="checkbox"
+            checked={saved}
+            onChange={(event) => {
+              setSaved(event.target.checked);
+              if (event.target.checked) setError(null);
+            }}
+          />
+          I have saved these codes
+        </label>
+        {error && (
+          <p className="portfolio-dialog__error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="portfolio-dialog__foot">
+        <button type="button" className="shell-button shell-button--primary" onClick={done}>
+          Done
+        </button>
+      </div>
     </SecurityDialog>
   );
 }
