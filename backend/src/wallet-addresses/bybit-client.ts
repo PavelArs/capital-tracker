@@ -268,6 +268,20 @@ export function parseBalances(result: unknown): BybitBalance[] {
   });
 }
 
+/**
+ * The unified trading account's coins, as /v5/account/wallet-balance lists them. A coin
+ * borrowed on margin has a negative wallet balance: a debt, not a holding, so it reads as 0.
+ */
+export function parseWalletBalance(result: unknown): BybitBalance[] {
+  const accounts = list(record(result).list, 1);
+  if (accounts.length === 0) return [];
+  return list(record(accounts[0]).coin, 2000).map((value) => {
+    const row = record(value);
+    const quantity = row.walletBalance === '' ? '0' : signed(row.walletBalance);
+    return { coin: coin(row.coin), quantity: quantity.startsWith('-') ? '0' : quantity };
+  });
+}
+
 function page<T>(result: unknown, key: string, size: number, parse: (item: unknown) => T) {
   const item = record(result);
   return { items: list(item[key], size).map(parse), cursor: nextCursor(item.nextPageCursor) };
@@ -356,8 +370,19 @@ export class BybitClient {
     );
   }
 
-  /** Every coin of one of the account's wallets: FUND (funding) or UNIFIED (trading). */
+  /**
+   * Every coin of one of the account's wallets: FUND (funding) or UNIFIED (trading). The
+   * all-coins endpoint answers for UNIFIED only when asked for at most ten coins by name
+   * (code 131203), so the trading account is read from its wallet balance instead.
+   */
   balances(key: BybitCredentials, accountType: 'FUND' | 'UNIFIED') {
+    if (accountType === 'UNIFIED')
+      return this.get(
+        key,
+        '/v5/account/wallet-balance',
+        [['accountType', 'UNIFIED']],
+        parseWalletBalance,
+      );
     return this.get(
       key,
       '/v5/asset/transfer/query-account-coins-balance',

@@ -9,6 +9,7 @@ import {
   parseExecution,
   parseInternalDeposit,
   parseKeyInfo,
+  parseWalletBalance,
   parseWithdrawal,
   sign,
 } from './bybit-client';
@@ -262,6 +263,32 @@ describe('Bybit client', () => {
     expect(requests[1].url.search).toContain('&cursor=132766%3A2%2C132766%3A2');
   });
 
+  it('reads the unified trading account from its wallet balance; a debt holds nothing', () => {
+    const usdt = { coin: 'USDT', walletBalance: '250', equity: '250', locked: '0' };
+    expect(
+      parseWalletBalance({
+        list: [
+          {
+            accountType: 'UNIFIED',
+            coin: [
+              usdt,
+              { ...usdt, coin: 'BTC', walletBalance: '-0.01' },
+              { coin: 'ETH', walletBalance: '' },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([
+      { coin: 'USDT', quantity: '250' },
+      { coin: 'BTC', quantity: '0' },
+      { coin: 'ETH', quantity: '0' },
+    ]);
+    expect(parseWalletBalance({ list: [] })).toEqual([]);
+    expect(() =>
+      parseWalletBalance({ list: [{ coin: [{ ...usdt, walletBalance: '1e3' }] }] }),
+    ).toThrow();
+  });
+
   it('reads the withdrawals of every kind and the balances of one wallet', async () => {
     replies.push(ok({ rows: [], nextPageCursor: '' }));
     replies.push(
@@ -276,6 +303,18 @@ describe('Bybit client', () => {
     expect(requests[0].url.searchParams.get('withdrawType')).toBe('2');
     expect(requests[1].url.searchParams.get('accountType')).toBe('FUND');
     expect(balances).toEqual({ ok: true, value: [{ coin: 'USDT', quantity: '12.5' }] });
+  });
+
+  it('asks for the trading account where Bybit lists every coin of it', async () => {
+    replies.push(
+      ok({ list: [{ accountType: 'UNIFIED', coin: [{ coin: 'BTC', walletBalance: '0.5' }] }] }),
+    );
+    expect(await client().balances(key, 'UNIFIED')).toEqual({
+      ok: true,
+      value: [{ coin: 'BTC', quantity: '0.5' }],
+    });
+    expect(requests[0].url.pathname).toBe('/v5/account/wallet-balance');
+    expect(requests[0].url.search).toBe('?accountType=UNIFIED');
   });
 
   it('says why nothing came back', async () => {
