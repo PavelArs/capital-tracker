@@ -591,6 +591,18 @@ network-specific identity:
   transaction asks for a classification again.
 - CLS-SWAP-INVALID: the same coin on both sides, two transactions moving the same way,
   or a side whose address is not in a wallet are refused with a reason; nothing is saved.
+- CLS-SWAP-DUST: **Given** a dust threshold of 1 USD **then** the transactions offered as
+  the other side leave out dust, hidden ones, and any worth less than the threshold at the
+  price stored for their time, in either direction.
+- CLS-RECORDED: **Given** the owner added "Buy 0.0125 BTC for 1000 USDT" in Trust Wallet by
+  hand or from CSV, and Trust Wallet's address sent the 1000 USDT **when** the owner picks
+  that buy under "Added by you or from CSV" in the Swap choices **then** the transaction is
+  that record: nothing new is recorded, it stops counting on its own (the USDT leave once),
+  and it leaves "Needs classification". Offered are trades and swaps of the same wallet within
+  a week that moved this coin the same way (a buy's coin or its cash, a sale's coin or its
+  proceeds, a swap's sides). A record of another wallet, one a blockchain transaction
+  produced, or one that moved another coin is refused. **Given** the record is deleted later
+  **then** the transaction counts again and asks for a classification.
 
 **US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
 take back out, and the rewards it pays.

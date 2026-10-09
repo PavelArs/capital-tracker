@@ -178,7 +178,12 @@ export type ChainClassification =
       type: 'pool-withdrawal';
       deposit: { addressId: string; txid: string };
       valueUsd: string | null;
-    };
+    }
+  /**
+   * Already added by hand or from CSV as this trade or swap of the same wallet (CLS-RECORDED):
+   * nothing new is recorded and the transaction stops counting on its own.
+   */
+  | { type: 'recorded'; operation: { kind: 'trade' | 'swap'; id: string } };
 
 export interface ClassificationCommand {
   requestId: string;

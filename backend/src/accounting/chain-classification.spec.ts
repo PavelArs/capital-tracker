@@ -259,6 +259,26 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'pool-withdrawal', deposit: { addressId, txid }, valueUsd: '0' });
   });
 
+  it('CLS-RECORDED: a movement added by hand names its trade or swap and records nothing', () => {
+    const id = '00000000-0000-4000-8000-0000000000AB';
+    const recorded = parse({
+      classification: { type: 'recorded', operation: { kind: 'trade', id } },
+    }).classification!;
+    expect(recorded).toEqual({
+      type: 'recorded',
+      operation: { kind: 'trade', id: id.toLowerCase() },
+    });
+    expect(planOperation(payment, recorded, undefined)).toEqual({ journal: 'none' });
+    expect(planOperation(receipt, recorded, undefined)).toEqual({ journal: 'none' });
+    expect(fitsDirection({ ...payment, network: 'bybit', asset: 'USDT' }, 'recorded')).toBe(true);
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'recorded' });
+    refused({ type: 'recorded', operation: { kind: 'reward', id } });
+    refused({ type: 'recorded', operation: { kind: 'trade', id: 'x' } });
+    refused({ type: 'recorded', operation: { kind: 'swap', id }, valueUsd: '1' });
+  });
+
   it('CLS-HIDE: hiding or resetting needs no type; the answer is kept while hidden', () => {
     expect(parse({ hidden: true, classification: null })).toMatchObject({
       hidden: true,

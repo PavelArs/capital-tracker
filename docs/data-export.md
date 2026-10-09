@@ -35,7 +35,8 @@ in `chain_txid`). `id` matches the Transactions list (`trade:<uuid>`, `transfer:
 swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt. A pool
 deposit (POOL-DEPOSIT) produces no entry; a pool withdrawal that returned more than its deposit
 links to the `reward:<uuid>` of that pool income, and its `classification_details` name the
-deposit. Values
+deposit. A transaction already recorded by hand or from CSV (CLS-RECORDED) produces no entry
+either; its `classification_details` name that `trade` or `swap`. Values
 are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
 `paid_amount`, `paid_fee` and the rate.
 

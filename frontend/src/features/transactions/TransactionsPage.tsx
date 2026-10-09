@@ -742,6 +742,7 @@ export default function TransactionsPage() {
           onClassified={(label) => void classified(label)}
           currency={currency}
           operations={operations}
+          dustThresholdUsd={list?.dustThresholdUsd ?? null}
           onClose={() => {
             const closed = opened.id;
             setOpenId(null);
