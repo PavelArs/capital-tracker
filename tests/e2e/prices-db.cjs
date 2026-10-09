@@ -336,7 +336,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 46/);
+    assert.match(migrate(name), /Migrations applied: 47/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const main = sourceFor(databases.main);

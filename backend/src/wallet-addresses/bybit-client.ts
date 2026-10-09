@@ -8,9 +8,10 @@ import type { ProviderFailure } from './esplora-client';
 const DEFAULT_BASE_URL = 'https://api.bybit.com';
 const RECV_WINDOW = '10000';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-// Bybit's page sizes: up to 100 trades and 50 deposits or withdrawals a page.
+// Bybit's page sizes: up to 100 trades or Earn yields and 50 deposits or withdrawals a page.
 export const TRADE_PAGE = 100;
 export const RECORD_PAGE = 50;
+export const YIELD_PAGE = 100;
 
 /** Why Bybit gave nothing: the provider's own trouble, or a key it no longer accepts. */
 export type BybitFailure = ProviderFailure | 'key_rejected';
@@ -35,6 +36,8 @@ export interface BybitKeyInfo {
   /** Bound to IP addresses; an unbound key expires after 90 days. */
   ipBound: boolean;
   expiresAt: string | null;
+  /** BYBIT-EARN: the key may read Earn positions and yield (its Earn permission). */
+  earn: boolean;
 }
 
 /** One fill of a spot order (Get Trade History, category spot). */
@@ -92,6 +95,21 @@ export interface BybitPage<T> {
 export interface BybitBalance {
   coin: string;
   quantity: string;
+}
+
+/** BYBIT-EARN: Bybit's Earn products the app reads, by the category Bybit names them with. */
+export type BybitEarnCategory = 'FlexibleSaving' | 'OnChain';
+
+/** One Earn yield payment (Get Yield History); Bybit keeps the last three months. */
+export interface BybitEarnYield {
+  /** Unique among one user's yields of one category. */
+  id: string;
+  coin: string;
+  amount: string;
+  /** Paid out; a pending one is read again later, a failed one never counts. */
+  state: 'done' | 'pending' | 'failed';
+  time: number;
+  raw: Record<string, unknown>;
 }
 
 class InvalidResponse extends Error {}
@@ -153,6 +171,7 @@ export function parseKeyInfo(result: unknown): BybitKeyInfo {
     item.expiredAt === undefined || item.expiredAt === null || item.expiredAt === ''
       ? null
       : text(item.expiredAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/);
+  const earn = list(permissions.Earn ?? [], 20);
   if (item.readOnly !== 0 && item.readOnly !== 1) invalid();
   return {
     userId: id,
@@ -162,6 +181,7 @@ export function parseKeyInfo(result: unknown): BybitKeyInfo {
     master: item.isMaster !== false,
     ipBound: ips.length > 0 && !ips.includes('*'),
     expiresAt: expiresAt && new Date(expiresAt).toISOString(),
+    earn: earn.includes('Earn'),
   };
 }
 
@@ -282,6 +302,46 @@ export function parseWalletBalance(result: unknown): BybitBalance[] {
   });
 }
 
+/** BYBIT-EARN: what each Flexible Savings or On-chain position holds (Get Staked Position). */
+export function parseEarnPositions(result: unknown): BybitBalance[] {
+  return list(record(result).list, 2000).map((value) => {
+    const row = record(value);
+    return { coin: coin(row.coin), quantity: decimal(row.amount) };
+  });
+}
+
+/** BYBIT-EARN: the active fixed-term positions; settled ones are already paid back. */
+export const parseFixedTermPositions = parseEarnPositions;
+
+const yieldStates: Record<string, BybitEarnYield['state']> = {
+  Success: 'done',
+  Pending: 'pending',
+  Fail: 'failed',
+};
+
+export function parseEarnYieldItem(value: unknown): BybitEarnYield {
+  const item = record(value);
+  const status = typeof item.status === 'string' ? yieldStates[item.status] : undefined;
+  return {
+    id: idText(item.id),
+    coin: coin(item.coin),
+    amount: decimal(item.amount),
+    state: status ?? invalid(),
+    time: milliseconds(item.createdAt),
+    raw: item,
+  };
+}
+
+/** A page of yield: Bybit documents the list as `list` and sends it as `yield`. */
+export function parseEarnYield(result: unknown): BybitPage<BybitEarnYield> {
+  const item = record(result);
+  const items = item.list ?? item.yield;
+  return {
+    items: list(items, YIELD_PAGE).map(parseEarnYieldItem),
+    cursor: nextCursor(item.nextPageCursor),
+  };
+}
+
 function page<T>(result: unknown, key: string, size: number, parse: (item: unknown) => T) {
   const item = record(result);
   return { items: list(item[key], size).map(parse), cursor: nextCursor(item.nextPageCursor) };
@@ -388,6 +448,38 @@ export class BybitClient {
       '/v5/asset/transfer/query-account-coins-balance',
       [['accountType', accountType]],
       parseBalances,
+    );
+  }
+
+  /** BYBIT-EARN: what the account holds in one Earn product (the key's Earn permission). */
+  earnPositions(key: BybitCredentials, category: BybitEarnCategory) {
+    return this.get(key, '/v5/earn/position', [['category', category]], parseEarnPositions);
+  }
+
+  /** BYBIT-EARN: the account's active fixed-term savings. */
+  fixedTermPositions(key: BybitCredentials) {
+    return this.get(key, '/v5/earn/fixed-term/position', [], parseFixedTermPositions);
+  }
+
+  /** BYBIT-EARN: yield paid in [start, end]; at most seven days a request, three months back. */
+  earnYield(
+    key: BybitCredentials,
+    category: BybitEarnCategory,
+    start: number,
+    end: number,
+    cursor: string | null,
+  ) {
+    return this.get(
+      key,
+      '/v5/earn/yield',
+      [
+        ['category', category],
+        ['startTime', String(start)],
+        ['endTime', String(end)],
+        ['limit', String(YIELD_PAGE)],
+        ...this.cursor(cursor),
+      ],
+      parseEarnYield,
     );
   }
 

@@ -51,13 +51,15 @@ const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> 
 /**
  * "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO), "Auto:
  * Bybit trade" for a Bybit spot fill it recorded as a Buy or Sell (BYBIT-TRADES), "Auto: vote
- * reward" for a Tron vote reward claim (TRON-REWARD).
+ * reward" for a Tron vote reward claim (TRON-REWARD), "Auto: Earn yield" for yield Bybit paid
+ * (BYBIT-EARN).
  */
 export function statusLabel(operation: Operation): string {
   if (!operation.classification?.automatic || operation.status !== 'recorded')
     return statusLabels[operation.status];
   if (operation.type === 'transfer') return 'Auto: own wallets';
-  return operation.type === 'staking-reward' ? 'Auto: vote reward' : 'Auto: Bybit trade';
+  if (operation.type !== 'staking-reward') return 'Auto: Bybit trade';
+  return operation.wallet?.network === 'bybit' ? 'Auto: Earn yield' : 'Auto: vote reward';
 }
 
 /** "Buy", or "Incoming" for a blockchain transaction nobody has classified yet. */
@@ -143,11 +145,18 @@ export function exchangeRecord(operation: Operation): string | null {
   return recordName(operation.chain?.txid ?? '');
 }
 
+const recordKinds: Record<string, string> = {
+  trade: 'Trade',
+  deposit: 'Deposit',
+  withdrawal: 'Withdrawal',
+  // BYBIT-EARN: a paid yield, named by its product kind and Bybit's id.
+  earn: 'Earn yield',
+};
+
 function recordName(txid: string): string | null {
-  const match = /^bybit-(trade|deposit|withdrawal)-(?:internal-)?(.+)$/.exec(txid);
-  if (!match) return null;
-  const kind = { trade: 'Trade', deposit: 'Deposit', withdrawal: 'Withdrawal' }[match[1]];
-  return `${kind} ${match[2]}`;
+  const match =
+    /^bybit-(trade|deposit|withdrawal|earn)-(?:internal-|flexible-|onchain-)?(.+)$/.exec(txid);
+  return match ? `${recordKinds[match[1]]} ${match[2]}` : null;
 }
 
 // Free public explorers; a network without one (an exchange account) gets no link.
