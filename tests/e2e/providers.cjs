@@ -216,7 +216,16 @@ function bybitRequest(request, response, url) {
   if (url.pathname === '/v5/asset/transfer/query-account-coins-balance') {
     const type = params.get('accountType');
     if (!['FUND', 'UNIFIED'].includes(type)) return reply(10001, 'accountType invalid');
+    // As Bybit answers: the unified account is listed here only for one to ten named coins.
+    if (type === 'UNIFIED' && !params.get('coin'))
+      return reply(131203, 'request parameter err: Limit the query to 1 to 10 coins for account UNIFIED');
     return reply(0, 'success', { accountType: type, memberId: key.info.userID, balance: bybit.balances[type] });
+  }
+  if (url.pathname === '/v5/account/wallet-balance') {
+    if (params.get('accountType') !== 'UNIFIED') return reply(10001, 'accountType only support UNIFIED');
+    const coin = bybit.balances.UNIFIED.map((row) => ({ coin: row.coin, walletBalance: row.walletBalance,
+      equity: row.walletBalance, locked: '0', borrowAmount: '0', usdValue: '', availableToWithdraw: '' }));
+    return reply(0, 'OK', { list: [{ accountType: 'UNIFIED', totalEquity: '', coin }] });
   }
   const lists = {
     '/v5/execution/list': ['executions', 'list', 7 * DAY_MS, 100],
