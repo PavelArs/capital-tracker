@@ -54,7 +54,7 @@ function inView(operation: Operation, view: View): boolean {
 
 /** Where a row happened; a blockchain row's suggested other side is not a place yet (M13). */
 function places(operation: Operation) {
-  const moved = operation.type === 'transfer';
+  const moved = operation.type === 'transfer' || operation.type === 'swap';
   return {
     accounts: [operation.account, moved ? operation.counterAccount : null],
     wallets: [operation.wallet, moved ? operation.counterWallet : null],
@@ -85,7 +85,9 @@ function searchable(operation: Operation): string {
     operation.counterAsset?.name,
     placeLabel(operation),
     operation.wallet?.address,
-    operation.type === 'transfer' ? operation.counterWallet?.address : undefined,
+    operation.type === 'transfer' || operation.type === 'swap'
+      ? operation.counterWallet?.address
+      : undefined,
     operation.chain?.txid,
     transactionHash(operation),
   ]

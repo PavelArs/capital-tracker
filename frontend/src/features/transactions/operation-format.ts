@@ -117,15 +117,26 @@ export function transactionHash(operation: Operation): string | null {
   // A Bybit trade, internal transfer or record without a usable hash is named by Bybit's id;
   // a Bybit deposit or withdrawal on a chain keeps the chain's hash (BYBIT-DEPOSIT).
   if (operation.chain.txid.startsWith('bybit-')) return null;
-  const [hash] = operation.chain.txid.split('-');
-  return operation.wallet?.network === 'ethereum' ? `0x${hash}` : hash;
+  return hashOf(operation.chain.txid, operation.wallet?.network);
+}
+
+export function hashOf(
+  txid: string,
+  network: NonNullable<Operation['wallet']>['network'] | undefined,
+): string {
+  const record = recordName(txid);
+  if (record) return record;
+  const [hash] = txid.split('-');
+  return network === 'ethereum' ? `0x${hash}` : hash;
 }
 
 /** "Trade 2100000000000000001": a Bybit record that has no blockchain hash. */
 export function exchangeRecord(operation: Operation): string | null {
-  const match = /^bybit-(trade|deposit|withdrawal)-(?:internal-)?(.+)$/.exec(
-    operation.chain?.txid ?? '',
-  );
+  return recordName(operation.chain?.txid ?? '');
+}
+
+function recordName(txid: string): string | null {
+  const match = /^bybit-(trade|deposit|withdrawal)-(?:internal-)?(.+)$/.exec(txid);
   if (!match) return null;
   const kind = { trade: 'Trade', deposit: 'Deposit', withdrawal: 'Withdrawal' }[match[1]];
   return `${kind} ${match[2]}`;
@@ -136,6 +147,11 @@ export function placeLabel(operation: Operation): string {
   // XFER-AUTO: a transfer between wallets names both, a blockchain one included.
   if (operation.type === 'transfer' && operation.account && operation.counterAccount)
     return `${operation.account.name} → ${operation.counterAccount.name}`;
+  // CLS-SWAP: paid from one wallet, received in another; within one wallet, just that wallet.
+  if (operation.type === 'swap' && operation.wallet && operation.account)
+    return operation.counterAccount
+      ? `${operation.counterAccount.name} → ${operation.account.name}`
+      : operation.account.name;
   // A chain row of an address in a wallet shows the wallet, then the address's own name.
   if (operation.wallet && operation.account)
     return `${operation.account.name} · ${operation.wallet.label ?? shortAddress(operation.wallet.address)}`;

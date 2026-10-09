@@ -60,6 +60,7 @@ const legacyChecks = [
   'manual-operations-db',
   'chain-classification-db',
   'chain-transfers-db',
+  'chain-swaps-db',
   'ethereum-wallets-db',
   'solana-wallets-db',
   'bitcoin-xpub-db',

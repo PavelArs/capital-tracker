@@ -64,7 +64,10 @@ export interface Operation {
   counterAccount: OperationPlace | null;
   /** A blockchain row's address; its account is in `account` once the owner picked one (M10). */
   wallet: OperationWallet | null;
-  /** Blockchain only: the owner's other address in the same transaction (M13). */
+  /**
+   * Blockchain only: the owner's other address in the same transaction (M13), or the address
+   * that paid for a swap (CLS-SWAP).
+   */
   counterWallet: OperationWallet | null;
   /** `direction` is the address's own; a transfer between wallets is listed as internal. */
   chain: {
@@ -72,6 +75,8 @@ export interface Operation {
     blockHeight: number;
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
+    /** A swap listed on its receiving row: the paying transaction (CLS-SWAP). */
+    pairedTxid?: string | null;
   } | null;
   /**
    * Hidden: a blockchain transaction left out of every calculation (M12). Dust: an unanswered
@@ -129,7 +134,13 @@ export type ChainClassification =
   | { type: 'income' | 'expense' | 'gift' | 'fee'; valueUsd: string }
   | { type: 'reward' | 'staking-reward' | 'airdrop'; valueUsd: string | null }
   /** Received, nothing more known: counts without a purchase price and no deposit. */
-  | { type: 'other' };
+  | { type: 'other' }
+  /**
+   * Coins of one address paid for coins that arrived at another or the same one (CLS-SWAP):
+   * the other side's transaction; without a value stablecoins count 1:1, other coins at their
+   * stored price then.
+   */
+  | { type: 'swap'; with: { addressId: string; txid: string }; valueUsd: string | null };
 
 export interface ClassificationCommand {
   requestId: string;

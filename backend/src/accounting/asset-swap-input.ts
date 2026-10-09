@@ -23,6 +23,10 @@ interface SwapPins {
   expectedJournalRevision: number;
 }
 export interface SwapCreateInput extends SwapFields, SwapPins {}
+/** A chain swap (CLS-SWAP): without an order it goes after every event at its instant. */
+export type ChainSwapCreateInput = Omit<SwapCreateInput, 'orderWithinTimestamp'> & {
+  orderWithinTimestamp: number | null;
+};
 export interface SwapCorrectionInput extends SwapFields, SwapPins {
   expectedVersion: number;
 }
@@ -165,7 +169,7 @@ export function parseSwapAllocationQuery(raw: unknown): SwapAllocationQuery {
 /** Fixed property order captures target, pins, and normalized economics, but not the request key. */
 export function swapPayload(
   kind: 'create' | 'correct' | 'void',
-  input: SwapCreateInput | SwapCorrectionInput | SwapVoidInput,
+  input: SwapCreateInput | ChainSwapCreateInput | SwapCorrectionInput | SwapVoidInput,
   swapId?: string,
 ): string {
   if (kind === 'create') {

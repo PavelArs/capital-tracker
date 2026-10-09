@@ -25,6 +25,7 @@ export const chainTypes = [
   'staking-reward',
   'airdrop',
   'other',
+  'swap',
 ] as const;
 export type ChainType = (typeof chainTypes)[number];
 
@@ -37,8 +38,17 @@ const incoming: readonly ChainType[] = [
   'staking-reward',
   'airdrop',
   'other',
+  'swap',
 ];
-const outgoing: readonly ChainType[] = ['sell', 'transfer', 'expense', 'gift', 'fee', 'other'];
+const outgoing: readonly ChainType[] = [
+  'sell',
+  'transfer',
+  'expense',
+  'gift',
+  'fee',
+  'other',
+  'swap',
+];
 
 /** Buy or sell: what was paid or received, in the currency it was paid in. */
 export interface PricedClassification {
@@ -69,12 +79,22 @@ export interface TransferClassification {
 export interface OtherClassification {
   type: 'other';
 }
+/**
+ * CLS-SWAP: coins of one of the owner's addresses paid for other coins that arrived at one of
+ * them. `with` names the other side's raw transaction; the value in USD is optional.
+ */
+export interface SwapClassification {
+  type: 'swap';
+  with: { addressId: string; txid: string };
+  valueUsd: string | null;
+}
 export type Classification =
   | PricedClassification
   | ValuedClassification
   | RewardClassification
   | TransferClassification
-  | OtherClassification;
+  | OtherClassification
+  | SwapClassification;
 
 export interface ClassificationInput {
   requestId: string;
@@ -90,6 +110,13 @@ export interface ClassificationInput {
 const bad = (): never => {
   throw new BadRequestException('Invalid accounting input');
 };
+
+/**
+ * A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds its
+ * number (M14); a Bybit record off chain has Bybit's own ID (M22).
+ */
+export const chainTxid =
+  /^(([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?|bybit-(trade|deposit|withdrawal)-[0-9A-Za-z_-]{1,80})$/;
 
 function object(raw: unknown, keys: readonly string[]): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return bad();
@@ -133,6 +160,16 @@ function classification(raw: unknown): Classification | null {
   if (type === 'other') {
     object(raw, ['type']);
     return { type };
+  }
+  if (type === 'swap') {
+    const row = object(raw, ['type', 'with', 'valueUsd']);
+    const other = object(row.with, ['addressId', 'txid']);
+    if (typeof other.txid !== 'string' || !chainTxid.test(other.txid)) return bad();
+    return {
+      type,
+      with: { addressId: parseUuid(other.addressId), txid: other.txid },
+      valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
+    };
   }
   return bad();
 }
@@ -287,6 +324,7 @@ export function planOperation(
   const { inbound, quantity } = legMovement(leg);
   if (!fitsDirection(leg, value.type)) throw unfit();
   if (value.type === 'transfer') throw new Error('A transfer records an owned transfer instead');
+  if (value.type === 'swap') throw new Error('A swap records a swap of both legs instead');
   const common = { occurredAt: leg.blockTime, quantity };
   const note = comment === undefined ? {} : { comment };
   switch (value.type) {
