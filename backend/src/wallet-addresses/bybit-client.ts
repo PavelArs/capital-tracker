@@ -8,10 +8,12 @@ import type { ProviderFailure } from './esplora-client';
 const DEFAULT_BASE_URL = 'https://api.bybit.com';
 const RECV_WINDOW = '10000';
 const MAX_BODY_BYTES = 8 * 1024 * 1024;
-// Bybit's page sizes: up to 100 trades or Earn yields and 50 deposits or withdrawals a page.
+// Bybit's page sizes: up to 100 trades, Earn yields or converts and 50 deposits, withdrawals
+// or coin exchanges a page.
 export const TRADE_PAGE = 100;
 export const RECORD_PAGE = 50;
 export const YIELD_PAGE = 100;
+export const CONVERT_PAGE = 100;
 
 /** Why Bybit gave nothing: the provider's own trouble, or a key it no longer accepts. */
 export type BybitFailure = ProviderFailure | 'key_rejected';
@@ -38,6 +40,8 @@ export interface BybitKeyInfo {
   expiresAt: string | null;
   /** BYBIT-EARN: the key may read Earn positions and yield (its Earn permission). */
   earn: boolean;
+  /** BYBIT-CONVERT: the key may read convert history (its Exchange permission). */
+  convert: boolean;
 }
 
 /** One fill of a spot order (Get Trade History, category spot). */
@@ -81,6 +85,23 @@ export interface BybitWithdrawal {
   chain: string;
   amount: string;
   withdrawFee: string;
+  state: 'done' | 'pending' | 'failed';
+  time: number;
+  raw: Record<string, unknown>;
+}
+
+/**
+ * BYBIT-CONVERT: one coin converted into another at a quoted rate, on the web, in the app or
+ * through the API (Get Convert History), or an older coin exchange (Get Coin Exchange Records).
+ */
+export interface BybitConvert {
+  /** Bybit's exchange transaction ID; the same convert has the same ID in both lists. */
+  id: string;
+  fromCoin: string;
+  fromAmount: string;
+  toCoin: string;
+  toAmount: string;
+  /** Settled; one still processing is read again later, a failed one never counts. */
   state: 'done' | 'pending' | 'failed';
   time: number;
   raw: Record<string, unknown>;
@@ -172,6 +193,7 @@ export function parseKeyInfo(result: unknown): BybitKeyInfo {
       ? null
       : text(item.expiredAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/);
   const earn = list(permissions.Earn ?? [], 20);
+  const exchange = list(permissions.Exchange ?? [], 20);
   if (item.readOnly !== 0 && item.readOnly !== 1) invalid();
   return {
     userId: id,
@@ -182,6 +204,7 @@ export function parseKeyInfo(result: unknown): BybitKeyInfo {
     ipBound: ips.length > 0 && !ips.includes('*'),
     expiresAt: expiresAt && new Date(expiresAt).toISOString(),
     earn: earn.includes('Earn'),
+    convert: exchange.includes('ExchangeHistory'),
   };
 }
 
@@ -342,6 +365,51 @@ export function parseEarnYield(result: unknown): BybitPage<BybitEarnYield> {
   };
 }
 
+const convertStates: Record<string, BybitConvert['state']> = {
+  init: 'pending',
+  processing: 'pending',
+  success: 'done',
+  failure: 'failed',
+};
+// Shorter than other IDs: "bybit-trade-convert-" and the ID fit the stored 80 characters.
+const convertId = (value: unknown) => text(value, /^[0-9A-Za-z_-]{1,60}$/);
+
+export function parseConvert(value: unknown): BybitConvert {
+  const item = record(value);
+  const status =
+    typeof item.exchangeStatus === 'string' ? convertStates[item.exchangeStatus] : undefined;
+  return {
+    id: convertId(item.exchangeTxId),
+    fromCoin: coin(item.fromCoin),
+    fromAmount: decimal(item.fromAmount),
+    toCoin: coin(item.toCoin),
+    toAmount: decimal(item.toAmount),
+    state: status ?? invalid(),
+    time: milliseconds(item.createdAt),
+    raw: item,
+  };
+}
+
+/** A page of convert history; the next page is asked for by number. */
+export function parseConvertHistory(result: unknown): BybitConvert[] {
+  return list(record(result).list ?? [], CONVERT_PAGE).map(parseConvert);
+}
+
+/** An older coin exchange: listed once done, with its time in seconds. */
+export function parseCoinExchange(value: unknown): BybitConvert {
+  const item = record(value);
+  return {
+    id: convertId(item.exchangeTxId),
+    fromCoin: coin(item.fromCoin),
+    fromAmount: decimal(item.fromAmount),
+    toCoin: coin(item.toCoin),
+    toAmount: decimal(item.toAmount),
+    state: 'done',
+    time: seconds(item.createdTime),
+    raw: item,
+  };
+}
+
 function page<T>(result: unknown, key: string, size: number, parse: (item: unknown) => T) {
   const item = record(result);
   return { items: list(item[key], size).map(parse), cursor: nextCursor(item.nextPageCursor) };
@@ -480,6 +548,35 @@ export class BybitClient {
         ...this.cursor(cursor),
       ],
       parseEarnYield,
+    );
+  }
+
+  /** BYBIT-CONVERT: one page of every convert, newest first (the key's Exchange permission). */
+  convertHistory(key: BybitCredentials, index: number) {
+    return this.get(
+      key,
+      '/v5/asset/exchange/query-convert-history',
+      [
+        ['index', String(index)],
+        ['limit', String(CONVERT_PAGE)],
+      ],
+      parseConvertHistory,
+    );
+  }
+
+  /** BYBIT-CONVERT: older coin exchanges, made before converts were listed in full. */
+  coinExchanges(key: BybitCredentials, cursor: string | null) {
+    return this.get(
+      key,
+      '/v5/asset/exchange/order-record',
+      [['limit', String(RECORD_PAGE)], ...this.cursor(cursor)],
+      (result) => {
+        const item = record(result);
+        return {
+          items: list(item.orderBody ?? [], RECORD_PAGE).map(parseCoinExchange),
+          cursor: nextCursor(item.nextPageCursor),
+        };
+      },
     );
   }
 

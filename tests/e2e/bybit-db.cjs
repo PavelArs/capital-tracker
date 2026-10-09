@@ -21,6 +21,7 @@ const { BybitKeyBox } = require(`${dist}/wallet-addresses/bybit-key-box.js`);
 const { BybitSyncAdapter } = require(`${dist}/wallet-addresses/bybit-sync.adapter.js`);
 const { SyncBybitAccount1793300000000 } = require(`${dist}/migrations/1793300000000-SyncBybitAccount.js`);
 const { ReadBybitEarn1794000000000 } = require(`${dist}/migrations/1794000000000-ReadBybitEarn.js`);
+const { ReadBybitConverts1794400000000 } = require(`${dist}/migrations/1794400000000-ReadBybitConverts.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_bybit_e2e';
@@ -189,7 +190,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 47/);
+  assert.match(migrate(database), /Migrations applied: 48/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -221,7 +222,7 @@ async function main() {
       ['bybit', String(uid), exchange, 'Bybit', 'never', null]);
     assert.deepEqual({ ...first.value.exchange, historyFrom: undefined },
       { keyHint: 'ly01', ipBound: false, keyExpiresAt: '2027-01-01T00:00:00.000Z', reportedAt: null, untracked: [], historyFrom: undefined,
-        earnAllowed: null, earn: null });
+        earnAllowed: null, earn: null, convertAllowed: null });
     // The secret and the key are stored encrypted only, and never returned.
     const storedRows = JSON.stringify(await db.query('SELECT * FROM bybit_accounts')) + JSON.stringify(await db.query('SELECT * FROM wallet_addresses'));
     const listed = JSON.stringify(await s.addresses.list(owner));
@@ -458,6 +459,74 @@ async function main() {
     assert.deepEqual(earnOff.result.address.balances.find((item) => item.symbol === 'USDT'), { symbol: 'USDT', quantity: '299.5' });
     console.log(`PASS BYBIT-EARN without the Earn permission nothing of Earn is asked; once ticked on the same key, ${earnPasses.length} passes read three months of yield in seven-day windows: 0.5 USDT and 0.0001 BTC paid become automatic staking rewards (older, pending and untracked yield left out), 300 USDT and 0.1 BTC in Earn count in Bybit's balance, which then matches the records; turned off, Earn no longer counts`);
 
+    // BYBIT-CONVERT: a key without the Exchange History permission reads no converts and says so.
+    const noConvert = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([noConvert.result.outcome, noConvert.result.address.exchange.convertAllowed], ['complete', false]);
+    assert.ok(!noConvert.urls.some((url) => url.pathname.startsWith('/v5/asset/exchange/')), 'No convert request without the permission');
+    // The owner ticks Exchange History on the same key. Bybit lists a convert of 0.01 BTC into
+    // 650 USDT, one of 100 USDT into 0.6 SOL, one still processing, one failed and one between
+    // two untracked coins; the older coin exchange records add 20 XRP sold for 10 USDT before
+    // converts were listed in full, and one made after that date, which the convert history
+    // would list instead.
+    const convertKey = { ...replacement, info: { ...replacement.info, permissions: { ...replacement.info.permissions, Exchange: ['ExchangeHistory'] } } };
+    const converted = (id, at, fromCoin, fromAmount, toCoin, toAmount, exchangeStatus = 'success') => ({ at, row: { accountType: 'funding',
+      exchangeTxId: id, userId: String(uid), fromCoin, fromCoinType: 'crypto', fromAmount, toCoin, toCoinType: 'crypto', toAmount,
+      exchangeStatus, extInfo: {}, convertRate: '0', createdAt: String(at) } });
+    const exchanged = (id, at, fromCoin, fromAmount, toCoin, toAmount) => ({ at, row: { fromCoin, fromAmount, toCoin, toAmount,
+      exchangeRate: '0', createdTime: String(Math.floor(at / 1000)), exchangeTxId: id } });
+    await post('bybit', {
+      keys: [readOnly, convertKey],
+      balances: {
+        FUND: [{ coin: 'USDT', walletBalance: '909.5', transferBalance: '909.5', bonus: '' }, { coin: 'BTC', walletBalance: '0.1901', transferBalance: '0.1901', bonus: '' },
+          { coin: 'SOL', walletBalance: '0.6', transferBalance: '0.6', bonus: '' }],
+        UNIFIED: balances.UNIFIED,
+      },
+      converts: [converted('5100000000000000000000000001', ago(5 * DAY), 'BTC', '0.01', 'USDT', '650'),
+        converted('5100000000000000000000000002', ago(4 * DAY), 'USDT', '100', 'SOL', '0.6'),
+        converted('5100000000000000000000000003', ago(60 * 60_000), 'USDT', '50', 'ETH', '0.02', 'processing'),
+        converted('5100000000000000000000000004', ago(3 * DAY), 'USDT', '70', 'ETH', '0.03', 'failure'),
+        converted('5100000000000000000000000005', ago(2 * DAY), 'XRP', '3', 'MNT', '1')],
+      coinExchanges: [exchanged('5200000000000000001', Date.UTC(2025, 7, 1), 'XRP', '20', 'USDT', '10'),
+        exchanged('5200000000000000002', ago(30 * DAY), 'USDT', '5', 'ETH', '0.002')],
+    });
+    const convertPass = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([convertPass.result.outcome, convertPass.result.imported, convertPass.result.address.exchange.convertAllowed],
+      ['complete', 3, true]);
+    const convertUrls = convertPass.urls.filter((url) => url.pathname.startsWith('/v5/asset/exchange/'));
+    assert.deepEqual(convertUrls.map((url) => `${url.pathname}${url.search}`), [
+      '/v5/asset/exchange/query-convert-history?index=1&limit=100',
+      '/v5/asset/exchange/order-record?limit=50',
+    ]);
+    const convertLegs = (await legsOf(db, wallet)).filter((row) => row.txid.startsWith('bybit-trade-convert-'));
+    assert.deepEqual(convertLegs.map((row) => [row.txid, row.asset, row.received, row.sent, row.direction, row.raw.convert,
+      row.raw.trade.side, row.raw.quoteAsset ?? null, row.raw.quoteUnits ?? null]), [
+      ['bybit-trade-convert-5200000000000000001', 'USDT', '10000000000000000000', '0', 'in', 'exchange', 'sell', null, null],
+      ['bybit-trade-convert-5100000000000000000000000001', 'BTC', '0', '10000000000000000', 'out', 'convert', 'sell', 'USDT', '650000000000000000000'],
+      ['bybit-trade-convert-5100000000000000000000000002', 'SOL', '600000000000000000', '0', 'in', 'convert', 'buy', 'USDT', '-100000000000000000000'],
+    ]);
+    // Converts between USDT and a tracked coin are recognised as a Sell and a Buy without asking.
+    const convertAnswers = await db.query(`SELECT txid, type, automatic FROM chain_transaction_classification_versions
+      WHERE "addressId"=$1 AND txid LIKE 'bybit-trade-convert-51%' ORDER BY txid`, [wallet]);
+    assert.deepEqual(convertAnswers.map((row) => [row.txid, row.type, row.automatic]), [
+      ['bybit-trade-convert-5100000000000000000000000001', 'sell', true],
+      ['bybit-trade-convert-5100000000000000000000000002', 'buy', true],
+    ]);
+    // BYBIT-GAPS: the converts close the difference; Bybit's balance matches the records.
+    assert.deepEqual(convertPass.result.address.balances, [
+      { symbol: 'BTC', quantity: '0.70009' }, { symbol: 'ETH', quantity: '0' }, { symbol: 'SOL', quantity: '0.6' },
+      { symbol: 'USDT', quantity: '1159.5' }, { symbol: 'USDC', quantity: '0' },
+    ]);
+    assert.deepEqual(await held(db, owner, exchange), { BTC: '0.70009', SOL: '0.6', USDT: '1159.5' });
+    const convertAgain = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([convertAgain.result.outcome, convertAgain.result.imported], ['complete', 0]);
+    // Permission withdrawn again: nothing is asked; what was read stays.
+    await post('bybit', { keys: [readOnly, replacement] });
+    const convertOff = await newRequests(() => s.addresses.sync(owner, wallet));
+    assert.deepEqual([convertOff.result.outcome, convertOff.result.address.exchange.convertAllowed], ['complete', false]);
+    assert.ok(!convertOff.urls.some((url) => url.pathname.startsWith('/v5/asset/exchange/')));
+    assert.equal((await legsOf(db, wallet)).filter((row) => row.txid.startsWith('bybit-trade-convert-')).length, 3);
+    console.log('PASS BYBIT-CONVERT without Exchange History no convert is asked; once ticked on the same key, a convert into USDT is a Sell and one from USDT a Buy, recorded without asking; processing, failed and untracked converts are left out; older coin exchanges count, newer ones come from the convert history only; Bybit\'s balance then matches the records');
+
     // Constraints and privacy.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'bybit','not-a-uid')`,
       [owner]), /wallet_addresses_address_check/);
@@ -478,8 +547,9 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new SyncBybitAccount1793300000000().down(), /recovery plan/);
     await assert.rejects(() => new ReadBybitEarn1794000000000().down(), /recovery plan/);
+    await assert.rejects(() => new ReadBybitConverts1794400000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS BYBIT-MIGRATION fresh 47 applies once; neither Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 48 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

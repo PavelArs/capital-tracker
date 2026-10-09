@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type {
+  BybitConvert,
   BybitDeposit,
   BybitEarnCategory,
   BybitEarnYield,
@@ -67,66 +68,143 @@ const leg = (
   raw: { ...fields.raw, txid: fields.txid },
 });
 
+interface Exchange {
+  txid: string;
+  side: 'buy' | 'sell';
+  base: string;
+  quote: string;
+  price: string;
+  /** Of the base coin. */
+  quantity: string;
+  /** In the quote coin. */
+  value: string;
+  fee: string;
+  feeCoin: string;
+  time: number;
+  /** Bybit's record and what kind of exchange it was. */
+  raw: Record<string, unknown>;
+}
+
 /**
- * BYBIT-TRADES: one spot fill as the change it made to the account. A buy adds the base coin
- * less a fee charged in it and spends the quote coin plus a fee charged in that; a sale the
- * other way round. The leg moves the base coin and records the quote side with it, so the
- * account's balances follow Bybit before the trade is answered. A pair whose base coin is not
- * tracked moves only the quote coin; a pair moving no tracked coin is left out.
+ * One exchange of a base coin for a quote coin as the change it made to the account. A buy adds
+ * the base coin less a fee charged in it and spends the quote coin plus a fee charged in that;
+ * a sale the other way round. The leg moves the base coin and records the quote side with it,
+ * so the account's balances follow Bybit before the trade is answered. A pair whose base coin
+ * is not tracked moves only the quote coin; a pair moving no tracked coin is left out.
  */
+function exchangeLeg(exchange: Exchange): BybitLeg | null {
+  const { base: baseCoin, quote: quoteCoin } = exchange;
+  const fee = toUnits(exchange.fee);
+  const feeIn = (coin: string) => (exchange.feeCoin === coin ? fee : 0n);
+  const buy = exchange.side === 'buy';
+  const base = buy
+    ? toUnits(exchange.quantity) - feeIn(baseCoin)
+    : -(toUnits(exchange.quantity) + feeIn(baseCoin));
+  const quote = buy
+    ? -(toUnits(exchange.value) + feeIn(quoteCoin))
+    : toUnits(exchange.value) - feeIn(quoteCoin);
+  const trade = {
+    side: exchange.side,
+    base: baseCoin,
+    quote: quoteCoin,
+    price: exchange.price,
+    quantity: exchange.quantity,
+    value: exchange.value,
+    fee: exchange.fee,
+    feeCoin: exchange.feeCoin,
+  };
+  const blockTime = iso(exchange.time);
+  const fields = { txid: exchange.txid, kind: 'trade' as const, blockTime, feeUnits: 0n };
+  if (tracked(baseCoin))
+    return leg(
+      {
+        ...fields,
+        asset: baseCoin,
+        raw: {
+          kind: 'trade',
+          trade,
+          ...(tracked(quoteCoin) ? { quoteAsset: quoteCoin, quoteUnits: quote.toString() } : {}),
+          ...exchange.raw,
+        },
+      },
+      base,
+    );
+  if (!tracked(quoteCoin)) return null;
+  return leg(
+    { ...fields, asset: quoteCoin, raw: { kind: 'trade', trade, ...exchange.raw } },
+    quote,
+  );
+}
+
+/** BYBIT-TRADES: one spot fill. */
 export function tradeLeg(fill: BybitExecution): BybitLeg | null {
   const pair = splitSymbol(fill.symbol);
   if (!pair) return null;
-  const fee = toUnits(fill.execFee);
-  const feeIn = (coin: string) => (fill.feeCurrency === coin ? fee : 0n);
-  const buy = fill.side === 'Buy';
-  const base = buy
-    ? toUnits(fill.execQty) - feeIn(pair.base)
-    : -(toUnits(fill.execQty) + feeIn(pair.base));
-  const quote = buy
-    ? -(toUnits(fill.execValue) + feeIn(pair.quote))
-    : toUnits(fill.execValue) - feeIn(pair.quote);
-  const txid = `bybit-trade-${fill.execId}`;
-  const trade = {
-    side: buy ? 'buy' : 'sell',
-    base: pair.base,
-    quote: pair.quote,
+  return exchangeLeg({
+    txid: `bybit-trade-${fill.execId}`,
+    side: fill.side === 'Buy' ? 'buy' : 'sell',
+    ...pair,
     price: fill.execPrice,
     quantity: fill.execQty,
     value: fill.execValue,
     fee: fill.execFee,
     feeCoin: fill.feeCurrency,
-  };
-  const blockTime = iso(fill.execTime);
-  if (tracked(pair.base))
-    return leg(
-      {
-        txid,
-        kind: 'trade',
-        asset: pair.base,
-        blockTime,
-        feeUnits: 0n,
-        raw: {
-          kind: 'trade',
-          trade,
-          ...(tracked(pair.quote) ? { quoteAsset: pair.quote, quoteUnits: quote.toString() } : {}),
-          record: fill.raw,
-        },
-      },
-      base,
-    );
-  if (!tracked(pair.quote)) return null;
-  return leg(
-    {
-      txid,
-      kind: 'trade',
-      asset: pair.quote,
-      blockTime,
-      feeUnits: 0n,
-      raw: { kind: 'trade', trade, record: fill.raw },
-    },
+    time: fill.execTime,
+    raw: { record: fill.raw },
+  });
+}
+
+/** The quoted price of one base coin, to 18 decimals. */
+function quotedPrice(value: string, quantity: string): string {
+  const scale = 10n ** BigInt(BYBIT_DECIMALS);
+  const price = (toUnits(value) * scale + toUnits(quantity) / 2n) / toUnits(quantity);
+  const fraction = (price % scale).toString().padStart(BYBIT_DECIMALS, '0').replace(/0+$/, '');
+  return `${price / scale}${fraction ? `.${fraction}` : ''}`;
+}
+
+// Which coin of a convert is its quote: stablecoins and fiat before the large coins Bybit also
+// quotes in; a coin quoted in nothing is always the base.
+const quotePriority = [
+  'USDT',
+  'USDC',
+  'FDUSD',
+  'USDE',
+  'USD1',
+  'DAI',
+  'EUR',
+  'BRL',
+  'TRY',
+  'PLN',
+].concat(['BTC', 'ETH', 'SOL', 'MNT']);
+const quoteRank = (coin: string) =>
+  quotePriority.includes(coin) ? quotePriority.indexOf(coin) : quotePriority.length;
+
+/**
+ * BYBIT-CONVERT: a settled convert as a trade without a fee (Bybit's spread is in its rate).
+ * Converting into a quote coin (USDT and USDC first, then fiat, then BTC, ETH, SOL and MNT)
+ * sells what was given; anything else buys what was received with it. Either way a convert between USDT or USDC and a tracked coin
+ * is recognised as a Buy or Sell like a spot fill.
+ */
+export function convertLeg(convert: BybitConvert, source: 'convert' | 'exchange'): BybitLeg | null {
+  if (convert.state !== 'done' || toUnits(convert.fromAmount) === 0n) return null;
+  if (toUnits(convert.toAmount) === 0n) return null;
+  const sell = quoteRank(convert.toCoin) < quoteRank(convert.fromCoin);
+  const [base, quote, quantity, value] = sell
+    ? [convert.fromCoin, convert.toCoin, convert.fromAmount, convert.toAmount]
+    : [convert.toCoin, convert.fromCoin, convert.toAmount, convert.fromAmount];
+  return exchangeLeg({
+    txid: `bybit-trade-convert-${convert.id}`,
+    side: sell ? 'sell' : 'buy',
+    base,
     quote,
-  );
+    price: quotedPrice(value, quantity),
+    quantity,
+    value,
+    fee: '0',
+    feeCoin: '',
+    time: convert.time,
+    raw: { convert: source, record: convert.raw },
+  });
 }
 
 // Bybit's chain names for the networks the app tracks.

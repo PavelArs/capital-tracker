@@ -3,6 +3,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import {
   type BybitBalance,
   BybitClient,
+  type BybitConvert,
   type BybitCredentials,
   type BybitDeposit,
   type BybitEarnYield,
@@ -11,11 +12,13 @@ import {
   type BybitPage,
   type BybitResult,
   type BybitWithdrawal,
+  CONVERT_PAGE,
 } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import {
   type BybitLeg,
   bybitCoins,
+  convertLeg,
   depositLeg,
   earnLeg,
   tradeLeg,
@@ -40,6 +43,13 @@ const MAX_PAGES_PER_WINDOW = 30;
 const SYNC_TIME_BUDGET_MS = 25_000;
 /** BYBIT-EARN: Bybit lists the last three months of Earn yield; a day less stays inside them. */
 export const EARN_HISTORY_DAYS = 89;
+/** BYBIT-CONVERT: pages of each convert list read on a pass (newest first, all every pass). */
+export const MAX_CONVERT_PAGES = 20;
+/**
+ * Bybit lists converts made on its website in the convert history from 10 September 2025 on;
+ * older ones are read from the coin exchange records, newer ones there would come twice.
+ */
+export const CONVERTS_LISTED_FROM = Date.UTC(2025, 8, 10);
 
 type EarnColumn = 'flexibleReadTo' | 'onchainReadTo';
 type Column =
@@ -98,8 +108,9 @@ class OutOfBudget extends Error {}
 /** Bybit refused the request for the key: for Earn, the key lacks its permission. */
 const refused = (error: unknown) => error instanceof Failed && error.reason === 'key_rejected';
 
-// sync-bybit-account (M22, PR-EXC-1): the account's spot trades, deposits and withdrawals as
-// raw legs, then the balances Bybit reports, all read with the owner's read-only key.
+// sync-bybit-account (M22, PR-EXC-1): the account's spot trades, deposits, withdrawals, Earn
+// yield and converts as raw legs, then the balances Bybit reports, all read with the owner's
+// read-only key.
 @Injectable()
 export class BybitSyncAdapter implements ChainSyncAdapter {
   readonly network = 'bybit';
@@ -180,7 +191,8 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     try {
       // BYBIT-EARN: whether the key may read Earn now, asked on every pass, so turning the
       // permission on in Bybit counts from the next sync without adding the account again.
-      let earn = await this.keyFacts(account, await call(() => this.client.keyInfo(key)), now);
+      const info = await call(() => this.client.keyInfo(key));
+      let earn = await this.keyFacts(account, info, now);
       for (const stream of this.streams) {
         if (stream.earn && !earn) continue;
         const cursor = account[stream.column];
@@ -223,6 +235,18 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
           earn = await this.denyEarn(account);
         }
       }
+      // BYBIT-CONVERT: every convert again on each pass: the lists have no time range to resume.
+      if (info.convert) {
+        try {
+          imported += await this.insertConverts(account, await this.converts(key, call));
+        } catch (error) {
+          if (!refused(error)) throw error;
+          await this.source.query(
+            `UPDATE bybit_accounts SET "convertAllowed" = false WHERE "walletId" = $1`,
+            [account.id],
+          );
+        }
+      }
       const balances = [
         ...(await call(() => this.client.balances(key, 'FUND'))),
         ...(await call(() => this.client.balances(key, 'UNIFIED'))),
@@ -260,15 +284,55 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
   }
 
   /**
-   * BYBIT-EARN: stores the key's public facts as Bybit tells them now, its Earn permission
-   * included; a yield list not read yet starts three months back, as far as Bybit keeps it.
+   * BYBIT-CONVERT: the converts in Bybit's convert history and the older coin exchanges. A key
+   * refused the older list still reads the newer one.
+   */
+  private async converts(
+    key: BybitCredentials,
+    call: <T>(request: () => Promise<BybitResult<T>>) => Promise<T>,
+  ): Promise<BybitLeg[]> {
+    const legs: BybitLeg[] = [];
+    for (let index = 1; index <= MAX_CONVERT_PAGES; index++) {
+      const page: BybitConvert[] = await call(() => this.client.convertHistory(key, index));
+      legs.push(...page.flatMap((item) => convertLeg(item, 'convert') ?? []));
+      if (page.length < CONVERT_PAGE) break;
+    }
+    try {
+      let cursor: string | null = null;
+      for (let pages = 0; pages < MAX_CONVERT_PAGES; pages++) {
+        const at = cursor;
+        const page: BybitPage<BybitConvert> = await call(() => this.client.coinExchanges(key, at));
+        legs.push(
+          ...page.items
+            .filter((item) => item.time < CONVERTS_LISTED_FROM)
+            .flatMap((item) => convertLeg(item, 'exchange') ?? []),
+        );
+        cursor = page.cursor;
+        if (cursor === null || page.items.length === 0) break;
+      }
+    } catch (error) {
+      if (!refused(error)) throw error;
+    }
+    return legs;
+  }
+
+  private insertConverts(account: AccountRow, legs: BybitLeg[]) {
+    return this.source.transaction('READ COMMITTED', (manager) =>
+      this.insert(manager, account, legs),
+    );
+  }
+
+  /**
+   * BYBIT-EARN, BYBIT-CONVERT: stores the key's public facts as Bybit tells them now, its Earn
+   * and Exchange permissions included; a yield list not read yet starts three months back, as far as Bybit keeps it.
    * Whether Earn is read on this pass.
    */
   private async keyFacts(account: AccountRow, info: BybitKeyInfo, now: number) {
     if (!info.earn) {
       await this.source.query(
-        `UPDATE bybit_accounts SET "ipBound" = $2, "keyExpiresAt" = $3 WHERE "walletId" = $1`,
-        [account.id, info.ipBound, info.expiresAt],
+        `UPDATE bybit_accounts SET "ipBound" = $2, "keyExpiresAt" = $3, "convertAllowed" = $4
+          WHERE "walletId" = $1`,
+        [account.id, info.ipBound, info.expiresAt, info.convert],
       );
       return this.denyEarn(account);
     }
@@ -276,9 +340,9 @@ export class BybitSyncAdapter implements ChainSyncAdapter {
     await this.source.query(
       `UPDATE bybit_accounts SET "earnAllowed" = true, "ipBound" = $2, "keyExpiresAt" = $3,
           "flexibleReadTo" = coalesce("flexibleReadTo", $4),
-          "onchainReadTo" = coalesce("onchainReadTo", $4)
+          "onchainReadTo" = coalesce("onchainReadTo", $4), "convertAllowed" = $5
         WHERE "walletId" = $1`,
-      [account.id, info.ipBound, info.expiresAt, from],
+      [account.id, info.ipBound, info.expiresAt, from, info.convert],
     );
     const [row]: Pick<AccountRow, EarnColumn>[] = await this.source.query(
       `SELECT "flexibleReadTo", "onchainReadTo" FROM bybit_accounts WHERE "walletId" = $1`,

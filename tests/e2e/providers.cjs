@@ -68,9 +68,12 @@ let solana = initialSolana();
 // answers the n-th signed request after the post with a retCode or an HTTP status. Earn
 // (BYBIT-EARN) answers only a key whose permissions include Earn: the positions posted per
 // product and the yield records of the last three months, as `yield` the way Bybit sends it.
+// Convert history and coin exchange records (BYBIT-CONVERT) answer only a key whose Exchange
+// permissions include ExchangeHistory, newest first, by page number and by cursor.
 const initialBybit = () => ({ keys: [], executions: [], deposits: [], internalDeposits: [], withdrawals: [],
   balances: { FUND: [], UNIFIED: [] }, earn: { FlexibleSaving: [], OnChain: [], fixed: [] },
-  flexibleYield: [], onchainYield: [], pageSize: null, fault: null, requests: 0, badSignatures: 0 });
+  flexibleYield: [], onchainYield: [], converts: [], coinExchanges: [], pageSize: null, fault: null,
+  requests: 0, badSignatures: 0 });
 let bybit = initialBybit();
 // Synthetic TronGrid (track-tron-wallets): the newest solidified block and raw items exactly as
 // the probe posts them, merged by id. An account's transactions are those whose contract names
@@ -244,6 +247,25 @@ function bybitRequest(request, response, url) {
       return reply(10001, 'Unknown synthetic endpoint');
     // Bybit keeps three months of yield.
     if (Number(params.get('startTime')) < Date.now() - 90 * DAY_MS) return reply(10001, 'Only the past 3 months data');
+  }
+  if (url.pathname.startsWith('/v5/asset/exchange/')) {
+    if (!(key.info.permissions?.Exchange ?? []).includes('ExchangeHistory'))
+      return reply(10005, 'Permission denied, please check your API key permissions.');
+    const limit = Number(params.get('limit'));
+    const newest = (name) => [...bybit[name]].sort((left, right) => right.at - left.at).map((item) => item.row);
+    if (url.pathname === '/v5/asset/exchange/query-convert-history') {
+      const index = Number(params.get('index'));
+      if (!Number.isSafeInteger(index) || index < 1 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+        return reply(700000, 'parameter error');
+      return reply(0, 'ok', { list: newest('converts').slice((index - 1) * limit, index * limit) });
+    }
+    if (url.pathname !== '/v5/asset/exchange/order-record') return reply(10001, 'Unknown synthetic endpoint');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50) return reply(10001, 'limit invalid');
+    const offset = params.has('cursor') ? Number(params.get('cursor')) : 0;
+    if (!Number.isSafeInteger(offset) || offset < 0) return reply(10001, 'cursor invalid');
+    const rows = newest('coinExchanges');
+    return reply(0, 'success', { orderBody: rows.slice(offset, offset + limit),
+      nextPageCursor: offset + limit < rows.length ? String(offset + limit) : '' });
   }
   const lists = {
     '/v5/earn/yield': [params.get('category') === 'OnChain' ? 'onchainYield' : 'flexibleYield', 'yield', 7 * DAY_MS, 100],
@@ -675,6 +697,7 @@ const server = http.createServer(async (request, response) => {
       const fault = data.fault;
       if (!keys || !records(data.executions) || !records(data.deposits) || !records(data.internalDeposits)
         || !records(data.withdrawals) || !records(data.flexibleYield) || !records(data.onchainYield)
+        || !records(data.converts) || !records(data.coinExchanges)
         || (data.balances !== undefined && (!plain(data.balances)
           || !coins(data.balances.FUND) || !coins(data.balances.UNIFIED)))
         || (data.earn !== undefined && (!plain(data.earn) || !coins(data.earn.FlexibleSaving)
@@ -688,6 +711,7 @@ const server = http.createServer(async (request, response) => {
       bybit = { keys: data.keys ?? bybit.keys, executions: merge('executions'), deposits: merge('deposits'),
         internalDeposits: merge('internalDeposits'), withdrawals: merge('withdrawals'),
         flexibleYield: merge('flexibleYield'), onchainYield: merge('onchainYield'),
+        converts: merge('converts'), coinExchanges: merge('coinExchanges'),
         balances: data.balances ? { FUND: data.balances.FUND ?? [], UNIFIED: data.balances.UNIFIED ?? [] } : bybit.balances,
         earn: data.earn ? { FlexibleSaving: data.earn.FlexibleSaving ?? [], OnChain: data.earn.OnChain ?? [],
           fixed: data.earn.fixed ?? [] } : bybit.earn,

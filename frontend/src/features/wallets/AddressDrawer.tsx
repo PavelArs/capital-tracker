@@ -15,6 +15,7 @@ import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
 import {
   addressValue,
+  ConvertNote,
   chainAmounts,
   EarnSection,
   PoolsSection,
@@ -31,15 +32,20 @@ const directionLabels: Record<AddressTransaction['direction'], string> = {
   out: 'Sent',
   self: 'To itself',
 };
-/** A Bybit record: a spot trade, a deposit or withdrawal (M22), or Earn yield (BYBIT-EARN). */
+/**
+ * A Bybit record: a spot trade, a deposit or withdrawal (M22), Earn yield (BYBIT-EARN) or a
+ * convert (BYBIT-CONVERT).
+ */
 const recordLabel = (item: AddressTransaction) =>
-  item.txid.startsWith('bybit-trade-')
-    ? 'Trade'
-    : item.txid.startsWith('bybit-earn-')
-      ? 'Earn yield'
-      : item.direction === 'out'
-        ? 'Withdrawal'
-        : 'Deposit';
+  item.txid.startsWith('bybit-trade-convert-')
+    ? 'Convert'
+    : item.txid.startsWith('bybit-trade-')
+      ? 'Trade'
+      : item.txid.startsWith('bybit-earn-')
+        ? 'Earn yield'
+        : item.direction === 'out'
+          ? 'Withdrawal'
+          : 'Deposit';
 const dayFormat = new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
   month: 'short',
@@ -319,6 +325,7 @@ export default function AddressDrawer({
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {address.pools && <PoolsSection pools={address.pools} />}
           {exchange && <EarnSection exchange={exchange} />}
+          {exchange && <ConvertNote exchange={exchange} />}
           {syncProblem(address, run) && (
             <p className="wallets-message wallets-message--error" role="alert">
               {syncProblem(address, run)}
