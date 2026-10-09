@@ -230,8 +230,9 @@ export default function AddressDrawer({
               <div>
                 <dt>Tracked assets</dt>
                 <dd>
-                  {network.assets.join(', ')}
-                  {network.anyToken && ' and every other token'}
+                  {exchange
+                    ? 'Every coin the account holds; Bybit prices the ones Kraken does not list'
+                    : `${network.assets.join(', ')}${network.anyToken ? ' and every other token' : ''}`}
                 </dd>
               </div>
             )}

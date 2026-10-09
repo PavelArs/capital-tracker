@@ -69,6 +69,7 @@ const expectedMigrationNames = [
   'TrackTronWallets1793600000000',
   'ReadBybitEarn1794000000000',
   'ReadBybitConverts1794400000000',
+  'PriceBybitCoins1794500000000',
   'TrackAnyChainToken1794900000000',
 ];
 const children = new Set();
@@ -587,7 +588,7 @@ async function main() {
     assert.deepEqual(
       (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current forty-nine-migration ledger',
+      'The actual migration CLI must build the complete current fifty-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {

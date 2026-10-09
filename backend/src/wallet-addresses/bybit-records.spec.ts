@@ -7,6 +7,7 @@ import type {
 } from './bybit-client';
 import {
   chainTxid,
+  completedTradeLeg,
   convertLeg,
   depositLeg,
   earnLeg,
@@ -90,11 +91,26 @@ describe('BYBIT-TRADES: a spot fill as a leg of the account', () => {
     expect(leg?.raw.quoteUnits).toBe(((4995n * E18) / 100n).toString());
   });
 
-  it('a pair whose base coin is not tracked moves only the quote coin; one of neither is left out', () => {
-    const leg = tradeLeg(fill({ symbol: 'XRPUSDT', execFee: '0.1', feeCurrency: 'XRP' }));
+  it('BYBIT-ANY-COIN: a fill of any coin moves that coin and records its quote side', () => {
+    const fee = { execQty: '1000', execFee: '0.1', feeCurrency: 'XRP' };
+    expect(tradeLeg(fill({ symbol: 'XRPUSDT', ...fee }))).toMatchObject({
+      asset: 'XRP',
+      receivedUnits: 1000n * E18 - E18 / 10n,
+      direction: 'in',
+    });
+    expect(tradeLeg(fill({ symbol: 'XRPUSDT', execFee: '0' }))?.raw).toMatchObject({
+      quoteAsset: 'USDT',
+      quoteUnits: (-650n * E18).toString(),
+    });
+    // Fiat is money, not a coin of the account.
+    expect(tradeLeg(fill({ symbol: 'XRPEUR' }))?.raw).not.toHaveProperty('quoteAsset');
+  });
+
+  it('a pair whose base ticker cannot be recorded moves only the quote coin; one of neither is left out', () => {
+    const leg = tradeLeg(fill({ symbol: 'SUSDT', execFee: '0.1', feeCurrency: 'S' }));
     expect(leg).toMatchObject({ asset: 'USDT', sentUnits: 650n * E18, direction: 'out' });
     expect(leg?.raw.quoteAsset).toBeUndefined();
-    expect(tradeLeg(fill({ symbol: 'XRPEUR' }))).toBeNull();
+    expect(tradeLeg(fill({ symbol: 'SEUR' }))).toBeNull();
   });
 });
 
@@ -136,7 +152,13 @@ describe('BYBIT-DEPOSIT: deposits and withdrawals keep the chain hash', () => {
   it('leaves out a deposit not yet credited, failed, or of an untracked coin', () => {
     expect(depositLeg(deposit({ state: 'pending', time: null }))).toBeNull();
     expect(depositLeg(deposit({ state: 'failed' }))).toBeNull();
-    expect(depositLeg(deposit({ coin: 'XRP' }))).toBeNull();
+    expect(depositLeg(deposit({ coin: 'S' }))).toBeNull();
+    expect(depositLeg(deposit({ coin: 'EUR' }))).toBeNull();
+    // BYBIT-ANY-COIN: any other coin is a record of the account.
+    expect(depositLeg(deposit({ coin: 'XRP', chain: 'XRP' }))).toMatchObject({
+      asset: 'XRP',
+      receivedUnits: E18 / 2n,
+    });
   });
 
   it('a withdrawal sends its amount plus the fee, as an own wallet sends amount plus fee', () => {
@@ -200,7 +222,8 @@ describe('BYBIT-EARN: Earn yield as records', () => {
     expect(earnLeg(paid({ state: 'pending' }), 'FlexibleSaving')).toBeNull();
     expect(earnLeg(paid({ state: 'failed' }), 'FlexibleSaving')).toBeNull();
     expect(earnLeg(paid({ amount: '0' }), 'FlexibleSaving')).toBeNull();
-    expect(earnLeg(paid({ coin: 'MNT' }), 'FlexibleSaving')).toBeNull();
+    expect(earnLeg(paid({ coin: 'S' }), 'FlexibleSaving')).toBeNull();
+    expect(earnLeg(paid({ coin: 'MNT' }), 'FlexibleSaving')).toMatchObject({ asset: 'MNT' });
   });
 });
 
@@ -264,15 +287,28 @@ describe('BYBIT-CONVERT: a convert as a trade of the account', () => {
     expect(swap).toMatchObject({ asset: 'SOL', direction: 'out' });
   });
 
-  it('a coin the app does not track moves only the tracked side; neither tracked is left out', () => {
+  it('BYBIT-ANY-COIN: a convert of any two coins moves the base and records the quote', () => {
     const sold = convertLeg(convert({ fromCoin: 'XRP', fromAmount: '1000' }), 'convert');
+    expect(sold).toMatchObject({ asset: 'XRP', direction: 'out', sentUnits: 1000n * E18 });
+    expect(sold?.raw).toMatchObject({
+      quoteAsset: 'USDT',
+      quoteUnits: ((6505n * E18) / 10n).toString(),
+    });
+    expect(convertLeg(convert({ fromCoin: 'XRP', toCoin: 'MNT' }), 'convert')).toMatchObject({
+      asset: 'XRP',
+      raw: { quoteAsset: 'MNT' },
+    });
+  });
+
+  it('a ticker the app cannot record moves only the other side; neither is left out', () => {
+    const sold = convertLeg(convert({ fromCoin: 'S', fromAmount: '1000' }), 'convert');
     expect(sold).toMatchObject({
       asset: 'USDT',
       direction: 'in',
       receivedUnits: (6505n * E18) / 10n,
     });
     expect(sold?.raw).not.toHaveProperty('quoteAsset');
-    expect(convertLeg(convert({ fromCoin: 'XRP', toCoin: 'MNT' }), 'convert')).toBeNull();
+    expect(convertLeg(convert({ fromCoin: 'S', toCoin: 'EUR' }), 'convert')).toBeNull();
   });
 
   it('leaves out a convert still processing, failed or of nothing', () => {
@@ -280,5 +316,52 @@ describe('BYBIT-CONVERT: a convert as a trade of the account', () => {
     expect(convertLeg(convert({ state: 'failed' }), 'convert')).toBeNull();
     expect(convertLeg(convert({ toAmount: '0' }), 'convert')).toBeNull();
     expect(convertLeg(convert({ fromAmount: '0' }), 'convert')).toBeNull();
+  });
+});
+
+describe('BYBIT-ANY-COIN: a stored trade that moved only its quote coin', () => {
+  const stored = (leg: ReturnType<typeof tradeLeg>) => JSON.parse(JSON.stringify(leg?.raw));
+  const time = new Date(Date.UTC(2026, 0, 2, 3, 4, 5));
+
+  it('becomes the leg of the coin it bought, with the quote side recorded', () => {
+    const fee = { symbol: 'XRPUSDT', execQty: '1000', execFee: '0.1', feeCurrency: 'XRP' };
+    // What an account stored before any coin was tracked: USDT out, the fill kept in raw.
+    const before = {
+      kind: 'trade',
+      trade: {
+        side: 'buy',
+        base: 'XRP',
+        quote: 'USDT',
+        price: '65000',
+        quantity: '1000',
+        value: '650',
+        fee: '0.1',
+        feeCoin: 'XRP',
+      },
+      record: { symbol: 'XRPUSDT' },
+      txid: 'bybit-trade-exec-1',
+    };
+    const leg = completedTradeLeg(before, time);
+    expect(leg).toEqual({
+      ...tradeLeg(fill({ ...fee, raw: { symbol: 'XRPUSDT' } })),
+      raw: {
+        kind: 'trade',
+        trade: before.trade,
+        quoteAsset: 'USDT',
+        quoteUnits: (-650n * E18).toString(),
+        record: { symbol: 'XRPUSDT' },
+        txid: 'bybit-trade-exec-1',
+      },
+    });
+    expect(leg?.blockTime).toBe(time.toISOString());
+  });
+
+  it('leaves a full leg, a ticker still not recorded and anything else as it is', () => {
+    expect(completedTradeLeg(stored(tradeLeg(fill())), time)).toBeNull();
+    const quoteOnly = stored(tradeLeg(fill({ symbol: 'SUSDT' })));
+    expect(quoteOnly.trade.base).toBe('S');
+    expect(completedTradeLeg(quoteOnly, time)).toBeNull();
+    expect(completedTradeLeg({ kind: 'deposit', txid: 'bybit-deposit-1' }, time)).toBeNull();
+    expect(completedTradeLeg({ kind: 'trade', txid: 'x', trade: null }, time)).toBeNull();
   });
 });

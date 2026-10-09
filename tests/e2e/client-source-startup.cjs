@@ -184,7 +184,7 @@ async function main() {
       (SELECT count(*) FROM migrations) AS migrations,
       (SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 1) AS latest_migration,
       (SELECT count(*) FROM owner_auth WHERE "userId"='11111111-1111-4111-8111-111111111111') AS owners`);
-    assert.equal(Number(state.migrations), 49, 'Run after the actual preserved forty-nine migrations');
+    assert.equal(Number(state.migrations), 50, 'Run after the actual preserved fifty migrations');
     assert.equal(state.latest_migration, 'TrackAnyChainToken1794900000000',
       'Latest current migration follows the preceding exact-ledger migration probe');
     assert.equal(Number(state.owners), 1, 'Run after synthetic owner seed and before HTTP traffic');
@@ -205,7 +205,7 @@ async function main() {
     assert.equal(shown.status, 0, 'Migration CLI must work without the HTTP-only setting');
     const shownNames = [...shown.stdout.matchAll(/^\[X\] (\S+)$/gm)].map((match) => match[1]).sort();
     const appliedNames = (await client.query('SELECT name FROM migrations ORDER BY name')).rows.map((row) => row.name);
-    assert.equal(shownNames.length, 49);
+    assert.equal(shownNames.length, 50);
     assert.deepEqual(shownNames, appliedNames, 'CLI displays every exact applied migration from the preserved ledger');
     assert.ok(!(shown.stdout + shown.stderr).includes('TRUSTED_PROXY_IPS'));
     assert.equal(await fingerprint(client), before, 'Read-only CLI inspection preserves all database state');
