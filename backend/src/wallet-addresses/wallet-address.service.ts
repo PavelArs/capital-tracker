@@ -366,7 +366,7 @@ function tronStakingOf(row: AddressRow) {
  */
 function tronReportedBalance(row: AddressRow) {
   const reported = row.tron?.reported;
-  if (row.network !== 'tron' || !reported) return null;
+  if (!reported) return null;
   const trx = chainAsset('tron', null);
   const units = (value: string | undefined) => BigInt(value ?? '0');
   const total =
@@ -408,7 +408,10 @@ function summary(row: AddressRow, now = new Date()) {
     balances,
     staking,
     pools,
-    reportedBalance: state === 'complete' ? tronReportedBalance(row) : null,
+    // Tron only: what the chain reports when the history explains a different TRX total.
+    ...(row.network === 'tron'
+      ? { reportedBalance: state === 'complete' ? tronReportedBalance(row) : null }
+      : {}),
     exchange: row.exchange
       ? {
           // The last four characters of the API key; the secret is never returned.
