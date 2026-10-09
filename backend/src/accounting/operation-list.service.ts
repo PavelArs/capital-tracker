@@ -7,7 +7,7 @@ import {
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
+import { storedPricesAt } from '../prices/market-price.store';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import type { ChainType, Classification } from './chain-classification';
@@ -315,8 +315,14 @@ export class OperationListService {
           WHERE w."ownerId"=$1`,
         [owner],
       );
-      const symbols = new Set(chain.map((row) => chainAsset(row.network, row.asset).symbol));
-      const market = await latestMarketPrices(manager, [...symbols], now);
+      // EST-AT-TIME: each chain transaction is valued at the price stored for its own time.
+      const marketPrices = await storedPricesAt(
+        manager,
+        chain.map((row) => ({
+          asset: chainAsset(row.network, row.asset).symbol,
+          at: row.blockTime.toISOString(),
+        })),
+      );
       const currency = asked ?? (await readMainCurrency(manager, owner));
       const fx = new FxConverter(await readFxRates(manager), currency);
 
@@ -457,12 +463,7 @@ export class OperationListService {
                     carryTransferId: row.producedSwapId ? row.producedTransferId : null,
                   },
           })),
-          marketPrices: new Map(
-            market.map((row) => [
-              row.asset,
-              { priceUsd: row.price, observedAt: row.observedAt, source: row.source },
-            ]),
-          ),
+          marketPrices,
           dustThresholdUsd: await readDustThreshold(manager, owner),
         },
         fx,

@@ -728,7 +728,8 @@ export default function TransactionsPage() {
             {currency === 'USD'
               ? 'Values are in USD as recorded'
               : `Values are in ${currency} at the Bank of Russia rate of each transaction's date`}
-            ; ≈ marks an estimate at the latest stored price. Dates and times are in UTC.
+            ; ≈ marks an estimate at the price stored for the transaction's time. Dates and times
+            are in UTC.
           </p>
         </section>
       )}

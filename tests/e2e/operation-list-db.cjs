@@ -296,8 +296,10 @@ async function everyJournal(db, s, f) {
   const wallet = await chainRows(db, owner);
   await db.query(
     `INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
-    VALUES ('BTC','USD','kraken',$1,'84945','hourly-close')`,
-    [new Date(now.getTime() - 30 * 60_000)],
+    VALUES ('BTC','USD','kraken',$1,'84945','hourly-close'),
+      ('BTC','USD','kraken',$2,'120000','hourly-close')`,
+    // EST-AT-TIME: the receipt is valued at the price of its own hour, never today's.
+    ['2025-06-20T07:30:00.000Z', new Date(now.getTime() - 30 * 60_000)],
   );
   // Another owner's operations never mix in.
   const foreignBtc = await instrument(s, other, {
@@ -347,7 +349,7 @@ async function everyJournal(db, s, f) {
   assert.deepEqual(receipt.chain, {
     txid: txid(1),
     blockHeight: 800001,
-    priceObservedAt: new Date(now.getTime() - 30 * 60_000).toISOString(),
+    priceObservedAt: '2025-06-20T07:30:00.000Z',
     direction: 'in',
     pairedTxid: null,
   });

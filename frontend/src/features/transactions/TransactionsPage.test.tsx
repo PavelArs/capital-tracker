@@ -79,7 +79,7 @@ const chainOperation = (n: number, changes: Partial<Operation>): Operation =>
     chain: {
       txid: txid(n),
       blockHeight: 800000 + n,
-      priceObservedAt: '2026-10-04T11:00:00.000Z',
+      priceObservedAt: '2025-06-20T08:00:00.000Z',
       direction: changes.direction ?? 'in',
     },
     status: 'needs-classification',
@@ -487,6 +487,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Transaction')).toBe(`${txid(1)}CopyView in explorer`);
     expect(fact('Block')).toBe('800,001');
     expect(fact('Network fee')).toBe('Paid by sender');
+    // EST-AT-TIME: the estimate is at the price stored for the transaction's hour.
+    expect(fact('Estimated value')).toBe('≈ $780.10 at the price stored Jun 20, 2025, 08:00 UTC');
     expect(fact('Status')).toBe('Needs classification');
     expect(fact('Source')).toBe('Blockchain');
     expect(within(drawer).getByRole('group', { name: 'What was this transaction?' })).toBeVisible();
