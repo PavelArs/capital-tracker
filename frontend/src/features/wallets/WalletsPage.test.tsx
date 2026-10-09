@@ -697,6 +697,46 @@ describe('M14: Ethereum wallets', () => {
     expect(drawer).toHaveTextContent('Etherscan');
   });
 
+  it('ETH-STAKE-BALANCE counts ETH in a staking pool in the balance and names the pool', async () => {
+    // A synthetic pool contract.
+    const pool = `0x${'7c'.repeat(20)}`;
+    const staked = ethWallet({
+      staking: {
+        symbol: 'ETH',
+        quantity: '1.002000000000000000',
+        rewards: '0.002000000000000000',
+        accounts: [
+          {
+            account: pool,
+            validator: null,
+            pool: 'ocsETH',
+            state: 'active',
+            quantity: '1.002000000000000000',
+            rewards: '0.002000000000000000',
+          },
+        ],
+      },
+    });
+    setup([wallet(1, {}), staked], withEther());
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    const row = within(trustCard).getByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 250 USDC1.002 ETH staked');
+
+    const user = userEvent.setup();
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    const staking = within(drawer).getByRole('region', { name: 'Staking' });
+    expect(staking).toHaveTextContent('Available0.498 ETH');
+    expect(staking).toHaveTextContent('Staked1.002 ETH');
+    expect(staking).toHaveTextContent('Rewards so far0.002 ETH');
+    const list = within(staking).getByRole('list', { name: 'Staking pools' });
+    const [item] = within(list).getAllByRole('listitem');
+    expect(item).toHaveTextContent('0x7c7c7c…7c7c7c');
+    expect(item).toHaveTextContent('ocsETH staking pool');
+    expect(item).toHaveTextContent('Active');
+    expect(staking).toHaveTextContent('moving it into a staking pool or back is not a sale');
+  });
+
   it('stacks the assets of an Ethereum row on a phone', async () => {
     vi.stubGlobal('matchMedia', (query: string) => ({
       matches: true,

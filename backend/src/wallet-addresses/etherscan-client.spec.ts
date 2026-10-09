@@ -256,4 +256,48 @@ describe('ETH-SYNC Etherscan client', () => {
       reason: 'invalid_response',
     });
   });
+
+  it('calls a contract as of a block and reads its answer or its revert', async () => {
+    const word = `0x${'0'.repeat(48)}${'de0b6b3a7640000'.padStart(16, '0')}`;
+    replies.push(
+      json({ jsonrpc: '2.0', id: 1, result: word.toUpperCase().replace('0X', '0x') }),
+      json({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } }),
+      json({ jsonrpc: '2.0', id: 1, result: '0x' }),
+    );
+    const data = `0x3af9e669${'0'.repeat(24)}${owned.slice(2)}`;
+    await expect(client().call(other, data, 20_000_000)).resolves.toEqual({ ok: true, data: word });
+    expect(Object.fromEntries(requests[0].searchParams)).toEqual({
+      chainid: '1',
+      module: 'proxy',
+      action: 'eth_call',
+      to: other,
+      data,
+      tag: '0x1312d00',
+      apikey: key,
+    });
+    await expect(client().call(other, data, 1)).resolves.toEqual({ ok: true, data: null });
+    await expect(client().call(other, data, 1)).resolves.toEqual({ ok: true, data: '0x' });
+  });
+
+  it.each([
+    [
+      'a refusal',
+      { status: '0', message: 'NOTOK', result: 'Max rate limit reached' },
+      'rate_limited',
+    ],
+    [
+      'another node error',
+      { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'missing trie node' } },
+      'invalid_response',
+    ],
+    ['an odd hex answer', { jsonrpc: '2.0', id: 1, result: '0x123' }, 'invalid_response'],
+    [
+      'an oversized answer',
+      { jsonrpc: '2.0', id: 1, result: `0x${'00'.repeat(4097)}` },
+      'invalid_response',
+    ],
+  ] as const)('maps %s of a contract call', async (_case, body, reason) => {
+    replies.push(json(body));
+    await expect(client().call(other, '0x3af9e669', 1)).resolves.toEqual({ ok: false, reason });
+  });
 });

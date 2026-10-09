@@ -41,8 +41,11 @@ const backfillStart = Date.parse('2025-01-01T00:00:00Z') / 1000;
 let cbr = null;
 // Synthetic Etherscan V2 (track-ethereum-wallets): the newest block and raw list items exactly as
 // the probe posts them; each list answers the items of an address in a block range, oldest first.
+// Pools (track-ethereum-stake) answer eth_call: balanceOfUnderlying(holder) as of a block is the
+// posted amount of the newest posted reading at or before it (0 before the first), symbol() is
+// the posted symbol; a contract never posted reverts, like one without these functions.
 const etherscanKey = 'acceptance-etherscan-key';
-const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], fault: null, requests: 0 });
+const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], pools: {}, fault: null, requests: 0 });
 let ethereum = initialEthereum();
 // Synthetic Solana mainnet JSON-RPC (track-solana-wallets): the finalized slot and raw
 // getTransaction results exactly as the probe posts them. Signatures and token accounts are
@@ -114,6 +117,28 @@ function etherscan(response, url) {
   const action = query.get('action');
   if (query.get('module') === 'proxy' && action === 'eth_blockNumber') {
     return respond(response, 200, { jsonrpc: '2.0', id: 83, result: `0x${ethereum.tip.toString(16)}` });
+  }
+  if (query.get('module') === 'proxy' && action === 'eth_call') {
+    const to = query.get('to') ?? '';
+    const data = query.get('data') ?? '';
+    const tag = query.get('tag') ?? '';
+    if (!/^0x[0-9a-f]{40}$/.test(to) || !/^0x[0-9a-f]{8}([0-9a-f]{64})*$/.test(data) || !/^0x[0-9a-f]{1,8}$/.test(tag)) {
+      return respond(response, 200, { jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'invalid argument' } });
+    }
+    const block = Number.parseInt(tag, 16);
+    const pool = ethereum.pools[to];
+    const revert = () => respond(response, 200, { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } });
+    if (!pool) return revert();
+    const word = (value) => BigInt(value).toString(16).padStart(64, '0');
+    if (data === '0x95d89b41') {
+      const symbol = Buffer.from(pool.symbol).toString('hex').padEnd(64, '0');
+      return respond(response, 200, { jsonrpc: '2.0', id: 1, result: `0x${word(32)}${word(pool.symbol.length)}${symbol}` });
+    }
+    if (data.length !== 74 || !data.startsWith('0x3af9e669')) return revert();
+    const holder = `0x${data.slice(-40)}`;
+    const reading = (pool.readings ?? []).filter((item) => item.holder === holder && item.block <= block)
+      .sort((left, right) => right.block - left.block)[0];
+    return respond(response, 200, { jsonrpc: '2.0', id: 1, result: `0x${word(reading?.units ?? '0')}` });
   }
   const list = { txlist: 'normal', txlistinternal: 'internal', tokentx: 'tokens' }[action];
   const address = query.get('address') ?? '';
@@ -416,14 +441,21 @@ const server = http.createServer(async (request, response) => {
           && Object.entries(item).every(([key, field]) => /^[A-Za-z_]{1,24}$/.test(key)
             && typeof field === 'string' && field.length <= 100)));
       const fault = data.fault;
+      const pools = (value) => value === undefined || (value && typeof value === 'object' && !Array.isArray(value)
+        && Object.entries(value).length <= 10 && Object.entries(value).every(([contract, pool]) => /^0x[0-9a-f]{40}$/.test(contract)
+          && pool && typeof pool.symbol === 'string' && /^[A-Za-z0-9.]{1,16}$/.test(pool.symbol)
+          && Array.isArray(pool.readings) && pool.readings.length <= 100 && pool.readings.every((item) => item
+            && /^0x[0-9a-f]{40}$/.test(item.holder) && Number.isSafeInteger(item.block) && item.block >= 0
+            && typeof item.units === 'string' && /^(0|[1-9][0-9]{0,40})$/.test(item.units))));
       if ((data.tip !== undefined && (!Number.isSafeInteger(data.tip) || data.tip < 0 || data.tip >= 2 ** 31))
-        || !items(data.normal) || !items(data.internal) || !items(data.tokens)
+        || !items(data.normal) || !items(data.internal) || !items(data.tokens) || !pools(data.pools)
         || (fault !== undefined && (!fault || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
           || (fault.rateLimited !== true && (!Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))))) {
         return respond(response, 400, { error: 'Invalid synthetic Ethereum fixture' });
       }
       ethereum = { tip: data.tip ?? ethereum.tip, normal: data.normal ?? ethereum.normal,
         internal: data.internal ?? ethereum.internal, tokens: data.tokens ?? ethereum.tokens,
+        pools: data.pools ?? ethereum.pools,
         fault: fault ? { onRequest: fault.onRequest, status: fault.status, rateLimited: fault.rateLimited === true } : null,
         requests: 0 };
       return respond(response, 200, { ok: true, tip: ethereum.tip });

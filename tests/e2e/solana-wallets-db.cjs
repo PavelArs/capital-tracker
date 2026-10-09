@@ -230,7 +230,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 41/);
+  assert.match(migrate(database), /Migrations applied: 42/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -445,7 +445,7 @@ async function main() {
     const stakedSummary = staked.result.address;
     assert.deepEqual(stakedSummary.balances[0], { symbol: 'SOL', quantity: '12.039995000' });
     assert.deepEqual(stakedSummary.staking, { symbol: 'SOL', quantity: '10.040000000', rewards: '0.040000000', accounts: [
-      { account: stakeAccount, validator: vote, state: 'active', quantity: '10.040000000', rewards: '0.040000000' }] });
+      { account: stakeAccount, validator: vote, pool: null, state: 'active', quantity: '10.040000000', rewards: '0.040000000' }] });
     // Only the fee left: the staked SOL keeps its lots; the reward arrives without a purchase price.
     // In time order; the synthetic chain is dated 2025, rewards when this probe saw them.
     const movesOf = async () => ((await readChainMoves(db.manager, owner)).get(stakerAccount) ?? [])
@@ -508,7 +508,7 @@ async function main() {
     await assert.rejects(() => new TrackSolanaWallets1792100000000().down(), /recovery plan/);
     await assert.rejects(() => new TrackSolanaStake1792600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS SOL-MIGRATION fresh 41 applies once; both Solana migrations refuse down');
+    console.log('PASS SOL-MIGRATION fresh 42 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }

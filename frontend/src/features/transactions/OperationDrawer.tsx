@@ -56,6 +56,13 @@ function editLink(operation: Operation): [string, string] | null {
     : null;
 }
 
+/** Where a stake row's coins went: a Solana stake account, an Ethereum staking pool. */
+function stakePlace(operation: Operation): string {
+  return operation.wallet?.network === 'ethereum'
+    ? 'a staking pool of this wallet'
+    : 'a stake account of this wallet';
+}
+
 function title(operation: Operation): string {
   const label = operation.type ? typeLabel(operation) : `${typeLabel(operation)} transaction`;
   return `${label} · ${ticker(operation.asset)}`;
@@ -414,7 +421,8 @@ export default function OperationDrawer({
         ? `≈ ${money(operation.estimatedValue, currency)} at the latest stored price`
         : null;
   const purchase = operation.type === 'buy';
-  // SOL-STAKE-MOVE: a move into the wallet's own stake account or back has nothing to classify.
+  // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool
+  // or back has nothing to classify.
   const stakeMove = operation.type === 'stake' || operation.type === 'unstake';
   const summary = (
     <>
@@ -442,8 +450,8 @@ export default function OperationDrawer({
       {stakeMove && (
         <p className="transactions-notice" role="note">
           {operation.type === 'stake'
-            ? 'Moved into a stake account of this wallet: the coins stay yours and keep their purchase price.'
-            : 'Returned from a stake account of this wallet: not income and not a deposit, rewards count as they are earned.'}{' '}
+            ? `Moved into ${stakePlace(operation)}: the coins stay yours and keep their purchase price.`
+            : `Returned from ${stakePlace(operation)}: not income and not a deposit, rewards count as they are earned.`}{' '}
           Only the network fee is a cost.
         </p>
       )}

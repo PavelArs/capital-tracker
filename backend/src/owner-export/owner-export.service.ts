@@ -3,6 +3,7 @@ import { DataSource, type EntityManager } from 'typeorm';
 import { deriveCarryInAmounts } from '../accounting/fifo';
 import { parseUuid } from '../accounting/input';
 import { isTradePurpose } from '../accounting/trade-purpose';
+import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { backupTables, legacyTables } from './backup-tables';
 import {
   backupDocument,
@@ -413,9 +414,9 @@ export class OwnerExportService {
           a.name AS "accountName", t.txid, t.asset, t."blockHeight", t."blockTime", t.direction,
           t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
           t."feeUnits"::text AS "feeUnits",
-          coalesce((SELECT sum(m.units) FROM wallet_stake_moves m WHERE t.asset IS NULL
+          coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
             AND m."ownerId"=t."ownerId" AND m."addressId"=t."addressId"
-            AND m.signature=t.txid), 0)::text AS "stakeUnits",
+            AND m.txid=t.txid), 0)::text AS "stakeUnits",
           c.version AS "classificationVersion", c.status AS "classificationStatus",
           c.type AS "classificationType", c.details AS "classificationDetails",
           c.comment AS "classificationComment", c.automatic, c."linkedAddressId",
