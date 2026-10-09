@@ -261,7 +261,8 @@ function problems(draft: Draft): Set<Problem> {
     draft.type === 'reward' ||
     draft.type === 'staking-reward' ||
     draft.type === 'pool-reward' ||
-    draft.type === 'airdrop'
+    draft.type === 'airdrop' ||
+    draft.type === 'fee'
   ) {
     if (draft.value.trim() && !positive(draft.value)) found.add('value');
   } else if (draft.type && draft.type !== 'other' && !positive(draft.value)) found.add('value');
@@ -300,6 +301,7 @@ function answer(draft: Draft): ChainClassification | null {
     case 'staking-reward':
     case 'pool-reward':
     case 'airdrop':
+    case 'fee':
       return { type: draft.type, valueUsd: draft.value.trim() ? decimal(draft.value) : null };
     case 'other':
       return { type: 'other' };
@@ -369,6 +371,8 @@ function failure(error: unknown): ReactNode {
     message === 'Several addresses of that account took part in this transaction'
   )
     return 'Several addresses of that wallet took part in this transaction, so it cannot be linked automatically. Choose another type.';
+  if (status === 422 && message === 'No stored price for this coin at that time')
+    return 'There is no stored price for this coin at that time. Enter the value in USD.';
   if (status === 422) return 'This type does not fit the direction of the transaction.';
   if (status === 409)
     return 'This could not be saved: it was changed elsewhere, or the account would not hold enough on that date. Close this window, reload and try again.';
@@ -474,6 +478,7 @@ export default function ClassifyForm({
     draft.type === 'pool-reward' ||
     draft.type === 'airdrop' ||
     draft.type === 'swap' ||
+    draft.type === 'fee' ||
     poolWithdrawal;
   const other = draft.type === 'other';
   // Other asks only for a comment, so it shows up front rather than under "More options".
@@ -736,13 +741,11 @@ export default function ClassifyForm({
                 optional ? 'Enter a value above zero, or leave it empty' : 'Enter the value in USD',
               ) || (
                 <span className="portfolio-field__hint">
-                  {swap
+                  {swap || draft.type === 'fee'
                     ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
                     : poolWithdrawal
                       ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                      : draft.type === 'expense' ||
-                          draft.type === 'fee' ||
-                          operation.direction !== 'in'
+                      : draft.type === 'expense' || operation.direction !== 'in'
                         ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
                         : optional
                           ? 'Without a value the coins count in net worth, not in profit.'
