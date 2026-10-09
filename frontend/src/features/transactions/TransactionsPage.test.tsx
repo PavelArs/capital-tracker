@@ -986,6 +986,39 @@ describe('classify-chain-transactions (M12)', () => {
     expect(classify.mock.calls[0][2].classification).toEqual({ type: 'other' });
   });
 
+  it('FEE-VALUE: a fee may be saved without a value; the stored price then counts', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([nextOne]));
+    const noPrice = new AxiosError('unprocessable', '422', undefined, undefined, {
+      status: 422,
+      statusText: 'Unprocessable Entity',
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+      data: { message: 'No stored price for this coin at that time' },
+    });
+    const classify = vi
+      .spyOn(operationsApi, 'classify')
+      .mockRejectedValueOnce(noPrice)
+      .mockResolvedValue();
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Fee' }));
+    const value = within(drawer).getByLabelText('Value at the time (optional)');
+    expect(
+      within(drawer).getByText(
+        /^Empty: USDT and USDC count 1:1, other coins at their stored price/,
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2].classification).toEqual({ type: 'fee', valueUsd: null });
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'There is no stored price for this coin at that time. Enter the value in USD.',
+    );
+    await user.type(value, '1.25');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(2));
+    expect(classify.mock.calls[1][2].classification).toEqual({ type: 'fee', valueUsd: '1.25' });
+  });
+
   it('CLS-RECLASSIFY, CLS-HIDE: a classified row can be changed or hidden, keeping its answer', async () => {
     const hidden = { ...bought, type: null, status: 'hidden' as const };
     vi.spyOn(operationsApi, 'list')

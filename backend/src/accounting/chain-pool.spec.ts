@@ -6,6 +6,7 @@ import {
   poolGainValueUsd,
   poolMoveUnits,
   poolReturnUnits,
+  storedValueUsd,
 } from './chain-pool';
 
 // Synthetic ids and amounts only (liquidity-pool-chain-legs, POOL-*).
@@ -95,6 +96,12 @@ describe('liquidity-pool-chain-legs', () => {
     expect(poolGainValueUsd(null, 'ETH', '0.1', '3000')).toBe('300');
     expect(poolGainValueUsd(null, 'ETH', '0.123456', '3000.5')).toBe('370.43');
     expect(poolGainValueUsd(null, 'ETH', '0.1', null)).toBeNull();
+  });
+
+  it('FEE-VALUE: a quantity without a value is worth 1:1 in stablecoins, else its stored price', () => {
+    expect(storedValueUsd('USDT', '1.5', null)).toBe('1.5');
+    expect(storedValueUsd('ETH', '0.000603', '3000')).toBe('1.81');
+    expect(storedValueUsd('ETH', '0.000603', null)).toBeNull();
   });
 
   it('POOL-INVALID: a withdrawal returns an earlier deposit of its coin in the same wallet', () => {
