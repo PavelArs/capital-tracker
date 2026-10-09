@@ -191,8 +191,10 @@ fingerprints exclude only deliberately changed authentication state, with separa
 authentication-state assertions. Read the change's verification record for actual
 results.
 
-CI invokes the same pnpm test:e2e command in its required docker-build job. It has
-not been run on GitHub in this session; local success is not a hosted CI claim.
+Pull request and main CI run only the critical subset (`critical-acceptance` shards).
+The full `pnpm test:e2e` suite runs in `.github/workflows/full-acceptance.yml`: nightly
+on main, on demand (Run workflow), and on a pull request that changes that file. It is
+not a required check; a red nightly run is a regression to fix.
 The ninth required CI job runs `pnpm audit:production` after a frozen install.
 It fails on high/critical production advisories and registry errors; lower-severity
 findings remain visible in [the dependency security record](dependency-security.md).
