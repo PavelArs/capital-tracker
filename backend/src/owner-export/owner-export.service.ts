@@ -419,7 +419,7 @@ export class OwnerExportService {
           c.version AS "classificationVersion", c.status AS "classificationStatus",
           c.type AS "classificationType", c.details AS "classificationDetails",
           c.comment AS "classificationComment", c.automatic, c."linkedAddressId",
-          c."tradeId", c."rewardId", c."transferId", c."createdAt" AS "classifiedAt"
+          c."tradeId", c."rewardId", c."transferId", c."swapId", c."createdAt" AS "classifiedAt"
         FROM wallet_addresses w
         JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
         LEFT JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -453,13 +453,16 @@ export class OwnerExportService {
       automatic:
         row.automatic === null || row.automatic === undefined ? null : row.automatic === true,
       linkedAddressId: text(row.linkedAddressId),
-      operationId: row.tradeId
-        ? `trade:${row.tradeId}`
-        : row.rewardId
-          ? `reward:${row.rewardId}`
-          : row.transferId
-            ? `transfer:${row.transferId}`
-            : null,
+      // A swap's details name the other side; a transfer that carried its coins is not listed.
+      operationId: row.swapId
+        ? `swap:${row.swapId}`
+        : row.tradeId
+          ? `trade:${row.tradeId}`
+          : row.rewardId
+            ? `reward:${row.rewardId}`
+            : row.transferId
+              ? `transfer:${row.transferId}`
+              : null,
       classificationVersion:
         row.classificationVersion === null ? null : Number(row.classificationVersion),
       classifiedAt: row.classifiedAt ? iso(row.classifiedAt) : null,
