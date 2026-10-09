@@ -113,6 +113,11 @@ export interface WalletAddress {
    * coin; already included in `balances`. Null when there are none or until a sync completes.
    */
   pools?: ChainBalance[] | null;
+  /**
+   * A Tron address: all the TRX the chain last reported (liquid, staked and unstaking) when it
+   * differs from what the transactions explain; shown, never counted. Null otherwise.
+   */
+  reportedBalance?: string | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */
   accountKey?: AccountKey | null;
   /** Set for a Bybit account: its balances are those Bybit reports. */

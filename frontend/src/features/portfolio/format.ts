@@ -44,7 +44,8 @@ const SMALLEST_QUANTITY = 0.00000001;
 export function quantity(value: string): string {
   const amount = Number(value);
   if (amount !== 0 && Math.abs(amount) < SMALLEST_QUANTITY) return '<0.00000001';
-  return number(value, 0, 8);
+  // A negative quantity (more left than the history explains) keeps its minus.
+  return `${sign(value, false)}${number(value, 0, 8)}`;
 }
 
 export function percent(value: string | null, signed = true): string {

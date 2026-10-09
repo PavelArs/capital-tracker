@@ -490,6 +490,8 @@ async function main() {
       { account: 'energy', kind: 'energy', validator: null, pool: null, state: 'active', quantity: '800.000000', rewards: '0.000000', availableAt: null },
       { account: 'bandwidth', kind: 'bandwidth', validator: null, pool: null, state: 'active', quantity: '300.000000', rewards: '0.000000', availableAt: null },
     ], reportedQuantity: null, unclaimedRewards: '3.200000' });
+    // The chain's 912.5 liquid and 1100 staked are what the history explains: nothing to show.
+    assert.equal(stakedSummary.reportedBalance, null);
     // Staking moves only the fee (none here); the claimed reward is a Staking reward recorded by
     // itself at the stored TRX price, so it no longer counts provisionally.
     const movesOf = async () => ((await readChainMoves(db.manager, owner)).get(stakerAccount) ?? [])
@@ -519,7 +521,8 @@ async function main() {
     await post('tron', { accounts: { [staker.address]: { address: staker.address, balance: 912.5 * SUN,
       frozenV2: [{ amount: 300 * SUN }, { type: 'ENERGY', amount: 700 * SUN }],
       unfrozenV2: [{ type: 'ENERGY', unfreeze_amount: 100 * SUN, unfreeze_expire_time: at(500) }, { unfreeze_amount: 5 * SUN, unfreeze_expire_time: at(600) }] } } });
-    const later = (await s.addresses.sync(owner, stakerId)).address.staking;
+    const laterSummary = (await s.addresses.sync(owner, stakerId)).address;
+    const later = laterSummary.staking;
     assert.deepEqual(later.accounts.map((item) => [item.kind, item.state, item.quantity, item.availableAt]), [
       ['energy', 'active', '700.000000', null],
       ['bandwidth', 'active', '300.000000', null],
@@ -527,7 +530,9 @@ async function main() {
       ['unstaking', 'deactivating', '5.000000', new Date(at(600)).toISOString()],
     ]);
     assert.deepEqual([later.quantity, later.reportedQuantity, later.unclaimedRewards], ['1100.000000', '1105.000000', '3.200000']);
-    console.log('PASS TRON-STAKE-STATE unstakes waiting their 14 days list with their dates; 1105 reported against 1100 explained is shown, the balance keeps the history');
+    // 912.5 liquid and 1105 staked or unstaking: 2017.5 TRX reported against 2012.5 explained.
+    assert.deepEqual([laterSummary.balances[0].quantity, laterSummary.reportedBalance], ['2012.500000', '2017.500000']);
+    console.log('PASS TRON-STAKE-STATE unstakes waiting their 14 days list with their dates; 1105 staked and 2017.5 TRX in all reported against 1100 and 2012.5 explained are shown, the balance keeps the history');
 
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackTronWallets1793600000000().down(), /recovery plan/);
