@@ -1,6 +1,6 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
 
-// The tracked networks as the Wallets screens present them (M10, M14, M15): the coin, the tokens a
+// The tracked networks as the Wallets screens present them (M10, M14, M15, Tron): the coin, the tokens a
 // wallet on it can hold (USDT and USDC only, Q7) and where its history comes from.
 export interface NetworkInfo {
   name: string;
@@ -43,6 +43,15 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     placeholder: 'Base58 address, 32 to 44 characters',
     defaultWallet: 'Solana wallet',
     labelExample: 'Main SOL',
+  },
+  tron: {
+    name: 'Tron',
+    symbol: 'TRX',
+    assets: ['TRX', 'USDT', 'USDC'],
+    source: 'TronGrid',
+    placeholder: 'T…, 34 characters',
+    defaultWallet: 'Tron wallet',
+    labelExample: 'Main TRX',
   },
   bybit: {
     name: 'Bybit',

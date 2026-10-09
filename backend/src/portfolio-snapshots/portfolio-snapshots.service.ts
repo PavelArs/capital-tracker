@@ -92,12 +92,13 @@ const INPUT_TABLES = [
   // D1: unanswered chain movements count, so new ones and new answers change the history.
   'wallet_address_transactions',
   'chain_transaction_classifications',
-  // SOL-STAKE-*, ETH-STAKE-*: what stayed in a wallet's stake accounts or pools, and their
-  // rewards. A stake account's or pool's last read balance changes no value by itself.
+  // SOL-STAKE-*, ETH-STAKE-*, TRON-STAKE-*: what stayed in a wallet's stake accounts, pools or
+  // Tron staking, and their rewards. A last read balance changes no value by itself.
   'wallet_stake_moves',
   'wallet_stake_rewards',
   'wallet_ether_stake_moves',
   'wallet_ether_stake_rewards',
+  'wallet_tron_stake_moves',
 ] as const;
 // Only which account an address belongs to; its sync progress changes no value.
 const INPUT_PARTS: readonly [string, string][] = [

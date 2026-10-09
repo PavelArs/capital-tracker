@@ -55,9 +55,12 @@ export function failureMessage(network: string, reason: SyncFailure): string {
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read.`;
     case 'not_configured':
-      return network === 'Bybit'
-        ? 'No usable Bybit API key is stored for this account. Add the account again with a read-only key.'
-        : `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
+      if (network === 'Bybit')
+        return 'No usable Bybit API key is stored for this account. Add the account again with a read-only key.';
+      // TronGrid refused the requests: without a key it may turn them away when busy.
+      if (network === 'Tron')
+        return 'TronGrid refused the requests. A free TronGrid API key on the server (TRONGRID_API_KEY) lets the app read Tron wallets reliably.';
+      return `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
     case 'key_rejected':
       return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
     case 'unsupported':

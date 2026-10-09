@@ -16,6 +16,7 @@ const known: Record<string, AssetIdentity> = {
   ETH: { color: 'var(--c-eth)', glyph: 'Ξ' },
   SOL: { color: 'var(--c-sol)', glyph: 'S' },
   ZEC: { color: 'var(--c-zec)', glyph: 'Z' },
+  TRX: { color: 'var(--c-trx)', glyph: 'T' },
   USDT: { color: cash, glyph: '₮' },
   USDC: { color: cash, glyph: '$' },
   USD: { color: cash, glyph: '$' },
@@ -38,7 +39,12 @@ export function assetIdentity(asset: {
 }
 
 export type Blockchain = Exclude<Network, 'bybit'>;
-const networkCoins: Record<Blockchain, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
+const networkCoins: Record<Blockchain, string> = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  solana: 'SOL',
+  tron: 'TRX',
+};
 
 /** TOKEN-CHAIN: a blockchain looks like its own coin. */
 export function networkIdentity(network: Blockchain): AssetIdentity {

@@ -40,6 +40,12 @@ export class EnvironmentVariables {
   @IsOptional()
   ETHERSCAN_API_KEY?: string;
 
+  // Optional free TronGrid key for Tron wallet history; without it TronGrid's lower keyless
+  // rate applies.
+  @IsString()
+  @IsOptional()
+  TRONGRID_API_KEY?: string;
+
   // Password reset email (M17, Q5): Yandex SMTP over implicit TLS. Without a user and an
   // app password, reset requests are answered as usual but no email goes out.
   @IsString()

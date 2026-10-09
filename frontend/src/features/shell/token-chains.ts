@@ -7,12 +7,18 @@ import type { Blockchain } from './asset-identity';
 
 export type TokenChains = ReadonlyMap<string, readonly Blockchain[]>;
 
-const order: Blockchain[] = ['bitcoin', 'ethereum', 'solana'];
-const ownCoin: Record<Blockchain, string> = { bitcoin: 'BTC', ethereum: 'ETH', solana: 'SOL' };
+const order: Blockchain[] = ['bitcoin', 'ethereum', 'solana', 'tron'];
+const ownCoin: Record<Blockchain, string> = {
+  bitcoin: 'BTC',
+  ethereum: 'ETH',
+  solana: 'SOL',
+  tron: 'TRX',
+};
 export const chainNames: Record<Blockchain, string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
   solana: 'Solana',
+  tron: 'Tron',
 };
 
 /**

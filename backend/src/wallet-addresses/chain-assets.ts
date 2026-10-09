@@ -1,10 +1,10 @@
-// What the tracked networks move (Q6, Q7): Bitcoin, and Ethereum and Solana each with exactly
-// the USDT and USDC tokens (ERC-20 and SPL). A raw chain transaction leg names its token in
+// What the tracked networks move (Q6, Q7): Bitcoin, and Ethereum, Solana and Tron each with
+// exactly the USDT and USDC tokens (ERC-20, SPL and TRC-20). A raw chain transaction leg names its token in
 // `asset`; null is the network's own coin. Amounts are stored in the asset's base units.
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 
-export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit'] as const;
+export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit', 'tron'] as const;
 export type Network = (typeof networks)[number];
 
 export interface ChainAsset {
@@ -14,7 +14,10 @@ export interface ChainAsset {
   symbol: string;
   name: string;
   decimals: number;
-  /** The token contract (Ethereum, lower case) or mint (Solana); null for the network's own coin. */
+  /**
+   * The token contract (Ethereum, lower case; Tron, base58) or mint (Solana); null for the
+   * network's own coin.
+   */
   contract: string | null;
 }
 
@@ -23,6 +26,7 @@ export const networkNames: Record<Network, string> = {
   ethereum: 'Ethereum',
   solana: 'Solana',
   bybit: 'Bybit',
+  tron: 'Tron',
 };
 
 const bybitCoin = (symbol: string, name: string): ChainAsset => ({
@@ -76,6 +80,24 @@ export const chainAssets: readonly ChainAsset[] = [
     name: 'USD Coin',
     decimals: 6,
     contract: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  },
+  // TRON-ADD: TRX and the TRC-20 USDT and USDC contracts.
+  { network: 'tron', token: null, symbol: 'TRX', name: 'TRON', decimals: 6, contract: null },
+  {
+    network: 'tron',
+    token: 'USDT',
+    symbol: 'USDT',
+    name: 'Tether',
+    decimals: 6,
+    contract: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+  },
+  {
+    network: 'tron',
+    token: 'USDC',
+    symbol: 'USDC',
+    name: 'USD Coin',
+    decimals: 6,
+    contract: 'TEkxiTehnzSmSe2XqrBj4w32RUN966rdz8',
   },
   bybitCoin('BTC', 'Bitcoin'),
   bybitCoin('ETH', 'Ethereum'),

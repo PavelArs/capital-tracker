@@ -184,7 +184,40 @@ export function checkApiKey(raw: string, part: 'key' | 'secret'): KeyCheck {
 
 export function checkAddress(network: WalletAddress['network'], raw: string): AddressCheck {
   if (network === 'solana') return checkSolanaAddress(raw);
+  if (network === 'tron') return checkTronAddress(raw);
   return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
+}
+
+/** A Tron address as wallet apps show it: "T…", 25 bytes in base58check. */
+const looksTron = (value: string) =>
+  /^T[1-9A-HJ-NP-Za-km-z]{33}$/.test(value) && base58Length(value) === 25;
+
+const otherNetwork = (network: string, other: string) =>
+  `This is not a ${network} address: it looks like a${other === 'Ethereum' ? 'n' : ''} ${other} address. Go back and pick ${other} to track it.`;
+
+/** TRON-ADD: the server verifies the checksum; the hex form is refused with a hint. */
+export function checkTronAddress(raw: string): AddressCheck {
+  const value = raw.trim();
+  if (!value) return { ok: false, message: 'Paste the wallet address.' };
+  const secret = secretCheck(value);
+  if (secret) return secret;
+  // Base58 is case-sensitive: the address is kept exactly as pasted.
+  if (looksTron(value)) return { ok: true, address: value, kind: 'Tron address' };
+  if (/^41[0-9a-f]{40}$/i.test(value))
+    return {
+      ok: false,
+      message: 'This is the hex form of a Tron address. Paste the address that starts with T.',
+    };
+  if (/^0x[0-9a-f]{40}$/i.test(value))
+    return { ok: false, message: otherNetwork('Tron', 'Ethereum') };
+  if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
+    return { ok: false, message: otherNetwork('Tron', 'Bitcoin') };
+  if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
+    return { ok: false, message: otherNetwork('Tron', 'Solana') };
+  return {
+    ok: false,
+    message: 'This is not a valid Tron address. Check that it was copied in full.',
+  };
 }
 
 export function checkSolanaAddress(raw: string): AddressCheck {
@@ -201,6 +234,7 @@ export function checkSolanaAddress(raw: string): AddressCheck {
       message:
         'This is not a Solana address: it looks like an Ethereum address. Go back and pick Ethereum to track it.',
     };
+  if (looksTron(value)) return { ok: false, message: otherNetwork('Solana', 'Tron') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
     return {
       ok: false,
@@ -221,6 +255,7 @@ export function checkEthereumAddress(raw: string): AddressCheck {
   // The server checks the EIP-55 checksum of a mixed-case address.
   if (/^0x[0-9a-f]{40}$/i.test(value))
     return { ok: true, address: value.toLowerCase(), kind: 'Ethereum address' };
+  if (looksTron(value)) return { ok: false, message: otherNetwork('Ethereum', 'Tron') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
     return {
       ok: false,
@@ -271,6 +306,12 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
       ok: true,
       address: value,
       kind: value.startsWith('3') ? 'Script address' : 'Legacy address',
+    };
+  }
+  if (looksTron(value)) {
+    return {
+      ok: false,
+      message: 'This looks like a Tron address. Go back and pick Tron to track it.',
     };
   }
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {
