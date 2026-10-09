@@ -718,7 +718,6 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     for (const step of steps) {
       if (
         ![steps[order[2]], steps[order[3]], steps[manifest]].includes(step) &&
-        step.name !== 'Use the Docker Hub mirror for pulls' &&
         !step.if?.includes('push')
       ) {
         expect(step.if).toBeUndefined();
@@ -1004,37 +1003,36 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
   });
 });
 
-describe('ENG-010: Docker Hub pulls go through a mirror so the shared runner address limit cannot fail a run', () => {
-  const mirrorStep = 'Use the Docker Hub mirror for pulls';
+describe('ENG-010: Docker Hub pulls use the repository account when one is configured so the shared runner address limit cannot fail a run', () => {
+  const loginStep = 'Log in to Docker Hub for pulls';
   const jobs: [string, WorkflowJob][] = [
     ['ci release-images', workflow('ci').jobs['release-images']],
     ['ci critical-acceptance', workflow('ci').jobs['critical-acceptance']],
     ['full-acceptance', workflow('full-acceptance').jobs['full-acceptance']],
   ];
 
-  it.each(jobs)(
-    '%s sets the mirror up on hosted runners before its first image is used',
-    (_, job) => {
-      const steps = job.steps ?? [];
-      const mirror = steps.findIndex((step) => step.name === mirrorStep);
-      expect(mirror).toBeGreaterThan(-1);
-      expect(steps[mirror].run?.trim()).toBe('bash scripts/ci-docker-mirror.sh');
-      expect(expression(steps[mirror].if)).toBe("runner.environment == 'github-hosted'");
-      expect(steps[mirror]['continue-on-error'] ?? false).toBe(false);
-      const firstImage = steps.findIndex(
-        (step) => step.name !== mirrorStep && /docker|acceptance|test:e2e/.test(step.run ?? ''),
-      );
-      expect(firstImage).toBeGreaterThan(mirror);
-    },
-  );
+  it.each(jobs)('%s logs in before its first image is used', (_, job) => {
+    const steps = job.steps ?? [];
+    const login = steps.findIndex((step) => step.name === loginStep);
+    expect(login).toBeGreaterThan(-1);
+    expect(steps[login].run?.trim()).toBe('bash scripts/ci-docker-login.sh');
+    expect(steps[login].env).toEqual({
+      DOCKERHUB_USERNAME: '${{ secrets.DOCKERHUB_USERNAME }}',
+      DOCKERHUB_TOKEN: '${{ secrets.DOCKERHUB_TOKEN }}',
+    });
+    expect(steps[login]['continue-on-error'] ?? false).toBe(false);
+    const firstImage = steps.findIndex(
+      (step) => step.name !== loginStep && /docker|acceptance|test:e2e/.test(step.run ?? ''),
+    );
+    expect(firstImage).toBeGreaterThan(login);
+  });
 
-  it('keeps the pinned digests and uses a public pull-through mirror with no credentials', () => {
-    const script = readFileSync(resolve(repositoryRoot, 'scripts/ci-docker-mirror.sh'), 'utf8');
+  it('reads the credentials from the environment only and is a no-op without them', () => {
+    const script = readFileSync(resolve(repositoryRoot, 'scripts/ci-docker-login.sh'), 'utf8');
     expect(script).toContain('set -euo pipefail');
-    expect(script).toContain('https://mirror.gcr.io');
-    expect(script).toContain('/etc/docker/daemon.json');
-    expect(script).not.toMatch(/login|password|token|secret/i);
-    // Digests are content addresses: the mirror serves the same bytes or the pull fails.
+    expect(script).toContain('--password-stdin');
+    expect(script).toContain('exit 0');
+    expect(script).not.toMatch(/\$\{\{|echo[^\n]*DOCKERHUB_TOKEN|-p "/);
     const pins = readFileSync(
       resolve(repositoryRoot, 'deploy/manual-mvp-infrastructure-pins.json'),
       'utf8',
