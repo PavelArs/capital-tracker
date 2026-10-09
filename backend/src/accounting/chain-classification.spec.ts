@@ -105,6 +105,18 @@ describe('classify-chain-transactions input and plan', () => {
     expect(() => legMovement({ ...ethereum, asset: 'DAI' })).toThrow('Unknown chain asset');
   });
 
+  it('BYBIT-ANY-COIN: a Bybit leg moves any coin with a ticker the records can name', () => {
+    const bybit = { ...receipt, network: 'bybit' as const, asset: 'XRP' };
+    expect(legMovement({ ...bybit, receivedUnits: '2500000000000000000' })).toEqual({
+      inbound: true,
+      quantity: '2.5',
+    });
+    expect(chainCoin(bybit)).toEqual({ assetType: 'crypto', symbol: 'XRP', name: 'XRP' });
+    expect(chainCoin({ network: 'bybit', asset: 'BTC' }).name).toBe('Bitcoin');
+    for (const asset of ['S', 'EUR', 'TOOLONGCOIN', 'xrp', null])
+      expect(() => chainCoin({ network: 'bybit', asset })).toThrow('Unknown chain asset');
+  });
+
   it('SOL-IDENTITY: a Solana leg moves SOL at 9 decimals or an SPL token at 6 (M15)', () => {
     const solana = { ...receipt, network: 'solana' as const };
     expect(legMovement({ ...solana, receivedUnits: '1250000000' })).toEqual({

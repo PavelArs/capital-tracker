@@ -7,13 +7,17 @@ import type {
   BybitExecution,
   BybitWithdrawal,
 } from './bybit-client';
-import { networkAssets } from './chain-assets';
+import { isBybitCoin, networkAssets } from './chain-assets';
 
-// sync-bybit-account (M22): Bybit's records as raw legs of the account, never edited later. A
-// leg moves one coin the app tracks; amounts are in the account's base units (18 decimals).
+// sync-bybit-account (M22): Bybit's records as raw legs of the account, never edited later
+// (except once, BYBIT-ANY-COIN: see completedTradeLeg). A leg moves one coin the app tracks;
+// amounts are in the account's base units (18 decimals).
 
 export const BYBIT_DECIMALS = 18;
-/** The coins a Bybit account can hold in the app (Q7): the tracked chains' coins and tokens. */
+/**
+ * The coins a Bybit account always shows (Q7), even at zero; BYBIT-ANY-COIN: its records and
+ * balances hold any other coin `isBybitCoin` accepts too.
+ */
 export const bybitCoins = networkAssets('bybit').map((asset) => asset.symbol);
 
 export type BybitKind = 'trade' | 'deposit' | 'withdrawal' | 'earn';
@@ -55,7 +59,7 @@ export function splitSymbol(symbol: string): { base: string; quote: string } | n
   return quote ? { base: symbol.slice(0, -quote.length), quote } : null;
 }
 
-const tracked = (coin: string) => bybitCoins.includes(coin);
+const tracked = isBybitCoin;
 const iso = (time: number) => new Date(time).toISOString();
 const leg = (
   fields: Omit<BybitLeg, 'receivedUnits' | 'sentUnits' | 'direction'>,
@@ -134,6 +138,38 @@ function exchangeLeg(exchange: Exchange): BybitLeg | null {
     { ...fields, asset: quoteCoin, raw: { kind: 'trade', trade, ...exchange.raw } },
     quote,
   );
+}
+
+/**
+ * BYBIT-ANY-COIN: a stored trade leg that moved only its quote coin, because its base coin was
+ * not tracked when it was read, as the leg it is now: the base coin with the quote side
+ * recorded with it. Null when it already is one, or its base coin is still not tracked.
+ */
+export function completedTradeLeg(
+  stored: Record<string, unknown>,
+  blockTime: Date,
+): BybitLeg | null {
+  const { kind, trade, txid, quoteAsset, quoteUnits, ...raw } = stored;
+  if (kind !== 'trade' || typeof txid !== 'string' || quoteAsset !== undefined) return null;
+  if (quoteUnits !== undefined || !trade || typeof trade !== 'object') return null;
+  const fields = trade as Record<string, unknown>;
+  const text = (key: string) => (typeof fields[key] === 'string' ? (fields[key] as string) : '');
+  const side = text('side');
+  if ((side !== 'buy' && side !== 'sell') || !tracked(text('base'))) return null;
+  const completed = exchangeLeg({
+    txid,
+    side,
+    base: text('base'),
+    quote: text('quote'),
+    price: text('price'),
+    quantity: text('quantity'),
+    value: text('value'),
+    fee: text('fee'),
+    feeCoin: text('feeCoin'),
+    time: blockTime.getTime(),
+    raw,
+  });
+  return completed?.asset === text('base') ? completed : null;
 }
 
 /** BYBIT-TRADES: one spot fill. */
