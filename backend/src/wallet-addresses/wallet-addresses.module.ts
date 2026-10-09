@@ -6,6 +6,7 @@ import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { BybitSyncAdapter } from './bybit-sync.adapter';
 import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
+import { ChainTokenLoader } from './chain-tokens';
 import { EsploraClient } from './esplora-client';
 import { EthereumSyncAdapter } from './ethereum-sync.adapter';
 import { EtherscanClient } from './etherscan-client';
@@ -23,6 +24,7 @@ import { WalletSyncService } from './wallet-sync.service';
   imports: [AccountingModule],
   controllers: [WalletAddressController],
   providers: [
+    ChainTokenLoader,
     WalletAddressService,
     WalletSyncService,
     BitcoinSyncAdapter,

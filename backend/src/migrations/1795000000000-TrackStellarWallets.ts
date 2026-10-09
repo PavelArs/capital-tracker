@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class TrackStellarWallets1794700000000 implements MigrationInterface {
-  name = 'TrackStellarWallets1794700000000';
+export class TrackStellarWallets1795000000000 implements MigrationInterface {
+  name = 'TrackStellarWallets1795000000000';
 
   async up(runner: QueryRunner): Promise<void> {
     // STELLAR-ADD: Stellar accounts join the other networks as their "G…" StrKey. A Stellar leg

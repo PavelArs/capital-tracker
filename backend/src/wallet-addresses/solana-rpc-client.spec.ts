@@ -108,7 +108,7 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
     replies.push(
       ok({ context: { slot: 1 }, value: [{ pubkey: walletUsdc, account: { lamports: 1 } }] }),
     );
-    await expect(client().tokenAccounts(wallet, USDC)).resolves.toEqual({
+    await expect(client().tokenAccounts(wallet, { mint: USDC })).resolves.toEqual({
       ok: true,
       accounts: [walletUsdc],
     });
@@ -120,6 +120,16 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
         { commitment: 'finalized', encoding: 'base64', dataSlice: { offset: 0, length: 0 } },
       ],
     });
+  });
+
+  it('TOKEN-ANY finds the wallet’s token accounts of every mint of one token program', async () => {
+    replies.push(ok({ context: { slot: 1 }, value: [{ pubkey: walletUsdc, account: {} }] }));
+    const programId = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+    await expect(client().tokenAccounts(wallet, { programId })).resolves.toEqual({
+      ok: true,
+      accounts: [walletUsdc],
+    });
+    expect(requests[0].params.slice(0, 2)).toEqual([wallet, { programId }]);
   });
 
   it('reads one page of signatures, newest first, before a given one', async () => {
@@ -159,8 +169,12 @@ describe('SOL-SYNC Solana JSON-RPC client', () => {
         accounts: [wallet, walletUsdc, other, lookup],
         preBalances: [2_000_000_000n, 2_039_280n, 1n, 7n],
         postBalances: [1_999_995_000n, 2_039_280n, 1n, 7n],
-        preTokenBalances: [{ accountIndex: 1, mint: USDC, owner: wallet, amount: 100_000_000n }],
-        postTokenBalances: [{ accountIndex: 1, mint: USDC, owner: wallet, amount: 75_000_000n }],
+        preTokenBalances: [
+          { accountIndex: 1, mint: USDC, owner: wallet, amount: 100_000_000n, decimals: 6 },
+        ],
+        postTokenBalances: [
+          { accountIndex: 1, mint: USDC, owner: wallet, amount: 75_000_000n, decimals: 6 },
+        ],
         raw: transaction,
       },
     });

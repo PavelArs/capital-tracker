@@ -845,6 +845,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M22 | `sync-bybit-account` | read-only Bybit key, balances, spot trades, deposits and withdrawals; verify what the P2P RUB purchases look like via the API | M9, M11, M13 | — |
 | M23 | `track-stellar-wallets` | XLM history and balance of a Stellar account from the public Horizon, the balance Horizon reports when the history differs (after D4, section 10) | M11, M12, M13 | — |
 | M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
+| M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
 
 ```mermaid
 flowchart LR
@@ -874,6 +875,8 @@ flowchart LR
   M11 --> M22
   M13 --> M22
   M22 --> M26
+  M14 --> M25
+  M15 --> M25
   M11 --> M23
   M12 --> M23
   M13 --> M23

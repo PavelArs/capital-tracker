@@ -78,6 +78,8 @@ export const notBackedUp: Record<string, string> = {
   fx_rates: 'Bank of Russia rates',
   display_fx_collection: 'legacy display rates',
   display_fx_observations: 'legacy display rates',
+  // TOKEN-ANY: what the chain says about each token; the legs keep the token's contract.
+  chain_tokens: 'token details read from the chain',
   // Rebuilt from the records above.
   portfolio_snapshots: 'rebuilt from operations',
   portfolio_snapshot_state: 'rebuilt from operations',

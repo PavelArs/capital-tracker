@@ -16,7 +16,7 @@ const { WalletAddressService } = require(`${dist}/wallet-addresses/wallet-addres
 const { WalletSyncService } = require(`${dist}/wallet-addresses/wallet-sync.service.js`);
 const { HorizonClient } = require(`${dist}/wallet-addresses/horizon-client.js`);
 const { StellarSyncAdapter } = require(`${dist}/wallet-addresses/stellar-sync.adapter.js`);
-const { TrackStellarWallets1794700000000 } = require(`${dist}/migrations/1794700000000-TrackStellarWallets.js`);
+const { TrackStellarWallets1795000000000 } = require(`${dist}/migrations/1795000000000-TrackStellarWallets.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
 const database = 'capital_tracker_stellar_wallets_e2e';
@@ -210,7 +210,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 50/);
+  assert.match(migrate(database), /Migrations applied: 51/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -375,9 +375,9 @@ async function main() {
     console.log('PASS STELLAR-PRIVATE another owner gets 404 for the wallet and sees none');
 
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
-    await assert.rejects(() => new TrackStellarWallets1794700000000().down(), /recovery plan/);
+    await assert.rejects(() => new TrackStellarWallets1795000000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS STELLAR-MIGRATION fresh 50 applies once; the Stellar migration refuses down');
+    console.log('PASS STELLAR-MIGRATION fresh 51 applies once; the Stellar migration refuses down');
   } finally {
     await db.destroy();
   }

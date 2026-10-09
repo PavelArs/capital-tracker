@@ -85,8 +85,8 @@ export type Reconciliation =
 
 /**
  * SYNC-RECONCILE: the account's addresses against its transactions, asset by asset (BTC; ETH,
- * USDT and USDC). Known only when every address has its whole history; a partly loaded
- * address would show a false difference.
+ * USDT, USDC and the other tokens the portfolio counts). Known only when every address has its
+ * whole history; a partly loaded address would show a false difference.
  */
 export function reconcile(
   addresses: readonly WalletAddress[],
@@ -104,7 +104,17 @@ export function reconcile(
         .filter((asset) => asset.holdings.some((holding) => holding.accountId === accountId))
         .map((asset) => (asset.symbol as string).toUpperCase())
     : [];
-  const symbols = [...new Set([...own.flatMap(addressAssets), ...recorded])];
+  // TOKEN-ANY: another token of a wallet is checked once the portfolio counts it; a token
+  // nobody recorded, such as an unsolicited airdrop, is not a difference to explain.
+  const counted = (symbol: string) => portfolio.assets.some((asset) => isCoin(asset, symbol));
+  const listed = own.flatMap((address) =>
+    networkOf(address).anyToken ? networkOf(address).assets : addressAssets(address),
+  );
+  const tokens = (balances as ChainBalance[][])
+    .flat()
+    .map((balance) => balance.symbol)
+    .filter(counted);
+  const symbols = [...new Set([...listed, ...recorded, ...tokens])];
   const assets = symbols.flatMap((symbol) => {
     const chain = sum(
       (balances as ChainBalance[][])

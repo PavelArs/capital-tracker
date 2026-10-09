@@ -353,13 +353,17 @@ function solanaRpc(response, body) {
     && first.every((key) => typeof key === 'string') && options(second) && second.encoding === 'jsonParsed') {
     return rpc({ context: { slot: solana.slot }, value: first.map((key) => solana.stakes.get(key) ?? null) });
   }
-  if (body.method === 'getTokenAccountsByOwner' && typeof first === 'string' && typeof second?.mint === 'string'
+  // By mint, or (TOKEN-ANY) every account of one token program, as the balances name it.
+  if (body.method === 'getTokenAccountsByOwner' && typeof first === 'string'
+    && (typeof second?.mint === 'string' || typeof second?.programId === 'string')
     && options(third) && third.encoding === 'base64') {
     const accounts = new Set();
     for (const [, result] of final) {
       const keys = solanaKeys(result);
       for (const balance of [...(result.meta.preTokenBalances ?? []), ...(result.meta.postTokenBalances ?? [])]) {
-        if (balance.owner === first && balance.mint === second.mint) accounts.add(keys[balance.accountIndex]);
+        const matches = second.mint !== undefined ? balance.mint === second.mint
+          : (balance.programId ?? 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') === second.programId;
+        if (balance.owner === first && matches) accounts.add(keys[balance.accountIndex]);
       }
     }
     return rpc({ context: { slot: solana.slot }, value: [...accounts].sort().map((pubkey) => ({ pubkey,
