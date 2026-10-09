@@ -8,7 +8,7 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
-import { chainBalances, type Reconciliation, shortAddress, sum } from './wallets';
+import { chainBalances, keyAddresses, type Reconciliation, shortAddress, sum } from './wallets';
 
 // Rows shared by the Wallets list and a wallet's own page (prototype "wallets", srcRow).
 
@@ -239,6 +239,8 @@ export function AddressRow({
     </div>
   ) : null;
   const label = `${name} ${address.address}`;
+  // M21: an account key stands for many addresses; the row says how many were used.
+  const derived = keyAddresses(address);
   if (narrow) {
     return (
       <li className="wallets-source">
@@ -247,7 +249,7 @@ export function AddressRow({
           <span className="transactions-item__main">
             <span className="transactions-item__title">{name}</span>
             <span className="transactions-item__detail">
-              {shortAddress(address.address)} · {syncBadge(address, run).label}
+              {derived ?? shortAddress(address.address)} · {syncBadge(address, run).label}
             </span>
           </span>
           <span className="transactions-item__side">
@@ -266,7 +268,10 @@ export function AddressRow({
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
           <AssetIcon symbol={network.symbol} name={network.name} assetType="crypto" size="sm" />
-          <span className="wallets-asset__name">{name}</span>
+          <span className="wallets-asset__text">
+            <span className="wallets-asset__name">{name}</span>
+            {derived && <span className="portfolio-sub">{derived}</span>}
+          </span>
         </span>
         <span className="wallets-mono wallets-soft">{shortAddress(address.address)}</span>
         <ChainAmounts address={address} stacked={false} />

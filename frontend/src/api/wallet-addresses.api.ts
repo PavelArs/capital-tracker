@@ -42,6 +42,17 @@ export interface Staking {
   accounts: StakeAccount[];
 }
 
+/** A Bitcoin wallet tracked through its account public key (M21) and the addresses it derives. */
+export interface AccountKey {
+  prefix: 'xpub' | 'ypub' | 'zpub';
+  /** Receiving and change addresses derived so far, up to 20 unused after the last used one. */
+  derivedAddresses: number;
+  /** Addresses with any confirmed transaction. */
+  usedAddresses: number;
+  /** The owner's single-address wallets this key also derives: their coins count twice. */
+  alsoTracked: { id: string; address: string; label: string | null }[];
+}
+
 export interface WalletAddress {
   id: string;
   network: Network;
@@ -57,6 +68,8 @@ export interface WalletAddress {
   balances: ChainBalance[] | null;
   /** Solana stake accounts or Ethereum pools; null when there are none or until a sync completes. */
   staking?: Staking | null;
+  /** Set when the Bitcoin wallet is an account public key rather than one address. */
+  accountKey?: AccountKey | null;
   sync: {
     /** How much of the history is stored. */
     state: SyncState;

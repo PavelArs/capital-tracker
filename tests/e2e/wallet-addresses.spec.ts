@@ -35,7 +35,7 @@ const isolated = test.extend<{ isolatedWalletAddresses: undefined }>({
           RAISE EXCEPTION 'Refuse wallet-address fixture outside synthetic acceptance';
         END IF;
         TRUNCATE chain_transaction_classification_versions, chain_transaction_classifications,
-          wallet_stake_rewards, wallet_stake_moves, wallet_stake_accounts, wallet_stake_scans,
+          wallet_stake_rewards, wallet_stake_moves, wallet_stake_accounts, wallet_stake_scans, wallet_xpub_addresses,
           wallet_ether_stake_rewards, wallet_ether_stake_moves, wallet_ether_stake_positions,
           wallet_address_transactions, wallet_addresses;
         INSERT INTO wallet_addresses(id, "ownerId", network, address)

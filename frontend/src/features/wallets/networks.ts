@@ -20,7 +20,7 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     symbol: 'BTC',
     assets: ['BTC'],
     source: 'Blockstream Esplora',
-    placeholder: 'bc1q…, 1… or 3…',
+    placeholder: 'bc1q…, 1…, 3… or zpub…',
     defaultWallet: 'Bitcoin wallet',
     labelExample: 'Savings BTC',
   },

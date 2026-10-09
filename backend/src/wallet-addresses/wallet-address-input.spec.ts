@@ -39,6 +39,25 @@ describe('WAL-ADD: wallet registration input', () => {
     });
   });
 
+  it('takes a Bitcoin account public key exactly as given (M21)', () => {
+    // The BIP-84 test vector's account key, never an owner's wallet.
+    const zpub =
+      'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+    expect(parseRegistration({ network: 'bitcoin', address: zpub, accountId })).toEqual({
+      network: 'bitcoin',
+      address: zpub,
+      accountId,
+      label: null,
+    });
+    // The key is a Bitcoin one only.
+    expect(() => parseRegistration({ network: 'solana', address: zpub })).toThrow(
+      BadRequestException,
+    );
+    expect(() =>
+      parseRegistration({ network: 'bitcoin', address: `${zpub.slice(0, -1)}t` }),
+    ).toThrow(BadRequestException);
+  });
+
   it('binds the address to an account with a trimmed label', () => {
     expect(
       parseRegistration({

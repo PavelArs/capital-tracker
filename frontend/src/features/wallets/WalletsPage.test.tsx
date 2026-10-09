@@ -930,3 +930,84 @@ describe('M15: Solana wallets', () => {
     expect(staking).toHaveTextContent('moving it into a stake account or back is not a sale');
   });
 });
+
+describe('M21: Bitcoin wallets by account public key', () => {
+  // The BIP-84 test vector's account key and its first receiving address, never an owner's wallet.
+  const zpub =
+    'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+  const first = 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu';
+  const keyed = wallet(5, {
+    address: zpub,
+    label: 'Trezor BTC',
+    accountKey: {
+      prefix: 'zpub',
+      derivedAddresses: 47,
+      usedAddresses: 5,
+      alsoTracked: [{ id: id(30), address: first, label: 'Old Trezor address' }],
+    },
+  });
+
+  it('XPUB-LIST shows how many addresses of the key were used', async () => {
+    setup([keyed]);
+    const row = await within(
+      await screen.findByRole('region', { name: 'Trust Wallet' }),
+    ).findByRole('button', { name: `Trezor BTC ${zpub}` });
+    expect(row).toHaveTextContent('5 addresses');
+    expect(row).toHaveTextContent('0.01 BTC');
+  });
+
+  it('XPUB-LIST names the used addresses instead of the key on a phone', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    setup([keyed]);
+    const row = await screen.findByRole('button', { name: `Trezor BTC ${zpub}` });
+    expect(row).toHaveClass('transactions-item');
+    expect(row).toHaveTextContent('5 addresses · Synced');
+    expect(row).not.toHaveTextContent('zpub');
+  });
+
+  it('XPUB-OVERLAP shows the key in the drawer and warns about addresses tracked twice', async () => {
+    setup([keyed]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Trezor BTC ${zpub}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Bitcoin' });
+    expect(drawer).toHaveTextContent(`Public key${zpub}`);
+    expect(drawer).toHaveTextContent('5 used · new ones are found automatically');
+    expect(within(drawer).getByRole('alert')).toHaveTextContent(
+      'One address of this key is also tracked as its own wallet (Old Trezor address), so their coins count twice.',
+    );
+  });
+
+  it('XPUB-ADD tracks a zpub and refuses a private or testnet key', async () => {
+    setup([]);
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: { ...keyed, accountKey: null } });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(keyed));
+    const user = userEvent.setup();
+    const dialog = await openAddWallet(user);
+    const field = within(dialog).getByLabelText('Bitcoin wallet address');
+    await user.click(field);
+    await user.paste(`tpub${zpub.slice(4)}`);
+    expect(within(dialog).getByText(/Testnet keys are not tracked/)).toBeInTheDocument();
+    await user.clear(field);
+    await user.paste(`zprv${zpub.slice(4)}`);
+    expect(field).toHaveValue('');
+    expect(add).not.toHaveBeenCalled();
+
+    await user.paste(zpub);
+    expect(
+      within(dialog).getByText(/every address of this account will be tracked/),
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    expect(dialog).toHaveTextContent(`Public key${zpub}`);
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'bitcoin', address: zpub, accountId: trust });
+  });
+});
