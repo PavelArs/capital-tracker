@@ -11,6 +11,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
+import { unitPrice } from './add-asset';
 import {
   addDecimal,
   bankRate,
@@ -28,6 +29,7 @@ import {
   type PaidIn,
   paidIn,
   positive,
+  priceFigure,
   problems,
   purposeTradeFromEntry,
   rewardFromEntry,
@@ -99,6 +101,10 @@ function failure(error: unknown): string {
 }
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+/** The price per unit a total and an amount imply, exact before it is shown. */
+const derivedPrice = (total: string, amount: string) =>
+  priceFigure(Number(unitPrice(total, amount)));
 
 export async function journalAccounts(): Promise<Account[]> {
   const accounts = [];
@@ -198,8 +204,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const [unit, setUnit] = useState(() => {
     const units = positive(initial.amount);
     const sum = positive(initial.total);
-    return editing && units && sum ? trimmed(Number(sum) / Number(units), 2) : '';
+    return editing && units && sum ? derivedPrice(sum, units) : '';
   });
+  // Which of price and total the owner typed last; an edit starts from the recorded total.
+  const driver = useRef<'unit' | 'total'>(editing ? 'total' : 'unit');
   const [bank, setBank] = useState<{ key: string; rate: string | null } | null>(null);
   const [tried, setTried] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -399,9 +407,16 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     if (spends(next)) setOther(null);
   };
 
-  // Price per unit and total follow each other: the field typed last decides.
+  // Price per unit and total follow each other: the field typed last decides. A total that
+  // was typed (or recorded) is never recomputed from the shown, rounded price.
   const setAmount = (amount: string) => {
     const units = positive(amount);
+    if (driver.current === 'total') {
+      update({ amount });
+      const sum = positive(entry.total);
+      if (units && sum) setUnit(derivedPrice(sum, units));
+      return;
+    }
     const each = positive(unit);
     update({
       amount,
@@ -409,23 +424,25 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     });
   };
   const setUnitPrice = (value: string) => {
+    driver.current = 'unit';
     setUnit(value);
     const units = positive(entry.amount);
     const each = positive(value);
     if (units && each) update({ total: trimmed(Number(units) * Number(each), 2) });
   };
   const setTotal = (total: string) => {
+    driver.current = 'total';
     update({ total });
     const units = positive(entry.amount);
     const sum = positive(total);
-    if (units && sum) setUnit(trimmed(Number(sum) / Number(units), 2));
+    if (units && sum) setUnit(derivedPrice(sum, units));
   };
 
   // The asset's latest market price in the price field's currency (prototype "Market today").
   const marketUsd = asset ? market.get(asset.id) : undefined;
   const rateShown = needsRate(entry.currency) ? positive(shown.rate) : '1';
   const marketPrice =
-    marketUsd && rateShown ? trimmed(Number(marketUsd) * Number(rateShown), 2) : null;
+    marketUsd && rateShown ? priceFigure(Number(marketUsd) * Number(rateShown)) : null;
   // What the amount is worth at today's market price, for the Value field.
   const marketValue =
     marketUsd && typedAmount ? trimmed(Number(marketUsd) * Number(typedAmount), 2) : null;

@@ -97,6 +97,15 @@ export function trimmed(value: number, digits: number): string {
   return value.toFixed(digits).replace(/\.?0+$/, '');
 }
 
+/**
+ * Display figure for a price per unit: cents from 1 up, and below 1 enough places to keep five
+ * significant digits, so a $0.004 token never shows as 0.
+ */
+export function priceFigure(value: number): string {
+  const places = value >= 1 || value <= 0 ? 2 : Math.min(18, Math.ceil(-Math.log10(value)) + 5);
+  return trimmed(value, places);
+}
+
 /** The Bank of Russia rate of the date as units per 1 USD, or null if none is stored. */
 export function bankRate(currency: 'EUR' | 'RUB', report: FxRatesReport): string | null {
   const rub = (code: 'USD' | 'EUR') =>

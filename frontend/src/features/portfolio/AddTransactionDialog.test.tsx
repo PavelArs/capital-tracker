@@ -694,6 +694,39 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.getByLabelText('Total paid')).toHaveValue('42526.67');
   });
 
+  it('OPS-EDIT keeps the recorded total when only the amount changes', async () => {
+    const user = userEvent.setup();
+    const { dialog, onSaved } = await open({
+      ...recorded,
+      quantity: '50000',
+      valueUsd: '6172.5',
+      value: '6172.5',
+    });
+    const view = within(dialog);
+    // The price the record implies, not rounded to cents.
+    expect(view.getByLabelText('Price per BTC')).toHaveValue('0.12345');
+    await user.clear(view.getByLabelText('Amount'));
+    await user.type(view.getByLabelText('Amount'), '50001');
+    expect(view.getByLabelText('Total paid')).toHaveValue('6172.5');
+    await user.click(view.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(correct.mock.calls[0][2]).toMatchObject({ quantity: '50001', grossUsd: '6172.5' });
+  });
+
+  it('X2 shows a market price below a cent instead of 0', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [{ instrumentId: id(1), priceSource: 'market', price: { value: '0.004' } }],
+    } as PortfolioValuation);
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.type(view.getByLabelText('Amount'), '1000');
+    const hint = await view.findByText(/Market today/);
+    await user.click(within(hint).getByRole('button', { name: 'Use' }));
+    expect(view.getByLabelText('Price per BTC')).toHaveValue('0.004');
+    expect(view.getByLabelText('Total paid')).toHaveValue('4');
+  });
+
   it('X3 adds a coin that is not among the assets together with its first buy', async () => {
     const user = userEvent.setup();
     const created = { ...asset(5, 'Toncoin', 'TON', 'crypto'), priceSource: 'manual' as const };
