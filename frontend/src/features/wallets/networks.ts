@@ -12,6 +12,8 @@ export interface NetworkInfo {
   placeholder: string;
   defaultWallet: string;
   labelExample: string;
+  /** An exchange account (M22): read with an API key, its balances as the exchange reports. */
+  exchange?: true;
 }
 
 export const networks: Record<WalletAddress['network'], NetworkInfo> = {
@@ -42,7 +44,23 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     defaultWallet: 'Solana wallet',
     labelExample: 'Main SOL',
   },
+  bybit: {
+    name: 'Bybit',
+    symbol: 'USDT',
+    assets: ['BTC', 'ETH', 'SOL', 'USDT', 'USDC'],
+    source: 'Bybit API, read-only key',
+    placeholder: 'API key',
+    defaultWallet: 'Bybit',
+    labelExample: 'Main account',
+    exchange: true,
+  },
 };
+
+/** The glyph of a network's rows: its coin, or the exchange's initial. */
+export const networkIcon = (network: NetworkInfo) =>
+  network.exchange
+    ? { symbol: null, name: network.name, assetType: 'manual' as const }
+    : { symbol: network.symbol, name: network.name, assetType: 'crypto' as const };
 
 export const networkOf = (address: Pick<WalletAddress, 'network'>): NetworkInfo =>
   networks[address.network];

@@ -96,6 +96,40 @@ describe('WAL-ADD: wallet registration input', () => {
   });
 });
 
+describe('BYBIT-KEY: adding a Bybit account (M22)', () => {
+  // Synthetic key and secret, never an owner's.
+  const apiKey = 'SyntheticKey0001';
+  const apiSecret = 'SyntheticSecret000000000000001';
+
+  it('takes a read-only API key and secret, trimmed of the spaces a copy adds', () => {
+    expect(
+      parseRegistration({
+        network: 'bybit',
+        apiKey: ` ${apiKey} `,
+        apiSecret: `${apiSecret}\n`,
+        accountId,
+        label: ' Bybit ',
+      }),
+    ).toEqual({
+      network: 'bybit',
+      credentials: { apiKey, apiSecret },
+      accountId,
+      label: 'Bybit',
+    });
+  });
+
+  it('refuses an address, a missing secret, unknown fields or a key that is not plain text', () => {
+    const bad = [
+      { network: 'bybit', address: '123456789' },
+      { network: 'bybit', apiKey },
+      { network: 'bybit', apiKey, apiSecret, address: '123456789' },
+      { network: 'bybit', apiKey: 'key with spaces', apiSecret },
+      { network: 'bybit', apiKey, apiSecret: 'short' },
+    ];
+    for (const body of bad) expect(() => parseRegistration(body)).toThrow(BadRequestException);
+  });
+});
+
 describe('WAL-NO-SECRETS: a seed phrase is never accepted as an address', () => {
   it.each([
     ['12 words', seedPhrase],

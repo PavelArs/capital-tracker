@@ -73,7 +73,7 @@ async function checkedRead(source, statements, action) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 42/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 43/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -99,11 +99,11 @@ async function main() {
     const account = (await accounts.createAccount(owners[0], { requestId: randomUUID(), name: 'Preserved' })).value;
     const opening = await accounts.saveOpening(owners[0], account.id, { requestId: randomUUID(), expectedRevision: 0, asOf: at, positions: [{ instrumentId: instruments[0].id, quantity: atom, costStatus: 'known', totalCostUsd: maximum }] });
     const beforeUpgrade = await fingerprint(source, ['migrations'], true);
-    assert.match(migrate(database), /Migrations applied: 25/);
-    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes', 'chain_transaction_classifications', 'chain_transaction_classification_versions', 'password_reset_tokens', 'wallet_stake_accounts', 'wallet_stake_moves', 'wallet_stake_rewards', 'wallet_stake_scans', 'wallet_xpub_addresses'], true), beforeUpgrade);
+    assert.match(migrate(database), /Migrations applied: 26/);
+    assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes', 'chain_transaction_classifications', 'chain_transaction_classification_versions', 'password_reset_tokens', 'wallet_stake_accounts', 'wallet_stake_moves', 'wallet_stake_rewards', 'wallet_stake_scans', 'wallet_xpub_addresses', 'bybit_accounts'], true), beforeUpgrade);
     assert.deepEqual(await source.query('SELECT DISTINCT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 42);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 43);
     assert.equal((await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n, 0);
     for (const table of ['account_swaps', 'account_swap_versions']) assert.equal((await source.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     assert.match(migrate(database), /Migrations applied: 0/);

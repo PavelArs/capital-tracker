@@ -145,6 +145,27 @@ export async function readChainMoves(
       ORDER BY t."blockTime", t.txid, w.id`,
     [owner],
   );
+  // BYBIT-TRADES (M22): a Bybit trade nobody has answered moved its quote coin as well (USDT
+  // spent on a buy, received on a sale). So does one answered "Other", which records nothing
+  // for that side. A recognised Buy or Sell settles the quote coin itself.
+  const quotes: ChainMoveRow[] = await manager.query(
+    `SELECT w."accountId", w.network, t.raw->>'quoteAsset' AS asset, t."blockTime",
+        greatest((t.raw->>'quoteUnits')::numeric, 0)::text AS "receivedUnits",
+        greatest(-(t.raw->>'quoteUnits')::numeric, 0)::text AS "sentUnits", '0' AS "stakeUnits"
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId"
+        AND h.txid=t.txid
+      LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w.network='bybit'
+        AND t.raw ? 'quoteAsset'
+        AND (v.status IS NULL OR v.status='unclassified'
+          OR (v.status='classified' AND v.type='other'))
+      ORDER BY t."blockTime", t.txid`,
+    [owner],
+  );
+  rows.push(...quotes);
   const stake: (Omit<ChainMoveRow, 'receivedUnits' | 'sentUnits'> & { units: string })[] =
     await manager.query(
       `SELECT w."accountId", w.network, NULL AS asset, m."blockTime", m.units::text AS units,
@@ -188,12 +209,15 @@ export async function readChainMoves(
  * movements count. The caller holds the owner's accounting lock.
  */
 export async function ensureChainCoins(manager: EntityManager, owner: string): Promise<void> {
+  // A Bybit trade (M22) also moves its quote coin.
   const rows: { network: Network; asset: string | null }[] = await manager.query(
-    `SELECT DISTINCT w.network, t.asset
+    `SELECT DISTINCT w.network, x.asset
       FROM wallet_addresses w
       JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      CROSS JOIN LATERAL (SELECT t.asset UNION ALL
+        SELECT t.raw->>'quoteAsset' WHERE w.network='bybit' AND t.raw ? 'quoteAsset') x
       WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
-      ORDER BY w.network, t.asset`,
+      ORDER BY w.network, x.asset`,
     [owner],
   );
   for (const row of rows) await findOrCreateInstrument(manager, owner, chainCoin(row), true);

@@ -17,7 +17,7 @@ import {
   rowTime,
   shortAddress,
   signedQuantity,
-  sourceLabels,
+  sourceLabel,
   statusLabel,
   statusLabels,
   ticker,
@@ -230,7 +230,7 @@ function OperationRow({
       <td>
         <span className="transactions-status">
           {operation.source === 'chain' && <Glyph name="chain" />}
-          {sourceLabels[operation.source]}
+          {sourceLabel(operation)}
         </span>
       </td>
     </tr>

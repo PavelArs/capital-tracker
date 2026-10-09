@@ -1,8 +1,10 @@
 // What the tracked networks move (Q6, Q7): Bitcoin, and Ethereum and Solana each with exactly
 // the USDT and USDC tokens (ERC-20 and SPL). A raw chain transaction leg names its token in
 // `asset`; null is the network's own coin. Amounts are stored in the asset's base units.
+// A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
+// `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 
-export const networks = ['bitcoin', 'ethereum', 'solana'] as const;
+export const networks = ['bitcoin', 'ethereum', 'solana', 'bybit'] as const;
 export type Network = (typeof networks)[number];
 
 export interface ChainAsset {
@@ -20,7 +22,17 @@ export const networkNames: Record<Network, string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
   solana: 'Solana',
+  bybit: 'Bybit',
 };
+
+const bybitCoin = (symbol: string, name: string): ChainAsset => ({
+  network: 'bybit',
+  token: symbol,
+  symbol,
+  name,
+  decimals: 18,
+  contract: null,
+});
 
 export const chainAssets: readonly ChainAsset[] = [
   { network: 'bitcoin', token: null, symbol: 'BTC', name: 'Bitcoin', decimals: 8, contract: null },
@@ -65,6 +77,11 @@ export const chainAssets: readonly ChainAsset[] = [
     decimals: 6,
     contract: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
   },
+  bybitCoin('BTC', 'Bitcoin'),
+  bybitCoin('ETH', 'Ethereum'),
+  bybitCoin('SOL', 'Solana'),
+  bybitCoin('USDT', 'Tether'),
+  bybitCoin('USDC', 'USD Coin'),
 ];
 
 export function isNetwork(value: unknown): value is Network {
@@ -76,6 +93,14 @@ export function chainAsset(network: string, token: string | null): ChainAsset {
   const found = chainAssets.find((item) => item.network === network && item.token === token);
   if (!found) throw new Error('Unknown chain asset');
   return found;
+}
+
+/** Whether the network names its coin in every leg: an exchange account has no coin of its own. */
+export const isExchange = (network: string): boolean => network === 'bybit';
+
+/** The coin a leg's fee is paid in: the network's own coin, or on an exchange the leg's coin. */
+export function feeAsset(network: string, token: string | null): ChainAsset {
+  return chainAsset(network, isExchange(network) ? token : null);
 }
 
 /** Every asset a network's wallet can hold, its own coin first. */

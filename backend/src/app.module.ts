@@ -71,6 +71,8 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
                 'req.headers["x-csrf-token"]',
                 'req.body.password',
                 'req.body.newPassword',
+                'req.body.apiKey',
+                'req.body.apiSecret',
               ],
               censor: '[REDACTED]',
             },

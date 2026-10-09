@@ -971,3 +971,187 @@ describe('M21: Bitcoin wallets by account public key', () => {
     expect(add).toHaveBeenCalledWith({ network: 'bitcoin', address: zpub, accountId: trust });
   });
 });
+
+describe('M22: Bybit accounts', () => {
+  // Synthetic key, secret and user ID; never an owner's.
+  const apiKey = 'SyntheticKey0001';
+  const apiSecret = 'SyntheticSecret000000000000001';
+  const bybit = id(12);
+  const exchangeAccount = (changes: Partial<WalletAddress>) =>
+    wallet(6, {
+      network: 'bybit',
+      address: '123456789',
+      accountId: bybit,
+      label: 'Bybit',
+      chainBalance: '0.50999',
+      balances: [
+        { symbol: 'BTC', quantity: '0.50999' },
+        { symbol: 'ETH', quantity: '0' },
+        { symbol: 'SOL', quantity: '0' },
+        { symbol: 'USDT', quantity: '599' },
+        { symbol: 'USDC', quantity: '0' },
+      ],
+      exchange: {
+        keyHint: '0001',
+        ipBound: false,
+        keyExpiresAt: '2027-01-01T00:00:00.000Z',
+        reportedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+        untracked: [{ symbol: 'XRP', quantity: '5' }],
+        historyFrom: '2024-10-10T00:00:00.000Z',
+      },
+      ...changes,
+    });
+  const withBybit = (): PortfolioValuation => {
+    const valuation = portfolio();
+    return {
+      ...valuation,
+      assets: valuation.assets.map((item) => ({
+        ...item,
+        holdings: [
+          ...item.holdings,
+          {
+            accountId: bybit,
+            accountName: 'Bybit',
+            quantity: item.symbol === 'BTC' ? '0.50999' : '399',
+            value: null,
+          },
+        ],
+      })),
+      accounts: [
+        ...valuation.accounts,
+        { ...valuation.accounts[0], accountId: bybit, name: 'Bybit' },
+      ],
+    };
+  };
+  const openBybit = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const option = within(dialog).getByRole('button', { name: /^Bybit/ });
+    expect(option).toBeEnabled();
+    expect(option).toHaveTextContent('Read-only API key. Spot trades, deposits and withdrawals');
+    await user.click(option);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    return dialog;
+  };
+
+  it('BYBIT-KEY adds an account with a read-only key; the secret is a password field', async () => {
+    setup([]);
+    const added = exchangeAccount({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    const sync = vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({ id: bybit } as never);
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    expect(dialog).toHaveTextContent('Set permissions to Read-Only and tick nothing else');
+    expect(dialog).toHaveTextContent('Bind it to this server');
+    const secret = within(dialog).getByLabelText('API secret');
+    expect(secret).toHaveAttribute('type', 'password');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByText('Paste the API key.')).toBeInTheDocument();
+    await user.type(within(dialog).getByLabelText('API key'), ` ${apiKey}`);
+    await user.click(secret);
+    await user.paste(apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    expect(within(dialog).getByLabelText('Wallet (optional)')).toHaveAttribute(
+      'placeholder',
+      'Bybit',
+    );
+    expect(dialog).toHaveTextContent('API key…0001');
+    expect(dialog).not.toHaveTextContent(apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'bybit', apiKey, apiSecret, accountId: bybit });
+    expect(sync).toHaveBeenCalledWith(added.id);
+  });
+
+  it('BYBIT-KEY shows why the server refused a key and keeps the form', async () => {
+    setup([]);
+    const refusal = Object.assign(new Error('Unprocessable'), {
+      isAxiosError: true,
+      response: {
+        status: 422,
+        data: {
+          message:
+            'This key can trade or withdraw. Create a read-only API key in Bybit and paste that one.',
+        },
+      },
+    });
+    vi.spyOn(walletAddressesApi, 'add').mockRejectedValue(refusal);
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    await user.type(within(dialog).getByLabelText('API key'), apiKey);
+    await user.type(within(dialog).getByLabelText('API secret'), apiSecret);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add account' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This key can trade or withdraw. Create a read-only API key in Bybit and paste that one.',
+    );
+  });
+
+  it('WAL-NO-SECRETS drops a seed phrase pasted as the API secret', async () => {
+    setup([]);
+    const add = vi.spyOn(walletAddressesApi, 'add');
+    const user = userEvent.setup();
+    const dialog = await openBybit(user);
+    const secret = within(dialog).getByLabelText('API secret');
+    await user.click(secret);
+    await user.paste(seedPhrase);
+    expect(secret).toHaveValue('');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent(
+      'This looks like a seed phrase. Never share it: the app needs only a read-only API key. It was not saved.',
+    );
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('BYBIT-GAPS lists the coins Bybit reports and the difference from the records', async () => {
+    setup([exchangeAccount({})], withBybit());
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    const row = within(account).getByRole('button', { name: 'Bybit 123456789' });
+    expect(row).toHaveTextContent('UID 123456789');
+    expect(row).toHaveTextContent('0.50999 BTC · 599 USDT');
+    expect(row).not.toHaveTextContent('ETH');
+    expect(account).toHaveTextContent('Bybit · 1 account');
+    expect(within(account).getByRole('note')).toHaveTextContent(
+      'Balance differs by 200 USDT. Bybit reports 599 USDT; your transactions in this wallet give 399 USDT. Add what Bybit does not report, such as P2P purchases or Earn, as transactions by hand.',
+    );
+  });
+
+  it('shows the key, its expiry and the untracked coins in the drawer, never the secret', async () => {
+    setup([exchangeAccount({})], withBybit());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Bybit 123456789' }));
+    const drawer = screen.getByRole('dialog', { name: 'Bybit · Bybit' });
+    expect(drawer).toHaveTextContent('Bybit UID123456789');
+    expect(drawer).toHaveTextContent('API key…0001 · read-only, stored encrypted');
+    expect(drawer).toHaveTextContent('Key expires1 Jan 2027');
+    expect(drawer).toHaveTextContent('As Bybit reported them 5 min ago');
+    expect(drawer).toHaveTextContent('Not tracked5 XRP · not counted');
+    expect(drawer).toHaveTextContent('Bybit records');
+  });
+
+  it('SYNC-STATUS says a key Bybit stopped accepting must be added again', async () => {
+    const message =
+      'Bybit did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.';
+    setup(
+      [
+        exchangeAccount({
+          sync: {
+            state: 'complete',
+            completedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+            status: 'failed',
+            lastAttemptAt: null,
+            lastSuccessAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+            nextRunAt: null,
+            errorMessage: message,
+          },
+        }),
+      ],
+      withBybit(),
+    );
+    const account = await screen.findByRole('region', { name: 'Bybit' });
+    expect(account).toHaveTextContent(`${message} Balances shown are from 3 h ago.`);
+  });
+});

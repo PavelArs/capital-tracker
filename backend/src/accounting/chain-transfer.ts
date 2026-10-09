@@ -1,5 +1,10 @@
 import { UnprocessableEntityException } from '@nestjs/common';
-import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
+import {
+  chainAsset,
+  isExchange,
+  type Network,
+  unitsToAtoms,
+} from '../wallet-addresses/chain-assets';
 import { unfit } from './chain-classification';
 import { formatAtoms } from './money';
 
@@ -31,8 +36,30 @@ export interface PlannedTransfer {
 }
 
 const net = (leg: OwnLeg) => BigInt(leg.receivedUnits) - BigInt(leg.sentUnits);
-const coins = (units: bigint, leg: OwnLeg) =>
-  formatAtoms(unitsToAtoms(units, chainAsset(leg.network, leg.asset)));
+// Amounts compared across two legs are in accounting atoms: a Bybit leg (M22) keeps 18
+// decimals where the chain keeps its own.
+const atoms = (units: bigint, leg: OwnLeg) =>
+  unitsToAtoms(units, chainAsset(leg.network, leg.asset));
+const netAtoms = (leg: OwnLeg) => atoms(net(leg), leg);
+const feeAtoms = (leg: OwnLeg) => atoms(BigInt(leg.feeUnits), leg);
+/** The coin a leg moves, whatever network carries it: BTC, ETH, SOL, USDT or USDC. */
+export const coinOf = (leg: Pick<OwnLeg, 'network' | 'asset'>) =>
+  chainAsset(leg.network, leg.asset).symbol;
+
+/**
+ * BYBIT-DEPOSIT: whether two legs are the two sides of one transaction. A chain leg of a token
+ * adds its log or token number to the hash, which Bybit's record does not know, so a Bybit
+ * leg meets a wallet's leg by the hash alone.
+ */
+export function sameTransaction(
+  left: Pick<OwnLeg, 'network'> & { txid: string },
+  right: Pick<OwnLeg, 'network'> & { txid: string },
+): boolean {
+  if (left.txid === right.txid) return true;
+  if (isExchange(left.network) === isExchange(right.network)) return false;
+  const [exchange, chain] = isExchange(left.network) ? [left, right] : [right, left];
+  return chain.txid.split('-')[0] === exchange.txid;
+}
 
 export const sameAccount = () =>
   new UnprocessableEntityException('Choose an account other than the one of this wallet');
@@ -54,23 +81,24 @@ export function planTransfer(
   partner: OwnLeg | null,
 ): PlannedTransfer {
   if (counterAccountId === leg.accountId) throw sameAccount();
-  const moved = net(leg);
+  if (partner && coinOf(partner) !== coinOf(leg)) throw mismatch();
+  const moved = netAtoms(leg);
   if (moved === 0n) throw unfit();
   const sender = moved < 0n ? leg : partner;
-  const fee = sender ? BigInt(sender.feeUnits) : 0n;
+  const fee = sender ? feeAtoms(sender) : 0n;
   let arrived: bigint;
   if (moved < 0n) {
-    arrived = partner ? net(partner) : -moved - fee;
+    arrived = partner ? netAtoms(partner) : -moved - fee;
     if (arrived <= 0n || -moved !== arrived + fee) throw partner ? mismatch() : unfit();
   } else {
     arrived = moved;
-    if (partner && -net(partner) !== arrived + fee) throw mismatch();
+    if (partner && -netAtoms(partner) !== arrived + fee) throw mismatch();
   }
   return {
     fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
     toAccountId: moved < 0n ? counterAccountId : leg.accountId,
-    quantity: coins(arrived, leg),
-    feeQuantity: coins(fee, leg),
+    quantity: formatAtoms(arrived),
+    feeQuantity: formatAtoms(fee),
   };
 }
 
@@ -90,21 +118,35 @@ export interface MatchableLeg extends OwnLeg {
 export function ownTransferPairs(
   legs: readonly MatchableLeg[],
 ): { outgoing: MatchableLeg; incoming: MatchableLeg }[] {
-  const byTxid = new Map<string, MatchableLeg[]>();
-  for (const leg of legs) byTxid.set(leg.txid, [...(byTxid.get(leg.txid) ?? []), leg]);
   const pairs: { outgoing: MatchableLeg; incoming: MatchableLeg }[] = [];
-  for (const group of byTxid.values()) {
-    const moving = group.filter((leg) => net(leg) !== 0n);
-    if (moving.length !== 2) continue;
+  const certain = (moving: MatchableLeg[]) => {
+    if (moving.length !== 2) return;
     const outgoing = moving.find((leg) => net(leg) < 0n);
     const incoming = moving.find((leg) => net(leg) > 0n);
-    if (!outgoing || !incoming || outgoing.network !== incoming.network) continue;
-    if (outgoing.asset !== incoming.asset) continue;
-    if (outgoing.accountId === null || incoming.accountId === null) continue;
-    if (outgoing.accountId === incoming.accountId) continue;
-    if (moving.some((leg) => leg.status !== null && leg.status !== 'unclassified')) continue;
-    if (-net(outgoing) !== net(incoming) + BigInt(outgoing.feeUnits)) continue;
+    if (!outgoing || !incoming || coinOf(outgoing) !== coinOf(incoming)) return;
+    if (outgoing.accountId === null || incoming.accountId === null) return;
+    if (outgoing.accountId === incoming.accountId) return;
+    if (moving.some((leg) => leg.status !== null && leg.status !== 'unclassified')) return;
+    if (-netAtoms(outgoing) !== netAtoms(incoming) + feeAtoms(outgoing)) return;
     pairs.push({ outgoing, incoming });
-  }
+  };
+  const moving = legs.filter((leg) => net(leg) !== 0n);
+  // Between wallets: the legs of one transaction identity.
+  const byTxid = new Map<string, MatchableLeg[]>();
+  for (const leg of moving)
+    if (!isExchange(leg.network)) byTxid.set(leg.txid, [...(byTxid.get(leg.txid) ?? []), leg]);
+  for (const group of byTxid.values()) certain(group);
+  // BYBIT-DEPOSIT: a Bybit deposit or withdrawal and the one wallet leg of the same coin in
+  // the same transaction.
+  for (const exchange of moving.filter((leg) => isExchange(leg.network)))
+    certain([
+      exchange,
+      ...moving.filter(
+        (leg) =>
+          !isExchange(leg.network) &&
+          sameTransaction(exchange, leg) &&
+          coinOf(leg) === coinOf(exchange),
+      ),
+    ]);
   return pairs;
 }

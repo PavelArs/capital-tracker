@@ -6,7 +6,7 @@ import type {
 import type { StakeState, Staking, WalletAddress } from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
-import { networkOf, networks } from './networks';
+import { networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
 import { chainBalances, keyAddresses, type Reconciliation, shortAddress, sum } from './wallets';
 
@@ -49,13 +49,21 @@ export function addressValue(
   return money(String(total), currency);
 }
 
-/** ["1.5 ETH", "250 USDC"]: the network's coin always, a token when the wallet holds it. */
+/**
+ * ["1.5 ETH", "250 USDC"]: the network's coin always, a token when the wallet holds it. An
+ * exchange account has no coin of its own: the coins it holds, or "0 USDT".
+ */
 function chainPieces(address: WalletAddress): string[] {
   const balances = chainBalances(address);
   if (balances === null) return [DASH];
-  return balances
-    .filter((balance, index) => index === 0 || Number(balance.quantity) !== 0)
-    .map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
+  const network = networkOf(address);
+  const held = balances.filter((balance, index) =>
+    network.exchange
+      ? Number(balance.quantity) !== 0
+      : index === 0 || Number(balance.quantity) !== 0,
+  );
+  const shown = held.length > 0 ? held : [{ symbol: network.symbol, quantity: '0' }];
+  return shown.map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
 }
 
 /** SOL-STAKE-BALANCE: "14.5 SOL staked", the part of the balance above held in stake accounts. */
@@ -236,11 +244,11 @@ export function AddressRow({
     return (
       <li className="wallets-source">
         <button type="button" className="transactions-item" aria-label={label} onClick={onOpen}>
-          <AssetIcon symbol={network.symbol} name={network.name} assetType="crypto" />
+          <AssetIcon {...networkIcon(network)} />
           <span className="transactions-item__main">
             <span className="transactions-item__title">{name}</span>
             <span className="transactions-item__detail">
-              {derived ?? shortAddress(address.address)} · {syncBadge(address, run).label}
+              {derived ?? place(address)} · {syncBadge(address, run).label}
             </span>
           </span>
           <span className="transactions-item__side">
@@ -258,13 +266,13 @@ export function AddressRow({
     <li className="wallets-source">
       <button type="button" className="wallets-source__open" aria-label={label} onClick={onOpen}>
         <span className="wallets-asset">
-          <AssetIcon symbol={network.symbol} name={network.name} assetType="crypto" size="sm" />
+          <AssetIcon {...networkIcon(network)} size="sm" />
           <span className="wallets-asset__text">
             <span className="wallets-asset__name">{name}</span>
             {derived && <span className="portfolio-sub">{derived}</span>}
           </span>
         </span>
-        <span className="wallets-mono wallets-soft">{shortAddress(address.address)}</span>
+        <span className="wallets-mono wallets-soft">{place(address)}</span>
         <ChainAmounts address={address} stacked={false} />
         <span className="wallets-num wallets-right">{addressValue(address, prices, currency)}</span>
         <span className="wallets-right wallets-status">
@@ -341,15 +349,25 @@ export function ManualRow({
 
 export function ReconcileNote({ result }: { result: Reconciliation }) {
   if (result.state !== 'differs') return null;
-  const lines = result.assets.map(({ symbol, chain, recorded, difference }) => {
+  const lines = result.assets.map(({ symbol, chain, recorded, difference, exchange }) => {
     const by = quantity(difference.replace(/^-/, ''));
-    return `Balance differs by ${by} ${symbol}. The blockchain shows ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
+    const source = exchange ? 'Bybit reports' : 'The blockchain shows';
+    return `Balance differs by ${by} ${symbol}. ${source} ${quantity(chain)} ${symbol}; your transactions in this wallet give ${quantity(recorded)} ${symbol}.`;
   });
+  // BYBIT-GAPS: what the API never lists, such as P2P purchases, is entered by hand.
+  const advice = result.assets.every((item) => item.exchange)
+    ? 'Add what Bybit does not report, such as P2P purchases or Earn, as transactions by hand.'
+    : 'Add the missing transactions or check that every address belongs here.';
   return (
     <p className="wallets-message wallets-message--warn" role="note">
-      {lines.join(' ')} Add the missing transactions or check that every address belongs here.
+      {lines.join(' ')} {advice}
     </p>
   );
+}
+
+/** Where a row's coins are: an address, or a Bybit account by its user ID. */
+function place(address: WalletAddress): string {
+  return networkOf(address).exchange ? `UID ${address.address}` : shortAddress(address.address);
 }
 
 export function subtitle(addresses: WalletAddress[]): string {
@@ -358,6 +376,10 @@ export function subtitle(addresses: WalletAddress[]): string {
     .filter((network) => addresses.some((address) => address.network === network))
     .map((network) => networks[network].name)
     .join(', ');
+  if (addresses.every((address) => networkOf(address).exchange))
+    return addresses.length === 1
+      ? `${names} · 1 account`
+      : `${names} · ${addresses.length} accounts`;
   return addresses.length === 1
     ? `${names} · 1 address`
     : `${names} · ${addresses.length} addresses`;

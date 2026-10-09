@@ -10,15 +10,18 @@ import {
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
+import { isExchange } from '../wallet-addresses/chain-assets';
 import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
 import { projectRewardVersion, readRewardHead } from './asset-reward.store';
 import { parseRewardCreate, parseRewardVoid } from './asset-reward-input';
+import { availableQuantity } from './available-quantity';
 import {
   type ChainLeg,
   type ClassificationInput,
   chainCoin,
   classificationPayload,
+  exchangeTrade,
   fitsDirection,
   legMovement,
   type PlannedOperation,
@@ -28,14 +31,17 @@ import {
 } from './chain-classification';
 import { isDust } from './chain-dust';
 import {
+  coinOf,
   type OwnLeg,
   ownTransferPairs,
   type PlannedTransfer,
   planTransfer,
+  sameTransaction,
 } from './chain-transfer';
-import { rethrowAccountingHistory } from './connected-accounting.store';
+import { readConnectedLedger, rethrowAccountingHistory } from './connected-accounting.store';
 import { FifoHistoryError } from './fifo';
 import { parseUuid } from './input';
+import { canonicalDecimalToAtoms } from './money';
 import { estimate } from './operation-list';
 import { OwnedTransferService } from './owned-transfer.service';
 import { readTransferHead } from './owned-transfer.store';
@@ -44,6 +50,7 @@ import { ensureChainCoins } from './portfolio-valuation.service';
 import { findOrCreateInstrument, TradeService } from './trade.service';
 import { parseTradeCreate, parseTradeVoid } from './trade-input';
 import { readJournal } from './trade-journal.store';
+import { cashAsset } from './trade-settlement';
 
 interface LegRow {
   network: ChainLeg['network'];
@@ -181,8 +188,11 @@ export class ChainClassificationService {
     const owner = parseUuid(ownerId);
     const address = parseUuid(addressId);
     // A hex hash (Bitcoin, Ethereum) or a base58 signature (Solana, M15); a token leg adds
-    // its number (M14).
-    if (!/^([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?$/.test(txid))
+    // its number (M14); a Bybit record off chain has Bybit's own ID (M22).
+    if (
+      !/^([0-9a-f]{64}|[1-9A-HJ-NP-Za-km-z]{64,88})(-[0-9]{1,9})?$/.test(txid) &&
+      !/^bybit-(trade|deposit|withdrawal)-[0-9A-Za-z_-]{1,80}$/.test(txid)
+    )
       throw new NotFoundException();
     const input = parseClassification(raw);
     const payload = classificationPayload(address, txid, input);
@@ -238,10 +248,93 @@ export class ChainClassificationService {
         await lockAccountingOwner(manager, owner);
         await ensureChainCoins(manager, owner);
       });
-      await this.linkOwnTransfers(ownerId);
+      // A transfer into Bybit can pay for a trade there, and a trade can provide the coins a
+      // withdrawal sends on: each round may make the next one possible (M22).
+      for (let round = 0; round < 3; round++) {
+        const { linked } = await this.linkOwnTransfers(ownerId);
+        const { recognized } = await this.recognizeExchangeTrades(ownerId);
+        if (linked + recognized === 0) break;
+      }
     } catch {
       this.logger.warn('Own transfers could not be linked now');
     }
+  }
+
+  /**
+   * BYBIT-TRADES (M22): records every Bybit spot fill that is certainly a Buy or Sell as one,
+   * without asking, oldest first, each in its own transaction. A buy waits until the account's
+   * records hold the USDT or USDC it spent (a transfer in, an answered deposit, a P2P purchase
+   * entered by hand), so it is paid from them rather than counted as new money; a sale waits
+   * for the coins it sold. Until then the fill counts provisionally (D1) and stays to
+   * classify. A fill the owner has answered is never touched.
+   */
+  async recognizeExchangeTrades(ownerId: string): Promise<{ recognized: number }> {
+    const owner = parseUuid(ownerId);
+    const fills: { addressId: string; txid: string; raw: unknown }[] = await this.source.query(
+      `SELECT t."addressId", t.txid, t.raw
+        FROM wallet_address_transactions t
+        JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+        LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+        WHERE t."ownerId"=$1 AND w.network='bybit' AND w."accountId" IS NOT NULL
+          AND t.raw->>'kind'='trade' AND h.txid IS NULL
+        ORDER BY t."blockTime", t.txid`,
+      [owner],
+    );
+    let recognized = 0;
+    for (const fill of fills) {
+      const answer = exchangeTrade(fill.raw);
+      if (!answer) continue;
+      try {
+        const done = await this.source.transaction(async (manager) => {
+          await lockAccountingOwner(manager, owner);
+          const row = await this.readLeg(manager, owner, fill.addressId, fill.txid);
+          const version = await this.lockHead(manager, fill.addressId, fill.txid);
+          if (version !== 0 || row.accountId === null || !fitsDirection(leg(row), answer.type))
+            return false;
+          const { quantity } = legMovement(leg(row));
+          const needed =
+            answer.type === 'buy'
+              ? canonicalDecimalToAtoms(answer.amount) + canonicalDecimalToAtoms(answer.fee ?? '0')
+              : canonicalDecimalToAtoms(quantity);
+          const paidWith = answer.type === 'buy' ? cashAsset[answer.currency] : chainCoin(row);
+          const instrument = await findOrCreateInstrument(manager, owner, paidWith, false);
+          const journal = await readJournal(manager, owner, row.accountId);
+          if (!instrument || !journal) return false;
+          const ledger = await readConnectedLedger(manager, owner, [row.accountId]);
+          const held = availableQuantity(
+            ledger,
+            row.accountId,
+            instrument.id,
+            row.blockTime.toISOString(),
+          );
+          if (canonicalDecimalToAtoms(held) < needed) return false;
+          const input: ClassificationInput = {
+            requestId: randomUUID(),
+            expectedVersion: 0,
+            hidden: false,
+            classification: answer,
+          };
+          const payload = JSON.stringify({
+            automatic: true,
+            ...JSON.parse(classificationPayload(fill.addressId, fill.txid, input)),
+          });
+          await this.record(
+            manager,
+            owner,
+            { address: fill.addressId, txid: fill.txid, row, version },
+            input,
+            payload,
+            true,
+          );
+          return true;
+        });
+        if (done) recognized += 1;
+      } catch (error) {
+        if (!(error instanceof HttpException || error instanceof FifoHistoryError))
+          this.logger.warn('A Bybit trade could not be recorded; it stays to classify');
+      }
+    }
+    return { recognized };
   }
 
   /**
@@ -260,8 +353,16 @@ export class ChainClassificationService {
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
         LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
           AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE t."ownerId"=$1 AND t.txid IN (SELECT txid FROM wallet_address_transactions
-          WHERE "ownerId"=$1 GROUP BY txid HAVING count(*) > 1)
+        WHERE t."ownerId"=$1 AND (t.txid IN (SELECT txid FROM wallet_address_transactions
+            WHERE "ownerId"=$1 GROUP BY txid HAVING count(*) > 1)
+          -- BYBIT-DEPOSIT: a wallet's leg and a Bybit record that names its hash alone.
+          OR split_part(t.txid, '-', 1) IN (SELECT x.txid FROM wallet_address_transactions x
+            JOIN wallet_addresses y ON y."ownerId"=x."ownerId" AND y.id=x."addressId"
+            WHERE x."ownerId"=$1 AND y.network='bybit')
+          OR (w.network='bybit' AND t.txid IN (SELECT split_part(x.txid, '-', 1)
+            FROM wallet_address_transactions x
+            JOIN wallet_addresses y ON y."ownerId"=x."ownerId" AND y.id=x."addressId"
+            WHERE x."ownerId"=$1 AND y.network<>'bybit')))
         ORDER BY t.txid, t."addressId"`,
       [owner],
     );
@@ -275,14 +376,13 @@ export class ChainClassificationService {
           const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
           const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
           // Answered or moved to another account meanwhile: the owner's word stands.
-          const unanswered = async (address: string, at: number) =>
-            at === 0 ||
-            (await this.version(manager, address, outgoing.txid, at)).status === 'unclassified';
+          const unanswered = async (address: string, txid: string, at: number) =>
+            at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
           if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
             return false;
           if (incoming.accountId === null) return false;
-          if (!(await unanswered(outgoing.addressId, version))) return false;
-          if (!(await unanswered(incoming.addressId, other))) return false;
+          if (!(await unanswered(outgoing.addressId, outgoing.txid, version))) return false;
+          if (!(await unanswered(incoming.addressId, incoming.txid, other))) return false;
           const input: ClassificationInput = {
             requestId: randomUUID(),
             expectedVersion: version,
@@ -436,13 +536,18 @@ export class ChainClassificationService {
         transferId: produced.transferId,
       },
       linkedAddressId: produced.transferId ? linked : null,
-      // A note added to a recognised transfer leaves it recognised.
-      automatic: produced.transferId ? (keep && live?.automatic) || automatic : null,
+      // A note added to a recognised transfer leaves it recognised; a Bybit trade the app
+      // recorded by itself (M22) is recognised too.
+      automatic: produced.transferId
+        ? (keep && live?.automatic) || automatic
+        : automatic && produced.tradeId
+          ? true
+          : null,
     });
     if (partner && !keep && produced.transferId && accountId)
       await this.append(manager, owner, {
         address: partner.address,
-        txid,
+        txid: partner.txid,
         previous: partner.version,
         requestId: randomUUID(),
         payload: JSON.stringify({ linkedTo: { addressId: address, txid }, ...produced }),
@@ -499,17 +604,26 @@ export class ChainClassificationService {
     target: Leg,
     accountId: string,
   ): Promise<Partner | null> {
-    const rows: (LegRow & { addressId: string })[] = await manager.query(
-      `SELECT t."addressId", ${legColumns}
+    // The same transaction identity, or (M22) a Bybit record and a wallet leg of one hash.
+    const rows: (LegRow & { addressId: string; txid: string })[] = await manager.query(
+      `SELECT t."addressId", t.txid, ${legColumns}
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
-        WHERE t."ownerId"=$1 AND t.txid=$2 AND t."addressId"<>$3 AND w."accountId"=$4
-        ORDER BY t."addressId"`,
+        WHERE t."ownerId"=$1 AND (t.txid=$2 OR split_part(t.txid, '-', 1)=$2
+            OR t.txid=split_part($2, '-', 1))
+          AND t."addressId"<>$3 AND w."accountId"=$4
+        ORDER BY t."addressId", t.txid`,
       [owner, target.txid, target.address, accountId],
     );
     const sends = !inbound(target.row);
     const opposite = rows.filter(
-      (row) => legMovement(leg(row)).quantity !== '0' && inbound(row) === sends,
+      (row) =>
+        sameTransaction({ network: target.row.network, txid: target.txid }, row) &&
+        // With Bybit on one side, only the leg of the same coin is the other side.
+        ((!isExchange(row.network) && !isExchange(target.row.network)) ||
+          coinOf(row) === coinOf(target.row)) &&
+        legMovement(leg(row)).quantity !== '0' &&
+        inbound(row) === sends,
     );
     if (opposite.length === 0) return null;
     if (opposite.length > 1)
@@ -517,12 +631,12 @@ export class ChainClassificationService {
         'Several addresses of that account took part in this transaction',
       );
     const [found] = opposite;
-    const version = await this.lockHead(manager, found.addressId, target.txid);
+    const version = await this.lockHead(manager, found.addressId, found.txid);
     const current = version
-      ? await this.version(manager, found.addressId, target.txid, version)
+      ? await this.version(manager, found.addressId, found.txid, version)
       : null;
     const live = current && (await this.active(manager, owner, current)) ? current : null;
-    return { address: found.addressId, txid: target.txid, row: found, version, current, live };
+    return { address: found.addressId, txid: found.txid, row: found, version, current, live };
   }
 
   private async version(manager: EntityManager, address: string, txid: string, version: number) {
@@ -657,7 +771,7 @@ export class ChainClassificationService {
         row.transferId,
       );
       if (row.linkedAddressId && !written.includes(row.linkedAddressId))
-        await this.unlink(manager, owner, row.linkedAddressId, row.txid, row.transferId);
+        await this.unlink(manager, owner, row.linkedAddressId, row.transferId);
       return;
     }
     // An outgoing Other produced nothing to void.
@@ -691,14 +805,21 @@ export class ChainClassificationService {
     );
   }
 
-  /** The other leg of a voided transfer has no answer of its own any more. */
-  private async unlink(
-    manager: EntityManager,
-    owner: string,
-    address: string,
-    txid: string,
-    transferId: string,
-  ) {
+  /**
+   * The other leg of a voided transfer has no answer of its own any more. It is found by the
+   * transfer it names: a Bybit leg and a wallet leg of one hash can differ in identity (M22).
+   */
+  private async unlink(manager: EntityManager, owner: string, address: string, transferId: string) {
+    const [linked]: { txid: string }[] = await manager.query(
+      `SELECT h.txid FROM chain_transaction_classifications h
+        JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+          AND v.txid=h.txid AND v.version=h."currentVersion"
+        WHERE h."ownerId"=$1 AND h."addressId"=$2 AND v."transferId"=$3
+        ORDER BY h.txid LIMIT 1`,
+      [owner, address, transferId],
+    );
+    if (!linked) return;
+    const { txid } = linked;
     const version = await this.lockHead(manager, address, txid);
     if (!version) return;
     const current = await this.version(manager, address, txid, version);

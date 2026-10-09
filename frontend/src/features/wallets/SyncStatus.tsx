@@ -19,7 +19,11 @@ export function failureMessage(
     case 'invalid_response':
       return `The ${network} data source sent an answer the app cannot read. Try again later.`;
     case 'not_configured':
-      return `${network} sync needs a valid Etherscan API key on the server.`;
+      return address?.network === 'bybit'
+        ? 'The stored Bybit API key cannot be read on this server. Add the account again with its read-only key.'
+        : `${network} sync needs a valid Etherscan API key on the server.`;
+    case 'key_rejected':
+      return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
     case 'server':
       return 'Could not reach the server. Try again.';
     case 'busy':

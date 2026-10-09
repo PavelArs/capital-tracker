@@ -1,7 +1,13 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
-import { chainAsset, type Network, unitsToAtoms } from '../wallet-addresses/chain-assets';
+import {
+  chainAsset,
+  isExchange,
+  type Network,
+  unitsToAtoms,
+} from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { isDust } from './chain-dust';
+import { coinOf, sameTransaction } from './chain-transfer';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
 import type { TradePurpose } from './trade-purpose';
@@ -254,7 +260,8 @@ export interface OperationList {
   operations: Operation[];
 }
 
-/** What a chain leg moves, as the list names assets; the fee is in the network's own coin. */
+/** What a chain leg moves, as the list names assets; the fee is in the network's own coin
+ * (an exchange's in the leg's coin). */
 function legAsset(network: Network, token: string | null): OperationAsset {
   const { symbol, name } = chainAsset(network, token);
   return { instrumentId: null, symbol, name };
@@ -367,6 +374,8 @@ function chainOperation(
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
+  // An exchange account pays a withdrawal's fee in the coin withdrawn.
+  const feeToken = isExchange(network) ? row.asset : null;
   const net = netUnits(row);
   const magnitude = net < 0n ? -net : net;
   const quantity = amount(magnitude, network, row.asset);
@@ -388,8 +397,8 @@ function chainOperation(
       row.direction === 'in' || BigInt(row.feeUnits) === 0n
         ? null
         : {
-            asset: legAsset(network, null),
-            quantity: amount(BigInt(row.feeUnits), network, null),
+            asset: legAsset(network, feeToken),
+            quantity: amount(BigInt(row.feeUnits), network, feeToken),
           },
     account: row.account,
     wallet: row.wallet,
@@ -429,8 +438,8 @@ function chainOperation(
         BigInt(row.feeUnits) === 0n
           ? null
           : {
-              asset: legAsset(network, null),
-              quantity: amount(BigInt(row.feeUnits), network, null),
+              asset: legAsset(network, feeToken),
+              quantity: amount(BigInt(row.feeUnits), network, feeToken),
             },
     };
   }
@@ -626,12 +635,42 @@ export function projectOperations(
       0,
     );
   }
+  // The legs of one transaction: one identity, or (M22) a Bybit record and the wallet legs of
+  // the same coin under its hash.
   const byTxid = new Map<string, ChainOperationInput[]>();
-  for (const row of sources.chain) byTxid.set(row.txid, [...(byTxid.get(row.txid) ?? []), row]);
+  const add = (key: string, row: ChainOperationInput) =>
+    byTxid.set(key, [...(byTxid.get(key) ?? []), row]);
+  for (const row of sources.chain) {
+    add(row.txid, row);
+    if (!isExchange(row.wallet.network) && row.txid.includes('-')) add(row.txid.split('-')[0], row);
+  }
+  const legsOf = (row: ChainOperationInput) => {
+    const exchange = isExchange(row.wallet.network);
+    const loose = exchange
+      ? (byTxid.get(row.txid) ?? [])
+      : (byTxid.get(row.txid.split('-')[0]) ?? []);
+    return [
+      ...new Set([
+        ...(byTxid.get(row.txid) ?? []).filter(
+          (leg) => leg.txid === row.txid && !exchange && !isExchange(leg.wallet.network),
+        ),
+        ...loose.filter(
+          (leg) =>
+            isExchange(leg.wallet.network) !== exchange &&
+            sameTransaction(
+              { network: row.wallet.network, txid: row.txid },
+              { network: leg.wallet.network, txid: leg.txid },
+            ) &&
+            coinOf({ network: leg.wallet.network, asset: leg.asset }) ===
+              coinOf({ network: row.wallet.network, asset: row.asset }),
+        ),
+      ]),
+    ];
+  };
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
     const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
-    const other = counterpart(row, byTxid.get(row.txid) ?? []);
+    const other = counterpart(row, legsOf(row));
     // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
     // sending leg; the receiving leg is part of it.
     if (

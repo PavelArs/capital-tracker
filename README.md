@@ -256,6 +256,7 @@ guessable identifiers.
 - **Bitcoin history:** [Blockstream Esplora](https://blockstream.info/api)
 - **Ethereum history:** [Etherscan](https://api.etherscan.io) (free key)
 - **Solana history:** public RPC `https://api.mainnet-beta.solana.com`
+- **Bybit account:** [Bybit V5 API](https://api.bybit.com) with the owner's read-only key, stored encrypted
 
 The old asset, liability, crypto wallet, currency, display-rate and metrics APIs were removed
 in M20; their tables and rows stay in the database and leave with the JSON backup.
