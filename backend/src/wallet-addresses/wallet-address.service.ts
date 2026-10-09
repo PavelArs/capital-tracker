@@ -19,6 +19,7 @@ import { HISTORY_DAYS } from './bybit-sync.adapter';
 import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from './chain-assets';
 import { walletSourceKey } from './chain-sync';
 import type { StakeState } from './solana-stake';
+import { stakeMoves, stakeRewards } from './stake-tables';
 import {
   type ExchangeRegistration,
   parseRegistration,
@@ -43,7 +44,10 @@ interface AddressRow {
   transactionCount: number;
   /** Received minus sent per asset; null names the network's own coin. */
   balances: { asset: string | null; units: string }[];
-  /** Solana: the wallet's stake accounts, what each holds by its history and its rewards. */
+  /**
+   * The wallet's Solana stake accounts or Ethereum pools, what each holds by its history and its
+   * rewards.
+   */
   stake: StakeRow[];
   /** Bitcoin account key (M21): its derived addresses; null for a single address. */
   derived: DerivedSummary | null;
@@ -58,6 +62,8 @@ interface AddressRow {
 interface StakeRow {
   account: string;
   validator: string | null;
+  /** Ethereum: the pool token's symbol, when it has a plain one. */
+  pool: string | null;
   state: StakeState | null;
   units: string;
   rewardUnits: string;
@@ -92,15 +98,22 @@ interface TransactionRow {
 }
 // Each stored leg's received minus sent units is its whole effect on the address in its asset,
 // the network fee included, so their sum per asset over the complete history is the chain
-// balance. A Solana wallet's stake accounts are part of it (SOL-STAKE-BALANCE): what moved
-// into them stays the wallet's SOL, and so do their rewards. The wallet's background source
-// (PR-SYN-1) comes along; null until its first pass.
+// balance. A wallet's stake accounts (SOL-STAKE-BALANCE) and staking pools (ETH-STAKE-BALANCE)
+// are part of it: what moved into them stays the wallet's coin, and so do their rewards. An
+// Ethereum pool that holds nothing for the wallet any more while its history says it should
+// reads as unstaking: the ether waits in the pool's exit queue until claimed. The wallet's
+// background source (PR-SYN-1) comes along; null until its first pass.
 // A Bitcoin account key (M21) adds what its derived addresses tell: how many there are, how many
 // were ever used, whether one's walk is unfinished, and which of them the owner also tracks as
 // separate wallets (XPUB-OVERLAP), whose coins would then count twice.
 // A Bybit account (M22) adds its key's public facts and the balances Bybit reported; how far it
 // has read is the oldest of its record lists.
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, e.exchange,
+const stakeHeld = (table: string, key: string) => `
+        coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
+          WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
+        coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
+          WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, bx.exchange,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -113,18 +126,23 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.
     FROM (SELECT z.asset, sum(z.units) AS units FROM (
         SELECT x.asset, x."receivedUnits" - x."sentUnits" AS units
           FROM wallet_address_transactions x WHERE x."addressId" = a.id
-        UNION ALL SELECT NULL, m.units FROM wallet_stake_moves m WHERE m."addressId" = a.id
-        UNION ALL SELECT NULL, r.units FROM wallet_stake_rewards r WHERE r."addressId" = a.id
+        UNION ALL SELECT NULL, m.units FROM ${stakeMoves} m WHERE m."addressId" = a.id
+        UNION ALL SELECT NULL, r.units FROM ${stakeRewards} r WHERE r."addressId" = a.id
       ) z GROUP BY z.asset) y) b
   CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('account', w.account,
-      'validator', w.validator, 'state', w.state, 'units', (w.moved + w.rewarded)::text,
-      'rewardUnits', w.rewarded::text) ORDER BY w."discoveredAt", w.account), '[]'::json) AS stake
-    FROM (SELECT sa.account, sa.validator, sa.state, sa."discoveredAt",
-        coalesce((SELECT sum(m.units) FROM wallet_stake_moves m
-          WHERE m."addressId" = sa."addressId" AND m.account = sa.account), 0) AS moved,
-        coalesce((SELECT sum(r.units) FROM wallet_stake_rewards r
-          WHERE r."addressId" = sa."addressId" AND r.account = sa.account), 0) AS rewarded
-      FROM wallet_stake_accounts sa WHERE sa."addressId" = a.id) w) k
+      'validator', w.validator, 'state', w.state, 'pool', w.pool,
+      'units', (w.moved + w.rewarded)::text, 'rewardUnits', w.rewarded::text)
+      ORDER BY w."discoveredAt", w.account), '[]'::json) AS stake
+    FROM (SELECT sa.account, sa.validator, sa.state, NULL::text AS pool, sa."discoveredAt",
+        ${stakeHeld('sa', 'account')}
+      FROM wallet_stake_accounts sa WHERE sa."addressId" = a.id
+      UNION ALL
+      SELECT e.contract, NULL, CASE WHEN e.units IS NULL THEN NULL
+          WHEN e.units > 0 THEN 'active'
+          WHEN e.moved + e.rewarded > 0 THEN 'deactivating' ELSE 'closed' END, e.symbol, e."discoveredAt",
+        e.moved, e.rewarded
+      FROM (SELECT p.*, ${stakeHeld('p', 'contract')}
+        FROM wallet_ether_stake_positions p WHERE p."addressId" = a.id) e) w) k
   LEFT JOIN LATERAL (SELECT json_build_object('derived', count(*)::int,
       'used', (count(*) FILTER (WHERE x."txCount" > 0))::int,
       'walking', coalesce(bool_or(x."walkTopTxid" IS NOT NULL), false),
@@ -139,7 +157,7 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.
       'keyExpiresAt', x."keyExpiresAt", 'balances', x.balances, 'balancesAt', x."balancesAt",
       'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
         x."internalReadTo", x."withdrawalsReadTo")) AS exchange
-    FROM bybit_accounts x WHERE x."walletId" = a.id) e ON true
+    FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -187,8 +205,8 @@ function balancesOf(row: AddressRow) {
 }
 
 /**
- * SOL-STAKE-BALANCE: the SOL in the wallet's stake accounts, part of its balance above. A
- * closed account that holds nothing is history only and is left out.
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE: the coins in the wallet's stake accounts or pools, part
+ * of its balance above. A closed one that holds nothing is history only and is left out.
  */
 function stakingOf(row: AddressRow) {
   if (isExchange(row.network)) return null;
@@ -198,6 +216,7 @@ function stakingOf(row: AddressRow) {
     .map((item) => ({
       account: item.account,
       validator: item.validator,
+      pool: item.pool,
       // Null until the chain was read after the account was found.
       state: item.state,
       quantity: formatUnits(BigInt(item.units), sol),

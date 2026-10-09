@@ -19,18 +19,23 @@ export interface ChainBalance {
 
 export type StakeState = 'activating' | 'active' | 'deactivating' | 'inactive' | 'closed';
 
-/** One stake account of a Solana wallet; its SOL is part of the wallet's balance. */
+/**
+ * One stake account of a Solana wallet, or one staking pool contract of an Ethereum wallet; its
+ * coins are part of the wallet's balance.
+ */
 export interface StakeAccount {
   account: string;
-  /** The vote account it delegates to; null when it delegates to none. */
+  /** The vote account it delegates to; null when it delegates to none (and for a pool). */
   validator: string | null;
+  /** Ethereum: the pool token's symbol, such as ocsETH; null when it has no plain one. */
+  pool?: string | null;
   /** Null until the chain was read after the account was found. */
   state: StakeState | null;
   quantity: string;
   rewards: string;
 }
 
-/** SOL in the wallet's stake accounts, already included in its SOL balance. */
+/** SOL in stake accounts or ETH in staking pools, already included in the wallet's balance. */
 export interface Staking {
   symbol: string;
   quantity: string;
@@ -77,7 +82,7 @@ export interface WalletAddress {
   chainBalance: string | null;
   /** Every asset the wallet can hold (ETH or SOL, USDT, USDC); null until a sync completes. */
   balances: ChainBalance[] | null;
-  /** Solana stake accounts; null when there are none or until a sync completes. */
+  /** Solana stake accounts or Ethereum pools; null when there are none or until a sync completes. */
   staking?: Staking | null;
   /** Set when the Bitcoin wallet is an account public key rather than one address. */
   accountKey?: AccountKey | null;

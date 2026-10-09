@@ -1235,6 +1235,28 @@ describe('link-own-transfers (M13)', () => {
     expect(within(facts).queryByText('Value', { exact: true })).toBeNull();
   });
 
+  it('ETH-STAKE-MOVE: ETH deposited into a staking pool needs no classification', async () => {
+    const eth = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+    const staked = chainOperation(10, {
+      type: 'stake',
+      direction: 'internal',
+      status: 'recorded',
+      asset: eth,
+      account: bybit,
+      wallet: { id: id(77), network: 'ethereum', address: `0x${'5e'.repeat(20)}`, label: null },
+      quantity: '1',
+      estimatedValueUsd: '2000',
+      fee: { asset: eth, quantity: '0.0005' },
+      chain: { txid: txid(10), blockHeight: 20000010, priceObservedAt: null, direction: 'out' },
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([staked]));
+    const { drawer } = await openRow(0, 'Stake · ETH');
+    expect(within(drawer).getByRole('note')).toHaveTextContent(
+      'Moved into a staking pool of this wallet: the coins stay yours and keep their purchase price. Only the network fee is a cost.',
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Classify' })).toBeNull();
+  });
+
   it('XFER-AUTO: the owner can still reclassify an automatic transfer', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([linked]));
     const { user, drawer } = await openRow(0, 'Transfer · BTC');

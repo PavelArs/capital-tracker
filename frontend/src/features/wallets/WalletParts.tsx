@@ -3,7 +3,7 @@ import type {
   AssetValuation,
   PortfolioValuation,
 } from '@api/portfolio-valuation.api';
-import type { StakeState, Staking, WalletAddress } from '@api/wallet-addresses.api';
+import type { StakeAccount, StakeState, Staking, WalletAddress } from '@api/wallet-addresses.api';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { networkIcon, networkOf, networks } from './networks';
@@ -66,7 +66,10 @@ function chainPieces(address: WalletAddress): string[] {
   return shown.map((balance) => `${quantity(balance.quantity)} ${balance.symbol}`);
 }
 
-/** SOL-STAKE-BALANCE: "14.5 SOL staked", the part of the balance above held in stake accounts. */
+/**
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE: "14.5 SOL staked", the part of the balance above held in
+ * stake accounts or staking pools.
+ */
 function stakedPiece(address: WalletAddress): string | null {
   const staking = address.staking;
   if (!staking || Number(staking.quantity) === 0) return null;
@@ -84,14 +87,24 @@ const stakeStates: Record<
   closed: { label: 'Closed', tone: 'neutral' },
 };
 
+/** What one stake account or pool is: its validator, or the pool's token. */
+function stakeDetail(item: StakeAccount, pools: boolean): string {
+  if (pools) return item.pool ? `${item.pool} staking pool` : 'Staking pool';
+  return item.validator
+    ? `Validator ${shortAddress(item.validator)}`
+    : 'Not delegated to a validator';
+}
+
 /**
- * SOL-STAKE-BALANCE: a Solana address's stake accounts in its drawer. What each holds is already
- * in the balance above; "available" is the rest.
+ * SOL-STAKE-BALANCE, ETH-STAKE-BALANCE: a Solana address's stake accounts, or an Ethereum
+ * address's staking pools, in its drawer. What each holds is already in the balance above;
+ * "available" is the rest.
  */
 export function StakingSection({ address, staking }: { address: WalletAddress; staking: Staking }) {
   const own = chainBalances(address)?.find((balance) => balance.symbol === staking.symbol);
   const available = own ? sum([own.quantity, `-${staking.quantity}`]) : null;
   const symbol = staking.symbol;
+  const pools = address.network === 'ethereum';
   return (
     <section aria-labelledby="address-staking">
       <h3 id="address-staking" className="transactions-section">
@@ -119,18 +132,14 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
           </dd>
         </div>
       </dl>
-      <ul className="wallets-stake" aria-label="Stake accounts">
+      <ul className="wallets-stake" aria-label={pools ? 'Staking pools' : 'Stake accounts'}>
         {staking.accounts.map((item) => {
           const state = item.state ? stakeStates[item.state] : null;
           return (
             <li key={item.account}>
               <span className="wallets-stake__main">
                 <span className="wallets-mono">{shortAddress(item.account)}</span>
-                <span className="wallets-muted">
-                  {item.validator
-                    ? `Validator ${shortAddress(item.validator)}`
-                    : 'Not delegated to a validator'}
-                </span>
+                <span className="wallets-muted">{stakeDetail(item, pools)}</span>
               </span>
               <span className="wallets-stake__side">
                 <span className="wallets-num">
@@ -150,8 +159,8 @@ export function StakingSection({ address, staking }: { address: WalletAddress; s
       </ul>
       <p className="wallets-muted wallets-stake__note">
         Staked {symbol} stays in this wallet: it counts in the balance and in net worth, and moving
-        it into a stake account or back is not a sale. Rewards count as received coins without a
-        purchase price, not as deposits.
+        it into a {pools ? 'staking pool' : 'stake account'} or back is not a sale. Rewards count as
+        received coins without a purchase price, not as deposits.
       </p>
     </section>
   );
