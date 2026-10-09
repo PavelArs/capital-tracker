@@ -69,6 +69,8 @@ interface AddressRow {
   exchange: ExchangeRow | null;
   /** Tron wallet: its staked TRX by its history, claimed rewards and the chain's last report. */
   tron: TronRow | null;
+  /** Stellar wallet (M23): the XLM balance Horizon last reported, stroops as text. */
+  stellar: { reportedUnits: string | null } | null;
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
@@ -147,13 +149,14 @@ interface TransactionRow {
 // withdrawal returns them.
 // A Tron wallet adds its staked TRX by its history (TRON-STAKE-BALANCE), the vote rewards it
 // claimed (TRON-REWARD) and what the chain last reported (TRON-STAKE-STATE).
+// A Stellar wallet adds the XLM balance Horizon last reported (STELLAR-REPORTED).
 const stakeHeld = (table: string, key: string) => `
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
         coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
           WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
 const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.pools, d.derived,
-    bx.exchange, tr.tron,
+    bx.exchange, tr.tron, sx.stellar,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -211,6 +214,8 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
         WHERE r."addressId" = a.id AND r.asset IS NULL
           AND r.raw->>'contractType' = '${TRON_REWARD_CONTRACT}')::text) AS tron
     FROM wallet_tron_accounts x WHERE x."addressId" = a.id) tr ON true
+  LEFT JOIN LATERAL (SELECT json_build_object('reportedUnits', x."reportedUnits"::text) AS stellar
+    FROM wallet_stellar_accounts x WHERE x."addressId" = a.id) sx ON true
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -379,6 +384,19 @@ function tronStakingOf(row: AddressRow) {
 }
 
 /**
+ * STELLAR-REPORTED: the XLM balance Horizon reports, when the history read gives another one:
+ * movements the sync does not read (offers, claimable balances, pools) or history the public
+ * server no longer keeps. Null when they agree or nothing was reported yet.
+ */
+function reportedBalanceOf(row: AddressRow): string | null {
+  const reported = row.stellar?.reportedUnits;
+  if (row.network !== 'stellar' || reported == null) return null;
+  const xlm = chainAsset('stellar', null);
+  const held = BigInt(row.balances.find((item) => item.asset === null)?.units ?? '0');
+  return BigInt(reported) === held ? null : formatUnits(BigInt(reported), xlm);
+}
+
+/**
  * TRON-STAKE-STATE: all the TRX the chain last reported for a Tron address (liquid, staked for
  * either resource, and unstaking), when it differs from what the stored transactions explain.
  * TronGrid does not list every way TRX arrives, so the difference is shown, never counted.
@@ -428,10 +446,12 @@ function summary(row: AddressRow, now = new Date()) {
     balances,
     staking,
     pools,
-    // Tron only: what the chain reports when the history explains a different TRX total.
-    ...(row.network === 'tron'
-      ? { reportedBalance: state === 'complete' ? tronReportedBalance(row) : null }
-      : {}),
+    reportedBalance:
+      state === 'complete'
+        ? row.network === 'tron'
+          ? tronReportedBalance(row)
+          : reportedBalanceOf(row)
+        : null,
     exchange: row.exchange
       ? {
           // The last four characters of the API key; the secret is never returned.

@@ -10,8 +10,10 @@ import { ChainTokenLoader } from './chain-tokens';
 import { EsploraClient } from './esplora-client';
 import { EthereumSyncAdapter } from './ethereum-sync.adapter';
 import { EtherscanClient } from './etherscan-client';
+import { HorizonClient } from './horizon-client';
 import { SolanaRpcClient } from './solana-rpc-client';
 import { SolanaSyncAdapter } from './solana-sync.adapter';
+import { StellarSyncAdapter } from './stellar-sync.adapter';
 import { TronSyncAdapter } from './tron-sync.adapter';
 import { TronGridClient } from './trongrid-client';
 import { WalletAddressController } from './wallet-address.controller';
@@ -30,6 +32,7 @@ import { WalletSyncService } from './wallet-sync.service';
     SolanaSyncAdapter,
     BybitSyncAdapter,
     TronSyncAdapter,
+    StellarSyncAdapter,
     { provide: EsploraClient, useFactory: () => new EsploraClient() },
     // The free Etherscan key (Q6) comes from the server's environment, never from the code.
     {
@@ -48,6 +51,8 @@ import { WalletSyncService } from './wallet-sync.service';
       useFactory: (config: ConfigService) =>
         new TronGridClient({ apiKey: config.get<string>('TRONGRID_API_KEY') ?? null }),
     },
+    // Stellar's public Horizon needs no key (STELLAR-SYNC).
+    { provide: HorizonClient, useFactory: () => new HorizonClient() },
     // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
     { provide: BybitClient, useFactory: () => new BybitClient() },
     {
@@ -64,6 +69,7 @@ import { WalletSyncService } from './wallet-sync.service';
         SolanaSyncAdapter,
         BybitSyncAdapter,
         TronSyncAdapter,
+        StellarSyncAdapter,
       ],
       useFactory: (
         bitcoin: BitcoinSyncAdapter,
@@ -71,7 +77,8 @@ import { WalletSyncService } from './wallet-sync.service';
         solana: SolanaSyncAdapter,
         bybit: BybitSyncAdapter,
         tron: TronSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron],
+        stellar: StellarSyncAdapter,
+      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron, stellar],
     },
   ],
 })

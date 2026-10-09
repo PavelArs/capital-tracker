@@ -231,7 +231,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 50/);
+  assert.match(migrate(database), /Migrations applied: 51/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -326,7 +326,7 @@ async function main() {
     // Constraints: base58 Solana addresses and signatures only.
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'solana',$2)`,
       [owner, `0${wallets.busy.slice(1)}`]), /wallet_addresses_address_check/);
-    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'stellar',$2)`,
+    await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'dogecoin',$2)`,
       [owner, wallets.busy]), /wallet_addresses_(network|address)_check/);
     await assert.rejects(() => db.query(`INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockTime",
       "receivedUnits","sentUnits","feeUnits",direction,raw) VALUES ($1,$2,$3,1,now(),0,0,0,'in',jsonb_build_object('txid',$3::text))`,
@@ -645,7 +645,7 @@ async function main() {
     await assert.rejects(() => new TrackSolanaWallets1792100000000().down(), /recovery plan/);
     await assert.rejects(() => new TrackSolanaStake1792600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS SOL-MIGRATION fresh 50 applies once; both Solana migrations refuse down');
+    console.log('PASS SOL-MIGRATION fresh 51 applies once; both Solana migrations refuse down');
   } finally {
     await db.destroy();
   }
