@@ -41,6 +41,7 @@ import {
   periodChange,
   periodPoints,
   periodStart,
+  periodStartPoint,
   rateDateStart,
   type SnapshotValue,
   seriesInstants,
@@ -356,7 +357,7 @@ export class PortfolioSnapshotsService {
         complete: point.complete,
         invested: invested[index],
       }));
-      const start = series.find((point) => point.value !== null) ?? null;
+      const start = periodStartPoint(series);
       return {
         period: query.period,
         currency,
@@ -365,7 +366,7 @@ export class PortfolioSnapshotsService {
         at: now.toISOString(),
         value: current.value,
         complete: points.every((point) => point.complete),
-        ...periodChange(start?.value ?? null, current.value),
+        ...periodChange(start && !start.unpriced ? start.value : null, current.value),
         invested: invested.at(-1) ?? null,
         // Profit or loss to date against all-time net invested, whatever the period.
         ...profitToDate(current.value, invested.at(-1) ?? null, current.unpriced),
