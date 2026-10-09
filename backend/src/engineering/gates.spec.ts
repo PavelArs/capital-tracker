@@ -718,6 +718,7 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
     for (const step of steps) {
       if (
         ![steps[order[2]], steps[order[3]], steps[manifest]].includes(step) &&
+        step.name !== 'Use the Docker Hub mirror for pulls' &&
         !step.if?.includes('push')
       ) {
         expect(step.if).toBeUndefined();
@@ -1000,5 +1001,41 @@ describe('ENG-002: controlled manual MVP deployment entry', () => {
     expect(validation?.if).toBe("env.RELEASE_MODE != 'inventory'");
     expect(steps.indexOf(validation as never)).toBeLessThan(steps.indexOf(promote[0] as never));
     expect(promote[2].run).toMatch(/python3 scripts\/manual-mvp-receipt\.py /);
+  });
+});
+
+describe('ENG-010: Docker Hub pulls go through a mirror so the shared runner address limit cannot fail a run', () => {
+  const mirrorStep = 'Use the Docker Hub mirror for pulls';
+  const jobs: [string, WorkflowJob][] = [
+    ['ci release-images', workflow('ci').jobs['release-images']],
+    ['ci critical-acceptance', workflow('ci').jobs['critical-acceptance']],
+    ['full-acceptance', workflow('full-acceptance').jobs['full-acceptance']],
+  ];
+
+  it.each(jobs)('%s sets the mirror up on hosted runners before its first image is used', (_, job) => {
+    const steps = job.steps ?? [];
+    const mirror = steps.findIndex((step) => step.name === mirrorStep);
+    expect(mirror).toBeGreaterThan(-1);
+    expect(steps[mirror].run?.trim()).toBe('bash scripts/ci-docker-mirror.sh');
+    expect(expression(steps[mirror].if)).toBe("runner.environment == 'github-hosted'");
+    expect(steps[mirror]['continue-on-error'] ?? false).toBe(false);
+    const firstImage = steps.findIndex(
+      (step) => step.name !== mirrorStep && /docker|acceptance|test:e2e/.test(step.run ?? ''),
+    );
+    expect(firstImage).toBeGreaterThan(mirror);
+  });
+
+  it('keeps the pinned digests and uses a public pull-through mirror with no credentials', () => {
+    const script = readFileSync(resolve(repositoryRoot, 'scripts/ci-docker-mirror.sh'), 'utf8');
+    expect(script).toContain('set -euo pipefail');
+    expect(script).toContain('https://mirror.gcr.io');
+    expect(script).toContain('/etc/docker/daemon.json');
+    expect(script).not.toMatch(/login|password|token|secret/i);
+    // Digests are content addresses: the mirror serves the same bytes or the pull fails.
+    const pins = readFileSync(
+      resolve(repositoryRoot, 'deploy/manual-mvp-infrastructure-pins.json'),
+      'utf8',
+    );
+    expect(pins).toMatch(/redis@sha256:[a-f0-9]{64}/);
   });
 });
