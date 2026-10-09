@@ -19,7 +19,7 @@ const networks = [
     key: 'bitcoin',
     symbol: 'BTC',
     name: 'Bitcoin',
-    detail: 'One public address. Account keys (xpub, zpub) come later',
+    detail: 'Address or account public key (xpub, zpub)',
   },
   { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH, USDT and USDC' },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL, USDT and USDC' },
@@ -30,12 +30,14 @@ const isTracked = (key: string): key is Network => key in tracked;
 // Tab order inside the modal: every enabled control.
 const focusable = 'button:not([disabled]), input:not([disabled])';
 
-function failure(error: unknown, network: Network): string {
+function failure(error: unknown, network: Network, key: boolean): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   if (status === undefined)
     return 'Could not reach the server. Try again; the same request will not add the wallet twice.';
   if (status === 400)
-    return `This is not a valid ${tracked[network].name} address. Check that it was copied in full.`;
+    return key
+      ? 'This is not a valid account public key. Check that it was copied in full.'
+      : `This is not a valid ${tracked[network].name} address. Check that it was copied in full.`;
   if (status === 404) return 'That wallet no longer exists. Close this window and reload the page.';
   if (status === 401) return 'Your session has ended. Sign in again.';
   return 'Could not add the wallet. Try again.';
@@ -114,6 +116,8 @@ export default function AddWalletDialog({
     ? accounts.find((account) => account.accountId === existing.accountId)?.name
     : undefined;
   const showError = !check.ok && (tried || input.trim().length > 20);
+  // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
+  const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
   const match = accountNamed(accounts, chosenName);
 
@@ -168,7 +172,7 @@ export default function AddWalletDialog({
       });
       onAdded(result.address, result.created);
     } catch (caught) {
-      setError(failure(caught, network));
+      setError(failure(caught, network, isKey));
       setSaving(false);
     }
   };
@@ -246,7 +250,7 @@ export default function AddWalletDialog({
                       </span>
                     ) : existing ? (
                       <span className="portfolio-field__error">
-                        This address is already tracked
+                        {isKey ? 'This key is already tracked' : 'This address is already tracked'}
                         {existingWallet ? ` in ${existingWallet}` : ''}.{' '}
                         <button
                           type="button"
@@ -262,7 +266,9 @@ export default function AddWalletDialog({
                       <span className="portfolio-field__error">{check.message}</span>
                     ) : (
                       <span className="portfolio-field__hint">
-                        Paste the public address. You can find it under Receive in your wallet app.
+                        {network === 'bitcoin'
+                          ? 'Paste a public address from Receive in your wallet app, or the account public key.'
+                          : 'Paste the public address. You can find it under Receive in your wallet app.'}
                       </span>
                     )}
                   </span>
@@ -280,9 +286,8 @@ export default function AddWalletDialog({
                   </p>
                 ) : (
                   <p className="wallets-note">
-                    Hardware wallets like Trezor use a new address for every deposit. Tracking all
-                    of them through the account public key comes later; until then add each address
-                    you received coins on.
+                    Hardware wallets like Trezor use a new address for every deposit. Paste the
+                    account public key (zpub) from Trezor Suite to track all of them at once.
                   </p>
                 )}
               </>
@@ -342,7 +347,7 @@ export default function AddWalletDialog({
                     <dd>{chosen.name}</dd>
                   </div>
                   <div>
-                    <dt>Address</dt>
+                    <dt>{isKey ? 'Public key' : 'Address'}</dt>
                     <dd className="wallets-mono">{check.address}</dd>
                   </div>
                 </dl>

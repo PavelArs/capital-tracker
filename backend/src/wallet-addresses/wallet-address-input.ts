@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { parseUuid } from '../accounting/input';
 import { normalizeBitcoinAddress } from './bitcoin-address';
+import { isExtendedKey, normalizeExtendedKey } from './bitcoin-xpub';
 import { isNetwork, type Network } from './chain-assets';
 import { normalizeEthereumAddress } from './ethereum-address';
 import { normalizeSolanaAddress } from './solana-address';
@@ -43,7 +44,9 @@ export interface Registration {
 }
 
 const normalizers: Record<Network, (value: unknown) => string> = {
-  bitcoin: normalizeBitcoinAddress,
+  // One address, or an account public key that stands for all of its addresses (M21).
+  bitcoin: (value) =>
+    isExtendedKey(value) ? normalizeExtendedKey(value) : normalizeBitcoinAddress(value),
   ethereum: normalizeEthereumAddress,
   solana: normalizeSolanaAddress,
 };

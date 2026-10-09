@@ -490,7 +490,7 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 41);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 42);
     const [owner, other, third] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('operations-owner@example.invalid','synthetic-not-a-hash',true),

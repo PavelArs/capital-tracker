@@ -14,7 +14,7 @@ import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
 import { addressValue, chainAmounts, type Prices, StakingSection } from './WalletParts';
-import { chainBalances } from './wallets';
+import { chainBalances, shortAddress } from './wallets';
 
 const NEW = '__new';
 const NONE = '';
@@ -107,6 +107,8 @@ export default function AddressDrawer({
   }, [address.id, count]);
 
   const wallet = accounts.find((account) => account.accountId === address.accountId);
+  // M21: a Bitcoin account public key and the addresses it derives.
+  const key = address.accountKey ?? null;
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
@@ -201,7 +203,7 @@ export default function AddressDrawer({
               </div>
             )}
             <div>
-              <dt>Address</dt>
+              <dt>{key ? 'Public key' : 'Address'}</dt>
               <dd>
                 <span className="wallets-mono">{address.address}</span>{' '}
                 <button
@@ -213,6 +215,12 @@ export default function AddressDrawer({
                 </button>
               </dd>
             </div>
+            {key && (
+              <div>
+                <dt>Addresses</dt>
+                <dd>{key.usedAddresses} used · new ones are found automatically</dd>
+              </div>
+            )}
             <div>
               <dt>Status</dt>
               <dd>
@@ -233,6 +241,15 @@ export default function AddressDrawer({
               <dd>Every hour in the background</dd>
             </div>
           </dl>
+          {key && key.alsoTracked.length > 0 && (
+            <p className="wallets-message wallets-message--warn" role="alert">
+              {key.alsoTracked.length === 1
+                ? 'One address of this key is also tracked as its own wallet'
+                : `${key.alsoTracked.length} addresses of this key are also tracked as their own wallets`}{' '}
+              ({key.alsoTracked.map((item) => item.label ?? shortAddress(item.address)).join(', ')}
+              ), so their coins count twice.
+            </p>
+          )}
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {syncProblem(address, run) && (
             <p className="wallets-message wallets-message--error" role="alert">

@@ -62,6 +62,7 @@ const expectedMigrationNames = [
   'TrackSolanaStake1792600000000',
   'ChainDustThreshold1792700000000',
   'AddSessionDevice1792800000000',
+  'ScanBitcoinXpub1792900000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -579,7 +580,7 @@ async function main() {
     assert.deepEqual(
       (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current forty-one-migration ledger',
+      'The actual migration CLI must build the complete current forty-two-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {

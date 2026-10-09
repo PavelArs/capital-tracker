@@ -168,6 +168,12 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
       'Legacy address',
     ],
     ['3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy', 'Script address'],
+    // M21: the BIP-84 test vector's account key, kept exactly as pasted.
+    [
+      ' zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs ',
+      'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs',
+      'Account public key · every address of this account will be tracked',
+    ],
   ])('accepts %s', (input, normalized, kind) => {
     expect(checkBitcoinAddress(input)).toEqual({ ok: true, address: normalized, kind });
   });
@@ -177,7 +183,8 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
     ['0x3B9e4f8A2c71D05e6aF1b2C9d8E07a4F5c6D8F31', 'This looks like an Ethereum address.'],
     ['DRpbCBMxVnDK7maPM5tGv6MvB3v1sRMC86PZ8okm21hy', 'pick Solana to track it'],
     ['bitcoin', 'This is not a valid Bitcoin address.'],
-    [`zpub${'6'.repeat(107)}`, 'Account public keys (xpub, zpub) are not supported yet.'],
+    [`zpub${'6'.repeat(90)}`, 'This is not a valid Bitcoin address.'],
+    [`tpub${'6'.repeat(107)}`, 'Testnet keys are not tracked'],
   ])('refuses %j', (input, message) => {
     const result = checkBitcoinAddress(input);
     expect(result.ok).toBe(false);
@@ -189,6 +196,8 @@ describe('WAL-INVALID, WAL-NO-SECRETS: the address field', () => {
     ['a 12-word phrase', Array(11).fill('abandon').concat('about').join(' ')],
     ['a 24-word phrase', Array(23).fill('abandon').concat('art').join('\n')],
     ['a private key', `5${'H'.repeat(50)}`],
+    ['an account private key', `zprv${'6'.repeat(107)}`],
+    ['an extended private key', `xprv${'9'.repeat(107)}`],
   ])('marks %s as a secret', (_case, input) => {
     expect(checkBitcoinAddress(input)).toMatchObject({ ok: false, secret: true });
   });
