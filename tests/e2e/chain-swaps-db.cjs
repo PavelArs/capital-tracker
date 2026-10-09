@@ -58,6 +58,7 @@ function services(db) {
       make('owned-transfer.service', 'OwnedTransferService'),
       make('asset-swap.service', 'AssetSwapService'),
     ),
+    exports: new (require('/app/backend/dist/owner-export/owner-export.service.js').OwnerExportService)(db),
   };
 }
 const rejected = (action, status, message) =>
@@ -263,6 +264,16 @@ async function sameWallet(db, s, owner, f) {
     'The produced swap is shown on its chain row only',
   );
   assert.equal(operations.find((operation) => operation.chain?.txid === legs.gas).status, 'needs-classification');
+
+  stage = 'CLS-SWAP-SAME the export lists the swap as produced by the receipt, and both legs name it';
+  const exported = (await s.exports.operations(db.manager, owner)).find((entry) => entry.id === `swap:${bought.swapId}`);
+  assert.deepEqual(
+    [exported.source, exported.chainTxid, exported.asset, exported.counterAsset, exported.valueUsd],
+    ['chain', legs.btcIn, 'USDT', 'BTC', '1000'],
+  );
+  const exportedLegs = (await s.exports.chain(db.manager, owner))
+    .filter((leg) => [legs.usdtOut, legs.btcIn].includes(leg.txid));
+  assert.deepEqual(exportedLegs.map((leg) => leg.operationId), [`swap:${bought.swapId}`, `swap:${bought.swapId}`]);
   console.log('PASS CLS-SWAP-SAME');
   return bought.swapId;
 }
