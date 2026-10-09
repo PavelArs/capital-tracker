@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
 import { tronHex } from './tron-address';
@@ -9,6 +10,9 @@ import { tronHex } from './tron-address';
 export const TRONGRID_PAGE_SIZE = 200;
 const DEFAULT_BASE_URL = 'https://api.trongrid.io';
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
+// A refusal is logged with its first characters, never an address, a hash or the key.
+const LOGGED_CHARS = 160;
+const ADDRESS_OR_HASH = /\bT[1-9A-HJ-NP-Za-km-z]{33}\b|\b[0-9a-fA-F]{40,64}\b/g;
 // Milliseconds since 1970 up to year 9999.
 const MAX_TIME_MS = 253402300799999;
 const MAX_BLOCK = 2 ** 31 - 1;
@@ -276,6 +280,7 @@ export function parseReward(body: unknown): bigint {
 }
 
 export class TronGridClient {
+  private readonly logger = new Logger(TronGridClient.name);
   private readonly apiKey: string | null;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -398,11 +403,14 @@ export class TronGridClient {
           ...(this.apiKey ? { 'TRON-PRO-API-KEY': this.apiKey } : {}),
         },
       });
-    } catch {
+    } catch (error) {
+      this.logRefusal(path, 'failed', errorCode(error));
       return { ok: false, reason: 'unavailable' };
     } finally {
       this.lastRequestAt = Date.now();
     }
+    if (response.status !== 200)
+      this.logRefusal(path, `answered ${response.status}`, String(response.data));
     // TronGrid answers 403 both to a key it refuses and to calls over its rate, keyed ("exceeds
     // the frequency limit") or not ("request rate exceeded … suspended").
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
@@ -420,4 +428,23 @@ export class TronGridClient {
       return { ok: false, reason: 'invalid_response' };
     }
   }
+
+  /** The sync status shows only a summary; the log keeps what TronGrid actually said. */
+  private logRefusal(path: string, outcome: string, detail: string) {
+    const redact = (text: string) =>
+      (this.apiKey ? text.split(this.apiKey).join('<key>') : text).replace(ADDRESS_OR_HASH, '<id>');
+    // Redacted before the cut, so no identifier is left half-shown at the end.
+    const said = redact(detail.slice(0, LOGGED_CHARS + 100))
+      .slice(0, LOGGED_CHARS)
+      .replace(/\s+/g, ' ')
+      .trim();
+    this.logger.warn(`TronGrid ${redact(path)} ${outcome}${said ? `: ${said}` : ''}`);
+  }
+}
+
+function errorCode(error: unknown): string {
+  const failure = error as { code?: unknown; name?: unknown; cause?: { code?: unknown } };
+  for (const value of [failure?.code, failure?.cause?.code, failure?.name])
+    if (typeof value === 'string' && value) return value;
+  return 'unknown error';
 }
