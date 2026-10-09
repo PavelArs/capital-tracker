@@ -55,8 +55,10 @@ export function typeLabel(operation: Operation): string {
   return operation.type ? typeLabels[operation.type] : directionLabels[operation.direction];
 }
 
+/** "BTC", or "USDT (Ethereum)": a token always names its blockchain (TOKEN-CHAIN). */
 export function ticker(asset: OperationAsset): string {
-  return asset.symbol ?? asset.name;
+  const name = asset.symbol ?? asset.name;
+  return asset.network ? `${name} (${networkNames[asset.network]})` : name;
 }
 
 /** Filter key: tickers group chain and journal rows of one coin; nameless assets by id. */

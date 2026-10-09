@@ -1148,6 +1148,130 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  describe('TOKEN-CHAIN', () => {
+    // The same ticker exists on several blockchains, so a token always names its own.
+    const ethereumWallet = {
+      id: id(23),
+      network: 'ethereum' as const,
+      address: `0x${'b2'.repeat(20)}`,
+      label: null,
+    };
+    const solanaWallet = {
+      id: id(24),
+      network: 'solana' as const,
+      address: 'So1Synthetic1111111111111111111111111111111',
+      label: null,
+    };
+
+    it('TOKEN-CHAIN-LEG: a token leg names its blockchain, the network coin does not', () => {
+      const list = projectOperations(
+        now,
+        sources({
+          chain: [
+            chain(8, {
+              wallet: ethereumWallet,
+              txid: `${txid(8)}-4`,
+              asset: 'USDT',
+              receivedUnits: '1000000000',
+              feeUnits: '0',
+            }),
+            chain(9, {
+              wallet: solanaWallet,
+              asset: 'USDT',
+              receivedUnits: '1000000000',
+              feeUnits: '0',
+            }),
+            chain(10, {
+              wallet: ethereumWallet,
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '420000000000000',
+              feeUnits: '420000000000000',
+            }),
+          ],
+        }),
+      );
+      const byId = new Map(list.operations.map((operation) => [operation.id, operation]));
+      expect(byId.get(`chain:${id(23)}:${txid(8)}-4`)?.asset).toEqual({
+        instrumentId: null,
+        symbol: 'USDT',
+        name: 'Tether',
+        network: 'ethereum',
+      });
+      expect(byId.get(`chain:${id(24)}:${txid(9)}`)?.asset).toEqual({
+        instrumentId: null,
+        symbol: 'USDT',
+        name: 'Tether',
+        network: 'solana',
+      });
+      const ether = byId.get(`chain:${id(23)}:${txid(10)}`);
+      expect(ether?.asset).toEqual({ instrumentId: null, symbol: 'ETH', name: 'Ethereum' });
+      expect(ether?.fee?.asset).toEqual({ instrumentId: null, symbol: 'ETH', name: 'Ethereum' });
+    });
+
+    it('TOKEN-CHAIN-SWAP: a swap row names the blockchain of each token it moved', () => {
+      const swapId = id(62);
+      const paidTxid = `${'c'.repeat(64)}-2`;
+      const answer = (pairWith: { addressId: string; txid: string }) => ({
+        version: 1,
+        status: 'classified' as const,
+        type: 'swap' as const,
+        details: { type: 'swap' as const, with: pairWith, valueUsd: null },
+        comment: null,
+        produced: { kind: 'swap' as const, id: swapId },
+        carryTransferId: null,
+        paired: pairWith,
+      });
+      const list = projectOperations(
+        now,
+        sources({
+          swaps: [
+            {
+              swapId,
+              version: 1,
+              account: trust,
+              outgoing: usdt,
+              incoming: { instrumentId: id(4), symbol: 'USDC', name: 'USD Coin' },
+              occurredAt: '2026-09-01T10:40:00.000Z',
+              orderWithinTimestamp: 0,
+              outgoingQuantity: '500',
+              incomingQuantity: '499.5',
+              considerationUsd: '500',
+              fee: null,
+            },
+          ],
+          chain: [
+            chain(11, {
+              wallet: ethereumWallet,
+              account: trust,
+              txid: paidTxid,
+              asset: 'USDT',
+              direction: 'out',
+              receivedUnits: '0',
+              sentUnits: '500000000',
+              feeUnits: '0',
+              classification: answer({ addressId: solanaWallet.id, txid: txid(12) }),
+            }),
+            chain(12, {
+              wallet: solanaWallet,
+              account: trust,
+              asset: 'USDC',
+              receivedUnits: '499500000',
+              feeUnits: '0',
+              classification: answer({ addressId: ethereumWallet.id, txid: paidTxid }),
+            }),
+          ],
+        }),
+      );
+      expect(list.operations).toHaveLength(1);
+      expect(list.operations[0]).toMatchObject({
+        type: 'swap',
+        asset: { ...usdt, network: 'ethereum' },
+        counterAsset: { instrumentId: id(4), symbol: 'USDC', name: 'USD Coin', network: 'solana' },
+      });
+    });
+  });
+
   it('OPS-EMPTY: no operations is an empty list', () => {
     expect(projectOperations(now, sources())).toEqual({
       at: now.toISOString(),

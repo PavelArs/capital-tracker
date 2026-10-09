@@ -13,6 +13,7 @@ import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { tokenChains } from '../shell/token-chains';
 import AttentionCard from './AttentionCard';
 import { collectAttention } from './attention';
 import HistoryChart from './HistoryChart';
@@ -354,6 +355,7 @@ export default function DashboardPage() {
           </section>
           <div className="dashboard-bottom">
             <TopAssets
+              chains={tokenChains(status.wallets)}
               portfolio={portfolio}
               failed={portfolioFailed}
               onRetry={() => void loadPortfolio()}

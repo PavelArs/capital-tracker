@@ -12,6 +12,11 @@ export interface OperationAsset {
   instrumentId: string | null;
   symbol: string | null;
   name: string;
+  /**
+   * TOKEN-CHAIN: the blockchain a token moved on, as USDT exists on several. Absent for a
+   * network's own coin and for what no chain transaction moved.
+   */
+  network?: Network;
 }
 export interface OperationPlace {
   id: string;
@@ -263,8 +268,11 @@ export interface OperationList {
 /** What a chain leg moves, as the list names assets; the fee is in the network's own coin. */
 function legAsset(network: Network, token: string | null): OperationAsset {
   const { symbol, name } = chainAsset(network, token);
-  return { instrumentId: null, symbol, name };
+  return { instrumentId: null, symbol, name, ...(token === null ? {} : { network }) };
 }
+/** TOKEN-CHAIN: a journal's asset as a chain leg moved it, named with the leg's blockchain. */
+const onChain = (asset: OperationAsset, leg: ChainOperationInput | null): OperationAsset =>
+  leg && leg.asset !== null ? { ...asset, network: leg.wallet.network } : asset;
 const USD: OperationAsset = { instrumentId: null, symbol: 'USD', name: 'US dollar' };
 const purposeTypes: Record<TradePurpose, OperationType> = {
   income: 'income',
@@ -465,9 +473,9 @@ function chainOperation(
       type: 'swap',
       direction: 'internal',
       status: 'recorded',
-      asset: produced.asset,
+      asset: onChain(produced.asset, paying),
       quantity: produced.quantity,
-      counterAsset: produced.counterAsset,
+      counterAsset: produced.counterAsset && onChain(produced.counterAsset, row),
       counterQuantity: produced.counterQuantity,
       valueUsd: produced.valueUsd,
       costBasisUsd: produced.valueUsd,

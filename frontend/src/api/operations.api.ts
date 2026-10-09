@@ -26,6 +26,8 @@ export interface OperationAsset {
   instrumentId: string | null;
   symbol: string | null;
   name: string;
+  /** TOKEN-CHAIN: the blockchain a token moved on; absent for a network's own coin. */
+  network?: OperationWallet['network'];
 }
 
 export interface OperationPlace {

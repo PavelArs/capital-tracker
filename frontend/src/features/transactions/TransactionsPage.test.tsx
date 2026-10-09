@@ -1529,3 +1529,78 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
     );
   });
 });
+
+describe('token blockchain (TOKEN-CHAIN)', () => {
+  // The same ticker on two blockchains: each row names its own.
+  const ethWallet = {
+    id: id(23),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000bb',
+    label: null,
+  };
+  const solWallet = {
+    id: id(24),
+    network: 'solana' as const,
+    address: 'So1Synthetic1111111111111111111111111111111',
+    label: null,
+  };
+  const leg = (wallet: typeof ethWallet | typeof solWallet, n: number, at: string) =>
+    operation({
+      id: `chain:${wallet.id}:${txid(n)}`,
+      kind: 'chain',
+      type: null,
+      direction: 'in',
+      occurredAt: at,
+      asset: { instrumentId: null, symbol: 'USDT', name: 'Tether', network: wallet.network },
+      quantity: '250',
+      wallet,
+      chain: { txid: txid(n), blockHeight: n, priceObservedAt: null, direction: 'in' },
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+    });
+  const onEthereum = leg(ethWallet, 31, '2026-09-02T10:00:00.000Z');
+  const onSolana = leg(solWallet, 32, '2026-09-01T10:00:00.000Z');
+
+  it('TOKEN-CHAIN-UI: a token row and its drawer name the blockchain', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([onEthereum, onSolana]));
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    expect(bodyRows().map((row) => cellTexts(row)[1])).toEqual([
+      'USDT (Ethereum)',
+      'USDT (Solana)',
+    ]);
+    expect(
+      [...container.querySelectorAll('tbody .asset-icon__chain')].map((icon) =>
+        icon.getAttribute('data-chain'),
+      ),
+    ).toEqual(['Ξ', 'S']);
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    expect(
+      screen.getByRole('dialog', { name: 'Incoming transaction · USDT (Solana)' }),
+    ).toBeInTheDocument();
+  });
+
+  it('TOKEN-CHAIN-UI: a swap of tokens names the blockchain of each', async () => {
+    const swapped = operation({
+      ...onSolana,
+      id: `chain:${solWallet.id}:${txid(33)}`,
+      type: 'swap',
+      direction: 'internal',
+      asset: { instrumentId: null, symbol: 'USDT', name: 'Tether', network: 'ethereum' },
+      quantity: '250',
+      counterAsset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin', network: 'solana' },
+      counterQuantity: '249.5',
+      counterWallet: ethWallet,
+      status: 'recorded',
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([swapped]));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    expect(cellTexts(bodyRows()[0]).slice(1, 3)).toEqual([
+      'USDT (Ethereum) → USDC (Solana)',
+      '-250+249.5 USDC (Solana)',
+    ]);
+  });
+});
