@@ -92,14 +92,20 @@ function draftOf(operation: Operation): Draft {
   const swapped = value?.type === 'swap' ? value : null;
   // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
   const suggested = !value && operation.counterWallet && operation.counterAccount;
+  // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
+  const together = !value && !suggested ? operation.chain?.swapWith : undefined;
   return {
-    type: value?.type ?? (suggested ? 'transfer' : null),
+    type: value?.type ?? (suggested ? 'transfer' : together ? 'swap' : null),
     amount: priced?.amount ?? '',
     currency: priced?.currency ?? 'USDT',
     rate: priced?.perUsd ?? '',
     value: valued?.valueUsd ?? '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
-    pair: swapped ? `${swapped.with.addressId}|${swapped.with.txid}` : '',
+    pair: swapped
+      ? `${swapped.with.addressId}|${swapped.with.txid}`
+      : together
+        ? `${together.addressId}|${together.txid}`
+        : '',
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
     hidden: false,
@@ -125,6 +131,8 @@ export function swapCandidates(operation: Operation, operations: Operation[]): [
   const leg = legDirection(operation);
   const coin = assetKey(legAsset(operation));
   const at = Date.parse(operation.occurredAt);
+  const suggested = operation.chain?.swapWith;
+  const together = suggested ? `${suggested.addressId}|${suggested.txid}` : '';
   const found = operations
     .filter(
       (item) =>
@@ -137,12 +145,17 @@ export function swapCandidates(operation: Operation, operations: Operation[]): [
         Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS,
     )
     .sort(
-      (a, b) => Math.abs(Date.parse(a.occurredAt) - at) - Math.abs(Date.parse(b.occurredAt) - at),
+      (a, b) =>
+        Number(pairKey(b) === together) - Number(pairKey(a) === together) ||
+        Math.abs(Date.parse(a.occurredAt) - at) - Math.abs(Date.parse(b.occurredAt) - at),
     )
     .map((item): [string, string] => [
       pairKey(item),
       [
-        `${day(item.occurredAt)}, ${rowTime(item)}`,
+        // SWAP-ONE-TX: the other leg of this very transaction says so instead of its time.
+        pairKey(item) === together
+          ? 'Same transaction'
+          : `${day(item.occurredAt)}, ${rowTime(item)}`,
         signedAmount(item),
         item.account?.name ?? 'Not in a wallet yet',
         addressText(item.wallet!),

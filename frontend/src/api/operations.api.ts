@@ -79,6 +79,10 @@ export interface Operation {
     direction: 'in' | 'out' | 'internal';
     /** A swap listed on its receiving row: the paying transaction (CLS-SWAP). */
     pairedTxid?: string | null;
+    /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
+    call?: { method: string | null };
+    /** SWAP-ONE-TX-SUGGEST: the other leg of the same transaction, as the other side of a swap. */
+    swapWith?: { addressId: string; txid: string };
   } | null;
   /**
    * Hidden: a blockchain transaction left out of every calculation (M12). Dust: an unanswered

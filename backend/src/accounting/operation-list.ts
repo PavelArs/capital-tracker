@@ -158,7 +158,13 @@ export interface ChainOperationInput {
    * came back from them (negative); absent or "0" for every other leg.
    */
   stakeUnits?: string;
+  /** SWAP-ONE-TX: the owner's own transaction called a contract (Ethereum), on its ether leg. */
+  call?: ContractCall | null;
   classification?: ChainClassificationInput | null;
+}
+/** SWAP-ONE-TX: a contract call, named by its method as the explorer decodes it, or null. */
+export interface ContractCall {
+  method: string | null;
 }
 export interface OperationSources {
   trades: readonly TradeOperationInput[];
@@ -228,6 +234,13 @@ export interface Operation {
     direction: 'in' | 'out' | 'internal';
     /** CLS-SWAP: the paying transaction of a swap listed on its receiving row, or null. */
     pairedTxid: string | null;
+    /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
+    call?: ContractCall;
+    /**
+     * SWAP-ONE-TX-SUGGEST: the one leg of the same transaction that moved another coin the
+     * other way, as the suggested other side of a swap; only while both are unanswered.
+     */
+    swapWith?: { addressId: string; txid: string };
   } | null;
   /**
    * Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). Dust: an
@@ -537,6 +550,51 @@ function chainOperation(
   };
 }
 
+/** SWAP-ONE-TX: the transaction a leg belongs to; a token leg adds its number to the hash. */
+const hashKey = (row: ChainOperationInput) => `${row.wallet.network}:${row.txid.split('-')[0]}`;
+const unanswered = (row: ChainOperationInput) =>
+  !row.classification || row.classification.status === 'unclassified';
+/** A leg of the network's own coin that only paid the transaction's fee. */
+const feeOnly = (row: ChainOperationInput) =>
+  row.asset === null &&
+  BigInt(row.receivedUnits) === 0n &&
+  BigInt(row.sentUnits) === BigInt(row.feeUnits);
+const swappable = (row: ChainOperationInput) =>
+  unanswered(row) && !feeOnly(row) && netUnits(row) !== 0n && BigInt(row.stakeUnits ?? '0') === 0n;
+const coin = (row: ChainOperationInput) => chainAsset(row.wallet.network, row.asset).symbol;
+
+/**
+ * SWAP-ONE-TX: a transaction that took one coin from the owner and gave another back called a
+ * contract (a DEX on Ethereum, a program on Solana) that swapped them. The leg names the call
+ * the owner's transaction made and, while both are unanswered, suggests the one leg of the
+ * same transaction that moved another coin the other way as the other side of a swap. The
+ * leg that only paid the network fee is no side of it.
+ */
+function oneTransactionSwap(
+  operation: Projected,
+  row: ChainOperationInput,
+  legs: readonly ChainOperationInput[],
+): Projected {
+  if (!operation.chain) return operation;
+  const call = legs.find((leg) => leg.call)?.call ?? null;
+  const sides = swappable(row)
+    ? legs.filter(
+        (leg) =>
+          leg !== row &&
+          swappable(leg) &&
+          coin(leg) !== coin(row) &&
+          netUnits(leg) > 0n !== netUnits(row) > 0n,
+      )
+    : [];
+  const swapWith =
+    sides.length === 1 ? { addressId: sides[0].wallet.id, txid: sides[0].txid } : null;
+  if (!call && !swapWith) return operation;
+  return {
+    ...operation,
+    chain: { ...operation.chain, ...(call ? { call } : {}), ...(swapWith ? { swapWith } : {}) },
+  };
+}
+
 /** Every known operation, newest first; raw chain rows stay unclassified (OPS-1..3). */
 export function projectOperations(
   at: Date,
@@ -719,6 +777,11 @@ export function projectOperations(
     ];
   };
   const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
+  // SWAP-ONE-TX: every leg of one blockchain transaction, across the owner's addresses.
+  const byHash = new Map<string, ChainOperationInput[]>();
+  for (const row of sources.chain)
+    if (!isExchange(row.wallet.network))
+      byHash.set(hashKey(row), [...(byHash.get(hashKey(row)) ?? []), row]);
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
     const entry = ref ? produced.get(`${ref.kind}:${ref.id}`) : undefined;
@@ -736,7 +799,11 @@ export function projectOperations(
       netUnits(row) > 0n
     )
       continue;
-    const operation = chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd);
+    const operation = oneTransactionSwap(
+      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd),
+      row,
+      byHash.get(hashKey(row)) ?? [],
+    );
     entries.push({ operation, order: operation.orderWithinTimestamp });
   }
 

@@ -92,6 +92,11 @@ const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
   </span>
 );
 
+/** SWAP-ONE-TX: the owner's transaction called a contract, by the method the explorer names. */
+function callFact(call: { method: string | null }): [string, ReactNode] {
+  return ['Contract call', call.method ?? 'Method not named'];
+}
+
 /**
  * CLS-SWAP: a blockchain swap reads as both of its transactions, what was paid and from where,
  * then what arrived and where; its value is the cost basis of the coins bought.
@@ -127,6 +132,7 @@ function swapFacts(
       </span>,
     ],
   );
+  if (chain.call) rows.push(callFact(chain.call));
   // A Bybit record has no block (M22).
   if (wallet.network !== 'bybit')
     rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
@@ -190,6 +196,7 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
         {transactionHash(operation) ?? exchangeRecord(operation)}
       </span>,
     ]);
+    if (chain.call) rows.push(callFact(chain.call));
     if (!exchange) rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
     rows.push(
       [

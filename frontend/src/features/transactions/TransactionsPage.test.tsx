@@ -1604,3 +1604,102 @@ describe('token blockchain (TOKEN-CHAIN)', () => {
     ]);
   });
 });
+
+describe('swap in one transaction (SWAP-ONE-TX)', () => {
+  // A DEX swap: 0.5 ETH went to a contract that sent 1,500 USDC back in the same transaction.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(26),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000cc',
+    label: null,
+  };
+  const hash = 'e'.repeat(64);
+  const call = { method: 'swapExactETHForTokens' };
+  const leg = (txid: string, changes: Partial<Operation>) =>
+    operation({
+      id: `chain:${ethWallet.id}:${txid}`,
+      kind: 'chain',
+      type: null,
+      occurredAt: '2026-09-03T10:00:00.000Z',
+      account: trust,
+      wallet: ethWallet,
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+      ...changes,
+    });
+  const ether = leg(hash, {
+    direction: 'out',
+    asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' },
+    quantity: '0.5',
+    fee: { asset: { instrumentId: null, symbol: 'ETH', name: 'Ethereum' }, quantity: '0.002' },
+    chain: {
+      txid: hash,
+      blockHeight: 21000014,
+      priceObservedAt: null,
+      direction: 'out',
+      call,
+      swapWith: { addressId: ethWallet.id, txid: `${hash}-7` },
+    },
+  });
+  const usdc = leg(`${hash}-7`, {
+    direction: 'in',
+    asset: { instrumentId: null, symbol: 'USDC', name: 'USD Coin', network: 'ethereum' },
+    quantity: '1500',
+    chain: {
+      txid: `${hash}-7`,
+      blockHeight: 21000014,
+      priceObservedAt: null,
+      direction: 'in',
+      call,
+      swapWith: { addressId: ethWallet.id, txid: hash },
+    },
+  });
+
+  it('SWAP-ONE-TX-UI: the token back is suggested as a swap paid with the contract call', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([usdc, ether]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog', {
+      name: 'Incoming transaction · USDC (Ethereum)',
+    });
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    expect(
+      within(facts).getByText('Contract call', { exact: true }).nextElementSibling?.textContent,
+    ).toBe('swapExactETHForTokens');
+    expect(within(drawer).getByRole('button', { name: 'Swap' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const paidWith = within(drawer).getByLabelText('Paid with');
+    expect(paidWith).toHaveValue(`${ethWallet.id}|${hash}`);
+    expect(within(paidWith).getByRole('option', { selected: true }).textContent).toBe(
+      'Same transaction · -0.5 ETH · Trust Wallet · Ethereum 0x0000…00cc',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toMatchObject({
+      classification: {
+        type: 'swap',
+        with: { addressId: ethWallet.id, txid: hash },
+        valueUsd: null,
+      },
+    });
+  });
+
+  it('SWAP-ONE-TX-UI: the contract call is suggested as a swap for what came back', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([usdc, ether]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(2));
+    await user.click(within(bodyRows()[1]).getByRole('button'));
+    const drawer = screen.getByRole('dialog', { name: 'Outgoing transaction · ETH' });
+    expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(
+      `${ethWallet.id}|${hash}-7`,
+    );
+  });
+});
