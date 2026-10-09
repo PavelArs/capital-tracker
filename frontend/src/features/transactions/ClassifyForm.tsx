@@ -28,6 +28,8 @@ const currencies: Currency[] = ['USD', 'USDT', 'USDC', 'EUR', 'RUB'];
 // what arrives can be bought or received, what leaves can be sold, spent or given, and either
 // can move between the owner's own wallets (M13). Other is a movement nobody can name yet.
 // A swap pairs a receipt with a payment in another coin, from any of the wallets (CLS-SWAP).
+// Coins put into a liquidity pool stay the owner's; a withdrawal names the deposit it returns,
+// and the pool's rewards are income (POOL-*).
 const TRANSFER: [ChainType, string] = ['transfer', 'Transfer between my wallets'];
 const SWAP: [ChainType, string] = ['swap', 'Swap'];
 const incoming: [ChainType, string][] = [
@@ -39,6 +41,8 @@ const incoming: [ChainType, string][] = [
   ['staking-reward', 'Staking reward'],
   ['airdrop', 'Airdrop'],
   ['gift', 'Gift received'],
+  ['pool-reward', 'Pool reward'],
+  ['pool-withdrawal', 'Pool withdrawal'],
   ['other', 'Other'],
 ];
 const outgoing: [ChainType, string][] = [
@@ -48,6 +52,7 @@ const outgoing: [ChainType, string][] = [
   ['expense', 'Expense'],
   ['gift', 'Gift sent'],
   ['fee', 'Fee'],
+  ['pool-deposit', 'Pool deposit'],
   ['other', 'Other'],
 ];
 /** The leg's own direction: a recorded transfer reads as internal in the list. */
@@ -72,6 +77,8 @@ interface Draft {
   account: string;
   /** Swap only: the transaction on the other side, as "address id|txid". */
   pair: string;
+  /** Pool withdrawal only: the deposit it returns, as "address id|txid". */
+  deposit: string;
   comment: string;
   hidden: boolean;
 }
@@ -90,6 +97,7 @@ function draftOf(operation: Operation): Draft {
   const valued = value && !priced && 'valueUsd' in value ? value : null;
   const moved = value?.type === 'transfer' ? value : null;
   const swapped = value?.type === 'swap' ? value : null;
+  const returned = value?.type === 'pool-withdrawal' ? value : null;
   // XFER-AUTO: the owner's other address in the same transaction suggests a transfer.
   const suggested = !value && operation.counterWallet && operation.counterAccount;
   // SWAP-ONE-TX-SUGGEST: another coin back in the same transaction suggests a swap.
@@ -106,6 +114,7 @@ function draftOf(operation: Operation): Draft {
       : together
         ? `${together.addressId}|${together.txid}`
         : '',
+    deposit: returned ? `${returned.deposit.addressId}|${returned.deposit.txid}` : '',
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
     hidden: false,
@@ -113,7 +122,14 @@ function draftOf(operation: Operation): Draft {
 }
 
 const WEEK_MS = 7 * 86_400_000;
-const unpaired = new Set(['transfer', 'swap', 'stake', 'unstake']);
+const unpaired = new Set([
+  'transfer',
+  'swap',
+  'stake',
+  'unstake',
+  'pool-deposit',
+  'pool-withdrawal',
+]);
 /** The coin this leg moved: a swap row lists what was paid first. */
 const legAsset = (operation: Operation) =>
   operation.type === 'swap' && operation.counterAsset ? operation.counterAsset : operation.asset;
@@ -178,7 +194,52 @@ export function swapCandidates(operation: Operation, operations: Operation[]): [
   return found;
 }
 
-type Problem = 'amount' | 'rate' | 'value' | 'account' | 'pair' | 'comment';
+/**
+ * POOL-WITHDRAW: the owner's pool deposits this receipt can return: the same coin, from an
+ * address of the same wallet, made no later, that no other withdrawal returns; newest first.
+ */
+export function poolCandidates(operation: Operation, operations: Operation[]): [string, string][] {
+  const coin = assetKey(operation.asset);
+  const depositKey = (item: Operation) => {
+    const value = item.classification?.value;
+    return value?.type === 'pool-withdrawal'
+      ? `${value.deposit.addressId}|${value.deposit.txid}`
+      : '';
+  };
+  const taken = new Set(
+    operations
+      .filter((item) => item.id !== operation.id && item.status === 'recorded')
+      .map(depositKey)
+      .filter(Boolean),
+  );
+  const found = operations
+    .filter(
+      (item) =>
+        item.kind === 'chain' &&
+        item.type === 'pool-deposit' &&
+        item.status === 'recorded' &&
+        pairKey(item) !== '' &&
+        !taken.has(pairKey(item)) &&
+        assetKey(item.asset) === coin &&
+        item.account !== null &&
+        item.account.id === operation.account?.id &&
+        item.occurredAt <= operation.occurredAt,
+    )
+    .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
+    .map((item): [string, string] => [
+      pairKey(item),
+      [
+        `${day(item.occurredAt)}, ${rowTime(item)}`,
+        amount(item.quantity, item.asset),
+        addressText(item.wallet!),
+      ].join(' · '),
+    ]);
+  const saved = depositKey(operation);
+  if (saved && !found.some(([key]) => key === saved)) found.unshift([saved, 'The saved deposit']);
+  return found;
+}
+
+type Problem = 'amount' | 'rate' | 'value' | 'account' | 'pair' | 'deposit' | 'comment';
 
 function problems(draft: Draft): Set<Problem> {
   const found = new Set<Problem>();
@@ -187,6 +248,11 @@ function problems(draft: Draft): Set<Problem> {
   } else if (draft.type === 'swap') {
     if (!draft.pair) found.add('pair');
     if (draft.value.trim() && !positive(draft.value)) found.add('value');
+  } else if (draft.type === 'pool-withdrawal') {
+    if (!draft.deposit) found.add('deposit');
+    if (draft.value.trim() && !positive(draft.value)) found.add('value');
+  } else if (draft.type === 'pool-deposit') {
+    // Nothing to enter: the coins stay the owner's.
   } else if (draft.type === 'buy' || draft.type === 'sell') {
     if (!positive(draft.amount)) found.add('amount');
     if ((draft.currency === 'EUR' || draft.currency === 'RUB') && draft.rate.trim())
@@ -194,6 +260,7 @@ function problems(draft: Draft): Set<Problem> {
   } else if (
     draft.type === 'reward' ||
     draft.type === 'staking-reward' ||
+    draft.type === 'pool-reward' ||
     draft.type === 'airdrop'
   ) {
     if (draft.value.trim() && !positive(draft.value)) found.add('value');
@@ -231,14 +298,29 @@ function answer(draft: Draft): ChainClassification | null {
     }
     case 'reward':
     case 'staking-reward':
+    case 'pool-reward':
     case 'airdrop':
       return { type: draft.type, valueUsd: draft.value.trim() ? decimal(draft.value) : null };
     case 'other':
       return { type: 'other' };
+    case 'pool-deposit':
+      return { type: 'pool-deposit' };
+    case 'pool-withdrawal': {
+      const [addressId, txid] = draft.deposit.split('|');
+      return {
+        type: 'pool-withdrawal',
+        deposit: { addressId, txid },
+        valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+      };
+    }
     default:
       return { type: draft.type, valueUsd: decimal(draft.value)! };
   }
 }
+
+/** POOL-UNDO: the deposit a withdrawal returns cannot change or be hidden first. */
+export const POOL_DEPOSIT_NAMED =
+  'A pool withdrawal names this deposit; change the withdrawal first';
 
 function failure(error: unknown): ReactNode {
   if (dependentOf(error))
@@ -262,6 +344,19 @@ function failure(error: unknown): ReactNode {
     return 'Both transactions moved the same coin. Choose a transaction in another coin.';
   if (status === 422 && message === 'Choose the other side of the swap')
     return 'Choose the transaction on the other side.';
+  const pools: Record<string, string> = {
+    'Choose a pool deposit': 'Choose the pool deposit this withdrawal returns.',
+    'A pool withdrawal returns the coin of its deposit':
+      'That deposit was in another coin. Choose a deposit of the coin that came back.',
+    'Choose a pool deposit of this wallet':
+      'That deposit was made from another wallet. Choose a deposit of this wallet.',
+    'Choose a pool deposit made before this withdrawal':
+      'That deposit was made after this withdrawal. Choose an earlier one.',
+    'That pool deposit was already withdrawn':
+      'Another withdrawal already returns that deposit. Choose another one, or change that withdrawal first.',
+    [POOL_DEPOSIT_NAMED]: 'A pool withdrawal returns this deposit. Change that withdrawal first.',
+  };
+  if (status === 422 && typeof message === 'string' && pools[message]) return pools[message];
   if (status === 422 && message === 'Choose an account other than the one of this wallet')
     return 'Choose a wallet other than the one of this address.';
   if (
@@ -330,6 +425,8 @@ export default function ClassifyForm({
   const [accountsFailed, setAccountsFailed] = useState(false);
   const transfer = draft.type === 'transfer';
   const swap = draft.type === 'swap';
+  const poolDeposit = draft.type === 'pool-deposit';
+  const poolWithdrawal = draft.type === 'pool-withdrawal';
   useEffect(() => {
     if (!transfer || accounts) return;
     let live = true;
@@ -374,8 +471,10 @@ export default function ClassifyForm({
   const optional =
     draft.type === 'reward' ||
     draft.type === 'staking-reward' ||
+    draft.type === 'pool-reward' ||
     draft.type === 'airdrop' ||
-    draft.type === 'swap';
+    draft.type === 'swap' ||
+    poolWithdrawal;
   const other = draft.type === 'other';
   // Other asks only for a comment, so it shows up front rather than under "More options".
   const commentField = (
@@ -564,6 +663,45 @@ export default function ClassifyForm({
             </div>
           </div>
         )}
+        {poolDeposit && (
+          <div className="transactions-subform">
+            <span className="portfolio-field__hint">
+              The coins stay yours while they are in the pool: they keep their purchase price and
+              count in your balance. This is not a sale and not a withdrawal. Only the network fee
+              {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
+              a cost.
+            </span>
+          </div>
+        )}
+        {poolWithdrawal && (
+          <div className="transactions-subform">
+            <div className="portfolio-field">
+              <label className="portfolio-field__label" htmlFor={`${id}-deposit`}>
+                Returns the deposit
+              </label>
+              <select
+                id={`${id}-deposit`}
+                className="portfolio-input"
+                value={draft.deposit}
+                onChange={(event) => change({ deposit: event.target.value })}
+                {...invalid('deposit')}
+              >
+                <option value="">Choose the pool deposit</option>
+                {poolCandidates(operation, operations).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              {fieldError('deposit', 'Choose the pool deposit this withdrawal returns') || (
+                <span className="portfolio-field__hint">
+                  Your pool deposits of {legAsset(operation).symbol ?? 'this coin'} from this wallet
+                  made before it. Classify the deposit as Pool deposit first.
+                </span>
+              )}
+            </div>
+          </div>
+        )}
         {other && (
           <div className="transactions-subform">
             <span className="portfolio-field__hint">
@@ -574,11 +712,12 @@ export default function ClassifyForm({
             {commentField}
           </div>
         )}
-        {draft.type && !priced && !transfer && !other && (
+        {draft.type && !priced && !transfer && !other && !poolDeposit && (
           <div className="transactions-subform">
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor={`${id}-value`}>
-                Value at the time{optional ? ' (optional)' : ''}
+                {poolWithdrawal ? 'Value of the gain' : 'Value at the time'}
+                {optional ? ' (optional)' : ''}
               </label>
               <span className="portfolio-affix">
                 <input
@@ -599,13 +738,15 @@ export default function ClassifyForm({
                 <span className="portfolio-field__hint">
                   {swap
                     ? `Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
-                    : draft.type === 'expense' ||
-                        draft.type === 'fee' ||
-                        operation.direction !== 'in'
-                      ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
-                      : optional
-                        ? 'Without a value the coins count in net worth, not in profit.'
-                        : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
+                    : poolWithdrawal
+                      ? `Only what came back above the deposit is income; less is a loss. Empty: USDT and USDC count 1:1, other coins at their stored price on ${day(operation.occurredAt)}.`
+                      : draft.type === 'expense' ||
+                          draft.type === 'fee' ||
+                          operation.direction !== 'in'
+                        ? `What the coins were worth on ${day(operation.occurredAt)}; it leaves your capital.`
+                        : optional
+                          ? 'Without a value the coins count in net worth, not in profit.'
+                          : `What the coins were worth on ${day(operation.occurredAt)}; it becomes their cost basis.`}
                 </span>
               )}
             </div>

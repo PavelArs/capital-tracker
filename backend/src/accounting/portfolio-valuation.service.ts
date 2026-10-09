@@ -12,6 +12,7 @@ import type { Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
+import { poolMoveUnits } from './chain-pool';
 import {
   type ConnectedLedger,
   type ConnectedLedgerCache,
@@ -184,6 +185,34 @@ export async function readChainMoves(
       [owner],
     );
   for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
+  // POOL-DEPOSIT, POOL-WITHDRAW: coins in a liquidity pool stay held; a deposit and a withdrawal
+  // spend their network fee, and a withdrawal that returned less than its deposit the rest.
+  const pools: (Omit<ChainMoveRow, 'stakeUnits'> & {
+    feeUnits: string;
+    deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
+  })[] = await manager.query(
+    `SELECT w."accountId", w.network, t.asset, t."blockTime",
+        t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
+        t."feeUnits"::text AS "feeUnits",
+        CASE WHEN p.txid IS NULL THEN NULL ELSE json_build_object(
+          'receivedUnits', p."receivedUnits"::text, 'sentUnits', p."sentUnits"::text,
+          'feeUnits', p."feeUnits"::text) END AS deposit
+      FROM wallet_addresses w
+      JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
+      JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+      JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+        AND v.txid=h.txid AND v.version=h."currentVersion"
+      LEFT JOIN wallet_address_transactions p ON v.type='pool-withdrawal'
+        AND p."addressId"=v."pairedAddressId" AND p.txid=v."pairedTxid"
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND v.status='classified'
+        AND v.type IN ('pool-deposit', 'pool-withdrawal')
+      ORDER BY t."blockTime", t.txid, w.id`,
+    [owner],
+  );
+  for (const { deposit, feeUnits, ...row } of pools) {
+    const units = poolMoveUnits({ ...row, feeUnits }, deposit && { ...row, ...deposit });
+    rows.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
+  }
   const coins = new Map<string, string | null>();
   const moves = new Map<string, ChainMove[]>();
   for (const row of rows) {

@@ -57,9 +57,12 @@ function glyph(operation: Operation): Glyph {
     case 'swap':
     case 'stake':
     case 'unstake':
+    case 'pool-deposit':
+    case 'pool-withdrawal':
       return 'move';
     case 'reward':
     case 'staking-reward':
+    case 'pool-reward':
       return 'reward';
     case 'airdrop':
       return 'airdrop';

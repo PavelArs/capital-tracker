@@ -142,6 +142,7 @@ describe('list-all-operations projection', () => {
       comment: 'First buy from the spreadsheet',
       settlement: null,
       classification: null,
+      pool: null,
       orderWithinTimestamp: 0,
       // Without asked rates the list is in USD, exactly as recorded.
       value: '1000',
@@ -200,6 +201,7 @@ describe('list-all-operations projection', () => {
       comment: null,
       settlement: null,
       classification: null,
+      pool: null,
       orderWithinTimestamp: 0,
       value: null,
       estimatedValue: '780.10005255',
@@ -1148,6 +1150,162 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  describe('POOL-*', () => {
+    // Trust Wallet's Ethereum address put 1 ETH (fee 0.001 ETH) and 3000 USDC into a pool and
+    // got 0.9 ETH (fee 0.0005 ETH) and 3400 USDC back.
+    const ethWallet = {
+      id: id(23),
+      network: 'ethereum' as const,
+      address: '0x00000000000000000000000000000000000000bb',
+      label: null,
+    };
+    const ether = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+    const rewardId = id(70);
+    const depositTxid = 'f'.repeat(64);
+    const withdrawalTxid = 'e'.repeat(64);
+    const answered = (type: 'pool-deposit' | 'pool-withdrawal', txid: string | null) => ({
+      version: 1,
+      status: 'classified' as const,
+      type,
+      details:
+        type === 'pool-deposit'
+          ? { type }
+          : { type, deposit: { addressId: ethWallet.id, txid: txid! }, valueUsd: null },
+      comment: null,
+      produced: null,
+      paired: txid ? { addressId: ethWallet.id, txid } : null,
+    });
+    const leg = (overrides: Partial<ChainOperationInput>) =>
+      chain(7, { wallet: ethWallet, account: trust, ...overrides });
+    const ethDeposit = leg({
+      txid: depositTxid,
+      blockTime: '2026-08-10T10:00:00.000Z',
+      direction: 'out',
+      receivedUnits: '0',
+      sentUnits: '1001000000000000000',
+      feeUnits: '1000000000000000',
+      classification: answered('pool-deposit', null),
+    });
+    const usdcDeposit = leg({
+      txid: `${depositTxid}-4`,
+      asset: 'USDC',
+      blockTime: '2026-08-10T10:00:00.000Z',
+      direction: 'out',
+      receivedUnits: '0',
+      sentUnits: '3000000000',
+      feeUnits: '0',
+      classification: answered('pool-deposit', null),
+    });
+    const ethBack = leg({
+      txid: withdrawalTxid,
+      blockTime: '2026-09-01T10:00:00.000Z',
+      direction: 'in',
+      receivedUnits: '900000000000000000',
+      sentUnits: '500000000000000',
+      feeUnits: '500000000000000',
+      classification: answered('pool-withdrawal', depositTxid),
+    });
+    const usdcBack = leg({
+      txid: `${withdrawalTxid}-3`,
+      asset: 'USDC',
+      blockTime: '2026-09-01T10:00:00.000Z',
+      direction: 'in',
+      receivedUnits: '3400000000',
+      sentUnits: '0',
+      feeUnits: '0',
+      classification: {
+        ...answered('pool-withdrawal', `${depositTxid}-4`),
+        produced: { kind: 'reward' as const, id: rewardId },
+      },
+    });
+    const gain = {
+      rewardId,
+      version: 1,
+      account: trust,
+      asset: { instrumentId: id(4), symbol: 'USDC', name: 'USD Coin' },
+      category: 'other' as const,
+      occurredAt: '2026-09-01T10:00:00.000Z',
+      orderWithinTimestamp: 2,
+      quantity: '400',
+      incomeValueUsd: '400',
+      acquisitionBasisUsd: '400',
+    };
+
+    it('POOL-DEPOSIT: each leg is a pool deposit of its principal, the fee apart, out of the count', () => {
+      const list = projectOperations(now, sources({ chain: [ethDeposit, usdcDeposit] }));
+      expect(list.needsClassificationCount).toBe(0);
+      const [eth, usdc] = list.operations;
+      expect(eth).toMatchObject({
+        type: 'pool-deposit',
+        direction: 'internal',
+        status: 'recorded',
+        asset: ether,
+        quantity: '1',
+        valueUsd: null,
+        fee: { asset: ether, quantity: '0.001' },
+        chain: { txid: depositTxid, direction: 'out', pairedTxid: null },
+        pool: null,
+      });
+      expect(usdc).toMatchObject({ type: 'pool-deposit', quantity: '3000', fee: null });
+    });
+
+    it('POOL-WITHDRAW: a withdrawal shows what came back, its deposit and the difference', () => {
+      const list = projectOperations(
+        now,
+        sources({ rewards: [gain], chain: [ethDeposit, usdcDeposit, ethBack, usdcBack] }),
+      );
+      expect(list.operations).toHaveLength(4);
+      const usdc = list.operations.find((item) => item.chain?.txid === `${withdrawalTxid}-3`);
+      expect(usdc).toMatchObject({
+        type: 'pool-withdrawal',
+        direction: 'internal',
+        status: 'recorded',
+        quantity: '3400',
+        valueUsd: '400',
+        costBasisUsd: '400',
+        chain: { direction: 'in', pairedTxid: `${depositTxid}-4` },
+        pool: { deposited: '3000', difference: '400' },
+        orderWithinTimestamp: 2,
+      });
+      const eth = list.operations.find((item) => item.chain?.txid === withdrawalTxid);
+      expect(eth).toMatchObject({
+        quantity: '0.9',
+        valueUsd: null,
+        fee: { asset: ether, quantity: '0.0005' },
+        pool: { deposited: '1', difference: '-0.1' },
+      });
+    });
+
+    it('POOL-REWARD: a pool reward reads as the income it produced', () => {
+      const reward = leg({
+        txid: `${'c'.repeat(64)}-2`,
+        asset: 'USDC',
+        receivedUnits: '25000000',
+        sentUnits: '0',
+        feeUnits: '0',
+        classification: {
+          version: 1,
+          status: 'classified',
+          type: 'pool-reward',
+          details: { type: 'pool-reward', valueUsd: '25' },
+          comment: null,
+          produced: { kind: 'reward', id: rewardId },
+        },
+      });
+      const list = projectOperations(
+        now,
+        sources({ rewards: [{ ...gain, quantity: '25', incomeValueUsd: '25' }], chain: [reward] }),
+      );
+      expect(list.operations).toHaveLength(1);
+      expect(list.operations[0]).toMatchObject({
+        type: 'pool-reward',
+        status: 'recorded',
+        direction: 'in',
+        valueUsd: '25',
+      });
+    });
+  });
+
   describe('TOKEN-CHAIN', () => {
     // The same ticker exists on several blockchains, so a token always names its own.
     const ethereumWallet = {
@@ -1386,6 +1544,24 @@ describe('list-all-operations projection', () => {
       // The same coin both ways is no swap.
       const same = byId([ether(), ether({ txid: `${hash}-1`, direction: 'in' })]);
       expect(same.get(`chain:${id(26)}:${hash}`)?.chain).not.toHaveProperty('swapWith');
+    });
+
+    it('SWAP-ONE-TX-SUGGEST: a liquidity pool deposit or withdrawal suggests no swap', () => {
+      // POOL-DEPOSIT: ether and USDC both go into the pool (its pool token is not synced);
+      // POOL-WITHDRAW: both come back. Neither moves one coin each way.
+      const deposit = byId([
+        ether({ sentUnits: '1002000000000000000' }),
+        token('USDC', 4, { direction: 'out', receivedUnits: '0', sentUnits: '3000000000' }),
+      ]);
+      const withdrawal = byId([
+        ether({ direction: 'in', receivedUnits: '900000000000000000', sentUnits: '0' }),
+        token('USDC', 4, { receivedUnits: '3400000000' }),
+      ]);
+      for (const list of [deposit, withdrawal])
+        for (const leg of [hash, `${hash}-4`])
+          expect(list.get(`chain:${id(26)}:${leg}`)?.chain).not.toHaveProperty('swapWith');
+      // The contract call is still named.
+      expect(deposit.get(`chain:${id(26)}:${hash}-4`)?.chain?.call).toEqual(call);
     });
 
     it('SWAP-ONE-TX-SUGGEST: a Solana program swap of SOL for USDC is suggested the same way', () => {

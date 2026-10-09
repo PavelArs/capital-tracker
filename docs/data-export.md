@@ -32,7 +32,10 @@ voided entry shows what it said before it was deleted. `source` is `manual`, `cs
 from a CSV file) or `chain` (produced by classifying a blockchain transaction, whose txid is
 in `chain_txid`). `id` matches the Transactions list (`trade:<uuid>`, `transfer:<uuid>`, …), and
 `chain-transactions.csv` links to it in `operation_id`; both transactions of a blockchain
-swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt. Values
+swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt. A pool
+deposit (POOL-DEPOSIT) produces no entry; a pool withdrawal that returned more than its deposit
+links to the `reward:<uuid>` of that pool income, and its `classification_details` name the
+deposit. Values
 are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
 `paid_amount`, `paid_fee` and the rate.
 

@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { poolCandidates } from './ClassifyForm';
 import TransactionsPage, { forgetLastList } from './TransactionsPage';
 
 // Synthetic ids, names and amounts only.
@@ -872,6 +873,8 @@ describe('classify-chain-transactions (M12)', () => {
       'Staking reward',
       'Airdrop',
       'Gift received',
+      'Pool reward',
+      'Pool withdrawal',
       'Other',
     ]);
     expect(within(drawer).getByText('1 left to classify')).toBeInTheDocument();
@@ -910,6 +913,7 @@ describe('classify-chain-transactions (M12)', () => {
       'Expense',
       'Gift sent',
       'Fee',
+      'Pool deposit',
       'Other',
     ]);
     expect(within(next).getByText('0 left to classify')).toBeInTheDocument();
@@ -1876,5 +1880,223 @@ describe('transactions-page-polish', () => {
     expect(explorer).toHaveAttribute('href', `https://mempool.space/tx/${txid(1)}`);
     expect(explorer).toHaveAttribute('target', '_blank');
     expect(explorer).toHaveAttribute('rel', 'noopener noreferrer');
+  });
+});
+
+describe('liquidity-pool-chain-legs (POOL-*)', () => {
+  // Trust Wallet's Ethereum address put 3000 USDC into a pool and got 3400 USDC back.
+  const trust = { id: id(12), name: 'Trust Wallet' };
+  const ethWallet = {
+    id: id(23),
+    network: 'ethereum' as const,
+    address: '0x00000000000000000000000000000000000000bb',
+    label: null,
+  };
+  const chainUsdc = { instrumentId: null, symbol: 'USDC', name: 'USD Coin' };
+  const chainEth = { instrumentId: null, symbol: 'ETH', name: 'Ethereum' };
+  const depositTxid = `${'f'.repeat(64)}-4`;
+  const backTxid = `${'e'.repeat(64)}-3`;
+  const leg = (txid: string, changes: Partial<Operation>) =>
+    operation({
+      id: `chain:${ethWallet.id}:${txid}`,
+      kind: 'chain',
+      type: null,
+      asset: chainUsdc,
+      account: trust,
+      wallet: ethWallet,
+      chain: {
+        txid,
+        blockHeight: 20000000,
+        priceObservedAt: null,
+        direction: changes.direction ?? 'in',
+      },
+      status: 'needs-classification',
+      source: 'chain',
+      version: null,
+      ...changes,
+    });
+  const unanswered = leg(depositTxid, {
+    direction: 'out',
+    occurredAt: '2026-08-10T10:00:00.000Z',
+    quantity: '3000',
+  });
+  const deposited = leg(depositTxid, {
+    type: 'pool-deposit',
+    direction: 'internal',
+    occurredAt: '2026-08-10T10:00:00.000Z',
+    quantity: '3000',
+    status: 'recorded',
+    chain: { txid: depositTxid, blockHeight: 20000000, priceObservedAt: null, direction: 'out' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: { type: 'pool-deposit' },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const back = leg(backTxid, { occurredAt: '2026-09-01T10:00:00.000Z', quantity: '3400' });
+  // Not candidates: a deposit of another coin, and one made after the withdrawal.
+  const etherIn = leg(`${'f'.repeat(64)}`, {
+    ...deposited,
+    id: `chain:${ethWallet.id}:${'f'.repeat(64)}`,
+    asset: chainEth,
+    quantity: '1',
+    chain: { ...deposited.chain!, txid: 'f'.repeat(64) },
+  });
+  const later = {
+    ...deposited,
+    id: `chain:${ethWallet.id}:${'c'.repeat(64)}-1`,
+    occurredAt: '2026-09-20T10:00:00.000Z',
+    chain: { ...deposited.chain!, txid: `${'c'.repeat(64)}-1` },
+  };
+  const returned = leg(backTxid, {
+    type: 'pool-withdrawal',
+    direction: 'internal',
+    occurredAt: '2026-09-01T10:00:00.000Z',
+    quantity: '3400',
+    valueUsd: '400',
+    costBasisUsd: '400',
+    status: 'recorded',
+    chain: {
+      txid: backTxid,
+      blockHeight: 20000001,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: depositTxid,
+    },
+    pool: { deposited: '3000', difference: '400' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+      },
+      comment: null,
+      automatic: false,
+    },
+  });
+  const openRow = async (operations: Operation[], index: number, name: string) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list(operations));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(index));
+    await user.click(within(bodyRows()[index]).getByRole('button'));
+    return { user, drawer: screen.getByRole('dialog', { name }) };
+  };
+
+  it('POOL-DEPOSIT-UI: an outgoing transaction is a pool deposit with nothing to enter', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([unanswered], 0, 'Outgoing transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool deposit' }));
+    expect(
+      within(drawer).getByText(/The coins stay yours while they are in the pool/),
+    ).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText(/Value/)).not.toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: { type: 'pool-deposit' },
+    });
+  });
+
+  it('POOL-WITHDRAW-UI: a receipt names the deposit it returns, of its coin, made before it', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow(
+      [later, back, deposited, etherIn],
+      1,
+      'Incoming transaction · USDC',
+    );
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    const select = within(drawer).getByLabelText('Returns the deposit');
+    expect(
+      within(select)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Choose the pool deposit',
+      'Aug 10, 2026, 10:00 · 3,000 USDC · Ethereum 0x0000…00bb',
+    ]);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(
+      within(drawer).getByText('Choose the pool deposit this withdrawal returns'),
+    ).toBeInTheDocument();
+    expect(classify).not.toHaveBeenCalled();
+    await user.selectOptions(select, `${ethWallet.id}|${depositTxid}`);
+    await user.type(within(drawer).getByLabelText('Value of the gain (optional)'), '410');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: '410',
+      },
+    });
+  });
+
+  it('POOL-WITHDRAW-UI: a withdrawal shows its deposit and the pool income; a returned deposit is no choice', async () => {
+    const { user, drawer } = await openRow([returned, deposited], 0, 'Pool withdrawal · USDC');
+    expect(
+      within(drawer).getByText(
+        'Returned from a liquidity pool: the deposit comes back as your own coins, not income and not a deposit. The 400 USDC above it is pool income.',
+      ),
+    ).toBeInTheDocument();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Deposited')).toBe('3,000 USDC');
+    expect(fact('Pool income')).toBe('+400 USDC');
+    expect(fact('Deposit transaction')).toBe(`0x${'f'.repeat(64)}`);
+    expect(fact('Value')).toBe('$400.00');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByLabelText('Returns the deposit')).toHaveValue(
+      `${ethWallet.id}|${depositTxid}`,
+    );
+    // Another receipt cannot return the same deposit again.
+    const other = leg(`${'b'.repeat(64)}-1`, { occurredAt: '2026-09-02T10:00:00.000Z' });
+    expect(poolCandidates(other, [returned, deposited, other]).map(([key]) => key)).toEqual([]);
+  });
+
+  it('POOL-UNDO-UI: explains why a deposit a withdrawal returns cannot be hidden', async () => {
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'A pool withdrawal names this deposit; change the withdrawal first' },
+      }),
+    );
+    const { user, drawer } = await openRow([deposited], 0, 'Pool deposit · USDC');
+    expect(
+      within(drawer).getByText(
+        'Moved into a liquidity pool: the coins stay yours and keep their purchase price until a pool withdrawal returns them. Only the network fee is a cost.',
+      ),
+    ).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Hide from calculations' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      'A pool withdrawal returns this deposit, so it cannot be hidden. Change that withdrawal first.',
+    );
+  });
+
+  it('POOL-REWARD-UI: a receipt can be a pool reward with an optional value', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([back], 0, 'Incoming transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool reward' }));
+    await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '25');
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toMatchObject({
+      classification: { type: 'pool-reward', valueUsd: '25' },
+    });
   });
 });

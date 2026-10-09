@@ -7,6 +7,7 @@ import {
 } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { isDust } from './chain-dust';
+import { poolCoins, poolDepositUnits, poolReturnUnits } from './chain-pool';
 import { coinOf, sameTransaction } from './chain-transfer';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
@@ -197,7 +198,10 @@ export type OperationType =
   | 'expense'
   | 'gift'
   | 'fee'
-  | 'other';
+  | 'other'
+  | 'pool-deposit'
+  | 'pool-withdrawal'
+  | 'pool-reward';
 
 export interface Operation {
   id: string;
@@ -232,7 +236,10 @@ export interface Operation {
     blockHeight: number;
     priceObservedAt: string | null;
     direction: 'in' | 'out' | 'internal';
-    /** CLS-SWAP: the paying transaction of a swap listed on its receiving row, or null. */
+    /**
+     * CLS-SWAP: the paying transaction of a swap listed on its receiving row; POOL-WITHDRAW: the
+     * deposit a withdrawal returns. Null otherwise.
+     */
     pairedTxid: string | null;
     /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
     call?: ContractCall;
@@ -242,6 +249,11 @@ export interface Operation {
      */
     swapWith?: { addressId: string; txid: string };
   } | null;
+  /**
+   * POOL-WITHDRAW: what the deposit put into the pool and what came back above it (positive,
+   * pool income) or below it (negative, impermanent loss); null for every other row.
+   */
+  pool: { deposited: string; difference: string } | null;
   /**
    * Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). Dust: an
    * unanswered receipt worth less than the dust threshold; it counts like any unanswered one
@@ -329,6 +341,7 @@ const blank = {
   comment: null,
   settlement: null,
   classification: null,
+  pool: null,
 } satisfies Partial<Operation>;
 type Projected = Omit<Operation, 'value' | 'estimatedValue' | 'costBasis' | 'feeValue'>;
 const inUsdOnly = () => new FxConverter({ USD: [], EUR: [] }, 'USD');
@@ -484,6 +497,46 @@ function chainOperation(
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
     return { ...operation, type: 'other', status: 'recorded' };
+  // POOL-DEPOSIT, POOL-WITHDRAW: coins put into a liquidity pool or back stay the owner's; the
+  // row shows the principal, the network fee apart, and a withdrawal what it gained or lost.
+  if (
+    answer?.status === 'classified' &&
+    (answer.type === 'pool-deposit' || answer.type === 'pool-withdrawal')
+  ) {
+    const deposit = answer.type === 'pool-deposit';
+    const units = (leg: ChainOperationInput) => ({ ...leg, network: leg.wallet.network });
+    const moved = poolCoins(
+      deposit ? poolDepositUnits(units(row)) : poolReturnUnits(units(row)),
+      units(row),
+    );
+    const fee = BigInt(row.feeUnits) > 0n && row.asset === null && !isExchange(network);
+    const paired = deposit ? null : other;
+    const deposited = paired && poolCoins(poolDepositUnits(units(paired)), units(paired));
+    return {
+      ...operation,
+      type: answer.type,
+      direction: 'internal',
+      status: 'recorded',
+      quantity: moved,
+      estimatedValueUsd: estimate(moved, price),
+      // The owner sent both: the fee of each is theirs.
+      fee: fee
+        ? { asset: legAsset(network, null), quantity: amount(BigInt(row.feeUnits), network, null) }
+        : null,
+      valueUsd: produced?.valueUsd ?? null,
+      costBasisUsd: produced?.costBasisUsd ?? null,
+      chain: operation.chain && { ...operation.chain, pairedTxid: paired?.txid ?? null },
+      pool: deposited
+        ? {
+            deposited,
+            difference: formatAtoms(
+              canonicalDecimalToAtoms(moved) - canonicalDecimalToAtoms(deposited),
+            ),
+          }
+        : null,
+      orderWithinTimestamp: produced?.orderWithinTimestamp ?? 0,
+    };
+  }
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
   // elsewhere leaves the transaction to classify again, with the other side to suggest.
   if (answer?.status !== 'classified' || !answer.type || !produced)
