@@ -22,11 +22,17 @@ const fullSuiteJobs = [
   'spec-check',
   'dependency-audit',
 ];
-// A push to main only builds the release after confirming its pull request passed the suite.
-const pushJobs = ['release-images', 'merged-pr-ci'];
+// The images built on main are the ones deployed: they pass the critical acceptance shards,
+// the image scan and the receipt there too, not only on their pull request.
+const releaseCheckJobs = ['critical-acceptance', 'image-security', 'docker-build'];
+// A push to main builds the release after confirming its pull request passed the suite, and
+// checks the images it built.
+const pushJobs = ['release-images', 'merged-pr-ci', ...releaseCheckJobs];
 const requiredJobs = [...fullSuiteJobs, 'merged-pr-ci'];
-// Checks that never run on main: everything in the full suite except the image build.
-const testJobs = fullSuiteJobs.filter((job) => job !== 'release-images');
+// Checks that never run on main: the source checks of the full suite.
+const testJobs = fullSuiteJobs.filter(
+  (job) => job !== 'release-images' && !releaseCheckJobs.includes(job),
+);
 
 type Needs = Record<string, unknown>;
 type WorkflowStep = {
@@ -189,8 +195,8 @@ function pullRequestNeeds(): Needs {
   return needs;
 }
 
-describe('ENG-006: pull requests run every check, a push to main only builds the release', () => {
-  it('ENG-006-A skips every check on push and the merged pull request check elsewhere', () => {
+describe('ENG-006: pull requests run every check, a push to main builds and checks the release', () => {
+  it('ENG-006-A skips the source checks on push and the merged pull request check elsewhere', () => {
     const ci = workflow('ci');
     expect(Object.keys(ci.on).sort()).toEqual(['pull_request', 'push', 'workflow_dispatch']);
     expect(ci.on.push?.branches).toEqual(['main']);
@@ -199,9 +205,10 @@ describe('ENG-006: pull requests run every check, a push to main only builds the
     for (const job of testJobs) expect(expression(ci.jobs[job].if)).toBe(testCondition);
     expect(expression(ci.jobs['merged-pr-ci'].if)).toBe(pushCondition);
     expect(ci.jobs['release-images'].if).toBeUndefined();
+    for (const job of releaseCheckJobs) expect(ci.jobs[job].if).toBeUndefined();
   });
 
-  it('ENG-006-A accepts a push whose image build and merged pull request check succeeded', () => {
+  it('ENG-006-A accepts a push whose image build, image checks and merged pull request check succeeded', () => {
     const result = invokeWorkflowGate(gateStep(workflow('ci')), pushNeeds(), 'push');
     expect(result.status).toBe(0);
   });
@@ -373,7 +380,11 @@ describe('ENG-004: release work runs beside the early gates and the aggregate re
       expect(job).toBeDefined();
       // Only the event split is allowed: always() or OR expressions could bypass failures.
       expect(expression(job.if)).toBe(
-        name === 'release-images' ? '' : name === 'merged-pr-ci' ? pushCondition : testCondition,
+        name === 'release-images' || releaseCheckJobs.includes(name)
+          ? ''
+          : name === 'merged-pr-ci'
+            ? pushCondition
+            : testCondition,
       );
       expect(job['continue-on-error'] ?? false).toBe(false);
       for (const step of job.steps ?? []) expect(step['continue-on-error'] ?? false).toBe(false);
@@ -700,9 +711,9 @@ describe('ENG-007: images are built once and critical acceptance runs in verifie
       path: 'release-images/manifest.json',
       'if-no-files-found': 'error',
     });
-    // Pull requests hand the images to the shards; a push to main exports them instead.
+    // Both events hand the images to the shards; a push to main also exports them.
     for (const position of [order[2], order[3], manifest]) {
-      expect(expression(steps[position].if)).toBe(testCondition);
+      expect(steps[position].if).toBeUndefined();
     }
     for (const step of steps) {
       if (

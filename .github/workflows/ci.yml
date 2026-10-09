@@ -270,14 +270,12 @@ jobs:
       # The raw tar is about 700 MB and every shard and the scan job download it: zstd
       # shrinks it a few times for a couple of seconds of compression here.
       - name: Save the exact images for the acceptance shards
-        if: github.event_name != 'push'
         run: |
           set -euo pipefail
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
           (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
-        if: github.event_name != 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-images
@@ -287,14 +285,14 @@ jobs:
           compression-level: 0
       # The receipt job needs only the manifest, not the images themselves.
       - name: Upload the image manifest for the acceptance receipt
-        if: github.event_name != 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-images-manifest
           path: release-images/manifest.json
           if-no-files-found: error
           retention-days: 1
-      # The deploy promotes exactly these images; their pull request passed the full suite.
+      # The deploy promotes exactly these images: they pass the acceptance shards and the scan on
+      # main as well as on their pull request.
       - name: Export the release candidate images
         if: github.event_name == 'push'
         env:
@@ -341,7 +339,6 @@ jobs:
     permissions:
       contents: read
     needs: [release-images]
-    if: github.event_name != 'push'
     strategy:
       # Every shard reports its own result; the final job still requires all of them.
       fail-fast: false
@@ -413,7 +410,6 @@ jobs:
       contents: read
       packages: read
     needs: [release-images]
-    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -503,7 +499,6 @@ jobs:
     permissions:
       contents: read
     needs: [release-images, critical-acceptance, image-security]
-    if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -642,9 +637,11 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
           CI_EVENT: ${{ github.event_name }}
         run: |
-          # A push to main only builds the release; every other event must pass the full suite.
+          # A push to main builds the release, checks the images it built and confirms its pull
+          # request passed the source checks; every other event must pass the full suite.
           if [[ "$CI_EVENT" == push ]]; then
-            node scripts/check-ci-results.cjs "$NEEDS_JSON" release-images merged-pr-ci
+            node scripts/check-ci-results.cjs "$NEEDS_JSON" release-images merged-pr-ci \
+              critical-acceptance image-security docker-build
           else
             node scripts/check-ci-results.cjs "$NEEDS_JSON" \
               backend-check backend-test backend-build \
