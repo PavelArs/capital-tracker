@@ -3,6 +3,7 @@ import {
   type ChainLeg,
   chainCoin,
   classificationPayload,
+  exchangeTrade,
   fitsDirection,
   legMovement,
   parseClassification,
@@ -243,5 +244,72 @@ describe('classify-chain-transactions input and plan', () => {
       hidden: false,
       classification: { type: 'income', valueUsd: '700' },
     });
+  });
+});
+
+describe('BYBIT-TRADES: a Bybit spot fill as a Buy or Sell (M22)', () => {
+  const trade = (overrides: Record<string, string> = {}) => ({
+    kind: 'trade',
+    trade: {
+      side: 'buy',
+      base: 'BTC',
+      quote: 'USDT',
+      price: '65000',
+      quantity: '0.01',
+      value: '650',
+      fee: '0.00001',
+      feeCoin: 'BTC',
+      ...overrides,
+    },
+  });
+
+  it('0.01 BTC for 650 USDT with a 0.00001 BTC fee: 649.35 USDT for 0.00999 BTC plus a 0.65 USDT fee', () => {
+    expect(exchangeTrade(trade())).toEqual({
+      type: 'buy',
+      currency: 'USDT',
+      amount: '649.35',
+      fee: '0.65',
+    });
+    const leg: ChainLeg = {
+      network: 'bybit',
+      asset: 'BTC',
+      blockTime: '2026-01-02T03:04:05.000Z',
+      receivedUnits: '9990000000000000',
+      sentUnits: '0',
+    };
+    const value = exchangeTrade(trade());
+    if (!value) throw new Error('No trade');
+    expect(plan(leg, value, undefined)).toMatchObject({
+      journal: 'trade',
+      fields: {
+        side: 'buy',
+        quantity: '0.00999',
+        grossUsd: '649.35',
+        feeUsd: '0.65',
+        settlementCurrency: 'USDT',
+      },
+    });
+  });
+
+  it('a fee in the quote coin is the fee as charged; a sale keeps its value less the fee', () => {
+    expect(exchangeTrade(trade({ fee: '0.65', feeCoin: 'USDT' }))).toMatchObject({
+      amount: '650',
+      fee: '0.65',
+    });
+    expect(exchangeTrade(trade({ side: 'sell', fee: '0.65', feeCoin: 'USDT' }))).toMatchObject({
+      type: 'sell',
+      amount: '650',
+      fee: '0.65',
+    });
+    // A sale charged in the base coin sold the fee too: 0.01001 BTC for 650.65 less 0.65.
+    expect(exchangeTrade(trade({ side: 'sell' }))).toMatchObject({ amount: '650.65', fee: '0.65' });
+  });
+
+  it('anything less plain stays to classify', () => {
+    expect(exchangeTrade(trade({ quote: 'BTC', base: 'ETH' }))).toBeNull();
+    expect(exchangeTrade(trade({ feeCoin: 'MNT' }))).toBeNull();
+    expect(exchangeTrade(trade({ fee: '-0.01', feeCoin: 'USDT' }))).toBeNull();
+    expect(exchangeTrade({ kind: 'deposit' })).toBeNull();
+    expect(exchangeTrade(null)).toBeNull();
   });
 });

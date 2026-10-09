@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AccountingModule } from '../accounting/accounting.module';
 import { BitcoinSyncAdapter } from './bitcoin-sync.adapter';
+import { BybitClient } from './bybit-client';
+import { BybitKeyBox } from './bybit-key-box';
+import { BybitSyncAdapter } from './bybit-sync.adapter';
 import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
 import { EsploraClient } from './esplora-client';
 import { EthereumSyncAdapter } from './ethereum-sync.adapter';
@@ -21,6 +24,7 @@ import { WalletSyncService } from './wallet-sync.service';
     BitcoinSyncAdapter,
     EthereumSyncAdapter,
     SolanaSyncAdapter,
+    BybitSyncAdapter,
     { provide: EsploraClient, useFactory: () => new EsploraClient() },
     // The free Etherscan key (Q6) comes from the server's environment, never from the code.
     {
@@ -31,15 +35,23 @@ import { WalletSyncService } from './wallet-sync.service';
     },
     // Solana's public endpoint needs no key (M15).
     { provide: SolanaRpcClient, useFactory: () => new SolanaRpcClient() },
+    // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
+    { provide: BybitClient, useFactory: () => new BybitClient() },
+    {
+      provide: BybitKeyBox,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => new BybitKeyBox(config),
+    },
     // One adapter per network.
     {
       provide: CHAIN_SYNC_ADAPTERS,
-      inject: [BitcoinSyncAdapter, EthereumSyncAdapter, SolanaSyncAdapter],
+      inject: [BitcoinSyncAdapter, EthereumSyncAdapter, SolanaSyncAdapter, BybitSyncAdapter],
       useFactory: (
         bitcoin: BitcoinSyncAdapter,
         ethereum: EthereumSyncAdapter,
         solana: SolanaSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana],
+        bybit: BybitSyncAdapter,
+      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit],
     },
   ],
 })

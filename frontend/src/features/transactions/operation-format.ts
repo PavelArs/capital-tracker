@@ -41,16 +41,27 @@ const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> 
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
   solana: 'Solana',
+  bybit: 'Bybit',
 };
 
-/** "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO). */
+/**
+ * "Recorded", or "Auto: own wallets" for a transfer the app recognised (XFER-AUTO), "Auto:
+ * Bybit trade" for a Bybit spot fill it recorded as a Buy or Sell (BYBIT-TRADES).
+ */
 export function statusLabel(operation: Operation): string {
-  return operation.classification?.automatic && operation.status === 'recorded'
-    ? 'Auto: own wallets'
-    : statusLabels[operation.status];
+  if (!operation.classification?.automatic || operation.status !== 'recorded')
+    return statusLabels[operation.status];
+  return operation.type === 'transfer' ? 'Auto: own wallets' : 'Auto: Bybit trade';
 }
 
 /** "Buy", or "Incoming" for a blockchain transaction nobody has classified yet. */
+/** "Blockchain", or "Bybit" for a record read from the owner's Bybit account (M22). */
+export function sourceLabel(operation: Operation): string {
+  return operation.source === 'chain' && operation.wallet?.network === 'bybit'
+    ? 'Bybit'
+    : sourceLabels[operation.source];
+}
+
 export function typeLabel(operation: Operation): string {
   return operation.type ? typeLabels[operation.type] : directionLabels[operation.direction];
 }
@@ -88,6 +99,7 @@ export function shortAddress(address: string): string {
 }
 
 export function walletLabel(wallet: NonNullable<Operation['wallet']>): string {
+  if (wallet.network === 'bybit') return `Bybit account UID ${wallet.address}`;
   return `${networkNames[wallet.network]} wallet ${shortAddress(wallet.address)}`;
 }
 
@@ -102,6 +114,9 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
  */
 export function transactionHash(operation: Operation): string | null {
   if (!operation.chain) return null;
+  // A Bybit trade, internal transfer or record without a usable hash is named by Bybit's id;
+  // a Bybit deposit or withdrawal on a chain keeps the chain's hash (BYBIT-DEPOSIT).
+  if (operation.chain.txid.startsWith('bybit-')) return null;
   return hashOf(operation.chain.txid, operation.wallet?.network);
 }
 
@@ -109,8 +124,22 @@ export function hashOf(
   txid: string,
   network: NonNullable<Operation['wallet']>['network'] | undefined,
 ): string {
+  const record = recordName(txid);
+  if (record) return record;
   const [hash] = txid.split('-');
   return network === 'ethereum' ? `0x${hash}` : hash;
+}
+
+/** "Trade 2100000000000000001": a Bybit record that has no blockchain hash. */
+export function exchangeRecord(operation: Operation): string | null {
+  return recordName(operation.chain?.txid ?? '');
+}
+
+function recordName(txid: string): string | null {
+  const match = /^bybit-(trade|deposit|withdrawal)-(?:internal-)?(.+)$/.exec(txid);
+  if (!match) return null;
+  const kind = { trade: 'Trade', deposit: 'Deposit', withdrawal: 'Withdrawal' }[match[1]];
+  return `${kind} ${match[2]}`;
 }
 
 /** Where the operation happened: an account, two for a transfer, or a wallet. */

@@ -14,13 +14,14 @@ import ClassifyForm from './ClassifyForm';
 import {
   amount,
   day,
+  exchangeRecord,
   hashOf,
   moment,
   networkName,
   placeLabel,
   shortAddress,
   signedAmount,
-  sourceLabels,
+  sourceLabel,
   statusLabel,
   statusLabels,
   ticker,
@@ -122,10 +123,14 @@ function swapFacts(
     [
       'Transaction',
       <span key="txid" className="transactions-mono">
-        {transactionHash(operation)}
+        {hashOf(chain.txid, wallet.network)}
       </span>,
     ],
-    ['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)],
+  );
+  // A Bybit record has no block (M22).
+  if (wallet.network !== 'bybit')
+    rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
+  rows.push(
     [
       'Network fee',
       operation.fee ? amount(operation.fee.quantity, operation.fee.asset) : 'Paid by sender',
@@ -154,6 +159,7 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
       operation.type === 'transfer' && operation.account && operation.counterAccount
         ? { from: operation.account, to: operation.counterAccount }
         : null;
+    const exchange = wallet.network === 'bybit';
     rows.push(['Network', networkName(wallet)]);
     if (moved) rows.push(['From', walletLink(moved.from)], ['To', walletLink(moved.to)]);
     else
@@ -162,10 +168,10 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
         operation.account ? walletLink(operation.account) : 'Not in a wallet yet',
       ]);
     rows.push([
-      'Address',
+      exchange ? 'Account' : 'Address',
       <span key="wallet" className="transactions-mono">
         {wallet.label ? `${wallet.label} · ` : ''}
-        {wallet.address}
+        {exchange ? `UID ${wallet.address}` : wallet.address}
       </span>,
     ]);
     const other = operation.counterWallet;
@@ -177,17 +183,22 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
           {moved ? other.address : shortAddress(other.address)}
         </span>,
       ]);
+    // A Bybit record has no block; its id stands in for a hash it does not have (M22).
+    rows.push([
+      exchange && !transactionHash(operation) ? 'Bybit record' : 'Transaction',
+      <span key="txid" className="transactions-mono">
+        {transactionHash(operation) ?? exchangeRecord(operation)}
+      </span>,
+    ]);
+    if (!exchange) rows.push(['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)]);
     rows.push(
       [
-        'Transaction',
-        <span key="txid" className="transactions-mono">
-          {transactionHash(operation)}
-        </span>,
-      ],
-      ['Block', new Intl.NumberFormat('en-US').format(chain.blockHeight)],
-      [
-        'Network fee',
-        operation.fee ? amount(operation.fee.quantity, operation.fee.asset) : 'Paid by sender',
+        exchange ? 'Fee' : 'Network fee',
+        operation.fee
+          ? amount(operation.fee.quantity, operation.fee.asset)
+          : exchange
+            ? 'None'
+            : 'Paid by sender',
       ],
       [
         'Estimated value',
@@ -204,6 +215,15 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     const staking = operation.type === 'stake' || operation.type === 'unstake';
     if (operation.status === 'recorded' && !moved && !staking) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
+      if (
+        exchange &&
+        (operation.type === 'buy' || operation.type === 'sell') &&
+        operation.value !== null
+      )
+        rows.push([
+          'Price',
+          `${price(String(Number(operation.value) / Number(operation.quantity)), currency)} per ${ticker(operation.asset)}`,
+        ]);
       if (operation.paid)
         rows.push([
           'Paid',
@@ -261,7 +281,10 @@ function facts(operation: Operation, currency: AccountingCurrency): [string, Rea
     ]);
     if (operation.kind === 'trade') rows.push(['Comment', operation.comment ?? 'None']);
   }
-  rows.push(['Status', statusLabel(operation)], ['Source', sourceDetails[operation.source]]);
+  rows.push(
+    ['Status', statusLabel(operation)],
+    ['Source', sourceLabel(operation) === 'Bybit' ? 'Bybit' : sourceDetails[operation.source]],
+  );
   return rows;
 }
 
@@ -498,7 +521,7 @@ export default function OperationDrawer({
         >
           {needs || hidden || dust
             ? statusLabels[operation.status]
-            : `${sourceLabels[operation.source]} · ${typeLabel(operation)}`}
+            : `${sourceLabel(operation)} · ${typeLabel(operation)}`}
         </span>
         <span className="transactions-hero__amount">{signedAmount(operation)}</span>
         {operation.counterAsset && operation.counterQuantity && (
@@ -522,6 +545,18 @@ export default function OperationDrawer({
           in your balance. Classify it if it matters, or hide it.
         </p>
       )}
+      {operation.classification?.automatic &&
+        operation.status === 'recorded' &&
+        (operation.type === 'buy' || operation.type === 'sell') && (
+          <p className="transactions-notice" role="note">
+            Recognised automatically from Bybit's trade history:{' '}
+            {operation.type === 'buy'
+              ? 'paid from the USDT or USDC this account already held'
+              : 'the coins sold were already in this account'}
+            , so it counts as a {operation.type === 'buy' ? 'purchase' : 'sale'}, not a deposit.
+            Change the classification if it is wrong.
+          </p>
+        )}
       {operation.classification?.automatic &&
         operation.status === 'recorded' &&
         operation.counterAccount && (
@@ -605,8 +640,9 @@ export default function OperationDrawer({
               )}
               {chain && !stakeMove && (
                 <p className="transactions-info">
-                  Blockchain transactions can't be deleted. You can change the classification, add a
-                  comment or hide it from calculations. Your changes survive the next sync.
+                  {sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'}{' '}
+                  can't be deleted. You can change the classification, add a comment or hide it from
+                  calculations. Your changes survive the next sync.
                 </p>
               )}
               {toggling.error && (

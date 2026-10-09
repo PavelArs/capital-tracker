@@ -1,14 +1,31 @@
 import { randomUUID } from 'node:crypto';
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  Optional,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
-import { chainAsset, formatUnits, type Network, networkAssets } from './chain-assets';
+import { BybitClient } from './bybit-client';
+import { BybitKeyBox } from './bybit-key-box';
+import { bybitCoins } from './bybit-records';
+import { HISTORY_DAYS } from './bybit-sync.adapter';
+import { chainAsset, formatUnits, isExchange, type Network, networkAssets } from './chain-assets';
+import { walletSourceKey } from './chain-sync';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
-import { parseRegistration, parseTransactionQuery, parseUpdate } from './wallet-address-input';
+import {
+  type ExchangeRegistration,
+  parseRegistration,
+  parseTransactionQuery,
+  parseUpdate,
+} from './wallet-address-input';
 import { WalletSyncService } from './wallet-sync.service';
 
 interface AddressRow {
@@ -34,6 +51,8 @@ interface AddressRow {
   stake: StakeRow[];
   /** Bitcoin account key (M21): its derived addresses; null for a single address. */
   derived: DerivedSummary | null;
+  /** Bybit account (M22): its stored key and what Bybit last reported; null for a wallet. */
+  exchange: ExchangeRow | null;
   // json_build_object turns timestamps into text.
   source:
     | (Omit<SourceRow, 'lastAttemptAt' | 'lastSuccessAt' | 'nextRunAt'> &
@@ -56,6 +75,16 @@ interface DerivedSummary {
   /** The owner's single-address wallets that this key also derives. */
   alsoTracked: { id: string; address: string; label: string | null }[];
 }
+interface ExchangeRow {
+  keyHint: string;
+  ipBound: boolean;
+  // json_build_object turns timestamps into text.
+  keyExpiresAt: string | null;
+  balances: { coin: string; quantity: string }[] | null;
+  balancesAt: string | null;
+  historyFrom: string;
+  readFrom: string;
+}
 interface TransactionRow {
   txid: string;
   network: Network;
@@ -77,12 +106,14 @@ interface TransactionRow {
 // A Bitcoin account key (M21) adds what its derived addresses tell: how many there are, how many
 // were ever used, whether one's walk is unfinished, and which of them the owner also tracks as
 // separate wallets (XPUB-OVERLAP), whose coins would then count twice.
+// A Bybit account (M22) adds its key's public facts and the balances Bybit reported; how far it
+// has read is the oldest of its record lists.
 const stakeHeld = (table: string, key: string) => `
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
         coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
           WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
-const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived,
+const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.derived, bx.exchange,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
       'lastAttemptAt', s."lastAttemptAt", 'lastSuccessAt', s."lastSuccessAt",
       'nextRunAt', s."nextRunAt", 'errorCode', s."errorCode", 'errorMessage', s."errorMessage")
@@ -122,6 +153,11 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, d.
             WHERE y."walletId" = a.id))) AS derived
     FROM wallet_xpub_addresses x WHERE x."walletId" = a.id
     HAVING a.address ~ '^[xyz]pub') d ON true
+  LEFT JOIN LATERAL (SELECT json_build_object('keyHint', x."keyHint", 'ipBound', x."ipBound",
+      'keyExpiresAt', x."keyExpiresAt", 'balances', x.balances, 'balancesAt', x."balancesAt",
+      'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
+        x."internalReadTo", x."withdrawalsReadTo")) AS exchange
+    FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
   LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text`;
 
 function sourceRow(raw: AddressRow['source']): SourceRow | null {
@@ -144,11 +180,24 @@ function historyState(row: AddressRow): 'never' | 'partial' | 'complete' {
   }
   if (row.network === 'bitcoin')
     return row.walkTopTxid ? 'partial' : row.completedAt ? 'complete' : 'never';
+  // Bybit: complete once every list was read up to the last hour and the balances fetched.
+  if (row.exchange)
+    return row.completedAt
+      ? 'complete'
+      : row.exchange.readFrom > row.exchange.historyFrom
+        ? 'partial'
+        : 'never';
   return row.completedAt ? 'complete' : row.scannedBlock !== null ? 'partial' : 'never';
 }
 
 /** The balance of each asset the network's wallet can hold, its own coin first. */
 function balancesOf(row: AddressRow) {
+  // BYBIT-GAPS: an exchange account's balance is what Bybit reports, compared with the records.
+  if (row.exchange)
+    return networkAssets(row.network).map((asset) => ({
+      symbol: asset.symbol,
+      quantity: row.exchange?.balances?.find((item) => item.coin === asset.symbol)?.quantity ?? '0',
+    }));
   return networkAssets(row.network).map((asset) => {
     const units = row.balances.find((item) => item.asset === asset.token)?.units ?? '0';
     return { symbol: asset.symbol, quantity: formatUnits(BigInt(units), asset) };
@@ -160,6 +209,7 @@ function balancesOf(row: AddressRow) {
  * of its balance above. A closed one that holds nothing is history only and is left out.
  */
 function stakingOf(row: AddressRow) {
+  if (isExchange(row.network)) return null;
   const sol = chainAsset(row.network, null);
   const accounts = row.stake
     .filter((item) => item.state !== 'closed' || BigInt(item.units) !== 0n)
@@ -199,6 +249,27 @@ function summary(row: AddressRow, now = new Date()) {
     chainBalance: balances?.[0].quantity ?? null,
     balances,
     staking,
+    exchange: row.exchange
+      ? {
+          // The last four characters of the API key; the secret is never returned.
+          keyHint: row.exchange.keyHint,
+          ipBound: row.exchange.ipBound,
+          keyExpiresAt:
+            row.exchange.keyExpiresAt && new Date(row.exchange.keyExpiresAt).toISOString(),
+          reportedAt:
+            state === 'complete' && row.exchange.balancesAt
+              ? new Date(row.exchange.balancesAt).toISOString()
+              : null,
+          // Coins Bybit holds that the app does not track (Q7); they never count.
+          untracked:
+            state === 'complete'
+              ? (row.exchange.balances ?? [])
+                  .filter((item) => !bybitCoins.includes(item.coin))
+                  .map((item) => ({ symbol: item.coin, quantity: item.quantity }))
+              : [],
+          historyFrom: new Date(row.exchange.historyFrom).toISOString(),
+        }
+      : null,
     accountKey: row.derived
       ? {
           prefix: row.address.slice(0, 4),
@@ -226,8 +297,12 @@ function transaction(row: TransactionRow) {
   const received = amount(BigInt(row.receivedUnits));
   const sent = amount(BigInt(row.sentUnits));
   const net = amount(BigInt(row.receivedUnits) - BigInt(row.sentUnits));
-  // The network fee is paid in its own coin, whatever asset the leg moves.
-  const fee = formatUnits(BigInt(row.feeUnits), chainAsset(row.network, null));
+  // The network fee is paid in its own coin, whatever asset the leg moves; Bybit's fee is in
+  // the coin withdrawn.
+  const fee = formatUnits(
+    BigInt(row.feeUnits),
+    isExchange(row.network) ? asset : chainAsset(row.network, null),
+  );
   return {
     txid: row.txid,
     blockHeight: row.blockHeight,
@@ -254,13 +329,17 @@ export class WalletAddressService {
   constructor(
     private readonly source: DataSource,
     private readonly walletSync: WalletSyncService,
+    @Optional() private readonly bybit?: BybitClient,
+    @Optional() private readonly box?: BybitKeyBox,
   ) {}
 
   // WAL-DUP: an address already tracked is returned as it is, whatever account or name the
   // repeated request names; moving or renaming it is an explicit update.
   async register(ownerId: string, raw: unknown) {
     const owner = parseUuid(ownerId);
-    const { network, address, accountId, label } = parseRegistration(raw);
+    const registration = parseRegistration(raw);
+    if (registration.network === 'bybit') return this.registerBybit(owner, registration);
+    const { network, address, accountId, label } = registration;
     return this.source.transaction('READ COMMITTED', async (manager) => {
       if (accountId) await this.account(manager, owner, accountId);
       const inserted: { id: string }[] = await manager.query(
@@ -274,6 +353,81 @@ export class WalletAddressService {
         [owner, network, address],
       );
       return { created: inserted.length === 1, value: summary(row) };
+    });
+  }
+
+  /**
+   * BYBIT-KEY: asks Bybit about the key first and refuses one that can trade or withdraw. The
+   * account is named by its Bybit user ID, so adding it again with a new key (an unbound key
+   * expires after 90 days) replaces the stored key and keeps what was read.
+   */
+  private async registerBybit(owner: string, input: ExchangeRegistration) {
+    if (!this.bybit || !this.box) throw new ServiceUnavailableException();
+    const info = await this.bybit.keyInfo(input.credentials);
+    if (!info.ok) {
+      if (info.reason === 'key_rejected')
+        throw new UnprocessableEntityException(
+          'Bybit did not accept this API key and secret. Check that both were copied in full.',
+        );
+      throw new ServiceUnavailableException(
+        'Bybit could not be reached. Try again in a few minutes.',
+      );
+    }
+    const key = info.value;
+    if (!key.readOnly || key.canWithdraw)
+      throw new UnprocessableEntityException(
+        'This key can trade or withdraw. Create a read-only API key in Bybit and paste that one.',
+      );
+    if (!key.unified)
+      throw new UnprocessableEntityException(
+        'This is a classic Bybit account. The app reads Unified Trading Accounts only.',
+      );
+    if (!key.master)
+      throw new UnprocessableEntityException(
+        'This key belongs to a sub-account. Create the key in your main Bybit account.',
+      );
+    const box = this.box;
+    return this.source.transaction('READ COMMITTED', async (manager) => {
+      if (input.accountId) await this.account(manager, owner, input.accountId);
+      const inserted: { id: string }[] = await manager.query(
+        `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
+          VALUES ($1, $2, 'bybit', $3, $4, $5)
+          ON CONFLICT ("ownerId", network, address) DO NOTHING RETURNING id`,
+        [randomUUID(), owner, key.userId, input.accountId, input.label],
+      );
+      const [wallet]: { id: string }[] = await manager.query(
+        `SELECT id FROM wallet_addresses WHERE "ownerId" = $1 AND network = 'bybit' AND address = $2
+          FOR UPDATE`,
+        [owner, key.userId],
+      );
+      const historyFrom = new Date(Date.now() - HISTORY_DAYS * 86_400_000);
+      await manager.query(
+        `INSERT INTO bybit_accounts ("ownerId", "walletId", credentials, "keyHint", "ipBound",
+            "keyExpiresAt", "historyFrom", "tradesReadTo", "depositsReadTo", "internalReadTo",
+            "withdrawalsReadTo")
+          VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, $7, $7, $7, $7)
+          ON CONFLICT ("walletId") DO UPDATE SET credentials = EXCLUDED.credentials,
+            "keyHint" = EXCLUDED."keyHint", "ipBound" = EXCLUDED."ipBound",
+            "keyExpiresAt" = EXCLUDED."keyExpiresAt", "keySavedAt" = clock_timestamp()`,
+        [
+          owner,
+          wallet.id,
+          JSON.stringify(box.seal(input.credentials, owner, wallet.id)),
+          input.credentials.apiKey.slice(-4),
+          key.ipBound,
+          key.expiresAt,
+          historyFrom,
+        ],
+      );
+      // A new key for an account whose key stopped working is tried at the next tick.
+      await manager.query(
+        `UPDATE sync_sources SET "nextRunAt" = clock_timestamp() WHERE key = $1`,
+        [walletSourceKey(wallet.id)],
+      );
+      return {
+        created: inserted.length === 1,
+        value: summary(await this.address(manager, owner, wallet.id)),
+      };
     });
   }
 
@@ -345,7 +499,7 @@ export class WalletAddressService {
           "receivedUnits"::text AS "receivedUnits", "sentUnits"::text AS "sentUnits",
           "feeUnits"::text AS "feeUnits"
           FROM wallet_address_transactions WHERE "addressId" = $1
-          ORDER BY "blockHeight" DESC, txid LIMIT $2 OFFSET $3`,
+          ORDER BY "blockHeight" DESC, "blockTime" DESC, txid LIMIT $2 OFFSET $3`,
         [addressId, limit, offset, address.network],
       );
       const total = address.transactionCount;

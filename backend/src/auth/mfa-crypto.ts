@@ -39,30 +39,40 @@ export function newRecoveryCodes(): string[] {
   );
 }
 
+/**
+ * The server's 32-byte MFA key file and its identifier, checked as MfaCipher needs them: an
+ * absolute, owner-only regular file that is not a link. A Bybit API key (M22) is sealed with a
+ * key derived from the same file.
+ */
+export function readMfaKey(config: ConfigService): { key: Buffer; keyId: string } {
+  const file = config.get<string>('MFA_KEY_FILE');
+  const keyId = config.get<string>('MFA_KEY_ID');
+  let descriptor: number | undefined;
+  try {
+    if (!file || !isAbsolute(file) || !keyId || !/^[A-Za-z0-9_-]{1,64}$/.test(keyId))
+      throw new Error();
+    descriptor = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = fstatSync(descriptor);
+    if (!stat.isFile() || stat.size !== 32 || ![0o400, 0o600].includes(stat.mode & 0o7777))
+      throw new Error();
+    const bytes = Buffer.alloc(33);
+    if (readSync(descriptor, bytes, 0, bytes.length, 0) !== 32) throw new Error();
+    return { key: bytes.subarray(0, 32), keyId };
+  } catch {
+    throw new Error('MFA encryption key configuration invalid');
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 export class MfaCipher {
   private readonly key: Buffer;
   readonly keyId: string;
 
   constructor(config: ConfigService) {
-    const file = config.get<string>('MFA_KEY_FILE');
-    const keyId = config.get<string>('MFA_KEY_ID');
-    let descriptor: number | undefined;
-    try {
-      if (!file || !isAbsolute(file) || !keyId || !/^[A-Za-z0-9_-]{1,64}$/.test(keyId))
-        throw new Error();
-      descriptor = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-      const stat = fstatSync(descriptor);
-      if (!stat.isFile() || stat.size !== 32 || ![0o400, 0o600].includes(stat.mode & 0o7777))
-        throw new Error();
-      const bytes = Buffer.alloc(33);
-      if (readSync(descriptor, bytes, 0, bytes.length, 0) !== 32) throw new Error();
-      this.key = bytes.subarray(0, 32);
-      this.keyId = keyId;
-    } catch {
-      throw new Error('MFA encryption key configuration invalid');
-    } finally {
-      if (descriptor !== undefined) closeSync(descriptor);
-    }
+    const { key, keyId } = readMfaKey(config);
+    this.key = key;
+    this.keyId = keyId;
   }
 
   private context(userId: string, version: string): Buffer {

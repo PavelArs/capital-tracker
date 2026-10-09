@@ -115,8 +115,8 @@ export default function WalletsPage() {
         <>
           <div className="wallets-intro">
             <p className="wallets-soft">
-              Wallets are read-only. The app stores only public addresses; it never asks for a seed
-              phrase or a private key.
+              Wallets are read-only. The app stores only public addresses and read-only exchange
+              keys; it never asks for a seed phrase or a private key.
             </p>
             {addButton}
           </div>
@@ -197,6 +197,8 @@ export default function WalletsPage() {
             void load(true);
             if (created) void sync(address.id);
             else setOpenId(address.id);
+            // A Bybit account added again carries a new key: read it at once.
+            if (!created && address.network === 'bybit') void sync(address.id);
           }}
         />
       )}
