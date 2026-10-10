@@ -73,5 +73,9 @@ describe('GlobalExceptionFilter', () => {
     expect(
       run(new ConflictException({ message: 'List', coverage: { accountId: 1 } })),
     ).not.toHaveProperty('coverage');
+    const unstarted = { accountId: coverage.accountId, coverageFrom: null };
+    expect(run(new ConflictException({ message: 'None', coverage: unstarted }))).toEqual(
+      expect.objectContaining({ coverage: unstarted }),
+    );
   });
 });

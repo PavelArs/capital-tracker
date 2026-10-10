@@ -18,8 +18,8 @@ interface ErrorResponse {
   path: string;
   // The operation a refused accounting change would leave short (409 only).
   dependent?: Record<string, unknown>;
-  // The account whose records start after the refused change (409 only).
-  coverage?: { accountId: string; coverageFrom: string };
+  // The account whose records start after the refused change, or have not started (409 only).
+  coverage?: { accountId: string; coverageFrom: string | null };
 }
 
 // A 409 may name the later operation it protects so the client can say which one.
@@ -28,7 +28,9 @@ function conflictCoverage(status: number, value: unknown) {
   if (status !== HttpStatus.CONFLICT) return undefined;
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
   const { accountId, coverageFrom } = value as Record<string, unknown>;
-  return typeof accountId === 'string' && typeof coverageFrom === 'string'
+  // A null start is an account whose records have not started at all.
+  return typeof accountId === 'string' &&
+    (typeof coverageFrom === 'string' || coverageFrom === null)
     ? { accountId, coverageFrom }
     : undefined;
 }
@@ -79,7 +81,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     message: string;
     error: string;
     dependent?: Record<string, unknown>;
-    coverage?: { accountId: string; coverageFrom: string };
+    coverage?: { accountId: string; coverageFrom: string | null };
   } {
     if (exception instanceof HttpException) {
       const status = exception.getStatus();
@@ -88,7 +90,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       let message: string;
       let error: string;
       let dependent: Record<string, unknown> | undefined;
-      let coverage: { accountId: string; coverageFrom: string } | undefined;
+      let coverage: { accountId: string; coverageFrom: string | null } | undefined;
 
       if (typeof exceptionResponse === 'string') {
         message = exceptionResponse;

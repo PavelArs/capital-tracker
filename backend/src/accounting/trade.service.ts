@@ -26,6 +26,7 @@ import {
   advanceConnectedJournals,
   assertRevisionCapacity,
   connectedResult,
+  journalNotStarted,
   projectConnectedLedger,
   readConnectedLedger,
   readTradeVersionCount,
@@ -371,7 +372,10 @@ export class TradeService {
       (kind === 'create' && value.expectedJournalRevision === 0
         ? await startEmptyJournal(manager, owner, account, value.requestId)
         : undefined);
-    if (!journal) throw conflict();
+    if (!journal)
+      throw kind === 'create' && value.expectedJournalRevision === 0
+        ? journalNotStarted(id)
+        : conflict();
     const [previous]: VersionRow[] = await manager.query(
       `${versionSelect} WHERE v."ownerId"=$1 AND v."accountId"=$2 AND v."requestId"=$3`,
       [owner, id, value.requestId],

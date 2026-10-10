@@ -1546,6 +1546,14 @@ describe('link-own-transfers (M13)', () => {
       },
       /The records of Bybit start on Jul 1, 2025, after this transfer on Jun 23, 2025\. Hide the transaction/,
     ],
+    [
+      'names the account opened with balances whose records have not started',
+      {
+        message: 'The records of an account have not started',
+        coverage: { accountId: cold.id, coverageFrom: null },
+      },
+      /The records of Cold storage have not started: it was opened with balances, so start them on Manual accounts first\. Until then this transaction can only be hidden/,
+    ],
   ])('XFER-REFUSED: %s', async (_name, data, expected) => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
     vi.spyOn(operationsApi, 'classify').mockRejectedValue(
