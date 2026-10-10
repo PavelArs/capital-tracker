@@ -7,10 +7,16 @@
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 // BYBIT-ANY-COIN: it holds any coin Bybit lists, not only the ones below.
+// EVM-MULTICHAIN: Base, Arbitrum and OP Mainnet are read like Ethereum (evm-chains.ts).
+
+import { type EvmChain, evmChains, evmNetworks } from './evm-chains';
 
 export const networks = [
   'bitcoin',
   'ethereum',
+  'base',
+  'arbitrum',
+  'optimism',
   'solana',
   'bybit',
   'tron',
@@ -27,7 +33,7 @@ export interface ChainAsset {
   name: string;
   decimals: number;
   /**
-   * The token contract (Ethereum, lower case; Tron, base58) or mint (Solana); null for the
+   * The token contract (an EVM chain, lower case; Tron, base58) or mint (Solana); null for the
    * network's own coin.
    */
   contract: string | null;
@@ -43,12 +49,41 @@ export interface ChainAsset {
 export const networkNames: Record<Network, string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
+  base: 'Base',
+  arbitrum: 'Arbitrum One',
+  optimism: 'OP Mainnet',
   solana: 'Solana',
   bybit: 'Bybit',
   tron: 'Tron',
   stellar: 'Stellar',
   zcash: 'Zcash',
 };
+
+const evmChainAssets = (chain: EvmChain): ChainAsset[] => [
+  {
+    network: chain.network,
+    token: null,
+    symbol: 'ETH',
+    name: 'Ethereum',
+    decimals: 18,
+    contract: null,
+  },
+  ...(['USDT', 'USDC'] as const).flatMap((token) => {
+    const contract = chain.stablecoins[token];
+    return contract
+      ? [
+          {
+            network: chain.network,
+            token,
+            symbol: token,
+            name: token === 'USDT' ? 'Tether' : 'USD Coin',
+            decimals: 6,
+            contract,
+          },
+        ]
+      : [];
+  }),
+];
 
 const bybitCoin = (symbol: string, name: string): ChainAsset => ({
   network: 'bybit',
@@ -138,6 +173,11 @@ export const chainAssets: readonly ChainAsset[] = [
     decimals: 8,
     contract: null,
   },
+  // EVM-MULTICHAIN: the other Ethereum-like chains hold ETH as their own coin and follow the
+  // USDT and USDC contracts that chain lists.
+  ...evmChains
+    .filter((chain) => chain.network !== 'ethereum')
+    .flatMap((chain) => evmChainAssets(chain)),
   bybitCoin('BTC', 'Bitcoin'),
   bybitCoin('ETH', 'Ethereum'),
   bybitCoin('SOL', 'Solana'),
@@ -150,7 +190,7 @@ export function isNetwork(value: unknown): value is Network {
 }
 
 /** TOKEN-ANY: the networks whose wallets move any token, not only USDT and USDC. */
-export const anyTokenNetworks = ['ethereum', 'solana'] as const;
+export const anyTokenNetworks = [...evmNetworks, 'solana'] as const;
 export type AnyTokenNetwork = (typeof anyTokenNetworks)[number];
 export const movesAnyToken = (network: string): network is AnyTokenNetwork =>
   anyTokenNetworks.includes(network as AnyTokenNetwork);

@@ -9,7 +9,17 @@ export type ProviderFailure =
   | 'invalid_response'
   | 'not_configured'
   | 'key_rejected';
-export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron' | 'stellar' | 'zcash';
+export type Network =
+  | 'bitcoin'
+  | 'ethereum'
+  | 'base'
+  | 'arbitrum'
+  | 'optimism'
+  | 'solana'
+  | 'bybit'
+  | 'tron'
+  | 'stellar'
+  | 'zcash';
 
 /** One asset's balance on the chain, an exact decimal. */
 export interface ChainBalance {

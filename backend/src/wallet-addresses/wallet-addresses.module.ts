@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DataSource } from 'typeorm';
 import { AccountingModule } from '../accounting/accounting.module';
 import { BitcoinSyncAdapter } from './bitcoin-sync.adapter';
 import { BlockbookClient } from './blockbook-client';
@@ -9,8 +10,9 @@ import { BybitSyncAdapter } from './bybit-sync.adapter';
 import { CHAIN_SYNC_ADAPTERS, type ChainSyncAdapter } from './chain-sync';
 import { ChainTokenLoader } from './chain-tokens';
 import { EsploraClient } from './esplora-client';
-import { EthereumSyncAdapter } from './ethereum-sync.adapter';
 import { EtherscanClient } from './etherscan-client';
+import { evmChains } from './evm-chains';
+import { EvmSyncAdapter } from './evm-sync.adapter';
 import { HorizonClient } from './horizon-client';
 import { SolanaRpcClient } from './solana-rpc-client';
 import { SolanaSyncAdapter } from './solana-sync.adapter';
@@ -30,7 +32,6 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
     WalletAddressService,
     WalletSyncService,
     BitcoinSyncAdapter,
-    EthereumSyncAdapter,
     SolanaSyncAdapter,
     BybitSyncAdapter,
     TronSyncAdapter,
@@ -65,12 +66,14 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => new BybitKeyBox(config),
     },
-    // One adapter per network.
+    // One adapter per network; the Ethereum-like chains share one class and one Etherscan key
+    // (EVM-MULTICHAIN).
     {
       provide: CHAIN_SYNC_ADAPTERS,
       inject: [
+        DataSource,
+        EtherscanClient,
         BitcoinSyncAdapter,
-        EthereumSyncAdapter,
         SolanaSyncAdapter,
         BybitSyncAdapter,
         TronSyncAdapter,
@@ -78,14 +81,23 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
         ZcashSyncAdapter,
       ],
       useFactory: (
+        source: DataSource,
+        etherscan: EtherscanClient,
         bitcoin: BitcoinSyncAdapter,
-        ethereum: EthereumSyncAdapter,
         solana: SolanaSyncAdapter,
         bybit: BybitSyncAdapter,
         tron: TronSyncAdapter,
         stellar: StellarSyncAdapter,
         zcash: ZcashSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron, stellar, zcash],
+      ): ChainSyncAdapter[] => [
+        bitcoin,
+        ...evmChains.map((chain) => new EvmSyncAdapter(source, etherscan, chain)),
+        solana,
+        bybit,
+        tron,
+        stellar,
+        zcash,
+      ],
     },
   ],
 })

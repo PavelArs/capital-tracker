@@ -306,3 +306,39 @@ describe('ETH-SYNC: the part of a block range read in full', () => {
     expect(rangeEnd(100, 200, [page(100)])).toBeNull();
   });
 });
+
+describe('EVM-MULTICHAIN: legs of the same address on another chain', () => {
+  const baseUsdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
+
+  it('names a chain’s own USDC by ticker, and the mainnet contract there is an ordinary token', () => {
+    const legs = ethereumLegs(
+      owned,
+      [],
+      [],
+      [
+        token({ contract: baseUsdc, logIndex: 1 }),
+        token({ contract: usdc, logIndex: 2, hash: hash('2') }),
+      ],
+      'base',
+    );
+    expect(legs.map((leg) => leg.asset)).toEqual(['USDC', usdc]);
+    const mainnet = ethereumLegs(owned, [], [], [token({ contract: baseUsdc })]);
+    expect(mainnet.map((leg) => leg.asset)).toEqual([baseUsdc]);
+  });
+
+  it('reports other tokens of the chain with the chain as their network', () => {
+    const facts = ethereumTokenFacts(
+      [
+        token({ contract: baseUsdc }),
+        token({
+          contract: unknownToken,
+          raw: { tokenSymbol: 'SYN', tokenName: 'Synthetic', tokenDecimal: '18' },
+        }),
+      ],
+      'base',
+    );
+    expect(facts).toEqual([
+      { network: 'base', contract: unknownToken, symbol: 'SYN', name: 'Synthetic', decimals: 18 },
+    ]);
+  });
+});

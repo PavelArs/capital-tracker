@@ -413,6 +413,23 @@ describe('STELLAR-ADD, WAL-NO-SECRETS: the Stellar address field (M23)', () => {
   });
 });
 
+describe('EVM-MULTICHAIN: the 0x address of an Ethereum-like chain', () => {
+  const lower = '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed';
+
+  it('is checked like an Ethereum address on every chain', () => {
+    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism'] as const) {
+      expect(checkAddress(network, ` ${lower} `)).toEqual({
+        ok: true,
+        address: lower,
+        kind: 'Ethereum address',
+      });
+      expect(checkAddress(network, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh')).toMatchObject({
+        ok: false,
+      });
+    }
+  });
+});
+
 describe('names', () => {
   it('shortens an address to its start and end', () => {
     expect(shortAddress('bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq')).toBe('bc1qar0s…wf5mdq');
