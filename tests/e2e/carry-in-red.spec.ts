@@ -1,16 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
-import {
-  browserCsrfAdmissions,
-  expectAdmissionDelta,
-  hostSubject,
-  ledger,
-  ledgerState,
-} from './admission-fixtures';
+import { ledgerState } from './admission-fixtures';
 import { providerRequests, uuid } from './manual-opening-fixtures';
-import { fingerprint, test } from './mfa-fixtures';
+import { test } from './mfa-fixtures';
 import {
-  browserPost,
   restartWithExactProviderWarmup,
   trackBrowserRequests,
   tradeInput,
@@ -22,11 +15,9 @@ import {
   type InitialLot,
   type InitialLots,
   coverageFrom,
-  fillLot,
   fixture,
   initialSummary,
   retainedRows,
-  reviewLabel,
   soldSummary,
 } from './carry-in-fixtures';
 
@@ -239,119 +230,6 @@ test('CARRY-001-A: real owner initializes original 100/200 lots, sells 1.5 for 4
       admissions,
     );
     expect(providerRequests()).toEqual(providers);
-    assertQuota();
-  }
-});
-
-test('CARRY-001-A / CARRY-005-A: real Russian lot preview requires a separate unchecked immutable-baseline review', async ({
-  page,
-}) => {
-  const data = await fixture(page);
-  const { api, account, path, lots } = data;
-  const before = retainedRows(account.id);
-  const providers = providerRequests();
-  const admissions = ledger();
-  const csrfBefore = browserCsrfAdmissions();
-  const assertQuota = trackBrowserRequests(page, api);
-
-  try {
-    await page.goto(`/manual-accounts/${account.id}`);
-    await page.getByRole('button', { name: 'Начальные данные', exact: true }).click();
-    await expect(
-      page.getByRole('heading', { name: 'Начальные лоты FIFO', exact: true }),
-    ).toBeVisible();
-    await fillLot(page, 0, lots[0]);
-    await page.getByRole('button', { name: 'Добавить лот', exact: true }).click();
-    await fillLot(page, 1, lots[1]);
-    const initialize = page.getByRole('button', {
-      name: 'Начать журнал с начальными лотами',
-      exact: true,
-    });
-    await expect(initialize).toBeDisabled();
-    const beforePreview = fingerprint(['auth_sessions', 'auth_request_limits']);
-    const preview = await browserPost(page, `${path}/preview`, () =>
-      page.getByRole('button', { name: 'Проверить начальные лоты', exact: true }).click(),
-    );
-    expect(preview.status()).toBe(200);
-    expect(preview.request().postDataJSON()).toEqual({ expectedOpeningRevision: 1, lots });
-    expect(await preview.json()).toEqual({
-      accountId: account.id,
-      openingRevision: 1,
-      coverageFrom,
-      canInitialize: true,
-      issues: [],
-      lots: lots.map((lot, index) => ({
-        ...lot,
-        ordinal: index + 1,
-        instrumentName: data.instrument.name,
-        instrumentSymbol: data.instrument.symbol,
-        priorDisposedQuantity: '0',
-        priorAllocatedCostUsd: '0',
-        carriedCostUsd: lot.originalCostUsd,
-      })),
-      reconciliation: [
-        {
-          instrumentId: data.instrument.id,
-          instrumentName: data.instrument.name,
-          instrumentSymbol: data.instrument.symbol,
-          openingQuantity: '2',
-          openingCostUsd: '300',
-          carriedQuantity: '2',
-          carriedCostUsd: '300',
-        },
-      ],
-      carryInCostUsd: '300',
-    });
-    expect(
-      fingerprint(['auth_sessions', 'auth_request_limits']),
-      'Preview stores no origin, lot or key',
-    ).toBe(beforePreview);
-    const review = page.getByRole('checkbox', { name: reviewLabel, exact: true });
-    await expect(review).toBeVisible();
-    await expect(review).not.toBeChecked();
-    await expect(initialize).toBeDisabled();
-    await review.check();
-    await expect(initialize).toBeEnabled();
-    const initialized = await browserPost(page, path, () => initialize.click());
-    expect(initialized.status()).toBe(201);
-    const command = initialized.request().postDataJSON() as Record<string, unknown>;
-    expect(command).toEqual({
-      requestId: expect.any(String),
-      expectedOpeningRevision: 1,
-      lots,
-      assertReviewed: true,
-    });
-    const receipt = readOrigin(await initialized.json(), data, uuid(command.requestId));
-    await expectState(data, receipt, false);
-    const saved = page.getByRole('region', { name: 'Сохраненные начальные позиции', exact: true });
-    await expect(saved).toContainText('Снимок на начало учета');
-    await expect(saved).toContainText('Ревизия 1');
-    await expect(saved).toContainText(coverageFrom);
-    const snapshot = saved.getByRole('table');
-    await expect(snapshot.getByRole('cell', { name: '2', exact: true })).toBeVisible();
-    await expect(snapshot.getByRole('cell', { name: '300', exact: true })).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Сохранить начальные позиции', exact: true }),
-    ).toHaveCount(0);
-    expect(await api.trades(account.id)).toEqual({
-      journalRevision: 0,
-      items: [],
-      nextOffset: null,
-    });
-    await baseline(data);
-  } finally {
-    expect(
-      retainedRows(account.id),
-      'Reviewed initialization preserves the original opening and private prior state',
-    ).toEqual(before);
-    expect(providerRequests()).toEqual(providers);
-    expectAdmissionDelta(admissions, [
-      {
-        scope: 'csrf-ip',
-        subject: await hostSubject(),
-        hits: browserCsrfAdmissions() - csrfBefore,
-      },
-    ]);
     assertQuota();
   }
 });

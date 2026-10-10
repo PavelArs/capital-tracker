@@ -775,13 +775,75 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
     await user.click(screen.getByRole('button', { name: 'Add asset' }));
     const empty = screen.getByRole('dialog', { name: 'Add asset' });
-    expect(
-      await within(empty).findByText(/To give it a balance, add a wallet or account first/),
-    ).toBeInTheDocument();
-    expect(within(empty).getByRole('link', { name: 'manual accounts' })).toHaveAttribute(
-      'href',
-      '/manual-accounts',
-    );
+    // G1: with no account yet, the balance gets a new one made right here.
+    expect(await within(empty).findByText(/You have no account yet/)).toBeInTheDocument();
+    expect(within(empty).getByLabelText('Wallet or account')).toHaveValue('');
+    expect(within(empty).queryByRole('link', { name: 'manual accounts' })).toBeNull();
+  });
+
+  it('G1: makes the account first when there is none, and keeps it on a retry', async () => {
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    const createAccount = vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({
+      id: id(150),
+      name: 'Home safe',
+      currentRevision: 0,
+      createdAt: '2026-10-05T00:00:00Z',
+    });
+    const create = vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    createTrade.mockRejectedValueOnce(httpError(500));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+
+    // The name is asked for before anything is saved.
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    expect(within(dialog).getByText('Enter a name for the account')).toBeInTheDocument();
+    expect(createAccount).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+
+    await user.type(within(dialog).getByLabelText('Wallet or account'), 'Home safe');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await within(dialog).findByRole('alert');
+    expect(createAccount).toHaveBeenCalledTimes(1);
+    expect(createAccount.mock.calls[0][0]).toMatchObject({ name: 'Home safe' });
+    expect(createTrade.mock.calls[0][0]).toBe(id(150));
+    // A new account starts its journal at revision 0.
+    expect(createTrade.mock.calls[0][1]).toMatchObject({ expectedJournalRevision: 0 });
+
+    // The retry goes to the same account and sends the same trade request.
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(createAccount).toHaveBeenCalledTimes(1);
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createTrade.mock.calls[1][0]).toBe(id(150));
+    expect(createTrade.mock.calls[1][1].requestId).toBe(createTrade.mock.calls[0][1].requestId);
+  });
+
+  it('G1: offers a new account next to the existing ones', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    const createAccount = vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({
+      id: id(151),
+      name: 'Bank',
+      currentRevision: 0,
+      createdAt: '2026-10-05T00:00:00Z',
+    });
+    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('radio', { name: 'Deposit' }));
+    await user.type(within(dialog).getByLabelText('Name'), 'Deposit');
+    await user.type(within(dialog).getByLabelText('Amount'), '100');
+    await user.selectOptions(within(dialog).getByLabelText('Wallet or account'), 'New account…');
+    await user.type(within(dialog).getByLabelText('Name of the new account'), 'Bank');
+    await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(createAccount).toHaveBeenCalledTimes(1);
+    expect(createTrade.mock.calls[0][0]).toBe(id(151));
   });
 
   it('keeps the dialog and request id on a refusal, then retries the same request', async () => {
@@ -1238,6 +1300,78 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
       await within(chart).findByText('No value can be shown for this period in USD.'),
     ).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Holdings' })).not.toHaveTextContent('not built');
+  });
+
+  const priceBook = (currentRevision: number) =>
+    ({ currentRevision, items: [], nextOffset: null }) as unknown as Awaited<
+      ReturnType<typeof manualPricesApi.list>
+    >;
+
+  it('G1: a hand-valued asset has Update price; a market-priced one does not', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, deposit]));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    expect((await screen.findAllByRole('heading', { name: 'Bitcoin' })).length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Update price' })).toBeNull();
+    cleanup();
+    renderAt(`/portfolio/${deposit.instrumentId}`);
+    expect(await screen.findByRole('button', { name: 'Update price' })).toBeInTheDocument();
+  });
+
+  it('G1: Update price saves a new manual price on the current revision and refreshes', async () => {
+    const get = vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([deposit]));
+    vi.spyOn(manualPricesApi, 'list').mockResolvedValue(priceBook(3));
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${deposit.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Update price' }));
+    const dialog = screen.getByRole('dialog', { name: 'Update price' });
+    const field = within(dialog).getByLabelText('Price of one unit, USD');
+    await user.click(field);
+    await user.tab();
+    expect(within(dialog).getByText('Enter a price greater than 0')).toBeInTheDocument();
+    await user.type(field, '1,250');
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    expect(within(dialog).getByText(/without a comma between thousands/)).toBeInTheDocument();
+    expect(setPrice).not.toHaveBeenCalled();
+    await user.clear(field);
+    await user.type(field, '1250.5');
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(setPrice).toHaveBeenCalledWith(deposit.instrumentId, {
+      requestId: expect.any(String),
+      expectedRevision: 3,
+      observedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/),
+      priceUsd: '1250.5',
+      assertReviewed: true,
+    });
+    expect(get.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('G1: a lost answer is retried with the same request, a refusal starts a new one', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([deposit]));
+    const list = vi.spyOn(manualPricesApi, 'list').mockResolvedValue(priceBook(3));
+    setPrice
+      .mockRejectedValueOnce(new AxiosError('offline'))
+      .mockRejectedValueOnce(httpError(409))
+      .mockResolvedValueOnce({} as PriceReceipt);
+    const user = userEvent.setup();
+    renderAt(`/portfolio/${deposit.instrumentId}`);
+    await user.click(await screen.findByRole('button', { name: 'Update price' }));
+    const dialog = screen.getByRole('dialog', { name: 'Update price' });
+    await user.type(within(dialog).getByLabelText('Price of one unit, USD'), '10');
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Could not reach the server',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(setPrice).toHaveBeenCalledTimes(2));
+    expect(setPrice.mock.calls[1][1]).toEqual(setPrice.mock.calls[0][1]);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(await within(dialog).findByText(/changed elsewhere/)).toBeInTheDocument();
+    list.mockResolvedValue(priceBook(4));
+    await user.click(within(dialog).getByRole('button', { name: 'Save price' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(setPrice.mock.calls[2][1].expectedRevision).toBe(4);
+    expect(setPrice.mock.calls[2][1].requestId).not.toBe(setPrice.mock.calls[0][1].requestId);
   });
 });
 

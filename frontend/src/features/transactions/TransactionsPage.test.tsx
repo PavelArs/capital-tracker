@@ -564,10 +564,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     await waitFor(() => expect(bodyRows()).toHaveLength(2));
     await user.click(within(bodyRows()[1]).getByRole('button', { name: 'Staking reward' }));
     let drawer = screen.getByRole('dialog', { name: 'Staking reward · BTC' });
-    expect(within(drawer).getByRole('link', { name: 'Open in Bybit' })).toHaveAttribute(
-      'href',
-      `/manual-accounts/${bybit.id}`,
-    );
+    // G1: no screen edits it any more, so nothing offers to.
+    expect(within(drawer).queryByRole('link', { name: /^Open in/ })).toBeNull();
     expect(within(drawer).queryByRole('button', { name: 'Delete' })).toBeNull();
     await user.click(within(drawer).getByRole('button', { name: 'Close' }));
 
@@ -591,10 +589,8 @@ describe('TransactionsPage (list-all-operations)', () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([]));
     renderPage();
     expect(await screen.findByRole('heading', { name: 'No transactions yet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open manual accounts' })).toHaveAttribute(
-      'href',
-      '/manual-accounts',
-    );
+    expect(screen.getByRole('link', { name: 'Open wallets' })).toHaveAttribute('href', '/wallets');
+    expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
   });
 
   it('offers a retry when loading fails and never shows numbers it does not have', async () => {

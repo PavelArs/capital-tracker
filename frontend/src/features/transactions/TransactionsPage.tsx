@@ -590,9 +590,6 @@ export default function TransactionsPage() {
           </p>
           {/* Add transaction is in the page header. */}
           <div className="transactions-actions">
-            <Link className="shell-button" to="/manual-accounts">
-              Open manual accounts
-            </Link>
             <Link className="shell-button" to="/wallets">
               Open wallets
             </Link>

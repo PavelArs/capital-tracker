@@ -16,22 +16,6 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];
 
-// Screens the new sections do not cover yet keep their URLs and Russian names (D6, M20): CSV
-// import and trades by hand per account, and changing a manual price after the asset exists.
-// They are no longer in the sidebar (G1); Settings lists them as "Older screens".
-export const olderScreens = [
-  {
-    path: '/manual-accounts',
-    label: 'Manual accounts',
-    hint: 'Opening balances, trades added by hand and CSV import for each account.',
-  },
-  {
-    path: '/manual-prices',
-    label: 'Manual prices',
-    hint: 'Change the stored price of an asset you value by hand.',
-  },
-] as const;
-
 // Retired screens (M20) send old bookmarks to the section that replaced them. `/assets/*`
 // is not here: the web server keeps that prefix for the built bundle, so the old asset
 // screens were only ever reached by in-app navigation and the browser never asks for them.
@@ -44,9 +28,8 @@ export const retiredPaths = [
   ['/capital-flows', '/dashboard'],
   ['/period-profit', '/dashboard'],
   ['/settings', '/preferences'],
+  // G1: the older screens left with their last features; accounts are made in Add asset and Add
+  // wallet, prices are changed on the asset page.
+  ['/manual-accounts', '/wallets'],
+  ['/manual-prices', '/portfolio'],
 ] as const;
-
-/** Settings is the current section on the older screens it lists. */
-export function isOlderScreenPath(pathname: string) {
-  return olderScreens.some(({ path }) => pathname === path || pathname.startsWith(`${path}/`));
-}
