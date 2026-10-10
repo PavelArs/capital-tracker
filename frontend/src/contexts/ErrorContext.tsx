@@ -1,33 +1,46 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+
+export interface ToastMessage {
+  id: number;
+  message: string;
+}
 
 interface ErrorContextType {
   showError: (message: string) => void;
+  dismissToast: (id: number) => void;
   clearError: () => void;
-  error: string | null;
+  toasts: readonly ToastMessage[];
 }
 
 const ErrorContext = createContext<ErrorContextType | undefined>(undefined);
 
+/** More than this many at once and the oldest goes: a burst of failures stays readable. */
+const MAX_TOASTS = 3;
+let nextId = 1;
+
 export function ErrorProvider({ children }: { children: React.ReactNode }) {
-  const [error, setError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<readonly ToastMessage[]>([]);
 
   const showError = useCallback((message: string) => {
-    setError(message);
-    // Auto-hide after 5 seconds
-    setTimeout(() => {
-      setError(null);
-    }, 5000);
+    // The same message again replaces the one on screen, so it is not stacked twice.
+    setToasts((current) =>
+      [...current.filter((toast) => toast.message !== message), { id: nextId++, message }].slice(
+        -MAX_TOASTS,
+      ),
+    );
   }, []);
 
-  const clearError = useCallback(() => {
-    setError(null);
+  const dismissToast = useCallback((id: number) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  return (
-    <ErrorContext.Provider value={{ showError, clearError, error }}>
-      {children}
-    </ErrorContext.Provider>
+  const clearError = useCallback(() => setToasts([]), []);
+
+  const value = useMemo(
+    () => ({ showError, dismissToast, clearError, toasts }),
+    [showError, dismissToast, clearError, toasts],
   );
+  return <ErrorContext.Provider value={value}>{children}</ErrorContext.Provider>;
 }
 
 export function useError() {

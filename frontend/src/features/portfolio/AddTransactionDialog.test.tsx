@@ -6,6 +6,7 @@ import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.ap
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -186,6 +187,7 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
   const rates = vi.fn();
   beforeEach(() => {
     vi.spyOn(portfolioAssetsApi, 'listAll').mockResolvedValue([bitcoin, ether, dollars]);
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([]);
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [
         {
@@ -869,6 +871,32 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       grossUsd: '30000',
       settlementCurrency: 'USDT',
     });
+  });
+
+  it('TOKEN-HIDE does not offer the coins of tokens the wallets leave out', async () => {
+    const spam = asset(7, 'Spam Token', 'SPAM1A2B', 'crypto');
+    const seen = asset(8, 'Seen Token', 'SEEN', 'crypto');
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, spam, seen]);
+    const address = (hidden: string[], shown: string[]) =>
+      ({
+        hiddenTokens: hidden.map((symbol) => ({
+          symbol,
+          name: symbol,
+          quantity: '1',
+          reason: 'dust',
+        })),
+        balances: shown.map((symbol) => ({ symbol, quantity: '1' })),
+      }) as unknown as WalletAddress;
+    // SEEN is left out by one address but held by another, so it stays an asset.
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([
+      address(['SPAM1A2B', 'SEEN'], []),
+      address([], ['SEEN']),
+    ]);
+    const { dialog } = await open();
+    const assets = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    expect(assets.queryByText('SPAM1A2B')).not.toBeInTheDocument();
+    expect(assets.getByText('SEEN')).toBeInTheDocument();
+    expect(assets.getByText('ETH')).toBeInTheDocument();
   });
 
   it("OPS-BUY-CASH shows how much of a buy the account's cash pays", async () => {

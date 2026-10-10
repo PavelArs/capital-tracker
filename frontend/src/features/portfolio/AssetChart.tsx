@@ -2,7 +2,14 @@ import type { AssetHistoryPoint } from '@api/asset-history.api';
 import type { HistoryPeriod } from '@api/portfolio-history.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { compact, niceStep, pointLabel, tickLabel } from '../dashboard/HistoryChart';
+import {
+  chartDateTicks,
+  chartRightPad,
+  compact,
+  niceStep,
+  pointLabel,
+  tickLabel,
+} from '../dashboard/HistoryChart';
 import { money, quantity } from './format';
 import '../dashboard/dashboard.css';
 
@@ -91,7 +98,7 @@ export default function AssetChart({
       </p>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - PAD.right);
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
   const innerHeight = HEIGHT - PAD.top - PAD.bottom;
   // The period spans every point: cost basis is known even while the price is not.
   const timeOf = points.map((point) => Date.parse(point.at));
@@ -148,7 +155,7 @@ export default function AssetChart({
     .join('');
   // Each purchase sits on the cost basis it raised.
   const bought = noCost ? new Map<number, Purchase[]>() : purchasesByPoint(points, purchases);
-  const tickCount = Math.min(5, points.length);
+  const tickCount = chartDateTicks(width, points.length);
   const xTicks = [
     ...new Set(
       Array.from({ length: tickCount }, (_, index) =>
