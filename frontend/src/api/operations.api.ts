@@ -173,6 +173,15 @@ export type ChainClassification =
    * stored price then.
    */
   | { type: 'swap'; with: { addressId: string; txid: string }; valueUsd: string | null }
+  /**
+   * A swap against a purchase or sale the owner added by hand or from CSV in the same account:
+   * the record goes and the swap takes its place (CLS-SWAP-RECORD). `version` is the one seen.
+   */
+  | {
+      type: 'swap';
+      record: { kind: 'trade'; id: string; version: number };
+      valueUsd: string | null;
+    }
   /** Coins put into a liquidity pool: they stay the owner's (POOL-DEPOSIT). */
   | { type: 'pool-deposit' }
   /**

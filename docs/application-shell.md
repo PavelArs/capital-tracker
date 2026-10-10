@@ -17,10 +17,10 @@ sections in this order:
 Placeholders say the section is not built yet, show no numbers and make no requests.
 Their own changes replace them (M2/M4, M6, M8, M10, M18).
 
-There is no Legacy group in the sidebar (G1). The screens no new section covers yet keep their
-Russian text and unchanged URLs: manual accounts (CSV import, swaps) and manual prices. Settings
-lists them under **Older screens** and stays the current section while one is open. M20 retired
-the others; their old URLs open the section that replaced them:
+There is no Legacy group in the sidebar and no Older screens card in Settings (G1). The manual
+accounts and manual prices screens are gone: accounts are made in Add asset ("New account…") and
+Add wallet, and the price of a hand-valued asset is changed with **Update price** on its asset
+page. Their old URLs and those of the screens M20 retired open the section that replaced them:
 
 | Old URL | Opens |
 |---|---|
@@ -28,6 +28,8 @@ the others; their old URLs open the section that replaced them:
 | `/liabilities/*` | `/portfolio` |
 | `/crypto`, `/wallet-addresses` | `/wallets` |
 | `/owned-transfers` | `/transactions` |
+| `/manual-accounts/*` | `/wallets` |
+| `/manual-prices` | `/portfolio` |
 | `/settings` | `/preferences` |
 
 The old asset screens under `/assets/*` have no redirect: the web server serves the built

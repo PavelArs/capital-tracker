@@ -805,13 +805,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
               </p>
             ) : accounts.length === 0 || assets.length === 0 ? (
               <p className="shell-note" role="status">
-                {accounts.length === 0
-                  ? 'Add a wallet or account first on the '
-                  : 'Add an asset first on the Portfolio page, then record its trades. '}
-                {accounts.length === 0 && (
+                {accounts.length === 0 ? (
                   <>
-                    <Link to="/manual-accounts">manual accounts</Link> page.
+                    Add a wallet first on the <Link to="/wallets">Wallets</Link> page, or an asset
+                    with a balance on the Portfolio page.
                   </>
+                ) : (
+                  'Add an asset first on the Portfolio page, then record its trades.'
                 )}
               </p>
             ) : (

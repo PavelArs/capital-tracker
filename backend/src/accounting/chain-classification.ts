@@ -114,6 +114,17 @@ export interface SwapClassification {
   with: { addressId: string; txid: string };
   valueUsd: string | null;
 }
+/**
+ * CLS-SWAP-RECORD: the other side of the swap is a purchase or sale the owner added by hand or
+ * from CSV in the same account (a coin bought, these coins spent). The record is replaced by the
+ * swap in the same step; `version` is the one the owner saw. The value in USD is optional and
+ * defaults to the record's own.
+ */
+export interface RecordSwapClassification {
+  type: 'swap';
+  record: { kind: 'trade'; id: string; version: number };
+  valueUsd: string | null;
+}
 /** POOL-DEPOSIT: coins put into a liquidity pool; they stay the owner's. */
 export interface PoolDepositClassification {
   type: 'pool-deposit';
@@ -146,6 +157,7 @@ export type Classification =
   | TransferClassification
   | OtherClassification
   | SwapClassification
+  | RecordSwapClassification
   | PoolDepositClassification
   | PoolWithdrawalClassification
   | RecordedClassification;
@@ -242,7 +254,19 @@ function classification(raw: unknown): Classification | null {
     return { type };
   }
   if (type === 'swap') {
-    const row = object(raw, ['type', 'with', 'valueUsd']);
+    const row = object(raw, ['type', 'with', 'record', 'valueUsd']);
+    if (row.record !== undefined) {
+      if (row.with !== undefined) return bad();
+      const record = object(row.record, ['kind', 'id', 'version']);
+      const version = record.version;
+      if (record.kind !== 'trade' || typeof version !== 'number') return bad();
+      if (!Number.isSafeInteger(version) || version < 1 || version > 10000) return bad();
+      return {
+        type,
+        record: { kind: 'trade', id: parseUuid(record.id), version },
+        valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
+      };
+    }
     const other = object(row.with, ['addressId', 'txid']);
     if (typeof other.txid !== 'string' || !chainTxid.test(other.txid)) return bad();
     return {

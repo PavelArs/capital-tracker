@@ -51,18 +51,6 @@ export const editable = (operation: Operation) =>
     ((operation.kind === 'transfer' || operation.kind === 'reward') &&
       entryKind(operation) !== null));
 
-/**
- * Where other operations can be changed today; blockchain rows are classified here (M12). The
- * legacy declared deposits and withdrawals count nowhere since M7 and their screen is retired
- * (M20), so they are only shown.
- */
-function editLink(operation: Operation): [string, string] | null {
-  if (editable(operation) || operation.kind === 'chain' || operation.kind === 'flow') return null;
-  return operation.account
-    ? [`/manual-accounts/${operation.account.id}`, `Open in ${operation.account.name}`]
-    : null;
-}
-
 /** Where a stake row's coins went: a Solana stake account, an Ethereum staking pool. */
 function stakePlace(operation: Operation): string {
   return operation.wallet?.network === 'ethereum'
@@ -606,7 +594,6 @@ export default function OperationDrawer({
     }
   };
 
-  const link = editLink(operation);
   const hidden = operation.status === 'hidden';
   const dust = operation.status === 'dust';
   const value =
@@ -879,15 +866,7 @@ export default function OperationDrawer({
                   Edit
                 </button>
               </div>
-            ) : (
-              link && (
-                <div className="transactions-drawer__foot">
-                  <Link className="shell-button" to={link[0]}>
-                    {link[1]}
-                  </Link>
-                </div>
-              )
-            )}
+            ) : null}
           </>
         )}
       </div>

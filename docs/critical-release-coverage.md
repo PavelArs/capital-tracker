@@ -12,7 +12,7 @@ unrun, so this document reports no release acceptance pass.
 
 ## Browser journeys selected
 
-The reviewed selection contains 28 manifest entries: 14 of the original 19 browser cases,
+The manifest held 28 entries at review; G1 later removed ten browser cases of retired screens (see "Retired with their screens") and 19 remain. At review it contained 28 entries: 14 of the original 19 browser cases,
 CSV-006-B session-renewal recovery, since 2026-10-03 the wallet-address import (ADDR-API since
 M20) and, since 2026-10-04, PORTFOLIO-UI whole-portfolio valuation, CURRENCY-UI three-currency accounting
 and CHART-PERIODS portfolio snapshots on the dashboard, and since 2026-10-05 OPS-UI operations
@@ -30,17 +30,7 @@ using synthetic owner data and provider fixtures.
 | MFA-002-A/B | Password alone leaves private data denied; TOTP plus CSRF establishes the owner session. |
 | SES-001-B | Logout revokes a copied session credential and replay fails. |
 | SES-002-A | Missing CSRF or foreign Origin cannot change owner settings (main currency, dust threshold); every table stays unchanged. |
-| OPEN-001-A / OPEN-002-A | Opening amounts preserve the distinction between unknown and zero cost across restart/history. |
-| TRADE-003-A / TRADE-006-A | FIFO proceeds, cost and profit stay exact; pending edits lock; restart and correction history remain consistent. |
-| SWAP-UI | A committed exchange survives lost response and SPA remount without duplicate posting. |
-| REWARD-UI | Unknown basis and zero remain distinct; category and receipt-bound retry intent persist. |
-| CSV-006-A | Sale-first import preserves FIFO/provenance and replay safety; whole-batch rollback works. |
-| PRICE-UI / PRICE-RECOVERY | Price retry preserves a committed command; late responses cannot overwrite newer state. |
-| VAL-UI | Account totals remain exact and refresh/late replies preserve the trade draft. |
-| VCH-UI | Empty and zero chart history render correctly; late period replies do not lose drafts or show stale data. |
-| MPV-UI | Selected portfolio totals and missing-price gaps are accurate; stale replies are ignored. |
-| SHELL-UI | Owner MFA login/logout, responsive keyboard access, no Legacy group, the uncovered older screens reached from Settings and retired bookmarks opening their replacement. |
-| CSV-006-B | A committed CSV confirm survives session expiry, 401, MFA reauthentication and SPA return without duplicate posting. |
+| SHELL-UI | Owner MFA login/logout, responsive keyboard access, no Legacy group and no Older screens in Settings, a hand-valued asset's price changed on its asset page, and retired bookmarks (manual accounts and prices included) opening their replacement. |
 | ADDR-API / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every one of the 60 stored transactions has its USD value missing, never zero, across a reload. |
 | PORTFOLIO-UI | Whole-portfolio value, average buy price, cost basis, unrealized and realized P&L and allocation come from real accounts and a stored price; anonymous and query-carrying reads are refused. |
 | CURRENCY-UI | The main currency saved in Settings survives logout and MFA login; the Portfolio and Asset screens show value, cost and P&L in EUR and RUB from stored Bank of Russia rates, cost at the purchase date's rate; anonymous, missing-CSRF and unknown-currency requests are refused. |
@@ -61,6 +51,7 @@ using synthetic owner data and provider fixtures.
 |---|---|---|
 | TRANSFER-UI | The legacy transfer screen is gone; transfers are added, edited and deleted in Add transaction and the Transactions drawer. | `owned-transfers-db` and `owned-transfers-bounds-db` probes, TRANSFER-API, MANUAL-OPS-UI and XFER-UI. |
 | FLOW-004-A | The declared deposit and withdrawal journal counts nowhere since M7; its screen is gone and its rows stay listed, read-only, in Transactions. | `external-usd-flows-db` probe and FLOW-001-A / FLOW-002-A (API); FLOW-SPLIT-UI covers deposits as M7 counts them. |
+| OPEN-001-A / OPEN-002-A (form), TRADE-003-A / TRADE-006-A (form), SWAP-UI, REWARD-UI, CSV-006-A, CSV-006-B, PRICE-UI / PRICE-RECOVERY, VAL-UI, VCH-UI, MPV-UI | G1 removed the Manual accounts and Manual prices screens, the CSV import wizard and the older valuation views; accounts are made in Add asset and Add wallet, prices are changed on the asset page, trades are added in Add transaction. Only their browser tests left; the API cases in the same files stay. | The API cases of the same files, MANUAL-OPS-UI, PORTFOLIO-UI, SHELL-UI (Update price) and the matching database probes. |
 | PROFIT-UI / XIRR-UI / TWR-UI | Hidden in the new interface (Q10); the backend previews stay until a separate removal. | `period-profit-db`, `xirr-preview-db`, `twr-preview-db` and `linked-twr-db` probes and the API cases in the same files. |
 
 The second M20 step removed the legacy backend modules (assets, liabilities, crypto,

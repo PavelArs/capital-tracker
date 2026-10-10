@@ -75,7 +75,7 @@ describe('SHELL-001 the five sections, no Legacy group', () => {
     ]);
   });
 
-  it('has no Legacy group: the older screens are reached from Settings (G1)', async () => {
+  it('has no Legacy group and no link to the retired older screens (G1)', async () => {
     const document = await markup();
     expect(
       [...document.querySelectorAll('details')].some(
@@ -99,12 +99,10 @@ describe('SHELL-001 the five sections, no Legacy group', () => {
       expect(document.querySelector(`nav a[href^="${retired}"]`)).toBeNull();
   });
 
-  it('marks exactly one current destination; Settings is current on the older screens', async () => {
+  it('marks exactly one current destination', async () => {
     for (const [path, current] of [
       ['/dashboard', '/dashboard'],
       ['/preferences', '/preferences'],
-      ['/manual-accounts/11111111-1111-4111-8111-111111111111', '/preferences'],
-      ['/manual-prices', '/preferences'],
     ]) {
       const document = await markup(path);
       const marked = document.querySelectorAll('a[aria-current="page"]');
