@@ -243,8 +243,11 @@ function recordCoins(item: Operation): { received: string[]; sent: string[] } {
     : { received: cash, sent: [assetKey(item.asset)] };
 }
 
-/** CLS-RECORDED: a trade or swap added by hand or from CSV, as a choice and in the details. */
-export function recordText(item: Operation): string {
+/**
+ * CLS-RECORDED: a trade or swap added by hand or from CSV, as a choice and in the details; with
+ * `elsewhere`, the account it was made in (CLS-PAID).
+ */
+export function recordText(item: Operation, elsewhere = false): string {
   return [
     `${day(item.occurredAt)}, ${rowTime(item)}`,
     item.kind === 'swap' && item.counterAsset && item.counterQuantity
@@ -255,13 +258,33 @@ export function recordText(item: Operation): string {
             : ''
         }`,
     item.source === 'csv' ? 'From CSV' : 'Added by you',
+    ...(elsewhere && item.account ? [item.account.name] : []),
   ].join(' · ');
+}
+
+/** CLS-PAID: coins a wallet can send to pay for a purchase, which cash settles in. */
+const payingCoins = new Set(['USDT', 'USDC']);
+
+/**
+ * CLS-PAID: a purchase added by hand in another account that these USDT or USDC may have paid
+ * for: a plain buy, not paid in RUB or EUR, whose cash is not already all spent.
+ */
+function payable(item: Operation, operation: Operation, coin: string): boolean {
+  if (item.kind !== 'trade' || item.type !== 'buy' || item.paid) return false;
+  if (!item.account || item.account.id === operation.account?.id) return false;
+  const cash = item.settlement;
+  if (!cash || Number(cash.quantity) === 0) return true;
+  return (
+    assetKey(cash.asset) === coin &&
+    Number(cash.quantity) < Number(item.valueUsd ?? 0) + Number(item.feeUsd ?? 0)
+  );
 }
 
 /**
  * CLS-RECORDED: the trades and swaps added by hand or from CSV in this wallet's account that
  * moved this coin the same way within a week, nearest first: this transaction can be one of
- * them, already recorded. The saved one stays a choice.
+ * them, already recorded. USDT or USDC sent out may also have paid for a purchase made by hand
+ * in another account (CLS-PAID). The saved one stays a choice.
  */
 export function recordCandidates(
   operation: Operation,
@@ -277,14 +300,18 @@ export function recordCandidates(
         item.source !== 'chain' &&
         item.status === 'recorded' &&
         operation.account !== null &&
-        item.account?.id === operation.account.id &&
-        recordCoins(item)[inbound ? 'received' : 'sent'].includes(coin) &&
-        Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS,
+        Math.abs(Date.parse(item.occurredAt) - at) <= WEEK_MS &&
+        ((item.account?.id === operation.account.id &&
+          recordCoins(item)[inbound ? 'received' : 'sent'].includes(coin)) ||
+          (!inbound && payingCoins.has(coin) && payable(item, operation, coin))),
     )
     .sort(
       (a, b) => Math.abs(Date.parse(a.occurredAt) - at) - Math.abs(Date.parse(b.occurredAt) - at),
     )
-    .map((item): [string, string] => [item.id, recordText(item)]);
+    .map((item): [string, string] => [
+      item.id,
+      recordText(item, item.account?.id !== operation.account?.id),
+    ]);
   const saved = operation.classification?.value;
   const key = saved?.type === 'recorded' ? `${saved.operation.kind}:${saved.operation.id}` : '';
   if (key && !found.some(([id]) => id === key)) found.unshift([key, 'The saved record']);
@@ -630,6 +657,12 @@ export default function ClassifyForm({
 
   const pairs = swap ? swapCandidates(operation, operations, dustThresholdUsd) : [];
   const records = swap ? recordCandidates(operation, operations) : [];
+  // CLS-PAID: the picked record belongs to another account, so the coins go there to pay for it.
+  const paidElsewhere = recorded
+    ? operations.find(
+        (item) => item.id === draft.pair && item.account?.id !== operation.account?.id,
+      )?.account
+    : undefined;
   const options = (items: [string, string][]) =>
     items.map(([key, label]) => (
       <option key={key} value={key}>
@@ -837,7 +870,9 @@ export default function ClassifyForm({
               {fieldError('pair', 'Choose the transaction on the other side') || (
                 <span className="portfolio-field__hint">
                   {recorded
-                    ? 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
+                    ? paidElsewhere
+                      ? `The coins move to ${paidElsewhere.name} just before that purchase and pay for it there. Nothing is counted twice.`
+                      : 'This transaction is that record: nothing new is added, and the coins are not counted twice.'
                     : 'Transactions in another coin within a week from any of your wallets, or what you added by hand or from CSV for this wallet.'}
                 </span>
               )}

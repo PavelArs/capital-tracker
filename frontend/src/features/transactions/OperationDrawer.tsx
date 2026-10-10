@@ -301,7 +301,9 @@ function facts(
     if (linked && operation.status === 'recorded')
       rows.push([
         'Recorded as',
-        record ? recordText(record) : 'A record added by hand or from CSV',
+        record
+          ? recordText(record, record.account?.id !== operation.account?.id)
+          : 'A record added by hand or from CSV',
       ]);
     if (operation.status === 'recorded' && !moved && !staking && !pooled && !linked) {
       rows.push(['Value', shown(operation.value, operation.valueUsd, currency, 'Not recorded')]);
@@ -675,10 +677,17 @@ export default function OperationDrawer({
                 : '')}
         </p>
       )}
-      {record && operation.status === 'recorded' && (
+      {record && operation.status === 'recorded' && operation.type !== 'transfer' && (
         <p className="transactions-notice" role="note">
           Already recorded by hand or from CSV: this transaction doesn't count on its own, so its
           coins are not counted twice. Change the classification if it is wrong.
+        </p>
+      )}
+      {record && operation.status === 'recorded' && operation.type === 'transfer' && (
+        <p className="transactions-notice" role="note">
+          These coins moved to {record.account?.name ?? 'that account'} and paid for the purchase
+          you added there, so the purchase is not new money. Change the classification if it is
+          wrong.
         </p>
       )}
       {dust && (

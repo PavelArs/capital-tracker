@@ -526,8 +526,10 @@ function chainOperation(
       ? answer.details.operation
       : null;
   const record = named ? records.get(`${named.kind}:${named.id}`) : undefined;
+  // CLS-PAID: coins carried to the purchase's account stay a transfer, whatever becomes of it.
+  const carried = answer?.status === 'classified' && produced?.kind === 'transfer';
   const recordGone =
-    named !== null && (record === undefined || record.account?.id !== row.account?.id);
+    named !== null && !carried && (record === undefined || record.account?.id !== row.account?.id);
   // SOL-STAKE-MOVE: SOL moved into the wallet's own stake account or back stays the owner's;
   // nothing to classify, only the network fee is a cost.
   const staked = BigInt(row.stakeUnits ?? '0');
@@ -549,7 +551,7 @@ function chainOperation(
     isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd, hiddenToken)
   )
     return { ...operation, status: 'dust' };
-  if (named && record && !recordGone)
+  if (named && record && !recordGone && !carried)
     return { ...operation, type: record.type, status: 'recorded' };
   // An outgoing Other records no entry: the coins left with no sale price (D1).
   if (answer?.status === 'classified' && answer.type === 'other' && !answer.produced)
@@ -599,7 +601,12 @@ function chainOperation(
   }
   // CLS-BUY: the row reads as the entry it produced, raw facts kept. An entry voided
   // elsewhere leaves the transaction to classify again, with the other side to suggest.
-  if (answer?.status !== 'classified' || !answer.type || answer.type === 'recorded' || !produced)
+  if (
+    answer?.status !== 'classified' ||
+    !answer.type ||
+    (answer.type === 'recorded' && !carried) ||
+    !produced
+  )
     return other
       ? { ...operation, counterAccount: other.account, counterWallet: other.wallet }
       : operation;
@@ -643,6 +650,8 @@ function chainOperation(
       counterWallet: answer.linkedAddressId ? (other?.wallet ?? null) : null,
       orderWithinTimestamp: produced.orderWithinTimestamp,
     };
+  // A recorded answer produces a transfer or nothing (CLS-PAID): the branch above returned it.
+  if (answer.type === 'recorded') return operation;
   return {
     ...operation,
     type: answer.type,

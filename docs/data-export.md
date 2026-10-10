@@ -36,7 +36,8 @@ swap (CLS-SWAP) link to the one `swap:<uuid>`, whose `chain_txid` is the receipt
 deposit (POOL-DEPOSIT) produces no entry; a pool withdrawal that returned more than its deposit
 links to the `reward:<uuid>` of that pool income, and its `classification_details` name the
 deposit. A transaction already recorded by hand or from CSV (CLS-RECORDED) produces no entry
-either; its `classification_details` name that `trade` or `swap`. Values
+either; its `classification_details` name that `trade` or `swap`. USDT or USDC that paid for such
+a purchase in another account (CLS-PAID) links to the `transfer:<uuid>` that carried it. Values
 are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
 `paid_amount`, `paid_fee` and the rate.
 

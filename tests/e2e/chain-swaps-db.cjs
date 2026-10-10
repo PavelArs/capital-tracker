@@ -590,6 +590,185 @@ async function recordedByHand(db, s, owner, f) {
   console.log('PASS CLS-RECORDED');
 }
 
+
+// CLS-PAID: 300 USDT left Trust Wallet to pay for 10 ZEC the owner added by hand in an account
+// of its own as a Buy paid in USDT. That account held no USDT, so the buy entered as money from
+// outside while the send also took the USDT away. Answering the send with the purchase carries
+// the USDT over and settles the purchase against them.
+async function paidFromAnotherWallet(db, s, owner, f) {
+  stage = 'CLS-PAID a purchase in another account and the send that paid for it count twice';
+  const zec = (await s.accounting.createInstrument(owner, { requestId: randomUUID(), name: 'Zcash', symbol: 'ZEC' })).value;
+  const zcash = await account(s, owner, 'Zcash');
+  const sentAt = '2026-09-27T10:00:00.000Z';
+  const paid = `${hash(21)}-4`;
+  await raw(db, owner, f.eth, { txid: paid, asset: 'USDT', height: 21, at: sentAt, received: '0', sent: '300000000', fee: '0', direction: 'out' });
+  const revision = async () => (await journal(s, owner, zcash))?.journalRevision ?? 0;
+  const buy = async (at, quantity = '10') =>
+    (await s.trades.create(owner, zcash, {
+      requestId: randomUUID(),
+      expectedJournalRevision: await revision(),
+      instrumentId: zec.id,
+      side: 'buy',
+      occurredAt: at,
+      quantity,
+      grossUsd: '300',
+      feeUsd: '0',
+      settlementCurrency: 'USDT',
+    })).value.trade.tradeId;
+  const tradeId = await buy('2026-09-27T09:00:00.000Z');
+  const cash = async (id) => (await listed(s, owner)).find((row) => row.id === `trade:${id}`).settlement?.quantity;
+  same(await cash(tradeId), '0', 'The account held no USDT: the whole buy is money from outside');
+  stage = 'CLS-PAID-INVALID only a purchase an account\'s cash has not paid, with USDT or USDC';
+  const recorded = (kind, id) => ({ type: 'recorded', operation: { kind, id } });
+  const versions = async () => (await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions'))[0].n;
+  const before = await versions();
+  const sold = (await s.trades.create(owner, zcash, {
+    requestId: randomUUID(), expectedJournalRevision: await revision(), instrumentId: zec.id, side: 'sell',
+    occurredAt: '2026-09-27T09:30:00.000Z', quantity: '1', grossUsd: '40', feeUsd: '0',
+  })).value.trade.tradeId;
+  await rejected(
+    () => classify(s, owner, f.eth, paid, { expectedVersion: 0, classification: recorded('trade', sold) }),
+    422,
+    'Choose an operation of this wallet',
+  );
+  const gas = `${hash(23)}`;
+  await raw(db, owner, f.eth, { txid: gas, height: 23, at: '2026-09-27T08:00:00.000Z', received: '0', sent: '10000000000000000', fee: '1000000000000000', direction: 'out' });
+  await rejected(
+    () => classify(s, owner, f.eth, gas, { expectedVersion: 0, classification: recorded('trade', tradeId) }),
+    422,
+    'Only USDT or USDC can pay for a purchase in another wallet',
+  );
+  await rejected(
+    () => classify(s, owner, f.vault, legs.coldIn, { expectedVersion: 3, classification: recorded('trade', tradeId) }),
+    422,
+    'Choose an operation of this wallet',
+  );
+  assert.equal(await versions(), before, 'Nothing was saved');
+  const waiting = await count(s, owner);
+  const trustUsdt = await held(s, owner, 'USDT', f.trust);
+  assert.equal(await held(s, owner, 'USDT', zcash), 0n);
+
+  stage = 'CLS-PAID the send is the payment: the USDT move to the account just before the purchase';
+  const saved = await classify(s, owner, f.eth, paid, {
+    expectedVersion: 0,
+    classification: recorded('trade', tradeId),
+  });
+  assert.equal(saved.value.operation.kind, 'transfer', 'The answer produced the carrying transfer');
+  const linked = await answer(db, f.eth, paid);
+  assert.deepEqual(
+    [linked.status, linked.type, linked.accountId, linked.swapId],
+    ['classified', 'recorded', f.trust, null],
+  );
+  assert.ok(linked.transferId);
+  assert.deepEqual(linked.details, recorded('trade', tradeId));
+  const [carry] = await db.query(
+    `SELECT v."occurredAt", v.quantity::text, t."fromAccountId", t."toAccountId"
+      FROM owned_transfers t JOIN owned_transfer_versions v ON v."transferId"=t.id AND v.version=t."currentVersion"
+      WHERE t.id=$1`,
+    [linked.transferId],
+  );
+  assert.equal(carry.occurredAt.toISOString(), '2026-09-27T08:59:59.999Z', 'Just before the purchase');
+  same(carry.quantity, '300');
+  assert.deepEqual([carry.fromAccountId, carry.toAccountId], [f.trust, zcash]);
+  same(await cash(tradeId), '300', 'The purchase spends the USDT that arrived');
+  assert.equal(await held(s, owner, 'USDT', f.trust), trustUsdt, 'The USDT leave once');
+  assert.equal(await held(s, owner, 'USDT', zcash), 0n, 'And are spent on the ZEC');
+  assert.equal(await held(s, owner, 'ZEC', zcash), coins('9'), '10 ZEC bought, 1 sold');
+  assert.equal(await count(s, owner), waiting - 1);
+  let operations = await listed(s, owner);
+  const row = operations.find((item) => item.chain?.txid === paid);
+  assert.deepEqual(
+    [row.type, row.status, row.direction, row.asset.symbol, row.account.id, row.counterAccount.id],
+    ['transfer', 'recorded', 'internal', 'USDT', f.trust, zcash],
+  );
+  same(row.quantity, '300');
+  assert.equal(operations.filter((item) => item.id === `transfer:${linked.transferId}`).length, 0, 'Listed once, on the send');
+  assert.equal(operations.find((item) => item.id === `trade:${tradeId}`).source, 'manual', 'The purchase stays the owner\'s');
+  const exportedLeg = (await s.exports.chain(db.manager, owner)).find((leg) => leg.txid === paid);
+  assert.equal(exportedLeg.operationId, `transfer:${linked.transferId}`, 'The export links the send to its transfer');
+  const exportedCarry = (await s.exports.operations(db.manager, owner)).find((entry) => entry.id === `transfer:${linked.transferId}`);
+  assert.deepEqual([exportedCarry.source, exportedCarry.chainTxid], ['chain', paid]);
+
+  stage = 'CLS-PAID a purchase the carried USDT paid is not owed any more';
+  await rejected(
+    () => classify(s, owner, f.eth, `${hash(22)}-5`, { expectedVersion: 0, classification: recorded('trade', tradeId) }),
+    404,
+  );
+  const second = `${hash(22)}-5`;
+  await raw(db, owner, f.eth, { txid: second, asset: 'USDT', height: 22, at: '2026-09-27T11:00:00.000Z', received: '0', sent: '300000000', fee: '0', direction: 'out' });
+  await rejected(
+    () => classify(s, owner, f.eth, second, { expectedVersion: 0, classification: recorded('trade', tradeId) }),
+    422,
+    'That purchase was already paid from the cash of its account',
+  );
+
+  stage = 'CLS-PAID answering again gives the USDT back and settles the purchase without them';
+  await classify(s, owner, f.eth, paid, { expectedVersion: 1, hidden: true, classification: null });
+  assert.equal(await transferKind(db, linked.transferId), 'void');
+  same(await cash(tradeId), '0', 'Back to money from outside');
+  assert.equal(await held(s, owner, 'USDT', zcash), 0n);
+  assert.equal(await count(s, owner), waiting, 'The hidden send asks no more, the second one waits');
+  await classify(s, owner, f.eth, paid, { expectedVersion: 2, classification: recorded('trade', tradeId) });
+  same(await cash(tradeId), '300');
+
+  stage = 'CLS-PAID a send before the purchase is carried at its own time, and the purchase can be edited';
+  const third = `${hash(24)}-6`;
+  await raw(db, owner, f.eth, { txid: third, asset: 'USDT', height: 24, at: '2026-09-28T10:00:00.000Z', received: '0', sent: '100000000', fee: '0', direction: 'out' });
+  const later = await buy('2026-09-28T12:00:00.000Z', '3');
+  await classify(s, owner, f.eth, third, { expectedVersion: 0, classification: recorded('trade', later) });
+  const [early] = await db.query(
+    `SELECT v."occurredAt" FROM chain_transaction_classifications h
+      JOIN chain_transaction_classification_versions c ON c."addressId"=h."addressId" AND c.txid=h.txid AND c.version=h."currentVersion"
+      JOIN owned_transfers t ON t.id=c."transferId" JOIN owned_transfer_versions v ON v."transferId"=t.id AND v.version=t."currentVersion"
+      WHERE h."addressId"=$1 AND h.txid=$2`,
+    [f.eth, third],
+  );
+  assert.equal(early.occurredAt.toISOString(), '2026-09-28T10:00:00.000Z', 'At the time of the send');
+  same(await cash(later), '100', 'Only the 100 USDT that arrived; the rest of its 300 is money from outside');
+  assert.equal(await held(s, owner, 'USDT', zcash), 0n, 'Both purchases spent what arrived');
+  const edited = (await listed(s, owner)).find((row) => row.id === `trade:${later}`);
+  await s.trades.correct(owner, zcash, later, {
+    requestId: randomUUID(),
+    expectedJournalRevision: await revision(),
+    instrumentId: zec.id,
+    side: 'buy',
+    occurredAt: '2026-09-28T12:00:00.000Z',
+    quantity: '3',
+    grossUsd: '90',
+    feeUsd: '0',
+    settlementCurrency: 'USDT',
+  });
+  same(await cash(later), '90', 'Edited, it still spends the carried USDT');
+  assert.equal(edited.source, 'manual');
+
+  stage = 'CLS-PAID a purchase from before the wallet held the coins is refused with a reason';
+  const early1 = await buy('2026-07-01T09:00:00.000Z', '1');
+  const fourth = `${hash(25)}-7`;
+  await raw(db, owner, f.eth, { txid: fourth, asset: 'USDT', height: 25, at: '2026-09-29T10:00:00.000Z', received: '0', sent: '10000000', fee: '0', direction: 'out' });
+  const rows = await versions();
+  await rejected(
+    () => classify(s, owner, f.eth, fourth, { expectedVersion: 0, classification: recorded('trade', early1) }),
+    422,
+    'The wallet did not hold these coins yet when that purchase was made; check the purchase date',
+  );
+  assert.equal(await versions(), rows, 'Nothing was saved');
+
+  stage = 'CLS-PAID deleting the purchase leaves the send a transfer, its USDT in the account';
+  const again = await answer(db, f.eth, paid);
+  await s.trades.void(owner, zcash, sold, { requestId: randomUUID(), expectedJournalRevision: await revision() });
+  await s.trades.void(owner, zcash, tradeId, { requestId: randomUUID(), expectedJournalRevision: await revision() });
+  assert.equal(await held(s, owner, 'USDT', f.trust), trustUsdt - coins('410'), 'Gone from the wallet once, and the other sends too');
+  assert.equal(await held(s, owner, 'USDT', zcash), coins('310'), 'And in the other account, with the 10 the edited purchase left');
+  operations = await listed(s, owner);
+  assert.deepEqual(
+    [operations.find((item) => item.chain?.txid === paid).type, operations.find((item) => item.chain?.txid === paid).status],
+    ['transfer', 'recorded'],
+  );
+  assert.equal((await answer(db, f.eth, paid)).transferId, again.transferId);
+
+  console.log('PASS CLS-PAID');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -638,6 +817,7 @@ async function main() {
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
     await oneTransaction(db, s, owner.id, f);
     await recordedByHand(db, s, owner.id, f);
+    await paidFromAnotherWallet(db, s, owner.id, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }
