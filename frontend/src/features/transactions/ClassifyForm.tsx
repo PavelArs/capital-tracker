@@ -20,6 +20,7 @@ import {
   signedAmount,
   typeLabels,
 } from './operation-format';
+import RemoveCounted from './RemoveCounted';
 
 type ChainType = ChainClassification['type'];
 type Currency = Extract<ChainClassification, { currency: string }>['currency'];
@@ -513,6 +514,8 @@ interface Props {
   /** Other transactions still to classify, for the footer. */
   left: number;
   onSaved: (label: string) => void;
+  /** BYBIT-GAP-DELETE: a counted Bybit difference was deleted from the form. */
+  onDeleted?: () => void;
   onCancel: () => void;
 }
 
@@ -525,6 +528,7 @@ export default function ClassifyForm({
   children,
   left,
   onSaved,
+  onDeleted,
   onCancel,
 }: Props) {
   const id = useId();
@@ -941,6 +945,9 @@ export default function ClassifyForm({
       <div className="transactions-drawer__foot">
         <span className="transactions-left">{left} left to classify</span>
         <span className="transactions-grow" />
+        {onDeleted && (
+          <RemoveCounted operation={operation} disabled={saving} onDeleted={onDeleted} />
+        )}
         <button type="button" className="shell-button shell-button--ghost" onClick={onCancel}>
           Later
         </button>

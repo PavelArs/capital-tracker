@@ -19,6 +19,7 @@ import {
   exchangeRecord,
   explorerUrl,
   hashOf,
+  isCountedGap,
   moment,
   networkName,
   placeLabel,
@@ -31,6 +32,7 @@ import {
   transactionHash,
   typeLabel,
 } from './operation-format';
+import RemoveCounted from './RemoveCounted';
 
 const sourceDetails: Record<Operation['source'], string> = {
   manual: 'Added by you',
@@ -563,6 +565,9 @@ export default function OperationDrawer({
     }
   };
 
+  // BYBIT-GAP-DELETE: a counted difference is the owner's own record, so it can be deleted.
+  const counted = Boolean(chain?.chain && isCountedGap(chain.chain.txid));
+
   // CLS-HIDE: hiding keeps the answer, so including the row again restores it.
   const toggleHidden = async () => {
     if (!chain?.wallet || !chain.chain) return;
@@ -767,6 +772,10 @@ export default function OperationDrawer({
             dustThresholdUsd={dustThresholdUsd}
             left={Math.max(left - (needs ? 1 : 0), 0)}
             onSaved={(label) => onClassified?.(label)}
+            onDeleted={() => {
+              announceClassificationChange();
+              onClassified?.('deleted');
+            }}
             onCancel={needs ? onClose : () => setClassifying(false)}
           >
             {summary}
@@ -801,9 +810,9 @@ export default function OperationDrawer({
               )}
               {chain && !stakeMove && (
                 <p className="transactions-info">
-                  {sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'}{' '}
-                  can't be deleted. You can change the classification, add a comment or hide it from
-                  calculations. Your changes survive the next sync.
+                  {counted
+                    ? 'You counted this difference yourself, so you can delete it. Until then you can also change the classification, add a comment or hide it from calculations.'
+                    : `${sourceLabel(operation) === 'Bybit' ? 'Bybit records' : 'Blockchain transactions'} can't be deleted. You can change the classification, add a comment or hide it from calculations. Your changes survive the next sync.`}
                 </p>
               )}
               {toggling.error && (
@@ -825,6 +834,14 @@ export default function OperationDrawer({
                   </button>
                 )}
                 <span className="transactions-grow" />
+                <RemoveCounted
+                  operation={chain}
+                  disabled={toggling.busy}
+                  onDeleted={() => {
+                    announceClassificationChange();
+                    onClassified?.('deleted');
+                  }}
+                />
                 <button
                   type="button"
                   className="shell-button shell-button--ghost"

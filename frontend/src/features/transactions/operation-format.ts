@@ -157,9 +157,12 @@ const recordKinds: Record<string, string> = {
   convert: 'Convert',
 };
 
+/** BYBIT-COUNT-GAP: a difference the owner counted, not a record Bybit has. */
+export const isCountedGap = (txid: string): boolean =>
+  /^bybit-(?:deposit|withdrawal)-gap-/.test(txid);
+
 function recordName(txid: string): string | null {
-  // BYBIT-COUNT-GAP: a difference the owner counted, not a record Bybit has.
-  if (/^bybit-(?:deposit|withdrawal)-gap-/.test(txid)) return 'Balance difference';
+  if (isCountedGap(txid)) return 'Balance difference';
   const match =
     /^bybit-(?:trade-(convert)-|(trade|deposit|withdrawal|earn)-(?:internal-|flexible-|onchain-)?)(.+)$/.exec(
       txid,

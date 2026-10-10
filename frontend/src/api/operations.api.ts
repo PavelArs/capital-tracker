@@ -222,6 +222,14 @@ export const operationsApi = {
       command,
     );
   },
+  /** BYBIT-GAP-DELETE: deletes a record made by counting a Bybit balance difference. */
+  removeCounted: async (
+    wallet: { id: string },
+    txid: string,
+    command: { requestId: string; expectedVersion: number },
+  ): Promise<void> => {
+    await apiClient.post(`/accounting/chain-transactions/${wallet.id}/${txid}/removal`, command);
+  },
   /** CLS-COUNT: blockchain transactions nobody has classified or hidden yet. */
   needsClassification: async (): Promise<number> => {
     const response = await apiClient.get<{ count: number }>(

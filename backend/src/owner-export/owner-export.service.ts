@@ -456,7 +456,7 @@ export class OwnerExportService {
           AND h."addressId"=t."addressId" AND h.txid=t.txid
         LEFT JOIN chain_transaction_classification_versions c ON c."ownerId"=h."ownerId"
           AND c."addressId"=h."addressId" AND c.txid=h.txid AND c.version=h."currentVersion"
-        WHERE w."ownerId"=$1`,
+        WHERE w."ownerId"=$1 AND c.status IS DISTINCT FROM 'deleted'`,
       [owner],
     );
     return rows.map((row) => ({

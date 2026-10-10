@@ -104,7 +104,8 @@ const sources = `
     WHERE v."ownerId" = $1
   UNION ALL
   SELECT 'classification', v."addressId"::text || ':' || v.txid, v.version,
-      CASE WHEN v.version = 1 THEN 'created' ELSE 'changed' END, v."createdAt", t."blockTime",
+      CASE WHEN v.status = 'deleted' THEN 'deleted' WHEN v.version = 1 THEN 'created'
+        ELSE 'changed' END, v."createdAt", t."blockTime",
       a.name, CASE WHEN v.automatic IS TRUE THEN 'automatic' ELSE 'owner' END,
       jsonb_build_object('status', v.status, 'type', v.type, 'comment', v.comment,
         'details', md5(v.details::text), 'direction', t.direction, 'network', w.network,

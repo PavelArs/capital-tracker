@@ -31,12 +31,14 @@ import {
   chainCoin,
   chainTxid,
   classificationPayload,
+  countedGapTxid,
   exchangeTrade,
   fitsDirection,
   legMovement,
   type PlannedOperation,
   type PoolWithdrawalClassification,
   parseClassification,
+  parseRemoval,
   planOperation,
   type RecordedClassification,
   type SwapClassification,
@@ -93,7 +95,7 @@ export interface ClassificationRow {
   version: number;
   requestId: string;
   canonicalPayload: string;
-  status: 'unclassified' | 'classified' | 'hidden';
+  status: 'unclassified' | 'classified' | 'hidden' | 'deleted';
   type: string | null;
   details: ClassificationInput['classification'];
   comment: string | null;
@@ -315,6 +317,12 @@ export class ChainClassificationService {
         const row = await this.readLeg(manager, owner, address, txid);
         const version = await this.lockHead(manager, address, txid);
         if (version !== input.expectedVersion) throw conflict();
+        // BYBIT-GAP-DELETE: a deleted record is gone for every answer.
+        if (
+          version > 0 &&
+          (await this.version(manager, address, txid, version)).status === 'deleted'
+        )
+          throw new NotFoundException();
         // BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that
         // coin, as for the automatic answer. Otherwise the shortfall would be entered as new
         // money while the unanswered receipts that supplied the coin still count (D1).
@@ -343,6 +351,61 @@ export class ChainClassificationService {
     // An answer can make an earlier transfer possible: the sender now holds the coins.
     if (result.created) await this.linkQuietly(owner);
     return result;
+  }
+
+  /**
+   * BYBIT-GAP-DELETE: deletes a record the app made when the owner counted a Bybit balance
+   * difference. The raw leg stays and a last version says it was deleted, so the history keeps
+   * who deleted what; the record leaves the lists and the books, and the balance notice shows
+   * the difference again. Only a record nobody answered, or one hidden, can go: an answer that
+   * produced an entry is changed first.
+   */
+  async removeCounted(ownerId: string, addressId: string, txid: string, raw: unknown) {
+    const owner = parseUuid(ownerId);
+    const address = parseUuid(addressId);
+    if (!countedGapTxid.test(txid)) throw new NotFoundException();
+    const input = parseRemoval(raw);
+    const payload = JSON.stringify({ addressId: address, txid, removal: input.expectedVersion });
+    try {
+      return await this.source.transaction(async (manager) => {
+        await lockAccountingOwner(manager, owner);
+        const [replay]: ClassificationRow[] = await manager.query(
+          `SELECT ${versionColumns} FROM chain_transaction_classification_versions v
+            WHERE v."ownerId"=$1 AND v."requestId"=$2`,
+          [owner, input.requestId],
+        );
+        if (replay) {
+          if (replay.canonicalPayload !== payload) throw conflict();
+          return classificationView(replay);
+        }
+        await this.readLeg(manager, owner, address, txid);
+        const version = await this.lockHead(manager, address, txid);
+        if (version !== input.expectedVersion) throw conflict();
+        const current = version > 0 ? await this.version(manager, address, txid, version) : null;
+        if (current?.status === 'deleted') throw new NotFoundException();
+        if (current?.status === 'classified')
+          throw new UnprocessableEntityException(
+            'This record has an answer; change it to "Needs classification" first',
+          );
+        const saved = await this.append(manager, owner, {
+          address,
+          txid,
+          previous: version,
+          requestId: input.requestId,
+          payload,
+          status: 'deleted',
+          details: null,
+          comment: null,
+          produced: nothing,
+          linkedAddressId: null,
+          automatic: null,
+          paired: null,
+        });
+        return classificationView(saved);
+      });
+    } catch (error) {
+      return rethrowAccountingHistory(error);
+    }
   }
 
   /**

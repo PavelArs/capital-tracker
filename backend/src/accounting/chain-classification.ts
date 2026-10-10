@@ -270,6 +270,24 @@ export function parseClassification(raw: unknown): ClassificationInput {
   };
 }
 
+/** The records the app created itself when the owner counted a Bybit balance difference. */
+export const countedGapTxid = /^bybit-(?:deposit|withdrawal)-gap-[0-9A-Za-z_-]{1,80}$/;
+
+export interface RemovalInput {
+  requestId: string;
+  /** The version the owner saw; 0 for a record nobody answered. */
+  expectedVersion: number;
+}
+
+/** BYBIT-GAP-DELETE: the request that deletes a counted difference. */
+export function parseRemoval(raw: unknown): RemovalInput {
+  const row = object(raw, ['requestId', 'expectedVersion']);
+  const version = row.expectedVersion;
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) return bad();
+  if (version > 10000) return bad();
+  return { requestId: parseUuid(row.requestId), expectedVersion: version };
+}
+
 /** The request as stored: replaying it returns the same receipt. */
 export function classificationPayload(
   addressId: string,

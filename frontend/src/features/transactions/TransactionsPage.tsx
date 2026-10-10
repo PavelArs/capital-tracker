@@ -498,6 +498,12 @@ export default function TransactionsPage() {
     const was = opened;
     const next = await load(asked, false);
     if (!next || !was) return;
+    // BYBIT-GAP-DELETE: the record is gone from the list.
+    if (label === 'deleted') {
+      setOpenId(null);
+      setNotice('Record deleted. The wallet shows the difference again.');
+      return;
+    }
     const said =
       label === 'hidden'
         ? 'Hidden from calculations.'
