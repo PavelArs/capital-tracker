@@ -1,8 +1,29 @@
 import apiClient from './client';
 import type { AssetType, PriceSource, ValuationCurrency } from './portfolio-assets.api';
 
-export type AccountingCurrency = 'USD' | 'EUR' | 'RUB';
-export const accountingCurrencies: readonly AccountingCurrency[] = ['USD', 'EUR', 'RUB'];
+/** The three currencies every screen offers (Q1). */
+export const baseCurrencies = ['USD', 'EUR', 'RUB'] as const;
+/** Other Bank of Russia currencies; one of them may be the main currency (CUR-MORE). */
+export const extraCurrencies = ['GBP', 'CHF', 'CNY', 'JPY', 'KZT', 'TRY', 'AED'] as const;
+export const accountingCurrencies = [...baseCurrencies, ...extraCurrencies] as const;
+export type AccountingCurrency = (typeof accountingCurrencies)[number];
+export type ExtraCurrency = (typeof extraCurrencies)[number];
+
+export const isExtraCurrency = (value: unknown): value is ExtraCurrency =>
+  (extraCurrencies as readonly unknown[]).includes(value);
+
+export const currencyNames: Record<AccountingCurrency, string> = {
+  USD: 'US dollar',
+  EUR: 'Euro',
+  RUB: 'Russian ruble',
+  GBP: 'British pound',
+  CHF: 'Swiss franc',
+  CNY: 'Chinese yuan',
+  JPY: 'Japanese yen',
+  KZT: 'Kazakhstani tenge',
+  TRY: 'Turkish lira',
+  AED: 'UAE dirham',
+};
 
 // Exact decimal strings from GET /accounting/portfolio (portfolio-valuation, PV-1..4), stated
 // in one accounting currency at Bank of Russia rates (account-in-three-currencies, CUR-*).
@@ -55,7 +76,7 @@ export interface AllocationSlice {
 }
 
 export interface FxRate {
-  currency: 'USD' | 'EUR';
+  currency: Exclude<AccountingCurrency, 'RUB'>;
   date: string;
   rubPerUnit: string;
 }

@@ -116,6 +116,14 @@ their FX series, without schema changes.
   each currency, so the market/flow split below holds in every currency.
 - **Display.** Settings picks the main currency; screens show it and can switch to
   the other two.
+- **More currencies (M29).** GBP, CHF, CNY, JPY, KZT, TRY and AED are accounting
+  currencies too, from the same Bank of Russia series (a quote per 10, 100 or 1000 units
+  is read per unit). Settings → Main currency offers them next to USD, EUR and RUB.
+  Only the main currency's series is collected, from 2009 on its first run, and its
+  hourly snapshots are stored, so an unused series costs nothing; the screens then offer
+  USD, EUR, RUB and that currency. Choosing another main currency stops collecting the
+  old one and removes its snapshots; stored rates stay. A read in any other currency
+  is refused.
 
 ### Capital change: market versus flows (BR 10)
 
@@ -848,6 +856,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
 | M27 | `show-audit-history` | History screen (Settings → Change history): every stored version of trades, transfers, swaps, rewards, deposits and withdrawals, manual prices and blockchain answers, newest first, each compared with the version before it (created, changed, deleted; who made it: you, a CSV import or the app); filters by change, type, source and date; side drawer with the values before and after; phone list per the mobile-tables rule; read only on the existing version tables, no migration | M12, M13 | — |
 | M28 | `hide-spam-tokens` | other tokens of Ethereum and Solana addresses that cannot be real (a negative balance from forged transfers, a copy of USDT or ETH from another contract) are left out of the address's balances, value and balance check by themselves; the owner hides or restores any other token per address, and an address lists two coins with the rest behind "Show N more" | M25 | — |
+| M29 | `add-accounting-currencies` | seven more Bank of Russia currencies (GBP, CHF, CNY, JPY, KZT, TRY, AED) as accounting currencies: one of them can be the main currency in Settings, its series is collected from 2009 and its snapshots stored only while it is the main one; USD, EUR and RUB stay one click away; the migration relaxes the main-currency CHECK to a currency-code shape | M5, M6 | Q1 |
 
 ```mermaid
 flowchart LR
@@ -883,6 +892,8 @@ flowchart LR
   M12 --> M23
   M13 --> M23
   M25 --> M28
+  M5 --> M29
+  M6 --> M29
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),
@@ -916,7 +927,7 @@ sidebar, five sections) so it does not wait for mockups.
 ## 10. Later versions
 
 From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (first
-after MVP, Q8), accounting currencies beyond USD, EUR and RUB, Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
+after MVP, Q8), accounting currencies beyond USD, EUR and RUB (M29: seven more as the main currency; several at once later), Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
 re-enrolment, stocks, bonds, ETFs, deposits, real estate,
 metals and liabilities as asset types, exchanges other than Bybit, bank integrations, tax reports,
 DeFi and NFT valuation, mobile layouts.

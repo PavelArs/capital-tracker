@@ -19,9 +19,16 @@ export const currencySymbols: Record<AccountingCurrency, string> = {
   USD: '$',
   EUR: '€',
   RUB: '₽',
+  GBP: '£',
+  CHF: 'CHF ',
+  CNY: 'CN¥',
+  JPY: 'JP¥',
+  KZT: '₸',
+  TRY: '₺',
+  AED: 'AED ',
 };
 
-/** $1,234.56, €920.00 or ₽104,500.00; signed adds "+" to gains. Missing is a dash, never 0. */
+/** $1,234.56, €920.00, ₽104,500.00 or £88.10; signed adds "+" to gains. Missing is a dash, never 0. */
 export function money(value: string | null, currency: AccountingCurrency, signed = false): string {
   if (value === null) return DASH;
   return `${sign(value, signed)}${currencySymbols[currency]}${number(value, 2, 2)}`;

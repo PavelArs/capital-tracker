@@ -1,10 +1,12 @@
 import {
   type AccountingCurrency,
   accountingCurrencies,
+  baseCurrencies,
   type PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { useMainCurrency } from '../shell/main-currency';
 import { rateText } from './format';
 
 const isCurrency = (value: string | null): value is AccountingCurrency =>
@@ -37,6 +39,22 @@ export function withCurrency(path: string, asked: AccountingCurrency | undefined
   return asked ? `${path}?currency=${asked}` : path;
 }
 
+/**
+ * USD, EUR and RUB, then the main currency when it is another one (CUR-MORE), and the one
+ * on screen when an address asked for it.
+ */
+export function switchCurrencies(
+  main: AccountingCurrency | undefined,
+  value: AccountingCurrency,
+): AccountingCurrency[] {
+  return accountingCurrencies.filter(
+    (currency) =>
+      (baseCurrencies as readonly AccountingCurrency[]).includes(currency) ||
+      currency === main ||
+      currency === value,
+  );
+}
+
 export function CurrencySwitch({
   value,
   onChange,
@@ -44,13 +62,14 @@ export function CurrencySwitch({
   value: AccountingCurrency;
   onChange: (currency: AccountingCurrency) => void;
 }) {
+  const { main } = useMainCurrency();
   // The router applies the new address in a transition, after React has already put the
   // controlled radio back; keep the clicked one marked until the page's currency changes.
   const [choice, setChoice] = useState({ value, chosen: value });
   const chosen = choice.value === value ? choice.chosen : value;
   return (
     <div className="shell-seg" role="radiogroup" aria-label="Currency">
-      {accountingCurrencies.map((currency) => (
+      {switchCurrencies(main, value).map((currency) => (
         <label key={currency}>
           <input
             type="radio"

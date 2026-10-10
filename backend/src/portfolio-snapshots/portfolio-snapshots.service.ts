@@ -18,10 +18,11 @@ import {
 } from '../accounting/portfolio-valuation.service';
 import {
   type AccountingCurrency,
-  accountingCurrencies,
   FxConverter,
   isAccountingCurrency,
+  isTrackedFor,
   moscowDate,
+  trackedCurrencies,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
@@ -309,6 +310,12 @@ export class PortfolioSnapshotsService {
   async history(ownerId: string, rawQuery: unknown, now = new Date()) {
     const owner = parseUuid(ownerId);
     const query = parseQuery(rawQuery);
+    // Snapshots exist for USD, EUR, RUB and the main currency; another one has none to show.
+    if (
+      query.currency !== null &&
+      !isTrackedFor(query.currency, await readMainCurrency(this.source.manager, owner))
+    )
+      throw invalid();
     await this.refresh(owner, now);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
@@ -398,6 +405,7 @@ export class PortfolioSnapshotsService {
       const instrument = inputs.valuation.instruments.find((item) => item.id === id);
       if (!instrument) throw new NotFoundException();
       const mainCurrency = await readMainCurrency(manager, owner);
+      if (query.currency !== null && !isTrackedFor(query.currency, mainCurrency)) throw invalid();
       const currency = query.currency ?? mainCurrency;
       const fx = new FxConverter(await readFxRates(manager), currency);
       const at = now.getTime();
@@ -479,11 +487,18 @@ export class PortfolioSnapshotsService {
         WHERE "ownerId"=$1`,
       [owner],
     );
+    // Base currencies and the main one: a currency left as main loses its snapshots, so a later
+    // return to it rebuilds them from the inputs of then, not of when they were last stored.
+    const tracked = trackedCurrencies([await readMainCurrency(manager, owner)]);
+    const isTracked = (row: StoredRow) => (tracked as readonly string[]).includes(row.currency);
+    const untracked = storedRows.filter((row) => !isTracked(row));
     const existing = new Map(
-      storedRows.map((row) => [
-        snapshotKey(row.takenAt.getTime(), row.currency),
-        { value: row.value, complete: row.complete },
-      ]),
+      storedRows
+        .filter(isTracked)
+        .map((row) => [
+          snapshotKey(row.takenAt.getTime(), row.currency),
+          { value: row.value, complete: row.complete },
+        ]),
     );
     const expected = new Set(instants);
     const obsolete = [...new Set(storedRows.map((row) => row.takenAt.getTime()))].filter(
@@ -492,14 +507,23 @@ export class PortfolioSnapshotsService {
     const from =
       !state || state.inputsRevision !== revision
         ? HISTORY_FROM_MS
-        : await this.earliestChange(manager, state, marks, instants, existing);
-    if (from === null && obsolete.length === 0) return { outcome: 'fresh' };
+        : await this.earliestChange(manager, state, marks, instants, existing, tracked);
+    if (untracked.length > 0)
+      await manager.query(
+        `DELETE FROM portfolio_snapshots WHERE "ownerId"=$1 AND currency<>ALL($2::text[])`,
+        [owner, tracked],
+      );
+    if (from === null && obsolete.length === 0) {
+      return untracked.length > 0
+        ? { outcome: 'rebuilt', from: null, written: 0, removed: 0 }
+        : { outcome: 'fresh' };
+    }
 
     let written = 0;
     if (from !== null) {
       const inputs = await readSeriesInputs(manager, owner);
       const rates = await readFxRates(manager);
-      const converters = accountingCurrencies.map((currency) => new FxConverter(rates, currency));
+      const converters = tracked.map((currency) => new FxConverter(rates, currency));
       const computed = instants
         .filter((at) => at >= from)
         .flatMap((at) => valuesAt(inputs.valuation, at, pricesAt(inputs, at), converters));
@@ -537,10 +561,11 @@ export class PortfolioSnapshotsService {
     marks: { prices: Date | null; rates: Date | null },
     instants: readonly number[],
     existing: ReadonlyMap<string, unknown>,
+    tracked: readonly AccountingCurrency[],
   ): Promise<number | null> {
     const candidates: number[] = [];
     const missing = instants.find((at) =>
-      accountingCurrencies.some((currency) => !existing.has(snapshotKey(at, currency))),
+      tracked.some((currency) => !existing.has(snapshotKey(at, currency))),
     );
     if (missing !== undefined) candidates.push(missing);
     if (marks.prices && marks.prices.getTime() !== state.pricesFetchedThrough?.getTime()) {

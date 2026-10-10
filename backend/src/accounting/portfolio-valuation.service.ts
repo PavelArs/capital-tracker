@@ -4,6 +4,7 @@ import {
   type AccountingCurrency,
   FxConverter,
   isAccountingCurrency,
+  isTrackedFor,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
@@ -48,7 +49,7 @@ interface ManualPriceRow {
   priceUsd: string;
 }
 
-/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
+/** Only `currency` (USD, EUR, RUB or the main currency) may be asked; without it the main one is used. */
 function parseQuery(query: unknown): AccountingCurrency | null {
   if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
@@ -419,6 +420,8 @@ export class PortfolioValuationService {
       const accounts = accountsAt(inputs, at);
       const prices = await latestPortfolioPrices(manager, owner, inputs.instruments, now);
       const mainCurrency = await readMainCurrency(manager, owner);
+      if (asked && !isTrackedFor(asked, mainCurrency))
+        throw new BadRequestException('Invalid accounting input');
       const fx = new FxConverter(await readFxRates(manager), asked ?? mainCurrency);
       // The prices stored a day earlier give each price's 24-hour change.
       const previous = await latestPortfolioPrices(

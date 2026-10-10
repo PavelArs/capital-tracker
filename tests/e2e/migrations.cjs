@@ -117,6 +117,7 @@ const migrationNames = [
   'TrackAnyChainToken1794900000000',
   'TrackStellarWallets1795000000000',
   'HideChainTokens1795200000000',
+  'AddAccountingCurrencies1795400000000',
 ];
 
 function connection(database) {
@@ -209,7 +210,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly fifty-two migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly fifty-three migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -246,7 +247,6 @@ const reparsedChecks = [
   'account_trade_version_payments.account_trade_version_payments_currency_check',
   'account_trade_version_payments.account_trade_version_payments_rateSource_check',
   'auth_sessions.auth_sessions_state_check',
-  'owner_settings.owner_settings_mainCurrency_check',
 ];
 
 async function verifyRestoredCheckForms() {
@@ -1140,7 +1140,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000', '1792600000000', '1792700000000', '1792800000000', '1792900000000', '1793100000000', '1793200000000', '1793300000000', '1793600000000', '1794000000000', '1794400000000', '1794500000000', '1794900000000', '1795000000000', '1795200000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000', '1792600000000', '1792700000000', '1792800000000', '1792900000000', '1793100000000', '1793200000000', '1793300000000', '1793600000000', '1794000000000', '1794400000000', '1794500000000', '1794900000000', '1795000000000', '1795200000000', '1795400000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],

@@ -54,7 +54,8 @@ test('CURRENCY-UI: main currency EUR persists after logout and values come from 
       dustThresholdUsd: null,
     });
     expect(
-      (await settings.put('/api/owner-settings', { data: { mainCurrency: 'GBP' }, headers })).status(),
+      (await settings.put('/api/owner-settings', { data: { mainCurrency: 'XXX' }, headers })).status(),
+      'A code that is no accounting currency is refused',
     ).toBe(400);
     expect(
       (await settings.put('/api/owner-settings', { data: { mainCurrency: 'EUR' } })).status(),

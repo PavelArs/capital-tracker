@@ -4,6 +4,7 @@ import {
   type AccountingCurrency,
   FxConverter,
   isAccountingCurrency,
+  isTrackedFor,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
@@ -172,7 +173,7 @@ function payment(row: TradeRow): TradePayment | null {
   };
 }
 
-/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
+/** Only `currency` (USD, EUR, RUB or the main currency) may be asked; without it the main one is used. */
 function parseQuery(query: unknown): AccountingCurrency | null {
   if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
@@ -323,7 +324,10 @@ export class OperationListService {
           at: row.blockTime.toISOString(),
         })),
       );
-      const currency = asked ?? (await readMainCurrency(manager, owner));
+      const mainCurrency = await readMainCurrency(manager, owner);
+      if (asked && !isTrackedFor(asked, mainCurrency))
+        throw new BadRequestException('Invalid accounting input');
+      const currency = asked ?? mainCurrency;
       const fx = new FxConverter(await readFxRates(manager), currency);
 
       return projectOperations(

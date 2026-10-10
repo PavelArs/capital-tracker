@@ -154,6 +154,31 @@
   min-width: 0;
 }
 
+.shell-setting__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.shell-select {
+  width: auto;
+  height: 36px;
+  min-height: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--sunken);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+
+.shell-select:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--accent-soft);
+}
+
 .shell-setting__hint {
   margin: 0;
   color: var(--ink-3);

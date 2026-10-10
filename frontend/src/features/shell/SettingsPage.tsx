@@ -1,7 +1,13 @@
 import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { announceClassificationChange } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
-import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
+import {
+  type AccountingCurrency,
+  baseCurrencies,
+  currencyNames,
+  extraCurrencies,
+  isExtraCurrency,
+} from '@api/portfolio-valuation.api';
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -34,8 +40,11 @@ function ratesHint(report: FxRatesReport | null | 'failed'): string {
       ? [`${rateText(rate.currency, rate.rubPerUnit)} (${rateDate.format(new Date(rate.date))})`]
       : [],
   );
+  const waiting = report.rates.flatMap((rate) => (rate.rubPerUnit ? [] : [rate.currency]));
   const text = known.length
-    ? `Bank of Russia: ${known.join(', ')}.`
+    ? `Bank of Russia: ${known.join(', ')}.${
+        waiting.length ? ` Rates for ${waiting.join(', ')} are being collected.` : ''
+      }`
     : 'No Bank of Russia rate is stored yet; EUR and RUB show "No rate".';
   return report.sync?.errorMessage
     ? `${text} Last update failed: ${report.sync.errorMessage}.`
@@ -93,7 +102,7 @@ function MainCurrency() {
         ? 'Could not save the main currency; nothing changed.'
         : state === 'saving'
           ? 'Saving…'
-          : 'Portfolio values, cost and P&L are shown in it; the other two stay one click away.';
+          : 'Portfolio values, cost and P&L are shown in it; USD, EUR and RUB stay one click away.';
   return (
     <div className="shell-setting">
       <div className="shell-setting__text">
@@ -109,25 +118,46 @@ function MainCurrency() {
         </p>
         <p className="shell-setting__hint">{ratesHint(rates)}</p>
       </div>
-      <div
-        className="shell-seg"
-        role="radiogroup"
-        aria-labelledby="settings-currency"
-        aria-describedby="settings-currency-hint"
-      >
-        {accountingCurrencies.map((currency) => (
-          <label key={currency}>
-            <input
-              type="radio"
-              name="main-currency"
-              value={currency}
-              checked={saved === currency}
-              disabled={saved === null}
-              onChange={() => void choose(currency)}
-            />
-            {currency}
-          </label>
-        ))}
+      <div className="shell-setting__controls">
+        <div
+          className="shell-seg"
+          role="radiogroup"
+          aria-labelledby="settings-currency"
+          aria-describedby="settings-currency-hint"
+        >
+          {baseCurrencies.map((currency) => (
+            <label key={currency}>
+              <input
+                type="radio"
+                name="main-currency"
+                value={currency}
+                checked={saved === currency}
+                disabled={saved === null}
+                onChange={() => void choose(currency)}
+              />
+              {currency}
+            </label>
+          ))}
+        </div>
+        <select
+          className="shell-select"
+          aria-label="Other main currency"
+          value={isExtraCurrency(saved) ? saved : ''}
+          disabled={saved === null}
+          onChange={(event) => {
+            const choice = event.target.value;
+            if (isExtraCurrency(choice)) void choose(choice);
+          }}
+        >
+          <option value="" disabled>
+            Other currency…
+          </option>
+          {extraCurrencies.map((currency) => (
+            <option key={currency} value={currency}>
+              {currency} · {currencyNames[currency]}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

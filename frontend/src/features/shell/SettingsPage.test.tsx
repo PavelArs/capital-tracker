@@ -152,6 +152,53 @@ describe('CUR-SWITCH main currency setting', () => {
     expect(screen.getByText(/Portfolio values, cost and P&L are shown in it/)).toBeInTheDocument();
   });
 
+  it('CUR-MORE: picks another Bank of Russia currency as the main one and says its rate is being collected', async () => {
+    vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
+      mainCurrency: 'EUR',
+      dustThresholdUsd: null,
+    });
+    const update = vi.spyOn(ownerSettingsApi, 'update').mockImplementation(async (settings) => ({
+      mainCurrency: 'EUR',
+      dustThresholdUsd: null,
+      ...settings,
+    }));
+    vi.spyOn(fxRatesApi, 'get').mockResolvedValue({
+      ...rates,
+      rates: [...rates.rates, { currency: 'KZT', rubPerUnit: null, date: null }],
+    });
+    const user = userEvent.setup();
+    renderSettings();
+    const group = screen.getByRole('radiogroup', { name: 'Main currency' });
+    const other = screen.getByRole('combobox', { name: 'Other main currency' });
+    await waitFor(() => expect(within(group).getByRole('radio', { name: 'EUR' })).toBeChecked());
+    expect(other).toHaveValue('');
+    expect(
+      within(other)
+        .getAllByRole('option')
+        .map((option) => option.textContent),
+    ).toEqual([
+      'Other currency…',
+      'GBP · British pound',
+      'CHF · Swiss franc',
+      'CNY · Chinese yuan',
+      'JPY · Japanese yen',
+      'KZT · Kazakhstani tenge',
+      'TRY · Turkish lira',
+      'AED · UAE dirham',
+    ]);
+    expect(await screen.findByText(/Rates for KZT are being collected\./)).toBeInTheDocument();
+
+    await user.selectOptions(other, 'KZT');
+    expect(update).toHaveBeenCalledWith({ mainCurrency: 'KZT' });
+    await waitFor(() => expect(other).toHaveValue('KZT'));
+    for (const radio of within(group).getAllByRole('radio')) expect(radio).not.toBeChecked();
+
+    // Back to one of the three: the other currency's choice clears.
+    await user.click(within(group).getByRole('radio', { name: 'RUB' }));
+    expect(update).toHaveBeenLastCalledWith({ mainCurrency: 'RUB' });
+    await waitFor(() => expect(other).toHaveValue(''));
+  });
+
   it('keeps the saved currency when saving fails and says so', async () => {
     vi.spyOn(ownerSettingsApi, 'get').mockResolvedValue({
       mainCurrency: 'RUB',

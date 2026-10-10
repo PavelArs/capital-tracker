@@ -23,8 +23,8 @@ const backfillStart = Date.parse('2025-01-01T00:00:00Z');
 // History is read from a month before 1 January 2009, four years (1460 days) per request.
 const historyStart = Date.parse('2008-12-01T00:00:00Z');
 const REQUEST = 1460 * 86400000;
-const codes = { USD: 'R01235', EUR: 'R01239' };
-const base = { R01235: 80, R01239: 90 };
+const codes = { USD: 'R01235', EUR: 'R01239', GBP: 'R01035' };
+const base = { R01235: 80, R01239: 90, R01035: 100 };
 let stage = 'synthetic configuration';
 
 const moscowDay = (ms) => Math.floor((ms + 3 * HOUR) / DAY) * DAY;
@@ -309,17 +309,71 @@ async function ownerSettings(db) {
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'EUR' }), { mainCurrency: 'EUR', dustThresholdUsd: null });
   assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), { mainCurrency: 'RUB', dustThresholdUsd: null });
   assert.deepEqual(await service.read(owner.id), { mainCurrency: 'RUB', dustThresholdUsd: null });
+  // CUR-MORE: any Bank of Russia currency the application lists may be the main one.
+  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'GBP' }), { mainCurrency: 'GBP', dustThresholdUsd: null });
+  assert.deepEqual(await service.read(owner.id), { mainCurrency: 'GBP', dustThresholdUsd: null });
+  assert.deepEqual(await service.update(owner.id, { mainCurrency: 'RUB' }), { mainCurrency: 'RUB', dustThresholdUsd: null });
   assert.deepEqual(await service.read(other.id), { mainCurrency: 'USD', dustThresholdUsd: null }, 'One owner never changes another');
   const before = await fingerprint(db);
-  for (const input of [{ mainCurrency: 'GBP' }, { mainCurrency: 'rub' }, { mainCurrency: 'EUR', theme: 'dark' }, {}, [], null, 'EUR']) {
+  for (const input of [{ mainCurrency: 'XXX' }, { mainCurrency: 'BTC' }, { mainCurrency: 'gbp' }, { mainCurrency: 'rub' }, { mainCurrency: 'EUR', theme: 'dark' }, {}, [], null, 'EUR']) {
     await rejected(() => service.update(owner.id, input), 400);
   }
   await rejected(() => service.read('not-a-uuid'), 400);
-  await assert.rejects(() => db.query(`INSERT INTO owner_settings ("ownerId","mainCurrency") VALUES ($1,'GBP')`, [other.id]), /check/i);
+  // The table only checks the shape of a code; the application owns the list.
+  for (const code of ['gbp', 'EU', 'U5D', '1AB', ''])
+    await assert.rejects(() => db.query(`INSERT INTO owner_settings ("ownerId","mainCurrency") VALUES ($1,$2)`, [other.id, code]), /check/i);
   await assert.rejects(() => db.query(`INSERT INTO owner_settings ("ownerId","mainCurrency") VALUES ($1,'USD')`, [randomUUID()]), /foreign key/i);
   assert.equal(await fingerprint(db), before, 'Refused input changes nothing');
-  console.log('PASS CUR-SWITCH main currency stored per owner (USD default); invalid currencies and owners refused');
+  console.log('PASS CUR-SWITCH main currency stored per owner (USD default); invalid currencies and owners refused; GBP accepted');
   return { owner: owner.id, other: other.id };
+}
+
+async function moreCurrencies(db) {
+  stage = 'CUR-MORE a main currency beyond USD, EUR and RUB is collected from its own series';
+  await post('cbr', { base });
+  const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('more-currency-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const settingsService = new OwnerSettingsService(db);
+  const only = (rows, currency) => rows.filter((row) => row.currency === currency).map(({ source, ...row }) => row);
+  const codesAsked = (urls) => [...new Set(requested(urls).map(([, code]) => code))];
+
+  // Not chosen: GBP is neither asked for nor listed.
+  const idle = await newRequests(() => collector(db).collect(at()));
+  assert.equal(idle.result.outcome, 'collected');
+  assert.deepEqual(codesAsked(idle.urls), ['R01235', 'R01239'], 'An unused series is never asked for');
+  assert.deepEqual((await collector(db).read(at())).rates.map(({ currency }) => currency), ['USD', 'EUR']);
+  assert.deepEqual(only(await stored(db), 'GBP'), []);
+
+  // Chosen as the main currency: collected from 2009 although the hourly run is not due yet.
+  await settingsService.update(owner.id, { mainCurrency: 'GBP' });
+  const last = (await state(db)).lastAttemptAt;
+  const soon = new Date(last.getTime() + 60000);
+  const tomorrow = moscowDay(soon.getTime()) + DAY;
+  const { result, urls } = await newRequests(() => collector(db).tick(soon));
+  assert.equal(result.outcome, 'collected', 'A newly chosen currency does not wait for the next hour');
+  assert.deepEqual(codesAsked(urls), ['R01235', 'R01239', 'R01035']);
+  assert.deepEqual(requested(urls).filter(([, code]) => code === 'R01035'), ranges('R01035', historyStart, tomorrow),
+    'The whole history of the new series is read in four-year requests, newest first');
+  const gbp = only(await stored(db), 'GBP');
+  assert.deepEqual(gbp, expectedRates('GBP', historyStart, tomorrow));
+  assert.ok(gbp.length > 1000);
+  let sync = await state(db);
+  assert.equal(sync.state, 'synced');
+  assert.equal(sync.errorMessage, null);
+  const view = await collector(db).read(soon);
+  assert.deepEqual(view.rates.map(({ currency }) => currency), ['USD', 'EUR', 'GBP']);
+  const latest = expectedRates('GBP', historyStart, moscowDay(soon.getTime())).at(-1);
+  assert.deepEqual(view.rates.at(-1), { currency: 'GBP', rubPerUnit: latest.rubPerUnit, date: latest.rateDate });
+  // Once stored the series follows the hourly run like the others.
+  assert.deepEqual(await newRequests(() => collector(db).tick(new Date(soon.getTime() + 60000))).then(({ result: again }) => again), { outcome: 'not_due' });
+
+  // Back to a base currency: the series is no longer asked for or listed, and its stored rates stay.
+  await settingsService.update(owner.id, { mainCurrency: 'EUR' });
+  const later = await newRequests(() => collector(db).collect(new Date(soon.getTime() + HOUR)));
+  assert.deepEqual(codesAsked(later.urls), ['R01235', 'R01239']);
+  assert.deepEqual((await collector(db).read(soon)).rates.map(({ currency }) => currency), ['USD', 'EUR']);
+  assert.deepEqual(only(await stored(db), 'GBP'), gbp, 'Stored rates are history and stay');
+  console.log(`PASS CUR-MORE GBP chosen as the main currency is collected once (${gbp.length} rates), listed while chosen and left alone after`);
 }
 
 async function threeCurrencyPortfolio(db, owners) {
@@ -492,7 +546,7 @@ async function main() {
   await post('reset', {});
   for (const name of Object.values(databases)) {
     await createDatabase(name);
-    assert.match(migrate(name), /Migrations applied: 52/);
+    assert.match(migrate(name), /Migrations applied: 53/);
     assert.match(migrate(name), /Migrations applied: 0/);
   }
   const rates = sourceFor(databases.rates);
@@ -504,13 +558,14 @@ async function main() {
   await broken.initialize();
   await accounting.initialize();
   try {
-    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 52);
+    assert.equal((await rates.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 53);
     await migration(rates);
     await disabled(rates);
     const first = await backfill(rates);
     await incremental(rates, first);
     await failures(rates);
     await appendOnly(rates);
+    await moreCurrencies(rates);
     await history(upgrade);
     await unreadable(broken);
     const owners = await ownerSettings(accounting);
