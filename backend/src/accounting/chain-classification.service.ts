@@ -42,6 +42,7 @@ import {
   parseRemoval,
   planOperation,
   type RecordedClassification,
+  type RecordSwapClassification,
   type SwapClassification,
   unfit,
 } from './chain-classification';
@@ -72,7 +73,14 @@ import {
   tradeCoins,
   unpaidFor,
 } from './chain-recorded';
-import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
+import {
+  type PlannedSwap,
+  planRecordSwap,
+  planSwap,
+  SWAP_RECORD_WINDOW_MS,
+  type SwapSide,
+  swapValueUsd,
+} from './chain-swap';
 import {
   coinOf,
   type OwnLeg,
@@ -332,6 +340,8 @@ export class ChainClassificationService {
     const input = parseClassification(raw);
     // CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one.
     if (input.replaces && (input.hidden || input.classification === null))
+      throw new BadRequestException('Invalid accounting input');
+    if (input.replaces && input.classification?.type === 'swap' && 'record' in input.classification)
       throw new BadRequestException('Invalid accounting input');
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
@@ -978,7 +988,9 @@ export class ChainClassificationService {
       throw namedDeposit();
     await this.checkWithdrawalOrder(manager, owner, target, current, value);
     if (value?.type === 'swap')
-      return this.recordSwap(manager, owner, target, input, payload, value);
+      return 'record' in value
+        ? this.recordSwapOfRecord(manager, owner, target, input, payload, value)
+        : this.recordSwap(manager, owner, target, input, payload, value);
     const live = current && (await this.active(manager, owner, current)) ? current : null;
     const comment = input.comment ?? null;
     const accountId = row.accountId;
@@ -1183,6 +1195,104 @@ export class ChainClassificationService {
         paired: { addressId: address, txid },
       });
     return saved;
+  }
+
+  /**
+   * CLS-SWAP-RECORD: answers the leg as a swap against a purchase or sale the owner added by
+   * hand or from CSV in the same account (a coin bought, these coins spent, or the other way
+   * round). The record goes and one swap takes its place, at the transaction's time and with its
+   * exact amount; the record's own value stays the swap's unless the owner gave one. Whatever
+   * the leg answered before is voided first, then the record, then the swap is written, so
+   * the cash a purchase spent is free for the swap to spend.
+   */
+  private async recordSwapOfRecord(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+    payload: string,
+    value: RecordSwapClassification,
+  ): Promise<ClassificationRow> {
+    const { address, txid, row } = target;
+    if (row.accountId === null)
+      throw new UnprocessableEntityException('Choose the account of this wallet first');
+    const chain = side(address, txid, row);
+    const plan = planRecordSwap(chain);
+    const found = (await readOwnRecords(manager, owner, [row.accountId])).find(
+      (record) => record.kind === 'trade' && record.id === value.record.id,
+    );
+    if (!found || found.version !== value.record.version)
+      throw new ConflictException('That record changed; reload and try again');
+    const { answer } = found;
+    if (
+      (answer.type !== 'buy' && answer.type !== 'sell') ||
+      answer.fee !== undefined ||
+      answer.perUsd !== undefined
+    )
+      throw new UnprocessableEntityException('That record cannot be replaced by a swap');
+    if (found.inbound !== plan.paying)
+      throw new UnprocessableEntityException('Choose a record that moved coins the other way');
+    const coin = chainCoin(chain);
+    if (found.coin === coin.symbol?.toUpperCase())
+      throw new UnprocessableEntityException('A swap needs two different coins');
+    if (Math.abs(found.at.getTime() - row.blockTime.getTime()) > SWAP_RECORD_WINDOW_MS)
+      throw new UnprocessableEntityException('That record is too far from this transaction');
+    const current = target.version
+      ? await this.version(manager, address, txid, target.version)
+      : null;
+    if (current && (await this.active(manager, owner, current)))
+      await this.retire(manager, owner, current, [key(address, txid)]);
+    await this.voidRecord(manager, owner, found);
+    const legCoin = await findOrCreateInstrument(manager, owner, coin, true);
+    if (!legCoin) throw new Error('Chain coin was not created');
+    const [outgoingInstrumentId, incomingInstrumentId] = plan.paying
+      ? [legCoin.id, found.instrumentId]
+      : [found.instrumentId, legCoin.id];
+    const [outgoingQuantity, incomingQuantity] = plan.paying
+      ? [plan.quantity, found.quantity]
+      : [found.quantity, plan.quantity];
+    const fee = plan.feeQuantity !== '0';
+    let swapId: string;
+    try {
+      const created = await this.swaps.mutateWithin(manager, owner, plan.accountId, 'create', {
+        ...parseSwapCreate({
+          requestId: randomUUID(),
+          expectedJournalRevision: await this.revision(manager, owner, plan.accountId),
+          assertExecuted: true,
+          outgoingInstrumentId,
+          incomingInstrumentId,
+          occurredAt: plan.occurredAt,
+          orderWithinTimestamp: 0,
+          outgoingQuantity,
+          incomingQuantity,
+          considerationUsd: value.valueUsd ?? found.valueUsd,
+          feeSource: fee ? 'held' : null,
+          feeInstrumentId: fee ? legCoin.id : null,
+          feeQuantity: plan.feeQuantity,
+        }),
+        orderWithinTimestamp: null,
+      });
+      swapId = created.value.swap.swapId;
+    } catch (error) {
+      if (!refused(error)) throw error;
+      throw new UnprocessableEntityException(
+        'The books do not hold the coins of this swap at that time; answer the earlier transactions of this wallet first',
+      );
+    }
+    return this.append(manager, owner, {
+      address,
+      txid,
+      previous: target.version,
+      requestId: input.requestId,
+      payload,
+      status: 'classified',
+      details: input.classification,
+      comment: input.comment ?? null,
+      produced: { ...nothing, accountId: row.accountId, swapAccountId: plan.accountId, swapId },
+      linkedAddressId: null,
+      automatic: null,
+      paired: null,
+    });
   }
 
   /**

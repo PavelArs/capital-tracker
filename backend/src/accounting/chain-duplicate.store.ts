@@ -14,6 +14,8 @@ import { projectTradeVersion, type VersionRow, versionSelect } from './trade-jou
 export interface OwnRecord extends Movement {
   kind: 'trade' | 'reward';
   id: string;
+  /** The coin's instrument in the journal. */
+  instrumentId: string;
   /** The version of the record now. */
   version: number;
   /** What the owner's record says, as the answer to a transaction. */
@@ -79,6 +81,7 @@ export async function readOwnRecords(
     records.push({
       kind: 'trade',
       id: trade.tradeId,
+      instrumentId: trade.instrumentId,
       version: trade.version,
       accountId: row.accountId,
       coin,
@@ -105,6 +108,7 @@ export async function readOwnRecords(
     records.push({
       kind: 'reward',
       id: reward.rewardId,
+      instrumentId: reward.instrumentId,
       version: reward.version,
       accountId: row.accountId,
       coin,

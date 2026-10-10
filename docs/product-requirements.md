@@ -623,6 +623,12 @@ network-specific identity:
   and one tap on "Join as one transfer" answers the withdrawal as a transfer naming the receipt:
   one owned transfer moves what arrived, the cost basis goes with it, only the difference is
   spent as a fee, both transactions read as that one transfer, and the pair is listed once.
+  Nothing is joined without the tap (the same hash with the exact fee is still linked by the
+  app, XFER-AUTO). A pair is offered only when each side is the other's single closest
+  candidate; a second equally good receipt, a different coin, the same account, a receipt
+  before the withdrawal or one a day later, or more arriving than left offers nothing and the
+  owner classifies as before. **Given** the owner answers the withdrawal differently **then**
+  the transfer is voided and the receipt asks for a classification again.
 - CLS-DUPLICATE: **Given** the owner added "Buy 0.4 ETH for 1200 USD" by hand or from CSV in an
   account, and a wallet of that account received 0.4 ETH within 48 hours of it, so the same
   coins count twice **when** no one has answered the transaction **then** Transactions shows
@@ -642,12 +648,18 @@ network-specific identity:
   later entry depends on it) is refused with a reason and nothing is saved. A buy or sale that
   was settled in the account's cash is replaced before the transaction is recorded, so the cash
   it spent is spent once and not entered as new money.
-  Nothing is joined without the tap (the same hash with the exact fee is still linked by the
-  app, XFER-AUTO). A pair is offered only when each side is the other's single closest
-  candidate; a second equally good receipt, a different coin, the same account, a receipt
-  before the withdrawal or one a day later, or more arriving than left offers nothing and the
-  owner classifies as before. **Given** the owner answers the withdrawal differently **then**
-  the transfer is voided and the receipt asks for a classification again.
+- CLS-SWAP-RECORD: **Given** the owner added "Buy 10 ZEC for 1000 USD" by hand or from CSV in an
+  account, and a wallet of that account sent 1000 USDC within a week of it to pay for it **when**
+  the owner answers the send as a Swap and chooses that purchase under "Received in exchange"
+  (for coins that arrived, a sale under "Paid with") **then** the purchase is deleted and one
+  swap takes its place in the same step, at the transaction's time and with its exact amount,
+  with the purchase's value in USD unless the owner enters one: the coins count once, the cash
+  the purchase spent is free for the swap to spend, the audit history shows both, and changing
+  the answer later voids the swap and does not bring the purchase back. Offered are plain
+  purchases and sales of another coin in the same account that no transaction already names;
+  one with a fee, an amount stated in RUB or EUR, a purpose, or in another account, a coin the
+  wallet moved, or more than a week away is refused with a reason, as is a record that changed
+  since it was shown or that later entries depend on. No migration.
 
 **US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
 take back out, and the rewards it pays.
@@ -913,6 +925,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M35 | `pay-purchase-from-wallet` | USDT or USDC sent from a tracked wallet can be answered as the payment of a purchase the owner added by hand in another account (CLS-PAID): the coins move to that account just before the purchase and the purchase is settled against them, so it stops counting as money from outside; first of three slices that link manual records with blockchain transactions, no migration | M13 | — |
 | M36 | `propose-transfer-pairs` | a withdrawal and a receipt of one coin in two accounts that name different transactions are proposed on Transactions and joined as one transfer with one tap (XFER-PROPOSED); the difference is the fee; the other leg is found by the transfer both name, so the link column stays for legs of one hash; second of three slices that link manual records with blockchain transactions, no migration | M13, M35 | — |
 | M37 | `replace-duplicate-records` | a record the owner added by hand or from CSV and a wallet transaction of the same account that are the same movement (same coin and way, amount within 1%, time within 48 hours) are proposed on Transactions; one tap answers the transaction as the record said and deletes the record in one step, so the coins count once and the audit history shows both (CLS-DUPLICATE); last of three slices that link manual records with blockchain transactions, no migration | M35, M36 | — |
+| M38 | `swap-with-record` | an outgoing or incoming blockchain transaction can be answered as a swap against a purchase or sale the owner added by hand or from CSV in the same wallet: the record is replaced by one swap at the transaction's time, with its exact amount and the record's value (CLS-SWAP-RECORD); no migration | M37 | — |
 
 ```mermaid
 flowchart LR

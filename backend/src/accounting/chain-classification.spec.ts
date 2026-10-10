@@ -248,6 +248,28 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'transfer', accountId, partner: { addressId, txid, extra: 1 } });
   });
 
+  it('CLS-SWAP-RECORD: a swap may name a record of the owner instead of a transaction', () => {
+    const id = '00000000-0000-4000-8000-000000000009';
+    const record = { kind: 'trade', id, version: 3 };
+    expect(
+      parse({ classification: { type: 'swap', record, valueUsd: '450' } }).classification,
+    ).toEqual({
+      type: 'swap',
+      record,
+      valueUsd: '450',
+    });
+    const other = { addressId: id, txid: 'a'.repeat(64) };
+    for (const bad of [
+      { type: 'swap', record, with: other, valueUsd: null },
+      { type: 'swap', record: { ...record, kind: 'reward' }, valueUsd: null },
+      { type: 'swap', record: { ...record, version: 0 }, valueUsd: null },
+      { type: 'swap', record: { ...record, version: 1.5 }, valueUsd: null },
+      { type: 'swap', record: { kind: 'trade', id }, valueUsd: null },
+      { type: 'swap', record: { ...record, id: 'x' }, valueUsd: null },
+    ])
+      expect(() => parse({ classification: bad })).toThrow(BadRequestException);
+  });
+
   it('CLS-DUPLICATE: an answer may name the record of the owner it replaces', () => {
     const id = '00000000-0000-4000-8000-000000000020';
     const classification = { type: 'buy', currency: 'USD', amount: '100' };
