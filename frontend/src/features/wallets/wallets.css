@@ -565,3 +565,50 @@ button.wallets-source__open:focus-visible {
 .wallets-stake__note {
   margin: 10px 0 0;
 }
+
+/* TOKEN-SHOW-MORE: the toggle under an address's coins, and how many tokens it hides. */
+.wallets-more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0 22px 12px;
+  font-size: var(--fs-sm);
+}
+
+.wallets-more .portfolio-link {
+  padding: 0;
+}
+
+.transactions-hero .wallets-more {
+  padding: 4px 0 0;
+}
+
+/* TOKEN-HIDE: the other tokens of an address, and the hidden ones, in its drawer. */
+.wallets-tokens {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-tokens li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.wallets-tokens__name {
+  display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 639.98px) {
+  .wallets-more {
+    padding: 0 16px 12px;
+  }
+}

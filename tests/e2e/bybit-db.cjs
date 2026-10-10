@@ -191,7 +191,7 @@ async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   assert.ok(process.env.MFA_KEY_FILE && process.env.MFA_KEY_ID, 'Synthetic server key must be mounted');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 51/);
+  assert.match(migrate(database), /Migrations applied: 52/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -282,6 +282,14 @@ async function main() {
     assert.deepEqual(await held(db, owner, exchange), { BTC: '0.50999', USDT: '399' });
     const heads = await db.query('SELECT txid FROM chain_transaction_classifications WHERE "addressId"=$1', [wallet]);
     assert.deepEqual(heads, [], 'The buy is not recognised while the records hold no USDT');
+    // BYBIT-TRADES: answering the fill "Buy" in USDT is refused while the records hold no USDT; it
+    // would enter the 650 as new money while the unanswered deposits still count.
+    await refusal(() => s.classifications.classify(owner, wallet, 'bybit-trade-2100000000000000001', { requestId: randomUUID(),
+      hidden: false, expectedVersion: 0, classification: { type: 'buy', currency: 'USDT', amount: '649.35', fee: '0.65' } }), 409,
+      /do not hold the USDT/);
+    assert.deepEqual(await db.query('SELECT txid FROM chain_transaction_classifications WHERE "addressId"=$1', [wallet]), [],
+      'The refused answer left nothing behind');
+    assert.deepEqual(await held(db, owner, exchange), { BTC: '0.50999', USDT: '399' });
     console.log(`PASS BYBIT-SYNC two years read in ${passes.length} passes of at most 40 signed requests, in windows Bybit accepts (7 days of trades, under 30 of records), pages by raw cursor; 5 legs; untracked pair and pending deposit left out`);
     console.log('PASS CLS-PROVISIONAL before any answer the Bybit account holds 0.50999 BTC and 399 USDT (100 + 1000 − 650 − 51)');
 
@@ -726,7 +734,7 @@ async function main() {
     await assert.rejects(() => new ReadBybitConverts1794400000000().down(), /recovery plan/);
     await assert.rejects(() => new PriceBybitCoins1794500000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS BYBIT-MIGRATION fresh 51 applies once; no Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 52 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

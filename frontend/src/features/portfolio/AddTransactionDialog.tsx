@@ -25,6 +25,7 @@ import {
   isPurposeKind,
   MAX_COMMENT_LENGTH,
   needsRate,
+  numberProblem,
   occurredAt,
   type PaidIn,
   paidIn,
@@ -776,7 +777,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                       <span className="portfolio-affix__suffix">{symbol}</span>
                     </span>
-                    {fieldError('amount') ||
+                    {fieldError('amount', numberProblem(entry.amount, problemText.amount)) ||
                       (sell && (
                         <Availability
                           id={`${id}-available`}
@@ -971,7 +972,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       />
                       <span className="portfolio-affix__suffix">USD</span>
                     </span>
-                    {fieldError('total', 'Enter what it was worth on that date')}
+                    {fieldError(
+                      'total',
+                      numberProblem(entry.total, 'Enter what it was worth on that date'),
+                    )}
                     <span className="portfolio-field__hint" id={`${id}-value-hint`}>
                       What it was worth on that date. {valueHints[kind]}
                       {marketValue && (
@@ -1112,7 +1116,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             {transfer ? symbol : entry.currency}
                           </span>
                         </span>
-                        {fieldError('fee')}
+                        {fieldError('fee', numberProblem(entry.fee, problemText.fee))}
                       </div>
                     )}
                   </div>
