@@ -222,7 +222,13 @@ beforeEach(() => {
   vi.spyOn(fxRatesApi, 'get').mockResolvedValue(rates('90.12', '100.5'));
   vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
     items: [
-      { id: id(101), name: 'Trust Wallet', currentRevision: 0, createdAt: '2025-01-01T00:00:00Z' },
+      {
+        id: id(101),
+        name: 'Trust Wallet',
+        kind: null,
+        currentRevision: 0,
+        createdAt: '2025-01-01T00:00:00Z',
+      },
     ],
     nextCursor: null,
   });
@@ -478,6 +484,33 @@ describe('PV-UI Portfolio values every asset', () => {
     );
     await user.click(screen.getByRole('link', { name: '← Portfolio' }));
     expect(await screen.findByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
+  });
+
+  it('A3 names how a wallet is held under its name in Holdings, when the owner said', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin, cash]));
+    vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+      items: [
+        {
+          id: id(101),
+          name: 'Trust Wallet',
+          kind: 'software',
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    await user.click(await screen.findByRole('link', { name: 'Bitcoin' }));
+    const holdings = await screen.findByRole('region', { name: 'Holdings' });
+    await waitFor(() =>
+      expect(
+        within(holdings)
+          .getAllByRole('listitem')
+          .map((item) => item.textContent),
+      ).toEqual(['Trust WalletSoftware wallet1 BTC$80,000.00', 'Bybit0.2 BTC$16,000.00']),
+    );
   });
 
   it('explains a missing rate, an unknown asset and a failed load', async () => {

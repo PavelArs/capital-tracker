@@ -51,6 +51,7 @@ beforeEach(() => {
   vi.spyOn(accountingApi, 'getAccount').mockResolvedValue({
     id: '22222222-2222-4222-8222-222222222222',
     name: 'Ручной счет',
+    kind: null,
     currentRevision: 0,
     currentOpening: null,
     createdAt: '2025-01-01T00:00:00.000Z',

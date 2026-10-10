@@ -1,3 +1,4 @@
+import type { WalletKind } from '@api/accounting.api';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
 import { addressAssets, networkOf } from './networks';
@@ -476,4 +477,20 @@ export function accountNamed<T extends { name: string }>(
 ): T | undefined {
   const wanted = name.trim().toLocaleLowerCase('en');
   return accounts.find((account) => account.name.trim().toLocaleLowerCase('en') === wanted);
+}
+
+/** W1: the kinds an owner can choose, in the order the dialogs list them. */
+export const walletKinds: readonly WalletKind[] = ['software', 'hardware', 'exchange'];
+
+export const kindLabels: Record<WalletKind, string> = {
+  software: 'Software wallet',
+  hardware: 'Hardware wallet',
+  exchange: 'Exchange',
+};
+
+/** The kind of each account by its id. */
+export function kindsOf(
+  accounts: readonly { id: string; kind: WalletKind | null }[] | undefined,
+): Record<string, WalletKind | null> {
+  return Object.fromEntries((accounts ?? []).map((account) => [account.id, account.kind]));
 }

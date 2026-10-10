@@ -43,12 +43,13 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
   for (const { tablename } of tables) {
     if (excluded.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
-    // Upgrades add owner_mfa."consecutiveFailures" and auth_sessions.device
+    // Upgrades add owner_mfa."consecutiveFailures", auth_sessions.device and manual_accounts.kind
     // (asserted to be 0 and null separately).
     const row = withoutClassification && tablename === 'accounting_instruments'
       ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'"
       : withoutClassification && tablename === 'owner_mfa' ? "to_jsonb(t) - 'consecutiveFailures'"
-        : withoutClassification && tablename === 'auth_sessions' ? "to_jsonb(t) - 'device'" : 'to_jsonb(t)';
+        : withoutClassification && tablename === 'auth_sessions' ? "to_jsonb(t) - 'device'"
+          : withoutClassification && tablename === 'manual_accounts' ? "to_jsonb(t) - 'kind'" : 'to_jsonb(t)';
     values.push([tablename, await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(values)).digest('hex');
@@ -474,7 +475,7 @@ async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value);
   assert.ok(existsSync('/app/backend/dist/accounting/asset-reward.service.js'), 'Missing new module is a prerequisite failure, not RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 54/);
+  assert.match(migrate(database), /Migrations applied: 55/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

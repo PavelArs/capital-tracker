@@ -1,3 +1,4 @@
+import type { WalletKind } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
@@ -6,6 +7,7 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAskedCurrency } from '../portfolio/currency';
 import { failureMessage, type SyncRun } from './SyncStatus';
+import { kindsOf } from './wallets';
 
 // One sync request reads at most ten provider pages; a long history needs several requests.
 const MAX_SYNC_REQUESTS = 40;
@@ -24,6 +26,10 @@ export function useWallets() {
   );
   const [addresses, setAddresses] = useState<WalletAddress[] | null>(
     () => cachedReads.wallets.last() ?? null,
+  );
+  // W1: how each wallet is held; a failed read leaves the labels out, not the page.
+  const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
+    kindsOf(cachedReads.accounts.last()),
   );
   const [failed, setFailed] = useState(false);
   const [runs, setRuns] = useState<Record<string, SyncRun>>({});
@@ -46,6 +52,11 @@ export function useWallets() {
       const keptAddresses = cachedReads.wallets.last();
       if (!quiet) setPortfolio(kept && keptAddresses ? kept : null);
       try {
+        // The labels never hold the page back: they arrive when they arrive, or not at all.
+        cachedReads.accounts
+          .load()
+          .then((accounts) => request === latest.current && setKinds(kindsOf(accounts)))
+          .catch(() => undefined);
         const [nextPortfolio, nextAddresses] = await Promise.all([
           cachedReads.portfolio.load(asked),
           cachedReads.wallets.load(),
@@ -131,5 +142,5 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  return { portfolio, addresses, failed, load, replace, runs, sync, asked };
+  return { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked };
 }

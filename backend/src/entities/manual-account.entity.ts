@@ -17,6 +17,9 @@ export class ManualAccount {
   @Column({ type: 'varchar', length: 120 })
   name!: string;
 
+  @Column({ type: 'text', nullable: true })
+  kind!: 'software' | 'hardware' | 'exchange' | null;
+
   @Column({ type: 'integer', nullable: true })
   currentRevision!: number | null;
 

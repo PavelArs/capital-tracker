@@ -1,3 +1,4 @@
+import type { WalletKind } from '@api/accounting.api';
 import type { AssetHistory } from '@api/asset-history.api';
 import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList } from '@api/operations.api';
@@ -23,6 +24,7 @@ import {
   statusLabels,
   typeLabel,
 } from '../transactions/operation-format';
+import { kindLabels, kindsOf } from '../wallets/wallets';
 import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
@@ -296,6 +298,7 @@ function AssetDetails({
   asked,
   operations,
   onRetryOperations,
+  kinds,
   now,
 }: {
   asset: AssetValuation;
@@ -303,6 +306,8 @@ function AssetDetails({
   asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetryOperations: () => void;
+  /** W1, A3: how each wallet is held, once known. */
+  kinds: Record<string, WalletKind | null>;
   now: Date;
 }) {
   const unit = asset.symbol ?? '';
@@ -400,20 +405,26 @@ function AssetDetails({
             <p className="portfolio-none">Nothing held right now.</p>
           ) : (
             <ul className="portfolio-holdings">
-              {asset.holdings.map((holding) => (
-                <li key={holding.accountId}>
-                  <Link
-                    className="shell-link"
-                    to={withCurrency(`/wallets/${holding.accountId}`, asked)}
-                  >
-                    {holding.accountName}
-                  </Link>
-                  <span className="portfolio-num">
-                    {quantity(holding.quantity)} {unit}
-                    <span className="portfolio-sub">{amount(holding.value)}</span>
-                  </span>
-                </li>
-              ))}
+              {asset.holdings.map((holding) => {
+                const kind = kinds[holding.accountId];
+                return (
+                  <li key={holding.accountId}>
+                    <span className="portfolio-holding">
+                      <Link
+                        className="shell-link"
+                        to={withCurrency(`/wallets/${holding.accountId}`, asked)}
+                      >
+                        {holding.accountName}
+                      </Link>
+                      {kind && <span className="portfolio-sub">{kindLabels[kind]}</span>}
+                    </span>
+                    <span className="portfolio-num">
+                      {quantity(holding.quantity)} {unit}
+                      <span className="portfolio-sub">{amount(holding.value)}</span>
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
           <p className="shell-note portfolio-note">
@@ -471,6 +482,21 @@ export default function AssetPage() {
     void loadOperations();
   }, [loadOperations]);
 
+  // A3: how each wallet is held; the page does not wait for it, and shows no label without it.
+  const [kinds, setKinds] = useState<Record<string, WalletKind | null>>(() =>
+    kindsOf(cachedReads.accounts.last()),
+  );
+  useEffect(() => {
+    let live = true;
+    cachedReads.accounts
+      .load()
+      .then((accounts) => live && setKinds(kindsOf(accounts)))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
   const asset = portfolio?.assets.find((item) => item.instrumentId === assetId);
   return (
     <div className="shell-page">
@@ -503,6 +529,7 @@ export default function AssetPage() {
           asked={asked}
           operations={operations}
           onRetryOperations={() => void loadOperations()}
+          kinds={kinds}
           now={new Date()}
         />
       ) : (

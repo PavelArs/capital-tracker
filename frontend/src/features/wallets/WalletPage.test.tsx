@@ -1,4 +1,4 @@
-import { accountingApi } from '@api/accounting.api';
+import { accountingApi, type WalletKind } from '@api/accounting.api';
 import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import {
   type AssetValuation,
@@ -199,11 +199,25 @@ function setup({
   account = trust,
   list = [wallet(1)],
   items = [buy, chainReceipt, transferIn, elsewhere],
+  kind = null,
 }: {
   account?: string;
   list?: WalletAddress[];
   items?: Operation[];
+  kind?: WalletKind | null;
 } = {}) {
+  vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
+    items: [
+      {
+        id: trust,
+        name: 'Trust Wallet',
+        kind,
+        currentRevision: 0,
+        createdAt: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+    nextCursor: null,
+  });
   vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio());
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
   vi.spyOn(operationsApi, 'list').mockResolvedValue(operations(items));
@@ -268,16 +282,17 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     const user = userEvent.setup();
     setup();
     await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
-    const rename = vi.spyOn(accountingApi, 'renameAccount').mockResolvedValue({
+    const rename = vi.spyOn(accountingApi, 'updateAccount').mockResolvedValue({
       id: trust,
       name: 'Ledger',
+      kind: null,
       currentRevision: 1,
       createdAt: '2026-10-01T00:00:00.000Z',
     });
     vi.mocked(portfolioValuationApi.get).mockResolvedValue(portfolio('Ledger'));
 
-    await user.click(screen.getByRole('button', { name: 'Rename' }));
-    const dialog = screen.getByRole('dialog', { name: 'Rename wallet' });
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
     const field = within(dialog).getByLabelText('Name');
     expect(field).toHaveValue('Trust Wallet');
     await user.clear(field);
@@ -287,9 +302,75 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
 
     await user.type(field, '  Ledger ');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
-    expect(rename).toHaveBeenCalledWith(trust, 'Ledger');
+    expect(rename).toHaveBeenCalledWith(trust, { name: 'Ledger' });
     expect(await screen.findByRole('heading', { level: 2, name: 'Ledger' })).toBeVisible();
-    expect(screen.queryByRole('dialog', { name: 'Rename wallet' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
+  });
+
+  it('W1 shows how the wallet is held next to its addresses, once the owner said', async () => {
+    setup({ kind: 'hardware' });
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+  });
+
+  it('W1 changes how the wallet is held without touching its name, and can take it back', async () => {
+    const user = userEvent.setup();
+    setup({ kind: 'software' });
+    await screen.findByText('Software wallet · Bitcoin · 1 address');
+    const update = vi.spyOn(accountingApi, 'updateAccount').mockResolvedValue({
+      id: trust,
+      name: 'Trust Wallet',
+      kind: 'hardware',
+      currentRevision: 1,
+      createdAt: '2026-10-01T00:00:00.000Z',
+    });
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: trust,
+          name: 'Trust Wallet',
+          kind: 'hardware',
+          currentRevision: 1,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    let dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
+    const field = within(dialog).getByLabelText('How you hold it');
+    expect(field).toHaveValue('software');
+    // Nothing changed: nothing is sent.
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(update).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
+    await user.selectOptions(within(dialog).getByLabelText('How you hold it'), 'hardware');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(update).toHaveBeenCalledWith(trust, { kind: 'hardware' });
+    expect(await screen.findByText('Hardware wallet · Bitcoin · 1 address')).toBeVisible();
+
+    vi.mocked(accountingApi.listAccounts).mockResolvedValue({
+      items: [
+        {
+          id: trust,
+          name: 'Trust Wallet',
+          kind: null,
+          currentRevision: 2,
+          createdAt: '2026-10-01T00:00:00.000Z',
+        },
+      ],
+      nextCursor: null,
+    });
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
+    await user.selectOptions(within(dialog).getByLabelText('How you hold it'), 'Not chosen');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(update).toHaveBeenLastCalledWith(trust, { kind: null });
+    expect(await screen.findByText('Bitcoin · 1 address')).toBeVisible();
   });
 
   it('keeps the dialog open with the reason when the rename is refused', async () => {
@@ -303,17 +384,17 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
       headers: {},
       config: { headers: new AxiosHeaders() },
     });
-    vi.spyOn(accountingApi, 'renameAccount').mockRejectedValue(refused);
+    vi.spyOn(accountingApi, 'updateAccount').mockRejectedValue(refused);
 
-    await user.click(screen.getByRole('button', { name: 'Rename' }));
-    const dialog = screen.getByRole('dialog', { name: 'Rename wallet' });
+    await user.click(screen.getByRole('button', { name: 'Edit' }));
+    const dialog = screen.getByRole('dialog', { name: 'Edit wallet' });
     await user.type(within(dialog).getByLabelText('Name'), ' 2');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(
       'Use a name of 1 to 120 characters on one line.',
     );
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog', { name: 'Rename wallet' })).toBeNull();
+    expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
   });
 
   it('syncs every address of the wallet', async () => {

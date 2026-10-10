@@ -45,14 +45,15 @@ function migrate(name) {
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
 }
-// AST-2 adds three classification columns to accounting_instruments; upgrade comparisons
-// strip only those keys and check their defaults separately.
+// AST-2 adds three classification columns to accounting_instruments and W1 a nullable kind to
+// manual_accounts; upgrade comparisons strip only those keys and check their defaults separately.
 async function fingerprint(source, excluded = [], withoutClassification = false) {
   const rows = [];
   for (const { tablename } of await source.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")) {
     assert.match(tablename, /^[a-z_]+$/);
     const row = withoutClassification && tablename === 'accounting_instruments'
-      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'"
+      : withoutClassification && tablename === 'manual_accounts' ? "to_jsonb(t) - 'kind'" : 'to_jsonb(t)';
     if (!excluded.includes(tablename)) rows.push([tablename, await source.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
@@ -73,7 +74,7 @@ async function checkedRead(source, statements, action) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase('capital_tracker_prices_fresh_e2e');
-  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 54/);
+  assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 55/);
   assert.match(migrate('capital_tracker_prices_fresh_e2e'), /Migrations applied: 0/);
   await createDatabase(database);
   const statements = [];
@@ -103,7 +104,7 @@ async function main() {
     assert.equal(await fingerprint(source, ['migrations', 'manual_usd_price_versions', 'display_fx_collection', 'display_fx_observations', 'owner_transfer_journals', 'owned_transfers', 'owned_transfer_versions', 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes', 'chain_transaction_classifications', 'chain_transaction_classification_versions', 'password_reset_tokens', 'wallet_stake_accounts', 'wallet_stake_moves', 'wallet_stake_rewards', 'wallet_stake_scans', 'wallet_xpub_addresses', 'wallet_ether_stake_positions', 'wallet_ether_stake_moves', 'wallet_ether_stake_rewards', 'bybit_accounts', 'wallet_tron_accounts', 'wallet_tron_stake_moves', 'chain_tokens', 'wallet_stellar_accounts', 'wallet_zcash_accounts', 'wallet_sync_runs'], true), beforeUpgrade);
     assert.deepEqual(await source.query('SELECT DISTINCT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
-    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 54);
+    assert.equal((await source.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 55);
     assert.equal((await source.query('SELECT count(*)::int AS n FROM manual_usd_price_versions'))[0].n, 0);
     for (const table of ['account_swaps', 'account_swap_versions']) assert.equal((await source.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     assert.match(migrate(database), /Migrations applied: 0/);

@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
+import KindField, { type KindChoice } from './KindField';
 import { networkIcon, networks as tracked } from './networks';
 import { accountNamed, checkAddress, checkApiKey } from './wallets';
 
@@ -96,10 +97,13 @@ export default function AddWalletDialog({
   const [apiSecret, setApiSecret] = useState('');
   const [walletName, setWalletName] = useState(wallet ?? '');
   const [label, setLabel] = useState('');
+  // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
+  const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // One request id per new wallet name, so a retry after a lost answer cannot add it twice.
-  const attempt = useRef<{ name: string; requestId: string } | null>(null);
+  // One request id per new wallet name and kind, so a retry after a lost answer cannot add it
+  // twice and a changed kind is a new request.
+  const attempt = useRef<{ key: string; requestId: string } | null>(null);
   const dialog = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -152,6 +156,7 @@ export default function AddWalletDialog({
   const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
   const match = accountNamed(accounts, chosenName);
+  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
 
   // WAL-NO-SECRETS: a seed phrase or private key pasted as the key is dropped at once.
   const changeKey = (value: string, part: 'key' | 'secret') => {
@@ -200,12 +205,13 @@ export default function AddWalletDialog({
     try {
       let accountId = match?.accountId;
       if (!accountId) {
-        if (attempt.current?.name !== chosenName)
-          attempt.current = { name: chosenName, requestId: newRequestId() };
+        const key = `${chosenName}\n${kind}`;
+        if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
         accountId = (
           await accountingApi.createAccount({
             requestId: attempt.current.requestId,
             name: chosenName,
+            ...(kind ? { kind } : {}),
           })
         ).id;
       }
@@ -468,6 +474,7 @@ export default function AddWalletDialog({
                     ))}
                   </div>
                 )}
+                {!match && <KindField id="wallet-kind" value={kind} onChange={setPickedKind} />}
                 <div className="portfolio-field">
                   <label className="portfolio-field__label" htmlFor="wallet-label">
                     {exchange ? 'Account name' : 'Address name'}{' '}
