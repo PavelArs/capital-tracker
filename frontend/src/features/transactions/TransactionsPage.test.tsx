@@ -1,4 +1,5 @@
 import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
 import {
   type DuplicateProposal,
   type Operation,
@@ -3142,6 +3143,8 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
       .mockResolvedValue(found(many));
     renderPage();
     await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    // Leaving only after the answer came: a page left mid-load would hand it to the next one.
+    await waitFor(() => expect(cachedReads.transferProposals.last()).toBeDefined());
     expect(screen.queryByRole('region', { name: /possible transfer/ })).toBeNull();
     cleanup();
     renderPage();

@@ -1,4 +1,5 @@
 import { operationsApi } from '@api/operations.api';
+import { ownerSettingsApi } from '@api/owner-settings.api';
 import {
   type HistoryPeriod,
   type PortfolioHistory,
@@ -17,6 +18,9 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AttentionProvider } from '../shell/attention-context';
+import { MainCurrencyProvider } from '../shell/main-currency';
+import SyncIndicator from '../shell/SyncIndicator';
+import { useNeedsClassification } from '../transactions/useNeedsClassification';
 import DashboardPage from './DashboardPage';
 
 // The window has its own tests; here it only has to open and report a saved trade.
@@ -679,5 +683,35 @@ describe('show-dashboard-top-assets', () => {
     expect(screen.getByRole('region', { name: 'Net worth' })).toBeInTheDocument();
     await user.click(within(top).getByRole('button', { name: 'Try again' }));
     expect(await within(top).findByRole('link', { name: 'Bitcoin' })).toBeInTheDocument();
+  });
+
+  it('CACHE-ONCE asks for each route once when the dashboard opens', async () => {
+    const settings = vi
+      .spyOn(ownerSettingsApi, 'get')
+      .mockResolvedValue({ mainCurrency: 'USD' } as never);
+    // The shell reads these for the bell, the sidebar and the menu badge, the page for itself.
+    function Badge() {
+      return <span data-testid="to-classify">{useNeedsClassification()}</span>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <MainCurrencyProvider>
+          <AttentionProvider>
+            <Badge />
+            <SyncIndicator />
+            <DashboardPage />
+          </AttentionProvider>
+        </MainCurrencyProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('region', { name: 'Top assets' });
+    await waitFor(() => expect(screen.getByTestId('to-classify')).toHaveTextContent('0'));
+    await waitFor(() => expect(settings).toHaveBeenCalled());
+    expect(sources).toHaveBeenCalledTimes(1);
+    expect(toClassify).toHaveBeenCalledTimes(1);
+    expect(valued).toHaveBeenCalledTimes(1);
+    expect(wallets).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(settings).toHaveBeenCalledTimes(1);
   });
 });

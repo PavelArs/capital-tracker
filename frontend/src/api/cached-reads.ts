@@ -16,20 +16,42 @@ import { forgetReads, generationNow, recall, remember } from './read-cache';
 import { SYNC_CHANGED, type SyncSource, syncStatusApi } from './sync-status.api';
 import { type WalletAddress, walletAddressesApi } from './wallet-addresses.api';
 
+// Reads on their way, by key. Callers asking for the same thing meanwhile share one request.
+const inFlight = new Map<string, { generation: number; promise: Promise<unknown> }>();
+
 /**
  * A read whose last answer is kept for the session: `last` is what to paint on arrival,
  * `load` asks the server and keeps the answer. The page always loads; the cache only decides
- * what it shows meanwhile.
+ * what it shows meanwhile. Loads asked while an identical one is on its way (the shell and a
+ * page both need the sync status, say) wait for that one answer instead of sending another.
  */
 function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => Promise<T>) {
-  const key = (args: A) => `${name}:${JSON.stringify(args)}`;
+  // load() and load(undefined) ask the same question.
+  const key = (args: A) => {
+    const asked = [...args];
+    while (asked.length && asked[asked.length - 1] === undefined) asked.pop();
+    return `${name}:${JSON.stringify(asked)}`;
+  };
   return {
     last: (...args: A): T | undefined => recall<T>(key(args)),
-    load: async (...args: A): Promise<T> => {
+    load: (...args: A): Promise<T> => {
+      const id = key(args);
       const startedIn = generationNow();
-      const value = await read(...args);
-      remember(key(args), value, startedIn);
-      return value;
+      const shared = inFlight.get(id);
+      // An answer to a question asked before a change is not shared with one asked after it.
+      if (shared && shared.generation === startedIn) return shared.promise as Promise<T>;
+      const promise = (async () => {
+        const value = await read(...args);
+        remember(id, value, startedIn);
+        return value;
+      })();
+      const entry = { generation: startedIn, promise };
+      inFlight.set(id, entry);
+      const done = () => {
+        if (inFlight.get(id) === entry) inFlight.delete(id);
+      };
+      promise.then(done, done);
+      return promise;
     },
   };
 }
