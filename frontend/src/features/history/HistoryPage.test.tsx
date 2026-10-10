@@ -4,6 +4,7 @@ import {
   type AuditValue,
   auditHistoryApi,
 } from '@api/audit-history.api';
+import { forgetReads } from '@api/read-cache';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
@@ -268,6 +269,8 @@ describe('audit history screen (BR 14)', () => {
     const first = renderPage();
     expect(screen.getByRole('status', { name: 'Loading the change history' })).toBeInTheDocument();
     first.unmount();
+    // A change by the owner drops the stalled request, so the next visit asks again.
+    forgetReads();
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the change history');
     await user.click(screen.getByRole('button', { name: 'Try again' }));
