@@ -308,11 +308,11 @@ async function main() {
   } finally { await admin.end(); }
   const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend', env: { ...settings, ...process.env, DB_NAME: database }, encoding: 'utf8', timeout: 60000 });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 53/);
+  assert.match(migrated.stdout, /Migrations applied: 54/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 53);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 54);
     const [owner, early, other, paid, unpriced] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('flows-owner@example.invalid','synthetic-not-a-hash',true),
       ('flows-early@example.invalid','synthetic-not-a-hash',true),

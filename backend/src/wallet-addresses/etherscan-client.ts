@@ -1,11 +1,12 @@
 import axios from 'axios';
 import type { StepFailure } from './chain-sync';
 
-// Etherscan's free API (Q6): one key, Ethereum mainnet through the V2 endpoint. Lists are read
-// oldest first between two block numbers, at most PAGE_SIZE items per request.
+// Etherscan's free API (Q6): one key, any chain it lists through the V2 endpoint's `chainid`
+// (mainnet unless told otherwise). Lists are read oldest first between two block numbers, at
+// most PAGE_SIZE items per request.
 export const ETHERSCAN_PAGE_SIZE = 1000;
 const DEFAULT_BASE_URL = 'https://api.etherscan.io/v2/api';
-const MAINNET = '1';
+const MAINNET = 1;
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
 const MAX_UNIX_SECONDS = 253402300799;
 
@@ -210,26 +211,45 @@ export function parseCall(body: unknown): string | null {
   return invalid();
 }
 
+interface ClientOptions {
+  apiKey?: string | null;
+  baseUrl?: string;
+  timeoutMs?: number;
+  pauseMs?: number;
+  chainId?: number;
+}
+
 export class EtherscanClient {
   private readonly apiKey: string | null;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
-  private lastRequestAt = 0;
+  private readonly chainId: number;
+  // The key's rate limit is shared by every chain, so the views of one client share the pause.
+  private readonly pace: { lastRequestAt: number };
 
-  constructor(
-    options: {
-      apiKey?: string | null;
-      baseUrl?: string;
-      timeoutMs?: number;
-      pauseMs?: number;
-    } = {},
-  ) {
+  constructor(options: ClientOptions = {}, pace: { lastRequestAt: number } = { lastRequestAt: 0 }) {
     this.apiKey = options.apiKey?.trim() || null;
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.timeoutMs = options.timeoutMs ?? 8_000;
     // The free plan allows three calls a second (docs/provider-feasibility.md).
     this.pauseMs = options.pauseMs ?? 400;
+    this.chainId = options.chainId ?? MAINNET;
+    this.pace = pace;
+  }
+
+  /** EVM-MULTICHAIN: the same key and pacing, reading another chain of Etherscan's V2 API. */
+  forChain(chainId: number): EtherscanClient {
+    return new EtherscanClient(
+      {
+        apiKey: this.apiKey,
+        baseUrl: this.baseUrl,
+        timeoutMs: this.timeoutMs,
+        pauseMs: this.pauseMs,
+        chainId,
+      },
+      this.pace,
+    );
   }
 
   /** Without a key nothing is requested: the wallet reports what the server misses. */
@@ -291,12 +311,12 @@ export class EtherscanClient {
     parse: (body: unknown) => T,
   ): Promise<T | { ok: false; reason: StepFailure }> {
     if (!this.apiKey) return { ok: false, reason: 'not_configured' };
-    const wait = this.lastRequestAt + this.pauseMs - Date.now();
+    const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let response: { status: number; data: string };
     try {
       response = await axios.get<string>(this.baseUrl, {
-        params: { chainid: MAINNET, ...params, apikey: this.apiKey },
+        params: { chainid: String(this.chainId), ...params, apikey: this.apiKey },
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),
@@ -310,7 +330,7 @@ export class EtherscanClient {
     } catch {
       return { ok: false, reason: 'unavailable' };
     } finally {
-      this.lastRequestAt = Date.now();
+      this.pace.lastRequestAt = Date.now();
     }
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
     if (response.status !== 200) return { ok: false, reason: 'unavailable' };

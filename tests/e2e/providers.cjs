@@ -56,6 +56,9 @@ let cbr = null;
 const etherscanKey = 'acceptance-etherscan-key';
 const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], pools: {}, fault: null, requests: 0 });
 let ethereum = initialEthereum();
+// EVM-MULTICHAIN: the other chains of the same Etherscan V2 key by chain id (8453 Base, 42161 Arbitrum One, 10 OP Mainnet).
+const evmChainIds = new Set(['8453', '42161', '10']);
+let evmChains = new Map();
 // Synthetic Solana mainnet JSON-RPC (track-solana-wallets): the finalized slot and raw
 // getTransaction results exactly as the probe posts them. Signatures and token accounts are
 // derived from those transactions as the chain would: an address's signatures are the
@@ -160,18 +163,20 @@ function cbrDynamic(response, url) {
 function etherscan(response, url) {
   const query = url.searchParams;
   const refuse = (result) => respond(response, 200, { status: '0', message: 'NOTOK', result });
-  if (url.pathname !== '/v2/api' || query.get('chainid') !== '1') return refuse('Missing or unsupported chainid parameter');
+  // EVM-MULTICHAIN: chain 1 is Ethereum; the other chains the probes post (/__control/evm) answer their own lists.
+  const chain = query.get('chainid') === '1' ? ethereum : evmChains.get(query.get('chainid') ?? '');
+  if (url.pathname !== '/v2/api' || !chain) return refuse('Missing or unsupported chainid parameter');
   if (query.get('apikey') !== etherscanKey) return refuse('Invalid API Key (#err2)|synthetic');
-  ethereum.requests++;
-  const fault = ethereum.fault;
-  if (fault && fault.onRequest === ethereum.requests) {
-    ethereum.fault = null;
+  chain.requests++;
+  const fault = chain.fault;
+  if (fault && fault.onRequest === chain.requests) {
+    chain.fault = null;
     if (fault.rateLimited) return refuse('Max calls per sec rate limit reached (5/sec)');
     return respond(response, fault.status, { error: 'Synthetic provider fault' });
   }
   const action = query.get('action');
   if (query.get('module') === 'proxy' && action === 'eth_blockNumber') {
-    return respond(response, 200, { jsonrpc: '2.0', id: 83, result: `0x${ethereum.tip.toString(16)}` });
+    return respond(response, 200, { jsonrpc: '2.0', id: 83, result: `0x${chain.tip.toString(16)}` });
   }
   if (query.get('module') === 'proxy' && action === 'eth_call') {
     const to = query.get('to') ?? '';
@@ -181,7 +186,7 @@ function etherscan(response, url) {
       return respond(response, 200, { jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'invalid argument' } });
     }
     const block = Number.parseInt(tag, 16);
-    const pool = ethereum.pools[to];
+    const pool = (chain.pools ?? {})[to];
     const revert = () => respond(response, 200, { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'execution reverted' } });
     if (!pool) return revert();
     const word = (value) => BigInt(value).toString(16).padStart(64, '0');
@@ -205,7 +210,7 @@ function etherscan(response, url) {
     || !Number.isSafeInteger(offset) || offset < 1 || offset > 10000) {
     return refuse('Error! Invalid parameters');
   }
-  const items = ethereum[list]
+  const items = chain[list]
     .filter((item) => [item.from, item.to].includes(address) && Number(item.blockNumber) >= from && Number(item.blockNumber) <= to)
     .sort((left, right) => Number(left.blockNumber) - Number(right.blockNumber))
     .slice(0, offset);
@@ -775,6 +780,7 @@ const server = http.createServer(async (request, response) => {
       tokenPrices = { status: 200, ethereum: {}, solana: {} };
       cbr = null;
       ethereum = initialEthereum();
+      evmChains = new Map();
       solana = initialSolana();
       bybit = initialBybit();
       tron = initialTron();
@@ -874,6 +880,21 @@ const server = http.createServer(async (request, response) => {
         pageSize: data.pageSize === undefined ? bybit.pageSize : data.pageSize,
         fault: fault ? { onRequest: fault.onRequest, retCode: fault.retCode, status: fault.status } : null,
         requests: 0, badSignatures: bybit.badSignatures };
+      return respond(response, 200, { ok: true });
+    }
+    if (request.method === 'POST' && request.url === '/__control/evm') {
+      const data = await readJson(request);
+      const items = (value) => value === undefined || (Array.isArray(value) && value.length <= 100
+        && value.every((item) => item && typeof item === 'object' && !Array.isArray(item)
+          && Object.entries(item).every(([key, field]) => /^[A-Za-z_]{1,24}$/.test(key)
+            && typeof field === 'string' && field.length <= 100)));
+      if (!evmChainIds.has(String(data.chainid)) || (data.tip !== undefined && (!Number.isSafeInteger(data.tip) || data.tip < 0 || data.tip >= 2 ** 31))
+        || !items(data.normal) || !items(data.internal) || !items(data.tokens)) {
+        return respond(response, 400, { error: 'Invalid synthetic EVM chain fixture' });
+      }
+      const previous = evmChains.get(String(data.chainid)) ?? initialEthereum();
+      evmChains.set(String(data.chainid), { tip: data.tip ?? previous.tip, normal: data.normal ?? previous.normal,
+        internal: data.internal ?? previous.internal, tokens: data.tokens ?? previous.tokens, pools: {}, fault: null, requests: 0 });
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/ethereum') {

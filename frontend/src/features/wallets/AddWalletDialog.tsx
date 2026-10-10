@@ -23,6 +23,19 @@ const networks = [
     detail: 'Address or account public key (xpub, zpub)',
   },
   { key: 'ethereum', symbol: 'ETH', name: 'Ethereum', detail: 'One address. ETH and every token' },
+  { key: 'base', symbol: 'ETH', name: 'Base', detail: 'The same 0x address. ETH and every token' },
+  {
+    key: 'arbitrum',
+    symbol: 'ETH',
+    name: 'Arbitrum One',
+    detail: 'The same 0x address. ETH and every token',
+  },
+  {
+    key: 'optimism',
+    symbol: 'ETH',
+    name: 'OP Mainnet',
+    detail: 'The same 0x address. ETH and every token',
+  },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL and every token' },
   { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
   { key: 'stellar', symbol: 'XLM', name: 'Stellar', detail: 'One address. XLM' },
@@ -396,8 +409,14 @@ export default function AddWalletDialog({
                 {network === 'ethereum' ? (
                   <p className="wallets-note">
                     One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20
-                    token on Ethereum mainnet, named as the chain names them; networks such as
-                    Arbitrum are not read.
+                    token on Ethereum mainnet, named as the chain names them. The same address on
+                    Base, Arbitrum One or OP Mainnet is added as a wallet of its own.
+                  </p>
+                ) : network === 'base' || network === 'arbitrum' || network === 'optimism' ? (
+                  <p className="wallets-note">
+                    Paste the same 0x address you use on Ethereum. The app tracks ETH and every
+                    token this address holds on {tracked[network].name}, named as the chain names
+                    them; its other chains are separate wallets.
                   </p>
                 ) : network === 'solana' ? (
                   <p className="wallets-note">

@@ -1,7 +1,14 @@
 import type { EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
-import { chainAsset, formatUnits, isOtherToken, movesAnyToken, type Network } from './chain-assets';
+import {
+  anyTokenNetworks,
+  chainAsset,
+  formatUnits,
+  isOtherToken,
+  movesAnyToken,
+  type Network,
+} from './chain-assets';
 import { openPoolDeposits } from './pool-tables';
 import { stakeMoves, stakeRewards } from './stake-tables';
 import { type HiddenReason, hiddenReason, isWorthless, tokenKey } from './token-visibility';
@@ -125,8 +132,8 @@ async function tokenHolders(
   const rows: (TokenHolder & { id: string })[] = await manager.query(
     `SELECT a.id, a.network, a."tokenBackfillTo", a."hiddenTokens", a."shownTokens", b.balances
       FROM wallet_addresses a ${balancesLateral('a')}
-      WHERE a."ownerId" = $1 AND a.network IN ('ethereum', 'solana')`,
-    [owner],
+      WHERE a."ownerId" = $1 AND a.network = ANY($2::text[])`,
+    [owner, [...anyTokenNetworks]],
   );
   return withDust(manager, owner, rows);
 }
