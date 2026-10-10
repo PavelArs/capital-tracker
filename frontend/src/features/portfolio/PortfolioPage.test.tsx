@@ -421,7 +421,12 @@ describe('PV-UI Portfolio values every asset', () => {
       )
       .mockResolvedValueOnce(portfolio([bitcoin, cash]))
       .mockRejectedValueOnce(new AxiosError('offline'));
-    vi.spyOn(portfolioAssetsApi, 'create').mockResolvedValue(depositAsset);
+    // A saved asset drops what was kept, as the client does after any write, so a refresh
+    // asks again instead of joining the one still on its way.
+    vi.spyOn(portfolioAssetsApi, 'create').mockImplementation(async () => {
+      forgetReads();
+      return depositAsset;
+    });
     const user = userEvent.setup();
     const add = async () => {
       await user.click(screen.getByRole('button', { name: 'Add asset' }));

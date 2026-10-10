@@ -1,5 +1,5 @@
 import { accountingApi } from '@api/accounting.api';
-import { fxRatesApi } from '@api/fx-rates.api';
+import { cachedReads } from '@api/cached-reads';
 import { manualPricesApi } from '@api/manual-prices.api';
 import {
   type PortfolioAsset,
@@ -234,7 +234,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
     // saved and its balance refused, so check first and save nothing.
     const { currency } = entry;
     if (!asset && entry.amount.trim() && (currency === 'RUB' || currency === 'EUR')) {
-      const rate = await fxRatesApi.get().then(
+      const rate = await cachedReads.rates.load().then(
         (report) => bankRate(currency, report),
         () => undefined, // Unknown: the balance itself reports a missing rate.
       );
