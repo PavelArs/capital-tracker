@@ -603,6 +603,18 @@ network-specific identity:
   proceeds, a swap's sides). A record of another wallet, one a blockchain transaction
   produced, or one that moved another coin is refused. **Given** the record is deleted later
   **then** the transaction counts again and asks for a classification.
+- CLS-PAID: **Given** the owner added "Buy 10 ZEC for 300 USDT" by hand in an account of its
+  own that held no USDT (so the buy entered as money from outside), and a tracked wallet sent
+  300 USDT **when** the owner picks that buy under "Added by you or from CSV" in the Swap
+  choices **then** the 300 USDT move to that account as a transfer dated just before the buy
+  (or at the time of the send, if that was earlier), the buy is settled again and spends them,
+  and the transaction reads as that transfer. Nothing is counted twice and the buy is not new
+  money. Offered are plain buys in another account within a week, for sent USDT or USDC, that
+  the account's cash has not already paid in full; a sale, a buy paid in RUB or EUR, another
+  coin, or a wallet that did not hold the coins at the time of the buy is refused with a
+  reason. **Given** the owner answers the send differently or hides it **then** the buy is
+  settled again without those coins and the transfer is voided. **Given** the buy is deleted
+  **then** the send stays a transfer and the coins stay in the other account.
 
 **US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
 take back out, and the rewards it pays.
@@ -865,6 +877,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M32 | `phone-sheets` | phones (under 640 px): Add transaction, Add asset and Add wallet are full-screen sheets with the title on top and Cancel / Save fixed at the bottom while only the fields scroll; Portfolio lists the assets before the allocation; second of the mobile-layout slices, frontend only, no migration | M31 | — |
 | M33 | `phone-filters-asset` | phones: the header (brand, owner, section strip) stays pinned while the page scrolls; Transactions and History filters sit in two columns with the search on its own row; the asset page drops the repeated name, puts the price under the icon and shows the position figures two to a row; third of the mobile-layout slices, frontend only, no migration | M32 | — |
 | M34 | `phone-charts-types` | phones: the Dashboard and asset charts write three dates instead of five and give the value labels less room, so the dates stop running together and the plot is wider; the Add transaction type row keeps More on the same line instead of wrapping it alone; fourth of the mobile-layout slices, frontend only, no migration | M33 | — |
+| M35 | `pay-purchase-from-wallet` | USDT or USDC sent from a tracked wallet can be answered as the payment of a purchase the owner added by hand in another account (CLS-PAID): the coins move to that account just before the purchase and the purchase is settled against them, so it stops counting as money from outside; first of three slices that link manual records with blockchain transactions, no migration | M13 | — |
 
 ```mermaid
 flowchart LR

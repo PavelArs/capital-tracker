@@ -52,7 +52,16 @@ import {
   poolGainValueUsd,
   storedValueUsd,
 } from './chain-pool';
-import { recordGone, recordMoves, swapCoins, tradeCoins } from './chain-recorded';
+import {
+  carryTime,
+  type PurchaseRecord,
+  purchaseTotal,
+  recordGone,
+  recordMoves,
+  swapCoins,
+  tradeCoins,
+  unpaidFor,
+} from './chain-recorded';
 import { type PlannedSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 import {
   coinOf,
@@ -74,7 +83,7 @@ import { ensureChainCoins } from './portfolio-valuation.service';
 import { findOrCreateInstrument, TradeService } from './trade.service';
 import { parseTradeCreate, parseTradeVoid } from './trade-input';
 import { readJournal } from './trade-journal.store';
-import { cashAsset } from './trade-settlement';
+import { cashAsset, type SettlementCurrency } from './trade-settlement';
 
 interface LegRow {
   network: ChainLeg['network'];
@@ -124,6 +133,13 @@ interface Leg {
 interface Partner extends Leg {
   current: ClassificationRow | null;
   live: ClassificationRow | null;
+}
+/** CLS-PAID: the purchase in another account that the coins of a transaction paid for. */
+interface Pays {
+  accountId: string;
+  tradeId: string;
+  /** When the purchase was made. */
+  at: Date;
 }
 interface Produced {
   accountId: string | null;
@@ -683,8 +699,10 @@ export class ChainClassificationService {
     const accountId = row.accountId;
     if (value && accountId === null)
       throw new UnprocessableEntityException('Choose the account of this wallet first');
-    if (value?.type === 'recorded' && accountId)
-      await this.checkRecord(manager, owner, row, accountId, value);
+    const pays =
+      value?.type === 'recorded' && accountId
+        ? await this.checkRecord(manager, owner, row, accountId, value)
+        : null;
     const transfer = value?.type === 'transfer' ? value : null;
     const partner = transfer
       ? await this.partner(manager, owner, target, transfer.accountId)
@@ -702,7 +720,9 @@ export class ChainClassificationService {
             transfer.accountId,
             partner && own(partner.address, partner.row),
           )
-        : null;
+        : pays && accountId
+          ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
+          : null;
     const linked = partner?.address ?? null;
     const keep =
       live !== null &&
@@ -732,7 +752,9 @@ export class ChainClassificationService {
       if (planned && accountId)
         produced = await this.produce(manager, owner, row, accountId, planned);
       if (movement && accountId)
-        produced = await this.move(manager, owner, row, accountId, movement);
+        produced = await (pays
+          ? this.carryToRecord(manager, owner, row, accountId, movement, pays)
+          : this.move(manager, owner, row, accountId, movement));
       await (spends ? retirePartner() : retireOwn());
     }
     const saved = await this.append(manager, owner, {
@@ -1105,6 +1127,8 @@ export class ChainClassificationService {
   /**
    * CLS-RECORDED: the record must be a trade or swap the owner added by hand or from CSV, still
    * counting, in this wallet's account, that moved this coin the way the transaction did.
+   * CLS-PAID: USDT or USDC sent from the wallet may instead pay for a purchase in another
+   * account that has not been paid from that account's cash; the purchase is returned then.
    */
   private async checkRecord(
     manager: EntityManager,
@@ -1112,7 +1136,7 @@ export class ChainClassificationService {
     row: LegRow,
     accountId: string,
     value: RecordedClassification,
-  ) {
+  ): Promise<Pays | null> {
     const { id, kind } = value.operation;
     const [found]: {
       accountId: string;
@@ -1120,10 +1144,17 @@ export class ChainClassificationService {
       asset: string | null;
       cash: string | null;
       incoming: string | null;
+      occurredAt: Date | null;
+      cashSpent: string | null;
+      gross: string | null;
+      fee: string | null;
+      other: boolean | null;
     }[] =
       kind === 'trade'
         ? await manager.query(
-            `SELECT t."accountId", v.side, i.symbol AS asset, si.symbol AS cash, NULL AS incoming
+            `SELECT t."accountId", v.side, i.symbol AS asset, si.symbol AS cash, NULL AS incoming,
+                v."occurredAt", s.quantity AS "cashSpent", v."grossUsd" AS gross, v."feeUsd" AS fee,
+                (p."tradeId" IS NOT NULL OR u.purpose IS NOT NULL) AS other
               FROM account_trades t
               JOIN account_trade_versions v ON v."ownerId"=t."ownerId"
                 AND v."accountId"=t."accountId" AND v."tradeId"=t.id
@@ -1134,6 +1165,12 @@ export class ChainClassificationService {
                 AND s.version=v.version
               LEFT JOIN accounting_instruments si ON si."ownerId"=s."ownerId"
                 AND si.id=s."instrumentId"
+              LEFT JOIN account_trade_version_payments p ON p."ownerId"=v."ownerId"
+                AND p."accountId"=v."accountId" AND p."tradeId"=v."tradeId"
+                AND p.version=v.version
+              LEFT JOIN account_trade_version_purposes u ON u."ownerId"=v."ownerId"
+                AND u."accountId"=v."accountId" AND u."tradeId"=v."tradeId"
+                AND u.version=v.version
               WHERE t."ownerId"=$1 AND t.id=$2 AND v.kind<>'void'
                 AND NOT EXISTS (SELECT 1 FROM chain_transaction_classification_versions x
                   WHERE x."ownerId"=t."ownerId" AND x."tradeId"=t.id)`,
@@ -1141,7 +1178,8 @@ export class ChainClassificationService {
           )
         : await manager.query(
             `SELECT s."accountId", NULL AS side, o.symbol AS asset, NULL AS cash,
-                n.symbol AS incoming
+                n.symbol AS incoming, NULL AS "occurredAt", NULL AS "cashSpent", NULL AS gross,
+                NULL AS fee, NULL AS other
               FROM account_swaps s
               JOIN account_swap_versions v ON v."ownerId"=s."ownerId"
                 AND v."accountId"=s."accountId" AND v."swapId"=s.id
@@ -1156,14 +1194,90 @@ export class ChainClassificationService {
             [owner, id],
           );
     if (!found) throw new UnprocessableEntityException('Choose an operation you added or imported');
-    if (found.accountId !== accountId)
-      throw new UnprocessableEntityException('Choose an operation of this wallet');
+    if (found.accountId !== accountId) {
+      // CLS-PAID: only coins sent out can pay for a purchase made in another account.
+      if (kind !== 'trade' || inbound(row) || found.side !== 'buy' || !found.occurredAt)
+        throw new UnprocessableEntityException('Choose an operation of this wallet');
+      const purchase: PurchaseRecord = {
+        side: found.side,
+        asset: found.asset,
+        cash: found.cash,
+        cashSpent: canonicalDecimalToAtoms(found.cashSpent ?? '0'),
+        total: purchaseTotal(found.gross ?? '0', found.fee ?? '0'),
+        other: found.other === true,
+      };
+      unpaidFor(purchase, chainCoin(row).symbol);
+      return { accountId: found.accountId, tradeId: id, at: found.occurredAt };
+    }
     const coins =
       kind === 'trade'
         ? tradeCoins(found.side ?? 'buy', found.asset, found.cash)
         : swapCoins(found.asset, found.incoming);
     if (!recordMoves(coins, chainCoin(row).symbol, inbound(row)))
       throw new UnprocessableEntityException('That operation did not move this coin this way');
+    return null;
+  }
+
+  /**
+   * CLS-PAID: the coins of the transaction reach the purchase's account just before the
+   * purchase, and the purchase is settled anew, so it spends them rather than counting as money
+   * from outside.
+   */
+  private async carryToRecord(
+    manager: EntityManager,
+    owner: string,
+    row: LegRow,
+    accountId: string,
+    plan: PlannedTransfer,
+    pays: Pays,
+  ): Promise<Produced> {
+    let produced: Produced;
+    try {
+      produced = await this.move(
+        manager,
+        owner,
+        row,
+        accountId,
+        plan,
+        carryTime(row.blockTime, pays.at),
+      );
+    } catch (error) {
+      if (!refused(error)) throw error;
+      throw new UnprocessableEntityException(
+        'The wallet did not hold these coins yet when that purchase was made; check the purchase date',
+      );
+    }
+    await this.trades.settleWithin(
+      manager,
+      owner,
+      pays.accountId,
+      pays.tradeId,
+      chainCoin(row).symbol as SettlementCurrency,
+    );
+    return produced;
+  }
+
+  /**
+   * CLS-PAID: before the coins that paid for a purchase go back, the purchase is settled again
+   * without them, so it does not spend what is no longer there.
+   */
+  private async releaseRecord(manager: EntityManager, owner: string, row: ClassificationRow) {
+    const named = row.details?.type === 'recorded' ? row.details.operation : null;
+    if (named?.kind !== 'trade' || !row.transferId) return;
+    const [trade]: { accountId: string }[] = await manager.query(
+      `SELECT "accountId" FROM account_trades WHERE "ownerId"=$1 AND id=$2`,
+      [owner, named.id],
+    );
+    if (!trade) return;
+    const leg = await this.readLeg(manager, owner, row.addressId, row.txid);
+    await this.trades.settleWithin(
+      manager,
+      owner,
+      trade.accountId,
+      named.id,
+      chainCoin(leg).symbol as SettlementCurrency,
+      row.transferId,
+    );
   }
 
   /**
@@ -1344,6 +1458,7 @@ export class ChainClassificationService {
     row: LegRow,
     accountId: string,
     plan: PlannedTransfer,
+    at: Date = row.blockTime,
   ): Promise<Produced> {
     const coin = await findOrCreateInstrument(manager, owner, chainCoin(row), true);
     if (!coin) throw new Error('Chain coin was not created');
@@ -1359,7 +1474,7 @@ export class ChainClassificationService {
         toAccountId: plan.toAccountId,
         assertInternal: true,
         instrumentId: coin.id,
-        occurredAt: row.blockTime.toISOString(),
+        occurredAt: at.toISOString(),
         quantity: plan.quantity,
         feeInstrumentId: plan.feeQuantity === '0' ? null : coin.id,
         feeQuantity: plan.feeQuantity,
@@ -1404,6 +1519,8 @@ export class ChainClassificationService {
       return;
     }
     if (row.transferId) {
+      // CLS-PAID: a purchase that spent the coins is settled again without them first.
+      if (row.type === 'recorded') await this.releaseRecord(manager, owner, row);
       await this.voidTransfer(manager, owner, row.transferId);
       // A Bybit leg and a wallet leg of one hash can differ in identity (M22).
       const other =

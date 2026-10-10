@@ -1741,6 +1741,130 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       });
     });
 
+    it('CLS-PAID-UI: USDT sent can pay for a purchase made by hand in another account', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      // 300 USDT, bought ZEC in an account of its own that held no USDT then.
+      const zcash = { id: id(13), name: 'Zcash' };
+      const zec = { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' };
+      const owed = operation({
+        id: `trade:${id(64)}`,
+        occurredAt: '2026-09-01T09:00:00.000Z',
+        quantity: '10',
+        asset: zec,
+        account: zcash,
+        valueUsd: '300',
+        feeUsd: '0',
+        settlement: { asset: usdt, quantity: '0' },
+      });
+      // Not choices: paid from that account's cash in full, paid in RUB, and another coin's cash.
+      const settled = operation({
+        ...owed,
+        id: `trade:${id(65)}`,
+        settlement: { asset: usdt, quantity: '300' },
+      });
+      const inRub = operation({
+        ...owed,
+        id: `trade:${id(66)}`,
+        paid: {
+          currency: 'RUB',
+          gross: '24000',
+          fee: '0',
+          rateDate: '2026-09-01',
+          perUsd: '80',
+          rateSource: 'bank-of-russia',
+        },
+      });
+      const inUsdc = operation({
+        ...owed,
+        id: `trade:${id(67)}`,
+        settlement: {
+          asset: { instrumentId: id(4), symbol: 'USDC', name: 'USD Coin' },
+          quantity: '120',
+        },
+      });
+      const { user, drawer } = await openRow(
+        [paid, owed, settled, inRub, inUsdc],
+        0,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      const group = within(select).getByRole('group', { name: 'Added by you or from CSV' });
+      expect(
+        within(group)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, 09:00 · Buy 10 ZEC · Added by you · Zcash']);
+      await user.selectOptions(select, `trade:${id(64)}`);
+      expect(
+        within(drawer).getByText(
+          'The coins move to Zcash just before that purchase and pay for it there. Nothing is counted twice.',
+        ),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: { type: 'recorded', operation: { kind: 'trade', id: id(64) } },
+      });
+    });
+
+    it('CLS-PAID-UI: coins received never pay for a purchase in another account', async () => {
+      const owed = operation({
+        ...purchase,
+        id: `trade:${id(68)}`,
+        account: cold,
+        settlement: { asset: usdt, quantity: '0' },
+      });
+      const { user, drawer } = await openRow(
+        [owed, { ...paid, direction: 'in', chain: { ...paid.chain!, direction: 'in' } }],
+        1,
+        'Incoming transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      expect(within(drawer).queryByRole('group', { name: 'Added by you or from CSV' })).toBeNull();
+    });
+
+    it('CLS-PAID-UI: a payment carried to another account reads as a transfer naming the purchase', async () => {
+      const zcash = { id: id(13), name: 'Zcash' };
+      const owed = operation({
+        id: `trade:${id(64)}`,
+        occurredAt: '2026-09-01T09:00:00.000Z',
+        quantity: '10',
+        asset: { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' },
+        account: zcash,
+        valueUsd: '300',
+        settlement: { asset: usdt, quantity: '300' },
+      });
+      const carried = operation({
+        ...paid,
+        type: 'transfer',
+        direction: 'internal',
+        status: 'recorded',
+        counterAccount: zcash,
+        classification: {
+          version: 1,
+          hidden: false,
+          value: { type: 'recorded', operation: { kind: 'trade', id: id(64) } },
+          comment: null,
+          automatic: false,
+        },
+      });
+      const { user, drawer } = await openRow([carried, owed], 0, 'Transfer · USDT');
+      expect(
+        within(drawer).getByText(/These coins moved to Zcash and paid for the purchase/),
+      ).toBeInTheDocument();
+      expect(within(drawer).queryByText(/Already recorded by hand or from CSV/)).toBeNull();
+      const facts = within(drawer).getByRole('region', { name: 'Details' });
+      expect(
+        within(facts).getByText('Recorded as', { exact: true }).nextElementSibling?.textContent,
+      ).toBe('Sep 1, 2026, 09:00 · Buy 10 ZEC for 300 USDT · Added by you · Zcash');
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(`trade:${id(64)}`);
+    });
+
     it('a receipt can be the coins of a purchase imported from CSV', async () => {
       const { user, drawer } = await openRow(
         [imported, bought, purchase],

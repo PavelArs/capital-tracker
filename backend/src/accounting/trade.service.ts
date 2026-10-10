@@ -273,6 +273,49 @@ export class TradeService {
       parseTradeCorrection(input),
     );
   }
+  /**
+   * CLS-PAID: the trade saved again as it is, its cash side settled anew in `currency` against
+   * what the account holds then, apart from the coins of the transfer `apart` if one is named.
+   * A voided or changed trade that cannot be settled in coins is left alone. The caller owns the
+   * transaction and rethrows history errors.
+   */
+  async settleWithin(
+    manager: EntityManager,
+    owner: string,
+    accountId: string,
+    tradeId: string,
+    currency: SettlementCurrency,
+    apart?: string,
+  ): Promise<void> {
+    const head = (await readTradeHeads(manager, owner, accountId)).find(
+      (item) => item.tradeId === tradeId,
+    );
+    const journal = await readJournal(manager, owner, accountId);
+    if (!head || !journal || head.kind === 'void' || head.side !== 'buy') return;
+    if (head.paid || head.purpose) return;
+    await this.mutateWithin(
+      manager,
+      owner,
+      accountId,
+      'correct',
+      tradeId,
+      parseTradeCorrection({
+        requestId: randomUUID(),
+        expectedJournalRevision: journal.currentRevision,
+        instrumentId: head.instrumentId,
+        side: head.side,
+        occurredAt: head.occurredAt,
+        orderWithinTimestamp: head.orderWithinTimestamp,
+        quantity: head.quantity,
+        grossUsd: head.grossUsd,
+        feeUsd: head.feeUsd,
+        ...(head.comment === undefined ? {} : { comment: head.comment }),
+        settlementCurrency: currency,
+      }),
+      apart,
+    );
+  }
+
   async void(ownerId: string, accountId: string, tradeId: string, input: unknown) {
     return this.mutate(
       parseUuid(ownerId),
@@ -301,7 +344,8 @@ export class TradeService {
   /**
    * One create, correction or void inside the caller's transaction, under the owner's
    * accounting lock: a chain classification (M12) writes its own row in the same transaction.
-   * The caller rethrows history errors.
+   * The caller rethrows history errors. `apart` names an owned transfer whose coins the cash
+   * side must not take (CLS-PAID).
    */
   async mutateWithin(
     manager: EntityManager,
@@ -310,6 +354,7 @@ export class TradeService {
     kind: Kind,
     target: string | undefined,
     value: TradeCreateInput | TradeVoidInput,
+    apart?: string,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     const input = kind === 'void' ? undefined : (value as TradeCreateInput);
     const fields = input && requested(input);
@@ -377,12 +422,13 @@ export class TradeService {
       throw conflict();
     if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
     if (input?.settlementCurrency) {
+      const others = target === undefined ? ledger : withoutTrade(ledger, id, target);
       const settlement = await this.settle(
         manager,
         owner,
         input.settlementCurrency,
         nextExecution,
-        target === undefined ? ledger : withoutTrade(ledger, id, target),
+        apart === undefined ? others : withoutOperation(others, `transfer:${apart}`),
         id,
       );
       if (settlement) nextExecution = { ...nextExecution, settlement };
