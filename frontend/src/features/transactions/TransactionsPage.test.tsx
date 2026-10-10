@@ -1234,6 +1234,7 @@ describe('link-own-transfers (M13)', () => {
     vi.spyOn(accountingApi, 'listAccounts').mockResolvedValue({
       items: [cold, bybit].map((account) => ({
         ...account,
+        kind: null,
         currentRevision: 0,
         createdAt: '2025-01-01T00:00:00.000Z',
       })),

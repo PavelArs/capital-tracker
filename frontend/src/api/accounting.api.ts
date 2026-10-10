@@ -1,8 +1,13 @@
 import apiClient from './client';
 
+/** W1: how the owner holds a wallet's coins. */
+export type WalletKind = 'software' | 'hardware' | 'exchange';
+
 export interface AccountSummary {
   id: string;
   name: string;
+  /** Null until the owner says. */
+  kind: WalletKind | null;
   currentRevision: number;
   createdAt: string;
 }
@@ -23,6 +28,7 @@ export interface UuidPage<T> {
 export interface AccountInput {
   requestId: string;
   name: string;
+  kind?: WalletKind;
 }
 
 export const accountingApi = {
@@ -38,11 +44,14 @@ export const accountingApi = {
     return response.data;
   },
 
-  /** WAL-RENAME: only the name changes; what is recorded in the account stays. */
-  renameAccount: async (id: string, name: string): Promise<AccountSummary> => {
+  /** WAL-RENAME, W1: the name and the kind change; what is recorded in the account stays. */
+  updateAccount: async (
+    id: string,
+    changes: { name?: string; kind?: WalletKind | null },
+  ): Promise<AccountSummary> => {
     const response = await apiClient.patch<AccountSummary>(
       `/accounting/accounts/${encodeURIComponent(id)}`,
-      { name },
+      changes,
     );
     return response.data;
   },

@@ -1,3 +1,4 @@
+import type { WalletKind } from '@api/accounting.api';
 import type {
   AccountingCurrency,
   AssetValuation,
@@ -19,7 +20,14 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncBadge, syncProblem } from './SyncStatus';
-import { chainBalances, keyAddresses, type Reconciliation, shortAddress, sum } from './wallets';
+import {
+  chainBalances,
+  keyAddresses,
+  kindLabels,
+  type Reconciliation,
+  shortAddress,
+  sum,
+} from './wallets';
 
 // Rows shared by the Wallets list and a wallet's own page (prototype "wallets", srcRow).
 
@@ -711,7 +719,13 @@ function place(address: WalletAddress): string {
   return networkOf(address).exchange ? `UID ${address.address}` : shortAddress(address.address);
 }
 
-export function subtitle(addresses: WalletAddress[]): string {
+/** W1: "Hardware wallet · Bitcoin · 2 addresses"; the kind is left out until the owner says. */
+export function subtitle(addresses: WalletAddress[], kind?: WalletKind | null): string {
+  const what = addressesSubtitle(addresses);
+  return kind ? `${kindLabels[kind]} · ${what}` : what;
+}
+
+function addressesSubtitle(addresses: WalletAddress[]): string {
   if (addresses.length === 0) return 'Tracked by hand';
   const names = (Object.keys(networks) as WalletAddress['network'][])
     .filter((network) => addresses.some((address) => address.network === network))

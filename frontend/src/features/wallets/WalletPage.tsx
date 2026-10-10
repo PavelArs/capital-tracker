@@ -14,7 +14,8 @@ import { day, signedAmount, statusLabels, typeLabel } from '../transactions/oper
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
-import RenameWalletDialog from './RenameWalletDialog';
+import EditWalletDialog from './EditWalletDialog';
+
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
 import {
@@ -165,9 +166,9 @@ function WalletTransactions({
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
-  const { portfolio, addresses, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked } = useWallets();
   const [adding, setAdding] = useState(false);
-  const [renaming, setRenaming] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
 
@@ -192,6 +193,7 @@ export default function WalletPage() {
   }, [loadOperations]);
 
   const account = portfolio?.accounts.find((item) => item.accountId === accountId);
+  const kind = kinds[accountId] ?? null;
   const accounts: WalletAccount[] = (portfolio?.accounts ?? []).map(({ accountId: id, name }) => ({
     accountId: id,
     name,
@@ -247,19 +249,19 @@ export default function WalletPage() {
         <>
           <div className="portfolio-head">
             <span className="wallets-card__icon wallets-card__icon--lg" aria-hidden="true">
-              <Icon name="wallets" />
+              <Icon name={kind ?? 'wallets'} />
             </span>
             <div className="portfolio-head__title">
               <h2>{account.name}</h2>
-              <span className="portfolio-sub">{subtitle(own)}</span>
+              <span className="portfolio-sub">{subtitle(own, kind)}</span>
             </div>
             <div className="wallets-actions">
               <button
                 type="button"
                 className="shell-button shell-button--ghost"
-                onClick={() => setRenaming(true)}
+                onClick={() => setEditing(true)}
               >
-                Rename
+                Edit
               </button>
               {own.length > 0 && (
                 <button
@@ -402,13 +404,14 @@ export default function WalletPage() {
           }}
         />
       )}
-      {renaming && account && (
-        <RenameWalletDialog
+      {editing && account && (
+        <EditWalletDialog
           accountId={account.accountId}
           name={account.name}
-          onClose={() => setRenaming(false)}
-          onRenamed={() => {
-            setRenaming(false);
+          kind={kind}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
             refresh();
           }}
         />

@@ -36,8 +36,8 @@ function services(db) {
     prices: make('manual-price.service', 'ManualPriceService'),
     portfolio: make('manual-portfolio-valuation.service', 'ManualPortfolioValuationService') };
 }
-// AST-2 adds three classification columns to accounting_instruments; upgrade comparisons
-// strip only those keys and check their defaults separately.
+// AST-2 adds three classification columns to accounting_instruments and W1 a nullable kind to
+// manual_accounts; upgrade comparisons strip only those keys and check their defaults separately.
 async function fingerprint(db, excluded = [], withoutClassification = false) {
   const tables = await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename");
   const rows = [];
@@ -45,7 +45,8 @@ async function fingerprint(db, excluded = [], withoutClassification = false) {
     if (excluded.includes(tablename)) continue;
     assert.match(tablename, /^[a-z_]+$/);
     const row = withoutClassification && tablename === 'accounting_instruments'
-      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'" : 'to_jsonb(t)';
+      ? "to_jsonb(t) - 'assetType' - 'valuationCurrency' - 'priceSource'"
+      : withoutClassification && tablename === 'manual_accounts' ? "to_jsonb(t) - 'kind'" : 'to_jsonb(t)';
     rows.push([tablename, await db.query(`SELECT (${row})::text AS row FROM "${tablename}" t ORDER BY row`)]);
   }
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
@@ -142,8 +143,8 @@ async function populatedUpgrade() {
     await prior.query(`INSERT INTO assets("userId",name,category,amount,"currencyId",date)
       SELECT $1,'Preserved unrelated fixture','savings',123.45,id,'2025-01-01' FROM currencies WHERE code='USD'`, [owner]);
     const old = await fingerprint(prior, ['migrations'], true);
-    assert.match(migrate(previousDatabase), /Migrations applied: 36/);
-    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 55);
+    assert.match(migrate(previousDatabase), /Migrations applied: 37/);
+    assert.equal((await prior.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 56);
     assert.equal(await fingerprint(prior, ['migrations', ...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions', 'wallet_addresses', 'wallet_address_transactions', 'price_observations', 'sync_sources', 'fx_rates', 'owner_settings', 'portfolio_snapshots', 'portfolio_snapshot_state', 'account_trade_version_payments', 'account_trade_version_comments', 'account_trade_version_settlements', 'account_trade_version_purposes', 'chain_transaction_classifications', 'chain_transaction_classification_versions', 'password_reset_tokens', 'wallet_stake_accounts', 'wallet_stake_moves', 'wallet_stake_rewards', 'wallet_stake_scans', 'wallet_xpub_addresses', 'wallet_ether_stake_positions', 'wallet_ether_stake_moves', 'wallet_ether_stake_rewards', 'bybit_accounts', 'wallet_tron_accounts', 'wallet_tron_stake_moves', 'chain_tokens', 'wallet_stellar_accounts', 'wallet_zcash_accounts', 'wallet_sync_runs'], true), old);
     assert.deepEqual(await prior.query('SELECT "assetType","valuationCurrency","priceSource" FROM accounting_instruments'),
       [{ assetType: 'manual', valuationCurrency: 'USD', priceSource: 'manual' }]);
@@ -631,13 +632,13 @@ async function main() {
   assert.ok(existsSync('/app/backend/dist/accounting/owned-transfer.service.js'),
     'Missing module is prerequisite failure, not behavioral RED');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 55/);
+  assert.match(migrate(database), /Migrations applied: 56/);
   assert.match(migrate(database), /Migrations applied: 0/);
   if (!process.argv.includes('--limits-only')) await populatedUpgrade();
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 55);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 56);
     for (const table of [...transferTables, 'account_rewards', 'account_reward_versions', 'account_swaps', 'account_swap_versions']) assert.equal((await db.query(`SELECT count(*)::int AS n FROM ${table}`))[0].n, 0);
     const [owner, other, activeCap, versionCap] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('owned-transfer-owner@example.invalid','synthetic-not-a-hash',true),

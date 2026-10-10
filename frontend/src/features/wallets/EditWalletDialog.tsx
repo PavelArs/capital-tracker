@@ -1,6 +1,7 @@
-import { accountingApi } from '@api/accounting.api';
+import { accountingApi, type WalletKind } from '@api/accounting.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { kindLabels, walletKinds } from './wallets';
 
 const MAX_NAME = 120;
 
@@ -10,19 +11,24 @@ function failure(error: unknown): string {
   if (status === 400) return 'Use a name of 1 to 120 characters on one line.';
   if (status === 404) return 'This wallet no longer exists. Reload the page.';
   if (status === 401) return 'Your session has ended. Sign in again.';
-  return 'Could not rename the wallet. Try again.';
+  return 'Could not save the wallet. Try again.';
 }
 
 interface Props {
   accountId: string;
   name: string;
+  kind: WalletKind | null;
   onClose: () => void;
-  onRenamed: (name: string) => void;
+  onSaved: () => void;
 }
 
-// WAL-RENAME, prototype "Rename wallet": only the name changes; transactions stay as they are.
-export default function RenameWalletDialog({ accountId, name, onClose, onRenamed }: Props) {
+const NOT_CHOSEN = '';
+
+// WAL-RENAME, W1, prototype "Rename wallet": the name and how the wallet is held change;
+// transactions stay as they are.
+export default function EditWalletDialog({ accountId, name, kind, onClose, onSaved }: Props) {
   const [value, setValue] = useState(name);
+  const [chosen, setChosen] = useState<WalletKind | typeof NOT_CHOSEN>(kind ?? NOT_CHOSEN);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const input = useRef<HTMLInputElement>(null);
@@ -39,7 +45,7 @@ export default function RenameWalletDialog({ accountId, name, onClose, onRenamed
       if (event.key === 'Escape' && !busy.current) close.current();
       if (event.key !== 'Tab' || !dialog.current) return;
       const items = [
-        ...dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), input'),
+        ...dialog.current.querySelectorAll<HTMLElement>('button:not([disabled]), input, select'),
       ];
       const first = items[0];
       const last = items[items.length - 1];
@@ -62,15 +68,20 @@ export default function RenameWalletDialog({ accountId, name, onClose, onRenamed
       setError('Enter a name.');
       return;
     }
-    if (trimmed === name) {
+    const nextKind = chosen === NOT_CHOSEN ? null : chosen;
+    const changes = {
+      ...(trimmed === name ? {} : { name: trimmed }),
+      ...(nextKind === kind ? {} : { kind: nextKind }),
+    };
+    if (Object.keys(changes).length === 0) {
       onClose();
       return;
     }
     setSaving(true);
     setError(null);
     try {
-      const saved = await accountingApi.renameAccount(accountId, trimmed);
-      onRenamed(saved.name);
+      await accountingApi.updateAccount(accountId, changes);
+      onSaved();
     } catch (caught) {
       setError(failure(caught));
       setSaving(false);
@@ -84,11 +95,11 @@ export default function RenameWalletDialog({ accountId, name, onClose, onRenamed
         className="portfolio-dialog wallets-rename"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="rename-wallet"
+        aria-labelledby="edit-wallet"
       >
         <form onSubmit={save} noValidate>
           <div className="portfolio-dialog__head">
-            <h2 id="rename-wallet">Rename wallet</h2>
+            <h2 id="edit-wallet">Edit wallet</h2>
           </div>
           <div className="portfolio-dialog__body">
             <div className="portfolio-field">
@@ -107,6 +118,26 @@ export default function RenameWalletDialog({ accountId, name, onClose, onRenamed
               <span className="portfolio-field__hint">
                 Transactions, addresses and balances stay as they are.
               </span>
+            </div>
+            <div className="portfolio-field">
+              <label className="portfolio-field__label" htmlFor="wallet-kind">
+                How you hold it
+              </label>
+              <select
+                id="wallet-kind"
+                className="portfolio-input"
+                value={chosen}
+                onChange={(event) =>
+                  setChosen(event.target.value as WalletKind | typeof NOT_CHOSEN)
+                }
+              >
+                <option value={NOT_CHOSEN}>Not chosen</option>
+                {walletKinds.map((item) => (
+                  <option key={item} value={item}>
+                    {kindLabels[item]}
+                  </option>
+                ))}
+              </select>
             </div>
             {error && (
               <p className="portfolio-dialog__error" role="alert">

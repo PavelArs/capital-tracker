@@ -28,6 +28,25 @@ const paths = {
       <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
     </>
   ),
+  // W1: how a wallet is held.
+  software: (
+    <>
+      <rect x="6" y="2" width="12" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </>
+  ),
+  hardware: (
+    <>
+      <rect x="6" y="9" width="12" height="13" rx="2" />
+      <path d="M9 9V3h6v6M10 15h4" />
+    </>
+  ),
+  exchange: (
+    <>
+      <path d="M3 21h18M5 21V10M9 21V10M15 21V10M19 21V10" />
+      <path d="m2 10 10-7 10 7z" />
+    </>
+  ),
   settings: <path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6" />,
   logout: (
     <>

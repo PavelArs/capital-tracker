@@ -76,6 +76,7 @@ const expectedMigrationNames = [
   'TrackZcashWallets1795300000000',
   'TrackEvmChains1796000000000',
   'JournalWalletSyncs1796100000000',
+  'KindOfWallet1796200000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';
@@ -593,7 +594,7 @@ async function main() {
     assert.deepEqual(
       (await source.query('SELECT name FROM migrations ORDER BY timestamp')).map(({ name }) => name),
       expectedMigrationNames,
-      'The actual migration CLI must build the complete current fifty-two-migration ledger',
+      'The actual migration CLI must build the complete current fifty-six-migration ledger',
     );
     const before = await nonLedgerFingerprint(source);
     for (const run of [fixedWindows, races, expiryWaits, storageFailures, poolExhaustion, constraints]) {

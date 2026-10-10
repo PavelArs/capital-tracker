@@ -417,8 +417,8 @@ isolated(
 
     // WAL-RENAME: only the name changes; the address stays in the wallet.
     const renamed = `${walletName} renamed`;
-    await main.getByRole('button', { name: 'Rename', exact: true }).click();
-    const rename = page.getByRole('dialog', { name: 'Rename wallet' });
+    await main.getByRole('button', { name: 'Edit', exact: true }).click();
+    const rename = page.getByRole('dialog', { name: 'Edit wallet' });
     await rename.getByLabel('Name', { exact: true }).fill(`  ${renamed} `);
     await rename.getByRole('button', { name: 'Save', exact: true }).click();
     await expect(rename).toHaveCount(0);

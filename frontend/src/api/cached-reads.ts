@@ -1,3 +1,4 @@
+import { type AccountSummary, accountingApi } from './accounting.api';
 import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
@@ -55,7 +56,20 @@ function cachedRead<A extends unknown[], T>(name: string, read: (...args: A) => 
   };
 }
 
+/** Every account of the owner, page by page. */
+async function allAccounts(): Promise<AccountSummary[]> {
+  const accounts: AccountSummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await accountingApi.listAccounts(cursor);
+    accounts.push(...page.items);
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
+  return accounts;
+}
+
 export const cachedReads = {
+  accounts: cachedRead('accounts', allAccounts),
   portfolio: cachedRead('portfolio', (currency?: Parameters<typeof portfolioValuationApi.get>[0]) =>
     portfolioValuationApi.get(currency),
   ),

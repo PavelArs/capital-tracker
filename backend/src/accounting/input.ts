@@ -6,9 +6,15 @@ import {
   valuationCurrencies,
 } from './asset-classification';
 
+/** W1: how the owner holds the coins of a wallet. */
+export const walletKinds = ['software', 'hardware', 'exchange'] as const;
+export type WalletKind = (typeof walletKinds)[number];
+
 export interface AccountInput {
   requestId: string;
   name: string;
+  /** Present only when sent, so a body without it keeps its exact shape. */
+  kind?: WalletKind;
 }
 export interface InstrumentInput extends AccountInput {
   symbol: string | null;
@@ -112,13 +118,25 @@ export function parseAsOf(value: unknown): string {
   return date.toISOString();
 }
 export function parseAccount(input: unknown): AccountInput {
-  const row = object(input, ['requestId', 'name']);
-  return { requestId: parseUuid(row.requestId), name: label(row.name, 120) };
+  const row = object(input, ['requestId', 'name', 'kind']);
+  return {
+    requestId: parseUuid(row.requestId),
+    name: label(row.name, 120),
+    ...(Object.hasOwn(row, 'kind') ? { kind: member(row.kind, walletKinds) } : {}),
+  };
 }
-/** WAL-RENAME: only the name of an account changes; its id and history stay. */
-export function parseAccountRename(input: unknown): { name: string } {
-  const row = object(input, ['name']);
-  return { name: label(row.name, 120) };
+/**
+ * WAL-RENAME, W1: the name and the kind of an account change; its id and history stay. A kind
+ * of null takes the choice back; a body names at least one of the two.
+ */
+export function parseAccountChange(input: unknown): { name?: string; kind?: WalletKind | null } {
+  const row = object(input, ['name', 'kind']);
+  const has = (key: string) => Object.hasOwn(row, key);
+  if (!has('name') && !has('kind')) return bad();
+  return {
+    ...(has('name') ? { name: label(row.name, 120) } : {}),
+    ...(has('kind') ? { kind: row.kind === null ? null : member(row.kind, walletKinds) } : {}),
+  };
 }
 function member<T extends string>(value: unknown, allowed: readonly T[]): T {
   return allowed.find((item) => item === value) ?? bad();

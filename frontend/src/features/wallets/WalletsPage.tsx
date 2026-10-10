@@ -28,7 +28,7 @@ import './wallets.css';
 // Wallets grouped the way the owner holds them (prototype "Wallets", M10): each account with
 // its tracked addresses, the coins entered by hand, and whether the chain agrees.
 export default function WalletsPage() {
-  const { portfolio, addresses, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked } = useWallets();
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
@@ -141,6 +141,7 @@ export default function WalletsPage() {
               (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),
             );
             const headingId = `wallet-${account.accountId}`;
+            const kind = kinds[account.accountId] ?? null;
             return (
               <section
                 key={account.accountId}
@@ -149,7 +150,7 @@ export default function WalletsPage() {
               >
                 <div className="wallets-card__head">
                   <span className="wallets-card__icon" aria-hidden="true">
-                    <Icon name="wallets" />
+                    <Icon name={kind ?? 'wallets'} />
                   </span>
                   <div className="wallets-card__title">
                     <h2 id={headingId}>
@@ -160,7 +161,7 @@ export default function WalletsPage() {
                         {account.name}
                       </Link>
                     </h2>
-                    <span>{subtitle(own)}</span>
+                    <span>{subtitle(own, kind)}</span>
                   </div>
                   <div className="wallets-card__total">
                     <strong>{money(account.pricedValue, currency)}</strong>

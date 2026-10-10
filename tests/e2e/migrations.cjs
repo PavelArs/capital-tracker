@@ -120,6 +120,7 @@ const migrationNames = [
   'TrackZcashWallets1795300000000',
   'TrackEvmChains1796000000000',
   'JournalWalletSyncs1796100000000',
+  'KindOfWallet1796200000000',
 ];
 
 function connection(database) {
@@ -212,7 +213,7 @@ async function verifyFresh() {
   await client.connect();
   try {
     const ledger = (await client.query('SELECT name FROM migrations ORDER BY timestamp')).rows;
-    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly fifty-five migrations');
+    assert.deepEqual(ledger.map((row) => row.name), migrationNames, 'Exactly fifty-six migrations');
     const tables = (await client.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = 'public'`,
     )).rows.map((row) => row.tablename);
@@ -751,6 +752,11 @@ function mfaStreakAddition(kind, row) {
 function sessionDeviceAddition(kind, row) {
   return kind === 'columns' && row.table_name === 'auth_sessions' && row.column_name === 'device';
 }
+// KindOfWallet1796200000000 adds one nullable column and its check to manual_accounts.
+function walletKindAddition(kind, row) {
+  if (kind === 'columns') return row.table_name === 'manual_accounts' && row.column_name === 'kind';
+  return kind === 'constraints' && row.relname === 'manual_accounts' && row.conname === 'manual_accounts_kind_check';
+}
 function replacedOriginCheck(kind, row) {
   return kind === 'constraints' && row.relname === 'account_trade_journals'
     && row.conname === 'account_trade_journals_originKind_check';
@@ -1115,6 +1121,14 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           const ordered = (values) => values.sort((a, b) => a.id.localeCompare(b.id));
           assert.deepEqual(ordered(parsed), ordered(rows.map(({ row }) => JSON.parse(row))),
             'Every old instrument column/value remains identical');
+        } else if (table === 'manual_accounts') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.equal(row.kind, null, 'Prior accounts have no wallet kind');
+            delete row.kind;
+          }
+          assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
+            'Every old account column/value remains identical');
         } else if (table === 'owner_mfa') {
           const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
           for (const row of parsed) {
@@ -1143,7 +1157,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
     assert.deepEqual(records.map(row => row.name), migrationNames);
     for (let index = previousCount; index < migrationNames.length; index++) {
       assert.equal(records[index].id, records[index - 1].id + 1, 'Migration history appends each record exactly once');
-      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000', '1792600000000', '1792700000000', '1792800000000', '1792900000000', '1793100000000', '1793200000000', '1793300000000', '1793600000000', '1794000000000', '1794400000000', '1794500000000', '1794900000000', '1795000000000', '1795200000000', '1795300000000', '1796000000000', '1796100000000'][index - 11]);
+      assert.equal(String(records[index].timestamp), ['1790020000000', '1790030000000', '1790040000000', '1790050000000', '1790060000000', '1790070000000', '1790080000000', '1790090000000', '1790100000000', '1790200000000', '1790300000000', '1790400000000', '1790700000000', '1790800000000', '1790900000000', '1791000000000', '1791100000000', '1791200000000', '1791300000000', '1791400000000', '1791600000000', '1791700000000', '1791800000000', '1792000000000', '1792100000000', '1792200000000', '1792500000000', '1792600000000', '1792700000000', '1792800000000', '1792900000000', '1793100000000', '1793200000000', '1793300000000', '1793600000000', '1794000000000', '1794400000000', '1794500000000', '1794900000000', '1795000000000', '1795200000000', '1795300000000', '1796000000000', '1796100000000', '1796200000000'][index - 11]);
     }
     for (const [kind, tableKey] of [
       ['tables', 'tablename'], ['columns', 'table_name'], ['constraints', 'relname'], ['indexes', 'tablename'],
@@ -1151,7 +1165,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       const prior = before[kind].filter(row => !(previousCount < 16 && replacedOriginCheck(kind,row)) && !replacedScopeCheck(kind, row));
       const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row))
         && !(previousCount >= 13 && classificationAddition(kind, row))
-        && !mfaStreakAddition(kind, row) && !sessionDeviceAddition(kind, row) && !replacedScopeCheck(kind, row));
+        && !mfaStreakAddition(kind, row) && !sessionDeviceAddition(kind, row) && !walletKindAddition(kind, row) && !replacedScopeCheck(kind, row));
       assert.deepEqual(retained, prior, `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);

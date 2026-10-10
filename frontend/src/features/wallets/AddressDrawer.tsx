@@ -12,6 +12,7 @@ import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
 import type { WalletAccount } from './AddWalletDialog';
+import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
 import SyncJournal from './SyncJournal';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
@@ -89,13 +90,15 @@ export default function AddressDrawer({
   close.current = onClose;
   const [choice, setChoice] = useState(address.accountId ?? NONE);
   const [newName, setNewName] = useState('');
+  // W1: how a new wallet is held; null while untouched, so a Bybit account starts as an exchange.
+  const [pickedKind, setPickedKind] = useState<KindChoice | null>(null);
   const [label, setLabel] = useState(address.label ?? '');
   const [saving, setSaving] = useState(false);
   const [allCoins, setAllCoins] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   // undefined while loading, null when the read failed.
   const [recent, setRecent] = useState<AddressTransaction[] | null | undefined>(undefined);
-  const attempt = useRef<{ name: string; requestId: string } | null>(null);
+  const attempt = useRef<{ key: string; requestId: string } | null>(null);
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -140,6 +143,7 @@ export default function AddressDrawer({
   const key = address.accountKey ?? null;
   // M22: a Bybit account, its balances as Bybit reports them.
   const exchange = address.exchange ?? null;
+  const kind: KindChoice = pickedKind ?? (exchange ? 'exchange' : '');
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
@@ -157,9 +161,14 @@ export default function AddressDrawer({
     try {
       let accountId: string | null = choice === NONE ? null : choice;
       if (choice === NEW) {
-        if (attempt.current?.name !== name) attempt.current = { name, requestId: newRequestId() };
+        const key = `${name}\n${kind}`;
+        if (attempt.current?.key !== key) attempt.current = { key, requestId: newRequestId() };
         accountId = (
-          await accountingApi.createAccount({ requestId: attempt.current.requestId, name })
+          await accountingApi.createAccount({
+            requestId: attempt.current.requestId,
+            name,
+            ...(kind ? { kind } : {}),
+          })
         ).id;
       }
       const saved = await walletAddressesApi.update(address.id, {
@@ -384,18 +393,21 @@ export default function AddressDrawer({
               </select>
             </div>
             {choice === NEW && (
-              <div className="portfolio-field">
-                <label className="portfolio-field__label" htmlFor="address-new-wallet">
-                  New wallet name
-                </label>
-                <input
-                  id="address-new-wallet"
-                  className="portfolio-input"
-                  maxLength={120}
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                />
-              </div>
+              <>
+                <div className="portfolio-field">
+                  <label className="portfolio-field__label" htmlFor="address-new-wallet">
+                    New wallet name
+                  </label>
+                  <input
+                    id="address-new-wallet"
+                    className="portfolio-input"
+                    maxLength={120}
+                    value={newName}
+                    onChange={(event) => setNewName(event.target.value)}
+                  />
+                </div>
+                <KindField id="address-new-kind" value={kind} onChange={setPickedKind} />
+              </>
             )}
             <div className="portfolio-field">
               <label className="portfolio-field__label" htmlFor="address-label">

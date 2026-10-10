@@ -1,7 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   parseAccount,
-  parseAccountRename,
+  parseAccountChange,
   parseAsOf,
   parseDecimal,
   parseHistoryQuery,
@@ -279,10 +279,29 @@ describe('OPEN-001/003 strict bounded query input', () => {
   });
 });
 
-describe('WAL-RENAME account rename input', () => {
+describe('WAL-RENAME, W1 account change input', () => {
   it('trims the new name and accepts nothing else', () => {
-    expect(parseAccountRename({ name: '  Cold storage  ' })).toEqual({ name: 'Cold storage' });
-    expect(parseAccountRename({ name: 'x'.repeat(120) })).toEqual({ name: 'x'.repeat(120) });
+    expect(parseAccountChange({ name: '  Cold storage  ' })).toEqual({ name: 'Cold storage' });
+    expect(parseAccountChange({ name: 'x'.repeat(120) })).toEqual({ name: 'x'.repeat(120) });
+  });
+  it('takes a kind alone or with the name, and null to take the choice back', () => {
+    expect(parseAccountChange({ kind: 'hardware' })).toEqual({ kind: 'hardware' });
+    expect(parseAccountChange({ name: ' Ledger ', kind: 'software' })).toEqual({
+      name: 'Ledger',
+      kind: 'software',
+    });
+    expect(parseAccountChange({ kind: null })).toEqual({ kind: null });
+    expect(parseAccountChange({ kind: 'exchange' })).toEqual({ kind: 'exchange' });
+  });
+  it('names a kind of a new account only when sent', () => {
+    expect(parseAccount({ requestId, name: 'Ledger' })).toEqual({ requestId, name: 'Ledger' });
+    expect(parseAccount({ requestId, name: 'Ledger', kind: 'hardware' })).toEqual({
+      requestId,
+      name: 'Ledger',
+      kind: 'hardware',
+    });
+    rejects(() => parseAccount({ requestId, name: 'Ledger', kind: null }));
+    rejects(() => parseAccount({ requestId, name: 'Ledger', kind: 'bank' }));
   });
   it.each([
     undefined,
@@ -295,7 +314,11 @@ describe('WAL-RENAME account rename input', () => {
     { name: 'Line\nbreak' },
     { name: 7 },
     { name: 'Ledger', requestId },
+    { kind: 'bank' },
+    { kind: 'Software' },
+    { kind: 7 },
+    { name: 'Ledger', kind: undefined, extra: 1 },
   ])('refuses %p', (input) => {
-    expect(() => parseAccountRename(input)).toThrow(BadRequestException);
+    expect(() => parseAccountChange(input)).toThrow(BadRequestException);
   });
 });

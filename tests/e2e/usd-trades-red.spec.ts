@@ -36,7 +36,7 @@ async function realEmptyAccount(page: Page) {
   });
   expect(created.status(), 'The predecessor already supports real empty manual accounts').toBe(201);
   const account = (await created.json()) as Account;
-  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'name']);
+  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'kind', 'name']);
   expect(account.id).toMatch(uuidV4);
   expect(account.name).toBe(name);
   expect(account.currentRevision).toBe(0);

@@ -17,12 +17,13 @@ import {
 } from './asset-classification';
 import {
   parseAccount,
-  parseAccountRename,
+  parseAccountChange,
   parseHistoryQuery,
   parseInstrument,
   parseListQuery,
   parseOpening,
   parseUuid,
+  type WalletKind,
 } from './input';
 import { projectOpening, type SnapshotRow } from './opening.store';
 
@@ -30,6 +31,7 @@ interface AccountRow {
   id: string;
   name: string;
   currentRevision: number | null;
+  kind: WalletKind | null;
   createdAt: Date;
   canonicalPayload: string;
 }
@@ -44,6 +46,8 @@ interface InstrumentRow extends AssetClassification {
 export interface AccountSummary {
   id: string;
   name: string;
+  /** W1: software, hardware or exchange; null until the owner says. */
+  kind: WalletKind | null;
   currentRevision: number;
   createdAt: string;
 }
@@ -76,6 +80,7 @@ export interface Opening {
 const accountView = (row: AccountRow): AccountSummary => ({
   id: row.id,
   name: row.name,
+  kind: row.kind ?? null,
   currentRevision: row.currentRevision ?? 0,
   createdAt: row.createdAt.toISOString(),
 });
@@ -108,12 +113,26 @@ export class AccountingService {
   ): Promise<{ created: boolean; value: AccountSummary }> {
     const owner = parseUuid(ownerId);
     const value = parseAccount(input);
-    const payload = JSON.stringify({ name: value.name });
+    // The kind joins the payload only when sent, so an earlier request keeps its exact payload.
+    const payload = JSON.stringify({
+      name: value.name,
+      ...(value.kind ? { kind: value.kind } : {}),
+    });
+    // The kind column is named only when a kind is sent, so the database checks that build an
+    // account on a schema from before the column still work.
     const rows: AccountRow[] = await this.source.query(
       `INSERT INTO manual_accounts
-      (id,"ownerId","requestId","canonicalPayload",name) VALUES ($1,$2,$3,$4,$5)
+      (id,"ownerId","requestId","canonicalPayload",name${value.kind ? ',kind' : ''})
+      VALUES ($1,$2,$3,$4,$5${value.kind ? ',$6' : ''})
       ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
-      [randomUUID(), owner, value.requestId, payload, value.name],
+      [
+        randomUUID(),
+        owner,
+        value.requestId,
+        payload,
+        value.name,
+        ...(value.kind ? [value.kind] : []),
+      ],
     );
     const row =
       rows[0] ??
@@ -260,14 +279,19 @@ export class AccountingService {
     return { items, nextCursor: rows.length > query.limit ? items[items.length - 1].id : null };
   }
 
-  /** WAL-RENAME: a new name for the owner's account; everything recorded in it is unchanged. */
+  /**
+   * WAL-RENAME, W1: a new name and/or kind for the owner's account; everything recorded in it is
+   * unchanged.
+   */
   async renameAccount(ownerId: string, accountId: string, input: unknown): Promise<AccountSummary> {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
-    const { name } = parseAccountRename(input);
+    const change = parseAccountChange(input);
     const [rows]: [AccountRow[], number] = await this.source.query(
-      'UPDATE manual_accounts SET name=$3 WHERE "ownerId"=$1 AND id=$2 RETURNING *',
-      [owner, id, name],
+      `UPDATE manual_accounts SET name = COALESCE($3, name),
+        kind = CASE WHEN $4::boolean THEN $5 ELSE kind END
+        WHERE "ownerId"=$1 AND id=$2 RETURNING *`,
+      [owner, id, change.name ?? null, change.kind !== undefined, change.kind ?? null],
     );
     if (!rows[0]) throw new NotFoundException();
     return accountView(rows[0]);

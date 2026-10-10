@@ -193,16 +193,24 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
         {
           id: id(11),
           name: 'Hardware wallet',
+          kind: null,
           currentRevision: 0,
           createdAt: '2025-01-01T00:00:00.000Z',
         },
         {
           id: id(12),
           name: 'No journal',
+          kind: null,
           currentRevision: 0,
           createdAt: '2025-01-01T00:00:00.000Z',
         },
-        { id: id(13), name: 'Exchange', currentRevision: 0, createdAt: '2025-01-01T00:00:00.000Z' },
+        {
+          id: id(13),
+          name: 'Exchange',
+          kind: null,
+          currentRevision: 0,
+          createdAt: '2025-01-01T00:00:00.000Z',
+        },
       ],
       nextCursor: null,
     });

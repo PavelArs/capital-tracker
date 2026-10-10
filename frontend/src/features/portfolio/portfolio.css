@@ -506,6 +506,12 @@ a.portfolio-asset__name:hover {
   font-size: var(--fs-sm);
 }
 
+.portfolio-holding {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .portfolio-holdings li:first-child {
   border-top: 0;
 }
