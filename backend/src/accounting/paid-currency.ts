@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { FxConverter, type FxRates, moscowDate, rateOn } from '../fx-rates/fx-conversion';
+import { FxConverter, type FxRates, freshRateOn, moscowDate } from '../fx-rates/fx-conversion';
 import { canonicalDecimalToAtoms, formatAtoms, MAX_INPUT_ATOMS } from './money';
 
 // CUR-PAID-RUB: a trade paid in rubles or euros keeps the amounts as paid. Its USD amounts
@@ -66,8 +66,9 @@ export function derivePaidAmounts(
     fee = quotient(feePaid, rate);
     perUsd = paid.perUsd;
   } else {
-    const usd = rateOn(rates.USD, date);
-    const unit = paid.currency === 'RUB' ? { rubPerUnit: '1' } : rateOn(rates[paid.currency], date);
+    const usd = freshRateOn(rates.USD, date);
+    const unit =
+      paid.currency === 'RUB' ? { rubPerUnit: '1' } : freshRateOn(rates[paid.currency], date);
     if (!usd || !unit) return null;
     const fx = new FxConverter(rates, 'USD');
     gross = fx.convert(grossPaid, paid.currency, date)!;
