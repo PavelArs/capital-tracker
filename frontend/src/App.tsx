@@ -1,6 +1,6 @@
 import { setErrorHandler } from '@api';
-import ErrorNotification from '@components/ErrorNotification';
 import Layout from '@components/Layout';
+import ToastViewport from '@components/Toast';
 import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
@@ -88,7 +88,7 @@ function AppContent() {
 
   return (
     <>
-      <ErrorNotification />
+      <ToastViewport />
       <Router>
         <AppRoutes />
       </Router>
