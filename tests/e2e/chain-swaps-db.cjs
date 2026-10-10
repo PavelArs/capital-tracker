@@ -977,6 +977,166 @@ async function duplicates(db, s, owner) {
   console.log('PASS CLS-DUPLICATE');
 }
 
+async function swapOfRecord(db, s, owner) {
+  stage = 'CLS-SWAP-RECORD a coin bought by hand and the stablecoin sent to pay for it become one swap';
+  const home = await account(s, owner, 'Swap record');
+  const w = await wallet(db, owner, home, 'ethereum', `0x${'5e'.repeat(20)}`);
+  const instrument = async (symbol) =>
+    (await db.query('SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND symbol=$2', [owner, symbol]))[0].id;
+  const btc = await instrument('BTC');
+  const revision = async () => (await journal(s, owner, home))?.journalRevision ?? 0;
+  const manual = async (side, at, quantity, grossUsd, more = {}) =>
+    (await s.trades.create(owner, home, {
+      requestId: randomUUID(),
+      expectedJournalRevision: await revision(),
+      instrumentId: more.instrumentId ?? btc,
+      side,
+      occurredAt: at,
+      quantity,
+      grossUsd,
+      feeUsd: '0',
+      ...more.fields,
+    })).value.trade.tradeId;
+  const headKind = async (tradeId) =>
+    (await db.query(
+      `SELECT v.kind FROM account_trades t JOIN account_trade_versions v ON v."ownerId"=t."ownerId"
+        AND v."accountId"=t."accountId" AND v."tradeId"=t.id AND v.version=t."currentVersion" WHERE t.id=$1`,
+      [tradeId],
+    ))[0].kind;
+  const versions = async () =>
+    (await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions'))[0].n;
+  const record = (id, version = 1) => ({ kind: 'trade', id, version });
+  const swapOf = (id, version = 1, valueUsd = null) => ({ type: 'swap', record: record(id, version), valueUsd });
+
+  // 5000 USDC arrive and are answered as income; later 450 USDC leave. The purchase of 0.01 BTC
+  // for 450 USD was added by hand, dated before the USDC arrived (an import without a time).
+  await raw(db, owner, w, { txid: `${hash(41)}-1`, asset: 'USDC', height: 41, at: '2026-09-30T14:49:00.000Z', received: '5000000000', sent: '0', fee: '0', direction: 'in' });
+  await classify(s, owner, w, `${hash(41)}-1`, { expectedVersion: 0, classification: { type: 'income', valueUsd: '5000' } });
+  const bought = await manual('buy', '2026-09-30T00:00:00.000Z', '0.01', '450');
+  const out = `${hash(42)}-1`;
+  await raw(db, owner, w, { txid: out, asset: 'USDC', height: 42, at: '2026-09-30T15:34:00.000Z', received: '0', sent: '450000000', fee: '0', direction: 'out' });
+  assert.equal(await held(s, owner, 'BTC', home), coins('0.01'));
+  assert.equal(await held(s, owner, 'USDC', home), coins('4550'), 'The 450 USDC left and the purchase did not spend them');
+
+  stage = 'CLS-SWAP-RECORD-INVALID a stale, altered or unfit record is refused and nothing is saved';
+  const before = await versions();
+  await rejected(() => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(bought, 2) }), 409, 'That record changed; reload and try again');
+  await rejected(() => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(randomUUID()) }), 409);
+  const abroadAccount = await account(s, owner, 'Swap record elsewhere');
+  const abroad = (await s.trades.create(owner, abroadAccount, {
+    requestId: randomUUID(), expectedJournalRevision: 0, instrumentId: btc, side: 'buy',
+    occurredAt: '2026-09-30T00:00:00.000Z', quantity: '0.01', grossUsd: '450', feeUsd: '0',
+  })).value.trade.tradeId;
+  await rejected(() => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(abroad) }), 409);
+  const sale = await manual('sell', '2026-09-30T12:00:00.000Z', '0.001', '45');
+  await rejected(
+    () => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(sale) }),
+    422,
+    'Choose a record that moved coins the other way',
+  );
+  const far = await manual('buy', '2026-09-01T12:00:00.000Z', '0.01', '450');
+  await rejected(
+    () => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(far) }),
+    422,
+    'That record is too far from this transaction',
+  );
+  const usdcBuy = await manual('buy', '2026-09-30T10:00:00.000Z', '10', '10', { instrumentId: await instrument('USDC') });
+  await rejected(
+    () => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(usdcBuy) }),
+    422,
+    'A swap needs two different coins',
+  );
+  const feed = await manual('buy', '2026-09-30T09:00:00.000Z', '0.01', '450', { fields: { feeUsd: '2' } });
+  await rejected(
+    () => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(feed) }),
+    422,
+    'That record cannot be replaced by a swap',
+  );
+  await rejected(
+    () => classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(bought), replaces: record(bought) }),
+    400,
+  );
+  assert.equal(await versions(), before, 'Nothing was saved');
+  assert.equal(await headKind(bought), 'create', 'The record still counts');
+
+  stage = 'CLS-SWAP-RECORD the send answered as a swap against the purchase replaces it with one swap';
+  const waiting = await count(s, owner);
+  const btcLevel = await held(s, owner, 'BTC', home);
+  const usdcLevel = await held(s, owner, 'USDC', home);
+  const saved = await classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(bought) });
+  assert.equal(saved.value.operation.kind, 'swap');
+  const now1 = await answer(db, w, out);
+  assert.deepEqual([now1.status, now1.type, now1.accountId, now1.pairedAddressId, now1.pairedTxid], ['classified', 'swap', home, null, null]);
+  assert.equal(await swapKind(db, now1.swapId), 'create');
+  assert.equal(await headKind(bought), 'void', 'The purchase is voided');
+  assert.equal(await held(s, owner, 'BTC', home), btcLevel, 'The BTC count once');
+  assert.equal(await held(s, owner, 'USDC', home), usdcLevel, 'The USDC left once');
+  assert.equal(await count(s, owner), waiting - 1);
+  const [stored] = await db.query(
+    `SELECT v."outgoingQuantity"::text AS out, v."incomingQuantity"::text AS inc, v."considerationUsd"::text AS value,
+        v."occurredAt" FROM account_swap_versions v WHERE v."swapId"=$1 AND v.version=1`,
+    [now1.swapId],
+  );
+  same(stored.out, '450');
+  same(stored.inc, '0.01');
+  same(stored.value, '450', 'The purchase value stays the swap value');
+  assert.equal(new Date(stored.occurredAt).toISOString(), '2026-09-30T15:34:00.000Z', 'The swap takes the transaction time');
+  const operations = await listed(s, owner);
+  assert.equal(operations.filter((row) => row.id === `trade:${bought}`).length, 0, 'The purchase leaves the lists');
+  const row = operations.find((item) => item.chain?.txid === out);
+  assert.deepEqual([row.type, row.status, row.asset.symbol, row.counterAsset.symbol], ['swap', 'recorded', 'USDC', 'BTC']);
+  const events = (await s.history.read(owner, {}, now)).events;
+  assert.ok(events.some((event) => event.entity === 'trade' && event.entityId === bought && event.change === 'deleted'), 'The audit history shows the purchase deleted');
+  const again = await classify(s, owner, w, out, { expectedVersion: 0, classification: swapOf(bought) }).catch((error) => error);
+  assert.equal(again.getStatus?.(), 409, 'Answering the answered send again is refused');
+
+  stage = 'CLS-SWAP-RECORD changing the answer voids the swap and the coins count again as the new answer says';
+  await classify(s, owner, w, out, { expectedVersion: 1, classification: { type: 'sell', currency: 'USD', amount: '450' } });
+  assert.equal(await swapKind(db, now1.swapId), 'void');
+  assert.equal(await held(s, owner, 'BTC', home), btcLevel - coins('0.01'), 'The purchase is not restored; the BTC go with the swap');
+
+  stage = 'CLS-SWAP-RECORD a sale added by hand and the coins that arrived for it become one swap';
+  await manual('buy', '2026-10-01T00:00:00.000Z', '0.05', '2200');
+  const sold = await manual('sell', '2026-10-02T00:00:00.000Z', '0.02', '900');
+  const level = await held(s, owner, 'BTC', home);
+  const inbound = `${hash(43)}-1`;
+  await raw(db, owner, w, { txid: inbound, asset: 'USDC', height: 43, at: '2026-10-02T09:00:00.000Z', received: '900000000', sent: '0', fee: '0', direction: 'in' });
+  const usdc = await held(s, owner, 'USDC', home);
+  await classify(s, owner, w, inbound, { expectedVersion: 0, classification: swapOf(sold, 1, '905') });
+  const [received] = await db.query(
+    `SELECT v."outgoingQuantity"::text AS out, v."incomingQuantity"::text AS inc, v."considerationUsd"::text AS value
+      FROM account_swap_versions v WHERE v."swapId"=$1 AND v.version=1`,
+    [(await answer(db, w, inbound)).swapId],
+  );
+  same(received.out, '0.02');
+  same(received.inc, '900');
+  same(received.value, '905', 'The value the owner gave wins');
+  assert.equal(await headKind(sold), 'void');
+  assert.equal(await held(s, owner, 'BTC', home), level, 'The 0.02 BTC left once');
+  assert.equal(await held(s, owner, 'USDC', home), usdc, 'The 900 USDC arrived once');
+
+  stage = 'CLS-SWAP-RECORD-INVALID a purchase a later entry depends on is not replaced, and nothing is saved';
+  const lone = await account(s, owner, 'Swap record dependent');
+  const dw = await wallet(db, owner, lone, 'ethereum', `0x${'6e'.repeat(20)}`);
+  const first = (await s.trades.create(owner, lone, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 0,
+    instrumentId: btc, side: 'buy', occurredAt: '2026-10-03T00:00:00.000Z', quantity: '0.1', grossUsd: '4000', feeUsd: '0',
+  })).value.trade.tradeId;
+  await s.trades.create(owner, lone, {
+    requestId: randomUUID(),
+    expectedJournalRevision: 1,
+    instrumentId: btc, side: 'sell', occurredAt: '2026-10-03T08:00:00.000Z', quantity: '0.1', grossUsd: '4100', feeUsd: '0',
+  });
+  await raw(db, owner, dw, { txid: `${hash(44)}-1`, asset: 'USDC', height: 44, at: '2026-10-03T10:00:00.000Z', received: '0', sent: '4000000000', fee: '0', direction: 'out' });
+  const unchanged = await versions();
+  await rejected(() => classify(s, owner, dw, `${hash(44)}-1`, { expectedVersion: 0, classification: swapOf(first) }), 422);
+  assert.equal(await versions(), unchanged, 'Nothing was saved');
+  assert.equal(await headKind(first), 'create', 'The purchase still counts');
+
+  console.log('PASS CLS-SWAP-RECORD');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -1027,6 +1187,7 @@ async function main() {
     await recordedByHand(db, s, owner.id, f);
     await paidFromAnotherWallet(db, s, owner.id, f);
     await duplicates(db, s, owner.id);
+    await swapOfRecord(db, s, owner.id);
   } finally {
     if (db.isInitialized) await db.destroy();
   }
