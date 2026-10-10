@@ -404,7 +404,7 @@ async function refused(db, s) {
     classification: { type: 'buy', currency: 'USD', amount: '30000' },
   });
   const late = await refusal();
-  assert.equal(late.message, 'The records of an account start after this transfer');
+  assert.equal(late.message, 'The records of an account start after this entry');
   assert.deepEqual(late.coverage, { accountId: receiver, coverageFrom: '2026-10-05T00:00:00.000Z' });
   assert.equal(late.dependent, undefined);
   assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
@@ -435,6 +435,25 @@ async function refused(db, s) {
     assert.equal(error.getStatus?.(), 409);
     assert.equal(error.getResponse().message, 'The records of an account have not started');
     assert.deepEqual(error.getResponse().coverage, { accountId: legacy, coverageFrom: null });
+  }
+
+  stage = 'XFER-REFUSED any answer that adds coins before the records of the account begin says so';
+  await raw(db, owner, b, 24, 'in', '1000000', '0', '0', '2026-10-02T10:00:00.000Z');
+  for (const classification of [
+    { type: 'airdrop', valueUsd: null },
+    { type: 'buy', currency: 'USD', amount: '500' },
+  ]) {
+    try {
+      await classify(s, owner, b, 24, { expectedVersion: 0, classification });
+      assert.fail(`${classification.type} must be refused`);
+    } catch (error) {
+      assert.equal(error.getStatus?.(), 409, classification.type);
+      assert.equal(error.getResponse().message, 'The records of an account start after this entry');
+      assert.deepEqual(error.getResponse().coverage, {
+        accountId: receiver,
+        coverageFrom: '2026-10-05T00:00:00.000Z',
+      });
+    }
   }
   console.log('PASS XFER-REFUSED');
 }
