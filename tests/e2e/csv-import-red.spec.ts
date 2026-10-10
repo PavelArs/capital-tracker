@@ -1,17 +1,10 @@
 import { createHash } from 'node:crypto';
 import { type Page, expect } from '@playwright/test';
-import {
-  browserCsrfAdmissions,
-  expectAdmissionDelta,
-  hostSubject,
-  ledger,
-  ledgerState,
-} from './admission-fixtures';
+import { ledgerState } from './admission-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
 import { fingerprint, origin, test } from './mfa-fixtures';
 import {
   type TradeApi,
-  browserPost,
   noStore,
   restartWithExactProviderWarmup,
   trackBrowserRequests,
@@ -22,8 +15,6 @@ import {
 // No future CSV production module, table query, authentication mock or injected token.
 const csvTables = ['account_csv_imports', 'account_csv_import_commands', 'account_csv_import_rows'];
 const filename = 'Сделки 📒.csv';
-const literalMarkup = '<img data-csv-canary="unsafe" src="invalid">';
-const headers = ['instrument', 'side', 'time', 'order', 'quantity', 'gross', 'fee', 'note'];
 const source = Buffer.from(
   '\uFEFFinstrument,side,time,order,quantity,gross,fee,note\r\n' +
     'TOKEN,sell,2025-01-03T00:00:00Z,0,1.5,450,0,"Первое примечание\r\nВторая строка"\r\n' +
@@ -31,32 +22,6 @@ const source = Buffer.from(
     'TOKEN,buy,2025-01-02T00:00:00Z,0,1,200,0,=1+1\r\n',
   'utf8',
 );
-const inspectedRows = [
-  {
-    ordinal: 1,
-    startLine: 2,
-    cells: [
-      'TOKEN',
-      'sell',
-      '2025-01-03T00:00:00Z',
-      '0',
-      '1.5',
-      '450',
-      '0',
-      'Первое примечание\r\nВторая строка',
-    ],
-  },
-  {
-    ordinal: 2,
-    startLine: 4,
-    cells: ['TOKEN', 'buy', '2025-01-01T00:00:00Z', '0', '1', '100', '0', literalMarkup],
-  },
-  {
-    ordinal: 3,
-    startLine: 5,
-    cells: ['TOKEN', 'buy', '2025-01-02T00:00:00Z', '0', '1', '200', '0', '=1+1'],
-  },
-];
 const emptySummary = {
   grossBuysUsd: '0',
   buyFeesUsd: '0',
@@ -178,86 +143,6 @@ test('CSV-001-A: real owner upload preserves BOM/CRLF identity and first Cyrilli
       admissions,
     );
     expect(providerRequests()).toEqual(expectedProviders);
-    assertQuota();
-  }
-});
-
-test('CSV-006-A: real Russian upload and inspection show the retained filename, every literal row and physical start line', async ({
-  page,
-}) => {
-  const { api, account } = await fixture(page);
-  const before = retainedRows();
-  const providers = providerRequests();
-  const admissions = ledger();
-  const csrfBefore = browserCsrfAdmissions();
-  const assertQuota = trackBrowserRequests(page, api);
-
-  try {
-    await page.goto(`/manual-accounts/${account.id}`);
-    await page.getByRole('combobox', { name: 'Вид операций', exact: true }).selectOption('imports');
-    await expect(page.getByRole('heading', { name: 'Импорт CSV', exact: true })).toBeVisible();
-    await page.getByLabel('Файл CSV', { exact: true }).setInputFiles({
-      name: filename,
-      mimeType: 'text/csv',
-      buffer: source,
-    });
-    const uploaded = await browserPost(page, `/accounts/${account.id}/csv-imports`, () =>
-      page.getByRole('button', { name: 'Загрузить CSV', exact: true }).click(),
-    );
-    expect(uploaded.status()).toBe(201);
-    const identity = readIdentity(await uploaded.json());
-    await expect(page.getByText(filename, { exact: true }).first()).toBeVisible();
-    await expectDraft(api, account.id, identity);
-    const afterUpload = fingerprint(['auth_sessions', 'auth_request_limits']);
-
-    await page
-      .getByRole('combobox', { name: 'Разделитель', exact: true })
-      .selectOption({ label: 'Запятая (,)' });
-    const inspected = await browserPost(
-      page,
-      `/accounts/${account.id}/csv-imports/${identity.batchId}/inspect`,
-      () => page.getByRole('button', { name: 'Просмотреть исходные строки', exact: true }).click(),
-    );
-    expect(inspected.status()).toBe(200);
-    expect(await inspected.json()).toEqual({
-      batchId: identity.batchId,
-      valid: true,
-      headers,
-      rows: inspectedRows,
-      error: null,
-    });
-    const table = page.getByRole('table', { name: 'Исходные строки', exact: true });
-    await expect(table).toBeVisible();
-    await expect(table.getByRole('row')).toHaveCount(4);
-    for (const header of headers) {
-      await expect(table.getByRole('columnheader', { name: header, exact: true })).toBeVisible();
-    }
-    for (const row of inspectedRows) {
-      const rendered = table.getByRole('row').filter({ hasText: row.cells[2] });
-      await expect(rendered).toHaveCount(1);
-      await expect(rendered.getByRole('cell')).toContainText(row.cells);
-      await expect(
-        rendered.getByRole('cell', { name: String(row.startLine), exact: true }),
-      ).toBeVisible();
-    }
-    await expect(table.getByRole('cell', { name: literalMarkup, exact: true })).toBeVisible();
-    await expect(page.locator('[data-csv-canary]')).toHaveCount(0);
-    expect(
-      fingerprint(['auth_sessions', 'auth_request_limits']),
-      'Inspection preserves the entire uploaded source and all accounting state',
-    ).toBe(afterUpload);
-  } finally {
-    expect(retainedRows(), 'Upload and inspection create no implicit trade or opening').toBe(
-      before,
-    );
-    expect(providerRequests()).toEqual(providers);
-    expectAdmissionDelta(admissions, [
-      {
-        scope: 'csrf-ip',
-        subject: await hostSubject(),
-        hits: browserCsrfAdmissions() - csrfBefore,
-      },
-    ]);
     assertQuota();
   }
 });

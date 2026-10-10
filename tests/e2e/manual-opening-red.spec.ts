@@ -106,34 +106,3 @@ test('OPEN-001-B / OPEN-003-A: an empty account is private, exact and canonicall
       .toEqual(providersBefore);
   }
 });
-
-test('OPEN-001-A: the Russian protected manual-account page creates an empty account that survives reload', async ({
-  page,
-}) => {
-  await loginWithMfa(page);
-  await page.goto('/manual-accounts');
-  await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
-  const name = `Ручной счет ${randomUUID()}`;
-  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
-  await page.getByLabel('Название счета', { exact: true }).fill(name);
-  const pending = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === '/api/accounting/accounts' &&
-      response.request().method() === 'POST',
-  );
-  await page.getByRole('button', { name: 'Создать счет', exact: true }).click();
-  const created = await pending;
-  expect(created.status()).toBe(201);
-  const account = (await created.json()) as AccountSummary;
-  expectEmptySummary(account, name);
-
-  await page.goto(`/manual-accounts/${account.id}`);
-  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-  await page.reload();
-  await expect(page).toHaveURL(`${origin}/manual-accounts/${account.id}`);
-  await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
-  const detail = await page.context().request.get(`/api/accounting/accounts/${account.id}`);
-  expect(detail.status()).toBe(200);
-  expect(await detail.json()).toEqual({ ...account, currentOpening: null });
-});

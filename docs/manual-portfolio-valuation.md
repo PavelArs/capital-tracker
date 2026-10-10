@@ -1,5 +1,11 @@
 # Manual portfolio valuation
 
+> **Screen removed (G1, 2026-10-10).** The Russian browser screen this page describes was removed
+> from the application. Accounts are made in Add asset and Add wallet, trades are added in Add
+> transaction and the price of a hand-valued asset is changed on its asset page. The wording
+> about screens below is historical; the data and API rules still describe the stored records.
+
+
 “Оценка выбранных счетов” previews an explicitly selected set of one to ten
 owned manual accounts at one UTC instant. It is a selected subset, not the whole
 portfolio or net worth: it does not reconcile overlapping positions across

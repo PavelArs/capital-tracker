@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Locator, expect } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
 import { noStore, providerRequests, seedForeign } from './manual-opening-fixtures';
 import { fingerprint, origin, passwordStep, test } from './mfa-fixtures';
@@ -84,10 +84,6 @@ async function createPortfolio(
 
 function expectKeys(value: Record<string, unknown>, keys: string[]) {
   expect(Object.keys(value).sort()).toEqual([...keys].sort());
-}
-
-function summaryValue(region: Locator, label: string) {
-  return region.getByText(label, { exact: true }).locator('xpath=following-sibling::dd[1]');
 }
 
 async function preview(
@@ -400,168 +396,5 @@ test('MPV-API: exact shared-instrument sum and private coverage gaps', async ({
     expect(providerRequests()).toEqual(providersBefore);
   } finally {
     await pendingContext.close();
-  }
-});
-
-test('MPV-UI: selected exact portfolio displays explicit gaps and ignores a late stale request', async ({
-  page,
-}) => {
-  const api = await tradeApi(page);
-  const data = await createPortfolio(api, 'MPV UI');
-  const providersBefore = providerRequests();
-  const businessBefore = fingerprint(['auth_sessions', 'auth_request_limits']);
-  const writes: string[] = [];
-  page.on('request', (request) => {
-    const url = new URL(request.url());
-    if (url.pathname === previewPath && request.method() !== 'GET') writes.push(url.href);
-  });
-
-  await page.goto('/manual-accounts');
-  const directory = page.getByRole('region', { name: 'Счета', exact: true });
-  await expect(directory).not.toContainText('Загрузка счетов…');
-  const more = directory.getByRole('button', { name: 'Показать еще счета', exact: true });
-  while (await more.isVisible()) {
-    const nextPage = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/accounting/accounts' &&
-        response.request().method() === 'GET',
-    );
-    await more.click();
-    expect((await nextPage).status()).toBe(200);
-    await expect(directory.getByRole('button', { name: 'Загрузка…', exact: true })).toHaveCount(0);
-  }
-  const disclosure = page.getByText('Оценить выбранные счета', { exact: true });
-  await disclosure.click();
-  const heading = page.getByRole('heading', { name: 'Оценка выбранных счетов', exact: true });
-  // Retained valuation heading after explicitly opening the supplementary panel.
-  await expect(heading).toBeVisible();
-  const region = page.getByRole('region', { name: 'Оценка выбранных счетов', exact: true });
-  const at = page.getByLabel('Момент оценки (UTC)', { exact: true });
-  await at.fill(valuationAt);
-
-  const halfChoice = page.getByRole('checkbox', {
-    name: `Включить счет ${data.accounts.half.name}`,
-    exact: true,
-  });
-  const doubleChoice = page.getByRole('checkbox', {
-    name: `Включить счет ${data.accounts.double.name}`,
-    exact: true,
-  });
-  const gapChoice = page.getByRole('checkbox', {
-    name: `Включить счет ${data.accounts.missingPrice.name}`,
-    exact: true,
-  });
-  await halfChoice.check();
-  await doubleChoice.check();
-
-  const initial = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === previewPath && response.request().method() === 'POST',
-  );
-  await region.getByRole('button', { name: 'Рассчитать оценку', exact: true }).click();
-  expect((await initial).status()).toBe(200);
-  await expect(region.getByText('Полная оценка выбранных счетов', { exact: true })).toBeVisible();
-  await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
-  await expect(summaryValue(region, 'Оценённая часть, USD')).toHaveText('308.64');
-  await expect(summaryValue(region, 'Счетов без истории')).toHaveText('0');
-  await expect(summaryValue(region, 'Позиций без цены')).toHaveText('0');
-  const table = region.getByRole('table', { name: 'Оценка по счетам', exact: true });
-  await expect(table).toBeVisible();
-  const halfRow = table.getByRole('row').filter({ hasText: data.accounts.half.name });
-  await expect(halfRow.getByRole('cell').nth(3)).toHaveText('61.728');
-  await expect(halfRow.getByRole('cell').nth(4)).toHaveText('61.728');
-  const doubleRow = table.getByRole('row').filter({ hasText: data.accounts.double.name });
-  await expect(doubleRow.getByRole('cell').nth(3)).toHaveText('246.912');
-  await expect(doubleRow.getByRole('cell').nth(4)).toHaveText('246.912');
-  await expect(summaryValue(region, 'Нереализованная прибыль, USD')).toHaveText('58.64');
-  await expect(summaryValue(region, 'Доход, %')).toHaveText('23.46 %');
-  await expect(halfRow.getByRole('cell').nth(5)).toHaveText('11.728');
-  await expect(halfRow.getByRole('cell').nth(6)).toHaveText('23.46 %');
-  await expect(doubleRow.getByRole('cell').nth(5)).toHaveText('46.912');
-  await expect(doubleRow.getByRole('cell').nth(6)).toHaveText('23.46 %');
-
-  // DIRECTORY / MPV-UI-DISCLOSURE: hiding the panel must not replace its intent.
-  const mountedValuation = await region.elementHandle();
-  await disclosure.click();
-  await expect(region).toBeHidden();
-  await disclosure.click();
-  expect(await mountedValuation?.evaluate((node) => node.isConnected)).toBe(true);
-  await expect(halfChoice).toBeChecked();
-  await expect(doubleChoice).toBeChecked();
-  await expect(at).toHaveValue(valuationAt);
-  await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('308.64');
-  expect(writes).toHaveLength(1);
-  await mountedValuation?.dispose();
-
-  await gapChoice.check();
-  await expect(region.getByText('Полная оценка выбранных счетов', { exact: true })).toBeHidden();
-  const incomplete = page.waitForResponse(
-    (response) =>
-      new URL(response.url()).pathname === previewPath && response.request().method() === 'POST',
-  );
-  await region.getByRole('button', { name: 'Рассчитать оценку', exact: true }).click();
-  expect((await incomplete).status()).toBe(200);
-  await expect(region.getByText('Неполная оценка выбранных счетов', { exact: true })).toBeVisible();
-  await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('Не определена');
-  await expect(summaryValue(region, 'Оценённая часть, USD')).toHaveText('308.64');
-  await expect(summaryValue(region, 'Позиций без цены')).toHaveText('1');
-  await expect(summaryValue(region, 'Нереализованная прибыль, USD')).toHaveText('Не определена');
-  await expect(
-    table.getByRole('row').filter({ hasText: data.accounts.missingPrice.name }),
-  ).toBeVisible();
-
-  const matchesPreview = (url: URL) => url.pathname === previewPath;
-  let release = () => {};
-  let held = false;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route(
-    matchesPreview,
-    async (route) => {
-      const actual = await route.fetch();
-      expect(actual.status()).toBe(200);
-      held = true;
-      await gate;
-      await route.fulfill({ response: actual });
-    },
-    { times: 1 },
-  );
-  try {
-    const delayed = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === previewPath && response.request().method() === 'POST',
-    );
-    await region.getByRole('button', { name: 'Рассчитать оценку', exact: true }).click();
-    await expect.poll(() => held).toBe(true);
-    await at.fill(beforeCoverageAt);
-    await expect(
-      region.getByText('Неполная оценка выбранных счетов', { exact: true }),
-    ).toBeHidden();
-    release();
-    const late = await delayed;
-    expect(late.status()).toBe(200);
-    await expect(
-      region.getByText('Неполная оценка выбранных счетов', { exact: true }),
-    ).toBeHidden();
-
-    const current = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === previewPath && response.request().method() === 'POST',
-    );
-    await region.getByRole('button', { name: 'Рассчитать оценку', exact: true }).click();
-    expect((await current).status()).toBe(200);
-    await expect(
-      region.getByText('Неполная оценка выбранных счетов', { exact: true }),
-    ).toBeVisible();
-    await expect(summaryValue(region, 'Счетов без истории')).toHaveText('3');
-    await expect(summaryValue(region, 'Оценка выбранных счетов, USD')).toHaveText('Не определена');
-    await expect(region.getByText('Момент раньше начала истории', { exact: true })).toHaveCount(3);
-    expect(writes).toHaveLength(4);
-    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(businessBefore);
-    expect(providerRequests()).toEqual(providersBefore);
-  } finally {
-    release();
-    await page.unroute(matchesPreview);
   }
 });
