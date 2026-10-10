@@ -50,21 +50,6 @@ export interface RewardVoidCommand {
   expectedVersion: number;
 }
 
-export interface RewardPage {
-  accountId: string;
-  journalRevision: number;
-  activeCount: number;
-  versionCount: number;
-  limits: { activeRewards: number; versions: number };
-  items: RewardVersion[];
-  nextOffset: number | null;
-}
-
-export interface RewardVersions {
-  items: RewardVersion[];
-  nextBeforeVersion: number | null;
-}
-
 const accountPath = (accountId: string) =>
   `/accounting/accounts/${encodeURIComponent(accountId)}/rewards`;
 const rewardPath = (accountId: string, rewardId: string) =>
@@ -85,23 +70,4 @@ export const assetRewardsApi = {
     input: RewardVoidCommand,
   ): Promise<RewardReceipt> =>
     (await apiClient.post<RewardReceipt>(`${rewardPath(accountId, rewardId)}/void`, input)).data,
-  list: async (accountId: string, journalRevision: number, offset = 0): Promise<RewardPage> =>
-    (
-      await apiClient.get<RewardPage>(accountPath(accountId), {
-        params: { journalRevision, offset, limit: 50 },
-      })
-    ).data,
-  versions: async (
-    accountId: string,
-    rewardId: string,
-    beforeVersion?: number,
-  ): Promise<RewardVersions> =>
-    (
-      await apiClient.get<RewardVersions>(`${rewardPath(accountId, rewardId)}/versions`, {
-        params: {
-          limit: 10,
-          ...(beforeVersion === undefined ? {} : { beforeVersion }),
-        },
-      })
-    ).data,
 };
