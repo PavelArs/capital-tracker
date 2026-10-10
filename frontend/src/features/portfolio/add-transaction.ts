@@ -184,6 +184,21 @@ export function withDefaultTime<T extends Pick<TransactionEntry, 'date' | 'time'
   return { ...entry, time: instant.slice(11, 16) };
 }
 
+/**
+ * The Moscow calendar date the server will use for the entry's Bank of Russia rate: the date of
+ * its instant (with the default time of a new entry dated today) at UTC+3, not the typed date.
+ */
+export function rateDate(
+  entry: Pick<TransactionEntry, 'date' | 'time'>,
+  now: Date,
+  editing = false,
+): string {
+  const timed = editing ? entry : withDefaultTime(entry, now);
+  const time = Date.parse(occurredAt(timed));
+  if (Number.isNaN(time)) return entry.date;
+  return new Date(time + 3 * 3_600_000).toISOString().slice(0, 10);
+}
+
 /** Two nonnegative decimal strings as integers of the same scale, and that scale. */
 function scaledPair(left: string, right: string): [bigint, bigint, number] {
   const [leftWhole, leftFraction = ''] = left.split('.');
