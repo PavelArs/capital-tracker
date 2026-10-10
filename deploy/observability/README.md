@@ -13,11 +13,14 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
 
 ## Setup
 
-1. **Network.** The backend serves `/metrics` on port 9464, which Compose never publishes (the
-   public proxy forwards only `/api/`). Put your Prometheus and Alloy containers on the
-   application's Docker network: `docker network connect <project>_capital-tracker-network <container>`
-   (see `docker network ls`). Use `external: true` in their compose file to keep it across
-   re-creation. Alloy also needs the Docker socket mounted read-only.
+1. **Network.** The backend serves `/metrics` on port 9464. Compose publishes it on the
+   server's loopback only (`127.0.0.1:9464`, `METRICS_HOST_PORT` changes the host port), and the
+   public proxy forwards only `/api/`, so it is not reachable from outside. A Prometheus in
+   host network mode scrapes `127.0.0.1:9464`. A Prometheus on a Docker network can instead join
+   the application's network (`docker network connect <project>_capital-tracker-network <container>`,
+   see `docker network ls`; `external: true` in its compose file keeps it across re-creation)
+   and scrape `capital_tracker_backend:9464`. The published port needs the server update step
+   once; see the pull request that added it.
 2. **Metrics.** Add the job from `prometheus-scrape.yml`, add the rules file, reload Prometheus.
    Check Status → Targets shows `capital-tracker-backend` as UP.
 3. **Logs.** Either merge `alloy-logs.alloy` into your own Alloy config (point `forward_to` at your

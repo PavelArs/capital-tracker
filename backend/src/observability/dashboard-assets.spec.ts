@@ -51,6 +51,15 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
       expect(text).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b|pavelars\.ru|api[_-]?key|secret/i);
     }
   });
+
+  it('OBS-PORT-1 Compose publishes the metrics port on the loopback only', () => {
+    const compose = readFileSync(resolve(__dirname, '../../../docker-compose.yml'), 'utf8');
+    const metricsPorts = compose
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('- ') && line.includes(':9464'));
+    expect(metricsPorts).toHaveLength(1);
+    expect(metricsPorts[0]).toMatch(/"127\.0\.0\.1:\$\{METRICS_HOST_PORT:-9464\}:9464"/);
+  });
 });
 
 describe('OBS-LOKI the Loki and Alloy stack', () => {

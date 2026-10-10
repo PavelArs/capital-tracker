@@ -233,7 +233,7 @@ Swagger/documentation endpoint is mounted, including in development.
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
 | Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |
-| Metrics     | Internal only: Prometheus `GET /metrics` on `METRICS_PORT` (default 9464), a separate listener that Compose does not publish        |
+| Metrics     | Internal only: Prometheus `GET /metrics` on `METRICS_PORT` (default 9464), a separate listener that Compose publishes on the server's loopback only |
 
 Private endpoints use the Secure/HttpOnly/SameSite=Strict host-only session cookie.
 All writes, including login/MFA/logout, require the exact configured Origin and
