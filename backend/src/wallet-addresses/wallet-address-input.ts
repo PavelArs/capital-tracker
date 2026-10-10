@@ -60,6 +60,9 @@ const normalizers: Record<Exclude<Network, 'bybit'>, (value: unknown) => string>
   bitcoin: (value) =>
     isExtendedKey(value) ? normalizeExtendedKey(value) : normalizeBitcoinAddress(value),
   ethereum: normalizeEthereumAddress,
+  base: normalizeEthereumAddress,
+  arbitrum: normalizeEthereumAddress,
+  optimism: normalizeEthereumAddress,
   solana: normalizeSolanaAddress,
   tron: normalizeTronAddress,
   stellar: normalizeStellarAddress,

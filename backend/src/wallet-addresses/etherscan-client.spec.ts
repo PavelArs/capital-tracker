@@ -97,6 +97,30 @@ describe('ETH-SYNC Etherscan client', () => {
     expect(requests).toHaveLength(0);
   });
 
+  it('EVM-MULTICHAIN asks for the chain it was made for with the same key, and mainnet otherwise', async () => {
+    replies.push(ok([]), ok([]), ok([]));
+    await client().normal(owned, 1, 2);
+    await client().forChain(8453).normal(owned, 1, 2);
+    await client().forChain(42161).blockNumber();
+    expect(requests.map((request) => request.searchParams.get('chainid'))).toEqual([
+      '1',
+      '8453',
+      '42161',
+    ]);
+    expect(requests.map((request) => request.searchParams.get('apikey'))).toEqual([key, key, key]);
+    expect(new EtherscanClient({ apiKey: null }).forChain(10).configured).toBe(false);
+  });
+
+  it('EVM-MULTICHAIN paces the calls of every chain together, as the key allows a few a second', async () => {
+    replies.push(ok([]), ok([]), ok([]));
+    const paced = new EtherscanClient({ apiKey: key, baseUrl, timeoutMs: 500, pauseMs: 60 });
+    const started = Date.now();
+    await paced.normal(owned, 1, 2);
+    await paced.forChain(10).normal(owned, 1, 2);
+    await paced.forChain(8453).normal(owned, 1, 2);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(110);
+  });
+
   it('reads one block range of mainnet history oldest first with the key', async () => {
     replies.push(ok([normal]));
     const result = await client().normal(owned, 19_000_000, 20_000_100);

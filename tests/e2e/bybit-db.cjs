@@ -415,7 +415,7 @@ async function main() {
     'Synthetic server key must be mounted',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 55/);
+  assert.match(migrate(database), /Migrations applied: 56/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -1886,7 +1886,7 @@ async function main() {
       ),
       snapshot,
     );
-    console.log('PASS BYBIT-MIGRATION fresh 55 applies once; no Bybit migration goes down');
+    console.log('PASS BYBIT-MIGRATION fresh 56 applies once; no Bybit migration goes down');
   } finally {
     await db.destroy();
   }

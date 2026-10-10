@@ -1,5 +1,6 @@
 import type { Operation, OperationAsset, OperationType } from '@api/operations.api';
 import { DASH, quantity } from '../portfolio/format';
+import { isEvm } from '../shell/evm-networks';
 
 // Display only: the list keeps exact decimal strings; rounding happens here (OPS-4).
 export const typeLabels: Record<OperationType, string> = {
@@ -43,6 +44,9 @@ export const statusLabels: Record<Operation['status'], string> = {
 const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> = {
   bitcoin: 'Bitcoin',
   ethereum: 'Ethereum',
+  base: 'Base',
+  arbitrum: 'Arbitrum One',
+  optimism: 'OP Mainnet',
   solana: 'Solana',
   tron: 'Tron',
   stellar: 'Stellar',
@@ -139,7 +143,7 @@ export function hashOf(
   const record = recordName(txid);
   if (record) return record;
   const [hash] = txid.split('-');
-  return network === 'ethereum' ? `0x${hash}` : hash;
+  return network && isEvm(network) ? `0x${hash}` : hash;
 }
 
 /** "Trade 2100000000000000001": a Bybit record that has no blockchain hash. */
@@ -174,6 +178,9 @@ function recordName(txid: string): string | null {
 const explorers: Partial<Record<string, (hash: string) => string>> = {
   bitcoin: (hash) => `https://mempool.space/tx/${hash}`,
   ethereum: (hash) => `https://etherscan.io/tx/${hash}`,
+  base: (hash) => `https://basescan.org/tx/${hash}`,
+  arbitrum: (hash) => `https://arbiscan.io/tx/${hash}`,
+  optimism: (hash) => `https://optimistic.etherscan.io/tx/${hash}`,
   solana: (hash) => `https://solscan.io/tx/${hash}`,
   tron: (hash) => `https://tronscan.org/#/transaction/${hash}`,
   stellar: (hash) => `https://stellar.expert/explorer/public/tx/${hash}`,

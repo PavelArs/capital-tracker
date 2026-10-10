@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class JournalWalletSyncs1795600000000 implements MigrationInterface {
-  name = 'JournalWalletSyncs1795600000000';
+export class JournalWalletSyncs1796100000000 implements MigrationInterface {
+  name = 'JournalWalletSyncs1796100000000';
 
   async up(runner: QueryRunner): Promise<void> {
     // SYNC-JOURNAL: one row for each pass of a wallet that ended (the background job's and "Sync

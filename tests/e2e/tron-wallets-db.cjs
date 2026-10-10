@@ -235,7 +235,7 @@ function services(db, apiKey = null) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 55/);
+  assert.match(migrate(database), /Migrations applied: 56/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -610,7 +610,7 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackTronWallets1793600000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS TRON-MIGRATION fresh 55 applies once; the Tron migration refuses down');
+    console.log('PASS TRON-MIGRATION fresh 56 applies once; the Tron migration refuses down');
   } finally {
     await db.destroy();
   }

@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class KindOfWallet1795900000000 implements MigrationInterface {
-  name = 'KindOfWallet1795900000000';
+export class KindOfWallet1796200000000 implements MigrationInterface {
+  name = 'KindOfWallet1796200000000';
 
   async up(runner: QueryRunner): Promise<void> {
     // WALLET-KIND: how the owner holds an account's coins, shown on the wallet and asset pages.

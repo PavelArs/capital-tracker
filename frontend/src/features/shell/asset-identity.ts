@@ -16,6 +16,10 @@ const known: Record<string, AssetIdentity> = {
   ETH: { color: 'var(--c-eth)', glyph: 'Ξ' },
   SOL: { color: 'var(--c-sol)', glyph: 'S' },
   ZEC: { color: 'var(--c-zec)', glyph: 'Z' },
+  // EVM-MULTICHAIN: the chains that hold ETH look like themselves, not like Ethereum.
+  BASE: { color: 'var(--c-base)', glyph: 'B' },
+  ARB: { color: 'var(--c-arb)', glyph: 'A' },
+  OP: { color: 'var(--c-op)', glyph: 'O' },
   TRX: { color: 'var(--c-trx)', glyph: 'T' },
   XLM: { color: 'var(--c-xlm)', glyph: 'X' },
   USDT: { color: cash, glyph: '₮' },
@@ -43,6 +47,9 @@ export type Blockchain = Exclude<Network, 'bybit'>;
 const networkCoins: Record<Blockchain, string> = {
   bitcoin: 'BTC',
   ethereum: 'ETH',
+  base: 'BASE',
+  arbitrum: 'ARB',
+  optimism: 'OP',
   solana: 'SOL',
   tron: 'TRX',
   stellar: 'XLM',
