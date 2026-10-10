@@ -136,6 +136,7 @@ const synced = (address: WalletAddress, outcome: SyncResult['outcome'] = 'comple
 function setup(list: WalletAddress[], valuation = portfolio()) {
   vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(valuation);
   vi.spyOn(walletAddressesApi, 'list').mockResolvedValue(list);
+  vi.spyOn(walletAddressesApi, 'syncRuns').mockResolvedValue([]);
   vi.spyOn(walletAddressesApi, 'transactions').mockResolvedValue({
     total: 0,
     offset: 0,

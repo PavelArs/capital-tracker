@@ -229,7 +229,7 @@ Swagger/documentation endpoint is mounted, including in development.
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
 | Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, CSV imports, manual prices, portfolio value and history |
-| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
+| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/sync-runs`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
 | Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |

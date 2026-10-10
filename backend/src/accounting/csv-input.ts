@@ -58,7 +58,7 @@ const columnFields = [
   'feeUsd',
   'currency',
 ] as const;
-const has = (row: object, key: string): boolean => Object.prototype.hasOwnProperty.call(row, key);
+const has = (row: object, key: string): boolean => Object.hasOwn(row, key);
 function bad(): never {
   throw new BadRequestException('Invalid CSV input');
 }

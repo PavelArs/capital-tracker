@@ -470,6 +470,31 @@ button.wallets-source__open:focus-visible {
   justify-self: start;
 }
 
+.wallets-journal {
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.wallets-journal li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+.wallets-journal time {
+  justify-self: end;
+}
+
+.wallets-journal__text {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
 .wallets-recent {
   margin: 0 0 10px;
   padding: 0;
