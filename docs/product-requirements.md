@@ -802,7 +802,7 @@ Beyond section 17:
 |---|---|---|---|---|
 | 10 | Market vs deposits | Adapt | `external-usd-flows`, `period-profit-preview` | M7 |
 | 13 | Duplicate protection | Keep | uniqueness per address and txid; request-id idempotency on every journal | extend per network in M14, M15 |
-| 14 | Audit | Keep | immutable versions on every journal | classification versions in M12 |
+| 14 | Audit | Keep | immutable versions on every journal | classification versions in M12; history screen in M27 |
 | 16 | Data ownership | Keep | database-first prices and FX | — |
 | 15 | Future CSV import | Keep | `usd-csv-imports` + PR #34 | — |
 
@@ -846,6 +846,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M23 | `track-stellar-wallets` | XLM history and balance of a Stellar account from the public Horizon, the balance Horizon reports when the history differs (after D4, section 10) | M11, M12, M13 | — |
 | M26 | `price-bybit-coins` | any coin a Bybit account holds or trades, not only BTC, ETH, SOL, USDT and USDC; hourly and daily prices from Bybit's public spot market (`XYZUSDT`, no key) for coins Kraken and CoinGecko are not asked for; a one-time re-read of accounts read before | M22, M3 | — |
 | M25 | `track-any-chain-token` | every ERC-20 token of Ethereum wallets and every SPL token of Solana wallets, named from the chain, with old history read again once; the same classification flow, unpriced unlisted receipts count as dust; then CoinGecko prices by contract for held tokens | M3, M14, M15 | — |
+| M27 | `show-audit-history` | History screen (Settings → Change history): every stored version of trades, transfers, swaps, rewards, deposits and withdrawals, manual prices and blockchain answers, newest first, each compared with the version before it (created, changed, deleted; who made it: you, a CSV import or the app); filters by change, type, source and date; side drawer with the values before and after; phone list per the mobile-tables rule; read only on the existing version tables, no migration | M12, M13 | — |
 
 ```mermaid
 flowchart LR
@@ -914,6 +915,6 @@ sidebar, five sections) so it does not wait for mockups.
 
 From BR 18 and the items above that the MVP leaves out: Trezor xpub scanning (first
 after MVP, Q8), accounting currencies beyond USD, EUR and RUB, Zcash, TRON and Stellar wallets, tokens beyond USDT/USDC, browser TOTP
-re-enrolment, an audit history screen, stocks, bonds, ETFs, deposits, real estate,
+re-enrolment, stocks, bonds, ETFs, deposits, real estate,
 metals and liabilities as asset types, exchanges other than Bybit, bank integrations, tax reports,
 DeFi and NFT valuation, mobile layouts.
