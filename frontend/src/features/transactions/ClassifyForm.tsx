@@ -84,6 +84,8 @@ interface Draft {
   pair: string;
   /** Pool withdrawal only: the deposit it returns, as "address id|txid". */
   deposit: string;
+  /** Pool withdrawal only: just a part of the deposit came back; the rest is still in the pool. */
+  partial: boolean;
   comment: string;
   hidden: boolean;
 }
@@ -123,6 +125,7 @@ function draftOf(operation: Operation): Draft {
           ? `${together.addressId}|${together.txid}`
           : '',
     deposit: returned ? `${returned.deposit.addressId}|${returned.deposit.txid}` : '',
+    partial: returned?.partial === true,
     comment: saved?.comment ?? '',
     // Changing an answer starts from "included"; hiding is its own button outside this form.
     hidden: false,
@@ -280,23 +283,34 @@ export function recordCandidates(
 }
 
 /**
- * POOL-WITHDRAW: the owner's pool deposits this receipt can return: the same coin, from an
- * address of the same wallet, made no later, that no other withdrawal returns; newest first.
+ * POOL-WITHDRAW, POOL-PARTIAL: the owner's pool deposits this receipt can return: the same coin,
+ * from an address of the same wallet, made no later, that no other withdrawal closed and that
+ * still has coins in the pool; newest first, with what is left when parts came back already.
  */
 export function poolCandidates(operation: Operation, operations: Operation[]): [string, string][] {
   const coin = assetKey(operation.asset);
-  const depositKey = (item: Operation) => {
+  const named = (item: Operation) => {
     const value = item.classification?.value;
     return value?.type === 'pool-withdrawal'
-      ? `${value.deposit.addressId}|${value.deposit.txid}`
-      : '';
+      ? { key: `${value.deposit.addressId}|${value.deposit.txid}`, partial: value.partial === true }
+      : null;
   };
-  const taken = new Set(
-    operations
-      .filter((item) => item.id !== operation.id && item.status === 'recorded')
-      .map(depositKey)
-      .filter(Boolean),
+  const others = operations.filter(
+    (item) => item.id !== operation.id && item.status === 'recorded',
   );
+  const closed = new Set(
+    others.flatMap((item) => {
+      const found = named(item);
+      return found && !found.partial ? [found.key] : [];
+    }),
+  );
+  // What the latest part left in the pool, by deposit.
+  const left = new Map<string, string>();
+  for (const item of [...others].sort((a, b) => a.occurredAt.localeCompare(b.occurredAt))) {
+    const found = named(item);
+    if (found?.partial && item.pool?.remaining !== undefined)
+      left.set(found.key, item.pool.remaining);
+  }
   const found = operations
     .filter(
       (item) =>
@@ -304,7 +318,8 @@ export function poolCandidates(operation: Operation, operations: Operation[]): [
         item.type === 'pool-deposit' &&
         item.status === 'recorded' &&
         pairKey(item) !== '' &&
-        !taken.has(pairKey(item)) &&
+        !closed.has(pairKey(item)) &&
+        Number(left.get(pairKey(item)) ?? 1) > 0 &&
         assetKey(item.asset) === coin &&
         item.account !== null &&
         item.account.id === operation.account?.id &&
@@ -317,9 +332,12 @@ export function poolCandidates(operation: Operation, operations: Operation[]): [
         `${day(item.occurredAt)}, ${rowTime(item)}`,
         amount(item.quantity, item.asset),
         addressText(item.wallet!),
+        ...(left.has(pairKey(item))
+          ? [`${amount(left.get(pairKey(item))!, item.asset)} left in the pool`]
+          : []),
       ].join(' · '),
     ]);
-  const saved = depositKey(operation);
+  const saved = named(operation)?.key;
   if (saved && !found.some(([key]) => key === saved)) found.unshift([saved, 'The saved deposit']);
   return found;
 }
@@ -405,6 +423,7 @@ function answer(draft: Draft): ChainClassification | null {
         type: 'pool-withdrawal',
         deposit: { addressId, txid },
         valueUsd: draft.value.trim() ? decimal(draft.value) : null,
+        ...(draft.partial ? { partial: true as const } : {}),
       };
     }
     case 'recorded':
@@ -827,6 +846,19 @@ export default function ClassifyForm({
                 </span>
               )}
             </div>
+            <label className="transactions-toggle">
+              <input
+                type="checkbox"
+                checked={draft.partial}
+                onChange={(event) => change({ partial: event.target.checked })}
+              />
+              Part of the deposit
+            </label>
+            <span className="portfolio-field__hint">
+              {draft.partial
+                ? 'The rest is still in the pool: it stays in your balance with its purchase price. Classify the other parts in the order they happened.'
+                : 'The last or only withdrawal of this deposit: what is missing from it counts as impermanent loss.'}
+            </span>
           </div>
         )}
         {other && (

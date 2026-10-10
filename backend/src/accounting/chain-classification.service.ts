@@ -42,6 +42,8 @@ import {
 } from './chain-classification';
 import { isDust } from './chain-dust';
 import {
+  byPoolOrder,
+  checkPoolWithdrawal,
   type PoolLeg,
   planPoolWithdrawal,
   poolDepositUnits,
@@ -209,6 +211,8 @@ const side = (address: string, txid: string, row: LegRow): SwapSide => ({
   blockTime: row.blockTime.toISOString(),
 });
 const poolLeg = (address: string, txid: string, row: LegRow): PoolLeg => side(address, txid, row);
+/** Where a leg stands among the withdrawals of a deposit (POOL-PARTIAL). */
+const at = (leg: Leg) => ({ blockTime: leg.row.blockTime, txid: leg.txid });
 /** POOL-UNDO: a deposit cannot change while a withdrawal returns it. */
 const namedDeposit = () =>
   new UnprocessableEntityException(
@@ -662,9 +666,10 @@ export class ChainClassificationService {
       current?.status === 'classified' &&
       current.type === 'pool-deposit' &&
       value?.type !== 'pool-deposit' &&
-      (await this.withdrawalOf(manager, owner, address, txid, null))
+      (await this.withdrawalsOf(manager, owner, address, txid, null)).length > 0
     )
       throw namedDeposit();
+    await this.checkWithdrawalOrder(manager, owner, target, current, value);
     if (value?.type === 'swap')
       return this.recordSwap(manager, owner, target, input, payload, value);
     const live = current && (await this.active(manager, owner, current)) ? current : null;
@@ -1156,9 +1161,10 @@ export class ChainClassificationService {
   }
 
   /**
-   * POOL-WITHDRAW, POOL-INVALID: the gain a withdrawal records over the deposit it names, as pool
-   * income at the time it came back; a loss or no difference records nothing. The deposit must
-   * be answered as one, and no other withdrawal may name it.
+   * POOL-WITHDRAW, POOL-PARTIAL, POOL-INVALID: the gain a withdrawal records over what its
+   * deposit still had in the pool, as pool income at the time it came back; a loss or no
+   * difference records nothing. The deposit must be answered as one, and no earlier withdrawal
+   * may have closed it.
    */
   private async planWithdrawal(
     manager: EntityManager,
@@ -1172,12 +1178,19 @@ export class ChainClassificationService {
     const answer = version ? await this.version(manager, addressId, txid, version) : null;
     if (answer?.status !== 'classified' || answer.type !== 'pool-deposit')
       throw new UnprocessableEntityException('Choose a pool deposit');
-    const plan = planPoolWithdrawal(
-      poolLeg(target.address, target.txid, target.row),
-      poolLeg(addressId, txid, row),
-    );
-    if (await this.withdrawalOf(manager, owner, addressId, txid, target))
+    const mine = poolLeg(target.address, target.txid, target.row);
+    const deposit = poolLeg(addressId, txid, row);
+    checkPoolWithdrawal(mine, deposit);
+    // The earlier withdrawals of the deposit; a later one only waits for this one's answer.
+    const earlier = (await this.withdrawalsOf(manager, owner, addressId, txid, target))
+      .filter((item) => byPoolOrder(item, at(target)) < 0)
+      .map((item) => ({
+        leg: poolLeg(item.address, item.txid, item.row),
+        partial: item.partial,
+      }));
+    if (earlier.some((item) => !item.partial))
       throw new UnprocessableEntityException('That pool deposit was already withdrawn');
+    const plan = planPoolWithdrawal(mine, deposit, { partial: value.partial === true, earlier });
     if (plan.gain === '0') return { journal: 'none' };
     const { symbol } = chainCoin(target.row);
     const valueUsd = poolGainValueUsd(
@@ -1199,25 +1212,83 @@ export class ChainClassificationService {
     };
   }
 
-  /** The withdrawal whose current answer names this deposit, other than `except`; if any. */
-  private async withdrawalOf(
+  /**
+   * POOL-PARTIAL: the withdrawals whose current answer names this deposit, other than `except`,
+   * oldest first, each with its leg.
+   */
+  private async withdrawalsOf(
     manager: EntityManager,
     owner: string,
     address: string,
     txid: string,
     except: Pick<Leg, 'address' | 'txid'> | null,
-  ): Promise<boolean> {
-    const rows: unknown[] = await manager.query(
-      `SELECT 1 FROM chain_transaction_classifications h
-        JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
-          AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE h."ownerId"=$1 AND v.status='classified' AND v.type='pool-withdrawal'
-          AND v."pairedAddressId"=$2 AND v."pairedTxid"=$3
-          AND NOT (h."addressId"=$4 AND h.txid=$5)
-        LIMIT 1`,
-      [owner, address, txid, except?.address ?? address, except?.txid ?? txid],
-    );
-    return rows.length > 0;
+  ): Promise<{ address: string; txid: string; blockTime: Date; partial: boolean; row: LegRow }[]> {
+    const rows: (LegRow & { addressId: string; txid: string; partial: boolean })[] =
+      await manager.query(
+        `SELECT h."addressId", h.txid, coalesce((v.details->>'partial')::boolean, false) AS partial,
+            ${legColumns}
+          FROM chain_transaction_classifications h
+          JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+            AND v.txid=h.txid AND v.version=h."currentVersion"
+          JOIN wallet_address_transactions t ON t."addressId"=h."addressId" AND t.txid=h.txid
+          JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+          WHERE h."ownerId"=$1 AND v.status='classified' AND v.type='pool-withdrawal'
+            AND v."pairedAddressId"=$2 AND v."pairedTxid"=$3
+            AND NOT (h."addressId"=$4 AND h.txid=$5)`,
+        [owner, address, txid, except?.address ?? address, except?.txid ?? txid],
+      );
+    return rows
+      .map(({ addressId, txid: id, partial, ...rest }) => ({
+        address: addressId,
+        txid: id,
+        blockTime: rest.blockTime,
+        partial,
+        row: rest as LegRow,
+      }))
+      .sort(byPoolOrder);
+  }
+
+  /**
+   * POOL-PARTIAL: the parts of a deposit are settled in the order they happened, so a withdrawal
+   * cannot be added before, changed or hidden under one that comes after it on the same deposit.
+   */
+  private async checkWithdrawalOrder(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    current: ClassificationRow | null,
+    value: ClassificationInput['classification'],
+  ) {
+    const was =
+      current?.status === 'classified' && current.type === 'pool-withdrawal' ? current : null;
+    const next = value?.type === 'pool-withdrawal' ? value : null;
+    // A note on the same answer changes what the others settle against nothing.
+    const kept = was?.details as PoolWithdrawalClassification | null | undefined;
+    if (
+      kept &&
+      next &&
+      kept.deposit.addressId === next.deposit.addressId &&
+      kept.deposit.txid === next.deposit.txid &&
+      kept.valueUsd === next.valueUsd &&
+      (kept.partial === true) === (next.partial === true)
+    )
+      return;
+    const named = [
+      was?.pairedAddressId && was.pairedTxid
+        ? { addressId: was.pairedAddressId, txid: was.pairedTxid }
+        : null,
+      next?.deposit ?? null,
+    ];
+    for (const deposit of named) {
+      if (!deposit) continue;
+      const later = (
+        await this.withdrawalsOf(manager, owner, deposit.addressId, deposit.txid, target)
+      ).some((item) => byPoolOrder(item, at(target)) > 0);
+      if (later)
+        throw new UnprocessableEntityException(
+          'A later withdrawal already returns part of this deposit; change it first',
+        );
+    }
   }
 
   private async revision(manager: EntityManager, owner: string, accountId: string) {
