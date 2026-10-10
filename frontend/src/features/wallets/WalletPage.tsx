@@ -1,10 +1,14 @@
+import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList } from '@api/operations.api';
+import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
+import { isAxiosError } from 'axios';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { withCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
+import ConfirmDialog from '../security/ConfirmDialog';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
@@ -163,12 +167,25 @@ function WalletTransactions({
   );
 }
 
+/** WALLET-REMOVE: the reason the server gave, or a plain sentence for what went wrong. */
+function removalFailure(error: unknown): string {
+  const response = isAxiosError(error) ? error.response : undefined;
+  if (!response) return 'Could not reach the server. Nothing was changed; try again.';
+  if (response.status === 409 && typeof response.data?.message === 'string')
+    return response.data.message;
+  if (response.status === 404) return 'This wallet no longer exists. Reload the page.';
+  return 'Could not remove the wallet. Nothing was changed; try again.';
+}
+
 // One wallet (account): its value, addresses, assets and transactions (prototype "wallet").
 export default function WalletPage() {
   const { accountId = '' } = useParams();
-  const { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
+    useWallets();
+  const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
 
@@ -262,6 +279,13 @@ export default function WalletPage() {
                 onClick={() => setEditing(true)}
               >
                 Edit
+              </button>
+              <button
+                type="button"
+                className="shell-button shell-button--ghost"
+                onClick={() => setRemoving(true)}
+              >
+                Remove
               </button>
               {own.length > 0 && (
                 <button
@@ -416,6 +440,25 @@ export default function WalletPage() {
           }}
         />
       )}
+      {removing && account && (
+        <ConfirmDialog
+          title={`Remove ${account.name}?`}
+          text={
+            own.length > 0
+              ? `${account.name} leaves your wallets and its ${own.length === 1 ? 'address stops' : `${own.length} addresses stop`} syncing. A wallet that holds recorded transactions cannot be removed, because they are your history; remove its addresses instead.`
+              : `${account.name} leaves your wallets. A wallet that holds recorded transactions cannot be removed, because they are your history.`
+          }
+          confirmLabel="Remove wallet"
+          busyLabel="Removing…"
+          failure={removalFailure}
+          onConfirm={async () => {
+            await accountingApi.removeAccount(account.accountId);
+            announceSyncChange();
+            navigate(withCurrency('/wallets', asked));
+          }}
+          onClose={() => setRemoving(false)}
+        />
+      )}
       {open && portfolio && (
         <AddressDrawer
           key={open.id}
@@ -428,6 +471,11 @@ export default function WalletPage() {
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount || address.accountId !== accountId) refresh();
+          }}
+          onRemoved={(address) => {
+            setOpenId(null);
+            forget(address.id);
+            refresh();
           }}
           onClose={() => setOpenId(null)}
         />

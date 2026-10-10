@@ -1,4 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { WalletAddressService } from './wallet-address.service';
@@ -26,6 +37,12 @@ export class WalletAddressController {
   @Patch(':id')
   update(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {
     return this.addresses.update(owner.userId, id, input);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    await this.addresses.remove(owner.userId, id);
   }
 
   @Patch(':id/tokens')

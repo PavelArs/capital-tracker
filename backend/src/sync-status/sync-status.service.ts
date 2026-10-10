@@ -89,7 +89,7 @@ export class SyncStatusService {
         `SELECT a.id, a.network, a.label, s.key, s.state, s."lastAttemptAt", s."lastSuccessAt",
             s."nextRunAt", s."errorCode", s."errorMessage"
           FROM wallet_addresses a LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
-          WHERE a."ownerId" = $1 ORDER BY a."createdAt", a.id`,
+          WHERE a."ownerId" = $1 AND a."removedAt" IS NULL ORDER BY a."createdAt", a.id`,
         [owner],
       );
       const sources: SourceSummary[] = [];

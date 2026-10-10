@@ -331,13 +331,13 @@ async function main() {
   } finally { await admin.end(); }
   const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend', env: { ...settings, ...process.env, DB_NAME: database }, encoding: 'utf8', timeout: 60000 });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 56/);
+  assert.match(migrated.stdout, /Migrations applied: 57/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 56);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 57);
     assert.deepEqual((await db.query('SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2')).map(({ name }) => name),
-      ['KindOfWallet1796200000000', 'JournalWalletSyncs1796100000000']);
+      ['StopTrackingWallets1796300000000', 'KindOfWallet1796200000000']);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('snapshot-owner@example.invalid','synthetic-not-a-hash',true),
       ('snapshot-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);

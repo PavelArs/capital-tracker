@@ -69,6 +69,7 @@ export class MetricsCollector {
             min(s."lastSuccessAt") AS oldest
           FROM wallet_addresses a
           LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
+          WHERE a."removedAt" IS NULL
           GROUP BY 1, 2`,
       );
       const [{ bytes }]: { bytes: string }[] = await this.source.query(

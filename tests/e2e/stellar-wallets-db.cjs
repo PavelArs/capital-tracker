@@ -210,7 +210,7 @@ function services(db) {
 async function main() {
   for (const [name, value] of Object.entries(settings)) assert.equal(process.env[name], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 56/);
+  assert.match(migrate(database), /Migrations applied: 57/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -377,7 +377,7 @@ async function main() {
     const snapshot = JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"));
     await assert.rejects(() => new TrackStellarWallets1795000000000().down(), /recovery plan/);
     assert.equal(JSON.stringify(await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename")), snapshot);
-    console.log('PASS STELLAR-MIGRATION fresh 56 applies once; the Stellar migration refuses down');
+    console.log('PASS STELLAR-MIGRATION fresh 57 applies once; the Stellar migration refuses down');
   } finally {
     await db.destroy();
   }

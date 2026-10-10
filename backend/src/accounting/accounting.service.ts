@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { stopTracking } from '../wallet-addresses/wallet-removal';
 import { lockAccountingOwner } from './accounting-lock';
 import {
   type AssetClassification,
@@ -258,7 +259,7 @@ export class AccountingService {
       ...(options.limit === undefined ? {} : { limit: queryNumber(options.limit) }),
     });
     const rows: AccountRow[] = await this.source.query(
-      `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,
+      `SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND "removedAt" IS NULL AND ($2::uuid IS NULL OR id>$2::uuid) ORDER BY id LIMIT $3`,
       [owner, query.cursor ?? null, query.limit + 1],
     );
     const items = rows.slice(0, query.limit).map(accountView);
@@ -290,11 +291,49 @@ export class AccountingService {
     const [rows]: [AccountRow[], number] = await this.source.query(
       `UPDATE manual_accounts SET name = COALESCE($3, name),
         kind = CASE WHEN $4::boolean THEN $5 ELSE kind END
-        WHERE "ownerId"=$1 AND id=$2 RETURNING *`,
+        WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL RETURNING *`,
       [owner, id, change.name ?? null, change.kind !== undefined, change.kind ?? null],
     );
     if (!rows[0]) throw new NotFoundException();
     return accountView(rows[0]);
+  }
+
+  /**
+   * WALLET-REMOVE: stops tracking a wallet that holds no recorded transaction: its addresses
+   * stop syncing and it leaves the lists. A wallet with entries in the books stays, because
+   * those entries are the history FIFO and the profit figures depend on; only its addresses
+   * can be removed.
+   */
+  async removeAccount(ownerId: string, accountId: string): Promise<void> {
+    const owner = parseUuid(ownerId);
+    const id = parseUuid(accountId);
+    await this.source.transaction('READ COMMITTED', async (manager) => {
+      await lockAccountingOwner(manager, owner);
+      const found: unknown[] = await manager.query(
+        'SELECT 1 FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL FOR UPDATE',
+        [owner, id],
+      );
+      if (found.length === 0) throw new NotFoundException();
+      const [{ recorded }]: { recorded: boolean }[] = await manager.query(
+        `SELECT (EXISTS (SELECT 1 FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=$2)
+          OR EXISTS (SELECT 1 FROM account_opening_snapshots WHERE "ownerId"=$1 AND "accountId"=$2)
+          OR EXISTS (SELECT 1 FROM owned_transfers
+            WHERE "ownerId"=$1 AND ("fromAccountId"=$2 OR "toAccountId"=$2))
+          OR EXISTS (SELECT 1 FROM account_swaps WHERE "ownerId"=$1 AND "accountId"=$2)
+          OR EXISTS (SELECT 1 FROM account_rewards WHERE "ownerId"=$1 AND "accountId"=$2))
+          AS recorded`,
+        [owner, id],
+      );
+      if (recorded)
+        throw new ConflictException(
+          'This wallet has recorded transactions, so it stays in your history. Remove its addresses to stop syncing them.',
+        );
+      await stopTracking(manager, owner, { accountId: id });
+      await manager.query(
+        'UPDATE manual_accounts SET "removedAt"=clock_timestamp() WHERE "ownerId"=$1 AND id=$2',
+        [owner, id],
+      );
+    });
   }
 
   async getAccount(
@@ -304,7 +343,7 @@ export class AccountingService {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const [row]: AccountRow[] = await this.source.query(
-      'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2',
+      'SELECT * FROM manual_accounts WHERE "ownerId"=$1 AND id=$2 AND "removedAt" IS NULL',
       [owner, id],
     );
     if (!row) throw new NotFoundException();
