@@ -81,22 +81,66 @@ const shortDate = new Intl.DateTimeFormat('en-US', {
 /** Mar 1, 2026, as the prototype and the Transactions list write dates. */
 export const dateText = (iso: string) => shortDate.format(new Date(iso));
 
+/** The message of a 409 that names the transfer itself as the first operation left short. */
+const OWN_SHORTFALL = 'An account does not hold enough for this transfer';
+
 /** The operation a 409 names as depending on the change, if the server named one. */
 export function dependentOf(error: unknown): DependentOperation | null {
   const data = isAxiosError(error) ? error.response?.data : undefined;
-  return isAxiosError(error) && error.response?.status === 409 && data?.dependent
+  return isAxiosError(error) &&
+    error.response?.status === 409 &&
+    data?.dependent &&
+    data.message !== OWN_SHORTFALL
     ? (data.dependent as DependentOperation)
     : null;
 }
 
-function failure(error: unknown): string {
+/** The account a new transfer would leave short, when the server named it. */
+export function shortOf(error: unknown): DependentOperation | null {
+  const data = isAxiosError(error) ? error.response?.data : undefined;
+  return isAxiosError(error) &&
+    error.response?.status === 409 &&
+    data?.dependent &&
+    data.message === OWN_SHORTFALL
+    ? (data.dependent as DependentOperation)
+    : null;
+}
+
+/** An account whose records start after the date of the change, when the server named it. */
+export function coverageOf(error: unknown): { accountId: string; coverageFrom: string } | null {
+  const data = isAxiosError(error) ? error.response?.data : undefined;
+  return isAxiosError(error) && error.response?.status === 409 && data?.coverage
+    ? (data.coverage as { accountId: string; coverageFrom: string })
+    : null;
+}
+
+/** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
+export const shortText = (account: string, coin: string, date: string) =>
+  `${account} does not hold enough ${coin} on ${dateText(date)} for this transfer.`;
+/** The account's records start later than the transaction, so nothing can move in or out. */
+export const coverageText = (account: string, from: string, date: string) =>
+  `The records of ${account} start on ${dateText(from)}, after this transfer on ${dateText(date)}.`;
+
+function failure(
+  error: unknown,
+  accounts: readonly Account[] | null,
+  coin: string,
+  date: string,
+): string {
   const status = isAxiosError(error) ? error.response?.status : undefined;
   const message = isAxiosError(error) ? String(error.response?.data?.message ?? '') : '';
   const dependent = dependentOf(error);
+  const name = (id: string) => accounts?.find((item) => item.id === id)?.name ?? 'The account';
+  const short = shortOf(error);
+  const coverage = coverageOf(error);
   if (status === undefined)
     return 'Could not reach the server. Try again; the same request will not save the transaction twice.';
   if (status === 409 && message.includes('Bank of Russia rate'))
     return 'No Bank of Russia rate is stored for this date. Enter the rate you paid.';
+  if (short)
+    return `${shortText(name(short.accountId), coin, short.occurredAt)} Add the receipts that bring it there first.`;
+  if (coverage)
+    return `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
   if (dependent)
     return `A later transaction on ${dateText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
   if (status === 409 || status === 422)
@@ -628,7 +672,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       }
       onSaved();
     } catch (caught) {
-      setError(failure(caught));
+      setError(failure(caught, accounts, symbol, occurredAt(shown)));
       setSaving(false);
     }
   };

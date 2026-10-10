@@ -52,4 +52,26 @@ describe('GlobalExceptionFilter', () => {
       'dependent',
     );
   });
+
+  it('XFER-COVER keeps the account a 409 names as starting after the change, and nothing else', () => {
+    const coverage = {
+      accountId: '00000000-0000-4000-8000-000000000002',
+      coverageFrom: '2026-10-05T00:00:00.000Z',
+    };
+    const body = run(
+      new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'The records of an account start after this transfer',
+        coverage: { ...coverage, private: 'marker' },
+      }),
+    );
+    expect(body).toEqual(expect.objectContaining({ statusCode: 409, coverage }));
+    expect(run(new BadRequestException({ message: 'Bad', coverage }))).not.toHaveProperty(
+      'coverage',
+    );
+    expect(
+      run(new ConflictException({ message: 'List', coverage: { accountId: 1 } })),
+    ).not.toHaveProperty('coverage');
+  });
 });

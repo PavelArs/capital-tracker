@@ -8,7 +8,15 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
-import { type Account, dependentOf, journalAccounts } from '../portfolio/AddTransactionDialog';
+import {
+  type Account,
+  coverageOf,
+  coverageText,
+  dependentOf,
+  journalAccounts,
+  shortOf,
+  shortText,
+} from '../portfolio/AddTransactionDialog';
 import { decimal, MAX_COMMENT_LENGTH, positive } from '../portfolio/add-transaction';
 import {
   amount,
@@ -439,7 +447,21 @@ function answer(draft: Draft): ChainClassification | null {
 export const POOL_DEPOSIT_NAMED =
   'A pool withdrawal names this deposit; change the withdrawal first';
 
-function failure(error: unknown): ReactNode {
+function failure(
+  error: unknown,
+  operation: Operation,
+  accounts: readonly Account[] | null,
+): ReactNode {
+  const name = (id: string) =>
+    [operation.account, operation.counterAccount, ...(accounts ?? [])].find(
+      (place) => place?.id === id,
+    )?.name ?? 'The account';
+  const short = shortOf(error);
+  if (short)
+    return `${shortText(name(short.accountId), operation.asset.symbol ?? operation.asset.name, short.occurredAt)} Classify the receipts that brought the coins there first, or choose another type.`;
+  const coverage = coverageOf(error);
+  if (coverage)
+    return `${coverageText(name(coverage.accountId), coverage.coverageFrom, operation.occurredAt)} Hide the transaction if its coins are already in that opening balance, or choose another type.`;
   if (dependentOf(error))
     return 'A later transaction spends these coins, so this answer cannot change now. Change that transaction first.';
   if (!isAxiosError(error) || error.response === undefined)
@@ -601,7 +623,7 @@ export default function ClassifyForm({
       announceClassificationChange();
       onSaved(transfer ? 'Transfer' : draft.type ? typeName(operation, draft.type) : 'hidden');
     } catch (caught) {
-      setError(failure(caught));
+      setError(failure(caught, operation, accounts));
       setSaving(false);
     }
   };

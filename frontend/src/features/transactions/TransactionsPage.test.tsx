@@ -1518,6 +1518,46 @@ describe('link-own-transfers (M13)', () => {
       'Choose another wallet or another type.',
     );
   });
+  it.each([
+    [
+      'names the account that does not hold the coins',
+      {
+        message: 'An account does not hold enough for this transfer',
+        dependent: {
+          operationId: `transfer:${id(41)}`,
+          accountId: cold.id,
+          instrumentId: id(1),
+          occurredAt: '2025-06-23T08:00:00.000Z',
+        },
+      },
+      /Cold storage does not hold enough BTC on Jun 23, 2025 for this transfer\. Classify the receipts/,
+    ],
+    [
+      'names the account whose records start after the transaction',
+      {
+        message: 'The records of an account start after this transfer',
+        coverage: { accountId: bybit.id, coverageFrom: '2025-07-01T00:00:00.000Z' },
+      },
+      /The records of Bybit start on Jul 1, 2025, after this transfer on Jun 23, 2025\. Hide the transaction/,
+    ],
+  ])('XFER-REFUSED: %s', async (_name, data, expected) => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data,
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+    await within(drawer).findByRole('option', { name: 'Bybit' });
+    await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(expected);
+  });
 });
 
 describe('swap-chain-coins (CLS-SWAP)', () => {
