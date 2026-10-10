@@ -24,3 +24,24 @@ export class AuthenticatorConfirmDto {
   @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.code)
   code!: string;
 }
+
+// SEC-PASSWORD: the service checks every field's content; the DTO only bounds their size.
+export class ChangePasswordDto {
+  @IsString()
+  @MaxLength(1024)
+  @Type(() => Object)
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.currentPassword)
+  currentPassword!: string;
+
+  @IsString()
+  @MaxLength(1024)
+  @Type(() => Object)
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.newPassword)
+  newPassword!: string;
+
+  @IsString()
+  @MaxLength(16)
+  @Type(() => Object)
+  @Transform(({ obj }: { obj: Record<string, unknown> }) => obj.code)
+  code!: string;
+}

@@ -160,6 +160,15 @@
   font-size: var(--fs-sm);
 }
 
+/* A read-only value at the right of a setting, such as the owner's email. */
+.shell-setting__value {
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .shell-setting__hint--error {
   color: var(--neg);
 }

@@ -41,14 +41,14 @@ const newCodes = Array.from({ length: 10 }, (_, index) =>
   [0, 1, 2, 3].map((group) => `${index}${group}`.repeat(4)).join('-'),
 );
 
-function failure(status: number) {
+function failure(status: number, data: unknown = {}) {
   const headers = new AxiosHeaders();
   return new AxiosError('failed', String(status), { headers }, null, {
     status,
     statusText: '',
     headers: {},
     config: { headers },
-    data: {},
+    data,
   });
 }
 
@@ -329,5 +329,106 @@ describe('Settings → Security (PR-AUTH-4)', () => {
     expect(within(scan).getByLabelText('Code from the new app')).toBeDisabled();
     await userEvent.click(within(scan).getByRole('button', { name: 'Start again' }));
     expect(screen.getByRole('dialog', { name: 'Set up authenticator again' })).toBeInTheDocument();
+  });
+
+  describe('SEC-PASSWORD: change the password', () => {
+    const open = async () => {
+      const user = userEvent.setup();
+      render(<SecuritySettings />);
+      await within(region()).findByText(/7 of 10 unused/);
+      await user.click(within(region()).getByRole('button', { name: 'Change password' }));
+      return { user, dialog: screen.getByRole('dialog', { name: 'Change password' }) };
+    };
+    const fill = async (
+      user: ReturnType<typeof userEvent.setup>,
+      dialog: HTMLElement,
+      values: { current?: string; next?: string; again?: string; code?: string },
+    ) => {
+      const view = within(dialog);
+      if (values.current) await user.type(view.getByLabelText('Current password'), values.current);
+      if (values.next) await user.type(view.getByLabelText('New password'), values.next);
+      if (values.again) await user.type(view.getByLabelText('New password again'), values.again);
+      if (values.code)
+        await user.type(view.getByLabelText('Code from your authenticator app'), values.code);
+    };
+    const oldPassword = 'the old synthetic password';
+    const freshPassword = 'a new synthetic password';
+
+    it('sends the three secrets once, then says so and reloads the sessions', async () => {
+      const change = vi.spyOn(securityApi, 'changePassword').mockResolvedValue(undefined);
+      const { user, dialog } = await open();
+      await fill(user, dialog, {
+        current: oldPassword,
+        next: freshPassword,
+        again: freshPassword,
+        code: '123 456',
+      });
+      await user.click(within(dialog).getByRole('button', { name: 'Change password' }));
+      expect(change).toHaveBeenCalledTimes(1);
+      expect(change).toHaveBeenCalledWith({
+        currentPassword: oldPassword,
+        newPassword: freshPassword,
+        code: '123456',
+      });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(within(region()).getByRole('status')).toHaveTextContent(
+        'Password changed. Every other browser was signed out.',
+      );
+      expect(securityApi.get).toHaveBeenCalledTimes(2);
+    });
+
+    it('checks a field when it loses focus and sends nothing while a field is wrong', async () => {
+      const change = vi.spyOn(securityApi, 'changePassword').mockResolvedValue(undefined);
+      const { user, dialog } = await open();
+      await user.type(within(dialog).getByLabelText('New password'), 'too short');
+      await user.tab();
+      expect(
+        within(dialog).getByText('Use 15 to 128 characters, without line breaks.'),
+      ).toBeVisible();
+      await user.type(within(dialog).getByLabelText('New password'), ' but now it is long enough');
+      expect(within(dialog).queryByText(/Use 15 to 128 characters, without/)).toBeNull();
+      await user.type(within(dialog).getByLabelText('New password again'), 'something else');
+      await user.tab();
+      expect(within(dialog).getByText('The two passwords differ.')).toBeVisible();
+      await user.click(within(dialog).getByRole('button', { name: 'Change password' }));
+      expect(within(dialog).getByText('Enter your current password.')).toBeVisible();
+      expect(
+        within(dialog).getByText('Enter the 6-digit code from your authenticator app.'),
+      ).toBeVisible();
+      expect(change).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      [
+        'a wrong current password',
+        failure(422, { error: 'password' }),
+        'That is not your current password.',
+      ],
+      [
+        'an unchanged password',
+        failure(422, { error: 'same' }),
+        'Choose a password you do not use now.',
+      ],
+      [
+        'a wrong code',
+        failure(422),
+        'That code is not valid. Enter the current code from your authenticator app.',
+      ],
+      ['too many attempts', failure(429), 'Too many attempts. Wait a few minutes and try again.'],
+    ])('names %s, keeps the dialog open and clears the used code', async (_name, error, text) => {
+      vi.spyOn(securityApi, 'changePassword').mockRejectedValue(error);
+      const { user, dialog } = await open();
+      await fill(user, dialog, {
+        current: oldPassword,
+        next: freshPassword,
+        again: freshPassword,
+        code: '123456',
+      });
+      await user.click(within(dialog).getByRole('button', { name: 'Change password' }));
+      expect(await within(dialog).findByText(text)).toBeVisible();
+      expect(screen.getByRole('dialog', { name: 'Change password' })).toBeInTheDocument();
+      expect(within(dialog).getByLabelText('Code from your authenticator app')).toHaveValue('');
+      expect(within(region()).queryByRole('status')).toBeNull();
+    });
   });
 });

@@ -3,6 +3,7 @@ import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import AuthenticatorDialog from './AuthenticatorDialog';
+import ChangePasswordDialog from './ChangePasswordDialog';
 import ConfirmDialog from './ConfirmDialog';
 import RecoveryCodesDialog from './RecoveryCodesDialog';
 import './security.css';
@@ -25,6 +26,7 @@ function activity(lastActiveAt: string): string {
 }
 
 type Dialog =
+  | { kind: 'password' }
   | { kind: 'authenticator' }
   | { kind: 'codes' }
   | { kind: 'session'; session: SecuritySession }
@@ -36,6 +38,7 @@ export default function SecuritySettings() {
   const [overview, setOverview] = useState<SecurityOverview | null>(null);
   const [failed, setFailed] = useState(false);
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [changed, setChanged] = useState(false);
 
   const load = useCallback(() => {
     let active = true;
@@ -82,6 +85,24 @@ export default function SecuritySettings() {
         </div>
       ) : (
         <>
+          <div className="shell-setting">
+            <div className="shell-setting__text">
+              <span className="shell-setting__label">Password</span>
+              <p className="shell-setting__hint" role={changed ? 'status' : undefined}>
+                {changed
+                  ? 'Password changed. Every other browser was signed out.'
+                  : 'Asks for your current password and a code from your authenticator app.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="shell-button shell-button--secondary"
+              disabled={!overview}
+              onClick={() => setDialog({ kind: 'password' })}
+            >
+              Change password
+            </button>
+          </div>
           <div className="shell-setting">
             <div className="shell-setting__text">
               <span className="shell-setting__label">Two-factor authentication</span>
@@ -169,6 +190,15 @@ export default function SecuritySettings() {
             )}
           </div>
         </>
+      )}
+      {dialog?.kind === 'password' && (
+        <ChangePasswordDialog
+          onChanged={() => {
+            setChanged(true);
+            load();
+          }}
+          onClose={() => setDialog(null)}
+        />
       )}
       {dialog?.kind === 'authenticator' && (
         <AuthenticatorDialog onFinished={load} onClose={() => setDialog(null)} />

@@ -55,6 +55,14 @@ export const securityApi = {
     return response.data.recoveryCodes;
   },
 
+  changePassword: async (input: {
+    currentPassword: string;
+    newPassword: string;
+    code: string;
+  }): Promise<void> => {
+    await apiClient.post('/auth/security/password', input);
+  },
+
   endSession: async (id: string): Promise<void> => {
     await apiClient.delete(`/auth/security/sessions/${encodeURIComponent(id)}`);
   },

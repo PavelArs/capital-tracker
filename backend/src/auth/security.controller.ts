@@ -3,7 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { FactorDto } from './dto/factor.dto';
-import { AuthenticatorConfirmDto, RecoveryCodesDto } from './dto/security.dto';
+import { AuthenticatorConfirmDto, ChangePasswordDto, RecoveryCodesDto } from './dto/security.dto';
 import { SessionRequest } from './guards/session.guard';
 import { MfaService, RecoveryStatus, ReplacementOutput } from './mfa.service';
 import { AuthRequestLimit } from './request-limit.decorator';
@@ -73,6 +73,19 @@ export class SecurityController {
         body.code,
       ),
     };
+  }
+
+  // SEC-PASSWORD: the current password and a fresh TOTP; every other browser is signed out.
+  @AuthRequestLimit('mfa-ip')
+  @Post('password')
+  @HttpCode(204)
+  @ApiOperation({ summary: 'Change the password after the current one and a fresh TOTP' })
+  async changePassword(
+    @CurrentUser() user: OwnerIdentity,
+    @Request() req: SessionRequest,
+    @Body() body: ChangePasswordDto,
+  ): Promise<void> {
+    await this.factors.changePassword(user.userId, req.authSession.hash, body);
   }
 
   @Delete('sessions/:id')

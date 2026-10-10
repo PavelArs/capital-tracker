@@ -9,7 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsPage from './SettingsPage';
 
 // Settings → Security has its own tests; here it only has to render.
-vi.mock('@contexts/AuthContext', () => ({ useAuth: () => ({ logoutEverywhere: vi.fn() }) }));
+vi.mock('@contexts/AuthContext', () => ({
+  useAuth: () => ({ logoutEverywhere: vi.fn(), user: { email: 'owner@example.test' } }),
+}));
 
 // A controllable device colour scheme behind window.matchMedia.
 let deviceDark = false;
@@ -100,6 +102,16 @@ describe('SHELL-006 theme setting', () => {
     expect(applied()).toBe('light');
     setDevice(true);
     expect(applied()).toBe('dark');
+  });
+
+  it('S1: Settings starts with a Profile card that shows the sign-in email', () => {
+    renderSettings();
+    const profile = screen.getByRole('region', { name: 'Profile' });
+    expect(within(profile).getByText('owner@example.test')).toBeInTheDocument();
+    expect(
+      profile.compareDocumentPosition(screen.getByRole('region', { name: 'Security' })) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('HIST-LINK: Settings opens the change history', () => {
