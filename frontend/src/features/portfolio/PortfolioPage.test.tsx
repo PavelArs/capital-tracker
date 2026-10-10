@@ -503,6 +503,15 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     return dialog;
   };
 
+  it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
   it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
     let assets = [bitcoin, toncoin];
     const get = vi
@@ -738,7 +747,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await within(dialog).findByRole('alert');
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await user.click(
+      within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
+    );
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });

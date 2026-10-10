@@ -5,8 +5,10 @@ import { Icon } from './icons';
 export default function CloseButton({
   onClick,
   buttonRef,
+  disabled,
 }: {
   onClick: () => void;
+  disabled?: boolean;
   buttonRef?: Ref<HTMLButtonElement>;
 }) {
   return (
@@ -16,6 +18,7 @@ export default function CloseButton({
       className="shell-close"
       aria-label="Close"
       title="Close"
+      disabled={disabled}
       onClick={onClick}
     >
       <Icon name="close" />
