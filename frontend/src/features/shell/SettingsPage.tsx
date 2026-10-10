@@ -4,6 +4,7 @@ import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import SecuritySettings from '../security/SecuritySettings';
@@ -293,6 +294,21 @@ export default function SettingsPage() {
         <section className="shell-card" aria-labelledby="settings-wallets">
           <h2 id="settings-wallets">Wallets</h2>
           <DustThreshold />
+        </section>
+        <section className="shell-card" aria-labelledby="settings-history">
+          <h2 id="settings-history">History</h2>
+          <div className="shell-setting">
+            <div className="shell-setting__text">
+              <span className="shell-setting__label">Change history</span>
+              <p className="shell-setting__hint">
+                Who changed what and when: every transaction you added, corrected or deleted, and
+                each answer to a blockchain transaction.
+              </p>
+            </div>
+            <Link className="shell-button shell-button--secondary" to="/history">
+              Open history
+            </Link>
+          </div>
         </section>
         <DataExport />
       </div>

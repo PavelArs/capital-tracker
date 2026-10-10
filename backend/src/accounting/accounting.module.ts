@@ -5,6 +5,8 @@ import { AssetRewardController } from './asset-reward.controller';
 import { AssetRewardService } from './asset-reward.service';
 import { AssetSwapController } from './asset-swap.controller';
 import { AssetSwapService } from './asset-swap.service';
+import { AuditHistoryController } from './audit-history.controller';
+import { AuditHistoryService } from './audit-history.service';
 import { CarryInController } from './carry-in.controller';
 import { CarryInService } from './carry-in.service';
 import { ChainClassificationController } from './chain-classification.controller';
@@ -48,6 +50,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     AssetSwapController,
     PortfolioValuationController,
     OperationListController,
+    AuditHistoryController,
     ChainClassificationController,
   ],
   providers: [
@@ -67,6 +70,7 @@ import { ValuationHistoryService } from './valuation-history.service';
     AssetSwapService,
     PortfolioValuationService,
     OperationListService,
+    AuditHistoryService,
     ChainClassificationService,
   ],
   // Wallet sync links own transfers after each pass (M13, D7).
