@@ -49,16 +49,18 @@ export const coinOf = (leg: Pick<OwnLeg, 'network' | 'asset'>) =>
 /**
  * BYBIT-DEPOSIT: whether two legs are the two sides of one transaction. A chain leg of a token
  * adds its log or token number to the hash, which Bybit's record does not know, so a Bybit
- * leg meets a wallet's leg by the hash alone.
+ * leg meets a wallet's leg by the hash alone. BYBIT-LINK-HASH: a Bybit record stored under its
+ * own identity (any Ethereum-like chain but Ethereum) names the chain's hash as `hash`.
  */
 export function sameTransaction(
-  left: Pick<OwnLeg, 'network'> & { txid: string },
-  right: Pick<OwnLeg, 'network'> & { txid: string },
+  left: Pick<OwnLeg, 'network'> & { txid: string; hash?: string | null },
+  right: Pick<OwnLeg, 'network'> & { txid: string; hash?: string | null },
 ): boolean {
   if (left.txid === right.txid) return true;
   if (isExchange(left.network) === isExchange(right.network)) return false;
   const [exchange, chain] = isExchange(left.network) ? [left, right] : [right, left];
-  return chain.txid.split('-')[0] === exchange.txid;
+  const hash = chain.txid.split('-')[0];
+  return hash === exchange.txid || (!!exchange.hash && hash === exchange.hash);
 }
 
 export const sameAccount = () =>
@@ -117,15 +119,23 @@ export function planTransfer(
 /** A leg with the owner's current answer for it, for automatic matching. */
 export interface MatchableLeg extends OwnLeg {
   txid: string;
+  /** A Bybit record's chain hash when its identity is not that hash (BYBIT-LINK-HASH). */
+  hash?: string | null;
   /** Null before the first answer. */
   status: 'unclassified' | 'classified' | 'hidden' | null;
+  /**
+   * XFER-REJOIN: the account this leg was answered as a transfer with, when that transfer has
+   * no other leg yet (the owner answered one side before the other was known).
+   */
+  loneTo?: string | null;
 }
 
 /**
  * D7, XFER-AUTO, XFER-UNKNOWN: transactions that are certainly a transfer between two of the
  * owner's accounts. Exactly one of the owner's addresses sent and exactly one received, both
- * in accounts, different ones, neither answered yet, and the receiver got what was sent less
- * the fee. Anything less certain stays to classify; nothing is guessed.
+ * in accounts, different ones, neither answered yet (XFER-REJOIN: or one answered as a transfer
+ * with the other's account and nothing more), and the receiver got what was sent less the fee.
+ * Anything less certain stays to classify; nothing is guessed.
  */
 export function ownTransferPairs(
   legs: readonly MatchableLeg[],
@@ -138,7 +148,16 @@ export function ownTransferPairs(
     if (!outgoing || !incoming || coinOf(outgoing) !== coinOf(incoming)) return;
     if (outgoing.accountId === null || incoming.accountId === null) return;
     if (outgoing.accountId === incoming.accountId) return;
-    if (moving.some((leg) => leg.status !== null && leg.status !== 'unclassified')) return;
+    // Neither answered, or one answered as a transfer with the other's account and nothing else.
+    const open = (leg: MatchableLeg) => leg.status === null || leg.status === 'unclassified';
+    const lone = (leg: MatchableLeg, other: MatchableLeg) =>
+      leg.status === 'classified' && leg.loneTo === other.accountId;
+    if (
+      !(open(outgoing) && open(incoming)) &&
+      !(open(outgoing) && lone(incoming, outgoing)) &&
+      !(lone(outgoing, incoming) && open(incoming))
+    )
+      return;
     if (-netAtoms(outgoing) !== netAtoms(incoming) + feeAtoms(outgoing)) return;
     pairs.push({ outgoing, incoming });
   };

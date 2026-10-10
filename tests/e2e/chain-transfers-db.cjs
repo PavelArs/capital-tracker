@@ -652,6 +652,183 @@ async function addressChoice(db, s) {
   console.log('PASS XFER-ADDRESS');
 }
 
+// BYBIT-LINK-HASH, XFER-REJOIN: a Bybit withdrawal to an Ethereum-like chain other than Ethereum
+// is stored under Bybit's own id and names the chain's hash in its record; it meets the wallet's
+// receipt of that hash. When the owner answered the receipt alone first, the two are joined
+// once the withdrawal is synced. A record naming another hash is left alone.
+async function bybitHash(db, s) {
+  stage = 'BYBIT-LINK-HASH synthetic fourth owner: a Bybit account and an Arbitrum wallet';
+  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('bybit-hash-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = fourth.id;
+  const exchange = await account(s, owner, 'Bybit');
+  const metamask = await account(s, owner, 'Metamask');
+  const place = async (network, address, accountId) =>
+    (
+      await db.query(
+        `INSERT INTO wallet_addresses(id,"ownerId",network,address,"accountId")
+          VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+        [randomUUID(), owner, network, address, accountId],
+      )
+    )[0].id;
+  const uid = await place('bybit', '1000001', exchange);
+  const arbitrum = await place('arbitrum', `0x${'ab'.repeat(20)}`, metamask);
+  const wei = (units) => (BigInt(units) * 10n ** 10n).toString(); // 1 unit = 1e-8 ETH
+  const leg = (addressId, id, direction, received, sent, fee, at, record, bybitLeg) =>
+    db.query(
+      `INSERT INTO wallet_address_transactions("ownerId","addressId",txid,"blockHeight","blockHash",
+        "blockTime","receivedUnits","sentUnits","feeUnits",direction,asset,raw)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        owner,
+        addressId,
+        id,
+        bybitLeg ? 0 : 900000,
+        bybitLeg ? null : sha256(`block:${id}`),
+        at,
+        wei(received),
+        wei(sent),
+        wei(fee),
+        direction,
+        bybitLeg ? 'ETH' : null,
+        JSON.stringify(record),
+      ],
+    );
+  const hash = (n) => txid(900 + n);
+  const withdrawal = (n, named = hash(n)) => ({
+    kind: 'withdrawal',
+    internal: false,
+    record: { chain: 'ARBI', toAddress: `0x${'ab'.repeat(20)}`, txID: `0x${named.toUpperCase()}` },
+  });
+  const answer = (addressId, id, body) =>
+    s.classifications.classify(owner, addressId, id, {
+      requestId: randomUUID(),
+      hidden: false,
+      ...body,
+    });
+  const heads = (id) =>
+    db.query(
+      `SELECT "addressId", version, status, type, "transferId", "linkedAddressId", automatic, comment
+        FROM chain_transaction_classification_versions WHERE txid=$1 ORDER BY "addressId", version`,
+      [id],
+    );
+  const listed = async (...ids) =>
+    (await s.operations.read(owner, {}, now)).operations.filter((operation) =>
+      ids.includes(operation.chain?.txid),
+    );
+
+  stage = 'BYBIT-LINK-HASH Bybit holds 0.5 ETH bought at 2000 each';
+  await leg(uid, 'bybit-deposit-fund1', 'in', 50_000_000, 0, 0, '2026-10-09T08:00:00.000Z', {
+    kind: 'deposit',
+    internal: false,
+    record: { chain: 'ETH', txID: `0x${hash(0)}` },
+  }, true);
+  await answer(uid, 'bybit-deposit-fund1', {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '1000' },
+  });
+
+  stage = 'BYBIT-LINK-HASH the withdrawal and the wallet receipt of its hash are linked at once';
+  // 0.02212814 ETH leave Bybit (0.00004 of it Bybit's fee); 0.02208814 arrive two minutes later.
+  await leg(uid, 'bybit-withdrawal-7000001', 'out', 0, 2_212_814, 4_000, '2026-10-10T17:56:00.000Z',
+    withdrawal(1), true);
+  await leg(arbitrum, hash(1), 'in', 2_208_814, 0, 0, '2026-10-10T17:58:00.000Z', { hash: hash(1) }, false);
+  assert.equal(await count(s, owner), 2);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
+  assert.equal(await count(s, owner), 0);
+  const sent = await heads('bybit-withdrawal-7000001');
+  const got = await heads(hash(1));
+  assert.deepEqual(
+    [...sent, ...got].map((row) => [row.status, row.type, row.automatic]),
+    [['classified', 'transfer', true], ['classified', 'transfer', true]],
+  );
+  assert.equal(sent[0].transferId, got[0].transferId);
+  const [row, ...rest] = await listed('bybit-withdrawal-7000001', hash(1));
+  assert.equal(rest.length, 0, 'The pair is listed once');
+  assert.deepEqual(
+    [row.type, row.direction, row.account.id, row.counterAccount.id],
+    ['transfer', 'internal', exchange, metamask],
+  );
+  same(row.quantity, '0.02208814', 'Metamask received 0.02208814 ETH');
+  same(row.fee.quantity, '0.00004', "Bybit's withdrawal fee");
+  // 2000 USD per ETH: 44.17628 move, the 0.08 fee is consumed.
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '44.17628');
+  same((await journal(s, owner, exchange)).summary.remainingCostUsd, '955.74372');
+  same((await journal(s, owner, exchange)).transferSummary.feeConsumedBasisUsd, '0.08');
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  console.log('PASS BYBIT-LINK-HASH');
+
+  stage = 'XFER-REJOIN the receipt was answered alone first: the withdrawal that follows joins it';
+  await leg(arbitrum, hash(2), 'in', 2_208_814, 0, 0, '2026-10-10T18:58:00.000Z', { hash: hash(2) }, false);
+  const alone = await answer(arbitrum, hash(2), {
+    expectedVersion: 0,
+    comment: 'from the exchange',
+    classification: { type: 'transfer', accountId: exchange },
+  });
+  assert.equal(alone.value.linkedAddressId, null);
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
+  assert.equal(await count(s, owner), 0);
+  await leg(uid, 'bybit-withdrawal-7000002', 'out', 0, 2_212_814, 4_000, '2026-10-10T18:56:00.000Z',
+    withdrawal(2), true);
+  assert.equal(await count(s, owner), 1, 'The withdrawal counts as new until it is joined');
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 1 });
+  assert.equal(await count(s, owner), 0);
+  const joined = await heads(hash(2));
+  assert.deepEqual(
+    joined.map((row) => [row.version, row.status, row.type, row.automatic, row.comment]),
+    [
+      [1, 'classified', 'transfer', false, 'from the exchange'],
+      [2, 'classified', 'transfer', true, 'from the exchange'],
+    ],
+    "The owner's note stays",
+  );
+  const withdrawn = await heads('bybit-withdrawal-7000002');
+  assert.equal(withdrawn.length, 1);
+  assert.equal(withdrawn[0].transferId, joined[1].transferId);
+  assert.notEqual(joined[0].transferId, joined[1].transferId);
+  assert.equal((await listed('bybit-withdrawal-7000002', hash(2))).length, 1);
+  // The receipt is counted once: 2 x 44.17628 in Metamask, the fee consumed twice in Bybit.
+  same((await journal(s, owner, metamask)).summary.remainingCostUsd, '88.35256');
+  same((await journal(s, owner, exchange)).summary.remainingCostUsd, '911.48744');
+  assert.equal(
+    (await db.query(`SELECT count(*)::int AS n FROM owned_transfers t JOIN owned_transfer_versions v
+      ON v."transferId"=t.id AND v.version=t."currentVersion" WHERE t."ownerId"=$1 AND v.kind<>'void'`,
+      [owner]))[0].n,
+    2,
+    'Two transfers stand, no third',
+  );
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  console.log('PASS XFER-REJOIN');
+
+  stage = 'BYBIT-LINK-HASH a record naming another hash, or an answer to another account, is left alone';
+  const savings = await account(s, owner, 'Savings');
+  const vault = await place('arbitrum', `0x${'cd'.repeat(20)}`, savings);
+  await leg(vault, hash(5), 'in', 50_000_000, 0, 0, '2026-10-09T09:00:00.000Z', { hash: hash(5) }, false);
+  await answer(vault, hash(5), {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '1000' },
+  });
+  await leg(arbitrum, hash(3), 'in', 2_208_814, 0, 0, '2026-10-10T19:58:00.000Z', { hash: hash(3) }, false);
+  await leg(uid, 'bybit-withdrawal-7000003', 'out', 0, 2_212_814, 4_000, '2026-10-10T19:56:00.000Z',
+    withdrawal(3, hash(99)), true);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal(await count(s, owner), 2);
+  // The receipt of hash 4 was moved from Savings by the owner: Bybit's withdrawal of that hash
+  // is not the other side of that answer.
+  await leg(arbitrum, hash(4), 'in', 2_208_814, 0, 0, '2026-10-10T20:58:00.000Z', { hash: hash(4) }, false);
+  await answer(arbitrum, hash(4), {
+    expectedVersion: 0,
+    classification: { type: 'transfer', accountId: savings },
+  });
+  await leg(uid, 'bybit-withdrawal-7000004', 'out', 0, 2_212_814, 4_000, '2026-10-10T20:56:00.000Z',
+    withdrawal(4), true);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal((await heads('bybit-withdrawal-7000003')).length, 0, 'Still to classify');
+  assert.equal((await heads('bybit-withdrawal-7000004')).length, 0, 'Still to classify');
+  assert.equal((await heads(hash(4))).length, 1, "The owner's answer stands");
+  console.log('PASS BYBIT-LINK-HASH-REFUSED');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -702,6 +879,7 @@ async function main() {
     await refused(db, s);
     await proposed(db, s);
     await addressChoice(db, s);
+    await bybitHash(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

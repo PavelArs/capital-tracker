@@ -8,6 +8,7 @@ import type {
   BybitWithdrawal,
 } from './bybit-client';
 import { isBybitCoin, type Network, networkAssets } from './chain-assets';
+import { isEvmNetwork } from './evm-chains';
 
 // sync-bybit-account (M22): Bybit's records as raw legs of the account, never edited later
 // (except once, BYBIT-ANY-COIN: see completedTradeLeg). A leg moves one coin the app tracks;
@@ -316,6 +317,37 @@ export function chainFacts(record: unknown): ExchangeChainFacts | null {
     hash: plain(item.txID, /^[0-9A-Za-z_:-]{16,128}$/),
   };
 }
+
+// Bybit's names of the Ethereum-like chains the app reads through Etherscan (EVM-MULTICHAIN).
+const evmChainNames = Object.entries(chainNetworks)
+  .filter(([, network]) => network !== undefined && isEvmNetwork(network))
+  .map(([name]) => name);
+
+/**
+ * BYBIT-LINK-HASH: the hash of a deposit or withdrawal on an Ethereum-like chain, in the form a
+ * wallet's leg of that chain carries (lower-case hex without 0x), so the two sides of one
+ * transaction meet whatever identity Bybit's leg was stored under. Null for any other record.
+ */
+export function linkHash(record: unknown): string | null {
+  return factsLinkHash(chainFacts(record));
+}
+
+/** `linkHash` of the facts already read from a record. */
+export function factsLinkHash(facts: ExchangeChainFacts | null | undefined): string | null {
+  if (!facts?.hash || !evmChainNames.includes(facts.chain.toUpperCase())) return null;
+  const hash = facts.hash.toLowerCase().replace(/^0x/, '');
+  return /^[0-9a-f]{64}$/.test(hash) ? hash : null;
+}
+
+/** The same as `linkHash`, read by PostgreSQL from a stored raw leg `t` of a wallet `w`. */
+export const linkHashSql = (leg = 't', wallet = 'w') => {
+  const hash = `lower(regexp_replace(${leg}.raw->'record'->>'txID', '^0x', ''))`;
+  const chains = evmChainNames.map((name) => `'${name}'`).join(', ');
+  return `(CASE WHEN ${wallet}.network='bybit' AND ${leg}.raw->>'kind' IN ('deposit', 'withdrawal')
+      AND ${leg}.raw->>'internal' IS DISTINCT FROM 'true'
+      AND upper(${leg}.raw->'record'->>'chain') IN (${chains})
+      AND ${hash} ~ '^[0-9a-f]{64}$' THEN ${hash} END)`;
+};
 
 const digest = (parts: string[]) =>
   createHash('sha256').update(JSON.stringify(parts)).digest('hex').slice(0, 40);

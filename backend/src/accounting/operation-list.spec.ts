@@ -1795,6 +1795,58 @@ describe('list-all-operations projection', () => {
       const [operation] = projectOperations(now, sources({ chain: [chain(15)] })).operations;
       expect(operation.chain).not.toHaveProperty('exchange');
     });
+
+    it('BYBIT-LINK-HASH: the withdrawal and the wallet leg of the hash it names meet', () => {
+      const bybitWallet = {
+        id: id(27),
+        network: 'bybit' as const,
+        address: '1000001',
+        label: null,
+      };
+      const arbitrum = {
+        id: id(28),
+        network: 'arbitrum' as const,
+        address: `0x${'ab'.repeat(20)}`,
+        label: null,
+      };
+      const sent = chain(15, {
+        wallet: bybitWallet,
+        account: bybit,
+        txid: 'bybit-withdrawal-9000001',
+        asset: 'ETH',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '22128140000000000',
+        feeUnits: '40000000000000',
+        exchange: facts,
+      });
+      const received = chain(16, {
+        wallet: arbitrum,
+        account: trust,
+        txid: 'd'.repeat(64),
+        direction: 'in',
+        receivedUnits: '22088140000000000',
+        sentUnits: '0',
+        feeUnits: '0',
+      });
+      const list = projectOperations(now, sources({ chain: [sent, received] }));
+      expect(
+        list.operations.find((operation) => operation.wallet?.id === bybitWallet.id),
+      ).toMatchObject({
+        counterAccount: trust,
+        counterWallet: arbitrum,
+      });
+      // Another hash, or no hash named: two unrelated rows.
+      for (const other of [
+        { ...sent, exchange: { ...facts, hash: `0x${'e'.repeat(64)}` } },
+        { ...sent, exchange: { ...facts, hash: null } },
+      ])
+        expect(
+          projectOperations(now, sources({ chain: [other, received] })).operations.find(
+            (operation) => operation.wallet?.id === bybitWallet.id,
+          ),
+        ).toMatchObject({ counterWallet: null });
+    });
   });
 
   describe('SWAP-ONE-TX', () => {

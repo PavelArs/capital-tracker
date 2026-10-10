@@ -12,6 +12,7 @@ import {
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { marketPricesAt, priceAt, storedPricesAt } from '../prices/market-price.store';
+import { linkHashSql } from '../wallet-addresses/bybit-records';
 import { isExchange } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { leftOutTokens } from '../wallet-addresses/token-left-out';
@@ -119,6 +120,8 @@ interface LegRow {
   feeUnits: string;
   /** The quote coin a Bybit fill spent or received (M22); null for every other leg. */
   quoteAsset?: string | null;
+  /** A Bybit deposit or withdrawal's chain hash (BYBIT-LINK-HASH); null for every other leg. */
+  hash?: string | null;
 }
 export interface ClassificationRow {
   addressId: string;
@@ -193,7 +196,9 @@ const placed = (row: ProposalRow) => ({
 });
 interface MatchRow extends OwnLeg {
   txid: string;
+  hash: string | null;
   status: 'unclassified' | 'classified' | 'hidden' | null;
+  loneTo: string | null;
 }
 
 const versionColumns = `v."addressId", v.txid, v.version, v."requestId", v."canonicalPayload",
@@ -202,7 +207,7 @@ const versionColumns = `v."addressId", v.txid, v.version, v."requestId", v."cano
   v."pairedAddressId", v."pairedTxid", v."createdAt"`;
 const legColumns = `w.network, t.asset, w."accountId", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
   t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
-  t.raw->>'quoteAsset' AS "quoteAsset"`;
+  t.raw->>'quoteAsset' AS "quoteAsset", ${linkHashSql()} AS "hash"`;
 const conflict = () => new ConflictException('Classification request conflicts with saved state');
 const nothing: Produced = {
   accountId: null,
@@ -754,7 +759,19 @@ export class ChainClassificationService {
     const owner = parseUuid(ownerId);
     const legs: MatchRow[] = await this.source.query(
       `SELECT t.txid, t."addressId", w.network, t.asset, w."accountId", t."receivedUnits"::text AS "receivedUnits",
-          t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status
+          t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status,
+          ${linkHashSql()} AS hash,
+          -- XFER-REJOIN: answered as a transfer that still has no other leg.
+          CASE WHEN v.status='classified' AND v.type='transfer' AND v."transferId" IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM chain_transaction_classification_versions o
+              JOIN chain_transaction_classifications oh ON oh."addressId"=o."addressId"
+                AND oh.txid=o.txid AND oh."currentVersion"=o.version
+              WHERE o."transferId"=v."transferId"
+                AND (o."addressId" <> v."addressId" OR o.txid <> v.txid))
+            AND EXISTS (SELECT 1 FROM owned_transfers ot JOIN owned_transfer_versions ov
+              ON ov."transferId"=ot.id AND ov.version=ot."currentVersion"
+              WHERE ot.id=v."transferId" AND ov.kind <> 'void')
+            THEN v.details->>'accountId' END AS "loneTo"
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
@@ -769,7 +786,16 @@ export class ChainClassificationService {
           OR (w.network='bybit' AND t.txid IN (SELECT split_part(x.txid, '-', 1)
             FROM wallet_address_transactions x
             JOIN wallet_addresses y ON y."ownerId"=x."ownerId" AND y.id=x."addressId"
-            WHERE x."ownerId"=$1 AND y.network<>'bybit')))
+            WHERE x."ownerId"=$1 AND y.network<>'bybit'))
+          -- BYBIT-LINK-HASH: the same, for a Bybit record stored under an identity of its own.
+          OR split_part(t.txid, '-', 1) IN (SELECT ${linkHashSql('x', 'y')}
+            FROM wallet_address_transactions x
+            JOIN wallet_addresses y ON y."ownerId"=x."ownerId" AND y.id=x."addressId"
+            WHERE x."ownerId"=$1 AND y.network='bybit')
+          OR ${linkHashSql()} IN (SELECT split_part(x.txid, '-', 1)
+            FROM wallet_address_transactions x
+            JOIN wallet_addresses y ON y."ownerId"=x."ownerId" AND y.id=x."addressId"
+            WHERE x."ownerId"=$1 AND y.network<>'bybit'))
         ORDER BY t.txid, t."addressId"`,
       [owner],
     );
@@ -783,27 +809,57 @@ export class ChainClassificationService {
           const version = await this.lockHead(manager, outgoing.addressId, outgoing.txid);
           const other = await this.lockHead(manager, incoming.addressId, incoming.txid);
           // Answered or moved to another account meanwhile: the owner's word stands.
-          const unanswered = async (address: string, txid: string, at: number) =>
-            at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
           if (row.accountId !== outgoing.accountId || arrival.accountId !== incoming.accountId)
             return false;
-          if (incoming.accountId === null) return false;
-          if (!(await unanswered(outgoing.addressId, outgoing.txid, version))) return false;
-          if (!(await unanswered(incoming.addressId, incoming.txid, other))) return false;
+          if (outgoing.accountId === null || incoming.accountId === null) return false;
+          const unanswered = async (address: string, txid: string, at: number) =>
+            at === 0 || (await this.version(manager, address, txid, at)).status === 'unclassified';
+          // XFER-REJOIN: the side answered as a transfer with the other's account and nothing
+          // else is replaced by the transfer both sides name; the other side takes the answer.
+          const lone = async (address: string, txid: string, at: number, account: string) => {
+            if (at === 0) return false;
+            const current = await this.version(manager, address, txid, at);
+            return (
+              current.status === 'classified' &&
+              current.type === 'transfer' &&
+              current.linkedAddressId === null &&
+              (current.details as { accountId?: string } | null)?.accountId === account
+            );
+          };
+          const sending = await unanswered(outgoing.addressId, outgoing.txid, version);
+          const receiving = await unanswered(incoming.addressId, incoming.txid, other);
+          let target: { leg: typeof outgoing; row: LegRow; version: number; toAccount: string };
+          if (
+            sending &&
+            (receiving ||
+              (await lone(incoming.addressId, incoming.txid, other, outgoing.accountId)))
+          )
+            target = { leg: outgoing, row, version, toAccount: incoming.accountId };
+          else if (
+            receiving &&
+            (await lone(outgoing.addressId, outgoing.txid, version, incoming.accountId))
+          )
+            target = { leg: incoming, row: arrival, version: other, toAccount: outgoing.accountId };
+          else return false;
           const input: ClassificationInput = {
             requestId: randomUUID(),
-            expectedVersion: version,
+            expectedVersion: target.version,
             hidden: false,
-            classification: { type: 'transfer', accountId: incoming.accountId },
+            classification: { type: 'transfer', accountId: target.toAccount },
           };
           const payload = JSON.stringify({
             automatic: true,
-            ...JSON.parse(classificationPayload(outgoing.addressId, outgoing.txid, input)),
+            ...JSON.parse(classificationPayload(target.leg.addressId, target.leg.txid, input)),
           });
           await this.record(
             manager,
             owner,
-            { address: outgoing.addressId, txid: outgoing.txid, row, version },
+            {
+              address: target.leg.addressId,
+              txid: target.leg.txid,
+              row: target.row,
+              version: target.version,
+            },
             input,
             payload,
             true,
@@ -896,7 +952,7 @@ export class ChainClassificationService {
       `SELECT t.txid, t."addressId", w.network, w.address, w.label, t.asset, w."accountId",
           a.name AS "accountName", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
           t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status,
-          coalesce(v.version, 0) AS "version"
+          coalesce(v.version, 0) AS "version", ${linkHashSql()} AS "hash"
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
@@ -1026,7 +1082,10 @@ export class ChainClassificationService {
         : pays && accountId
           ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
           : null;
-    const linked = partner && !crossHash ? partner.address : null;
+    // The link column names a leg of the same identity; a Bybit record under an identity of its
+    // own (BYBIT-LINK-HASH) is joined by the transfer both name instead, like a crossed pair.
+    const linkable = partner !== null && partner.txid === txid;
+    const linked = linkable ? partner.address : null;
     const keep =
       live !== null &&
       value !== null &&
@@ -1090,9 +1149,10 @@ export class ChainClassificationService {
         payload: JSON.stringify({ linkedTo: { addressId: address, txid }, ...produced }),
         status: 'classified',
         details: { type: 'transfer', accountId },
-        comment: null,
+        // A transfer the owner noted on one side keeps its note when the other side joins it.
+        comment: partner.live?.type === 'transfer' ? partner.live.comment : null,
         produced: { ...nothing, accountId: partner.row.accountId, transferId: produced.transferId },
-        linkedAddressId: crossHash ? null : address,
+        linkedAddressId: linkable ? address : null,
         automatic,
         paired: null,
       });
@@ -1452,15 +1512,20 @@ export class ChainClassificationService {
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         WHERE t."ownerId"=$1 AND (t.txid=$2 OR split_part(t.txid, '-', 1)=$2
-            OR t.txid=split_part($2, '-', 1))
+            OR t.txid=split_part($2, '-', 1)
+            -- BYBIT-LINK-HASH: a Bybit record under an identity of its own names the hash.
+            OR split_part(t.txid, '-', 1)=$5 OR ${linkHashSql()}=split_part($2, '-', 1))
           AND t."addressId"<>$3 AND w."accountId"=$4
         ORDER BY t."addressId", t.txid`,
-      [owner, target.txid, target.address, accountId],
+      [owner, target.txid, target.address, accountId, target.row.hash ?? null],
     );
     const sends = !inbound(target.row);
     const opposite = rows.filter(
       (row) =>
-        sameTransaction({ network: target.row.network, txid: target.txid }, row) &&
+        sameTransaction(
+          { network: target.row.network, txid: target.txid, hash: target.row.hash },
+          row,
+        ) &&
         // With Bybit on one side, only the leg of the same coin is the other side.
         ((!isExchange(row.network) && !isExchange(target.row.network)) ||
           coinOf(row) === coinOf(target.row)) &&
