@@ -24,11 +24,6 @@ export function sum(values: readonly string[]): string {
   return decimal(values.reduce((total, value) => total + units(value), 0n));
 }
 
-/** Bitcoin as the portfolio knows it: the crypto asset with ticker BTC. */
-export function isBitcoin(asset: { symbol: string | null; assetType: string }): boolean {
-  return isCoin(asset, 'BTC');
-}
-
 /** A chain asset as the portfolio knows it: the crypto asset with that ticker. */
 export function isCoin(asset: { symbol: string | null; assetType: string }, symbol: string) {
   return asset.assetType === 'crypto' && asset.symbol?.toUpperCase() === symbol;
