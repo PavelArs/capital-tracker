@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@contexts/AuthContext';
 import { ErrorProvider, useError } from '@contexts/ErrorContext';
 import { ThemeProvider } from '@contexts/ThemeContext';
 import DashboardPage from '@features/dashboard/DashboardPage';
+import HistoryPage from '@features/history/HistoryPage';
 import ForgotPasswordPage from '@features/password-reset/ForgotPasswordPage';
 import ResetPasswordPage from '@features/password-reset/ResetPasswordPage';
 import AssetPage from '@features/portfolio/AssetPage';
@@ -64,6 +65,7 @@ function AppRoutes() {
         <Route path="wallets" element={<WalletsPage />} />
         <Route path="wallets/:accountId" element={<WalletPage />} />
         <Route path="preferences" element={<SettingsPage />} />
+        <Route path="history" element={<HistoryPage />} />
         <Route path="manual-accounts" element={<ManualAccounts />} />
         <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
         <Route path="manual-prices" element={<ManualPrices />} />
