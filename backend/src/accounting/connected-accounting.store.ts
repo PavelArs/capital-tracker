@@ -63,6 +63,14 @@ export const journalNotStarted = (accountId: string) =>
     message: 'The records of an account have not started',
     coverage: { accountId, coverageFrom: null },
   });
+/** An entry is dated before the records of its account begin (a journal opened on a date). */
+export const notCovered = (accountId: string, coverageFrom: string) =>
+  new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: 'The records of an account start after this entry',
+    coverage: { accountId, coverageFrom },
+  });
 export const emptyTransferSummary = (): TransferSummary => ({
   receivedBasisUsd: '0',
   sentBasisUsd: '0',
