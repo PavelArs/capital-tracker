@@ -925,8 +925,7 @@ export function projectOperations(
   const byTransfer = new Map<string, ChainOperationInput[]>();
   for (const row of sources.chain) {
     const ref = row.classification?.produced;
-    if (ref?.kind === 'transfer')
-      byTransfer.set(ref.id, [...(byTransfer.get(ref.id) ?? []), row]);
+    if (ref?.kind === 'transfer') byTransfer.set(ref.id, [...(byTransfer.get(ref.id) ?? []), row]);
   }
   const joined = (row: ChainOperationInput) => {
     const ref = row.classification?.produced;
