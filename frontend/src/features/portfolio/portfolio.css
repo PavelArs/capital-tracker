@@ -892,3 +892,33 @@ a.portfolio-asset__name:hover {
     order: 1;
   }
 }
+
+/* Asset page on phones: the page title already names the asset, the price sits under the icon
+   row and the position figures go two to a row. */
+@media (max-width: 639.98px) {
+  .portfolio-head {
+    gap: 8px 12px;
+  }
+
+  .portfolio-head__title {
+    min-width: 0;
+  }
+
+  .portfolio-head__title h2 {
+    display: none;
+  }
+
+  .portfolio-head__price {
+    flex-basis: 100%;
+    text-align: left;
+  }
+
+  .portfolio-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .portfolio-stat dd {
+    font-size: var(--fs-lg);
+  }
+}
