@@ -42,7 +42,7 @@ The sidebar foot holds the sync status (M11, from `GET /api/sync-status`): "All 
 with the last successful sync, "Syncing…", or "N sources need attention" with the
 others' last sync and each reason in its tooltip; it opens Wallets. Then comes the owner block with **Log out**. Below 960 px the sidebar becomes one slim bar
 (brand, owner avatar, **Log out**) over a swipeable strip of the five sections; the current
-section is scrolled into view, there is no menu button,
+section is scrolled into view, the bar stays pinned to the top while the page scrolls, there is no menu button,
 and the sync status and the owner's email stay on the wide layout (the dashboard and Wallets
 already say what needs attention). **Skip to content** jumps to the main area. Desktop 1440
 and 1280 show the full sidebar. On phones (under 560 px) a page header is the title, then the

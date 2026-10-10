@@ -386,7 +386,10 @@ function AssetDetails({
             <ul className="portfolio-holdings">
               {asset.holdings.map((holding) => (
                 <li key={holding.accountId}>
-                  <Link to={withCurrency(`/wallets/${holding.accountId}`, asked)}>
+                  <Link
+                    className="shell-link"
+                    to={withCurrency(`/wallets/${holding.accountId}`, asked)}
+                  >
                     {holding.accountName}
                   </Link>
                   <span className="portfolio-num">
