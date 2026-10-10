@@ -10,6 +10,7 @@ import {
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
+import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
@@ -277,6 +278,44 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(screen.getByText('No transactions match')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Clear filters' }));
     expect(bodyRows()).toHaveLength(6);
+  });
+
+  it('TOKEN-HIDE keeps the tokens the wallets leave out out of the asset filter', async () => {
+    const user = userEvent.setup();
+    const spam = { instrumentId: id(30), symbol: 'SPAM1A2B', name: 'Spam Claim' };
+    const held = { instrumentId: id(31), symbol: 'HELD', name: 'Held Token' };
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        operation({ id: id(40), asset: btc }),
+        operation({ id: id(41), asset: spam, status: 'dust' }),
+        operation({ id: id(42), asset: held, status: 'dust' }),
+      ]),
+    );
+    // HELD is left out by one address but shown by another, so it stays a choice.
+    const address = (hidden: string[], shown: string[]) =>
+      ({
+        hiddenTokens: hidden.map((symbol) => ({
+          symbol,
+          name: symbol,
+          quantity: '1',
+          reason: 'dust',
+        })),
+        balances: shown.map((symbol) => ({ symbol, quantity: '1' })),
+      }) as unknown as WalletAddress;
+    vi.spyOn(walletAddressesApi, 'list').mockResolvedValue([
+      address(['SPAM1A2B', 'HELD'], []),
+      address([], ['HELD']),
+    ]);
+    renderPage();
+    await waitFor(() => expect(bodyRows().length).toBeGreaterThan(0));
+    const filter = screen.getByRole('combobox', { name: 'Asset' });
+    await waitFor(() =>
+      expect(within(filter).queryByRole('option', { name: 'SPAM1A2B' })).not.toBeInTheDocument(),
+    );
+    expect(within(filter).getByRole('option', { name: 'HELD' })).toBeInTheDocument();
+    expect(within(filter).getByRole('option', { name: 'BTC' })).toBeInTheDocument();
+    await user.selectOptions(filter, 'BTC');
+    expect(bodyRows()).toHaveLength(1);
   });
 
   it('filters by source, account and search text', async () => {
