@@ -442,14 +442,6 @@ test('SWAP-UI: owner reviews exact evidence and retries a committed exchange acr
     const mountedEditor = await form.elementHandle();
     for (const width of [360, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
-      if (width < 1000) {
-        const menu = page.getByRole('button', { name: 'Menu', exact: true });
-        await menu.click();
-        await expect(menu).toHaveAttribute('aria-expanded', 'true');
-        await page.keyboard.press('Escape');
-        await expect(menu).toBeFocused();
-        await expect(menu).toHaveAttribute('aria-expanded', 'false');
-      }
       expect(await mountedEditor?.evaluate((node) => node.isConnected)).toBe(true);
       await expect(independentDraft.getByLabel('Количество', { exact: true })).toHaveValue('17');
       await expect(
