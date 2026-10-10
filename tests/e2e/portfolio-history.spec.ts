@@ -147,7 +147,7 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   expect(Date.parse(shown.at) - Date.parse(shown.from)).toBe(30 * DAY);
 
   // DASH-MAIN, ALLOC: the five largest held assets and the allocation the valuation returned,
-  // and the attention block once its checks have answered.
+  // and the header bell once its checks have answered (it no longer sits on the page).
   const valuation = (await (await valued).json()) as Valuation;
   const held = valuation.assets.filter((asset) => Number(asset.quantity) !== 0).slice(0, 5);
   expect(held.length).toBeGreaterThan(0);
@@ -168,9 +168,12 @@ test('CHART-PERIODS: dashboard net worth and capital chart from snapshots rebuil
   await expect(shares.first()).toContainText(slices[0].label);
   if (slices.length > 6)
     await expect(shares.last()).toContainText(`Other ${slices.length - 5} assets`);
-  const attention = main.getByRole('region', { name: 'Needs attention' });
+  await expect(main.getByRole('region', { name: 'Needs attention' })).toHaveCount(0);
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  const attention = page.getByRole('region', { name: 'Notifications' });
   await expect(attention).toBeVisible();
   await expect(attention).not.toContainText('Checking prices and wallets');
+  await page.keyboard.press('Escape');
   await page.screenshot({
     path: testInfo.outputPath('dashboard-1m-1440-dark.png'),
     fullPage: true,

@@ -80,11 +80,12 @@ test('CLS-UI: owner classifies a blockchain receipt as a buy, hides a payment, a
     [txid(0), null, '0.001', null, 'needs-classification'],
   ]);
 
-  // CLS-COUNT: the sidebar counts what waits; the Dashboard says so and links to it.
+  // CLS-COUNT: the sidebar counts what waits; the header bell says so and links to it.
   await page.goto('/dashboard');
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
   await expect(nav.getByLabel(`${before} to classify`, { exact: true })).toBeVisible();
-  const attention = page.getByRole('region', { name: 'Needs attention' });
+  await page.getByRole('button', { name: /^Notifications/ }).click();
+  const attention = page.getByRole('region', { name: 'Notifications' });
   await expect(attention).toContainText(`${before} blockchain transactions need classification`);
   await attention.getByRole('link', { name: 'Review' }).click();
   await expect(page).toHaveURL(/\/transactions\?status=needs-classification/);
