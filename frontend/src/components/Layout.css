@@ -146,46 +146,6 @@
   font-variant-numeric: tabular-nums;
 }
 
-.shell-nav__legacy {
-  padding-top: var(--sp-3);
-  border-top: 1px solid var(--line);
-}
-
-.shell-nav__legacy summary {
-  padding: 6px 10px;
-  border-radius: 8px;
-  color: var(--ink-3);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.shell-nav__legacy summary:hover {
-  color: var(--ink);
-}
-
-.shell-nav__legacy ul {
-  margin-top: var(--sp-1);
-}
-
-.shell-nav__legacy a {
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  padding: 4px 10px;
-  border-radius: 8px;
-  color: var(--ink-2);
-  font-size: var(--fs-sm);
-  text-decoration: none;
-}
-
-.shell-nav__legacy a:hover {
-  background: var(--raised);
-  color: var(--ink);
-}
-
 .shell-sync {
   display: flex;
   align-items: flex-start;
@@ -385,26 +345,6 @@ a.shell-sync:hover {
   .shell-nav__sections a {
     flex: none;
     height: 40px;
-    padding: 0 12px;
-    white-space: nowrap;
-  }
-  /* The screens still to retire (M20) follow the sections in the same strip. */
-  .shell-nav__legacy {
-    display: contents;
-  }
-  .shell-nav__legacy summary {
-    display: none;
-  }
-  .shell-nav__legacy ul {
-    display: flex;
-    gap: 2px;
-    margin: 0 0 0 var(--sp-2);
-    padding-left: var(--sp-2);
-    border-left: 1px solid var(--line);
-  }
-  .shell-nav__legacy a {
-    flex: none;
-    min-height: 40px;
     padding: 0 12px;
     white-space: nowrap;
   }

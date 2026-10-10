@@ -606,6 +606,11 @@
   margin-bottom: var(--sp-4);
 }
 
+/* CLS-COMPACT: the folded technical facts of a transaction waiting for its answer. */
+.transactions-more--facts {
+  margin-top: var(--sp-3);
+}
+
 .transactions-more > .portfolio-field {
   margin-bottom: var(--sp-4);
 }
@@ -686,12 +691,6 @@
 
 .transactions-row--hidden td {
   color: var(--ink-3);
-}
-
-@media (max-width: 559.98px) {
-  .transactions-options {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .transactions-classify__warn {

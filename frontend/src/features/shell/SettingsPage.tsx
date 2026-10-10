@@ -9,6 +9,7 @@ import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
 import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
+import { olderScreens } from './navigation';
 import PageHeader from './PageHeader';
 import '../portfolio/portfolio.css';
 import './shell-page.css';
@@ -311,6 +312,24 @@ export default function SettingsPage() {
           </div>
         </section>
         <DataExport />
+        <section className="shell-card" aria-labelledby="settings-older">
+          <h2 id="settings-older">Older screens</h2>
+          <p className="shell-note">
+            These screens have not moved into the new layout yet. They are still in Russian and keep
+            working as before.
+          </p>
+          {olderScreens.map(({ path, label, hint }) => (
+            <div className="shell-setting" key={path}>
+              <div className="shell-setting__text">
+                <span className="shell-setting__label">{label}</span>
+                <p className="shell-setting__hint">{hint}</p>
+              </div>
+              <Link className="shell-button shell-button--secondary" to={path}>
+                Open {label.toLowerCase()}
+              </Link>
+            </div>
+          ))}
+        </section>
       </div>
     </div>
   );

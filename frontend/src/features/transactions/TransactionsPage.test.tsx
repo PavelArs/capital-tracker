@@ -491,6 +491,14 @@ describe('TransactionsPage (list-all-operations)', () => {
     expect(fact('Estimated value')).toBe('≈ $780.10 at the price stored Jun 20, 2025, 08:00 UTC');
     expect(fact('Status')).toBe('Needs classification');
     expect(fact('Source')).toBe('Blockchain');
+    // CLS-COMPACT: what identifies the transaction stays up front; the technical facts are
+    // folded away until asked for, so the question is not pushed down the drawer.
+    const folded = within(facts).getByText('Details', { selector: 'summary' }).closest('details');
+    expect(folded).not.toHaveAttribute('open');
+    for (const label of ['Address', 'Transaction', 'Block', 'Network fee', 'Status', 'Source'])
+      expect(folded).toContainElement(within(facts).getByText(label, { exact: true }));
+    for (const label of ['Date', 'Network', 'Wallet'])
+      expect(folded).not.toContainElement(within(facts).getByText(label, { exact: true }));
     expect(within(drawer).getByRole('group', { name: 'What was this transaction?' })).toBeVisible();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog')).toBeNull();
