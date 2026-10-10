@@ -304,6 +304,19 @@ describe('ZCASH-SYNC Blockbook client', () => {
     expect(warn.mock.calls).toEqual([['Blockbook /api answered 401: {"error":"bad key <key>"}']]);
   });
 
+  it('uses a custom address and keeps its path key out of the log', async () => {
+    const custom = new BlockbookClient({
+      baseUrl: `${baseUrls[0]}/tokentokentoken/`,
+      timeoutMs: 500,
+      pauseMs: 0,
+    });
+    replies[0].push({ status: 500, body: 'see /tokentokentoken/api' });
+    await custom.status();
+    expect(requests[0].url.pathname).toBe('/tokentokentoken/api');
+    expect(requests[0].headers['api-key']).toBeUndefined();
+    expect(warn.mock.calls).toEqual([['Blockbook /api answered 500: see /<key>/api']]);
+  });
+
   it('sends no key header without a key', async () => {
     replies[0].push(json({ blockbook: { bestHeight: HEIGHT, inSync: true } }));
     await client([baseUrls[0]]).status();

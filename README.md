@@ -261,7 +261,7 @@ guessable identifiers.
 - **Bybit account:** [Bybit V5 API](https://api.bybit.com) with the owner's read-only key, stored encrypted
 - **Tron history and staking:** [TronGrid](https://api.trongrid.io) (free tier; optional free key `TRONGRID_API_KEY`); TRX that contracts send into a wallet, which TronGrid's account list omits, is found through [Tronscan](https://tronscan.org)'s public list (no key)
 - **Stellar history:** SDF's public [Horizon](https://horizon.stellar.org) (no key; keeps about one year of history)
-- **Zcash history:** [Blockbook](https://github.com/trezor/blockbook) at NOWNodes (free key `ZCASH_BLOCKBOOK_API_KEY`); without a key Trezor's public instances, which answer 403 to servers; transparent addresses only, shielded balances cannot be read
+- **Zcash history:** [Blockbook](https://github.com/trezor/blockbook) at NOWNodes (free key `ZCASH_BLOCKBOOK_API_KEY`) or at the address in `ZCASH_BLOCKBOOK_URL` (a provider with the key in its path); without either Trezor's public instances, which answer 403 to servers; transparent addresses only, shielded balances cannot be read
 
 The old asset, liability, crypto wallet, currency, display-rate and metrics APIs were removed
 in M20; their tables and rows stay in the database and leave with the JSON backup.

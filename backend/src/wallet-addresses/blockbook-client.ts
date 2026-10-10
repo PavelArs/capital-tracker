@@ -186,6 +186,7 @@ export class BlockbookClient {
   private readonly logger = new Logger(BlockbookClient.name);
   private readonly baseUrls: string[];
   private readonly apiKey: string | null;
+  private readonly secrets: string[];
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
@@ -198,12 +199,21 @@ export class BlockbookClient {
     options: {
       baseUrls?: string[];
       apiKey?: string | null;
+      /** One Blockbook address chosen by the server's owner; the key may be part of it. */
+      baseUrl?: string | null;
       timeoutMs?: number;
       pauseMs?: number;
     } = {},
   ) {
     this.apiKey = options.apiKey?.trim() || null;
-    this.baseUrls = options.baseUrls ?? (this.apiKey ? NOWNODES_BASE_URLS : TREZOR_BASE_URLS);
+    const custom = options.baseUrl?.trim().replace(/\/+$/, '');
+    this.baseUrls =
+      options.baseUrls ?? (custom ? [custom] : this.apiKey ? NOWNODES_BASE_URLS : TREZOR_BASE_URLS);
+    // A custom address may carry the key in its path (GetBlock): keep every piece out of logs.
+    this.secrets = [
+      ...(this.apiKey ? [this.apiKey] : []),
+      ...(custom ? new URL(custom).pathname.split('/').filter((part) => part.length >= 8) : []),
+    ];
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.pauseMs = options.pauseMs ?? 500;
   }
@@ -291,7 +301,9 @@ export class BlockbookClient {
   /** The sync status shows only a summary; the log keeps what Blockbook said, never an ID. */
   private logRefusal(path: string, outcome: string, detail: string) {
     const redact = (text: string) =>
-      (this.apiKey ? text.split(this.apiKey).join('<key>') : text).replace(ADDRESS_OR_HASH, '<id>');
+      this.secrets
+        .reduce((safe, secret) => safe.split(secret).join('<key>'), text)
+        .replace(ADDRESS_OR_HASH, '<id>');
     const said = redact(detail.slice(0, LOGGED_CHARS + 100))
       .slice(0, LOGGED_CHARS)
       .replace(/\s+/g, ' ')

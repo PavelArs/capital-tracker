@@ -63,7 +63,10 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
       provide: BlockbookClient,
       inject: [ConfigService],
       useFactory: (config: ConfigService) =>
-        new BlockbookClient({ apiKey: config.get<string>('ZCASH_BLOCKBOOK_API_KEY') ?? null }),
+        new BlockbookClient({
+          apiKey: config.get<string>('ZCASH_BLOCKBOOK_API_KEY') ?? null,
+          baseUrl: config.get<string>('ZCASH_BLOCKBOOK_URL') ?? null,
+        }),
     },
     // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
     { provide: BybitClient, useFactory: () => new BybitClient() },

@@ -50,6 +50,10 @@ export class EnvironmentVariables {
   @IsOptional()
   ZCASH_BLOCKBOOK_API_KEY?: string;
 
+  @IsString()
+  @IsOptional()
+  ZCASH_BLOCKBOOK_URL?: string;
+
   // Password reset email (M17, Q5): Yandex SMTP over implicit TLS. Without a user and an
   // app password, reset requests are answered as usual but no email goes out.
   @IsString()
