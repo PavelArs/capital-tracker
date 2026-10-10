@@ -68,6 +68,19 @@ export class EnvironmentVariables {
   @IsOptional()
   SMTP_FROM?: string;
 
+  // Internal Prometheus listener (/metrics on its own port). Compose never publishes it, so
+  // only containers on the application network can scrape it.
+  @IsIn(['true', 'false'])
+  @IsOptional()
+  METRICS_ENABLED = 'true';
+
+  @IsNumber()
+  @Min(1)
+  @Max(65535)
+  @Transform(({ value }) => Number.parseInt(value, 10))
+  @IsOptional()
+  METRICS_PORT = 9464;
+
   @IsEnum(Environment)
   @IsOptional()
   NODE_ENV: Environment = Environment.Development;

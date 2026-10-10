@@ -126,7 +126,7 @@ export const shortText = (account: string, coin: string, date: string) =>
 export const coverageText = (account: string, from: string | null, date: string) =>
   from === null
     ? `The records of ${account} have not started: it was opened with balances, so start them on Manual accounts first.`
-    : `The records of ${account} start on ${dateText(from)}, after this transfer on ${dateText(date)}.`;
+    : `The records of ${account} start on ${dateText(from)}, after this transaction on ${dateText(date)}.`;
 
 function failure(
   error: unknown,

@@ -560,10 +560,10 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     [
       'XFER-REFUSED names the account whose records start after the date',
       {
-        message: 'The records of an account start after this transfer',
+        message: 'The records of an account start after this entry',
         coverage: { accountId: id(13), coverageFrom: '2999-01-01T00:00:00.000Z' },
       },
-      /The records of Exchange start on Jan 1, 2999, after this transfer on /,
+      /The records of Exchange start on Jan 1, 2999, after this transaction on /,
     ],
     [
       'XFER-REFUSED names the account opened with balances whose records have not started',
