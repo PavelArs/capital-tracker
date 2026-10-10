@@ -17,10 +17,10 @@ sections in this order:
 Placeholders say the section is not built yet, show no numbers and make no requests.
 Their own changes replace them (M2/M4, M6, M8, M10, M18).
 
-**Legacy** (open by default, collapsible) holds the screens no new section covers yet,
-with their Russian names and unchanged URLs: manual accounts (CSV import, swaps) and manual
-prices. Legacy screens keep their own styles and language (decision D6). M20 retired the
-others; their old URLs open the section that replaced them:
+There is no Legacy group in the sidebar (G1). The screens no new section covers yet keep their
+Russian text and unchanged URLs: manual accounts (CSV import, swaps) and manual prices. Settings
+lists them under **Older screens** and stays the current section while one is open. M20 retired
+the others; their old URLs open the section that replaced them:
 
 | Old URL | Opens |
 |---|---|
@@ -41,8 +41,8 @@ prototype's tokens (`frontend/src/features/shell/tokens.css`), dark first, syste
 The sidebar foot holds the sync status (M11, from `GET /api/sync-status`): "All synced"
 with the last successful sync, "Syncing…", or "N sources need attention" with the
 others' last sync and each reason in its tooltip; it opens Wallets. Then comes the owner block with **Log out**. Below 960 px the sidebar becomes one slim bar
-(brand, owner avatar, **Log out**) over a swipeable strip of the five sections, with the
-Legacy links at its end; the current section is scrolled into view, there is no menu button,
+(brand, owner avatar, **Log out**) over a swipeable strip of the five sections; the current
+section is scrolled into view, there is no menu button,
 and the sync status and the owner's email stay on the wide layout (the header bell and Wallets
 already say what needs attention). **Skip to content** jumps to the main area. Desktop 1440
 and 1280 show the full sidebar. On phones (under 560 px) a page header is the title, then the

@@ -16,11 +16,20 @@ export const shellSections: readonly ShellSection[] = [
   { path: '/preferences', label: 'Settings', icon: 'settings' },
 ];
 
-// Screens the new sections do not cover yet keep their URLs and Russian names (D6, M20):
-// CSV import, swaps and changing a manual price after the asset exists.
-export const legacyLinks = [
-  ['/manual-accounts', 'Ручные счета'],
-  ['/manual-prices', 'Ручные цены'],
+// Screens the new sections do not cover yet keep their URLs and Russian names (D6, M20): CSV
+// import and trades by hand per account, and changing a manual price after the asset exists.
+// They are no longer in the sidebar (G1); Settings lists them as "Older screens".
+export const olderScreens = [
+  {
+    path: '/manual-accounts',
+    label: 'Manual accounts',
+    hint: 'Opening balances, trades added by hand and CSV import for each account.',
+  },
+  {
+    path: '/manual-prices',
+    label: 'Manual prices',
+    hint: 'Change the stored price of an asset you value by hand.',
+  },
 ] as const;
 
 // Retired screens (M20) send old bookmarks to the section that replaced them. `/assets/*`
@@ -37,6 +46,7 @@ export const retiredPaths = [
   ['/settings', '/preferences'],
 ] as const;
 
-export function isLegacyPath(pathname: string) {
-  return legacyLinks.some(([path]) => pathname === path || pathname.startsWith(`${path}/`));
+/** Settings is the current section on the older screens it lists. */
+export function isOlderScreenPath(pathname: string) {
+  return olderScreens.some(({ path }) => pathname === path || pathname.startsWith(`${path}/`));
 }
