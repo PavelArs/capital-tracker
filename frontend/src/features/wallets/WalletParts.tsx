@@ -47,17 +47,19 @@ export function addressValue(
   prices: Prices,
   currency: AccountingCurrency,
 ): string {
-  // Display only: the exact chain balances are the amounts next to it. A held asset without a
-  // price leaves the value unknown rather than too low.
+  // Display only: the exact chain balances are the amounts next to it. The priced coins add up;
+  // a held coin without a price is counted aloud ("+ 1 unpriced") instead of zeroing the rest.
   const balances = chainBalances(address);
   if (balances === null) return DASH;
   const held = balances.filter((balance) => Number(balance.quantity) !== 0);
-  if (held.some((balance) => !prices.has(balance.symbol))) return DASH;
-  const total = held.reduce(
+  const priced = held.filter((balance) => prices.has(balance.symbol));
+  if (priced.length === 0 && held.length > 0) return DASH;
+  const total = priced.reduce(
     (value, balance) => value + Number(balance.quantity) * Number(prices.get(balance.symbol)),
     0,
   );
-  return money(String(total), currency);
+  const unpriced = held.length - priced.length;
+  return `${money(String(total), currency)}${unpriced > 0 ? ` + ${unpriced} unpriced` : ''}`;
 }
 
 /**

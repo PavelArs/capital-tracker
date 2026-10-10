@@ -4,6 +4,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
+import CloseButton from '../shell/CloseButton';
 import { networkIcon, networks as tracked } from './networks';
 import { accountNamed, checkAddress, checkApiKey } from './wallets';
 
@@ -85,6 +86,10 @@ export default function AddWalletDialog({
   const [network, setNetwork] = useState<Network | null>(null);
   const [input, setInput] = useState('');
   const [tried, setTried] = useState(false);
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [left, setLeft] = useState<ReadonlySet<'address' | 'key' | 'secret'>>(new Set());
+  const leave = (field: 'address' | 'key' | 'secret') => () =>
+    setLeft((current) => (current.has(field) ? current : new Set(current).add(field)));
   const [secretMessage, setSecretMessage] = useState<string | null>(null);
   // M22: a Bybit account is read with an API key and secret, kept in memory only until sent.
   const [apiKey, setApiKey] = useState('');
@@ -140,7 +145,9 @@ export default function AddWalletDialog({
   const existingWallet = existing?.accountId
     ? accounts.find((account) => account.accountId === existing.accountId)?.name
     : undefined;
-  const showError = !check.ok && (tried || input.trim().length > 20);
+  const showError = !check.ok && (tried || left.has('address'));
+  const showKeyError = !keyCheck.ok && (tried || left.has('key'));
+  const showSecretError = !secretCheck.ok && (tried || left.has('secret'));
   // M21: an account public key (xpub, ypub, zpub) stands for every address of the account.
   const isKey = check.ok && /^[xyz]pub/.test(check.address);
   const chosenName = walletName.trim() || chosen.defaultWallet;
@@ -227,6 +234,7 @@ export default function AddWalletDialog({
         <form onSubmit={next} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id="add-wallet">Add wallet</h2>
+            <CloseButton onClick={onClose} disabled={saving} />
           </div>
           <div className="wallets-steps" aria-label={`Step ${step} of 3`}>
             {[1, 2, 3].map((item) => (
@@ -286,12 +294,13 @@ export default function AddWalletDialog({
                     autoComplete="off"
                     spellCheck={false}
                     value={apiKey}
-                    aria-invalid={tried && !keyCheck.ok ? true : undefined}
+                    aria-invalid={showKeyError ? true : undefined}
                     aria-describedby="bybit-key-help"
                     onChange={(event) => changeKey(event.target.value, 'key')}
+                    onBlur={leave('key')}
                   />
                   <span id="bybit-key-help">
-                    {tried && !keyCheck.ok && (
+                    {showKeyError && (
                       <span className="portfolio-field__error">{keyCheck.message}</span>
                     )}
                   </span>
@@ -307,16 +316,17 @@ export default function AddWalletDialog({
                     autoComplete="off"
                     spellCheck={false}
                     value={apiSecret}
-                    aria-invalid={tried && !secretCheck.ok ? true : undefined}
+                    aria-invalid={showSecretError ? true : undefined}
                     aria-describedby="bybit-secret-help"
                     onChange={(event) => changeKey(event.target.value, 'secret')}
+                    onBlur={leave('secret')}
                   />
                   <span id="bybit-secret-help">
                     {secretMessage ? (
                       <span className="portfolio-field__error" role="alert">
                         {secretMessage} It was not saved.
                       </span>
-                    ) : tried && !secretCheck.ok ? (
+                    ) : showSecretError ? (
                       <span className="portfolio-field__error">{secretCheck.message}</span>
                     ) : (
                       <span className="portfolio-field__hint">
@@ -351,6 +361,7 @@ export default function AddWalletDialog({
                     aria-invalid={showError || existing ? true : undefined}
                     aria-describedby="wallet-address-help"
                     onChange={(event) => changeAddress(event.target.value)}
+                    onBlur={leave('address')}
                   />
                   <span id="wallet-address-help">
                     {secretMessage ? (
