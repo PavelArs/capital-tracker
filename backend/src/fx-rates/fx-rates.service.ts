@@ -3,13 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, type EntityManager } from 'typeorm';
 import { isDue, nextRunAt } from '../prices/price-collection';
-import { CbrClient, type FxFailure } from './cbr-client';
+import { CBR_SERIES, CbrClient, type FxFailure } from './cbr-client';
 import {
+  type AccountingCurrency,
   type FxRate,
   type FxRates,
   moscowDate,
   type RatedCurrency,
   ratedCurrencies,
+  trackedCurrencies,
 } from './fx-conversion';
 
 export type FxCollectionResult =
@@ -64,8 +66,9 @@ const addDays = (date: string, days: number) =>
 // numeric(78,30) text without trailing zeros.
 const exact = (value: string) => (value.includes('.') ? value.replace(/\.?0+$/, '') : value);
 const iso = (date: Date | null) => date?.toISOString() ?? null;
-// A month earlier, so the rate in effect on 1 January 2009 (set before the holidays) is stored.
-const HISTORY_REQUEST_FROM = addDays(FX_HISTORY_FROM, -31);
+// A month earlier than the history's start, so the rate in effect on that day (set before the
+// holidays) is stored.
+const requestFrom = (historyFrom: string) => addDays(historyFrom, -31);
 
 function split(from: string, to: string): [string, string][] {
   const ranges: [string, string][] = [];
@@ -87,13 +90,14 @@ function split(from: string, to: string): [string, string][] {
 export function fxRequestRanges(
   stored: { first: string; last: string; gaps?: [string, string][] } | undefined,
   to: string,
+  historyFrom = FX_HISTORY_FROM,
 ): [string, string][] {
-  if (!stored) return split(HISTORY_REQUEST_FROM, to).reverse();
+  if (!stored) return split(requestFrom(historyFrom), to).reverse();
   const missing = (stored.gaps ?? [])
     .filter(([before, after]) => Date.parse(after) - Date.parse(before) > HOLE_DAYS * DAY_MS)
     .map(([before, after]): [string, string] => [addDays(before, 1), addDays(after, -1)]);
-  if (stored.first > FX_HISTORY_FROM)
-    missing.push([HISTORY_REQUEST_FROM, addDays(stored.first, -1)]);
+  if (stored.first > historyFrom)
+    missing.push([requestFrom(historyFrom), addDays(stored.first, -1)]);
   return [
     ...split(addDays(stored.last, -OVERLAP_DAYS), to),
     ...missing
@@ -113,6 +117,18 @@ export function fxSplitUnreadable(from: string, until: string): [string, string]
   ];
 }
 
+/**
+ * The series collected and shown: USD and EUR, and the currency an owner chose as the main one
+ * when it is not USD, EUR or RUB (CUR-MORE).
+ */
+export async function trackedRates(manager: EntityManager): Promise<RatedCurrency[]> {
+  const rows: { mainCurrency: AccountingCurrency }[] = await manager.query(
+    'SELECT DISTINCT "mainCurrency" FROM owner_settings',
+  );
+  const tracked = trackedCurrencies(rows.map((row) => row.mainCurrency));
+  return ratedCurrencies.filter((currency) => tracked.includes(currency));
+}
+
 /** Every stored Bank of Russia rate, ascending per currency (a few hundred rows a year). */
 export async function readFxRates(manager: EntityManager): Promise<FxRates> {
   const rows: RateRow[] = await manager.query(
@@ -120,9 +136,12 @@ export async function readFxRates(manager: EntityManager): Promise<FxRates> {
      FROM fx_rates WHERE source = $1 AND currency = ANY($2) ORDER BY currency, "rateDate"`,
     [SOURCE, ratedCurrencies],
   );
-  const rates: Record<RatedCurrency, FxRate[]> = { USD: [], EUR: [] };
-  for (const row of rows)
-    rates[row.currency].push({ date: row.rateDate, rubPerUnit: exact(row.rubPerUnit) });
+  const rates: Partial<Record<RatedCurrency, FxRate[]>> = {};
+  for (const row of rows) {
+    const series = rates[row.currency] ?? [];
+    series.push({ date: row.rateDate, rubPerUnit: exact(row.rubPerUnit) });
+    rates[row.currency] = series;
+  }
   return rates;
 }
 
@@ -173,7 +192,8 @@ export class FxRatesService {
             'SELECT "lastAttemptAt" AS at FROM sync_sources WHERE key = $1',
             [FX_SOURCE_KEY],
           );
-          if (!isDue(row?.at ?? null, now)) return { outcome: 'not_due' };
+          if (!isDue(row?.at ?? null, now) && !(await this.seriesMissing()))
+            return { outcome: 'not_due' };
         }
         return { outcome: 'collected', stored: await this.collectRates(now) };
       } finally {
@@ -184,8 +204,19 @@ export class FxRatesService {
     }
   }
 
+  /** A tracked series without any stored rate (an owner just chose it) is not kept waiting. */
+  private async seriesMissing(): Promise<boolean> {
+    const have: { currency: RatedCurrency }[] = await this.source.query(
+      'SELECT DISTINCT currency FROM fx_rates WHERE source = $1',
+      [SOURCE],
+    );
+    const stored = new Set(have.map((row) => row.currency));
+    return (await trackedRates(this.source.manager)).some((currency) => !stored.has(currency));
+  }
+
   private async collectRates(now: Date): Promise<number> {
     const to = addDays(moscowDate(now), 1);
+    const series = await trackedRates(this.source.manager);
     const stored: { currency: RatedCurrency; first: string; last: string }[] =
       await this.source.query(
         `SELECT currency, to_char(min("rateDate"), 'YYYY-MM-DD') AS first,
@@ -219,8 +250,12 @@ export class FxRatesService {
     // What the first refused answer held; the state has room for one.
     let detail: string | undefined;
     let reason: FxFailure | null = null;
-    for (const currency of ratedCurrencies) {
-      const queue = fxRequestRanges(bounds.get(currency), to);
+    for (const currency of series) {
+      const queue = fxRequestRanges(
+        bounds.get(currency),
+        to,
+        CBR_SERIES[currency].since ?? FX_HISTORY_FROM,
+      );
       let unreadable = 0;
       for (let range = queue.shift(); range; range = queue.shift()) {
         const [from, until] = range;
@@ -271,9 +306,7 @@ export class FxRatesService {
         failed.length === 0
           ? { state: 'synced', errorCode: null, errorMessage: null }
           : {
-              state: ratedCurrencies.every((currency) => failed.includes(currency))
-                ? 'failed'
-                : 'delayed',
+              state: series.every((currency) => failed.includes(currency)) ? 'failed' : 'delayed',
               errorCode: reason,
               errorMessage:
                 `Bank of Russia ${FAILURE_TEXT[reason!]}; no new rates for ${failed.join(', ')}${detail ? ` (${detail})` : ''}`.slice(
@@ -319,6 +352,7 @@ export class FxRatesService {
         'SELECT * FROM sync_sources WHERE key = $1',
         [FX_SOURCE_KEY],
       );
+      const series = await trackedRates(manager);
       const byCurrency = new Map(rows.map((row) => [row.currency, row]));
       const interrupted =
         state?.state === 'syncing' &&
@@ -327,7 +361,7 @@ export class FxRatesService {
       return {
         date: today,
         source: SOURCE,
-        rates: ratedCurrencies.map((currency) => {
+        rates: series.map((currency) => {
           const row = byCurrency.get(currency);
           return {
             currency,

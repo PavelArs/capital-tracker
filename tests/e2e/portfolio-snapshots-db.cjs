@@ -300,6 +300,52 @@ async function reads(db, s, f) {
   console.log('PASS CHART-PERIODS data: periods, currencies, main currency, privacy, refusals and invalid history');
 }
 
+async function moreCurrencies(db, s, f) {
+  stage = 'CUR-MORE a main currency beyond USD, EUR and RUB is snapshotted while it is the main one';
+  const { owner } = f;
+  const at = later(50 * 60_000);
+  await db.query(`INSERT INTO fx_rates(currency,source,"rateDate","rubPerUnit")
+    SELECT 'GBP','cbr',d::date,120 FROM generate_series(date '2025-01-01', date '2026-10-04', interval '1 day') d
+    WHERE extract(isodow FROM d) < 6`);
+  const rows = async () => snapshots(db, owner);
+  const instantsOf = (list) => [...new Set(list.map((row) => row.at))];
+  const before = await rows();
+  assert.ok(before.every((row) => currencies.includes(row.currency)), 'Only the three base currencies while EUR is the main one');
+
+  await db.query(`UPDATE owner_settings SET "mainCurrency"='GBP' WHERE "ownerId"=$1`, [owner]);
+  const rebuilt = await s.snapshots.refresh(owner, at);
+  assert.equal(rebuilt.outcome, 'rebuilt');
+  const withGbp = await rows();
+  const instants = instantsOf(withGbp);
+  assert.equal(withGbp.length, instants.length * 4, 'Every snapshot is also stored in the main currency');
+  assert.deepEqual(withGbp.filter((row) => row.at === instants[0]).map((row) => row.currency), ['EUR', 'GBP', 'RUB', 'USD']);
+  // 90 RUB per USD and 120 RUB per GBP: 0.75 GBP per USD.
+  const june = withGbp.filter((row) => row.at === '2025-06-14T00:00:00.000Z');
+  const usd = btcClose(Date.parse('2025-06-14T00:00:00.000Z'));
+  assert.deepEqual(june.map((row) => [row.currency, row.value, row.complete]), [
+    ['EUR', String(usd * 0.9), true], ['GBP', String(usd * 0.75), true], ['RUB', String(usd * 90), true], ['USD', String(usd), true]]);
+  for (const row of withGbp.filter((entry) => entry.at <= '2025-06-13T00:00:00.000Z'))
+    assert.deepEqual([row.value, row.complete], ['0', true], `${row.at} ${row.currency}`);
+  const history = await s.snapshots.history(owner, { period: 'ALL' }, at);
+  assert.deepEqual([history.currency, history.mainCurrency], ['GBP', 'GBP'], 'The main currency answers when none is asked');
+  assert.equal((await s.snapshots.history(owner, { period: 'ALL', currency: 'GBP' }, at)).currency, 'GBP');
+  assert.equal((await s.snapshots.refresh(owner, at)).outcome, 'fresh', 'A second run changes nothing');
+
+  // Another currency never chosen has no snapshots: refused, not shown as an empty chart.
+  await rejected(() => s.snapshots.history(owner, { currency: 'KZT' }, at), 400);
+
+  // Back to a base currency: the main currency's snapshots go, so a later return rebuilds them.
+  await db.query(`UPDATE owner_settings SET "mainCurrency"='EUR' WHERE "ownerId"=$1`, [owner]);
+  await s.snapshots.refresh(owner, at);
+  const after = await rows();
+  assert.ok(after.every((row) => currencies.includes(row.currency)), 'GBP snapshots are removed once it is not the main currency');
+  assert.equal(after.length, instantsOf(after).length * 3);
+  assert.deepEqual(after.filter((row) => row.currency !== 'GBP').map(({ computedAt, ...row }) => row),
+    withGbp.filter((row) => row.currency !== 'GBP').map(({ computedAt, ...row }) => row), 'The three base currencies are untouched');
+  await rejected(() => s.snapshots.history(owner, { currency: 'GBP' }, at), 400);
+  console.log('PASS CUR-MORE the main currency GBP is snapshotted next to USD, EUR and RUB, refused when not chosen and removed when left');
+}
+
 async function schedule(db, f) {
   stage = 'background job gated by PRICE_COLLECTION_ENABLED';
   const off = services(db).snapshots;
@@ -331,13 +377,13 @@ async function main() {
   } finally { await admin.end(); }
   const migrated = spawnSync(process.execPath, ['/app/backend/dist/migrate.js'], { cwd: '/app/backend', env: { ...settings, ...process.env, DB_NAME: database }, encoding: 'utf8', timeout: 60000 });
   assert.equal(migrated.status, 0, 'Actual schema migration');
-  assert.match(migrated.stdout, /Migrations applied: 52/);
+  assert.match(migrated.stdout, /Migrations applied: 53/);
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 52);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 53);
     assert.deepEqual((await db.query('SELECT name FROM migrations ORDER BY timestamp DESC LIMIT 2')).map(({ name }) => name),
-      ['HideChainTokens1795200000000', 'TrackStellarWallets1795000000000']);
+      ['AddAccountingCurrencies1795400000000', 'HideChainTokens1795200000000']);
     const [owner, other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('snapshot-owner@example.invalid','synthetic-not-a-hash',true),
       ('snapshot-other@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
@@ -345,7 +391,7 @@ async function main() {
     const f = { owner: owner.id, other: other.id };
     await storedHistory(db);
     await instrument(s, other.id, { name: 'Foreign bitcoin', symbol: 'BTC', assetType: 'crypto' });
-    for (const check of [backfill, hourly, rebuild, assetHistory, reads]) await check(db, s, f);
+    for (const check of [backfill, hourly, rebuild, assetHistory, reads, moreCurrencies]) await check(db, s, f);
     await schedule(db, f);
   } finally { if (db.isInitialized) await db.destroy(); }
 }

@@ -66,9 +66,9 @@ export function derivePaidAmounts(
     fee = quotient(feePaid, rate);
     perUsd = paid.perUsd;
   } else {
-    const usd = freshRateOn(rates.USD, date);
+    const usd = freshRateOn(rates.USD ?? [], date);
     const unit =
-      paid.currency === 'RUB' ? { rubPerUnit: '1' } : freshRateOn(rates[paid.currency], date);
+      paid.currency === 'RUB' ? { rubPerUnit: '1' } : freshRateOn(rates[paid.currency] ?? [], date);
     if (!usd || !unit) return null;
     const fx = new FxConverter(rates, 'USD');
     gross = fx.convert(grossPaid, paid.currency, date)!;

@@ -2,8 +2,20 @@ import { once } from 'node:events';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { BadRequestException } from '@nestjs/common';
-import { CbrClient, parseCbrDynamic } from './cbr-client';
-import { FxConverter, type FxRates, moscowDate, rateOn } from './fx-conversion';
+import { CBR_SERIES, CbrClient, parseCbrDynamic } from './cbr-client';
+import {
+  accountingCurrencies,
+  baseCurrencies,
+  extraCurrencies,
+  FxConverter,
+  type FxRates,
+  isAccountingCurrency,
+  isTrackedFor,
+  moscowDate,
+  ratedCurrencies,
+  rateOn,
+  trackedCurrencies,
+} from './fx-conversion';
 import { parseRateDate } from './fx-rates.controller';
 import { FX_HISTORY_FROM, fxRequestRanges, fxSplitUnreadable } from './fx-rates.service';
 
@@ -113,11 +125,14 @@ describe('FX-DATE Bank of Russia dates', () => {
   });
 
   it('CUR-RATE-GAP: a day without a published rate uses the latest earlier rate', () => {
-    expect(rateOn(rates.USD, '2025-06-08')).toEqual({ date: '2025-06-07', rubPerUnit: '78.5' });
-    expect(rateOn(rates.USD, '2025-06-09')?.rubPerUnit).toBe('78.5');
-    expect(rateOn(rates.USD, '2025-06-10')?.rubPerUnit).toBe('79');
-    expect(rateOn(rates.USD, '2030-01-01')?.rubPerUnit).toBe('79');
-    expect(rateOn(rates.USD, '2025-06-05')).toBeNull();
+    expect(rateOn(rates.USD ?? [], '2025-06-08')).toEqual({
+      date: '2025-06-07',
+      rubPerUnit: '78.5',
+    });
+    expect(rateOn(rates.USD ?? [], '2025-06-09')?.rubPerUnit).toBe('78.5');
+    expect(rateOn(rates.USD ?? [], '2025-06-10')?.rubPerUnit).toBe('79');
+    expect(rateOn(rates.USD ?? [], '2030-01-01')?.rubPerUnit).toBe('79');
+    expect(rateOn(rates.USD ?? [], '2025-06-05')).toBeNull();
     expect(rateOn([], '2025-06-05')).toBeNull();
   });
 });
@@ -151,6 +166,116 @@ describe('FX-CONVERT exact conversion between accounting currencies', () => {
     expect(eur.ratesOn('2025-06-06')).toEqual([
       { currency: 'USD', date: '2025-06-06', rubPerUnit: '78.9' },
     ]);
+  });
+});
+
+describe('CUR-MORE accounting currencies beyond USD, EUR and RUB', () => {
+  const more: FxRates = {
+    ...rates,
+    GBP: [{ date: '2025-06-07', rubPerUnit: '106.25' }],
+    JPY: [{ date: '2025-06-07', rubPerUnit: '0.5' }],
+  };
+
+  it('lists the seven added currencies after the first three, each with a Bank of Russia series', () => {
+    expect(baseCurrencies).toEqual(['USD', 'EUR', 'RUB']);
+    expect(extraCurrencies).toEqual(['GBP', 'CHF', 'CNY', 'JPY', 'KZT', 'TRY', 'AED']);
+    expect(accountingCurrencies).toEqual([...baseCurrencies, ...extraCurrencies]);
+    expect(ratedCurrencies).not.toContain('RUB');
+    expect(Object.keys(CBR_SERIES).sort()).toEqual([...ratedCurrencies].sort());
+    const codes = Object.values(CBR_SERIES).map(({ code }) => code);
+    expect(new Set(codes).size).toBe(codes.length);
+    for (const code of codes) expect(code).toMatch(/^R\d{5}[A-Z]?$/);
+    expect(isAccountingCurrency('GBP')).toBe(true);
+    for (const other of ['gbp', 'BTC', 'XXX', '', null, 'EURO']) {
+      expect(isAccountingCurrency(other)).toBe(false);
+    }
+  });
+
+  it('tracks the three base currencies, and an extra one only while it is the main one', () => {
+    expect(trackedCurrencies([])).toEqual(['USD', 'EUR', 'RUB']);
+    expect(trackedCurrencies(['EUR', 'RUB'])).toEqual(['USD', 'EUR', 'RUB']);
+    expect(trackedCurrencies(['KZT'])).toEqual(['USD', 'EUR', 'RUB', 'KZT']);
+    expect(trackedCurrencies(['TRY', 'GBP', 'TRY'])).toEqual(['USD', 'EUR', 'RUB', 'GBP', 'TRY']);
+  });
+
+  it('lets a read ask for USD, EUR, RUB and the main currency only', () => {
+    expect(isTrackedFor('RUB', 'USD')).toBe(true);
+    expect(isTrackedFor('GBP', 'GBP')).toBe(true);
+    expect(isTrackedFor('GBP', 'EUR')).toBe(false);
+    expect(isTrackedFor('KZT', 'GBP')).toBe(false);
+    expect(isTrackedFor('EUR', 'KZT')).toBe(true);
+  });
+
+  it('converts through rubles in an added currency at the rate of the date', () => {
+    const gbp = new FxConverter(more, 'GBP');
+    expect(gbp.convert(atoms('1062.5'), 'RUB', '2025-06-08')).toBe(atoms('10'));
+    // USD to GBP: 100 USD × 78.5 / 106.25.
+    expect(gbp.convert(atoms('100'), 'USD', '2025-06-08')).toBe(
+      atoms('73.882352941176470588235294117647'),
+    );
+    expect(new FxConverter(more, 'USD').convert(atoms('10'), 'GBP', '2025-06-08')).toBe(
+      atoms('13.535031847133757961783439490446'),
+    );
+    expect(new FxConverter(more, 'JPY').convert(atoms('1'), 'RUB', '2025-06-08')).toBe(atoms('2'));
+  });
+
+  it('CUR-NO-RATE: a currency without a stored series states nothing, never zero', () => {
+    const chf = new FxConverter(more, 'CHF');
+    expect(chf.convert(atoms('1'), 'USD', '2025-06-08')).toBeNull();
+    expect(chf.available('USD', '2025-06-08')).toBe(false);
+    expect(chf.available('CHF', '2025-06-08')).toBe(true);
+    expect(new FxConverter(more, 'GBP').convert(atoms('1'), 'GBP', '2000-01-01')).toBe(atoms('1'));
+    expect(new FxConverter(more, 'GBP').available('RUB', '2000-01-01')).toBe(false);
+  });
+
+  it('shows the rates of USD and EUR and of the converter currency, not of every currency', () => {
+    expect(
+      new FxConverter(more, 'RUB').ratesOn('2025-06-08').map(({ currency }) => currency),
+    ).toEqual(['USD', 'EUR']);
+    expect(new FxConverter(more, 'GBP').ratesOn('2025-06-08')).toEqual([
+      { currency: 'USD', date: '2025-06-07', rubPerUnit: '78.5' },
+      { currency: 'EUR', date: '2025-06-07', rubPerUnit: '90' },
+      { currency: 'GBP', date: '2025-06-07', rubPerUnit: '106.25' },
+    ]);
+  });
+
+  it('reads the history of a late series from its own start', () => {
+    expect(CBR_SERIES.TRY.since).toBe('2015-01-01');
+    expect(fxRequestRanges(undefined, '2025-06-11', '2015-01-01')).toEqual([
+      ['2022-11-29', '2025-06-11'],
+      ['2018-11-30', '2022-11-28'],
+      ['2014-12-01', '2018-11-29'],
+    ]);
+    // Rates stored from the start of 2015 are the whole history: only the last week is asked.
+    expect(
+      fxRequestRanges(
+        { first: '2014-12-30', last: '2025-06-10', gaps: [] },
+        '2025-06-11',
+        '2015-01-01',
+      ),
+    ).toEqual([['2025-06-03', '2025-06-11']]);
+  });
+
+  it('asks the Bank of Russia for the series code of the currency', async () => {
+    const seen: string[] = [];
+    const server = createServer((request: IncomingMessage, response: ServerResponse) => {
+      seen.push(new URL(request.url ?? '', 'http://x').searchParams.get('VAL_NM_RQ') ?? '');
+      response.setHeader('Content-Type', 'application/xml');
+      response.end(xml('R01820', record('06.06.2025', '52,1234', '100', 'R01820')));
+    });
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    try {
+      const { port } = server.address() as AddressInfo;
+      const client = new CbrClient({ baseUrl: `http://127.0.0.1:${port}`, retryPauseMs: 1 });
+      expect(await client.dynamic('JPY', '2025-06-01', '2025-06-10')).toEqual({
+        ok: true,
+        rates: [{ date: '2025-06-06', rubPerUnit: '0.521234' }],
+      });
+      expect(seen).toEqual(['R01820']);
+    } finally {
+      server.close();
+    }
   });
 });
 

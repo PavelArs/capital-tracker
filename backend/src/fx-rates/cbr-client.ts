@@ -8,8 +8,22 @@ export type RatesResult =
   | { ok: true; rates: FxRate[] }
   | { ok: false; reason: FxFailure; detail?: string };
 
-// Bank of Russia currency codes for its XML_dynamic series.
-export const CBR_CODES: Readonly<Record<RatedCurrency, string>> = { USD: 'R01235', EUR: 'R01239' };
+// Bank of Russia currency codes for its XML_dynamic series, and the first day the series is
+// asked for. USD, EUR, GBP, CHF, CNY, JPY and KZT are quoted since before 2009, the start of
+// the stored history; the others are asked from 2015 so a series that began later is not
+// asked for its empty past again every hour. A quote per 10, 100 or 1000 units (JPY, KZT)
+// is read per unit.
+export const CBR_SERIES: Readonly<Record<RatedCurrency, { code: string; since: string | null }>> = {
+  USD: { code: 'R01235', since: null },
+  EUR: { code: 'R01239', since: null },
+  GBP: { code: 'R01035', since: null },
+  CHF: { code: 'R01775', since: null },
+  CNY: { code: 'R01375', since: null },
+  JPY: { code: 'R01820', since: null },
+  KZT: { code: 'R01335', since: null },
+  TRY: { code: 'R01700J', since: '2015-01-01' },
+  AED: { code: 'R01230', since: '2015-01-01' },
+};
 const MAX_BODY_BYTES = 1024 * 1024;
 
 class InvalidResponse extends Error {}
@@ -122,7 +136,7 @@ export class CbrClient {
   }
 
   private async request(currency: RatedCurrency, from: string, to: string): Promise<RatesResult> {
-    const code = CBR_CODES[currency];
+    const { code } = CBR_SERIES[currency];
     const url = `${this.baseUrl}/scripts/XML_dynamic.asp?date_req1=${cbrDate(from)}&date_req2=${cbrDate(to)}&VAL_NM_RQ=${code}`;
     let response: { status: number; data: ArrayBuffer };
     try {
