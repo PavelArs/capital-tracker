@@ -5,15 +5,17 @@ import axios from 'axios';
 import type { StepFailure } from './chain-sync';
 import type { Direction } from './esplora-client';
 
-// Blockbook (ZCASH-SYNC), the open-source indexer behind Trezor Suite; Trezor runs free public
-// Zcash instances without a key. It sees only the transparent part of a transaction: what
+// Blockbook (ZCASH-SYNC), the open-source indexer behind Trezor Suite. Trezor's public Zcash
+// instances answer 403 to a server, so the app reads them only as a fallback without a key; a
+// free NOWNodes key (ZCASH_BLOCKBOOK_API_KEY) points it at NOWNodes' Blockbook instead. It sees only the transparent part of a transaction: what
 // t-addresses paid in and received. Amounts are strings in zatoshi (1 ZEC = 100 000 000).
 //
 // An address's history comes newest first in numbered pages. With a fixed block range the
 // pages do not move while a walk reads them (ZCASH-SYNC), and like every other source here
 // the pages stay short and every request takes a new connection (TRON-SYNC).
 export const BLOCKBOOK_PAGE_SIZE = 10;
-const DEFAULT_BASE_URLS = ['https://zec1.trezor.io', 'https://zec5.trezor.io'];
+const TREZOR_BASE_URLS = ['https://zec1.trezor.io', 'https://zec5.trezor.io'];
+const NOWNODES_BASE_URLS = ['https://zecbook.nownodes.io'];
 const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const LOGGED_CHARS = 160;
 const ADDRESS_OR_HASH = /\bt[13][1-9A-HJ-NP-Za-km-z]{33}\b|\b[0-9a-fA-F]{64}\b/g;
@@ -183,6 +185,7 @@ export type ZcashPageResult = ({ ok: true } & ZcashPage) | Failure;
 export class BlockbookClient {
   private readonly logger = new Logger(BlockbookClient.name);
   private readonly baseUrls: string[];
+  private readonly apiKey: string | null;
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private lastRequestAt = 0;
@@ -191,8 +194,16 @@ export class BlockbookClient {
     httpsAgent: new HttpsAgent({ keepAlive: false }),
   };
 
-  constructor(options: { baseUrls?: string[]; timeoutMs?: number; pauseMs?: number } = {}) {
-    this.baseUrls = options.baseUrls ?? DEFAULT_BASE_URLS;
+  constructor(
+    options: {
+      baseUrls?: string[];
+      apiKey?: string | null;
+      timeoutMs?: number;
+      pauseMs?: number;
+    } = {},
+  ) {
+    this.apiKey = options.apiKey?.trim() || null;
+    this.baseUrls = options.baseUrls ?? (this.apiKey ? NOWNODES_BASE_URLS : TREZOR_BASE_URLS);
     this.timeoutMs = options.timeoutMs ?? 10_000;
     this.pauseMs = options.pauseMs ?? 500;
   }
@@ -254,7 +265,7 @@ export class BlockbookClient {
         responseType: 'text',
         transformResponse: [(data: string) => data],
         validateStatus: () => true,
-        headers: { Accept: 'application/json' },
+        headers: { Accept: 'application/json', ...(this.apiKey ? { 'api-key': this.apiKey } : {}) },
       });
     } catch (error) {
       this.logRefusal(path, 'failed', errorCode(error));
@@ -265,6 +276,10 @@ export class BlockbookClient {
     if (response.status !== 200)
       this.logRefusal(path, `answered ${response.status}`, String(response.data));
     if (response.status === 429) return { ok: false, reason: 'rate_limited' };
+    // A key-less server is turned away with 401 or 403 (Trezor's Cloudflare, NOWNodes); so is a
+    // key that NOWNodes does not accept.
+    if (response.status === 401 || response.status === 403)
+      return { ok: false, reason: 'not_configured' };
     if (response.status !== 200) return { ok: false, reason: 'unavailable' };
     try {
       return parse(JSON.parse(response.data));
@@ -275,7 +290,8 @@ export class BlockbookClient {
 
   /** The sync status shows only a summary; the log keeps what Blockbook said, never an ID. */
   private logRefusal(path: string, outcome: string, detail: string) {
-    const redact = (text: string) => text.replace(ADDRESS_OR_HASH, '<id>');
+    const redact = (text: string) =>
+      (this.apiKey ? text.split(this.apiKey).join('<key>') : text).replace(ADDRESS_OR_HASH, '<id>');
     const said = redact(detail.slice(0, LOGGED_CHARS + 100))
       .slice(0, LOGGED_CHARS)
       .replace(/\s+/g, ' ')

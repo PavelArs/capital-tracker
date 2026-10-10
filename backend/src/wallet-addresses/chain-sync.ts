@@ -61,6 +61,9 @@ export function failureMessage(network: string, reason: SyncFailure): string {
       // TronGrid refused the requests: without a key it may turn them away when busy.
       if (network === 'Tron')
         return 'TronGrid refused the requests. A free TronGrid API key on the server (TRONGRID_API_KEY) lets the app read Tron wallets reliably.';
+      // Trezor's public Zcash instances turn servers away; NOWNodes needs its free key.
+      if (network === 'Zcash')
+        return 'The Zcash data sources refused the requests. A free NOWNodes API key on the server (ZCASH_BLOCKBOOK_API_KEY) lets the app read Zcash wallets.';
       return `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
     case 'key_rejected':
       return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;

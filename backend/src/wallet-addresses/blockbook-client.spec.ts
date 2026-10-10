@@ -282,6 +282,34 @@ describe('ZCASH-SYNC Blockbook client', () => {
     ]);
   });
 
+  it.each([401, 403])('reports a %s as a missing key', async (status) => {
+    replies[0].push({ status, body: '<!DOCTYPE html>' });
+    await expect(client([baseUrls[0]]).status()).resolves.toEqual({
+      ok: false,
+      reason: 'not_configured',
+    });
+  });
+
+  it('sends the key as a header only and keeps it out of the log', async () => {
+    const keyed = new BlockbookClient({
+      baseUrls: [baseUrls[0]],
+      apiKey: ' secret-key-1 ',
+      timeoutMs: 500,
+      pauseMs: 0,
+    });
+    replies[0].push({ status: 401, body: '{"error":"bad key secret-key-1"}' });
+    await keyed.status();
+    expect(requests[0].headers['api-key']).toBe('secret-key-1');
+    expect(requests[0].url.search).toBe('');
+    expect(warn.mock.calls).toEqual([['Blockbook /api answered 401: {"error":"bad key <key>"}']]);
+  });
+
+  it('sends no key header without a key', async () => {
+    replies[0].push(json({ blockbook: { bestHeight: HEIGHT, inSync: true } }));
+    await client([baseUrls[0]]).status();
+    expect(requests[0].headers['api-key']).toBeUndefined();
+  });
+
   it('reports an unreachable instance as unavailable', async () => {
     await expect(client(['http://127.0.0.1:1']).status()).resolves.toEqual({
       ok: false,

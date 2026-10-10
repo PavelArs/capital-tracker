@@ -53,6 +53,8 @@ services:
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
       # Optional free TronGrid key for Tron wallets; without it TronGrid's lower keyless rate applies.
       TRONGRID_API_KEY: ${TRONGRID_API_KEY:-}
+      # Free NOWNodes key for Zcash wallets (Blockbook); Trezor's public instances turn servers away.
+      ZCASH_BLOCKBOOK_API_KEY: ${ZCASH_BLOCKBOOK_API_KEY:-}
       # Yandex mailbox and app password for password reset emails (M17); without them reset
       # requests are answered as usual but no email is sent.
       SMTP_USER: ${SMTP_USER:-}
