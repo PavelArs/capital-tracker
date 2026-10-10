@@ -1,5 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseRegistration, parseTokenVisibility, parseUpdate } from './wallet-address-input';
+import {
+  parseBalanceGap,
+  parseRegistration,
+  parseTokenVisibility,
+  parseUpdate,
+} from './wallet-address-input';
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
@@ -186,6 +191,42 @@ describe('WAL-ACCOUNT: changing a wallet address', () => {
     ['no object', null],
   ])('refuses %s', (_case, input) => {
     expect(() => parseUpdate(input)).toThrow(BadRequestException);
+  });
+});
+
+describe('BYBIT-COUNT-GAP: counting a difference of a Bybit balance', () => {
+  const gap = {
+    requestId: accountId,
+    coin: 'BTC',
+    direction: 'in',
+    quantity: '0.03842035',
+    reported: '0.04165398',
+  };
+
+  it('accepts a coin, a direction and exact amounts', () => {
+    expect(parseBalanceGap(gap)).toEqual(gap);
+    expect(parseBalanceGap({ ...gap, coin: 'NIGHT', direction: 'out', reported: '0' }).coin).toBe(
+      'NIGHT',
+    );
+  });
+
+  it.each([
+    ['fiat', { coin: 'EUR' }],
+    ['a lower-case ticker', { coin: 'btc' }],
+    ['another direction', { direction: 'self' }],
+    ['a zero difference', { quantity: '0.000' }],
+    ['a negative difference', { quantity: '-1' }],
+    ['more than 18 decimals', { quantity: '0.0000000000000000001' }],
+    ['an exponent', { reported: '1e3' }],
+    ['a bad request id', { requestId: 'x' }],
+    ['an extra field', { accountId }],
+  ])('refuses %s', (_case, change) => {
+    expect(() => parseBalanceGap({ ...gap, ...change })).toThrow(BadRequestException);
+  });
+
+  it('refuses a body that is not an object', () => {
+    expect(() => parseBalanceGap(null)).toThrow(BadRequestException);
+    expect(() => parseBalanceGap([gap])).toThrow(BadRequestException);
   });
 });
 

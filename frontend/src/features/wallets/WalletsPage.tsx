@@ -17,7 +17,7 @@ import {
   subtitle,
   trackedSymbols,
 } from './WalletParts';
-import { isCoin, pricesOf, reconcile } from './wallets';
+import { gapAddress, isCoin, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import '../transactions/transactions.css';
@@ -176,7 +176,11 @@ export default function WalletsPage() {
                 ) : (
                   <p className="wallets-empty-row">Nothing in this wallet yet.</p>
                 )}
-                <ReconcileNote result={reconcile(list, portfolio, account.accountId)} />
+                <ReconcileNote
+                  result={reconcile(list, portfolio, account.accountId)}
+                  target={gapAddress(list, account.accountId)}
+                  onCounted={() => void load(true)}
+                />
               </section>
             );
           })}

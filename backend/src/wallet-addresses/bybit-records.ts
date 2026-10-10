@@ -307,6 +307,31 @@ export function withdrawalLeg(withdrawal: BybitWithdrawal): BybitLeg | null {
   );
 }
 
+/**
+ * BYBIT-COUNT-GAP: the difference between what Bybit reports and what the records hold, entered
+ * by the owner as one more record of the account. It is an unanswered deposit (or withdrawal)
+ * that counts at once, without a purchase price, and can be answered like any other record.
+ */
+export function gapLeg(
+  gap: { requestId: string; coin: string; direction: 'in' | 'out'; quantity: string },
+  at: Date,
+): BybitLeg {
+  const incoming = gap.direction === 'in';
+  const kind = incoming ? 'deposit' : 'withdrawal';
+  const units = toUnits(gap.quantity);
+  return leg(
+    {
+      txid: `bybit-${kind}-gap-${gap.requestId}`,
+      kind,
+      asset: gap.coin,
+      blockTime: at.toISOString(),
+      feeUnits: 0n,
+      raw: { kind, internal: false, balanceGap: true },
+    },
+    incoming ? units : -units,
+  );
+}
+
 const earnProducts: Record<BybitEarnCategory, string> = {
   FlexibleSaving: 'flexible',
   OnChain: 'onchain',

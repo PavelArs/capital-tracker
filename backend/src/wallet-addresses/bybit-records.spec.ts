@@ -1,3 +1,4 @@
+import { chainTxid as chainTxidPattern } from '../accounting/chain-classification';
 import type {
   BybitConvert,
   BybitDeposit,
@@ -11,6 +12,7 @@ import {
   convertLeg,
   depositLeg,
   earnLeg,
+  gapLeg,
   splitSymbol,
   toUnits,
   tradeLeg,
@@ -363,5 +365,40 @@ describe('BYBIT-ANY-COIN: a stored trade that moved only its quote coin', () => 
     expect(completedTradeLeg(quoteOnly, time)).toBeNull();
     expect(completedTradeLeg({ kind: 'deposit', txid: 'bybit-deposit-1' }, time)).toBeNull();
     expect(completedTradeLeg({ kind: 'trade', txid: 'x', trade: null }, time)).toBeNull();
+  });
+});
+
+describe('BYBIT-COUNT-GAP: a difference the owner counts as a record', () => {
+  const requestId = '00000000-0000-4000-8000-0000000000aa';
+  const at = new Date('2026-10-09T21:30:00Z');
+
+  it('is a deposit of the coin when Bybit holds more than the records', () => {
+    expect(gapLeg({ requestId, coin: 'BTC', direction: 'in', quantity: '0.0384' }, at)).toEqual({
+      txid: `bybit-deposit-gap-${requestId}`,
+      kind: 'deposit',
+      asset: 'BTC',
+      blockTime: at.toISOString(),
+      receivedUnits: 384n * 10n ** 14n,
+      sentUnits: 0n,
+      feeUnits: 0n,
+      direction: 'in',
+      raw: {
+        kind: 'deposit',
+        internal: false,
+        balanceGap: true,
+        txid: `bybit-deposit-gap-${requestId}`,
+      },
+    });
+  });
+
+  it('is a withdrawal of the coin when the records hold more, and its txid is accepted', () => {
+    const leg = gapLeg({ requestId, coin: 'SOL', direction: 'out', quantity: '0.525' }, at);
+    expect([leg.kind, leg.direction, leg.sentUnits, leg.receivedUnits]).toEqual([
+      'withdrawal',
+      'out',
+      525n * 10n ** 15n,
+      0n,
+    ]);
+    expect(chainTxidPattern.test(leg.txid)).toBe(true);
   });
 });

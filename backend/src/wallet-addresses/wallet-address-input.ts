@@ -4,7 +4,7 @@ import { normalizeBitcoinAddress } from './bitcoin-address';
 import { isExtendedKey, normalizeExtendedKey } from './bitcoin-xpub';
 import type { BybitCredentials } from './bybit-client';
 import { isApiKey, isApiSecret } from './bybit-key-box';
-import { isNetwork, type Network } from './chain-assets';
+import { isBybitCoin, isNetwork, type Network } from './chain-assets';
 import { normalizeEthereumAddress } from './ethereum-address';
 import { normalizeSolanaAddress } from './solana-address';
 import { normalizeStellarAddress } from './stellar-address';
@@ -130,4 +130,28 @@ export function parseTransactionQuery(raw: unknown): { offset: number; limit: nu
     offset: queryInteger(row.offset, 0, 0, 1_000_000),
     limit: queryInteger(row.limit, 50, 1, 100),
   };
+}
+
+/** BYBIT-COUNT-GAP: one coin's difference between Bybit's balance and the account's records. */
+export interface BalanceGap {
+  requestId: string;
+  coin: string;
+  direction: 'in' | 'out';
+  /** The difference, positive, in the coin. */
+  quantity: string;
+  /** The balance Bybit reported when the owner saw the difference. */
+  reported: string;
+}
+
+const AMOUNT = /^(0|[1-9][0-9]{0,14})(\.[0-9]{1,18})?$/;
+
+export function parseBalanceGap(raw: unknown): BalanceGap {
+  const row = object(raw, ['requestId', 'coin', 'direction', 'quantity', 'reported']);
+  const { coin, direction, quantity, reported } = row;
+  if (typeof coin !== 'string' || !isBybitCoin(coin)) return bad();
+  if (direction !== 'in' && direction !== 'out') return bad();
+  if (typeof quantity !== 'string' || !AMOUNT.test(quantity) || !/[1-9]/.test(quantity))
+    return bad();
+  if (typeof reported !== 'string' || !AMOUNT.test(reported)) return bad();
+  return { requestId: parseUuid(row.requestId), coin, direction, quantity, reported };
 }

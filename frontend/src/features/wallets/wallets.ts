@@ -130,6 +130,18 @@ export function reconcile(
   return assets.length === 0 ? { state: 'match' } : { state: 'differs', assets };
 }
 
+/**
+ * BYBIT-COUNT-GAP: the one Bybit account of a wallet whose balance differs from its records, the
+ * only place the difference can be counted; null for any other wallet.
+ */
+export function gapAddress(
+  addresses: readonly WalletAddress[],
+  accountId: string,
+): WalletAddress | null {
+  const own = addresses.filter((address) => address.accountId === accountId);
+  return own.length === 1 && networkOf(own[0]).exchange ? own[0] : null;
+}
+
 export type AddressCheck =
   | { ok: true; address: string; kind: string }
   | { ok: false; message: string; secret?: true };

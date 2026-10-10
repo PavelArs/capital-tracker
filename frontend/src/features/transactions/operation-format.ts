@@ -157,6 +157,8 @@ const recordKinds: Record<string, string> = {
 };
 
 function recordName(txid: string): string | null {
+  // BYBIT-COUNT-GAP: a difference the owner counted, not a record Bybit has.
+  if (/^bybit-(?:deposit|withdrawal)-gap-/.test(txid)) return 'Balance difference';
   const match =
     /^bybit-(?:trade-(convert)-|(trade|deposit|withdrawal|earn)-(?:internal-|flexible-|onchain-)?)(.+)$/.exec(
       txid,
