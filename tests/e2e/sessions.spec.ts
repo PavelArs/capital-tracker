@@ -260,6 +260,10 @@ test('SES-002-A: missing CSRF and foreign Origin cannot change owner settings', 
   request,
 }) => {
   const { csrfToken } = await browserLogin(page);
+  // The signed-in app refreshes its sources every minute and every authenticated read touches
+  // the session row, so a page left open could move auth_sessions between two fingerprints.
+  // Leaving the app ends its timers; the context keeps the cookie the denied writes need.
+  await page.goto('about:blank');
   const foreignCsrf = await csrf(request);
   const settingsBefore = settings();
   const before = fingerprint(true);
