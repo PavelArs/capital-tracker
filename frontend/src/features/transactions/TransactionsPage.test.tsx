@@ -13,7 +13,7 @@ import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { poolCandidates } from './ClassifyForm';
 import TransactionsPage from './TransactionsPage';
@@ -179,7 +179,29 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
+function Where() {
+  const { search } = useLocation();
+  return <output aria-label="Address">{search}</output>;
+}
+
 describe('TransactionsPage (list-all-operations)', () => {
+  it('OPS-OPEN: a link naming a transaction opens it and leaves the filters in the address', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    render(
+      <MemoryRouter
+        initialEntries={[`/transactions?open=${encodeURIComponent(receipt.id)}&currency=EUR`]}
+      >
+        <TransactionsPage />
+        <Where />
+      </MemoryRouter>,
+    );
+    expect(
+      await screen.findByRole('dialog', { name: 'Incoming transaction · BTC' }),
+    ).toBeInTheDocument();
+    // Back must not reopen it and a reload keeps the list: only the currency stays.
+    expect(screen.getByLabelText('Address')).toHaveTextContent(/^\?currency=EUR$/);
+  });
+
   it('OPS-LIST: lists manual, CSV and blockchain operations with every column, newest first', async () => {
     vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
     renderPage();

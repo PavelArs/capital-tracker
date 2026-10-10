@@ -28,6 +28,8 @@ export default function TokensSection({
 }) {
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Most hidden tokens are spam nobody needs to read, so the list opens on request.
+  const [listed, setListed] = useState(false);
   const shown = (address.balances ?? []).filter((balance) => balance.name !== undefined);
   const hidden = address.hiddenTokens ?? [];
   if (shown.length === 0 && hidden.length === 0) return null;
@@ -101,26 +103,36 @@ export default function TokensSection({
           <h3 id="address-hidden-tokens" className="transactions-section">
             Hidden tokens ({hidden.length})
           </h3>
-          <ul className="wallets-tokens">
-            {hidden.map((token) => (
-              <li key={token.symbol}>
-                <span className="wallets-tokens__name">
-                  <span>{token.symbol}</span>
-                  <span className="wallets-muted">{reasons[token.reason]}</span>
-                </span>
-                <span className="wallets-num">{quantity(token.quantity)}</span>
-                <button
-                  type="button"
-                  className="shell-button shell-button--ghost"
-                  aria-label={`Restore ${token.symbol}`}
-                  disabled={busy}
-                  onClick={() => void change([token.symbol], 'shown')}
-                >
-                  Restore
-                </button>
-              </li>
-            ))}
-          </ul>
+          {listed && (
+            <ul className="wallets-tokens">
+              {hidden.map((token) => (
+                <li key={token.symbol}>
+                  <span className="wallets-tokens__name">
+                    <span>{token.symbol}</span>
+                    <span className="wallets-muted">{reasons[token.reason]}</span>
+                  </span>
+                  <span className="wallets-num">{quantity(token.quantity)}</span>
+                  <button
+                    type="button"
+                    className="shell-button shell-button--ghost"
+                    aria-label={`Restore ${token.symbol}`}
+                    disabled={busy}
+                    onClick={() => void change([token.symbol], 'shown')}
+                  >
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            className="portfolio-link"
+            aria-expanded={listed}
+            onClick={() => setListed((current) => !current)}
+          >
+            {listed ? 'Show less' : 'Show more'}
+          </button>
         </section>
       )}
       {failed && (

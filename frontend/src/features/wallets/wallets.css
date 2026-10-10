@@ -637,3 +637,28 @@ button.wallets-source__open:focus-visible {
     padding: 0 16px 12px;
   }
 }
+
+/* Drawer: a listed transaction opens in Transactions. */
+.wallets-recent li > .wallets-recent__open {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.wallets-recent li > .wallets-recent__open:hover {
+  color: var(--accent);
+}
+
+.wallets-recent__more {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.wallets-recent__more .portfolio-link {
+  padding: 0;
+}

@@ -362,10 +362,11 @@ export default function TransactionsPage() {
   );
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  // OPS-OPEN: a link from another page (the wallet page) names the transaction to open.
   const [openId, setOpenId] = useState<string | null>(null);
   // The Edit window of the prototype (M9); new transactions open from the page header.
   const [dialog, setDialog] = useState<{ editing?: Operation } | null>(null);
-  const [params, setParams] = useSearchParams();
   // The router commits an address change later, in a transition; a second filter change
   // before that builds on the first one, not on the address it replaces.
   const pending = useRef<{ from: URLSearchParams; next: URLSearchParams } | null>(null);
@@ -404,6 +405,16 @@ export default function TransactionsPage() {
     pending.current = { from: params, next };
     setParams(next, { replace: true });
   };
+  // OPS-OPEN: the address names the transaction only to get here; it opens and the address
+  // goes back to the filters, so Back returns to the page that linked and a reload keeps the list.
+  const linked = params.get('open');
+  useEffect(() => {
+    if (!linked) return;
+    setOpenId(linked);
+    const next = new URLSearchParams(params);
+    next.delete('open');
+    replaceParams(next);
+  });
   const update = (changes: Record<string, string>) => {
     const base = pending.current?.from === params ? pending.current.next : params;
     const next = new URLSearchParams(base);

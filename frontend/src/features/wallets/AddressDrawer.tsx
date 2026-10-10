@@ -1,4 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import {
   type AddressTransaction,
@@ -60,6 +62,24 @@ const dayFormat = new Intl.DateTimeFormat('en-GB', {
   timeZone: 'UTC',
 });
 
+/** The newest transactions the drawer lists, once dust is left out. */
+const SHOWN_TRANSACTIONS = 10;
+/** Pages of the address's history read to find them: a spammed address has long runs of dust. */
+const MAX_PAGES = 6;
+
+/**
+ * This address's rows of the Transactions list by txid: the row to open and whether it is dust
+ * (CLS-DUST). A leg the list folds into a swap or a transfer has no row of its own.
+ */
+function operationsOf(operations: readonly Operation[], addressId: string) {
+  const found = new Map<string, Operation>();
+  for (const operation of operations) {
+    if (operation.chain && operation.wallet?.id === addressId)
+      found.set(operation.chain.txid, operation);
+  }
+  return found;
+}
+
 interface Props {
   address: WalletAddress;
   accounts: readonly WalletAccount[];
@@ -96,8 +116,18 @@ export default function AddressDrawer({
   const [saving, setSaving] = useState(false);
   const [allCoins, setAllCoins] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
-  // undefined while loading, null when the read failed.
-  const [recent, setRecent] = useState<AddressTransaction[] | null | undefined>(undefined);
+  // The history read so far, newest first; undefined while loading, null when the read failed.
+  const [history, setHistory] = useState<
+    { items: AddressTransaction[]; next: number | null } | null | undefined
+  >(undefined);
+  const [showDust, setShowDust] = useState(false);
+  // The Transactions list says which of them are dust and where each one opens; undefined while
+  // it loads, null when it cannot be read (every row then shows, none opens).
+  const [listed, setListed] = useState<ReadonlyMap<string, Operation> | null | undefined>(() => {
+    const kept = cachedReads.operations.last();
+    return kept ? operationsOf(kept.operations, address.id) : undefined;
+  });
+  const reading = useRef(false);
   const attempt = useRef<{ key: string; requestId: string } | null>(null);
 
   useEffect(() => {
@@ -125,18 +155,61 @@ export default function AddressDrawer({
   // A sync that stores new transactions changes the count; the newest are read again.
   useEffect(() => {
     if (count === 0) {
-      setRecent([]);
+      setHistory({ items: [], next: null });
       return;
     }
     let live = true;
     walletAddressesApi
       .transactions(address.id)
-      .then((page) => live && setRecent(page.items.slice(0, 10)))
-      .catch(() => live && setRecent(null));
+      .then((page) => live && setHistory({ items: page.items, next: page.nextOffset }))
+      .catch(() => live && setHistory(null));
     return () => {
       live = false;
     };
   }, [address.id, count]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a sync that stores transactions changes what is dust, so the list is asked again.
+  useEffect(() => {
+    let live = true;
+    cachedReads.operations
+      .load()
+      .then((list) => live && setListed(operationsOf(list.operations, address.id)))
+      .catch(() => live && setListed((kept) => kept ?? null));
+    return () => {
+      live = false;
+    };
+  }, [address.id, count]);
+
+  const isDust = (item: AddressTransaction) => listed?.get(item.txid)?.status === 'dust';
+  const rows = history?.items ?? [];
+  const shown = (showDust ? rows : rows.filter((item) => !isDust(item))).slice(
+    0,
+    SHOWN_TRANSACTIONS,
+  );
+  const dust = rows.filter(isDust).length;
+  // Older pages may hold more dust than the ones read.
+  const dustLabel = `${dust}${history?.next ? '+' : ''} dust ${dust === 1 && !history?.next ? 'transaction' : 'transactions'}`;
+  const waiting =
+    history === undefined || (history !== null && rows.length > 0 && listed === undefined);
+  // Dust takes no place in the list, so older pages are read until it is full.
+  useEffect(() => {
+    if (!history || history.next === null || listed === undefined || reading.current) return;
+    if (shown.length >= SHOWN_TRANSACTIONS || rows.length >= MAX_PAGES * 50) return;
+    reading.current = true;
+    const offset = history.next;
+    walletAddressesApi
+      .transactions(address.id, offset)
+      .then((page) =>
+        setHistory((kept) =>
+          kept && kept.next === offset
+            ? { items: [...kept.items, ...page.items], next: page.nextOffset }
+            : kept,
+        ),
+      )
+      .catch(() => undefined)
+      .finally(() => {
+        reading.current = false;
+      });
+  }, [history, listed, shown.length, rows.length, address.id]);
 
   const wallet = accounts.find((account) => account.accountId === address.accountId);
   // M21: a Bitcoin account public key and the addresses it derives.
@@ -442,40 +515,72 @@ export default function AddressDrawer({
             <h3 id="address-transactions" className="transactions-section">
               {exchange ? 'Bybit records' : 'Blockchain transactions'}
             </h3>
-            {!recent?.length ? (
+            {waiting ? (
+              <p className="wallets-muted">Loading…</p>
+            ) : shown.length === 0 ? (
               <p className="wallets-muted">
-                {count === 0
-                  ? 'None loaded yet. They appear here after a sync.'
-                  : recent === null
-                    ? 'Could not load them; they are in Transactions.'
-                    : 'Loading…'}
+                {history === null
+                  ? 'Could not load them; they are in Transactions.'
+                  : dust > 0
+                    ? 'Only dust in the latest transactions.'
+                    : 'None loaded yet. They appear here after a sync.'}
               </p>
             ) : (
               <ul className="wallets-recent">
-                {recent.map((item) => (
-                  <li key={item.txid}>
-                    <span>
-                      {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
-                      <span className="wallets-muted">
-                        {dayFormat.format(new Date(item.blockTime))}
+                {shown.map((item) => {
+                  const operation = listed?.get(item.txid);
+                  const line = (
+                    <>
+                      <span>
+                        {exchange ? recordLabel(item) : directionLabels[item.direction]}{' '}
+                        <span className="wallets-muted">
+                          {dayFormat.format(new Date(item.blockTime))}
+                          {operation?.status === 'dust' && ' · dust'}
+                        </span>
                       </span>
-                    </span>
-                    <span className="wallets-num">
-                      {item.net.startsWith('-') ? '-' : '+'}
-                      {quantity(item.net.replace(/^-/, ''))} {item.symbol}
-                    </span>
-                  </li>
-                ))}
+                      <span className="wallets-num">
+                        {item.net.startsWith('-') ? '-' : '+'}
+                        {quantity(item.net.replace(/^-/, ''))} {item.symbol}
+                      </span>
+                    </>
+                  );
+                  return (
+                    <li key={item.txid}>
+                      {operation ? (
+                        <Link
+                          className="wallets-recent__open"
+                          to={`/transactions?open=${encodeURIComponent(operation.id)}`}
+                        >
+                          {line}
+                        </Link>
+                      ) : (
+                        line
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             )}
-            {count > 0 && (
-              <Link
-                className="portfolio-link"
-                to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
-              >
-                All in Transactions
-              </Link>
-            )}
+            <div className="wallets-recent__more">
+              {dust > 0 && (
+                <button
+                  type="button"
+                  className="portfolio-link"
+                  aria-expanded={showDust}
+                  onClick={() => setShowDust((current) => !current)}
+                >
+                  {showDust ? 'Hide dust' : `Show ${dustLabel}`}
+                </button>
+              )}
+              {count > 0 && (
+                <Link
+                  className="portfolio-link"
+                  to={`/transactions?account=${encodeURIComponent(`wallet:${address.id}`)}`}
+                >
+                  All in Transactions
+                </Link>
+              )}
+            </div>
           </section>
           <SyncJournal address={address} run={run} />
         </div>
