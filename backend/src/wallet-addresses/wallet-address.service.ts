@@ -32,6 +32,7 @@ import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
+import { readJournal } from './sync-journal';
 import { balancesLateral, leftOut, withDust } from './token-left-out';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
@@ -819,6 +820,16 @@ export class WalletAddressService {
       imported: result.step?.imported ?? 0,
       address: summary(await this.read((manager) => this.address(manager, owner, addressId))),
     };
+  }
+
+  /** SYNC-JOURNAL: the newest passes of one wallet, newest first. */
+  async syncRuns(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    return this.read(async (manager) => {
+      await this.address(manager, owner, addressId);
+      return { items: await readJournal(manager, owner, addressId) };
+    });
   }
 
   /**

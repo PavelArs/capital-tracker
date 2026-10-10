@@ -39,6 +39,11 @@ export class WalletAddressController {
     return this.addresses.sync(owner.userId, id);
   }
 
+  @Get(':id/sync-runs')
+  syncRuns(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    return this.addresses.syncRuns(owner.userId, id);
+  }
+
   @Post(':id/balance-gap')
   @HttpCode(200)
   countGap(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {

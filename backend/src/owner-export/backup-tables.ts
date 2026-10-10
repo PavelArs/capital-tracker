@@ -86,5 +86,6 @@ export const notBackedUp: Record<string, string> = {
   portfolio_snapshot_state: 'rebuilt from operations',
   sync_sources: 'sync status',
   wallet_stake_scans: 'sync progress',
+  wallet_sync_runs: 'sync journal',
   migrations: 'schema history',
 };

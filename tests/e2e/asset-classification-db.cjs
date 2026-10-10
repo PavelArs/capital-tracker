@@ -52,14 +52,14 @@ async function createDatabase() {
 // LinkChainSwaps1793100000000, TrackEthereumStake1793200000000, SyncBybitAccount1793300000000,
 // TrackTronWallets1793600000000, ReadBybitEarn1794000000000, ReadBybitConverts1794400000000,
 // PriceBybitCoins1794500000000, TrackAnyChainToken1794900000000, TrackStellarWallets1795000000000,
-// HideChainTokens1795200000000 and TrackZcashWallets1795300000000 do not touch
+// HideChainTokens1795200000000, TrackZcashWallets1795300000000 and JournalWalletSyncs1795600000000 do not touch
 // instruments), run as a release without the classification did.
 async function createPreviousSchema() {
   const classes = readdirSync('/app/backend/dist/migrations')
     .filter((file) => file.endsWith('.js'))
     .flatMap((file) => Object.values(require(`/app/backend/dist/migrations/${file}`)))
     .filter((entry) => typeof entry === 'function' && /^[A-Za-z]+\d{13}$/.test(entry.name) && entry.name !== migration);
-  assert.equal(classes.length, 52, 'Every migration but the classification: exactly fifty-two');
+  assert.equal(classes.length, 53, 'Every migration but the classification: exactly fifty-three');
   const prior = new DataSource({ type: 'postgres', host: settings.DB_HOST, port: Number(settings.DB_PORT),
     username: settings.DB_USERNAME, password: settings.DB_PASSWORD, database,
     synchronize: false, migrationsRun: false, installExtensions: false, migrations: classes });
