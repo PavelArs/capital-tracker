@@ -256,7 +256,7 @@ guessable identifiers.
 - **Crypto prices (hourly):** [Kraken](https://api.kraken.com), then [CoinGecko](https://api.coingecko.com) (free tier)
 - **USD/EUR/RUB rates:** [Bank of Russia](https://www.cbr.ru) daily rates
 - **Bitcoin history:** [Blockstream Esplora](https://blockstream.info/api)
-- **Ethereum history:** [Etherscan](https://api.etherscan.io) (free key). The same key and API (`chainid`) also read Base, Arbitrum One and OP Mainnet, each added as a wallet of its own
+- **Ethereum history:** [Etherscan](https://api.etherscan.io) (free key). The same key and API (`chainid`) also read Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain and Avalanche C-Chain, each added as a wallet of its own
 - **Solana history:** public RPC `https://api.mainnet-beta.solana.com`
 - **Bybit account:** [Bybit V5 API](https://api.bybit.com) with the owner's read-only key, stored encrypted
 - **Tron history and staking:** [TronGrid](https://api.trongrid.io) (free tier; optional free key `TRONGRID_API_KEY`); TRX that contracts send into a wallet, which TronGrid's account list omits, is found through [Tronscan](https://tronscan.org)'s public list (no key)

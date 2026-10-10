@@ -417,7 +417,15 @@ describe('EVM-MULTICHAIN: the 0x address of an Ethereum-like chain', () => {
   const lower = '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed';
 
   it('is checked like an Ethereum address on every chain', () => {
-    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism'] as const) {
+    for (const network of [
+      'ethereum',
+      'base',
+      'arbitrum',
+      'optimism',
+      'polygon',
+      'bnb',
+      'avalanche',
+    ] as const) {
       expect(checkAddress(network, ` ${lower} `)).toEqual({
         ok: true,
         address: lower,
