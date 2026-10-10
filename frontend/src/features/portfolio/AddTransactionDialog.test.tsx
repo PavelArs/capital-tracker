@@ -12,7 +12,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import AddTransactionDialog, { splitAssets } from './AddTransactionDialog';
+import AddTransactionDialog, { byAllocation, splitAssets } from './AddTransactionDialog';
 import {
   addDecimal,
   bankRate,
@@ -899,6 +899,50 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(assets.getByText('ETH')).toBeInTheDocument();
   });
 
+  const chips = (group: ReturnType<typeof within>) =>
+    group
+      .getAllByRole('button')
+      .map((item) => item.textContent)
+      .filter((text) => text !== '+ Other asset');
+
+  it('ASSET-ORDER lists the assets by their share of the portfolio and starts with the largest', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue({
+      assets: [
+        {
+          instrumentId: id(1),
+          priceSource: 'market',
+          price: { value: '85053.34' },
+          allocationPercent: '12.5',
+        },
+        {
+          instrumentId: id(2),
+          priceSource: 'market',
+          price: { value: '3000' },
+          allocationPercent: '80',
+        },
+        {
+          instrumentId: id(4),
+          priceSource: 'market',
+          price: { value: '1' },
+          allocationPercent: null,
+        },
+      ],
+    } as PortfolioValuation);
+    const { dialog } = await open();
+    const group = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    expect(chips(group)).toEqual(['ETH', 'BTC', 'USDT']);
+    expect(group.getByRole('button', { name: 'ETH' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
+    vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
+    vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
+    const { dialog } = await open();
+    const group = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    expect(chips(group)).toEqual(['BTC', 'ETH', 'USDT']);
+  });
+
   it("OPS-BUY-CASH shows how much of a buy the account's cash pays", async () => {
     const user = userEvent.setup();
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, dollars, tether]);
@@ -960,6 +1004,18 @@ describe('ASSET-CHIPS which assets become chips', () => {
     const { shown, more } = splitAssets(many, many[7].id, priced);
     expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C1', 'C2', 'C3', 'C4', 'C5']);
     expect(more.map((item) => item.symbol)).toEqual(['C6', 'C7']);
+  });
+
+  it('orders by allocation and keeps held assets among the chips', () => {
+    const share = new Map([
+      [many[5].id, 10],
+      [many[7].id, 60],
+    ]);
+    const ordered = byAllocation(many, share);
+    expect(ordered.map((item) => item.symbol).slice(0, 3)).toEqual(['C8', 'C6', 'C1']);
+    const { shown, more } = splitAssets(ordered, ordered[0].id, new Map(), share);
+    expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C6', 'C1', 'C2', 'C3', 'C4']);
+    expect(more.map((item) => item.symbol)).toEqual(['C5', 'C7']);
   });
 
   it('always shows the chosen asset', () => {

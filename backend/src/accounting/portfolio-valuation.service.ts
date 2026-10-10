@@ -10,7 +10,7 @@ import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
-import { leftOutTokens } from '../wallet-addresses/token-left-out';
+import { leftOutSymbols, leftOutTokens } from '../wallet-addresses/token-left-out';
 import { tokenKey } from '../wallet-addresses/token-visibility';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
@@ -469,7 +469,19 @@ export class PortfolioValuationService {
         new Date(now.getTime() - DAY_MS),
       );
       const report = projectPortfolio(now, inputs.instruments, accounts, prices, fx, previous);
-      return { ...report, mainCurrency };
+      // TOKEN-HIDE: the asset of a coin the wallets leave out stays in the books it was made in
+      // before; with nothing held in it the table does not list it. Held coins always show.
+      const left = await leftOutSymbols(manager, owner);
+      const assets = report.assets.filter(
+        (asset) =>
+          !(
+            asset.assetType === 'crypto' &&
+            asset.symbol &&
+            left.has(asset.symbol) &&
+            asset.value === '0'
+          ),
+      );
+      return { ...report, assets, mainCurrency };
     });
   }
 }

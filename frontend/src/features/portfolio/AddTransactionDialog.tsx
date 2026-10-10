@@ -189,19 +189,30 @@ const tickerPattern = /^[A-Za-z0-9.-]{1,32}$/;
 const ASSET_CHIPS = 6;
 
 /**
- * The asset chips are for the few coins in daily use: with more than six assets the ones with a
- * market price come first, the rest sit behind "More assets", and the chosen one is always a chip.
+ * The assets by their share of the portfolio, the largest first, so the one the owner holds most
+ * of is the first choice. Assets with no share keep the order they came in.
+ */
+export function byAllocation(
+  assets: readonly PortfolioAsset[],
+  allocation: ReadonlyMap<string, number>,
+): PortfolioAsset[] {
+  return [...assets].sort((a, b) => (allocation.get(b.id) ?? 0) - (allocation.get(a.id) ?? 0));
+}
+
+/**
+ * The asset chips are for the few coins in daily use: with more than six assets the held ones
+ * and the ones with a market price come first (in the order given, which is by allocation), the
+ * rest sit behind "More assets", and the chosen one is always a chip.
  */
 export function splitAssets(
   assets: readonly PortfolioAsset[],
   chosen: string,
   market: ReadonlyMap<string, string>,
+  held: ReadonlyMap<string, number> = new Map(),
 ): { shown: PortfolioAsset[]; more: PortfolioAsset[] } {
   if (assets.length <= ASSET_CHIPS) return { shown: [...assets], more: [] };
-  const ranked = [
-    ...assets.filter((item) => market.has(item.id)),
-    ...assets.filter((item) => !market.has(item.id)),
-  ];
+  const first = (item: PortfolioAsset) => market.has(item.id) || held.has(item.id);
+  const ranked = [...assets.filter(first), ...assets.filter((item) => !first(item))];
   const shown = ranked.slice(0, ASSET_CHIPS);
   const pick = assets.find((item) => item.id === chosen);
   if (pick && !shown.includes(pick)) shown[ASSET_CHIPS - 1] = pick;
@@ -222,6 +233,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const otherRequest = useRef<{ ticker: string; requestId: string } | null>(null);
   // Latest market price in USD per asset, for the "Market today" hint.
   const [market, setMarket] = useState<ReadonlyMap<string, string>>(new Map());
+  // The share of the portfolio of each asset held, for the order of the choices.
+  const [allocation, setAllocation] = useState<ReadonlyMap<string, number>>(new Map());
   const [cashAvailability, setCashAvailability] = useState<Availability | null>(null);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -282,14 +295,29 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       .list()
       .then(hiddenTokenSymbols)
       .catch(() => new Set<string>());
-    Promise.all([portfolioAssetsApi.listAll(), journalAccounts(), hiddenTokens])
-      .then(([allAssets, withJournal, hidden]) => {
+    // The valuation is optional: the market hint and the order by allocation need it, nothing else.
+    const valuation = portfolioValuationApi.get('USD').catch(() => null);
+    Promise.all([portfolioAssetsApi.listAll(), journalAccounts(), hiddenTokens, valuation])
+      .then(([allAssets, withJournal, hidden, report]) => {
         if (!live) return;
-        const tradable = allAssets.filter(
-          (asset) =>
-            asset.id === initial.instrumentId ||
-            (asset.assetType !== 'fiat' &&
-              !(asset.assetType === 'crypto' && asset.symbol && hidden.has(asset.symbol))),
+        const prices = new Map<string, string>();
+        const shares = new Map<string, number>();
+        for (const item of report?.assets ?? []) {
+          if (item.priceSource === 'market' && item.price)
+            prices.set(item.instrumentId, item.price.value);
+          const share = Number(item.allocationPercent);
+          if (share > 0) shares.set(item.instrumentId, share);
+        }
+        setMarket(prices);
+        setAllocation(shares);
+        const tradable = byAllocation(
+          allAssets.filter(
+            (asset) =>
+              asset.id === initial.instrumentId ||
+              (asset.assetType !== 'fiat' &&
+                !(asset.assetType === 'crypto' && asset.symbol && hidden.has(asset.symbol))),
+          ),
+          shares,
         );
         setAssets(tradable);
         setAllAssets(allAssets);
@@ -305,25 +333,6 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       live = false;
     };
   }, [editing, initial.instrumentId]);
-
-  useEffect(() => {
-    let live = true;
-    portfolioValuationApi
-      .get('USD')
-      .then((valuation) => {
-        if (!live) return;
-        const prices = new Map<string, string>();
-        for (const item of valuation.assets)
-          if (item.priceSource === 'market' && item.price)
-            prices.set(item.instrumentId, item.price.value);
-        setMarket(prices);
-      })
-      // The hint is optional: without prices the window works as before.
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, []);
 
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
   const settledEntry = { ...entry, ...settled };
@@ -639,6 +648,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     assets ?? [],
     entry.instrumentId,
     market,
+    allocation,
   );
 
   return (
