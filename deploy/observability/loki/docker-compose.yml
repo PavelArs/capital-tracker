@@ -4,7 +4,8 @@
 #   docker compose -f deploy/observability/loki/docker-compose.yml up -d
 #
 # Alloy reaches Loki on this project's own network. Loki is published on the server's loopback
-# only (127.0.0.1:3100), so a Grafana in host network mode adds it as http://127.0.0.1:3100.
+# only (127.0.0.1:3110; 3100 and 3101 are the application's own host ports, LOKI_HOST_PORT
+# changes it), so a Grafana in host network mode adds it as http://127.0.0.1:3110.
 # Nothing is reachable from outside the server.
 name: capital-tracker-logs
 
@@ -14,7 +15,7 @@ services:
     restart: unless-stopped
     command: ['-config.file=/etc/loki/loki.yml']
     ports:
-      - '127.0.0.1:3100:3100'
+      - '127.0.0.1:${LOKI_HOST_PORT:-3110}:3100'
     volumes:
       - ./loki.yml:/etc/loki/loki.yml:ro
       - loki_data:/loki

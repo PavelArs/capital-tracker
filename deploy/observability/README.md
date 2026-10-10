@@ -27,8 +27,9 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
    `loki.write` component), or, if you run no Loki, start the stack in `loki/`:
    `docker compose -f deploy/observability/loki/docker-compose.yml up -d`. It is a separate
    Compose project with pinned images and 30 days of retention. Loki is published on the
-   server's loopback only (`127.0.0.1:3100`), so add a Loki data source in Grafana with URL
-   `http://127.0.0.1:3100`. That URL fits a Grafana in host network mode; a Grafana on a Docker
+   server's loopback only (`127.0.0.1:3110`, `LOKI_HOST_PORT` changes it; 3100 and 3101 are the
+   application's own host ports), so add a Loki data source in Grafana with URL
+   `http://127.0.0.1:3110`. That URL fits a Grafana in host network mode; a Grafana on a Docker
    network cannot reach the host's loopback, so give it the stack's network instead.
 4. **Dashboard.** Import `grafana/capital-tracker-dashboard.json` and pick your Prometheus and
    Loki data sources when asked. Routing the alerts (mail, Telegram) is done in your
