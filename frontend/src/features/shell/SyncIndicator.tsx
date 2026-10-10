@@ -1,4 +1,5 @@
-import { SYNC_CHANGED, type SyncSource, syncStatusApi } from '@api/sync-status.api';
+import { cachedReads } from '@api/cached-reads';
+import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { summarizeSync } from './sync-summary';
@@ -14,7 +15,7 @@ export default function SyncIndicator({ onFollow }: { onFollow?: () => void }) {
 
   const load = useCallback(async () => {
     try {
-      setSources(await syncStatusApi.get());
+      setSources(await cachedReads.sources.load());
       setFailed(false);
     } catch {
       setFailed(true);

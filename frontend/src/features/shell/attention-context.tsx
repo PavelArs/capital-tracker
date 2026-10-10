@@ -1,7 +1,8 @@
-import { CLASSIFICATION_CHANGED, operationsApi } from '@api/operations.api';
-import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
-import { SYNC_CHANGED, type SyncSource, syncStatusApi } from '@api/sync-status.api';
-import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { cachedReads } from '@api/cached-reads';
+import { CLASSIFICATION_CHANGED } from '@api/operations.api';
+import type { PortfolioValuation } from '@api/portfolio-valuation.api';
+import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
+import type { WalletAddress } from '@api/wallet-addresses.api';
 import {
   createContext,
   type ReactNode,
@@ -62,10 +63,10 @@ export function AttentionProvider({ children }: { children: ReactNode }) {
   const load = useCallback(async () => {
     const request = ++latest.current;
     const [toClassify, sources, wallets, portfolio] = await Promise.allSettled([
-      operationsApi.needsClassification(),
-      syncStatusApi.get(),
-      walletAddressesApi.list(),
-      portfolioValuationApi.get(undefined),
+      cachedReads.toClassify.load(),
+      cachedReads.sources.load(),
+      cachedReads.wallets.load(),
+      cachedReads.portfolio.load(),
     ]);
     if (request !== latest.current) return;
     setState({

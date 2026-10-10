@@ -1,12 +1,11 @@
 import { accountingApi } from '@api/accounting.api';
 import { assetRewardsApi } from '@api/asset-rewards.api';
+import { cachedReads } from '@api/cached-reads';
 import { fxRatesApi } from '@api/fx-rates.api';
 import type { Operation } from '@api/operations.api';
 import { ownedTransfersApi } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
-import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
-import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -344,12 +343,12 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     let live = true;
     // TOKEN-HIDE: the coins of tokens the wallets leave out are not offered; the list still shows
     // them when the wallets cannot be read, and an edit keeps the asset it was recorded with.
-    const hiddenTokens = walletAddressesApi
-      .list()
+    const hiddenTokens = cachedReads.wallets
+      .load()
       .then(hiddenTokenSymbols)
       .catch(() => new Set<string>());
     // The valuation is optional: the market hint and the order by allocation need it, nothing else.
-    const valuation = portfolioValuationApi.get('USD').catch(() => null);
+    const valuation = cachedReads.portfolio.load('USD').catch(() => null);
     Promise.all([portfolioAssetsApi.listAll(), journalAccounts(), hiddenTokens, valuation])
       .then(([allAssets, withJournal, hidden, report]) => {
         if (!live) return;
