@@ -1,16 +1,15 @@
 # Add this job under `scrape_configs:` of your existing Prometheus.
 #
-# The backend serves /metrics on its own port (9464) and Compose does not publish that port,
-# so Prometheus must share a Docker network with the backend container. Once, on the server:
-#
-#   docker network connect <project>_capital-tracker-network <your-prometheus-container>
-#
-# (`docker network ls` shows the exact name; <project> is the Compose project name.)
-# `docker network connect` is lost when the Prometheus container is recreated; to make it
-# permanent, declare that network as `external: true` in the Prometheus compose file.
+# The backend serves /metrics on port 9464 and Compose publishes it on the server's loopback
+# only (127.0.0.1:9464). Pick the target that matches how your Prometheus runs:
+#   - host network mode: 127.0.0.1:9464
+#   - on a Docker network: join <project>_capital-tracker-network
+#       (docker network connect <project>_capital-tracker-network <your-prometheus-container>)
+#     and use capital_tracker_backend:9464. The connect is lost when the container is
+#     recreated; declare that network as `external: true` in the Prometheus compose file.
 - job_name: capital-tracker-backend
   scrape_interval: 30s
   scrape_timeout: 10s
   metrics_path: /metrics
   static_configs:
-    - targets: ['capital_tracker_backend:9464']
+    - targets: ['127.0.0.1:9464']

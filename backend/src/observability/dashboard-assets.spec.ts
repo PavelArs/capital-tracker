@@ -39,7 +39,18 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
 
   it('OBS-ASSET-3 name no server, address or credential', () => {
     for (const file of [...files, 'README.md', 'alloy-logs.alloy']) {
-      expect(read(file)).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b|pavelars\.ru|api[_-]?key|secret/i);
+      // Loopback and wildcard listen addresses are not servers.
+      const text = read(file).replace(/\b(127\.0\.0\.1|0\.0\.0\.0)\b/g, '');
+      expect(text).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b|pavelars\.ru|api[_-]?key|secret/i);
     }
+  });
+
+  it('OBS-PORT-1 Compose publishes the metrics port on the loopback only', () => {
+    const compose = readFileSync(resolve(__dirname, '../../../docker-compose.yml'), 'utf8');
+    const metricsPorts = compose
+      .split('\n')
+      .filter((line) => line.trimStart().startsWith('- ') && line.includes(':9464'));
+    expect(metricsPorts).toHaveLength(1);
+    expect(metricsPorts[0]).toMatch(/"127\.0\.0\.1:\$\{METRICS_HOST_PORT:-9464\}:9464"/);
   });
 });
