@@ -259,6 +259,19 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     return { dialog, onSaved };
   };
 
+  it('DIALOG-CLOSE closes from the ✕ at the right of the title', async () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog onClose={onClose} onSaved={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    await within(dialog).findByRole('group', { name: 'Asset' });
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('fills the Bank of Russia rate of the date and saves rubles as paid', async () => {
     const user = userEvent.setup();
     const { dialog, onSaved } = await open();

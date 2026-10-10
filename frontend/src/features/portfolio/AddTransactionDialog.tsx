@@ -11,6 +11,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
+import CloseButton from '../shell/CloseButton';
 import { unitPrice } from './add-asset';
 import {
   addDecimal,
@@ -591,6 +592,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
         <form onSubmit={submit} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id={`${id}-title`}>{editing ? 'Edit transaction' : 'Add transaction'}</h2>
+            <CloseButton onClick={onClose} disabled={saving} />
           </div>
           <div className="portfolio-dialog__body">
             <div className="portfolio-field">

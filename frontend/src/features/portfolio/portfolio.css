@@ -519,6 +519,11 @@ a.portfolio-asset__name:hover {
 }
 
 .portfolio-dialog__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
   padding: 18px 22px 0;
 }
 
@@ -528,7 +533,13 @@ a.portfolio-asset__name:hover {
   font-weight: 600;
 }
 
+.portfolio-dialog__head h2 {
+  flex: 1;
+  min-width: 0;
+}
+
 .portfolio-dialog__head .shell-note {
+  flex-basis: 100%;
   margin-top: 8px;
 }
 

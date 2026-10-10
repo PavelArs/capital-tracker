@@ -10,6 +10,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
+import CloseButton from '../shell/CloseButton';
 import { type Account, journalAccounts } from './AddTransactionDialog';
 import {
   type AssetEntry,
@@ -287,6 +288,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
         <form onSubmit={submit} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id={`${id}-title`}>Add asset</h2>
+            <CloseButton onClick={() => finish.current()} disabled={saving} />
             <p className="shell-note">
               For things the app can't track by itself: cash, a bank deposit, an unsupported coin or
               anything else.

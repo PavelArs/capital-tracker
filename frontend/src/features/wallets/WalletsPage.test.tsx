@@ -329,6 +329,15 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     expect(row).toHaveTextContent('0.005 BTC');
   });
 
+  it('DIALOG-CLOSE closes Add wallet from the ✕ at the right of the title', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
+  });
+
   it('creates a new wallet once for the typed name', async () => {
     setup([]);
     const create = vi
