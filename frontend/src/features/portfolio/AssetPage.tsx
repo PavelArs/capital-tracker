@@ -29,6 +29,7 @@ import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
 import { assetCaption, Change, Signed } from './PortfolioPage';
+import UpdatePriceDialog from './UpdatePriceDialog';
 import '../shell/shell-page.css';
 import './portfolio.css';
 
@@ -298,7 +299,11 @@ function AssetDetails({
   asked,
   operations,
   onRetryOperations,
+<<<<<<< HEAD
   kinds,
+=======
+  onPriceSaved,
+>>>>>>> claude/design-review-fixes-w3
   now,
 }: {
   asset: AssetValuation;
@@ -306,10 +311,15 @@ function AssetDetails({
   asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetryOperations: () => void;
+<<<<<<< HEAD
   /** W1, A3: how each wallet is held, once known. */
   kinds: Record<string, WalletKind | null>;
+=======
+  onPriceSaved: () => void;
+>>>>>>> claude/design-review-fixes-w3
   now: Date;
 }) {
+  const [pricing, setPricing] = useState(false);
   const unit = asset.symbol ?? '';
   const currency = portfolio.currency;
   const chains = useTokenChains();
@@ -342,8 +352,28 @@ function AssetDetails({
           >
             {priceDetail(asset, currency, now)}
           </span>
+          {asset.priceSource === 'manual' && (
+            <button
+              type="button"
+              className="shell-button shell-button--secondary"
+              onClick={() => setPricing(true)}
+            >
+              Update price
+            </button>
+          )}
         </div>
       </div>
+      {pricing && (
+        <UpdatePriceDialog
+          instrumentId={asset.instrumentId}
+          name={asset.name}
+          onClose={() => setPricing(false)}
+          onSaved={() => {
+            setPricing(false);
+            onPriceSaved();
+          }}
+        />
+      )}
       <section className="shell-card" aria-label="Position">
         <dl className="portfolio-stats">
           <Stat label="Amount">
@@ -529,7 +559,11 @@ export default function AssetPage() {
           asked={asked}
           operations={operations}
           onRetryOperations={() => void loadOperations()}
+<<<<<<< HEAD
           kinds={kinds}
+=======
+          onPriceSaved={() => void load()}
+>>>>>>> claude/design-review-fixes-w3
           now={new Date()}
         />
       ) : (

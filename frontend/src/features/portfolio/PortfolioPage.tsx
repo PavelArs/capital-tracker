@@ -495,10 +495,10 @@ export default function PortfolioPage() {
             )}
             <p className="shell-note portfolio-note">
               {ratesNote(portfolio)} Holdings come from your{' '}
-              <Link className="shell-link" to="/manual-accounts">
-                manual accounts
-              </Link>
-              .
+              <Link className="shell-link" to="/wallets">
+                wallets
+              </Link>{' '}
+              and the transactions you add.
             </p>
           </section>
           <Allocation portfolio={portfolio} />

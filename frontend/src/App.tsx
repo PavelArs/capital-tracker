@@ -16,9 +16,6 @@ import TransactionsPage from '@features/transactions/TransactionsPage';
 import WalletPage from '@features/wallets/WalletPage';
 import WalletsPage from '@features/wallets/WalletsPage';
 import Login from '@pages/Login';
-import ManualAccountDetail from '@pages/ManualAccountDetail';
-import ManualAccounts from '@pages/ManualAccounts';
-import ManualPrices from '@pages/ManualPrices';
 import React, { useEffect } from 'react';
 import { Navigate, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 
@@ -66,9 +63,6 @@ function AppRoutes() {
         <Route path="wallets/:accountId" element={<WalletPage />} />
         <Route path="preferences" element={<SettingsPage />} />
         <Route path="history" element={<HistoryPage />} />
-        <Route path="manual-accounts" element={<ManualAccounts />} />
-        <Route path="manual-accounts/:id" element={<ManualAccountDetail />} />
-        <Route path="manual-prices" element={<ManualPrices />} />
         {retiredPaths.map(([from, to]) => (
           <Route key={from} path={`${from.slice(1)}/*`} element={<Navigate to={to} replace />} />
         ))}

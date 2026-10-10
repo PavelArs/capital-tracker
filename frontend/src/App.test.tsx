@@ -40,18 +40,11 @@ describe('LEGACY-RETIRE: retired screens send old bookmarks to their replacement
     ['/capital-flows', '/dashboard', 'Dashboard'],
     ['/period-profit', '/dashboard', 'Dashboard'],
     ['/settings', '/preferences', 'Settings'],
+    ['/manual-accounts', '/wallets', 'Wallets'],
+    ['/manual-prices', '/portfolio', 'Portfolio'],
   ])('%s opens %s', async (old, replacement, heading) => {
     open(old);
     expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
     expect(window.location.pathname).toBe(replacement);
-  });
-
-  it.each([
-    ['/manual-accounts', 'Ручные счета'],
-    ['/manual-prices', 'Ручные цены'],
-  ])('keeps %s, which no new screen covers yet', async (path, heading) => {
-    open(path);
-    expect(await screen.findByRole('heading', { name: heading })).toBeInTheDocument();
-    expect(window.location.pathname).toBe(path);
   });
 });

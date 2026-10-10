@@ -1,0 +1,48 @@
+# Loki and Alloy for the application logs. A separate Compose project: it is not part of the
+# release-managed docker-compose.yml and a release never touches it. Start it by hand:
+#
+#   docker compose -f deploy/observability/loki/docker-compose.yml up -d
+#
+# Loki joins the network your Grafana is on, so Grafana reaches it as http://loki:3100.
+# Nothing is published to the host. Set MONITORING_NETWORK if that network is not called
+# monitoring_default (`docker network ls`).
+name: capital-tracker-logs
+
+services:
+  loki:
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    restart: unless-stopped
+    command: ['-config.file=/etc/loki/loki.yml']
+    volumes:
+      - ./loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring
+
+  alloy:
+    image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+    restart: unless-stopped
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      # Read access to the Docker API lets Alloy find the application's containers and read
+      # their logs; it is also root-equivalent on the host, so keep this image pinned.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy_data:/var/lib/alloy/data
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+volumes:
+  loki_data:
+  alloy_data:
+
+networks:
+  monitoring:
+    name: ${MONITORING_NETWORK:-monitoring_default}
+    external: true
