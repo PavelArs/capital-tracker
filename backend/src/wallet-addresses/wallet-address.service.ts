@@ -132,6 +132,8 @@ interface ExchangeRow {
   earn: EarnHolding[] | null;
   /** BYBIT-CONVERT: whether the key may read convert history; null before a pass asked. */
   convertAllowed: boolean | null;
+  /** BYBIT-HIDDEN: received minus sent per coin of the legs the owner hid, in base units. */
+  hiddenLegs: { coin: string; units: string }[];
 }
 interface TransactionRow {
   txid: string;
@@ -166,6 +168,13 @@ const stakeHeld = (table: string, key: string) => `
           WHERE m."addressId" = ${table}."addressId" AND m.account = ${table}.${key}), 0) AS moved,
         coalesce((SELECT sum(r.units) FROM ${stakeRewards} r
           WHERE r."addressId" = ${table}."addressId" AND r.account = ${table}.${key}), 0) AS rewarded`;
+// BYBIT-HIDDEN: the legs of the account whose current answer is "hide from calculations", per
+// coin (the quote side of a hidden trade too): Bybit still holds them, the records do not.
+const hiddenLegJoin = `JOIN chain_transaction_classifications h ON h."addressId" = t."addressId"
+              AND h.txid = t.txid
+            JOIN chain_transaction_classification_versions v ON v."addressId" = h."addressId"
+              AND v.txid = h.txid AND v.version = h."currentVersion"
+            WHERE t."addressId" = a.id AND v.status = 'hidden'`;
 const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.pools, d.derived,
     bx.exchange, tr.tron, sx.stellar,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
@@ -208,7 +217,16 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
       'keyExpiresAt', x."keyExpiresAt", 'balances', x.balances, 'balancesAt', x."balancesAt",
       'historyFrom', x."historyFrom", 'readFrom', LEAST(x."tradesReadTo", x."depositsReadTo",
         x."internalReadTo", x."withdrawalsReadTo"), 'earnAllowed', x."earnAllowed",
-      'earn', x.earn, 'convertAllowed', x."convertAllowed") AS exchange
+      'earn', x.earn, 'convertAllowed', x."convertAllowed",
+      'hiddenLegs', (SELECT coalesce(json_agg(json_build_object('coin', y.coin,
+          'units', y.units::text)), '[]'::json)
+        FROM (SELECT z.coin, sum(z.units) AS units FROM (
+            SELECT t.asset AS coin, t."receivedUnits" - t."sentUnits" AS units
+              FROM wallet_address_transactions t ${hiddenLegJoin}
+            UNION ALL
+            SELECT t.raw->>'quoteAsset', (t.raw->>'quoteUnits')::numeric
+              FROM wallet_address_transactions t ${hiddenLegJoin} AND t.raw ? 'quoteAsset'
+          ) z GROUP BY z.coin) y)) AS exchange
     FROM bybit_accounts x WHERE x."walletId" = a.id) bx ON true
   LEFT JOIN LATERAL (SELECT json_build_object('reported', x.reported,
       'staked', (SELECT coalesce(sum(m.units), 0) FROM wallet_tron_stake_moves m
@@ -511,6 +529,16 @@ function summary(row: AddressRow, now = new Date()) {
           historyFrom: new Date(row.exchange.historyFrom).toISOString(),
           earnAllowed: row.exchange.earnAllowed,
           convertAllowed: row.exchange.convertAllowed,
+          // BYBIT-HIDDEN: what the owner hid from the records, still held at Bybit.
+          hidden:
+            state === 'complete'
+              ? row.exchange.hiddenLegs
+                  .filter((item) => isBybitCoin(item.coin) && BigInt(item.units) !== 0n)
+                  .map((item) => ({
+                    symbol: item.coin,
+                    quantity: formatUnits(BigInt(item.units), chainAsset('bybit', item.coin)),
+                  }))
+              : [],
           // BYBIT-EARN: the tracked coins in each Earn product, already in the balances.
           earn:
             state === 'complete' && row.exchange.earn

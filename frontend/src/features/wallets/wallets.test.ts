@@ -70,6 +70,39 @@ describe('SYNC-RECONCILE: chain balance against the account transactions', () =>
     });
   });
 
+  it('BYBIT-HIDDEN: what the owner hid from the records is no difference of an exchange', () => {
+    const bybit = (hidden: { symbol: string; quantity: string }[]) =>
+      address(1, {
+        network: 'bybit',
+        address: '123456789',
+        chainBalance: null,
+        balances: [{ symbol: 'BTC', quantity: '0.0102' }],
+        exchange: {
+          keyHint: 'ab12',
+          ipBound: true,
+          keyExpiresAt: null,
+          reportedAt: null,
+          untracked: [],
+          historyFrom: '2024-10-01T00:00:00.000Z',
+          hidden,
+        },
+      });
+    const records = portfolio([{ accountId: trust, quantity: '0.01' }]);
+    expect(reconcile([bybit([])], records, trust)).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'BTC', difference: '0.0002', exchange: true }],
+    });
+    expect(reconcile([bybit([{ symbol: 'BTC', quantity: '0.0002' }])], records, trust)).toEqual({
+      state: 'match',
+    });
+    expect(
+      reconcile([bybit([{ symbol: 'BTC', quantity: '0.0001' }])], records, trust),
+    ).toMatchObject({
+      state: 'differs',
+      assets: [{ symbol: 'BTC', difference: '0.0001' }],
+    });
+  });
+
   it('adds every address of the account and only crypto BTC holdings', () => {
     expect(
       reconcile(
