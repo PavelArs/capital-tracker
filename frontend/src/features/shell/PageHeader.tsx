@@ -2,8 +2,10 @@ import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { type ReactNode, useState } from 'react';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import { CurrencySwitch, useAskedCurrency } from '../portfolio/currency';
+import { useAttention } from './attention-context';
 import { Icon } from './icons';
 import { useMainCurrency } from './main-currency';
+import NotificationsBell from './NotificationsBell';
 import './shell-page.css';
 
 /**
@@ -25,6 +27,7 @@ export default function PageHeader({
 }) {
   const [asked, setAsked] = useAskedCurrency();
   const { main } = useMainCurrency();
+  const attention = useAttention();
   const [recording, setRecording] = useState(false);
   const shown = asked ?? currency ?? main;
   return (
@@ -32,6 +35,7 @@ export default function PageHeader({
       <h1>{title}</h1>
       {actions ? <div className="shell-page__actions">{actions}</div> : null}
       {shown && <CurrencySwitch value={shown} onChange={setAsked} />}
+      <NotificationsBell asked={asked} />
       <button
         type="button"
         className="shell-button shell-button--primary"
@@ -45,6 +49,7 @@ export default function PageHeader({
           onClose={() => setRecording(false)}
           onSaved={() => {
             setRecording(false);
+            attention?.refresh();
             onTransactionSaved?.();
           }}
         />

@@ -244,6 +244,33 @@
   font-size: var(--fs-sm);
 }
 
+.portfolio-warn--action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portfolio-warn--action > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.portfolio-warn--action .shell-icon {
+  flex: none;
+  color: var(--warn);
+}
+
+.portfolio-warn--action .shell-button {
+  flex: none;
+  text-decoration: none;
+}
+
+@media (max-width: 559.98px) {
+  .portfolio-warn--action {
+    flex-wrap: wrap;
+  }
+}
+
 .portfolio-warn-text {
   display: block;
   color: var(--warn);
