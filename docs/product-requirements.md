@@ -615,6 +615,20 @@ network-specific identity:
   reason. **Given** the owner answers the send differently or hides it **then** the buy is
   settled again without those coins and the transfer is voided. **Given** the buy is deleted
   **then** the send stays a transfer and the coins stay in the other account.
+- XFER-PROPOSED: **Given** coins of one asset left an address in one account and, within 24
+  hours, arrived at an address in another account under a different transaction hash (a
+  withdrawal that names its own id, say), and the amount received is at most 2% below the
+  amount sent, and no one has answered either **then** Transactions shows "One possible
+  transfer between your accounts" with the amounts, the times and the difference as the fee,
+  and one tap on "Join as one transfer" answers the withdrawal as a transfer naming the receipt:
+  one owned transfer moves what arrived, the cost basis goes with it, only the difference is
+  spent as a fee, both transactions read as that one transfer, and the pair is listed once.
+  Nothing is joined without the tap (the same hash with the exact fee is still linked by the
+  app, XFER-AUTO). A pair is offered only when each side is the other's single closest
+  candidate; a second equally good receipt, a different coin, the same account, a receipt
+  before the withdrawal or one a day later, or more arriving than left offers nothing and the
+  owner classifies as before. **Given** the owner answers the withdrawal differently **then**
+  the transfer is voided and the receipt asks for a classification again.
 
 **US-4.7** As the owner I record coins I put into a liquidity pool (for example Uniswap),
 take back out, and the rewards it pays.
@@ -878,6 +892,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M33 | `phone-filters-asset` | phones: the header (brand, owner, section strip) stays pinned while the page scrolls; Transactions and History filters sit in two columns with the search on its own row; the asset page drops the repeated name, puts the price under the icon and shows the position figures two to a row; third of the mobile-layout slices, frontend only, no migration | M32 | — |
 | M34 | `phone-charts-types` | phones: the Dashboard and asset charts write three dates instead of five and give the value labels less room, so the dates stop running together and the plot is wider; the Add transaction type row keeps More on the same line instead of wrapping it alone; fourth of the mobile-layout slices, frontend only, no migration | M33 | — |
 | M35 | `pay-purchase-from-wallet` | USDT or USDC sent from a tracked wallet can be answered as the payment of a purchase the owner added by hand in another account (CLS-PAID): the coins move to that account just before the purchase and the purchase is settled against them, so it stops counting as money from outside; first of three slices that link manual records with blockchain transactions, no migration | M13 | — |
+| M36 | `propose-transfer-pairs` | a withdrawal and a receipt of one coin in two accounts that name different transactions are proposed on Transactions and joined as one transfer with one tap (XFER-PROPOSED); the difference is the fee; the other leg is found by the transfer both name, so the link column stays for legs of one hash; second of three slices that link manual records with blockchain transactions, no migration | M13, M35 | — |
 
 ```mermaid
 flowchart LR

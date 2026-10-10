@@ -233,6 +233,21 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'transfer', accountId, valueUsd: '1' });
   });
 
+  it('XFER-PROPOSED: a transfer may name the receipt that has another hash', () => {
+    const accountId = '00000000-0000-4000-8000-000000000010';
+    const addressId = '00000000-0000-4000-8000-000000000002';
+    const txid = 'b'.repeat(64);
+    const partner = { addressId, txid };
+    expect(
+      parse({ classification: { type: 'transfer', accountId, partner } }).classification,
+    ).toEqual({ type: 'transfer', accountId, partner });
+    const refused = (classification: unknown) =>
+      expect(() => parse({ classification })).toThrow(BadRequestException);
+    refused({ type: 'transfer', accountId, partner: { addressId, txid: 'nope' } });
+    refused({ type: 'transfer', accountId, partner: { addressId: 'x', txid } });
+    refused({ type: 'transfer', accountId, partner: { addressId, txid, extra: 1 } });
+  });
+
   it('POOL-*: a pool deposit records nothing, a pool reward is income, a withdrawal names its deposit', () => {
     const deposit = parse({ classification: { type: 'pool-deposit' } }).classification!;
     expect(deposit).toEqual({ type: 'pool-deposit' });

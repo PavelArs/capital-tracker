@@ -150,8 +150,11 @@ export interface OperationList {
 
 /** What a blockchain transaction can be classified as (M12, M13). */
 export type ChainClassification =
-  /** The other wallet of a transfer between the owner's own wallets. */
-  | { type: 'transfer'; accountId: string }
+  /**
+   * The other wallet of a transfer between the owner's own wallets. `partner` names the
+   * transaction on the other side when it has another hash (XFER-PROPOSED).
+   */
+  | { type: 'transfer'; accountId: string; partner?: { addressId: string; txid: string } }
   | {
       type: 'buy' | 'sell';
       currency: 'USD' | 'USDT' | 'USDC' | 'EUR' | 'RUB';
@@ -188,6 +191,38 @@ export type ChainClassification =
    * nothing new is recorded and the transaction stops counting on its own.
    */
   | { type: 'recorded'; operation: { kind: 'trade' | 'swap'; id: string } };
+
+/** One side of a proposed transfer: a raw transaction of one of the owner's wallets. */
+export interface ProposedLeg {
+  addressId: string;
+  txid: string;
+  /** The version of its answer now; 0 before the first. */
+  version: number;
+  accountId: string;
+  accountName: string;
+  wallet: Omit<OperationWallet, 'id'>;
+  occurredAt: string;
+}
+
+/**
+ * XFER-PROPOSED: a withdrawal and a receipt of one coin in two accounts that name different
+ * transactions and probably are one transfer; the difference is its fee.
+ */
+export interface TransferProposal {
+  coin: string;
+  sent: string;
+  arrived: string;
+  fee: string;
+  outgoing: ProposedLeg;
+  incoming: ProposedLeg;
+}
+
+export interface TransferProposals {
+  /** How long after the withdrawal the receipt may be, and the most the fee may be of it. */
+  windowHours: number;
+  feePercent: number;
+  proposals: TransferProposal[];
+}
 
 export interface ClassificationCommand {
   requestId: string;
@@ -229,6 +264,13 @@ export const operationsApi = {
     command: { requestId: string; expectedVersion: number },
   ): Promise<void> => {
     await apiClient.post(`/accounting/chain-transactions/${wallet.id}/${txid}/removal`, command);
+  },
+  /** XFER-PROPOSED: pairs of a withdrawal and a receipt that probably are one transfer. */
+  transferProposals: async (): Promise<TransferProposals> => {
+    const response = await apiClient.get<TransferProposals>(
+      '/accounting/chain-transactions/transfer-proposals',
+    );
+    return response.data;
   },
   /** CLS-COUNT: blockchain transactions nobody has classified or hidden yet. */
   needsClassification: async (): Promise<number> => {

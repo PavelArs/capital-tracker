@@ -12,6 +12,12 @@ export class ChainClassificationController {
     return this.classifications.needsClassificationCount(owner.userId);
   }
 
+  // XFER-PROPOSED: pairs of a withdrawal and a receipt that probably are one transfer.
+  @Get('transfer-proposals')
+  proposals(@CurrentUser() owner: OwnerIdentity) {
+    return this.classifications.transferProposals(owner.userId);
+  }
+
   @Post(':addressId/:txid/classifications')
   async classify(
     @CurrentUser() owner: OwnerIdentity,

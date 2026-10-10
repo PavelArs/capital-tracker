@@ -3,8 +3,12 @@ import {
   type MatchableLeg,
   type OwnLeg,
   ownTransferPairs,
+  pairAmounts,
+  pairFits,
   planTransfer,
+  proposeTransferPairs,
   sameTransaction,
+  type TimedLeg,
 } from './chain-transfer';
 
 // Synthetic ids and amounts only (link-own-transfers, XFER-*).
@@ -237,5 +241,103 @@ describe('BYBIT-DEPOSIT: a Bybit account and an own wallet in one transaction (M
     expect(() => planTransfer(sent, bybit, exchange(E18 / 2n, { asset: 'USDT' }))).toThrow(
       UnprocessableEntityException,
     );
+  });
+});
+
+describe('XFER-PROPOSED: a withdrawal and a receipt that name different transactions', () => {
+  // A withdraws 100.5 USDT from Bybit-like account A; 100 USDT reaches B ten minutes later.
+  const usdt = { network: 'ethereum' as const, asset: 'USDT', feeUnits: '0' };
+  const T0 = new Date('2026-10-09T10:00:00.000Z');
+  const later = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
+  const out = (overrides: Partial<TimedLeg> = {}): TimedLeg => ({
+    ...sent,
+    ...usdt,
+    sentUnits: '100500000',
+    txid: txid(1),
+    status: null,
+    blockTime: T0,
+    ...overrides,
+  });
+  const into = (overrides: Partial<TimedLeg> = {}): TimedLeg => ({
+    ...received,
+    ...usdt,
+    receivedUnits: '100000000',
+    txid: txid(2),
+    status: null,
+    blockTime: later(10),
+    ...overrides,
+  });
+
+  it('pairs them, the difference being the fee of the transfer', () => {
+    const [proposal] = proposeTransferPairs([into(), out()]);
+    expect(pairAmounts(proposal)).toEqual({
+      coin: 'USDT',
+      sent: '100.5',
+      arrived: '100',
+      fee: '0.5',
+    });
+    expect(proposal.outgoing.txid).toBe(txid(1));
+    expect(proposal.incoming.txid).toBe(txid(2));
+  });
+
+  it('plans the transfer from what arrived, with the difference as its fee', () => {
+    const plan = planTransfer({ ...out(), accountId: accountA }, accountB, into(), true);
+    expect(plan).toEqual({
+      fromAccountId: accountA,
+      toAccountId: accountB,
+      quantity: '100',
+      feeQuantity: '0.5',
+    });
+    // The same plan from the receiving side.
+    expect(planTransfer({ ...into(), accountId: accountB }, accountA, out(), true)).toEqual(plan);
+    // More arrived than left: refused.
+    expect(() =>
+      planTransfer(
+        { ...out(), accountId: accountA },
+        accountB,
+        into({ receivedUnits: '100600000' }),
+        true,
+      ),
+    ).toThrow(UnprocessableEntityException);
+  });
+
+  it('never proposes what is not certain', () => {
+    const none: TimedLeg[][] = [
+      // The receipt is before the withdrawal, or a day and more after it.
+      [out(), into({ blockTime: later(-1) })],
+      [out(), into({ blockTime: later(24 * 60 + 1) })],
+      // More than 2% went missing, or more arrived than left.
+      [out(), into({ receivedUnits: '98000000' })],
+      [out(), into({ receivedUnits: '100600000' })],
+      // Another coin, the same account, no account, or an answer already given.
+      [out(), into({ asset: 'USDC' })],
+      [out(), into({ accountId: accountA })],
+      [out(), into({ accountId: null })],
+      [out({ status: 'classified' }), into()],
+      [out(), into({ status: 'hidden' })],
+      // The same transaction is XFER-AUTO's.
+      [out(), into({ txid: txid(1) })],
+    ];
+    for (const legs of none) expect(proposeTransferPairs(legs)).toEqual([]);
+    expect(pairFits(out(), into({ blockTime: later(24 * 60) }))).toBe(true);
+    expect(pairFits(out(), into({ receivedUnits: '98500000' }))).toBe(true);
+  });
+
+  it('leaves a leg with two equally good candidates to the owner', () => {
+    const second = into({ txid: txid(3), addressId: id(4) });
+    expect(proposeTransferPairs([out(), into(), second])).toEqual([]);
+    // A nearer one wins, and the farther receipt stays unmatched.
+    const nearer = into({ txid: txid(3), addressId: id(4), blockTime: later(2) });
+    const pairs = proposeTransferPairs([out(), into(), nearer]);
+    expect(pairs).toHaveLength(1);
+    expect(pairs[0].incoming.txid).toBe(txid(3));
+  });
+
+  it('pairs two withdrawals with their own receipts, newest first', () => {
+    const olderOut = out({ txid: txid(4), blockTime: later(-600) });
+    const olderIn = into({ txid: txid(5), blockTime: later(-590) });
+    const pairs = proposeTransferPairs([olderIn, olderOut, into(), out()]);
+    expect(pairs.map((pair) => pair.outgoing.txid)).toEqual([txid(1), txid(4)]);
+    expect(pairs.map((pair) => pair.incoming.txid)).toEqual([txid(2), txid(5)]);
   });
 });

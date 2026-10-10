@@ -69,9 +69,15 @@ import {
   coinOf,
   type OwnLeg,
   ownTransferPairs,
+  PAIR_FEE_PERCENT,
+  PAIR_WINDOW_HOURS,
   type PlannedTransfer,
+  pairAmounts,
+  pairFits,
   planTransfer,
+  proposeTransferPairs,
   sameTransaction,
+  type TimedLeg,
 } from './chain-transfer';
 import { readConnectedLedger, rethrowAccountingHistory } from './connected-accounting.store';
 import { FifoHistoryError } from './fifo';
@@ -151,6 +157,13 @@ interface Produced {
   transferId: string | null;
   swapAccountId: string | null;
   swapId: string | null;
+}
+interface ProposalRow extends TimedLeg {
+  accountName: string;
+  address: string;
+  label: string | null;
+  /** The head version of the answer, 0 before the first. */
+  version: number;
 }
 interface MatchRow extends OwnLeg {
   txid: string;
@@ -680,6 +693,53 @@ export class ChainClassificationService {
   }
 
   /**
+   * XFER-PROPOSED: withdrawals and receipts of one coin in two of the owner's accounts that look
+   * like the two sides of one transfer but name different transactions, so the app does not link
+   * them by itself. Nothing is changed here; accepting one answers the withdrawal as a transfer
+   * naming the receipt (the same classify call as any other answer).
+   */
+  async transferProposals(ownerId: string) {
+    const owner = parseUuid(ownerId);
+    const rows: ProposalRow[] = await this.source.query(
+      `SELECT t.txid, t."addressId", w.network, w.address, w.label, t.asset, w."accountId",
+          a.name AS "accountName", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
+          t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status,
+          coalesce(v.version, 0) AS "version"
+        FROM wallet_address_transactions t
+        JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+        JOIN manual_accounts a ON a."ownerId"=w."ownerId" AND a.id=w."accountId"
+        LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
+        LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+          AND v.txid=h.txid AND v.version=h."currentVersion"
+        WHERE t."ownerId"=$1 AND t."receivedUnits"<>t."sentUnits"
+          AND (h.txid IS NULL OR v.status='unclassified')
+          -- A Bybit fill or Earn record is a trade or yield, never a transfer.
+          AND coalesce(t.raw->>'kind', '') NOT IN ('trade', 'earn-flexible', 'earn-onchain')`,
+      [owner],
+    );
+    return {
+      windowHours: PAIR_WINDOW_HOURS,
+      feePercent: Number(PAIR_FEE_PERCENT),
+      proposals: proposeTransferPairs(rows).map((proposal) => {
+        const place = (row: ProposalRow) => ({
+          addressId: row.addressId,
+          txid: row.txid,
+          version: row.version,
+          accountId: row.accountId,
+          accountName: row.accountName,
+          wallet: { network: row.network, address: row.address, label: row.label },
+          occurredAt: row.blockTime.toISOString(),
+        });
+        return {
+          ...pairAmounts(proposal),
+          outgoing: place(proposal.outgoing),
+          incoming: place(proposal.incoming),
+        };
+      }),
+    };
+  }
+
+  /**
    * CLS-COUNT: chain transactions nobody has classified or hidden, less the receipts worth
    * less than the owner's dust threshold at the price stored for their time (CLS-DUST,
    * EST-AT-TIME); a stake move needs none, nor does the leg that only paid a token send's
@@ -768,7 +828,7 @@ export class ChainClassificationService {
         : null;
     const transfer = value?.type === 'transfer' ? value : null;
     const partner = transfer
-      ? await this.partner(manager, owner, target, transfer.accountId)
+      ? await this.partner(manager, owner, target, transfer.accountId, transfer.partner)
       : null;
     const withdrawal = value?.type === 'pool-withdrawal' ? value : null;
     const planned = withdrawal
@@ -782,11 +842,15 @@ export class ChainClassificationService {
             { ...own(address, row), accountId },
             transfer.accountId,
             partner && own(partner.address, partner.row),
+            transfer.partner !== undefined,
           )
         : pays && accountId
           ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
           : null;
-    const linked = partner?.address ?? null;
+    // XFER-PROPOSED: the link column names a leg of the same hash; a pair joined across two
+    // hashes is found by the transfer both name instead.
+    const crossHash = transfer?.partner !== undefined && partner !== null && partner.txid !== txid;
+    const linked = partner && !crossHash ? partner.address : null;
     const keep =
       live !== null &&
       value !== null &&
@@ -852,7 +916,7 @@ export class ChainClassificationService {
         details: { type: 'transfer', accountId },
         comment: null,
         produced: { ...nothing, accountId: partner.row.accountId, transferId: produced.transferId },
-        linkedAddressId: address,
+        linkedAddressId: crossHash ? null : address,
         automatic,
         paired: null,
       });
@@ -1105,7 +1169,9 @@ export class ChainClassificationService {
     owner: string,
     target: Leg,
     accountId: string,
+    named?: { addressId: string; txid: string },
   ): Promise<Partner | null> {
+    if (named) return this.namedPartner(manager, owner, target, accountId, named);
     // The same transaction identity, or (M22) a Bybit record and a wallet leg of one hash.
     const rows: (LegRow & { addressId: string; txid: string })[] = await manager.query(
       `SELECT t."addressId", t.txid, ${legColumns}
@@ -1132,13 +1198,63 @@ export class ChainClassificationService {
       throw new UnprocessableEntityException(
         'Several addresses of that account took part in this transaction',
       );
-    const [found] = opposite;
+    return this.partnerOf(manager, owner, opposite[0]);
+  }
+
+  /** The partner with its current answer, locked. */
+  private async partnerOf(
+    manager: EntityManager,
+    owner: string,
+    found: LegRow & { addressId: string; txid: string },
+  ): Promise<Partner> {
     const version = await this.lockHead(manager, found.addressId, found.txid);
     const current = version
       ? await this.version(manager, found.addressId, found.txid, version)
       : null;
     const live = current && (await this.active(manager, owner, current)) ? current : null;
     return { address: found.addressId, txid: found.txid, row: found, version, current, live };
+  }
+
+  /**
+   * XFER-PROPOSED: the other side the owner named, which has another hash than this
+   * transaction. It must be a withdrawal for a receipt (or the reverse) of the same coin in the
+   * account of the transfer, and fit as a pair; otherwise the answer is refused.
+   */
+  private async namedPartner(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    accountId: string,
+    named: { addressId: string; txid: string },
+  ): Promise<Partner> {
+    const [found]: (LegRow & { addressId: string; txid: string })[] = await manager.query(
+      `SELECT t."addressId", t.txid, ${legColumns}
+        FROM wallet_address_transactions t
+        JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
+        WHERE t."ownerId"=$1 AND t."addressId"=$2 AND t.txid=$3 AND w."accountId"=$4`,
+      [owner, named.addressId, named.txid, accountId],
+    );
+    const mine = own(target.address, target.row);
+    const there = found && own(found.addressId, found);
+    const sends = !inbound(target.row);
+    const fits =
+      found &&
+      there &&
+      found.addressId !== target.address &&
+      (sends
+        ? pairFits(
+            { ...mine, blockTime: target.row.blockTime },
+            { ...there, blockTime: found.blockTime },
+          )
+        : pairFits(
+            { ...there, blockTime: found.blockTime },
+            { ...mine, blockTime: target.row.blockTime },
+          ));
+    if (!fits || !found)
+      throw new UnprocessableEntityException(
+        'That transaction is not the other side of this one: it must move the same coin the other way, within a day and a fee of the amount',
+      );
+    return this.partnerOf(manager, owner, found);
   }
 
   private async version(manager: EntityManager, address: string, txid: string, version: number) {
@@ -1591,6 +1707,11 @@ export class ChainClassificationService {
         (await this.linkedTxid(manager, owner, row.linkedAddressId, row.transferId));
       if (row.linkedAddressId && other && !written.includes(key(row.linkedAddressId, other)))
         await this.unlink(manager, owner, row.linkedAddressId, other, row.transferId);
+      // XFER-PROPOSED: the other leg of a pair joined across two hashes names no address.
+      if (row.type === 'transfer' && !row.linkedAddressId)
+        for (const sibling of await this.siblings(manager, owner, row))
+          if (!written.includes(key(sibling.addressId, sibling.txid)))
+            await this.unlink(manager, owner, sibling.addressId, sibling.txid, row.transferId);
       return;
     }
     // An outgoing Other produced nothing to void.
@@ -1625,6 +1746,20 @@ export class ChainClassificationService {
   }
 
   /** The other leg's own identity, found by the transfer its answer names. */
+  /** The other legs whose current answer is the same transfer. */
+  private async siblings(manager: EntityManager, owner: string, row: ClassificationRow) {
+    const found: { addressId: string; txid: string }[] = await manager.query(
+      `SELECT h."addressId", h.txid FROM chain_transaction_classifications h
+        JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
+          AND v.txid=h.txid AND v.version=h."currentVersion"
+        WHERE h."ownerId"=$1 AND v."transferId"=$2 AND v.status='classified'
+          AND NOT (h."addressId"=$3 AND h.txid=$4)
+        ORDER BY h."addressId", h.txid`,
+      [owner, row.transferId, row.addressId, row.txid],
+    );
+    return found;
+  }
+
   private async linkedTxid(
     manager: EntityManager,
     owner: string,

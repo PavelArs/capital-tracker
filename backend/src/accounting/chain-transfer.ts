@@ -79,11 +79,23 @@ export function planTransfer(
   leg: OwnLeg & { accountId: string },
   counterAccountId: string,
   partner: OwnLeg | null,
+  /** XFER-PROPOSED: the partner has another hash, so the fee is what went missing between them. */
+  proposed = false,
 ): PlannedTransfer {
   if (counterAccountId === leg.accountId) throw sameAccount();
   if (partner && coinOf(partner) !== coinOf(leg)) throw mismatch();
   const moved = netAtoms(leg);
   if (moved === 0n) throw unfit();
+  if (proposed && partner) {
+    const [sent, arrived] = moved < 0n ? [-moved, netAtoms(partner)] : [-netAtoms(partner), moved];
+    if (arrived <= 0n || sent < arrived) throw mismatch();
+    return {
+      fromAccountId: moved < 0n ? leg.accountId : counterAccountId,
+      toAccountId: moved < 0n ? counterAccountId : leg.accountId,
+      quantity: formatAtoms(arrived),
+      feeQuantity: formatAtoms(sent - arrived),
+    };
+  }
   const sender = moved < 0n ? leg : partner;
   const fee = sender ? feeAtoms(sender) : 0n;
   let arrived: bigint;
@@ -149,4 +161,123 @@ export function ownTransferPairs(
       ),
     ]);
   return pairs;
+}
+
+/**
+ * XFER-PROPOSED: how long after a withdrawal a receipt of the same coin can still be its other
+ * side, and the most of the sent amount the difference may be (a network or withdrawal fee).
+ */
+export const PAIR_WINDOW_HOURS = 24;
+export const PAIR_FEE_PERCENT = 2n;
+
+/** A leg with the time it happened. */
+export interface TimedLeg extends MatchableLeg {
+  blockTime: Date;
+}
+
+/**
+ * Whether a withdrawal and a receipt can be the two sides of one transfer: the same coin in
+ * two different accounts, the receipt no earlier than the withdrawal and within the window,
+ * and what arrived at most a fee below what left (never above).
+ */
+export function pairFits(
+  outgoing: Pick<TimedLeg, keyof OwnLeg | 'blockTime'>,
+  incoming: Pick<TimedLeg, keyof OwnLeg | 'blockTime'>,
+): boolean {
+  if (net(outgoing) >= 0n || net(incoming) <= 0n || coinOf(outgoing) !== coinOf(incoming))
+    return false;
+  if (outgoing.accountId === null || incoming.accountId === null) return false;
+  if (outgoing.accountId === incoming.accountId) return false;
+  const gap = incoming.blockTime.getTime() - outgoing.blockTime.getTime();
+  if (gap < 0 || gap > PAIR_WINDOW_HOURS * 3_600_000) return false;
+  const sent = -netAtoms(outgoing);
+  const lost = sent - netAtoms(incoming);
+  return lost >= 0n && lost * 100n <= sent * PAIR_FEE_PERCENT;
+}
+
+/** A withdrawal and the receipt that probably is the other side of it. */
+export interface PairProposal<L extends TimedLeg = TimedLeg> {
+  outgoing: L;
+  incoming: L;
+  /** What went missing between them, in accounting atoms of the coin: the transfer's fee. */
+  feeAtoms: bigint;
+}
+
+/**
+ * XFER-PROPOSED: withdrawals and receipts of the same coin in two accounts that no one has
+ * answered and that name different transactions (the same one is XFER-AUTO). A pair is
+ * proposed only when each is the other's single closest candidate in time and amount; a
+ * tie or a second candidate leaves both to the owner (nothing is guessed). Newest first.
+ */
+export function proposeTransferPairs<L extends TimedLeg>(legs: readonly L[]): PairProposal<L>[] {
+  const open = legs.filter(
+    (leg) =>
+      net(leg) !== 0n &&
+      leg.accountId !== null &&
+      (leg.status === null || leg.status === 'unclassified'),
+  );
+  type Edge = { out: L; in: L; gap: number; lost: bigint };
+  const byCoin = new Map<string, { out: L[]; in: L[] }>();
+  for (const leg of open) {
+    const coin = coinOf(leg);
+    const group = byCoin.get(coin) ?? { out: [], in: [] };
+    group[net(leg) < 0n ? 'out' : 'in'].push(leg);
+    byCoin.set(coin, group);
+  }
+  const windowMs = PAIR_WINDOW_HOURS * 3_600_000;
+  const edges: Edge[] = [];
+  for (const group of byCoin.values()) {
+    const later = [...group.in].sort((left, right) => +left.blockTime - +right.blockTime);
+    for (const out of group.out) {
+      // The receipts no earlier than the withdrawal, in time order, until the window ends.
+      let low = 0;
+      let high = later.length;
+      while (low < high) {
+        const middle = (low + high) >> 1;
+        if (+later[middle].blockTime < +out.blockTime) low = middle + 1;
+        else high = middle;
+      }
+      for (let at = low; at < later.length; at++) {
+        const into = later[at];
+        const gap = +into.blockTime - +out.blockTime;
+        if (gap > windowMs) break;
+        if (sameTransaction(out, into) || !pairFits(out, into)) continue;
+        edges.push({ out, in: into, gap, lost: -netAtoms(out) - netAtoms(into) });
+      }
+    }
+  }
+  const closer = (left: Edge, right: Edge) =>
+    left.gap !== right.gap ? left.gap - right.gap : left.lost < right.lost ? -1 : 1;
+  const alike = (left: Edge, right: Edge) => left.gap === right.gap && left.lost === right.lost;
+  // The single best edge of each leg; a leg whose two best edges are equally good has none.
+  const bestOf = (side: 'out' | 'in') => {
+    const grouped = new Map<L, Edge[]>();
+    for (const edge of edges) grouped.set(edge[side], [...(grouped.get(edge[side]) ?? []), edge]);
+    const best = new Map<L, Edge>();
+    for (const [leg, mine] of grouped) {
+      const sorted = mine.sort(closer);
+      if (sorted.length < 2 || !alike(sorted[0], sorted[1])) best.set(leg, sorted[0]);
+    }
+    return best;
+  };
+  const ofOut = bestOf('out');
+  const ofIn = bestOf('in');
+  return edges
+    .filter((edge) => ofOut.get(edge.out) === edge && ofIn.get(edge.in) === edge)
+    .map((edge) => ({ outgoing: edge.out, incoming: edge.in, feeAtoms: edge.lost }))
+    .sort(
+      (left, right) =>
+        +right.outgoing.blockTime - +left.outgoing.blockTime ||
+        (left.outgoing.txid < right.outgoing.txid ? -1 : 1),
+    );
+}
+
+/** What a proposal says in words: the coin, what left, what arrived and the fee between. */
+export function pairAmounts(proposal: PairProposal) {
+  return {
+    coin: coinOf(proposal.outgoing),
+    sent: formatAtoms(-netAtoms(proposal.outgoing)),
+    arrived: formatAtoms(netAtoms(proposal.incoming)),
+    fee: formatAtoms(proposal.feeAtoms),
+  };
 }

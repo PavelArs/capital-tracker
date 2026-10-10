@@ -27,6 +27,7 @@ import {
   typeLabel,
   walletLabel,
 } from './operation-format';
+import TransferProposals from './TransferProposals';
 import TypeIcon, { Glyph } from './TypeIcon';
 import { useNarrowScreen } from './useNarrowScreen';
 import '../shell/shell-page.css';
@@ -553,6 +554,14 @@ export default function TransactionsPage() {
         <p className="transactions-notice" role="status">
           {notice}
         </p>
+      )}
+      {list !== null && !failed && (
+        <TransferProposals
+          onJoined={(message) => {
+            setNotice(message);
+            void load(asked, false);
+          }}
+        />
       )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">

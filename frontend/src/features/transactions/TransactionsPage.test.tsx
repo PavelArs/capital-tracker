@@ -1,5 +1,10 @@
 import { accountingApi } from '@api/accounting.api';
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import {
+  type Operation,
+  type OperationList,
+  operationsApi,
+  type TransferProposal,
+} from '@api/operations.api';
 import { ownedTransfersApi, type TransferReceipt } from '@api/owned-transfers.api';
 import { portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
@@ -2741,5 +2746,112 @@ describe('CLS-ADJACENT: the next transaction is the neighbour in time', () => {
     const next = await classifyRow(2, [newest, middle, answered(oldest)]);
     expect(within(next).getByText('+0.002 BTC')).toBeInTheDocument();
     expect(bodyRows()[1]).toHaveAttribute('aria-current', 'true');
+  });
+});
+
+describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
+  const leg = (n: number, accountName: string, at: string, label: string | null = null) => ({
+    addressId: id(60 + n),
+    txid: txid(80 + n),
+    version: 0,
+    accountId: id(70 + n),
+    accountName,
+    wallet: { network: 'ethereum' as const, address: `0x${String(n).repeat(40)}`, label },
+    occurredAt: at,
+  });
+  const proposal: TransferProposal = {
+    coin: 'USDT',
+    sent: '100.5',
+    arrived: '100',
+    fee: '0.5',
+    outgoing: leg(1, 'Exchange', '2026-10-01T10:00:00.000Z', 'Main'),
+    incoming: leg(2, 'Hardware', '2026-10-01T10:12:00.000Z'),
+  };
+  const found = (proposals: TransferProposal[]) => ({ windowHours: 24, feePercent: 2, proposals });
+
+  it('XFER-PROPOSED: lists the pair with the fee and joins it with one tap', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockResolvedValue(found([]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    expect(within(card).getByText(/100 USDT/)).toBeInTheDocument();
+    expect(card).toHaveTextContent('from Exchange to Hardware');
+    expect(card).toHaveTextContent('Left Main Oct 1, 2026, 10:00 UTC');
+    expect(card).toHaveTextContent('100.5 USDT left, so 0.5 USDT is the fee');
+    expect(card).toHaveTextContent('within 24 hours');
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify).toHaveBeenCalledWith(
+      { id: proposal.outgoing.addressId },
+      proposal.outgoing.txid,
+      expect.objectContaining({
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'transfer',
+          accountId: proposal.incoming.accountId,
+          partner: { addressId: proposal.incoming.addressId, txid: proposal.incoming.txid },
+        },
+      }),
+    );
+    expect(await screen.findByText(/Joined as one transfer: 100 USDT/)).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: /possible transfer/ })).toBeNull(),
+    );
+  });
+
+  it('says why a pair could not be joined and keeps the offer', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'transferProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Unprocessable', '422', undefined, undefined, {
+        status: 422,
+        statusText: 'Unprocessable',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The other wallet did not receive what this one sent, less the network fee',
+        },
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: 'One possible transfer between your accounts',
+    });
+    await user.click(within(card).getByRole('button', { name: 'Join as one transfer' }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'These cannot be joined: the other wallet did not receive what this one sent, less the network fee.',
+    );
+    expect(within(card).getByRole('button', { name: 'Join as one transfer' })).toBeEnabled();
+  });
+
+  it('shows nothing without a proposal, and three of many until asked', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    const many = [1, 2, 3, 4].map((n) => ({
+      ...proposal,
+      outgoing: { ...proposal.outgoing, txid: txid(90 + n) },
+    }));
+    vi.spyOn(operationsApi, 'transferProposals')
+      .mockResolvedValueOnce(found([]))
+      .mockResolvedValue(found(many));
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(6));
+    expect(screen.queryByRole('region', { name: /possible transfer/ })).toBeNull();
+    cleanup();
+    renderPage();
+    const card = await screen.findByRole('region', {
+      name: '4 possible transfers between your accounts',
+    });
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(3);
+    await user.click(within(card).getByRole('button', { name: 'Show all 4' }));
+    expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(4);
   });
 });
