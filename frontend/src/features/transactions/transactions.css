@@ -362,6 +362,29 @@
   overflow-wrap: anywhere;
 }
 
+/* A long address or hash keeps to one line; its middle gives way when the panel is narrow. */
+.transactions-line {
+  display: block;
+  min-width: 0;
+}
+
+.transactions-mid {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.transactions-mid__head {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.transactions-mid__tail {
+  flex: none;
+}
+
 .transactions-hash__actions {
   display: flex;
   flex-wrap: wrap;
