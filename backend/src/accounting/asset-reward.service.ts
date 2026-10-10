@@ -27,6 +27,7 @@ import {
   rewardPayload,
 } from './asset-reward-input';
 import type { FifoReward } from './asset-reward-types';
+import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
@@ -89,9 +90,10 @@ export class AssetRewardService {
     target?: string,
   ) {
     try {
-      return await this.source.transaction((manager) =>
-        this.mutateWithin(manager, owner, accountId, kind, input, target),
-      );
+      return await this.source.transaction(async (manager) => {
+        if (target !== undefined) await refuseProducedEntry(manager, owner, 'rewardId', target);
+        return this.mutateWithin(manager, owner, accountId, kind, input, target);
+      });
     } catch (error) {
       return rethrowAccountingHistory(error);
     }

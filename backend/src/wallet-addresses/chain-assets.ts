@@ -33,6 +33,11 @@ export interface ChainAsset {
   contract: string | null;
   /** TOKEN-ANY: whether a price source lists one of the other tokens; absent for the rest. */
   listed?: boolean;
+  /**
+   * TOKEN-HIDE: one of the other tokens that calls itself by the symbol of a coin the app
+   * tracks (USDT, ETH …) from a contract that is not that coin's; absent for the rest.
+   */
+  lookalike?: boolean;
 }
 
 export const networkNames: Record<Network, string> = {
@@ -162,6 +167,13 @@ export function rememberTokens(tokens: readonly ChainAsset[]): void {
     if (token.contract === null || !movesAnyToken(token.network)) continue;
     discovered.set(tokenKey(token.network, token.contract), token);
   }
+}
+
+/** TOKEN-HIDE: the other token of a network that the portfolio names by this ticker. */
+export function otherTokenByTicker(network: string, ticker: string): ChainAsset | undefined {
+  for (const token of discovered.values())
+    if (token.network === network && token.symbol === ticker) return token;
+  return undefined;
 }
 
 /** Forgets every remembered token (tests). */

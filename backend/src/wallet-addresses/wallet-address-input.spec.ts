@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { parseRegistration, parseUpdate } from './wallet-address-input';
+import { parseRegistration, parseTokenVisibility, parseUpdate } from './wallet-address-input';
 
 const address = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq';
 const accountId = '00000000-0000-4000-8000-000000000001';
@@ -186,5 +186,33 @@ describe('WAL-ACCOUNT: changing a wallet address', () => {
     ['no object', null],
   ])('refuses %s', (_case, input) => {
     expect(() => parseUpdate(input)).toThrow(BadRequestException);
+  });
+});
+
+describe('TOKEN-HIDE: hiding tokens of an address', () => {
+  it('names the tickers and what happens to them', () => {
+    expect(parseTokenVisibility({ tickers: ['SYN', 'USDT7F3A'], visibility: 'hidden' })).toEqual({
+      tickers: ['SYN', 'USDT7F3A'],
+      visibility: 'hidden',
+    });
+    expect(parseTokenVisibility({ tickers: ['SYN', 'SYN'], visibility: 'shown' })).toEqual({
+      tickers: ['SYN'],
+      visibility: 'shown',
+    });
+  });
+
+  it.each([
+    ['no body', undefined],
+    ['no tickers', { tickers: [], visibility: 'hidden' }],
+    [
+      'too many tickers',
+      { tickers: Array.from({ length: 201 }, (_, i) => `T${i}`), visibility: 'hidden' },
+    ],
+    ['a lower-case ticker', { tickers: ['syn'], visibility: 'hidden' }],
+    ['a ticker that is not text', { tickers: [5], visibility: 'hidden' }],
+    ['another visibility', { tickers: ['SYN'], visibility: 'gone' }],
+    ['an extra field', { tickers: ['SYN'], visibility: 'hidden', address: 'x' }],
+  ])('refuses %s', (_name, body) => {
+    expect(() => parseTokenVisibility(body)).toThrow(BadRequestException);
   });
 });

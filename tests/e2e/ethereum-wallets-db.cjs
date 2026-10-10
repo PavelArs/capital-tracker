@@ -179,7 +179,7 @@ function services(db, apiKey = etherscanKey) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 52/);
+  assert.match(migrate(database), /Migrations applied: 53/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -538,9 +538,10 @@ async function main() {
         { symbol: 'ETH', quantity: '0.999950000000000000' },
         { symbol: 'USDT', quantity: '0.000000' },
         { symbol: 'USDC', quantity: '0.000000' },
-        { symbol: 'SYN', quantity: '40.000000000000000000' },
-        { symbol: fakeTicker, quantity: '5.000000' },
+        { symbol: 'SYN', quantity: '40.000000000000000000', name: 'Synthetic Token', listed: false },
       ]);
+      // TOKEN-HIDE: the copy of USDT is left out of the balances, and listed apart with its reason.
+      assert.deepEqual(synced.result.address.hiddenTokens, [{ symbol: fakeTicker, name: 'USDT', quantity: '5.000000', reason: 'lookalike' }]);
       // D1: each token is one market-priced asset, created once however often the sync runs.
       assert.deepEqual((await s.addresses.sync(owner, holderId)).imported, 0);
       const instruments = async () => (await db.query(`SELECT symbol, "priceSource", count(*)::int AS n
@@ -585,7 +586,8 @@ async function main() {
       assertLegs(await stored(db, holderId), tokenLegs);
       assert.deepEqual((await db.query('SELECT "tokenBackfillTo", "tokenBackfillAt" FROM wallet_addresses WHERE id=$1', [holderId]))[0],
         { tokenBackfillTo: null, tokenBackfillAt: null });
-      assert.deepEqual(backfill.result.address.balances.map((item) => item.symbol), ['ETH', 'USDT', 'USDC', 'SYN', fakeTicker]);
+      assert.deepEqual(backfill.result.address.balances.map((item) => item.symbol), ['ETH', 'USDT', 'USDC', 'SYN']);
+      assert.deepEqual(backfill.result.address.hiddenTokens.map((item) => item.symbol), [fakeTicker]);
       const after = await newRequests(() => s.addresses.sync(owner, holderId));
       assert.deepEqual([after.result.imported, after.urls.map(call)], [0, [['eth_blockNumber', null, null, null]]]);
       console.log('PASS TOKEN-BACKFILL a wallet read before any token was followed has its old token transfers read once, up to the stored block; no balance shows a token until then');
@@ -659,6 +661,104 @@ async function main() {
         assert.equal(row.symbol, 'XRP');
         assert.equal(row.ticker, `XRP${xrpToken.slice(2, 6).toUpperCase()}`, 'The ticker of the market asset XRP is left to it');
         console.log('PASS TOKEN-TICKER a token named like an existing market asset gets a ticker of its own');
+      }
+
+      // TOKEN-HIDE: a token that cannot be real, or one the owner does not want, is left out of an
+      // address's balances; the owner can bring either back. The legs stay as stored.
+      {
+        const spamHolder = address('spam-holder');
+        const wanted = address('wanted-token');
+        const forged = address('forged-token');
+        const copycat = address('copycat-eth');
+        await post('ethereum', { tip: 20000600, normal: [normal(70, 20000501, outside, spamHolder, ether(1), 21000, 10 ** 9)], internal: [],
+          tokens: [
+            named(token(71, 20000502, wanted, 'WANTED', outside, spamHolder, 7000000n, 1), 'Wanted Token', '6'),
+            // A forged transfer out of a wallet that never held the token: the history goes below zero.
+            named(token(72, 20000503, forged, 'FRG', spamHolder, outside, 3000000000n, 1), 'Forged Token', '6'),
+            named(token(73, 20000504, copycat, 'ETH', outside, spamHolder, 40000000n, 1), 'Ether', '6'),
+          ] });
+        const spamId = (await s.addresses.register(owner, { network: 'ethereum', address: spamHolder, accountId: tokenAccount })).value.id;
+        assert.equal((await s.addresses.sync(owner, spamId)).outcome, 'complete');
+        const view = async () => (await s.addresses.list(owner)).find((item) => item.id === spamId);
+        const copyTicker = `ETH${copycat.slice(2, 6).toUpperCase()}`;
+        const tickerOf = (contract) => db.query('SELECT ticker FROM chain_tokens WHERE contract=$1', [contract]).then((rows) => rows[0].ticker);
+        const frg = await tickerOf(forged);
+        const symbols = (items) => items.map((item) => item.symbol);
+        let seen = await view();
+        assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC', 'WANTED']);
+        assert.deepEqual(seen.balances[3], { symbol: 'WANTED', quantity: '7.000000', name: 'Wanted Token', listed: false });
+        assert.deepEqual(seen.hiddenTokens, [
+          { symbol: copyTicker, name: 'Ether', quantity: '40.000000', reason: 'lookalike' },
+          { symbol: frg, name: 'Forged Token', quantity: '-3000.000000', reason: 'negative' },
+        ].sort((left, right) => left.symbol.localeCompare(right.symbol)));
+        assert.equal(seen.chainBalance, '1.000000000000000000', 'ETH is not a token: it always counts');
+
+        // TOKEN-DUST: with the dust threshold set, a token worth less than it, or one no source lists, is left out too.
+        {
+          const { OwnerSettingsService } = require(`${dist}/owner-settings/owner-settings.service.js`);
+          const settings = new OwnerSettingsService(db);
+          const hiddenOf = async () => Object.fromEntries((await view()).hiddenTokens.map((item) => [item.symbol, item.reason]));
+          assert.equal((await hiddenOf()).WANTED, undefined, 'No threshold, no dust');
+          await settings.update(owner, { dustThresholdUsd: '1' });
+          assert.equal((await hiddenOf()).WANTED, 'dust', 'Unpriced and unlisted: worth nothing');
+          const reload = async () => { forgetTokens(); await loadChainTokens(db.manager); };
+          const { forgetTokens } = require(`${dist}/wallet-addresses/chain-assets.js`);
+          const { loadChainTokens } = require(`${dist}/wallet-addresses/chain-tokens.js`);
+          const price = (value, minute) => db.query(`INSERT INTO price_observations(asset,"quoteCurrency",source,"observedAt",price,kind)
+            VALUES ('WANTED','USD','coingecko', now() - interval '${minute} minutes', $1, 'spot')`, [value]);
+          // A listed token whose price is not known yet is not known to be dust.
+          await db.query('UPDATE chain_tokens SET "coingeckoId"=$1 WHERE contract=$2', [wanted, wanted]);
+          await reload();
+          assert.equal((await hiddenOf()).WANTED, undefined);
+          // 7 tokens at 0.01 USD are worth 0.07 USD, below the threshold; at 1 USD they are worth 7 USD.
+          await price('0.01', 10);
+          assert.equal((await hiddenOf()).WANTED, 'dust');
+          await price('1', 5);
+          assert.equal((await hiddenOf()).WANTED, undefined);
+          await db.query('UPDATE chain_tokens SET "coingeckoId"=NULL WHERE contract=$1', [wanted]);
+          await reload();
+          await settings.update(owner, { dustThresholdUsd: null });
+          assert.equal((await hiddenOf()).WANTED, undefined);
+        }
+        const choose = (tickers, visibility, id = spamId, who = owner) => s.addresses.setTokenVisibility(who, id, { tickers, visibility });
+        const stored = async () => (await db.query('SELECT "hiddenTokens", "shownTokens" FROM wallet_addresses WHERE id=$1', [spamId]))[0];
+
+        // The owner hides a token they do not want.
+        seen = await choose(['WANTED'], 'hidden');
+        assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC']);
+        assert.deepEqual(seen.hiddenTokens.find((item) => item.symbol === 'WANTED'), { symbol: 'WANTED', name: 'Wanted Token', quantity: '7.000000', reason: 'owner' });
+        assert.deepEqual(await stored(), { hiddenTokens: [wanted], shownTokens: [] });
+        // The choice survives a sync, and the legs are still stored.
+        assert.equal((await s.addresses.sync(owner, spamId)).imported, 0);
+        assert.deepEqual(symbols((await view()).balances), ['ETH', 'USDT', 'USDC']);
+        assert.equal((await db.query('SELECT count(*)::int AS n FROM wallet_address_transactions WHERE "addressId"=$1', [spamId]))[0].n, 4);
+
+        // The owner brings back a token the app hid: it shows, with its negative balance.
+        seen = await choose([frg], 'shown');
+        assert.deepEqual(seen.balances.at(-1), { symbol: frg, quantity: '-3000.000000', name: 'Forged Token', listed: false });
+        assert.deepEqual(await stored(), { hiddenTokens: [wanted], shownTokens: [forged] });
+        // And hides it again for good; the last word wins and a token is in one list only.
+        seen = await choose([frg, 'WANTED'], 'hidden');
+        assert.equal(seen.hiddenTokens.find((item) => item.symbol === frg).reason, 'owner');
+        assert.deepEqual(await stored(), { hiddenTokens: [wanted, forged].sort(), shownTokens: [] });
+        seen = await choose(['WANTED', frg, copyTicker], 'shown');
+        assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC', ...[copyTicker, 'WANTED', frg].sort((left, right) => left.localeCompare(right))]);
+        assert.deepEqual(seen.hiddenTokens, []);
+
+        // Only tokens this address holds can be chosen; a wallet of another network and another owner are refused.
+        await refusal(() => choose(['NOSUCH'], 'hidden'), 400);
+        await refusal(() => choose(['SYN'], 'hidden'), 400);
+        await refusal(() => choose(['USDT'], 'hidden'), 400);
+        await refusal(() => choose(['WANTED'], 'gone'), 400);
+        await refusal(() => choose([], 'hidden'), 400);
+        await refusal(() => choose(['wanted'], 'hidden'), 400);
+        await refusal(() => choose(['WANTED'], 'hidden', main, stranger), 404);
+        await refusal(() => choose(['WANTED'], 'hidden', randomUUID()), 404);
+        assert.deepEqual(await stored(), { hiddenTokens: [], shownTokens: [copycat, forged, wanted].sort() });
+        // A balance is not partial while the history is read again for tokens: nothing is hidden or shown then.
+        await db.query('UPDATE wallet_addresses SET "tokenBackfillTo"="scannedBlock" WHERE id=$1', [spamId]);
+        assert.deepEqual([symbols((await view()).balances), (await view()).hiddenTokens], [['ETH', 'USDT', 'USDC'], []]);
+        console.log('PASS TOKEN-HIDE a negative balance and a copy of ETH are left out of the balances with their reason; the owner hides, brings back and hides tokens, the last word wins, the choice survives a sync and the legs stay; unknown tokens, other owners and bad bodies are refused');
       }
     }
 

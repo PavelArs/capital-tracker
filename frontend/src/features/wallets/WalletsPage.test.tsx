@@ -1466,9 +1466,12 @@ describe('M22: Bybit accounts', () => {
       { ...valuation, assets: [...valuation.assets, ton(bybit, '10'), doge] },
     );
     const account = await screen.findByRole('region', { name: 'Bybit' });
-    expect(within(account).getByRole('button', { name: 'Bybit 123456789' })).toHaveTextContent(
-      '0.50999 BTC · 399 USDT · 12.5 TON',
-    );
+    const row = within(account).getByRole('button', { name: 'Bybit 123456789' });
+    // TOKEN-SHOW-MORE: two coins, the third behind the toggle.
+    expect(row).toHaveTextContent('0.50999 BTC · 399 USDT');
+    expect(row).not.toHaveTextContent('TON');
+    await userEvent.setup().click(within(account).getByRole('button', { name: 'Show 1 more' }));
+    expect(row).toHaveTextContent('0.50999 BTC · 399 USDT · 12.5 TON');
     const note = within(account).getByRole('note');
     expect(note).toHaveTextContent(
       'Bybit reports 12.5 TON; your transactions in this wallet give 10 TON',
@@ -1657,5 +1660,159 @@ describe('Zcash wallets (M24)', () => {
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Zcash' });
     expect(drawer).toHaveTextContent('Trezor Blockbook');
     expect(drawer).toHaveTextContent('This is the balance of the transparent address.');
+  });
+});
+
+describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', () => {
+  const ethAddress = `0x${'5e'.repeat(20)}`;
+  const spam = (symbol: string, listed = false) => ({
+    symbol,
+    quantity: '5.000000',
+    name: `${symbol} token`,
+    listed,
+  });
+  const holder = (changes: Partial<WalletAddress> = {}) =>
+    wallet(6, {
+      network: 'ethereum',
+      address: ethAddress,
+      label: 'Main ETH',
+      chainBalance: '1.500000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '1.500000000000000000' },
+        { symbol: 'USDT', quantity: '12.000000' },
+        { symbol: 'USDC', quantity: '3.000000' },
+        spam('AAA'),
+        spam('BBB'),
+        spam('WRAP', true),
+      ],
+      hiddenTokens: [{ symbol: 'USDT1A2B', name: 'Tether', quantity: '-40', reason: 'lookalike' }],
+      ...changes,
+    });
+  const valuation = () => {
+    const base = portfolio();
+    return {
+      ...base,
+      assets: [
+        ...base.assets,
+        asset({
+          instrumentId: id(3),
+          name: 'Ethereum',
+          symbol: 'ETH',
+          price: { value: '2000', observedAt: null, source: 'kraken', status: 'fresh' },
+        }),
+        asset({
+          instrumentId: id(4),
+          name: 'USD Coin',
+          symbol: 'USDC',
+          price: { value: '1', observedAt: null, source: 'fixed', status: 'fixed' },
+        }),
+      ],
+    };
+  };
+
+  it('lists two coins and the rest behind "Show N more", and counts the hidden tokens', async () => {
+    setup([holder()], valuation());
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(row).toHaveTextContent('1.5 ETH · 12 USDT');
+    expect(row).not.toHaveTextContent('USDC');
+    expect(screen.getByText('1 hidden token')).toBeInTheDocument();
+    const more = screen.getByRole('button', { name: 'Show 4 more' });
+    expect(more).toHaveAttribute('aria-expanded', 'false');
+    await user.click(more);
+    expect(row).toHaveTextContent('1.5 ETH · 12 USDT · 3 USDC · 5 AAA · 5 BBB · 5 WRAP');
+    await user.click(screen.getByRole('button', { name: 'Show less' }));
+    expect(row).not.toHaveTextContent('USDC');
+  });
+
+  it('shows no toggle for two coins or fewer', async () => {
+    setup(
+      [holder({ balances: [{ symbol: 'ETH', quantity: '1.5' }, spam('AAA')], hiddenTokens: [] })],
+      valuation(),
+    );
+    await screen.findByRole('button', { name: `Main ETH ${ethAddress}` });
+    expect(screen.queryByRole('button', { name: /^Show/ })).toBeNull();
+  });
+
+  it('hides one token from the drawer and shows the balances the server returns', async () => {
+    const after = holder({
+      balances: [
+        { symbol: 'ETH', quantity: '1.5' },
+        { symbol: 'USDT', quantity: '12.000000' },
+        { symbol: 'USDC', quantity: '3.000000' },
+        spam('BBB'),
+        spam('WRAP', true),
+      ],
+      hiddenTokens: [
+        { symbol: 'AAA', name: 'AAA token', quantity: '5', reason: 'owner' },
+        { symbol: 'USDT1A2B', name: 'Tether', quantity: '-40', reason: 'lookalike' },
+      ],
+    });
+    setup([holder()], valuation());
+    const hide = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue(after);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    expect(drawer).toHaveTextContent('AAA token · no price');
+    expect(within(drawer).getByText('WRAP token')).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Hide AAA' }));
+    expect(hide).toHaveBeenCalledWith(holder().id, ['AAA'], 'hidden');
+    await waitFor(() =>
+      expect(
+        within(drawer).getByRole('heading', { name: 'Hidden tokens (2)' }),
+      ).toBeInTheDocument(),
+    );
+    expect(within(drawer).queryByRole('button', { name: 'Hide AAA' })).toBeNull();
+    expect(within(drawer).getByRole('button', { name: 'Restore AAA' })).toBeInTheDocument();
+  });
+
+  it('hides every token no price source lists at once, and not the listed one', async () => {
+    setup([holder()], valuation());
+    const hide = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue(holder());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    await user.click(
+      within(drawer).getByRole('button', { name: 'Hide 2 tokens no price source lists' }),
+    );
+    expect(hide).toHaveBeenCalledWith(holder().id, ['AAA', 'BBB'], 'hidden');
+  });
+
+  it('says why the app hid a token and brings it back on request', async () => {
+    setup(
+      [
+        holder({
+          hiddenTokens: [
+            { symbol: 'T', name: 'Spoof', quantity: '-3000', reason: 'negative' },
+            { symbol: 'USDT1A2B', name: 'Tether', quantity: '40', reason: 'lookalike' },
+            { symbol: 'AAA', name: 'AAA token', quantity: '5', reason: 'owner' },
+            { symbol: 'DDD', name: 'DDD token', quantity: '9', reason: 'dust' },
+          ],
+        }),
+      ],
+      valuation(),
+    );
+    const restore = vi.spyOn(walletAddressesApi, 'tokens').mockResolvedValue(holder());
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    expect(drawer).toHaveTextContent('the history sends out more than it received');
+    expect(drawer).toHaveTextContent('calls itself like a coin you track');
+    expect(drawer).toHaveTextContent('Hidden by you');
+    expect(drawer).toHaveTextContent('worth less than your dust threshold');
+    expect(drawer).toHaveTextContent('-3,000');
+    await user.click(within(drawer).getByRole('button', { name: 'Restore T' }));
+    expect(restore).toHaveBeenCalledWith(holder().id, ['T'], 'shown');
+  });
+
+  it('keeps the drawer and says nothing changed when the server refuses', async () => {
+    setup([holder()], valuation());
+    vi.spyOn(walletAddressesApi, 'tokens').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    await user.click(within(drawer).getByRole('button', { name: 'Hide AAA' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('Nothing was changed');
+    expect(within(drawer).getByRole('button', { name: 'Hide AAA' })).toBeEnabled();
   });
 });

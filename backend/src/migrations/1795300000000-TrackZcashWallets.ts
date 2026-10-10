@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class TrackZcashWallets1795100000000 implements MigrationInterface {
-  name = 'TrackZcashWallets1795100000000';
+export class TrackZcashWallets1795300000000 implements MigrationInterface {
+  name = 'TrackZcashWallets1795300000000';
 
   async up(runner: QueryRunner): Promise<void> {
     // ZCASH-ADD: transparent Zcash addresses ("t1…", "t3…") join the other networks. A Zcash leg

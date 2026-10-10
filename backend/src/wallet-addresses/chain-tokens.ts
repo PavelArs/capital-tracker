@@ -109,6 +109,11 @@ interface TokenRow {
   coingeckoId: string | null;
 }
 
+// TOKEN-HIDE: symbols a scam token borrows to pass for a real coin.
+/** Whether a token's own symbol is the symbol of a tracked coin, such as "USDT" or "ETH". */
+export const copiesTrackedCoin = (symbol: string): boolean =>
+  reservedTickers.has(alphanumeric(symbol));
+
 const asAsset = (row: TokenRow): ChainAsset | null =>
   movesAnyToken(row.network)
     ? {
@@ -119,6 +124,7 @@ const asAsset = (row: TokenRow): ChainAsset | null =>
         decimals: row.decimals,
         contract: row.contract,
         listed: row.coingeckoId !== null,
+        lookalike: copiesTrackedCoin(row.symbol),
       }
     : null;
 

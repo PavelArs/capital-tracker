@@ -107,6 +107,25 @@ export function parseUpdate(raw: unknown): Update {
   };
 }
 
+export interface TokenVisibility {
+  tickers: string[];
+  visibility: 'hidden' | 'shown';
+}
+
+export const TOKENS_AT_ONCE = 200;
+
+/** TOKEN-HIDE: tickers of other tokens, and whether the address's balances leave them out. */
+export function parseTokenVisibility(raw: unknown): TokenVisibility {
+  const row = object(raw, ['tickers', 'visibility']);
+  const { tickers, visibility } = row;
+  if (visibility !== 'hidden' && visibility !== 'shown') return bad();
+  if (!Array.isArray(tickers) || tickers.length < 1 || tickers.length > TOKENS_AT_ONCE)
+    return bad();
+  if (!tickers.every((ticker) => typeof ticker === 'string' && /^[A-Z0-9]{1,16}$/.test(ticker)))
+    return bad();
+  return { tickers: [...new Set(tickers as string[])], visibility };
+}
+
 export function parseTransactionQuery(raw: unknown): { offset: number; limit: number } {
   const row = object(raw ?? {}, ['offset', 'limit']);
   return {

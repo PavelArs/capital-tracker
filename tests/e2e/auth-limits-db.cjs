@@ -72,7 +72,8 @@ const expectedMigrationNames = [
   'PriceBybitCoins1794500000000',
   'TrackAnyChainToken1794900000000',
   'TrackStellarWallets1795000000000',
-  'TrackZcashWallets1795100000000',
+  'HideChainTokens1795200000000',
+  'TrackZcashWallets1795300000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';

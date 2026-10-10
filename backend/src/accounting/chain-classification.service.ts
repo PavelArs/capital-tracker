@@ -80,6 +80,8 @@ interface LegRow {
   receivedUnits: string;
   sentUnits: string;
   feeUnits: string;
+  /** The quote coin a Bybit fill spent or received (M22); null for every other leg. */
+  quoteAsset?: string | null;
 }
 export interface ClassificationRow {
   addressId: string;
@@ -138,7 +140,8 @@ const versionColumns = `v."addressId", v.txid, v.version, v."requestId", v."cano
   v."transferId", v."linkedAddressId", v.automatic, v."swapAccountId", v."swapId",
   v."pairedAddressId", v."pairedTxid", v."createdAt"`;
 const legColumns = `w.network, t.asset, w."accountId", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
-  t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits"`;
+  t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
+  t.raw->>'quoteAsset' AS "quoteAsset"`;
 const conflict = () => new ConflictException('Classification request conflicts with saved state');
 const nothing: Produced = {
   accountId: null,
@@ -306,6 +309,18 @@ export class ChainClassificationService {
         const row = await this.readLeg(manager, owner, address, txid);
         const version = await this.lockHead(manager, address, txid);
         if (version !== input.expectedVersion) throw conflict();
+        // BYBIT-TRADES: a Buy paid in the fill's own quote coin needs the records to hold that
+        // coin, as for the automatic answer. Otherwise the shortfall would be entered as new
+        // money while the unanswered receipts that supplied the coin still count (D1).
+        if (
+          value?.type === 'buy' &&
+          row.network === 'bybit' &&
+          row.quoteAsset === value.currency &&
+          !(await this.journalHolds(manager, owner, row, value))
+        )
+          throw new ConflictException(
+            `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
+          );
         const saved = await this.record(
           manager,
           owner,
@@ -380,23 +395,7 @@ export class ChainClassificationService {
           const version = await this.lockHead(manager, fill.addressId, fill.txid);
           if (version !== 0 || row.accountId === null || !fitsDirection(leg(row), answer.type))
             return false;
-          const { quantity } = legMovement(leg(row));
-          const needed =
-            answer.type === 'buy'
-              ? canonicalDecimalToAtoms(answer.amount) + canonicalDecimalToAtoms(answer.fee ?? '0')
-              : canonicalDecimalToAtoms(quantity);
-          const paidWith = answer.type === 'buy' ? cashAsset[answer.currency] : chainCoin(row);
-          const instrument = await findOrCreateInstrument(manager, owner, paidWith, false);
-          const journal = await readJournal(manager, owner, row.accountId);
-          if (!instrument || !journal) return false;
-          const ledger = await readConnectedLedger(manager, owner, [row.accountId]);
-          const held = availableQuantity(
-            ledger,
-            row.accountId,
-            instrument.id,
-            row.blockTime.toISOString(),
-          );
-          if (canonicalDecimalToAtoms(held) < needed) return false;
+          if (!(await this.journalHolds(manager, owner, row, answer))) return false;
           const input: ClassificationInput = {
             requestId: randomUUID(),
             expectedVersion: 0,
@@ -424,6 +423,36 @@ export class ChainClassificationService {
       }
     }
     return { recognized };
+  }
+
+  /**
+   * Whether the account's records already hold what a Bybit fill spent: the quote coin plus fee
+   * for a buy, the coins sold for a sale. False when the account has no journal.
+   */
+  private async journalHolds(
+    manager: EntityManager,
+    owner: string,
+    row: LegRow,
+    answer: ClassificationInput['classification'] & { type: 'buy' | 'sell' },
+  ): Promise<boolean> {
+    if (row.accountId === null) return false;
+    const { quantity } = legMovement(leg(row));
+    const needed =
+      answer.type === 'buy'
+        ? canonicalDecimalToAtoms(answer.amount) + canonicalDecimalToAtoms(answer.fee ?? '0')
+        : canonicalDecimalToAtoms(quantity);
+    const paidWith = answer.type === 'buy' ? cashAsset[answer.currency] : chainCoin(row);
+    const instrument = await findOrCreateInstrument(manager, owner, paidWith, false);
+    const journal = await readJournal(manager, owner, row.accountId);
+    if (!instrument || !journal) return false;
+    const ledger = await readConnectedLedger(manager, owner, [row.accountId]);
+    const held = availableQuantity(
+      ledger,
+      row.accountId,
+      instrument.id,
+      row.blockTime.toISOString(),
+    );
+    return canonicalDecimalToAtoms(held) >= needed;
   }
 
   /**

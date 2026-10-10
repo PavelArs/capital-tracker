@@ -12,6 +12,7 @@ import type {
   Staking,
   WalletAddress,
 } from '@api/wallet-addresses.api';
+import { useState } from 'react';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { addressAssets, networkIcon, networkOf, networks } from './networks';
@@ -61,7 +62,7 @@ export function addressValue(
  * ["1.5 ETH", "250 USDC"]: the network's coin always, a token when the wallet holds it. An
  * exchange account has no coin of its own: the coins it holds, or "0 USDT".
  */
-function chainPieces(address: WalletAddress): string[] {
+export function chainPieces(address: WalletAddress): string[] {
   const balances = chainBalances(address);
   if (balances === null) return [DASH];
   const network = networkOf(address);
@@ -365,14 +366,58 @@ export function PoolsSection({ pools }: { pools: ChainBalance[] }) {
   );
 }
 
-/** "1.5 ETH · 250 USDC". */
-export const chainAmounts = (address: WalletAddress): string => chainPieces(address).join(' · ');
+// TOKEN-SHOW-MORE: an address lists this many coins; the rest wait behind "Show N more".
+export const SHOWN_COINS = 2;
+
+/** "Show 3 more" / "Show less" under a list of coins, and how many tokens the address hides. */
+export function MoreCoins({
+  total,
+  expanded,
+  hidden,
+  onToggle,
+}: {
+  total: number;
+  expanded: boolean;
+  hidden: number;
+  onToggle: () => void;
+}) {
+  const extra = total - SHOWN_COINS;
+  if (extra <= 0 && hidden === 0) return null;
+  return (
+    <div className="wallets-more">
+      {extra > 0 && (
+        <button
+          type="button"
+          className="portfolio-link"
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          {expanded ? 'Show less' : `Show ${extra} more`}
+        </button>
+      )}
+      {hidden > 0 && (
+        <span className="wallets-muted">
+          {hidden} hidden {hidden === 1 ? 'token' : 'tokens'}
+        </span>
+      )}
+    </div>
+  );
+}
 
 // Each coin is one unbreakable piece: a row wraps between coins, a phone stacks them.
 // Staked SOL and coins in liquidity pools are already in the amounts; muted lines under them
 // say how much.
-function ChainAmounts({ address, stacked }: { address: WalletAddress; stacked: boolean }) {
-  const pieces = chainPieces(address);
+function ChainAmounts({
+  address,
+  stacked,
+  expanded,
+}: {
+  address: WalletAddress;
+  stacked: boolean;
+  expanded: boolean;
+}) {
+  const all = chainPieces(address);
+  const pieces = expanded ? all : all.slice(0, SHOWN_COINS);
   const notes = [stakedPiece(address), pooledPiece(address), earnPiece(address)].filter(
     (piece): piece is string => piece !== null,
   );
@@ -423,6 +468,7 @@ export function AddressRow({
   onOpen: () => void;
   onSync: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const network = networkOf(address);
   const name = address.label ?? network.name;
   const when = syncAge(address, run);
@@ -455,6 +501,14 @@ export function AddressRow({
     </div>
   ) : null;
   const label = `${name} ${address.address}`;
+  const more = (
+    <MoreCoins
+      total={chainPieces(address).length}
+      expanded={expanded}
+      hidden={address.hiddenTokens?.length ?? 0}
+      onToggle={() => setExpanded((current) => !current)}
+    />
+  );
   // M21: an account key stands for many addresses; the row says how many were used.
   const derived = keyAddresses(address);
   if (narrow) {
@@ -469,12 +523,13 @@ export function AddressRow({
             </span>
           </span>
           <span className="transactions-item__side">
-            <ChainAmounts address={address} stacked />
+            <ChainAmounts address={address} stacked expanded={expanded} />
             <span className="transactions-item__value">
               {addressValue(address, prices, currency)}
             </span>
           </span>
         </button>
+        {more}
         {message}
       </li>
     );
@@ -490,13 +545,14 @@ export function AddressRow({
           </span>
         </span>
         <span className="wallets-mono wallets-soft">{place(address)}</span>
-        <ChainAmounts address={address} stacked={false} />
+        <ChainAmounts address={address} stacked={false} expanded={expanded} />
         <span className="wallets-num wallets-right">{addressValue(address, prices, currency)}</span>
         <span className="wallets-right wallets-status">
           <SyncBadge address={address} run={run} />
           {when && <span className="wallets-muted">{when}</span>}
         </span>
       </button>
+      {more}
       {message}
     </li>
   );
