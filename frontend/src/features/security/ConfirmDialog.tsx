@@ -5,7 +5,10 @@ interface Props {
   title: string;
   text: string;
   confirmLabel: string;
-  failure: string;
+  /** Shown on the confirm button while the action runs. */
+  busyLabel?: string;
+  /** What to say when the action fails: a fixed text, or one made from the error. */
+  failure: string | ((error: unknown) => string);
   onConfirm: () => Promise<void>;
   onClose: () => void;
 }
@@ -15,6 +18,7 @@ export default function ConfirmDialog({
   title,
   text,
   confirmLabel,
+  busyLabel = 'Logging out…',
   failure,
   onConfirm,
   onClose,
@@ -26,8 +30,8 @@ export default function ConfirmDialog({
     setError(null);
     try {
       await onConfirm();
-    } catch {
-      setError(failure);
+    } catch (caught) {
+      setError(typeof failure === 'function' ? failure(caught) : failure);
       setBusy(false);
     }
   };
@@ -56,7 +60,7 @@ export default function ConfirmDialog({
           disabled={busy}
           onClick={() => void confirm()}
         >
-          {busy ? 'Logging out…' : confirmLabel}
+          {busy ? busyLabel : confirmLabel}
         </button>
       </div>
     </SecurityDialog>

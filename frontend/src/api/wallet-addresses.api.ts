@@ -256,6 +256,13 @@ export const walletAddressesApi = {
   },
   update: async (id: string, changes: WalletAddressChanges): Promise<WalletAddress> =>
     (await apiClient.patch<WalletAddress>(`${path}/${encodeURIComponent(id)}`, changes)).data,
+  /**
+   * WALLET-REMOVE: stops tracking the address. What it recorded stays in the history; adding
+   * the address again brings it back.
+   */
+  remove: async (id: string): Promise<void> => {
+    await apiClient.delete(`${path}/${encodeURIComponent(id)}`);
+  },
   /** TOKEN-HIDE: leaves other tokens (by ticker) out of the address's balances, or brings them back. */
   tokens: async (
     id: string,

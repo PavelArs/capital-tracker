@@ -16,6 +16,7 @@ import CloseButton from '../shell/CloseButton';
 import type { WalletAccount } from './AddWalletDialog';
 import KindField, { type KindChoice } from './KindField';
 import { networkOf } from './networks';
+import RemoveAddress from './RemoveAddress';
 import SyncJournal from './SyncJournal';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
 import TokensSection from './TokensSection';
@@ -89,6 +90,8 @@ interface Props {
   run: SyncRun | undefined;
   onSync: () => void;
   onSaved: (address: WalletAddress, newAccount: boolean) => void;
+  /** WALLET-REMOVE: the address stopped being tracked. */
+  onRemoved: (address: WalletAddress) => void;
   onClose: () => void;
 }
 
@@ -102,6 +105,7 @@ export default function AddressDrawer({
   run,
   onSync,
   onSaved,
+  onRemoved,
   onClose,
 }: Props) {
   const drawer = useRef<HTMLDivElement>(null);
@@ -583,6 +587,11 @@ export default function AddressDrawer({
             </div>
           </section>
           <SyncJournal address={address} run={run} />
+          <RemoveAddress
+            id={address.id}
+            exchange={!!exchange}
+            onRemoved={() => onRemoved(address)}
+          />
         </div>
         <div className="transactions-drawer__foot">
           <span className="transactions-grow" />

@@ -611,7 +611,7 @@ export class ChainClassificationService {
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
         WHERE t."ownerId"=$1 AND w.network='bybit' AND w."accountId" IS NOT NULL
-          AND t.raw->>'kind'='trade' AND h.txid IS NULL
+          AND w."removedAt" IS NULL AND t.raw->>'kind'='trade' AND h.txid IS NULL
         ORDER BY t."blockTime", t.txid`,
       [owner],
     );
@@ -699,8 +699,8 @@ export class ChainClassificationService {
         FROM wallet_address_transactions t
         JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
-        WHERE t."ownerId"=$1 AND w."accountId" IS NOT NULL AND h.txid IS NULL
-          AND ((w.network='tron' AND t.asset IS NULL AND t.raw->>'contractType'=$2)
+        WHERE t."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
+          AND h.txid IS NULL AND ((w.network='tron' AND t.asset IS NULL AND t.raw->>'contractType'=$2)
             OR (w.network='bybit' AND t.raw->>'kind'='earn'))
         ORDER BY t."blockTime", t.txid`,
       [owner, TRON_REWARD_CONTRACT],
@@ -777,7 +777,8 @@ export class ChainClassificationService {
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
         LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
           AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE t."ownerId"=$1 AND (t.txid IN (SELECT txid FROM wallet_address_transactions
+        WHERE t."ownerId"=$1 AND w."removedAt" IS NULL
+          AND (t.txid IN (SELECT txid FROM wallet_address_transactions
             WHERE "ownerId"=$1 GROUP BY txid HAVING count(*) > 1)
           -- BYBIT-DEPOSIT: a wallet's leg and a Bybit record that names its hash alone.
           OR split_part(t.txid, '-', 1) IN (SELECT x.txid FROM wallet_address_transactions x
@@ -959,7 +960,7 @@ export class ChainClassificationService {
         LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
         LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
           AND v.txid=h.txid AND v.version=h."currentVersion"
-        WHERE t."ownerId"=$1 AND t."receivedUnits"<>t."sentUnits"
+        WHERE t."ownerId"=$1 AND w."removedAt" IS NULL AND t."receivedUnits"<>t."sentUnits"
           AND (h.txid IS NULL OR v.status='unclassified')
           -- A Bybit fill or Earn record is a trade or yield, never a transfer.
           AND coalesce(t.raw->>'kind', '') NOT IN ('trade', 'earn-flexible', 'earn-onchain')`,
@@ -986,7 +987,8 @@ export class ChainClassificationService {
           LEFT JOIN chain_transaction_classifications h ON h."addressId"=t."addressId" AND h.txid=t.txid
           LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
             AND v.txid=h.txid AND v.version=h."currentVersion"
-          WHERE t."ownerId"=$1 AND (v.status IS NULL OR v.status='unclassified'
+          WHERE t."ownerId"=$1 AND w."removedAt" IS NULL
+            AND (v.status IS NULL OR v.status='unclassified'
               OR ${recordGone('v', 'w."accountId"')})
             AND NOT EXISTS (SELECT 1 FROM ${stakeMoves} m WHERE t.asset IS NULL
               AND m."addressId"=t."addressId" AND m.txid=t.txid)

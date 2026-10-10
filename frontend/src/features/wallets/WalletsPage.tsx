@@ -28,7 +28,8 @@ import './wallets.css';
 // Wallets grouped the way the owner holds them (prototype "Wallets", M10): each account with
 // its tracked addresses, the coins entered by hand, and whether the chain agrees.
 export default function WalletsPage() {
-  const { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked } = useWallets();
+  const { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked } =
+    useWallets();
   const [adding, setAdding] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
@@ -220,6 +221,11 @@ export default function WalletsPage() {
           onSaved={(address, newAccount) => {
             replace(address);
             if (newAccount) void load(true);
+          }}
+          onRemoved={(address) => {
+            setOpenId(null);
+            forget(address.id);
+            void load(true);
           }}
           onClose={() => setOpenId(null)}
         />

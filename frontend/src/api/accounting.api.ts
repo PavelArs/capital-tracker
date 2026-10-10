@@ -44,6 +44,14 @@ export const accountingApi = {
     return response.data;
   },
 
+  /**
+   * WALLET-REMOVE: stops tracking a wallet that holds no recorded transaction (409 otherwise,
+   * with the reason in the body).
+   */
+  removeAccount: async (id: string): Promise<void> => {
+    await apiClient.delete(`/accounting/accounts/${encodeURIComponent(id)}`);
+  },
+
   /** WAL-RENAME, W1: the name and the kind change; what is recorded in the account stays. */
   updateAccount: async (
     id: string,

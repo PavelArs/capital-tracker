@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { Response } from 'express';
 import { CurrentUser, OwnerIdentity } from '../shared/decorators';
 import { AccountingService } from './accounting.service';
@@ -54,6 +65,11 @@ export class AccountingController {
     @Body() input: unknown,
   ) {
     return this.accounting.renameAccount(owner.userId, id, input);
+  }
+  @Delete('accounts/:id')
+  @HttpCode(204)
+  async removeAccount(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
+    await this.accounting.removeAccount(owner.userId, id);
   }
   @Get('accounts/:id')
   getAccount(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {

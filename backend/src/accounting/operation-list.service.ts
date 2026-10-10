@@ -325,7 +325,10 @@ export class OperationListService {
             AND h.txid=t.txid
           LEFT JOIN chain_transaction_classification_versions c ON c."addressId"=h."addressId"
             AND c.txid=h.txid AND c.version=h."currentVersion"
-          WHERE w."ownerId"=$1 AND c.status IS DISTINCT FROM 'deleted'`,
+          WHERE w."ownerId"=$1 AND c.status IS DISTINCT FROM 'deleted'
+            -- WALLET-REMOVE: an address stopped keeps only the rows whose answer made an entry.
+            AND (w."removedAt" IS NULL OR c."tradeId" IS NOT NULL OR c."rewardId" IS NOT NULL
+              OR c."transferId" IS NOT NULL OR c."swapId" IS NOT NULL)`,
         [owner],
       );
       // EST-AT-TIME: each chain transaction is valued at the price stored for its own time.

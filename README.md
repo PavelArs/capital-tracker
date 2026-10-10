@@ -228,8 +228,8 @@ Swagger/documentation endpoint is mounted, including in development.
 | Group       | Endpoints                                                                                                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
-| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, manual prices, portfolio value and history |
-| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/sync-runs`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
+| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, manual prices, portfolio value and history; `DELETE /accounting/accounts/:id` stops tracking a wallet that holds no recorded transaction |
+| Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `DELETE /wallet-addresses/:id` (stop tracking an address; its history stays), `POST /wallet-addresses/:id/sync`, `GET /wallet-addresses/:id/sync-runs`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
 | Health      | Public `GET /health` (minimal liveness); private `GET /health/details`                                                              |

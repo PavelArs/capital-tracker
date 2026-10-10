@@ -470,6 +470,30 @@ button.wallets-source__open:focus-visible {
   justify-self: start;
 }
 
+/* WALLET-REMOVE: the confirmation under "Stop tracking" in the address drawer. */
+.wallets-confirm {
+  display: grid;
+  gap: var(--sp-3);
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--warn-soft);
+  font-size: var(--fs-sm);
+}
+
+.wallets-confirm p {
+  margin: 0;
+}
+
+.wallets-confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.wallets-remove {
+  margin-top: var(--sp-2);
+}
+
 .wallets-journal {
   margin: 0 0 10px;
   padding: 0;

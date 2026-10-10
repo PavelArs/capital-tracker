@@ -155,7 +155,7 @@ export async function readChainMoves(
         AND h.txid=t.txid
       LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
         AND v.txid=h.txid AND v.version=h."currentVersion"
-      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
         AND (v.status IS NULL OR v.status='unclassified' OR (v.status='classified'
           AND v.type='other' AND v."tradeId" IS NULL AND v."rewardId" IS NULL
           AND v."transferId" IS NULL) OR ${recordGone('v', 'w."accountId"')})
@@ -175,8 +175,8 @@ export async function readChainMoves(
         AND h.txid=t.txid
       LEFT JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId"
         AND v.txid=h.txid AND v.version=h."currentVersion"
-      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w.network='bybit'
-        AND t.raw ? 'quoteAsset'
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
+        AND w.network='bybit' AND t.raw ? 'quoteAsset'
         AND (v.status IS NULL OR v.status='unclassified'
           OR (v.status='classified' AND v.type='other') OR ${recordGone('v', 'w."accountId"')})
       ORDER BY t."blockTime", t.txid`,
@@ -189,14 +189,15 @@ export async function readChainMoves(
           '0' AS "stakeUnits"
         FROM wallet_addresses w
         JOIN ${stakeMoves} m ON m."ownerId"=w."ownerId" AND m."addressId"=w.id
-        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND NOT EXISTS (
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
+          AND NOT EXISTS (
           SELECT 1 FROM wallet_address_transactions t
             WHERE t."addressId"=m."addressId" AND t.txid=m.txid)
       UNION ALL
       SELECT w."accountId", w.network, NULL, r."observedAt", r.units::text, '0'
         FROM wallet_addresses w
         JOIN ${stakeRewards} r ON r."ownerId"=w."ownerId" AND r."addressId"=w.id
-        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL`,
+        WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL`,
       [owner],
     );
   for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
@@ -225,8 +226,8 @@ export async function readChainMoves(
         AND v.txid=h.txid AND v.version=h."currentVersion"
       LEFT JOIN wallet_address_transactions p ON v.type='pool-withdrawal'
         AND p."addressId"=v."pairedAddressId" AND p.txid=v."pairedTxid"
-      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND v.status='classified'
-        AND v.type IN ('pool-deposit', 'pool-withdrawal')`,
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
+        AND v.status='classified' AND v.type IN ('pool-deposit', 'pool-withdrawal')`,
     [owner],
   );
   // The parts of one deposit are settled in the order they happened.
@@ -283,7 +284,7 @@ export async function ensureChainCoins(manager: EntityManager, owner: string): P
       JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
       CROSS JOIN LATERAL (SELECT t.asset UNION ALL
         SELECT t.raw->>'quoteAsset' WHERE w.network='bybit' AND t.raw ? 'quoteAsset') x
-      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
+      WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND w."removedAt" IS NULL
       ORDER BY w.network, x.asset, w.id`,
     [owner],
   );
@@ -316,7 +317,7 @@ export async function readValuationInputs(
     `SELECT a.id AS "accountId",a.name,j."coverageFrom"
       FROM manual_accounts a LEFT JOIN account_trade_journals j
         ON j."ownerId"=a."ownerId" AND j."accountId"=a.id
-      WHERE a."ownerId"=$1 ORDER BY a.id`,
+      WHERE a."ownerId"=$1 AND a."removedAt" IS NULL ORDER BY a.id`,
     [owner],
   );
   const ledgers: ConnectedLedgerCache = new Map();

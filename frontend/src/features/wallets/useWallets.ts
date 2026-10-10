@@ -82,6 +82,10 @@ export function useWallets() {
         : [...list, address];
     });
   }, []);
+  // WALLET-REMOVE: an address stopped leaves the list at once; the next load confirms it.
+  const forget = useCallback((id: string) => {
+    setAddresses((current) => (current ? current.filter((item) => item.id !== id) : current));
+  }, []);
   const setRun = useCallback((id: string, run: SyncRun | null) => {
     setRuns((current) => {
       const next = { ...current };
@@ -142,5 +146,5 @@ export function useWallets() {
     return () => window.clearInterval(timer);
   }, [backgroundSyncing, load]);
 
-  return { portfolio, addresses, kinds, failed, load, replace, runs, sync, asked };
+  return { portfolio, addresses, kinds, failed, load, replace, forget, runs, sync, asked };
 }

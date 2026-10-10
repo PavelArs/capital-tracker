@@ -225,6 +225,7 @@ function setup({
     <MemoryRouter initialEntries={[`/wallets/${account}`]}>
       <Routes>
         <Route path="/wallets/:accountId" element={<WalletPage />} />
+        <Route path="/wallets" element={<p>Wallets list</p>} />
       </Routes>
     </MemoryRouter>,
   );
@@ -408,6 +409,99 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     );
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('dialog', { name: 'Edit wallet' })).toBeNull();
+  });
+
+  it('WALLET-REMOVE asks first, then removes the wallet and goes back to the list', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    const remove = vi.spyOn(accountingApi, 'removeAccount').mockResolvedValue(undefined);
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    expect(dialog).toHaveTextContent('its address stops syncing');
+    expect(dialog).toHaveTextContent('A wallet that holds recorded transactions cannot be removed');
+    expect(remove).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
+    expect(remove).toHaveBeenCalledWith(trust);
+    expect(await screen.findByText('Wallets list')).toBeVisible();
+  });
+
+  it('WALLET-REMOVE keeps the wallet and says why when it holds recorded transactions', async () => {
+    const user = userEvent.setup();
+    setup();
+    await screen.findByRole('heading', { level: 2, name: 'Trust Wallet' });
+    const refused = new AxiosError('Conflict', 'ERR_BAD_REQUEST', undefined, undefined, {
+      status: 409,
+      statusText: 'Conflict',
+      data: { message: 'This wallet has recorded transactions, so it stays in your history.' },
+      headers: {},
+      config: { headers: new AxiosHeaders() },
+    });
+    vi.spyOn(accountingApi, 'removeAccount').mockRejectedValue(refused);
+
+    await user.click(screen.getByRole('button', { name: 'Remove' }));
+    const dialog = screen.getByRole('dialog', { name: 'Remove Trust Wallet?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Remove wallet' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This wallet has recorded transactions, so it stays in your history.',
+    );
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Remove Trust Wallet?' })).toBeNull();
+    expect(screen.getByRole('heading', { level: 2, name: 'Trust Wallet' })).toBeVisible();
+  });
+
+  it('WALLET-REMOVE stops tracking one address from its drawer after saying what stays', async () => {
+    const user = userEvent.setup();
+    setup();
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    await user.click(
+      within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+    );
+    const drawer = await screen.findByRole('dialog');
+    const remove = vi.spyOn(walletAddressesApi, 'remove').mockResolvedValue(undefined);
+
+    await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
+    const confirm = within(drawer).getByRole('group', { name: 'Remove this address' });
+    expect(confirm).toHaveTextContent('stay in your history');
+    expect(confirm).toHaveTextContent('Adding it again brings them back');
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }));
+    expect(within(drawer).queryByRole('group', { name: 'Remove this address' })).toBeNull();
+    expect(remove).not.toHaveBeenCalled();
+
+    await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
+    vi.mocked(walletAddressesApi.list).mockResolvedValue([]);
+    await user.click(
+      within(within(drawer).getByRole('group', { name: 'Remove this address' })).getByRole(
+        'button',
+        { name: 'Remove address' },
+      ),
+    );
+    expect(remove).toHaveBeenCalledWith(wallet(1).id);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Addresses' })).toBeNull());
+  });
+
+  it('WALLET-REMOVE tells a failed address removal and changes nothing', async () => {
+    const user = userEvent.setup();
+    setup();
+    const addresses = await screen.findByRole('region', { name: 'Addresses' });
+    await user.click(
+      within(addresses).getByRole('button', { name: `Savings ${wallet(1).address}` }),
+    );
+    const drawer = await screen.findByRole('dialog');
+    vi.spyOn(walletAddressesApi, 'remove').mockRejectedValue(new Error('offline'));
+
+    await user.click(within(drawer).getByRole('button', { name: 'Remove address…' }));
+    await user.click(
+      within(within(drawer).getByRole('group', { name: 'Remove this address' })).getByRole(
+        'button',
+        { name: 'Remove address' },
+      ),
+    );
+    expect(await within(drawer).findByText(/Could not reach the server/)).toBeVisible();
+    expect(screen.getByRole('dialog')).toBeVisible();
   });
 
   it('syncs every address of the wallet', async () => {

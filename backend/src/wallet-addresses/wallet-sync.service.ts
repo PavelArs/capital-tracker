@@ -84,7 +84,8 @@ export class WalletSyncService {
         const due: DueWallet[] = await this.source.query(
           `SELECT a.id, a."ownerId", a.network FROM wallet_addresses a
             LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
-            WHERE s.key IS NULL OR s."nextRunAt" IS NULL OR s."nextRunAt" <= $1
+            WHERE a."removedAt" IS NULL
+              AND (s.key IS NULL OR s."nextRunAt" IS NULL OR s."nextRunAt" <= $1)
             ORDER BY s."nextRunAt" ASC NULLS FIRST, a."createdAt", a.id LIMIT $2`,
           [now, WALLETS_PER_TICK],
         );

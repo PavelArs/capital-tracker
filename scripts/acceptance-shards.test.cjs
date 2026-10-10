@@ -71,6 +71,7 @@ const legacyChecks = [
   'stellar-wallets-db',
   'zcash-wallets-db',
   'evm-chains-db',
+  'wallet-removal-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

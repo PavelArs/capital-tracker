@@ -43,6 +43,7 @@ import {
   parseTransactionQuery,
   parseUpdate,
 } from './wallet-address-input';
+import { resumeTracking, stopTracking } from './wallet-removal';
 import { WalletSyncService } from './wallet-sync.service';
 
 interface AddressRow {
@@ -215,6 +216,7 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
       'alsoTracked', (SELECT coalesce(json_agg(json_build_object('id', o.id, 'address', o.address,
           'label', o.label) ORDER BY o."createdAt", o.id), '[]'::json)
         FROM wallet_addresses o WHERE o."ownerId" = a."ownerId" AND o.network = 'bitcoin'
+          AND o."removedAt" IS NULL
           AND o.address IN (SELECT y.address FROM wallet_xpub_addresses y
             WHERE y."walletId" = a.id))) AS derived
     FROM wallet_xpub_addresses x WHERE x."walletId" = a.id
@@ -628,23 +630,37 @@ export class WalletAddressService {
     const registration = parseRegistration(raw);
     if (registration.network === 'bybit') return this.registerBybit(owner, registration);
     const { network, address, accountId, label } = registration;
-    return this.source.transaction('READ COMMITTED', async (manager) => {
+    const result = await this.source.transaction('READ COMMITTED', async (manager) => {
       if (accountId) await this.account(manager, owner, accountId);
-      const inserted: { id: string }[] = await manager.query(
+      // WALLET-REMOVE: an address stopped before comes back with its own history and the
+      // account and name of this request; one still tracked is left as it is.
+      const inserted: { id: string; fresh: boolean }[] = await manager.query(
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT ("ownerId", network, address) DO NOTHING RETURNING id`,
+          ON CONFLICT ("ownerId", network, address) DO UPDATE SET "removedAt" = NULL,
+            "accountId" = EXCLUDED."accountId", label = EXCLUDED.label
+            WHERE wallet_addresses."removedAt" IS NOT NULL
+          RETURNING id, (xmax = 0) AS fresh`,
         [randomUUID(), owner, network, address, accountId, label],
       );
+      const [back] = inserted;
+      if (back && !back.fresh) {
+        await resumeTracking(manager, back.id);
+        if (accountId) await ensureChainCoins(manager, owner);
+      }
       const [row]: AddressRow[] = await manager.query(
         `${selectAddress} WHERE a."ownerId" = $1 AND a.network = $2 AND a.address = $3`,
         [owner, network, address],
       );
       return {
         created: inserted.length === 1,
+        revived: !!back && !back.fresh,
         value: summary((await withDust(manager, owner, [row]))[0]),
       };
     });
+    // An address now in an account may complete a transfer between own wallets (D7).
+    if (result.revived && accountId) await this.walletSync.linkOwnTransfers(owner);
+    return { created: result.created, value: result.value };
   }
 
   /**
@@ -683,7 +699,10 @@ export class WalletAddressService {
       const inserted: { id: string }[] = await manager.query(
         `INSERT INTO wallet_addresses (id, "ownerId", network, address, "accountId", label)
           VALUES ($1, $2, 'bybit', $3, $4, $5)
-          ON CONFLICT ("ownerId", network, address) DO NOTHING RETURNING id`,
+          ON CONFLICT ("ownerId", network, address) DO UPDATE SET "removedAt" = NULL,
+            "accountId" = EXCLUDED."accountId", label = EXCLUDED.label
+            WHERE wallet_addresses."removedAt" IS NOT NULL
+          RETURNING id`,
         [randomUUID(), owner, key.userId, input.accountId, input.label],
       );
       const [wallet]: { id: string }[] = await manager.query(
@@ -734,7 +753,7 @@ export class WalletAddressService {
         `UPDATE wallet_addresses SET
           "accountId" = CASE WHEN $3 THEN $4::uuid ELSE "accountId" END,
           label = CASE WHEN $5 THEN $6::varchar ELSE label END
-          WHERE "ownerId" = $1 AND id = $2 RETURNING id`,
+          WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL RETURNING id`,
         [
           owner,
           addressId,
@@ -796,11 +815,27 @@ export class WalletAddressService {
     });
   }
 
+  /**
+   * WALLET-REMOVE: stops tracking the address. Its transactions, the owner's answers and the
+   * entries they produced stay in the books; it only leaves the lists, the balances and the
+   * sync schedule, and adding it again brings its history back.
+   */
+  async remove(ownerId: string, id: string) {
+    const owner = parseUuid(ownerId);
+    const addressId = parseUuid(id);
+    await this.source.transaction('READ COMMITTED', async (manager) => {
+      await lockAccountingOwner(manager, owner);
+      const stopped = await stopTracking(manager, owner, { addressId });
+      if (stopped.length !== 1) throw new NotFoundException();
+    });
+  }
+
   async list(ownerId: string) {
     const owner = parseUuid(ownerId);
     return this.read(async (manager) => {
       const rows: AddressRow[] = await manager.query(
-        `${selectAddress} WHERE a."ownerId" = $1 ORDER BY a."createdAt", a.id`,
+        `${selectAddress} WHERE a."ownerId" = $1 AND a."removedAt" IS NULL
+          ORDER BY a."createdAt", a.id`,
         [owner],
       );
       return (await withDust(manager, owner, rows)).map((row) => summary(row));
@@ -909,7 +944,7 @@ export class WalletAddressService {
 
   private async address(manager: EntityManager, owner: string, id: string) {
     const [row]: AddressRow[] = await manager.query(
-      `${selectAddress} WHERE a."ownerId" = $1 AND a.id = $2`,
+      `${selectAddress} WHERE a."ownerId" = $1 AND a.id = $2 AND a."removedAt" IS NULL`,
       [owner, id],
     );
     if (!row) throw new NotFoundException();
@@ -921,7 +956,7 @@ export class WalletAddressService {
   private async account(manager: EntityManager, owner: string, id: string) {
     await lockAccountingOwner(manager, owner);
     const rows: unknown[] = await manager.query(
-      'SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 FOR KEY SHARE',
+      'SELECT 1 FROM manual_accounts WHERE "ownerId" = $1 AND id = $2 AND "removedAt" IS NULL FOR KEY SHARE',
       [owner, id],
     );
     if (rows.length === 0) throw new NotFoundException();

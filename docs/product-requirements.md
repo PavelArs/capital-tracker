@@ -455,6 +455,20 @@ I know where its value comes from.
   key or seed phrase, **and** a 12- or 24-word input in the address field is rejected
   without being stored or logged.
 
+**US-3.1a** As the owner I stop tracking an address or a wallet I no longer want.
+
+- WALLET-REMOVE: **Given** an address with loaded transactions, some answered **when**
+  the owner removes it and confirms **then** it leaves the Wallets lists, stops syncing
+  and its unanswered movements stop counting in balances and in the transactions to
+  classify, **and** nothing is deleted: its stored transactions, the owner's answers and
+  the entries they produced stay in the history; **when** the same address is added again
+  **then** its history is back and the unanswered movements count again.
+- WALLET-REMOVE-ACCOUNT: **Given** a wallet **when** the owner removes it **then** its
+  addresses are removed the same way and it leaves the lists, **but** a wallet that holds
+  recorded transactions is refused with that reason, because they are the history the
+  cost basis and profit depend on; its addresses can still be removed one by one.
+- A removed Bybit account also loses its stored API key.
+
 **US-3.2** As the owner my wallets sync themselves.
 
 - SYNC-BG: **Given** a wallet with 3 transactions at the stubbed provider **when** the
