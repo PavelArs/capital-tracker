@@ -266,7 +266,7 @@ describe('audit history screen (BR 14)', () => {
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce(page([]));
     const first = renderPage();
-    expect(screen.getByText('Loading the change history…')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Loading the change history' })).toBeInTheDocument();
     first.unmount();
     renderPage();
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load the change history');

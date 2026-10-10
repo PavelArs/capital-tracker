@@ -1,14 +1,15 @@
+import { cachedReads } from '@api/cached-reads';
 import type { AssetType, PortfolioAsset } from '@api/portfolio-assets.api';
-import {
-  type AccountingCurrency,
-  type AssetValuation,
-  type PortfolioValuation,
-  portfolioValuationApi,
+import type {
+  AccountingCurrency,
+  AssetValuation,
+  PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, type TokenChains, useTokenChains, withChains } from '../shell/token-chains';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddAssetDialog from './AddAssetDialog';
@@ -329,7 +330,11 @@ function AssetsList({
 
 // Whole-portfolio value, allocation and the assets table (portfolio-valuation PV-5, AST-3).
 export default function PortfolioPage() {
-  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
+  const [asked] = useAskedCurrency();
+  // Coming back to the page paints the last answer at once; the load below replaces it.
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -337,7 +342,6 @@ export default function PortfolioPage() {
   const phone = useNarrowScreen();
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
-  const [asked] = useAskedCurrency();
   const chains = useTokenChains();
   const latest = useRef(0);
 
@@ -347,13 +351,15 @@ export default function PortfolioPage() {
       const request = ++latest.current;
       setFailed(false);
       setRefreshFailed(false);
-      if (!quiet) setPortfolio(null);
+      // What was kept for this currency stays on screen while the fresh answer loads.
+      const kept = cachedReads.portfolio.last(asked);
+      if (!quiet) setPortfolio(kept ?? null);
       try {
-        const next = await portfolioValuationApi.get(asked);
+        const next = await cachedReads.portfolio.load(asked);
         if (request === latest.current) setPortfolio(next);
       } catch {
         if (request !== latest.current) return;
-        if (quiet) setRefreshFailed(true);
+        if (quiet || kept) setRefreshFailed(true);
         else setFailed(true);
       }
     },
@@ -401,9 +407,7 @@ export default function PortfolioPage() {
           </button>
         </section>
       ) : portfolio === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading portfolio…
-        </section>
+        <PageSkeleton label="Loading portfolio" show={['stats', 'rows']} />
       ) : assets.length === 0 ? (
         <section className="shell-card shell-empty" aria-labelledby="portfolio-empty">
           <h2 id="portfolio-empty">No assets yet</h2>
@@ -414,7 +418,7 @@ export default function PortfolioPage() {
         <>
           {refreshFailed && (
             <p className="portfolio-warn" role="alert">
-              Could not refresh the values after adding the asset; showing the last loaded ones.{' '}
+              Could not refresh the values; showing the last loaded ones.{' '}
               <button type="button" className="shell-button" onClick={() => void load(true)}>
                 Refresh
               </button>

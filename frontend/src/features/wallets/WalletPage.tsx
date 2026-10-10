@@ -1,4 +1,5 @@
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList } from '@api/operations.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -7,6 +8,7 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, tokenChains, withChains } from '../shell/token-chains';
 import { day, signedAmount, statusLabels, typeLabel } from '../transactions/operation-format';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
@@ -116,9 +118,7 @@ function WalletTransactions({
           </button>
         </div>
       ) : operations === 'loading' ? (
-        <p className="portfolio-none" role="status">
-          Loading transactions…
-        </p>
+        <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
         <p className="portfolio-none">No transactions yet.</p>
       ) : (
@@ -171,16 +171,20 @@ export default function WalletPage() {
   const [openId, setOpenId] = useState<string | null>(null);
   const narrow = useNarrowScreen();
 
-  const [operations, setOperations] = useState<OperationsState>('loading');
+  const [operations, setOperations] = useState<OperationsState>(
+    () => cachedReads.operations.last(asked) ?? 'loading',
+  );
   const latestOperations = useRef(0);
   const loadOperations = useCallback(async () => {
     const request = ++latestOperations.current;
-    setOperations('loading');
+    // What was kept stays on screen while the fresh list loads.
+    const kept = cachedReads.operations.last(asked);
+    setOperations(kept ?? 'loading');
     try {
-      const list = await operationsApi.list(asked);
+      const list = await cachedReads.operations.load(asked);
       if (request === latestOperations.current) setOperations(list);
     } catch {
-      if (request === latestOperations.current) setOperations('failed');
+      if (request === latestOperations.current && !kept) setOperations('failed');
     }
   }, [asked]);
   useEffect(() => {
@@ -230,9 +234,7 @@ export default function WalletPage() {
           </button>
         </section>
       ) : portfolio === null || addresses === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading wallet…
-        </section>
+        <PageSkeleton label="Loading wallet" show={['stats', 'rows']} />
       ) : !account ? (
         <section className="shell-card shell-empty" aria-labelledby="wallet-missing">
           <h2 id="wallet-missing">Wallet not found</h2>

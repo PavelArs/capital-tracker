@@ -9,7 +9,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { poolCandidates } from './ClassifyForm';
-import TransactionsPage, { forgetLastList } from './TransactionsPage';
+import TransactionsPage from './TransactionsPage';
 
 // Synthetic ids, names and amounts only.
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -169,7 +169,6 @@ const cellTexts = (row: HTMLElement) =>
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  forgetLastList();
 });
 afterEach(cleanup);
 

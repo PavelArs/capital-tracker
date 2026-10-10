@@ -1,10 +1,10 @@
+import { cachedReads } from '@api/cached-reads';
 import {
   type HistoryPeriod,
   historyPeriods,
   type PortfolioHistory,
-  portfolioHistoryApi,
 } from '@api/portfolio-history.api';
-import { type PortfolioValuation, portfolioValuationApi } from '@api/portfolio-valuation.api';
+import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
@@ -209,13 +209,18 @@ function AboutChart() {
 // (record-portfolio-snapshots); what needs the owner, top assets and allocation from the
 // current valuation and sync status (show-dashboard-attention).
 export default function DashboardPage() {
-  const [history, setHistory] = useState<PortfolioHistory | null>(null);
+  const [asked] = useAskedCurrency();
+  // Coming back to the page paints the last answers at once; the loads below replace them.
+  const [history, setHistory] = useState<PortfolioHistory | null>(
+    () => cachedReads.history.last('1M', asked) ?? null,
+  );
   const [failed, setFailed] = useState(false);
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
   const [adding, setAdding] = useState(false);
-  const [asked] = useAskedCurrency();
   const latest = useRef(0);
-  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
   const [portfolioFailed, setPortfolioFailed] = useState(false);
   const latestPortfolio = useRef(0);
   const status = useAttentionSources();
@@ -225,7 +230,7 @@ export default function DashboardPage() {
     const request = ++latest.current;
     setFailed(false);
     try {
-      const next = await portfolioHistoryApi.get(period, asked);
+      const next = await cachedReads.history.load(period, asked);
       if (request === latest.current) setHistory(next);
     } catch {
       if (request === latest.current) setFailed(true);
@@ -241,7 +246,7 @@ export default function DashboardPage() {
     const request = ++latestPortfolio.current;
     setPortfolioFailed(false);
     try {
-      const next = await portfolioValuationApi.get(asked);
+      const next = await cachedReads.portfolio.load(asked);
       if (request === latestPortfolio.current) setPortfolio(next);
     } catch {
       if (request === latestPortfolio.current) setPortfolioFailed(true);

@@ -9,6 +9,7 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
+import { forgetReads } from '@api/read-cache';
 import { type JournalState, type TradeReceipt, tradesApi } from '@api/trades.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -263,7 +264,7 @@ describe('PV-UI Portfolio values every asset', () => {
     const user = userEvent.setup();
     renderAt('/portfolio');
     expect(screen.getByRole('heading', { level: 1, name: 'Portfolio' })).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent(/loading portfolio/i);
+    expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
     expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
 
     const summary = screen.getByRole('region', { name: 'Portfolio summary' });
@@ -903,13 +904,63 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     });
     const user = userEvent.setup();
     renderAt('/portfolio');
-    expect(screen.getByRole('status')).toHaveTextContent(/loading portfolio/i);
+    expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
     expect(await screen.findByRole('alert')).toHaveTextContent(/could not load your portfolio/i);
     fail = false;
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('No assets yet')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.getAllByRole('button', { name: 'Add asset' }).length).toBeGreaterThan(0);
+  });
+});
+
+describe('CACHE-UI coming back to a page shows the last answer at once', () => {
+  const later = (assets: AssetValuation[]) => portfolio(assets, { totalValue: '123456' });
+
+  it('paints the kept portfolio without a skeleton, then swaps in the fresh answer', async () => {
+    let refresh: (value: PortfolioValuation) => void = () => undefined;
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockReturnValueOnce(new Promise((resolve) => (refresh = resolve)));
+    const first = renderAt('/portfolio');
+    expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    first.unmount();
+
+    renderAt('/portfolio');
+    expect(screen.queryByRole('status', { name: 'Loading portfolio' })).toBeNull();
+    expect(screen.getByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    expect(portfolioValuationApi.get).toHaveBeenCalledTimes(2);
+
+    refresh(later([bitcoin, cash]));
+    expect(await screen.findByRole('row', { name: /^US dollar/ })).toBeInTheDocument();
+  });
+
+  it('keeps the kept values and says so when the refresh fails', async () => {
+    vi.spyOn(portfolioValuationApi, 'get')
+      .mockResolvedValueOnce(portfolio([bitcoin]))
+      .mockRejectedValueOnce(httpError(500));
+    const first = renderAt('/portfolio');
+    expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    first.unmount();
+
+    renderAt('/portfolio');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/could not refresh the values/i);
+    expect(screen.getByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+  });
+
+  it('does not paint another currency or anything older than a change by the owner', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const first = renderAt('/portfolio');
+    expect(await screen.findByRole('row', { name: /^Bitcoin/ })).toBeInTheDocument();
+    first.unmount();
+
+    renderAt('/portfolio?currency=EUR');
+    expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
+    cleanup();
+
+    forgetReads();
+    renderAt('/portfolio');
+    expect(screen.getByRole('status', { name: 'Loading portfolio' })).toBeInTheDocument();
   });
 });
 

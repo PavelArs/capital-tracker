@@ -265,3 +265,79 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
+
+/* Loading: grey blocks in the layout of the page, instead of a sentence. */
+.shell-bone {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--r-sm);
+  background: var(--line);
+  animation: shell-pulse 1.4s ease-in-out infinite;
+}
+
+.shell-bone--round {
+  flex: none;
+  border-radius: 50%;
+}
+
+.shell-skeleton {
+  display: grid;
+  gap: var(--sp-5);
+}
+
+.shell-skeleton__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-4);
+}
+
+.shell-skeleton__stat,
+.shell-skeleton__card {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.shell-skeleton__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+
+.shell-skeleton__toolbar,
+.shell-skeleton__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+
+.shell-skeleton__row {
+  justify-content: flex-start;
+}
+
+.shell-skeleton__row > :last-child:not(.shell-skeleton__lines) {
+  margin-left: auto;
+}
+
+.shell-skeleton__rows {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+.shell-skeleton__lines {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+}
+
+@keyframes shell-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell-bone {
+    animation: none;
+  }
+}

@@ -1,6 +1,7 @@
-import { CLASSIFICATION_CHANGED, operationsApi } from '@api/operations.api';
-import { SYNC_CHANGED, type SyncSource, syncStatusApi } from '@api/sync-status.api';
-import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { cachedReads } from '@api/cached-reads';
+import { CLASSIFICATION_CHANGED } from '@api/operations.api';
+import { SYNC_CHANGED, type SyncSource } from '@api/sync-status.api';
+import type { WalletAddress } from '@api/wallet-addresses.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 // Background sync and the price job run every few minutes; a minute keeps the block honest.
@@ -24,21 +25,27 @@ const settled = <T>(result: PromiseSettledResult<T>): T | null =>
  * that fails leaves its part unknown (null) instead of keeping an older answer.
  */
 export function useAttentionSources(): AttentionSources {
-  const [state, setState] = useState<AttentionSources>({
-    loaded: false,
-    toClassify: null,
-    sources: null,
-    wallets: null,
-    now: new Date(),
+  // Coming back to the page shows the last answers while the reads below run again.
+  const [state, setState] = useState<AttentionSources>(() => {
+    const toClassify = cachedReads.toClassify.last() ?? null;
+    const sources = cachedReads.sources.last() ?? null;
+    const wallets = cachedReads.wallets.last() ?? null;
+    return {
+      loaded: toClassify !== null && sources !== null && wallets !== null,
+      toClassify,
+      sources,
+      wallets,
+      now: new Date(),
+    };
   });
   const latest = useRef(0);
 
   const load = useCallback(async () => {
     const request = ++latest.current;
     const [toClassify, sources, wallets] = await Promise.allSettled([
-      operationsApi.needsClassification(),
-      syncStatusApi.get(),
-      walletAddressesApi.list(),
+      cachedReads.toClassify.load(),
+      cachedReads.sources.load(),
+      cachedReads.wallets.load(),
     ]);
     if (request !== latest.current) return;
     setState({

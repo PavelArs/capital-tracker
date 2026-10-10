@@ -1,5 +1,6 @@
 import type { ApiError } from '@shared/types';
 import axios, { AxiosError, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { forgetReads } from './read-cache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
@@ -83,7 +84,11 @@ apiClient.interceptors.request.use(
 
 // Response interceptor for error handling
 apiClient.interceptors.response.use(
-  (response: AxiosResponse) => response,
+  (response: AxiosResponse) => {
+    // A change by the owner (or a sign-in or sign-out) makes every kept answer old.
+    if (isUnsafeRequest(response.config)) forgetReads();
+    return response;
+  },
   async (error: AxiosError<ApiError>) => {
     const pageHandlesError =
       ['/auth/login', '/auth/mfa', '/auth/logout', '/auth/csrf'].includes(
@@ -114,6 +119,7 @@ apiClient.interceptors.response.use(
         requestAuthentication.get(error.config) === authenticationVersion
       ) {
         setCsrfToken(null);
+        forgetReads();
         // React navigation preserves in-memory commands; the original request still rejects.
         unauthorizedRegistration?.notify();
       }

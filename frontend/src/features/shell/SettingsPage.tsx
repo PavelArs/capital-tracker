@@ -1,4 +1,5 @@
-import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
+import { cachedReads } from '@api/cached-reads';
+import type { FxRatesReport } from '@api/fx-rates.api';
 import { announceClassificationChange } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
@@ -45,27 +46,32 @@ function ratesHint(report: FxRatesReport | null | 'failed'): string {
 
 /** Main currency of every screen; stored for the owner, so it survives logout (CUR-SWITCH). */
 function MainCurrency() {
-  const [saved, setSaved] = useState<AccountingCurrency | null>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'failed' | 'save-failed'>(
-    'loading',
+  // Coming back shows the settings last read while they are read again.
+  const [saved, setSaved] = useState<AccountingCurrency | null>(
+    () => cachedReads.settings.last()?.mainCurrency ?? null,
   );
-  const [rates, setRates] = useState<FxRatesReport | null | 'failed'>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'saving' | 'failed' | 'save-failed'>(
+    () => (cachedReads.settings.last() ? 'ready' : 'loading'),
+  );
+  const [rates, setRates] = useState<FxRatesReport | null | 'failed'>(
+    () => cachedReads.rates.last() ?? null,
+  );
   const { setMain } = useMainCurrency();
   const latest = useRef(0);
   useEffect(() => {
     let active = true;
-    ownerSettingsApi
-      .get()
+    cachedReads.settings
+      .load()
       .then((settings) => {
         if (!active) return;
         setSaved(settings.mainCurrency);
         setState('ready');
       })
-      .catch(() => active && setState('failed'));
-    fxRatesApi
-      .get()
+      .catch(() => active && setState((current) => (current === 'ready' ? current : 'failed')));
+    cachedReads.rates
+      .load()
       .then((report) => active && setRates(report))
-      .catch(() => active && setRates('failed'));
+      .catch(() => active && setRates((current) => current ?? 'failed'));
     return () => {
       active = false;
     };
@@ -146,22 +152,23 @@ function parseDust(text: string): string | null | undefined {
 
 /** CLS-DUST: incoming wallet transactions worth less than this skip "Needs classification". */
 function DustThreshold() {
-  const [saved, setSaved] = useState<string | null | undefined>(undefined);
-  const [text, setText] = useState('');
+  const kept = cachedReads.settings.last();
+  const [saved, setSaved] = useState<string | null | undefined>(kept?.dustThresholdUsd);
+  const [text, setText] = useState(kept?.dustThresholdUsd ?? '');
   const [state, setState] = useState<
     'loading' | 'ready' | 'saving' | 'saved' | 'invalid' | 'failed' | 'save-failed'
-  >('loading');
+  >(kept ? 'ready' : 'loading');
   useEffect(() => {
     let active = true;
-    ownerSettingsApi
-      .get()
+    cachedReads.settings
+      .load()
       .then((settings) => {
         if (!active) return;
         setSaved(settings.dustThresholdUsd);
         setText(settings.dustThresholdUsd ?? '');
         setState('ready');
       })
-      .catch(() => active && setState('failed'));
+      .catch(() => active && setState((current) => (current === 'ready' ? current : 'failed')));
     return () => {
       active = false;
     };
