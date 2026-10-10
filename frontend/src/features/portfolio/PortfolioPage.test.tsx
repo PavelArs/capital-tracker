@@ -320,6 +320,11 @@ describe('PV-UI Portfolio values every asset', () => {
     );
 
     const allocation = screen.getByRole('region', { name: 'Allocation' });
+    // The assets table comes first; how they are split follows it (review item P1).
+    const assetsCard = screen.getByRole('region', { name: 'Assets' });
+    expect(
+      assetsCard.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const grouping = within(allocation).getByRole('radiogroup', { name: 'Group allocation by' });
     const slices = () =>
       within(allocation)
@@ -502,6 +507,29 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await within(dialog).findByLabelText('Wallet or account');
     return dialog;
   };
+
+  it('shows a field problem when the field loses focus and clears it once fixed', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    const name = within(dialog).getByLabelText(/^Name/);
+    await user.click(name);
+    expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
+    await user.tab();
+    expect(within(dialog).getByText('Enter a name')).toBeInTheDocument();
+    await user.type(name, 'Gold');
+    expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
+  });
+
+  it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
 
   it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
     let assets = [bitcoin, toncoin];
@@ -738,7 +766,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await within(dialog).findByRole('alert');
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await user.click(
+      within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
+    );
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });
@@ -1003,6 +1033,51 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
         name: 'Bitcoin position value and cost basis, past 7 days, in USD',
       }),
     ).toBeInTheDocument();
+  });
+
+  it('ASSET-NO-COST leaves the cost line out and offers the transactions when no purchase price is known', async () => {
+    const unpriced = {
+      ...bitcoin,
+      costBasis: null,
+      unknownCostQuantity: '1.2',
+      knownCostSubtotal: '0',
+      averageBuyPrice: null,
+      unrealizedPnl: null,
+      unrealizedReturnPercent: null,
+    };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([unpriced], { costBasis: null, unknownCostCount: 1 }),
+    );
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: [],
+    });
+    vi.mocked(assetHistoryApi.get).mockImplementation(async (instrumentId, period) => ({
+      ...emptyHistory(instrumentId),
+      period,
+      points: [
+        { ...point('2026-09-19T00:00:00.000Z', '50000', '0'), costComplete: false },
+        { ...point('2026-10-05T12:00:00.000Z', '96000', '0', '1.2'), costComplete: false },
+      ],
+    }));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const chart = await screen.findByRole('region', { name: 'Position value over time' });
+    await waitFor(() =>
+      expect(within(chart).getByLabelText('Chart legend')).toHaveTextContent(
+        'Position valueCost basis unknown',
+      ),
+    );
+    await within(chart).findByRole('img');
+    expect(chart.querySelector('.dashboard-chart__invested')).toBeNull();
+    const details = screen.getByRole('region', { name: 'Position' });
+    expect(within(details).getByRole('note')).toHaveTextContent('has no purchase price');
+    expect(within(details).getByRole('link', { name: 'Review transactions' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC',
+    );
   });
 
   it('keeps the chosen period when an earlier period answers later', async () => {

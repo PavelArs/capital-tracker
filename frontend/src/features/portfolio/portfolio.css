@@ -244,6 +244,33 @@
   font-size: var(--fs-sm);
 }
 
+.portfolio-warn--action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.portfolio-warn--action > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.portfolio-warn--action .shell-icon {
+  flex: none;
+  color: var(--warn);
+}
+
+.portfolio-warn--action .shell-button {
+  flex: none;
+  text-decoration: none;
+}
+
+@media (max-width: 559.98px) {
+  .portfolio-warn--action {
+    flex-wrap: wrap;
+  }
+}
+
 .portfolio-warn-text {
   display: block;
   color: var(--warn);
@@ -519,6 +546,11 @@ a.portfolio-asset__name:hover {
 }
 
 .portfolio-dialog__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
   padding: 18px 22px 0;
 }
 
@@ -528,7 +560,13 @@ a.portfolio-asset__name:hover {
   font-weight: 600;
 }
 
+.portfolio-dialog__head h2 {
+  flex: 1;
+  min-width: 0;
+}
+
 .portfolio-dialog__head .shell-note {
+  flex-basis: 100%;
   margin-top: 8px;
 }
 
@@ -704,6 +742,17 @@ a.portfolio-asset__name:hover {
 
 .portfolio-chip--asset {
   padding-left: 4px;
+}
+
+.portfolio-input.portfolio-chip-select {
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  height: 32px;
+  padding: 0 28px 0 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
 }
 
 .portfolio-more summary {
@@ -891,11 +940,6 @@ a.portfolio-asset__name:hover {
   .portfolio-dialog--wide .portfolio-dialog__foot {
     flex: none;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-  }
-
-  /* Portfolio: the assets come before how they are split. */
-  .portfolio-allocation-slot {
-    order: 1;
   }
 }
 

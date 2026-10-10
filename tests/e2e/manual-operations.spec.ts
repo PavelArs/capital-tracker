@@ -81,10 +81,13 @@ test('MANUAL-OPS-UI: add a buy without a journal, sell only what is available, d
   const sell = await openDialog('Add transaction');
   await sell.getByRole('radio', { name: 'Sell' }).check();
   await sell.getByLabel('Date').fill('2025-04-01');
+  // The balance on the date is looked up once the date field loses focus.
+  await sell.getByLabel('Date').blur();
   await expect(
     sell.getByText(`Available in ${accountName}: 0.2 ${symbol} · Use all`),
   ).toBeVisible();
   await sell.getByLabel('Amount').fill('0.3');
+  await sell.getByLabel('Amount').blur();
   await expect(sell.getByRole('alert')).toHaveText(
     `Only 0.2 ${symbol} is available in ${accountName} on Apr 1, 2025 · Use all`,
   );
