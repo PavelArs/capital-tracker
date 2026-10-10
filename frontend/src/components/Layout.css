@@ -297,8 +297,11 @@ a.shell-sync:hover {
   .shell {
     display: block;
   }
+  /* The strip stays at the top while the page scrolls; sheets and drawers (z-index 80+) cover it. */
   .shell-nav {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 60;
     display: grid;
     grid-template-areas:
       "brand owner"
