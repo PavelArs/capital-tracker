@@ -82,11 +82,23 @@ export const valueOptional = (kind: EntryKind) => kind === 'reward' || kind === 
 
 export const MAX_COMMENT_LENGTH = 500;
 
+/**
+ * "1,500" could be one and a half or fifteen hundred: a comma followed by exactly three digits
+ * after an integer part that does not start with 0 is not read either way.
+ */
+export const ambiguousComma = (value: string) =>
+  /^[1-9]\d{0,2},\d{3}$/.test(value.replace(/[\s ]/g, ''));
+
 /** "1 000,50" as typed becomes "1000.50"; anything else that is not a decimal is null. */
 export function decimal(value: string): string | null {
+  if (ambiguousComma(value)) return null;
   const text = value.replace(/[\s ]/g, '').replace(',', '.');
   return /^\d+(\.\d+)?$/.test(text) ? text : null;
 }
+
+/** What to tell the owner about a number the form refused: the comma case needs its own words. */
+export const numberProblem = (value: string, fallback: string) =>
+  ambiguousComma(value) ? 'Write it without a comma between thousands: 1500, or 1.5' : fallback;
 export const positive = (value: string) => {
   const text = decimal(value);
   return text !== null && Number(text) > 0 ? text : null;
