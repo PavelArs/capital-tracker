@@ -10,6 +10,7 @@ import { newRequestId } from '../accounting/feedback';
 import { dependentOf } from '../portfolio/AddTransactionDialog';
 import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
+import CloseButton from '../shell/CloseButton';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
 import MiddleEllipsis from './MiddleEllipsis';
 import {
@@ -208,7 +209,7 @@ function facts(
   const rows: [string, ReactNode][] = [['Date', moment(operation.occurredAt)]];
   const { wallet, chain } = operation;
   const walletLink = (place: NonNullable<Operation['account']>) => (
-    <Link key={place.id} to={`/wallets/${place.id}`}>
+    <Link key={place.id} className="shell-link" to={`/wallets/${place.id}`}>
       {place.name}
     </Link>
   );
@@ -757,14 +758,7 @@ export default function OperationDrawer({
       >
         <div className="transactions-drawer__head">
           <h2 id="operation-title">{title(operation)}</h2>
-          <button
-            ref={closeButton}
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
         {chain && classifying ? (
           <ClassifyForm

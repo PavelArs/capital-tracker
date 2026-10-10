@@ -533,25 +533,31 @@
   font-size: var(--fs-xs);
 }
 
+/* Phones: the search spans the row, the other filters sit two to a row with their label
+   above (Asset | Account, Type | Source, From | To). */
 @media (max-width: 639.98px) {
   .transactions-filters {
-    align-items: stretch;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--sp-2);
   }
 
   .transactions-filter {
-    flex: 1 1 100%;
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    font-size: var(--fs-xs);
   }
 
-  .transactions-filter > span {
-    width: 56px;
-  }
-
-  .transactions-filter select {
-    flex: 1;
+  .transactions-filter select,
+  .transactions-filter input {
+    width: 100%;
     min-width: 0;
   }
 
   .transactions-search {
+    grid-column: 1 / -1;
+    order: -1;
     width: 100%;
   }
 }
