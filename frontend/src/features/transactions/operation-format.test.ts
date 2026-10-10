@@ -111,7 +111,18 @@ describe('the explorer page of a transaction', () => {
     expect(explorerUrl(`0x${hex}`, 'base')).toBe(`https://basescan.org/tx/0x${hex}`);
     expect(explorerUrl(`0x${hex}`, 'arbitrum')).toBe(`https://arbiscan.io/tx/0x${hex}`);
     expect(explorerUrl(`0x${hex}`, 'optimism')).toBe(`https://optimistic.etherscan.io/tx/0x${hex}`);
-    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism'] as const) {
+    expect(explorerUrl(`0x${hex}`, 'polygon')).toBe(`https://polygonscan.com/tx/0x${hex}`);
+    expect(explorerUrl(`0x${hex}`, 'bnb')).toBe(`https://bscscan.com/tx/0x${hex}`);
+    expect(explorerUrl(`0x${hex}`, 'avalanche')).toBe(`https://snowtrace.io/tx/0x${hex}`);
+    for (const network of [
+      'ethereum',
+      'base',
+      'arbitrum',
+      'optimism',
+      'polygon',
+      'bnb',
+      'avalanche',
+    ] as const) {
       expect(hashOf(`${hex}-3`, network)).toBe(`0x${hex}`);
     }
     expect(hashOf(hex, 'tron')).toBe(hex);

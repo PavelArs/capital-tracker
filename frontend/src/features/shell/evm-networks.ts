@@ -6,6 +6,9 @@ export const evmNetworks = [
   'base',
   'arbitrum',
   'optimism',
+  'polygon',
+  'bnb',
+  'avalanche',
 ] as const satisfies readonly Network[];
 export type EvmNetwork = (typeof evmNetworks)[number];
 

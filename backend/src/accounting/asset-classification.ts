@@ -23,6 +23,9 @@ export const marketTickers: readonly string[] = [
   'ZEC',
   'TRX',
   'XLM',
+  'POL',
+  'BNB',
+  'AVAX',
 ];
 
 const bad = (): never => {

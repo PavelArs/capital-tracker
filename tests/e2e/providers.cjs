@@ -56,8 +56,8 @@ let cbr = null;
 const etherscanKey = 'acceptance-etherscan-key';
 const initialEthereum = () => ({ tip: 20000100, normal: [], internal: [], tokens: [], pools: {}, fault: null, requests: 0 });
 let ethereum = initialEthereum();
-// EVM-MULTICHAIN: the other chains of the same Etherscan V2 key by chain id (8453 Base, 42161 Arbitrum One, 10 OP Mainnet).
-const evmChainIds = new Set(['8453', '42161', '10']);
+// EVM-MULTICHAIN: the other chains of the same Etherscan V2 key by chain id (8453 Base, 42161 Arbitrum One, 10 OP Mainnet, 137 Polygon, 56 BNB Smart Chain, 43114 Avalanche).
+const evmChainIds = new Set(['8453', '42161', '10', '137', '56', '43114']);
 let evmChains = new Map();
 // Synthetic Solana mainnet JSON-RPC (track-solana-wallets): the finalized slot and raw
 // getTransaction results exactly as the probe posts them. Signatures and token accounts are

@@ -5,6 +5,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
+import { isEvm } from '../shell/evm-networks';
 import { networkIcon, networks as tracked } from './networks';
 import { accountNamed, checkAddress, checkApiKey } from './wallets';
 
@@ -35,6 +36,24 @@ const networks = [
     symbol: 'ETH',
     name: 'OP Mainnet',
     detail: 'The same 0x address. ETH and every token',
+  },
+  {
+    key: 'polygon',
+    symbol: 'POL',
+    name: 'Polygon',
+    detail: 'The same 0x address. POL and every token',
+  },
+  {
+    key: 'bnb',
+    symbol: 'BNB',
+    name: 'BNB Smart Chain',
+    detail: 'The same 0x address. BNB and every token',
+  },
+  {
+    key: 'avalanche',
+    symbol: 'AVAX',
+    name: 'Avalanche C-Chain',
+    detail: 'The same 0x address. AVAX and every token',
   },
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL and every token' },
   { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
@@ -410,13 +429,15 @@ export default function AddWalletDialog({
                   <p className="wallets-note">
                     One Ethereum address holds ETH and tokens. The app tracks ETH and every ERC-20
                     token on Ethereum mainnet, named as the chain names them. The same address on
-                    Base, Arbitrum One or OP Mainnet is added as a wallet of its own.
+                    another chain (Base, Arbitrum One, OP Mainnet, Polygon, BNB Smart Chain or
+                    Avalanche) is added as a wallet of its own.
                   </p>
-                ) : network === 'base' || network === 'arbitrum' || network === 'optimism' ? (
+                ) : network !== null && isEvm(network) ? (
                   <p className="wallets-note">
-                    Paste the same 0x address you use on Ethereum. The app tracks ETH and every
-                    token this address holds on {tracked[network].name}, named as the chain names
-                    them; its other chains are separate wallets.
+                    Paste the same 0x address you use on Ethereum. The app tracks{' '}
+                    {tracked[network].symbol} and every token this address holds on{' '}
+                    {tracked[network].name}, named as the chain names them; its other chains are
+                    separate wallets.
                   </p>
                 ) : network === 'solana' ? (
                   <p className="wallets-note">
