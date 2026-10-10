@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ExchangeRatesCacheService } from '../cache/exchange-rates-cache.service';
 import {
+  databaseSize,
   dbPool,
   dependencyUp,
   sourceLastSuccess,
@@ -70,6 +71,10 @@ export class MetricsCollector {
           LEFT JOIN sync_sources s ON s.key = 'wallet:' || a.id::text
           GROUP BY 1, 2`,
       );
+      const [{ bytes }]: { bytes: string }[] = await this.source.query(
+        'SELECT pg_database_size(current_database()) AS bytes',
+      );
+      databaseSize.set(Number(bytes));
       dependencyUp.set({ dependency: 'postgres' }, 1);
 
       sourceLastSuccess.reset();
