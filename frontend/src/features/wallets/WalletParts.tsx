@@ -741,6 +741,19 @@ export function withoutHiddenTokens(holdings: Holding[], addresses: WalletAddres
   );
 }
 
+/**
+ * TOKEN-HIDE: the tickers of tokens every address that holds them leaves out. Their coins are
+ * no assets to pick: tickers are unique per token, so a real coin never matches.
+ */
+export function hiddenTokenSymbols(addresses: WalletAddress[]): Set<string> {
+  const hidden = new Set(
+    addresses.flatMap((address) => (address.hiddenTokens ?? []).map((token) => token.symbol)),
+  );
+  for (const address of addresses)
+    for (const balance of address.balances ?? []) hidden.delete(balance.symbol);
+  return hidden;
+}
+
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
   return new Set(addresses.flatMap(addressAssets));

@@ -6,12 +6,14 @@ import { ownedTransfersApi } from '@api/owned-transfers.api';
 import { type PortfolioAsset, portfolioAssetsApi } from '@api/portfolio-assets.api';
 import { portfolioValuationApi } from '@api/portfolio-valuation.api';
 import { type DependentOperation, tradesApi } from '@api/trades.api';
+import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
+import { hiddenTokenSymbols } from '../wallets/WalletParts';
 import { unitPrice } from './add-asset';
 import {
   addDecimal,
@@ -274,11 +276,20 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   useEffect(() => {
     let live = true;
-    Promise.all([portfolioAssetsApi.listAll(), journalAccounts()])
-      .then(([allAssets, withJournal]) => {
+    // TOKEN-HIDE: the coins of tokens the wallets leave out are not offered; the list still shows
+    // them when the wallets cannot be read, and an edit keeps the asset it was recorded with.
+    const hiddenTokens = walletAddressesApi
+      .list()
+      .then(hiddenTokenSymbols)
+      .catch(() => new Set<string>());
+    Promise.all([portfolioAssetsApi.listAll(), journalAccounts(), hiddenTokens])
+      .then(([allAssets, withJournal, hidden]) => {
         if (!live) return;
         const tradable = allAssets.filter(
-          (asset) => asset.assetType !== 'fiat' || asset.id === initial.instrumentId,
+          (asset) =>
+            asset.id === initial.instrumentId ||
+            (asset.assetType !== 'fiat' &&
+              !(asset.assetType === 'crypto' && asset.symbol && hidden.has(asset.symbol))),
         );
         setAssets(tradable);
         setAllAssets(allAssets);
