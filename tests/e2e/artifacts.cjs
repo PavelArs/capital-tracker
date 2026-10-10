@@ -5,7 +5,9 @@ const { resolve } = require('node:path');
 const { renderAcceptanceProxy } = require('../../scripts/render-acceptance-proxy.cjs');
 const root = resolve(__dirname, '../..');
 const compose = ['compose', '-p', 'capital-tracker-e2e', '-f', resolve(__dirname, 'compose.yml')];
-const docker = (...args) => execFileSync('docker', args, { cwd: root, encoding: 'utf8', timeout: 30000 }).trim();
+// A bound against a hung Docker call, not a speed check: on a self-hosted runner whose disk
+// another runner is loading images onto, `docker run --rm` alone has taken over 30 seconds.
+const docker = (...args) => execFileSync('docker', args, { cwd: root, encoding: 'utf8', timeout: 120000 }).trim();
 const inspect = (id) => JSON.parse(docker('inspect', id))[0];
 const backend = inspect(docker(...compose, 'ps', '-q', 'backend'));
 assert.equal(backend.Config.User, 'node', 'MFA runtime must remain non-root');

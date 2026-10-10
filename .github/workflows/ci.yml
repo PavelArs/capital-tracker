@@ -22,13 +22,18 @@ env:
   NODE_VERSION: "26.10.0"
 
 jobs:
+  # Owner decision 2026-10-06: with the repository variable CI_SELF_HOSTED set to 'true' every
+  # job below runs on the owner's self-hosted CI runners (label ci; ENG-008 keeps every job's
+  # runs-on the same expression). Without it, or for a pull request from a fork or from
+  # Dependabot, they run on GitHub's runners, so untrusted code never reaches the owner's
+  # machine. The deploy runner (label deploy) never takes these jobs (docs/self-hosted-runner.md).
   # ============================================
   # Backend Jobs
   # ============================================
   backend-check:
     name: Backend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: backend
@@ -54,7 +59,7 @@ jobs:
   backend-test:
     name: Backend Tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: backend
@@ -90,7 +95,7 @@ jobs:
   backend-build:
     name: Backend Build
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs: [backend-check]
     defaults:
       run:
@@ -123,7 +128,7 @@ jobs:
   frontend-check:
     name: Frontend Lint & Format
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: frontend
@@ -149,7 +154,7 @@ jobs:
   frontend-test:
     name: Frontend Tests
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     defaults:
       run:
         working-directory: frontend
@@ -185,7 +190,7 @@ jobs:
   frontend-build:
     name: Frontend Build
     if: github.event_name != 'push'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs: [frontend-check]
     defaults:
       run:
@@ -224,7 +229,7 @@ jobs:
   # their receipts before scanning the same images.
   release-images:
     name: Build Release Images
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -274,6 +279,13 @@ jobs:
           set -euo pipefail
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | zstd -T0 -3 -q -o release-images/images.tar.zst
           (cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)
+          # The owner's runners share the image store instead of the artifact storage quota; the
+          # checksum still travels in the artifact, so the shards detect a changed archive.
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }
+            install -d "/srv/ci-images/$GITHUB_RUN_ID"
+            mv release-images/images.tar.zst "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst"
+          fi
           ls -l release-images
       - name: Upload the exact images for the acceptance shards
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -322,6 +334,12 @@ jobs:
           node scripts/validate-manual-mvp-release.cjs candidate/manifest.json "$CANDIDATE_COMMIT" "$CANDIDATE_RUN_ID" deploy/manual-mvp-infrastructure-pins.json
           docker save capital-tracker-backend:acceptance capital-tracker-frontend:acceptance capital-tracker-postgres:acceptance redis:8.10.2-alpine3.23 | gzip > candidate/images.tar.gz
           sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256
+          # On the owner's runners the archive goes to the image store the deploy runner reads.
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then
+            mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }
+            install -d "/srv/ci-images/$GITHUB_RUN_ID"
+            mv candidate/images.tar.gz "/srv/ci-images/$GITHUB_RUN_ID/images.tar.gz"
+          fi
       - name: Upload the release candidate
         if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -334,7 +352,7 @@ jobs:
 
   critical-acceptance:
     name: Critical acceptance (${{ matrix.shard }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 90
     permissions:
       contents: read
@@ -363,9 +381,13 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+      # GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
+      # has them preinstalled by its owner and gives the job no sudo.
       - name: Install the Playwright browser
         if: startsWith(matrix.shard, 'browser-')
-        run: pnpm exec playwright install --with-deps chromium
+        env:
+          PLAYWRIGHT_DEPS: ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }}
+        run: pnpm exec playwright install $PLAYWRIGHT_DEPS chromium
       - name: Download the built release images
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -374,8 +396,9 @@ jobs:
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
-          zstd -dc release-images/images.tar.zst | docker load
+          zstd -dc < release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Run critical real release acceptance
@@ -397,14 +420,15 @@ jobs:
           path: |
             playwright-report/
             test-results/
-          retention-days: 7
-          # Diagnostics only: a re-run of a failed shard may replace its earlier report.
+          # Diagnostics only, kept briefly to stay within the private repository's artifact
+          # storage; a re-run of a failed shard may replace its earlier report.
+          retention-days: 2
           overwrite: true
 
   # The scans need only the built images, so they run beside the shards rather than after them.
   image-security:
     name: Image Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     permissions:
       contents: read
@@ -423,8 +447,9 @@ jobs:
       - name: Load and verify the exact built images
         run: |
           set -euo pipefail
+          if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi
           (cd release-images && sha256sum -c images.tar.zst.sha256)
-          zstd -dc release-images/images.tar.zst | docker load
+          zstd -dc < release-images/images.tar.zst | docker load
           rm release-images/images.tar.zst
           node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"
       - name: Scan the backend image
@@ -494,7 +519,7 @@ jobs:
   # Passes only when every shard passed on the built images and the scan job passed on them.
   docker-build:
     name: Acceptance Receipt and Image Security
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -531,7 +556,7 @@ jobs:
 
   spec-check:
     name: Specification and Engineering Gates
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     if: github.event_name != 'push'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -547,7 +572,7 @@ jobs:
 
   dependency-audit:
     name: Production Dependency Audit
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     if: github.event_name != 'push'
     timeout-minutes: 10
     steps:
@@ -564,7 +589,7 @@ jobs:
   # It gates nothing, so a cache outage cannot hold back a release.
   playwright-cache:
     name: Warm Playwright Browser Cache
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 15
     continue-on-error: true
     if: github.event_name == 'push'
@@ -592,7 +617,7 @@ jobs:
   # request passed every job above, critical acceptance shards included, on its last head.
   merged-pr-ci:
     name: Merged Pull Request CI
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     timeout-minutes: 60
     if: github.event_name == 'push'
     permissions:
@@ -611,7 +636,7 @@ jobs:
 
   ci-status:
     name: CI Status
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_SELF_HOSTED == 'true' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && fromJSON('["self-hosted","linux","x64","ci"]') || 'ubuntu-latest' }}
     needs:
       - backend-check
       - backend-test

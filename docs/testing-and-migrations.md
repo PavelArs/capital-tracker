@@ -53,7 +53,11 @@ In CI the critical profile runs in parallel shards on images built once:
   runs `node scripts/acceptance.mjs images --manifest release-images/manifest.json`
   (the same Compose build of backend and frontend) and uploads `docker save` of the
   four images, compressed with zstd, with their schema-v3 manifest; the manifest also goes
-  alone into `release-images-manifest` for the receipt job.
+  alone into `release-images-manifest` for the receipt job. On the owner's self-hosted
+  runners the archive goes to the shared image store `/srv/ci-images/<run id>/` instead
+  of the artifact (the private repository's artifact storage cannot hold it); its
+  checksum stays in the artifact and every consumer verifies it before loading
+  ([self-hosted runners](self-hosted-runner.md)).
 - Each shard loads them, refuses any ID that differs from the manifest and runs
   `node scripts/acceptance.mjs critical --shard <name> --images release-images/manifest.json`
   on its own stack. `probes-1` and `probes-2` run the 31 real checks of the serial

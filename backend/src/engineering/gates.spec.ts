@@ -48,6 +48,7 @@ type WorkflowStep = {
 };
 type WorkflowJob = {
   name?: string;
+  'runs-on'?: string;
   needs?: string | string[];
   if?: string;
   steps?: WorkflowStep[];
@@ -409,10 +410,14 @@ const shardNames = ['probes-1', 'probes-2', 'browser-1', 'browser-2', 'browser-3
 const shardJobNames = shardNames.map((shard) => `Critical acceptance (${shard})`);
 const mergedPrStep = 'Require a successful full pull request CI run';
 const exportStepName = 'Export the release candidate images';
+const imageStoreLink =
+  'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then ln -s "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst" release-images/images.tar.zst; fi';
 const loadImages = [
   'set -euo pipefail',
+  imageStoreLink,
   '(cd release-images && sha256sum -c images.tar.zst.sha256)',
-  'zstd -dc release-images/images.tar.zst | docker load',
+  // zstd ignores a symbolic link given as a file name, so the stored archive is read from stdin.
+  'zstd -dc < release-images/images.tar.zst | docker load',
   'rm release-images/images.tar.zst',
   'node scripts/acceptance-shards.cjs verify-images release-images/manifest.json "$GITHUB_SHA" "$GITHUB_RUN_ID"',
 ];
@@ -475,7 +480,12 @@ describe('ENG-005: pull request acceptance preserves security; main promotes onl
     const steps = shard.steps ?? [];
     const browser = steps.filter((step) => step.run?.includes('playwright install'));
     expect(browser).toHaveLength(1);
-    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install --with-deps chromium');
+    expect(browser[0].run?.trim()).toBe('pnpm exec playwright install $PLAYWRIGHT_DEPS chromium');
+    // GitHub's runners install Chromium's system packages with sudo; the self-hosted runner
+    // has them preinstalled by its owner and grants the job no sudo.
+    expect(expression(browser[0].env?.PLAYWRIGHT_DEPS)).toBe(
+      "runner.environment == 'github-hosted' && '--with-deps' || ''",
+    );
     expect(expression(browser[0].if)).toBe("startsWith(matrix.shard, 'browser-')");
     // The browser comes from a cache keyed on the installed Playwright version; the install
     // still runs after it, so a stale or missing cache only costs the download.
@@ -928,6 +938,202 @@ else process.exit(9);
     expect(step.run).toContain(
       'test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$GITHUB_SHA"',
     );
+  });
+});
+
+// Owner decisions 2026-10-05/06: every CI job may run on the owner's self-hosted runner.
+describe('ENG-008: only trusted runs reach the self-hosted runner', () => {
+  const ciJobs = Object.keys(workflow('ci').jobs);
+  const selfHosted = ['self-hosted', 'linux', 'x64', 'ci'];
+  const deployRunner = ['self-hosted', 'linux', 'x64', 'deploy'];
+  let ci: Workflow;
+
+  beforeAll(() => {
+    ci = workflow('ci');
+  });
+
+  // Evaluates a runs-on expression the way Actions does for these operators: a missing
+  // property is null, && and || return an operand, fromJSON parses its argument.
+  function runner(source: string | undefined, vars: Record<string, string>, github: unknown) {
+    if (!source?.trim().startsWith('${{')) return source;
+    const body = expression(source)
+      .replace(/\bfromJSON\(/g, 'JSON.parse(')
+      .replace(/([!=])=/g, '$1==')
+      .replace(/(\w)\.(?=[A-Za-z_])/g, '$1?.');
+    expect(body).not.toMatch(/[;`]|\$\{/);
+    return new Function('vars', 'github', `return (${body});`)(vars, github);
+  }
+
+  const repository = 'owner/capital-tracker';
+  const pullRequest = (headRepository: string, author: string) => ({
+    event_name: 'pull_request',
+    repository,
+    event: {
+      pull_request: { head: { repo: { full_name: headRepository } }, user: { login: author } },
+    },
+  });
+  const cases: [string, Record<string, string>, unknown, unknown][] = [
+    [
+      'switch off: same-repository pull request',
+      {},
+      pullRequest(repository, 'owner'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch off: push to main',
+      {},
+      { event_name: 'push', repository, event: {} },
+      'ubuntu-latest',
+    ],
+    [
+      'switch set to another value',
+      { CI_SELF_HOSTED: 'yes' },
+      pullRequest(repository, 'owner'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch on: same-repository pull request',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest(repository, 'owner'),
+      selfHosted,
+    ],
+    [
+      'switch on: push to main',
+      { CI_SELF_HOSTED: 'true' },
+      { event_name: 'push', repository, event: {} },
+      selfHosted,
+    ],
+    [
+      'switch on: manual dispatch',
+      { CI_SELF_HOSTED: 'true' },
+      { event_name: 'workflow_dispatch', repository, event: {} },
+      selfHosted,
+    ],
+    [
+      'switch on: pull request from a fork',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest('someone/capital-tracker', 'someone'),
+      'ubuntu-latest',
+    ],
+    [
+      'switch on: Dependabot pull request',
+      { CI_SELF_HOSTED: 'true' },
+      pullRequest(repository, 'dependabot[bot]'),
+      'ubuntu-latest',
+    ],
+  ];
+
+  it('ENG-008-A covers every CI job, the aggregate and the main-only jobs included', () => {
+    expect([...ciJobs].sort()).toEqual([...requiredJobs, 'playwright-cache', 'ci-status'].sort());
+  });
+
+  describe.each(ciJobs)('ENG-008-A %s', (job) => {
+    it.each(cases)('%s', (_case, vars, github, expected) => {
+      expect(runner(ci.jobs[job]['runs-on'], vars, github)).toEqual(expected);
+    });
+  });
+
+  // The deploy holds the dispatcher key: only its own runner may take it, and that runner
+  // never takes a CI job, whose code comes from branches and dependencies.
+  const deployCases: [string, Record<string, string>, unknown][] = [
+    ['switches off', {}, 'ubuntu-latest'],
+    ['only the CI switch on', { CI_SELF_HOSTED: 'true' }, 'ubuntu-latest'],
+    ['deploy switch set to another value', { DEPLOY_SELF_HOSTED: 'yes' }, 'ubuntu-latest'],
+    ['deploy switch on', { DEPLOY_SELF_HOSTED: 'true' }, deployRunner],
+    ['both switches on', { CI_SELF_HOSTED: 'true', DEPLOY_SELF_HOSTED: 'true' }, deployRunner],
+  ];
+
+  describe.each(Object.keys(workflow('cd').jobs))('ENG-008-D deploy job %s', (job) => {
+    it.each(deployCases)('%s', (_case, vars, expected) => {
+      for (const event of ['workflow_run', 'workflow_dispatch']) {
+        const github = { event_name: event, repository, event: {} };
+        expect(runner(workflow('cd').jobs[job]['runs-on'], vars, github)).toEqual(expected);
+      }
+    });
+  });
+
+  it('ENG-008-D CI and deploy runners share no distinguishing label', () => {
+    expect(selfHosted).not.toContain('deploy');
+    expect(deployRunner).not.toContain('ci');
+  });
+
+  // The runner user has no sudo except one sudoers rule for exactly this command
+  // (docs/self-hosted-runner.md); any other sudo would fail there.
+  it('ENG-008-C the only sudo in CI is the root ownership test the runner allows', () => {
+    const sudo = Object.values(ci.jobs).flatMap((job) =>
+      (job.steps ?? []).filter((step) => /\bsudo\b/.test(step.run ?? '')),
+    );
+    expect(sudo.map((step) => step.run?.trim())).toEqual([
+      'sudo python3 -B -m unittest discover -s tests/security -p manual_mvp_dispatch_flow_test.py -k test_application_uid_is_accepted_only_at_delegated_paths',
+    ]);
+  });
+
+  // A private repository's artifact storage cannot hold the image archives, so the owner's
+  // runners pass them through a shared store; the checksum still travels in the artifact.
+  it('ENG-008-E self-hosted runs keep image archives out of artifacts but verify them', () => {
+    const lines = (step: WorkflowStep | undefined) =>
+      (step?.run ?? '')
+        .trim()
+        .split('\n')
+        .map((line) => line.trim());
+    const build = ci.jobs['release-images'].steps ?? [];
+    const save = lines(
+      build.find((step) => step.name === 'Save the exact images for the acceptance shards'),
+    );
+    const checksum = save.indexOf(
+      '(cd release-images && sha256sum images.tar.zst > images.tar.zst.sha256)',
+    );
+    const move = save.indexOf(
+      'mv release-images/images.tar.zst "/srv/ci-images/$GITHUB_RUN_ID/images.tar.zst"',
+    );
+    expect(checksum).toBeGreaterThan(0);
+    expect(move).toBeGreaterThan(checksum);
+    const storeMounted =
+      "mountpoint -q /srv/ci-images || { echo '::error::The shared image store /srv/ci-images is not mounted (docs/self-hosted-runner.md)'; exit 1; }";
+    // A missing mount must fail the build, not fill the runner's own disk unseen.
+    expect(save.slice(move - 3, move)).toEqual([
+      'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+      storeMounted,
+      'install -d "/srv/ci-images/$GITHUB_RUN_ID"',
+    ]);
+    const exported = lines(build.find((step) => step.name === exportStepName));
+    const sum = exported.indexOf(
+      'sha256sum candidate/images.tar.gz > candidate/images.tar.gz.sha256',
+    );
+    const moveCandidate = exported.indexOf(
+      'mv candidate/images.tar.gz "/srv/ci-images/$GITHUB_RUN_ID/images.tar.gz"',
+    );
+    expect(sum).toBeGreaterThan(0);
+    expect(moveCandidate).toBeGreaterThan(sum);
+    expect(exported.slice(moveCandidate - 3, moveCandidate)).toEqual([
+      'if [[ $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+      storeMounted,
+      'install -d "/srv/ci-images/$GITHUB_RUN_ID"',
+    ]);
+    // The checksum file stays in the uploaded directories.
+    expect(save.join('\n')).not.toMatch(/mv release-images\/images\.tar\.zst\.sha256/);
+    expect(exported.join('\n')).not.toMatch(/mv candidate\/images\.tar\.gz\.sha256/);
+    // The deploy links the stored archive only when the artifact lacks it, then checks it
+    // against the artifact's checksum before loading anything.
+    const download = lines(
+      (workflow('cd').jobs.deploy.steps ?? []).find(
+        (step) => step.name === 'Download and verify the tested candidate',
+      ),
+    );
+    const link = download.indexOf(
+      'ln -s "/srv/ci-images/$RUN_ID/images.tar.gz" candidate/images.tar.gz',
+    );
+    expect(download[link - 1]).toBe(
+      'if [[ ! -e candidate/images.tar.gz && $RUNNER_ENVIRONMENT == self-hosted ]]; then',
+    );
+    expect(download.indexOf('sha256sum -c candidate/images.tar.gz.sha256')).toBeGreaterThan(link);
+    expect(download.at(-1)).toBe('sha256sum -c candidate/images.tar.gz.sha256');
+  });
+
+  it('ENG-008-B pull requests never trigger with base-repository privileges', () => {
+    for (const name of ['ci', 'cd']) {
+      expect(Object.keys(workflow(name).on)).not.toContain('pull_request_target');
+    }
   });
 });
 
