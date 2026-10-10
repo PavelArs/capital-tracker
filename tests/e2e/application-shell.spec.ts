@@ -12,7 +12,7 @@ async function fitsViewport(page: Page) {
     .toBeLessThanOrEqual(1);
 }
 
-test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout', async ({
+test('SHELL-UI: real owner login, responsive keyboard navigation, older screens reached from Settings and logout', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
@@ -205,20 +205,34 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
-  // SHELL-001-A: only the screens no new section covers yet stay under the open Legacy group.
-  const legacy = nav.locator('details', { has: page.getByText('Legacy', { exact: true }) });
-  await expect(legacy).toHaveAttribute('open', '');
-  await expect(legacy.getByRole('link')).toHaveCount(2);
+  // G1: no Legacy group in the sidebar; the screens no new section covers yet are reached from
+  // Settings, which stays the current section while one of them is open.
+  await expect(nav.getByText('Legacy', { exact: true })).toHaveCount(0);
+  await expect(nav.locator('a[href^="/manual-"]')).toHaveCount(0);
+  const openOlder = async (name: string) => {
+    await nav.getByRole('link', { name: 'Settings', exact: true }).click();
+    await page
+      .getByRole('region', { name: 'Older screens' })
+      .getByRole('link', { name, exact: true })
+      .click();
+  };
+  await nav.getByRole('link', { name: 'Settings', exact: true }).click();
+  const older = page.getByRole('region', { name: 'Older screens' });
+  await expect(older.getByRole('link')).toHaveCount(2);
   for (const [name, path] of [
-    ['Ручные счета', '/manual-accounts'],
-    ['Ручные цены', '/manual-prices'],
+    ['Open manual accounts', '/manual-accounts'],
+    ['Open manual prices', '/manual-prices'],
   ] as const) {
-    await expect(legacy.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
+    await expect(older.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
   }
   await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
 
-  await legacy.getByRole('link', { name: 'Ручные счета', exact: true }).click();
+  await older.getByRole('link', { name: 'Open manual accounts', exact: true }).click();
   await expect(page).toHaveURL(`${origin}/manual-accounts`);
+  await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  );
   await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
   await page.getByLabel('Название счета', { exact: true }).fill('Основной счет');
@@ -233,7 +247,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   const created = await createdResponse.json();
   await page.goto('/');
   await expect(page).toHaveURL(`${origin}/dashboard`);
-  await legacy.getByRole('link', { name: 'Ручные счета', exact: true }).click();
+  await openOlder('Open manual accounts');
   await expect(page.locator(`a[href="/manual-accounts/${created.id}"]`)).toContainText(
     'Основной счет',
   );
@@ -242,7 +256,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
     await page.setViewportSize({ width, height: 900 });
     await expect(menuButton).toHaveCount(0);
     await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
-    const accountLink = nav.getByRole('link', { name: 'Ручные счета', exact: true });
+    const accountLink = nav.getByRole('link', { name: 'Settings', exact: true });
     await expect(accountLink).toHaveAttribute('aria-current', 'page');
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     // The strip scrolls the current section into view instead of hiding it behind a menu.
@@ -260,9 +274,9 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
       .toBe(true);
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
-    await nav.getByRole('link', { name: 'Ручные цены', exact: true }).click();
+    await openOlder('Open manual prices');
     await expect(page).toHaveURL(`${origin}/manual-prices`);
-    await nav.getByRole('link', { name: 'Ручные счета', exact: true }).click();
+    await openOlder('Open manual accounts');
     await expect(page).toHaveURL(`${origin}/manual-accounts`);
     await fitsViewport(page);
   }
@@ -271,7 +285,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
     await page.setViewportSize({ width, height: 900 });
     await expect(menuButton).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'Ручные счета', exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toBeVisible();
     await fitsViewport(page);
   }
   const skip = page.getByRole('link', { name: 'Skip to content', exact: true });

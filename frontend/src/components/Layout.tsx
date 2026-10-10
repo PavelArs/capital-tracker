@@ -3,17 +3,40 @@ import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
-import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
+import { isOlderScreenPath, shellSections } from '@features/shell/navigation';
 import SyncIndicator from '@features/shell/SyncIndicator';
 import { useNeedsClassification } from '@features/transactions/useNeedsClassification';
 import { isAxiosError } from 'axios';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import '@fontsource-variable/jetbrains-mono';
 import '@fontsource-variable/onest';
 import '@features/shell/tokens.css';
 import './Layout.css';
+
+/** A section link; `current` marks it on a page that belongs to the section without being it. */
+function SectionLink({
+  to,
+  current,
+  onClick,
+  children,
+}: {
+  to: string;
+  current: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return current ? (
+    <Link to={to} aria-current="page" onClick={onClick}>
+      {children}
+    </Link>
+  ) : (
+    <NavLink to={to} onClick={onClick}>
+      {children}
+    </NavLink>
+  );
+}
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -26,14 +49,8 @@ export default function Layout() {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
   const toClassify = useNeedsClassification();
-  // Open by default: the owner still works in these screens until they are replaced.
-  const [legacyOpen, setLegacyOpen] = useState(true);
   const menuRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    if (isLegacyPath(pathname)) setLegacyOpen(true);
-  }, [pathname]);
 
   // Phones show the sections as a swipeable strip: keep the current one in view, also after a
   // turn of the device.
@@ -88,7 +105,12 @@ export default function Layout() {
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections.map((section) => (
               <li key={section.path}>
-                <NavLink to={withCurrency(section.path, asked)} onClick={followLink}>
+                <SectionLink
+                  to={withCurrency(section.path, asked)}
+                  // The older screens Settings lists are part of it.
+                  current={section.path === '/preferences' && isOlderScreenPath(pathname)}
+                  onClick={followLink}
+                >
                   <Icon name={section.icon} />
                   {section.label}
                   {section.path === '/transactions' && toClassify !== null && toClassify > 0 && (
@@ -100,26 +122,10 @@ export default function Layout() {
                       {toClassify}
                     </span>
                   )}
-                </NavLink>
+                </SectionLink>
               </li>
             ))}
           </ul>
-          <details
-            className="shell-nav__legacy"
-            open={legacyOpen}
-            onToggle={(event) => setLegacyOpen(event.currentTarget.open)}
-          >
-            <summary>Legacy</summary>
-            <ul>
-              {legacyLinks.map(([path, label]) => (
-                <li key={path}>
-                  <NavLink to={path} onClick={followLink}>
-                    {label}
-                  </NavLink>
-                </li>
-              ))}
-            </ul>
-          </details>
           <SyncIndicator onFollow={followLink} />
         </div>
         <div className="shell-owner">
