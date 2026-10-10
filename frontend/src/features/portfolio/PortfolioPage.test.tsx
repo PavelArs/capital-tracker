@@ -1005,6 +1005,51 @@ describe('ASSET-UI the asset page shows its chart, transactions and daily change
     ).toBeInTheDocument();
   });
 
+  it('ASSET-NO-COST leaves the cost line out and offers the transactions when no purchase price is known', async () => {
+    const unpriced = {
+      ...bitcoin,
+      costBasis: null,
+      unknownCostQuantity: '1.2',
+      knownCostSubtotal: '0',
+      averageBuyPrice: null,
+      unrealizedPnl: null,
+      unrealizedReturnPercent: null,
+    };
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(
+      portfolio([unpriced], { costBasis: null, unknownCostCount: 1 }),
+    );
+    vi.mocked(operationsApi.list).mockResolvedValue({
+      at: '2026-10-05T12:00:00.000Z',
+      quoteCurrency: 'USD',
+      needsClassificationCount: 0,
+      dustThresholdUsd: null,
+      operations: [],
+    });
+    vi.mocked(assetHistoryApi.get).mockImplementation(async (instrumentId, period) => ({
+      ...emptyHistory(instrumentId),
+      period,
+      points: [
+        { ...point('2026-09-19T00:00:00.000Z', '50000', '0'), costComplete: false },
+        { ...point('2026-10-05T12:00:00.000Z', '96000', '0', '1.2'), costComplete: false },
+      ],
+    }));
+    renderAt(`/portfolio/${bitcoin.instrumentId}`);
+    const chart = await screen.findByRole('region', { name: 'Position value over time' });
+    await waitFor(() =>
+      expect(within(chart).getByLabelText('Chart legend')).toHaveTextContent(
+        'Position valueCost basis unknown',
+      ),
+    );
+    await within(chart).findByRole('img');
+    expect(chart.querySelector('.dashboard-chart__invested')).toBeNull();
+    const details = screen.getByRole('region', { name: 'Position' });
+    expect(within(details).getByRole('note')).toHaveTextContent('has no purchase price');
+    expect(within(details).getByRole('link', { name: 'Review transactions' })).toHaveAttribute(
+      'href',
+      '/transactions?asset=BTC',
+    );
+  });
+
   it('keeps the chosen period when an earlier period answers later', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     let answerMonth: (history: AssetHistory) => void = () => undefined;
