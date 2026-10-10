@@ -45,16 +45,19 @@ function services(db) {
   const make = (file, name, ...rest) =>
     new (require(`/app/backend/dist/accounting/${file}.js`)[name])(db, ...rest);
   const trades = make('trade.service', 'TradeService');
+  const rewards = make('asset-reward.service', 'AssetRewardService');
   return {
     accounting: make('accounting.service', 'AccountingService'),
     trades,
+    rewards,
+    history: make('audit-history.service', 'AuditHistoryService'),
     operations: make('operation-list.service', 'OperationListService'),
     portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
     classifications: make(
       'chain-classification.service',
       'ChainClassificationService',
       trades,
-      make('asset-reward.service', 'AssetRewardService'),
+      rewards,
       make('owned-transfer.service', 'OwnedTransferService'),
       make('asset-swap.service', 'AssetSwapService'),
     ),
@@ -769,6 +772,211 @@ async function paidFromAnotherWallet(db, s, owner, f) {
   console.log('PASS CLS-PAID');
 }
 
+// CLS-DUPLICATE: records the owner added by hand and the transactions of a wallet that repeat
+// them. Unanswered, both count; the proposal replaces the record with the wallet's transaction,
+// which says what the record said, in one step.
+async function duplicates(db, s, owner) {
+  stage = 'CLS-DUPLICATE a hand-added buy and the receipt of the same coins count twice';
+  const dup = await account(s, owner, 'Duplicates');
+  const elsewhere = await account(s, owner, 'Elsewhere');
+  const w = await wallet(db, owner, dup, 'ethereum', `0x${'cd'.repeat(20)}`);
+  const instrument = async (symbol) =>
+    (await db.query('SELECT id FROM accounting_instruments WHERE "ownerId"=$1 AND symbol=$2', [owner, symbol]))[0].id;
+  const eth = await instrument('ETH');
+  const revision = async (id) => (await journal(s, owner, id))?.journalRevision ?? 0;
+  const manual = async (id, side, at, quantity, grossUsd, more = {}) =>
+    (await s.trades.create(owner, id, {
+      requestId: randomUUID(),
+      expectedJournalRevision: await revision(id),
+      instrumentId: more.instrumentId ?? eth,
+      side,
+      occurredAt: at,
+      quantity,
+      grossUsd,
+      feeUsd: '0',
+      ...more.fields,
+    })).value.trade.tradeId;
+  const receipt = async (n, at, wei, direction = 'in') =>
+    raw(db, owner, w, {
+      txid: hash(n),
+      height: n,
+      at,
+      received: direction === 'in' ? wei : '0',
+      sent: direction === 'in' ? '0' : wei,
+      fee: '0',
+      direction,
+    });
+  const proposals = async () => (await s.classifications.duplicateProposals(owner)).proposals;
+  const replace = (txid, version, proposal, over = {}) =>
+    classify(s, owner, w, txid, {
+      expectedVersion: version,
+      classification: proposal.classification,
+      ...(proposal.comment === null ? {} : { comment: proposal.comment }),
+      replaces: { kind: proposal.record.kind, id: proposal.record.id, version: proposal.record.version },
+      ...over,
+    });
+  const headKind = async (tradeId) =>
+    (await db.query(
+      `SELECT v.kind FROM account_trades t JOIN account_trade_versions v ON v."ownerId"=t."ownerId"
+        AND v."accountId"=t."accountId" AND v."tradeId"=t.id AND v.version=t."currentVersion" WHERE t.id=$1`,
+      [tradeId],
+    ))[0].kind;
+  const versions = async () =>
+    (await db.query('SELECT count(*)::int AS n FROM chain_transaction_classification_versions'))[0].n;
+
+  const bought = await manual(dup, 'buy', '2026-09-20T10:00:00.000Z', '0.4', '1200');
+  await receipt(31, '2026-09-20T10:20:00.000Z', '400000000000000000');
+  assert.equal(await held(s, owner, 'ETH', dup), coins('0.8'), 'The same 0.4 ETH count twice');
+  let found = await proposals();
+  assert.equal(found.length, 1, 'One duplicate is proposed');
+  const [one] = found;
+  assert.deepEqual([one.coin, one.direction, one.record.kind, one.record.id, one.record.type], ['ETH', 'in', 'trade', bought, 'buy']);
+  assert.equal(one.transaction.txid, hash(31));
+  same(one.transaction.quantity, '0.4');
+  assert.equal(one.classification.type, 'buy');
+  same(one.classification.amount, '1200');
+  assert.equal(one.classification.currency, 'USD');
+
+  stage = 'CLS-DUPLICATE-INVALID a stale, altered or foreign record is refused and nothing is saved';
+  const before = await versions();
+  await rejected(() => replace(hash(31), 0, one, { replaces: { kind: 'trade', id: bought, version: 2 } }), 409);
+  await rejected(
+    () => replace(hash(31), 0, one, { classification: { type: 'buy', currency: 'USD', amount: '1199' } }),
+    409,
+  );
+  await rejected(() => replace(hash(31), 0, one, { hidden: true }), 400);
+  await rejected(() => replace(hash(31), 0, one, { classification: null }), 400);
+  const abroad = await manual(elsewhere, 'buy', '2026-09-20T10:00:00.000Z', '0.4', '1200');
+  await rejected(() => replace(hash(31), 0, one, { replaces: { kind: 'trade', id: abroad, version: 1 } }), 409);
+  await receipt(32, '2026-09-25T10:00:00.000Z', '400000000000000000');
+  await rejected(() => replace(hash(32), 0, one), 422, 'That record is not the same movement as this transaction');
+  assert.equal(await versions(), before, 'Nothing was saved');
+  assert.equal(await headKind(bought), 'create', 'The record still counts');
+  assert.equal((await proposals()).length, 1, 'A record in another account and a far receipt are not matches');
+
+  stage = 'CLS-DUPLICATE the receipt replaces the record: it says what the record said';
+  const waiting = await count(s, owner);
+  const base = await held(s, owner, 'ETH', dup);
+  const saved = await replace(hash(31), 0, one);
+  const now1 = await answer(db, w, hash(31));
+  assert.deepEqual([now1.status, now1.type, now1.accountId], ['classified', 'buy', dup]);
+  assert.equal(await headKind(bought), 'void', 'The record is voided');
+  assert.equal(await held(s, owner, 'ETH', dup), base - coins('0.4'), 'The ETH count once');
+  assert.equal(await count(s, owner), waiting - 1);
+  assert.ok(saved.value.operation.kind === 'trade' && saved.value.operation.id !== bought, 'A new entry of the transaction');
+  let operations = await listed(s, owner);
+  assert.equal(operations.filter((row) => row.id === `trade:${bought}`).length, 0, 'The record leaves the lists');
+  const row = operations.find((item) => item.chain?.txid === hash(31));
+  assert.deepEqual([row.type, row.status, row.asset.symbol], ['buy', 'recorded', 'ETH']);
+  same(row.valueUsd, '1200');
+  assert.equal((await proposals()).length, 0, 'Nothing is left to propose');
+  const events = (await s.history.read(owner, {}, now)).events;
+  assert.ok(events.some((event) => event.entity === 'trade' && event.entityId === bought && event.change === 'deleted'), 'The audit history shows the record deleted');
+  assert.ok(events.some((event) => event.entity === 'classification' && event.entityId === `${w}:${hash(31)}` && event.change === 'created'), 'And the transaction answered');
+  const again = await replace(hash(31), 0, one).catch((error) => error);
+  assert.equal(again.getStatus?.(), 409, 'Replaying the answer on an answered transaction is refused');
+
+  stage = 'CLS-DUPLICATE a sale and the send of the same coins count once after the replacement';
+  const sold = await manual(dup, 'sell', '2026-09-22T08:00:00.000Z', '0.1', '350');
+  const level = await held(s, owner, 'ETH', dup);
+  await receipt(33, '2026-09-22T08:05:00.000Z', '100000000000000000', 'out');
+  assert.equal(await held(s, owner, 'ETH', dup), level - coins('0.1'), 'The same 0.1 ETH leave twice');
+  [found] = await proposals();
+  assert.deepEqual([found.direction, found.record.id, found.classification.type], ['out', sold, 'sell']);
+  await replace(hash(33), 0, found);
+  assert.equal(await headKind(sold), 'void');
+  assert.equal(await held(s, owner, 'ETH', dup), level, 'The 0.1 ETH leave once');
+  assert.equal((await answer(db, w, hash(33))).type, 'sell');
+
+  stage = 'CLS-DUPLICATE a hand-added reward and the receipt of the coins count twice';
+  const reward = (
+    await s.rewards.create(owner, dup, {
+      requestId: randomUUID(),
+      expectedJournalRevision: await revision(dup),
+      instrumentId: eth,
+      occurredAt: '2026-09-23T12:00:00.000Z',
+      quantity: '0.02',
+      assertReward: true,
+      category: 'staking',
+      acquisitionBasisUsd: '60',
+      incomeValueUsd: '60',
+    })
+  ).value.reward.rewardId;
+  const rewarded = await held(s, owner, 'ETH', dup);
+  await receipt(34, '2026-09-23T12:05:00.000Z', '20000000000000000');
+  assert.equal(await held(s, owner, 'ETH', dup), rewarded + coins('0.02'), 'The same 0.02 ETH count twice');
+  [found] = await proposals();
+  assert.deepEqual([found.record.kind, found.record.id, found.classification.type], ['reward', reward, 'staking-reward']);
+  await replace(hash(34), 0, found);
+  assert.equal(await held(s, owner, 'ETH', dup), rewarded, 'The reward counts once');
+  assert.equal((await answer(db, w, hash(34))).type, 'staking-reward');
+  assert.equal((await listed(s, owner)).filter((item) => item.id === `reward:${reward}`).length, 0);
+
+  stage = 'CLS-DUPLICATE a buy paid in the account\'s USDT cash is replaced by a buy paid in the same cash';
+  const cashAccount = await account(s, owner, 'Cash');
+  const cw = await wallet(db, owner, cashAccount, 'ethereum', `0x${'ef'.repeat(20)}`);
+  const usdt = await instrument('USDT');
+  await manual(cashAccount, 'buy', '2026-09-24T08:00:00.000Z', '600', '600', { instrumentId: usdt });
+  const priced = await manual(cashAccount, 'buy', '2026-09-24T09:00:00.000Z', '0.3', '600', {
+    fields: { settlementCurrency: 'USDT' },
+  });
+  await raw(db, owner, cw, { txid: hash(35), height: 35, at: '2026-09-24T09:05:00.000Z', received: '300000000000000000', sent: '0', fee: '0', direction: 'in' });
+  assert.equal(await held(s, owner, 'USDT', cashAccount), 0n, 'The 600 USDT bought were spent on the ETH');
+  [found] = await proposals();
+  assert.deepEqual([found.record.id, found.classification.currency], [priced, 'USDT']);
+  await classify(s, owner, cw, hash(35), {
+    expectedVersion: 0,
+    classification: found.classification,
+    replaces: { kind: 'trade', id: priced, version: 1 },
+  });
+  assert.equal(await headKind(priced), 'void');
+  assert.equal(await held(s, owner, 'USDT', cashAccount), 0n, 'The USDT are spent once, not entered as new money');
+  assert.equal(await held(s, owner, 'ETH', cashAccount), coins('0.3'));
+  const [spent] = await db.query(
+    `SELECT s.quantity::text FROM chain_transaction_classifications h
+      JOIN chain_transaction_classification_versions v ON v."addressId"=h."addressId" AND v.txid=h.txid AND v.version=h."currentVersion"
+      JOIN account_trade_version_settlements s ON s."tradeId"=v."tradeId" AND s.version=1
+      WHERE h."addressId"=$1 AND h.txid=$2`,
+    [cw, hash(35)],
+  );
+  same(spent.quantity, '600', 'The new buy spent the 600 USDT of the cash');
+
+  stage = 'CLS-DUPLICATE a record a transaction already stands for is never offered';
+  const named = await manual(dup, 'buy', '2026-09-26T10:00:00.000Z', '0.15', '450');
+  await receipt(36, '2026-09-26T10:10:00.000Z', '150000000000000000');
+  assert.equal((await proposals()).length, 1);
+  await classify(s, owner, w, hash(36), {
+    expectedVersion: 0,
+    classification: { type: 'recorded', operation: { kind: 'trade', id: named } },
+  });
+  await receipt(37, '2026-09-26T10:20:00.000Z', '150000000000000000');
+  assert.equal((await proposals()).length, 0, 'The record is tied to the first receipt');
+  assert.equal(await headKind(named), 'create');
+
+  stage = 'CLS-DUPLICATE-INVALID a record a later entry depends on is not replaced, and nothing is saved';
+  const lone = await account(s, owner, 'Dependent');
+  const dw = await wallet(db, owner, lone, 'ethereum', `0x${'ab'.repeat(19)}cd`);
+  await manual(lone, 'buy', '2026-09-27T10:00:00.000Z', '0.5', '1500');
+  await manual(lone, 'sell', '2026-09-27T12:00:00.000Z', '0.5', '1600');
+  await raw(db, owner, dw, { txid: hash(38), height: 38, at: '2026-09-27T10:30:00.000Z', received: '500000000000000000', sent: '0', fee: '0', direction: 'in' });
+  const [depends] = (await s.classifications.duplicateProposals(owner)).proposals.filter((item) => item.transaction.addressId === dw);
+  const unchanged = await versions();
+  await rejected(
+    () => classify(s, owner, dw, hash(38), {
+      expectedVersion: 0,
+      classification: depends.classification,
+      replaces: { kind: 'trade', id: depends.record.id, version: 1 },
+    }),
+    422,
+    'The books would not hold the coins without that record; change the entries that depend on it first',
+  );
+  assert.equal(await versions(), unchanged, 'Nothing was saved');
+  assert.equal(await headKind(depends.record.id), 'create', 'The record still counts');
+  assert.equal(await held(s, owner, 'ETH', lone), coins('0.5'), 'Bought 0.5 and sold 0.5; only the receipt remains');
+
+  console.log('PASS CLS-DUPLICATE');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -818,6 +1026,7 @@ async function main() {
     await oneTransaction(db, s, owner.id, f);
     await recordedByHand(db, s, owner.id, f);
     await paidFromAnotherWallet(db, s, owner.id, f);
+    await duplicates(db, s, owner.id);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

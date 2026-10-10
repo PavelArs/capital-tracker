@@ -1,5 +1,6 @@
 import { accountingApi } from '@api/accounting.api';
 import {
+  type DuplicateProposal,
   type Operation,
   type OperationList,
   operationsApi,
@@ -2853,5 +2854,113 @@ describe('XFER-PROPOSED-UI: a withdrawal and a receipt of two hashes', () => {
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(3);
     await user.click(within(card).getByRole('button', { name: 'Show all 4' }));
     expect(within(card).getAllByRole('button', { name: 'Join as one transfer' })).toHaveLength(4);
+  });
+});
+
+describe('CLS-DUPLICATE-UI: a record you added and the wallet that repeats it', () => {
+  const proposal: DuplicateProposal = {
+    coin: 'ETH',
+    direction: 'in',
+    transaction: {
+      addressId: id(61),
+      txid: txid(81),
+      version: 0,
+      accountId: id(71),
+      accountName: 'Trust Wallet',
+      wallet: { network: 'ethereum', address: `0x${'1'.repeat(40)}`, label: 'Main' },
+      occurredAt: '2026-10-01T10:20:00.000Z',
+      quantity: '0.4',
+    },
+    record: {
+      kind: 'trade',
+      id: id(95),
+      version: 2,
+      type: 'buy',
+      quantity: '0.4',
+      valueUsd: '1200',
+      occurredAt: '2026-10-01T10:00:00.000Z',
+    },
+    classification: { type: 'buy', currency: 'USD', amount: '1200' },
+    comment: 'first purchase',
+  };
+  const found = (proposals: DuplicateProposal[]) => ({
+    windowHours: 48,
+    amountPercent: 1,
+    proposals,
+  });
+
+  it("CLS-DUPLICATE: lists both records and replaces yours with the wallet's in one tap", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals')
+      .mockResolvedValueOnce(found([proposal]))
+      .mockResolvedValue(found([]));
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    expect(card).toHaveTextContent('0.4 ETH in Trust Wallet');
+    expect(card).toHaveTextContent(
+      'You added: Buy 0.4 ETH worth $1,200.00, Oct 1, 2026, 10:00 UTC',
+    );
+    expect(card).toHaveTextContent('Main received 0.4 ETH, Oct 1, 2026, 10:20 UTC');
+    expect(card).toHaveTextContent('within 48 hours');
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify).toHaveBeenCalledWith(
+      { id: proposal.transaction.addressId },
+      proposal.transaction.txid,
+      expect.objectContaining({
+        expectedVersion: 0,
+        hidden: false,
+        classification: proposal.classification,
+        comment: 'first purchase',
+        replaces: { kind: 'trade', id: proposal.record.id, version: 2 },
+      }),
+    );
+    expect(
+      await screen.findByText(/Replaced your record with the wallet's: 0.4 ETH/),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: /possible duplicate/ })).toBeNull(),
+    );
+  });
+
+  it('says why it could not be replaced and keeps the offer', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(found([proposal]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('Conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message: 'That record changed; reload and try again' },
+      }),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    await user.click(within(card).getByRole('button', { name: "Replace with the wallet's" }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent(
+      'This cannot be replaced: that record changed; reload and try again.',
+    );
+    expect(within(card).getByRole('button', { name: "Replace with the wallet's" })).toBeEnabled();
+  });
+
+  it('a sent coin reads as sent, and a record without a value leaves out its worth', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(all);
+    vi.spyOn(operationsApi, 'duplicateProposals').mockResolvedValue(
+      found([
+        {
+          ...proposal,
+          direction: 'out',
+          record: { ...proposal.record, type: 'sell', valueUsd: null },
+        },
+      ]),
+    );
+    renderPage();
+    const card = await screen.findByRole('region', { name: 'One possible duplicate' });
+    expect(card).toHaveTextContent('You added: Sell 0.4 ETH, Oct 1, 2026, 10:00 UTC');
+    expect(card).toHaveTextContent('Main sent 0.4 ETH');
   });
 });

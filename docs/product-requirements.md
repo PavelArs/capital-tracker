@@ -623,6 +623,25 @@ network-specific identity:
   and one tap on "Join as one transfer" answers the withdrawal as a transfer naming the receipt:
   one owned transfer moves what arrived, the cost basis goes with it, only the difference is
   spent as a fee, both transactions read as that one transfer, and the pair is listed once.
+- CLS-DUPLICATE: **Given** the owner added "Buy 0.4 ETH for 1200 USD" by hand or from CSV in an
+  account, and a wallet of that account received 0.4 ETH within 48 hours of it, so the same
+  coins count twice **when** no one has answered the transaction **then** Transactions shows
+  "One possible duplicate" with both lines, and one tap on "Replace with the wallet's" answers
+  the transaction as the record said (a Buy of the same amount in the same currency, with the
+  same note), deletes the record and writes both to the audit history, in one step: the coins
+  count once, the transaction keeps its exact time and amount, and what the record knew (the
+  price, the RUB or EUR amount and rate, the cash it was settled in, income, expense, gift or fee,
+  a staking reward or airdrop and its value) moves over to it. Offered are buys, sales, income,
+  expense, gift, fee entries and rewards of the same account for the same coin the same way,
+  whose amount differs from the transaction's by at most 1% and whose time by at most 48 hours,
+  when each is the other's single closest match (a tie, or a second equally close candidate,
+  proposes nothing). A record that a transaction already stands for or produced, a record whose
+  amounts an answer cannot repeat (a basis different from its income, a fee beside an income),
+  and a swap or a transfer are never offered. A record that changed since it was shown, an
+  answer that does not say what the record says, or a record the books cannot do without (a
+  later entry depends on it) is refused with a reason and nothing is saved. A buy or sale that
+  was settled in the account's cash is replaced before the transaction is recorded, so the cash
+  it spent is spent once and not entered as new money.
   Nothing is joined without the tap (the same hash with the exact fee is still linked by the
   app, XFER-AUTO). A pair is offered only when each side is the other's single closest
   candidate; a second equally good receipt, a different coin, the same account, a receipt
@@ -893,6 +912,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M34 | `phone-charts-types` | phones: the Dashboard and asset charts write three dates instead of five and give the value labels less room, so the dates stop running together and the plot is wider; the Add transaction type row keeps More on the same line instead of wrapping it alone; fourth of the mobile-layout slices, frontend only, no migration | M33 | — |
 | M35 | `pay-purchase-from-wallet` | USDT or USDC sent from a tracked wallet can be answered as the payment of a purchase the owner added by hand in another account (CLS-PAID): the coins move to that account just before the purchase and the purchase is settled against them, so it stops counting as money from outside; first of three slices that link manual records with blockchain transactions, no migration | M13 | — |
 | M36 | `propose-transfer-pairs` | a withdrawal and a receipt of one coin in two accounts that name different transactions are proposed on Transactions and joined as one transfer with one tap (XFER-PROPOSED); the difference is the fee; the other leg is found by the transfer both name, so the link column stays for legs of one hash; second of three slices that link manual records with blockchain transactions, no migration | M13, M35 | — |
+| M37 | `replace-duplicate-records` | a record the owner added by hand or from CSV and a wallet transaction of the same account that are the same movement (same coin and way, amount within 1%, time within 48 hours) are proposed on Transactions; one tap answers the transaction as the record said and deletes the record in one step, so the coins count once and the audit history shows both (CLS-DUPLICATE); last of three slices that link manual records with blockchain transactions, no migration | M35, M36 | — |
 
 ```mermaid
 flowchart LR

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -44,6 +45,13 @@ import {
   type SwapClassification,
   unfit,
 } from './chain-classification';
+import {
+  DUPLICATE_AMOUNT_PERCENT,
+  DUPLICATE_WINDOW_HOURS,
+  duplicateFits,
+  proposeDuplicates,
+} from './chain-duplicate';
+import { type OwnRecord, readOwnRecords } from './chain-duplicate.store';
 import { isDust } from './chain-dust';
 import {
   byPoolOrder,
@@ -165,6 +173,16 @@ interface ProposalRow extends TimedLeg {
   /** The head version of the answer, 0 before the first. */
   version: number;
 }
+/** A proposal row as the screen shows it: which transaction, in which account and wallet. */
+const placed = (row: ProposalRow) => ({
+  addressId: row.addressId,
+  txid: row.txid,
+  version: row.version,
+  accountId: row.accountId,
+  accountName: row.accountName,
+  wallet: { network: row.network, address: row.address, label: row.label },
+  occurredAt: row.blockTime.toISOString(),
+});
 interface MatchRow extends OwnLeg {
   txid: string;
   status: 'unclassified' | 'classified' | 'hidden' | null;
@@ -312,6 +330,9 @@ export class ChainClassificationService {
     const address = parseUuid(addressId);
     if (!chainTxid.test(txid)) throw new NotFoundException();
     const input = parseClassification(raw);
+    // CLS-DUPLICATE: the record is replaced by an answer, not by hiding or clearing one.
+    if (input.replaces && (input.hidden || input.classification === null))
+      throw new BadRequestException('Invalid accounting input');
     const payload = classificationPayload(address, txid, input);
     // Raw rows are never updated, so the entry can be checked before the write starts: a
     // malformed amount is a 400 here, not a conflict inside the journal.
@@ -364,6 +385,15 @@ export class ChainClassificationService {
           throw new ConflictException(
             `The account's records do not hold the ${value.currency} this trade paid with yet; answer the ${value.currency} deposit or transfer first`,
           );
+        // CLS-DUPLICATE: a record the answer replaces goes in the same transaction. A priced
+        // entry settles in the account's cash, which the record has spent, so it goes first;
+        // otherwise coins are added before the record goes and spent ones are freed first.
+        const replaced = input.replaces
+          ? await this.replacedRecord(manager, owner, { address, txid, row, version }, input)
+          : null;
+        const priced = replaced?.answer.type === 'buy' || replaced?.answer.type === 'sell';
+        const voidFirst = replaced !== null && (priced || !inbound(row));
+        if (replaced && voidFirst) await this.voidRecord(manager, owner, replaced);
         const saved = await this.record(
           manager,
           owner,
@@ -372,6 +402,7 @@ export class ChainClassificationService {
           payload,
           false,
         );
+        if (replaced && !voidFirst) await this.voidRecord(manager, owner, replaced);
         return { created: true, value: classificationView(saved) };
       });
     } catch (error) {
@@ -380,6 +411,93 @@ export class ChainClassificationService {
     // An answer can make an earlier transfer possible: the sender now holds the coins.
     if (result.created) await this.linkQuietly(owner);
     return result;
+  }
+
+  /**
+   * CLS-DUPLICATE: the record an answer replaces, checked as it stands now: still counting, not
+   * tied to a transaction, at the version the owner saw, the same movement as this transaction,
+   * and said again by the answer exactly (nothing is taken from the client's word).
+   */
+  private async replacedRecord(
+    manager: EntityManager,
+    owner: string,
+    target: Leg,
+    input: ClassificationInput,
+  ): Promise<OwnRecord> {
+    const { row } = target;
+    const named = input.replaces;
+    const answer = input.classification;
+    if (!named || !answer || row.accountId === null)
+      throw new BadRequestException('Invalid accounting input');
+    if (
+      target.version > 0 &&
+      (await this.version(manager, target.address, target.txid, target.version)).status !==
+        'unclassified'
+    )
+      throw conflict();
+    const found = (await readOwnRecords(manager, owner, [row.accountId])).find(
+      (record) => record.kind === named.kind && record.id === named.id,
+    );
+    if (!found || found.version !== named.version)
+      throw new ConflictException('That record changed; reload and try again');
+    const move = legMovement({ ...row, blockTime: row.blockTime.toISOString() });
+    const same = duplicateFits(
+      {
+        accountId: row.accountId,
+        coin: chainCoin(row).symbol.toUpperCase(),
+        inbound: move.inbound,
+        atoms: canonicalDecimalToAtoms(move.quantity),
+        at: row.blockTime,
+      },
+      found,
+    );
+    if (!same)
+      throw new UnprocessableEntityException(
+        'That record is not the same movement as this transaction',
+      );
+    if (
+      operationKey(row.accountId, found.answer, found.comment) !==
+      operationKey(row.accountId, answer, input.comment ?? null)
+    )
+      throw new ConflictException('That record changed; reload and try again');
+    return found;
+  }
+
+  /** CLS-DUPLICATE: voids the record an answer replaces; its versions stay in the history. */
+  private async voidRecord(manager: EntityManager, owner: string, record: OwnRecord) {
+    const expectedJournalRevision = await this.revision(manager, owner, record.accountId);
+    try {
+      if (record.kind === 'trade') {
+        await this.trades.mutateWithin(
+          manager,
+          owner,
+          record.accountId,
+          'void',
+          record.id,
+          parseTradeVoid({ requestId: randomUUID(), expectedJournalRevision }),
+        );
+        return;
+      }
+      const head = await readRewardHead(manager, owner, record.accountId, record.id);
+      if (!head) throw new ConflictException('That record changed; reload and try again');
+      await this.rewards.mutateWithin(
+        manager,
+        owner,
+        record.accountId,
+        'void',
+        parseRewardVoid({
+          requestId: randomUUID(),
+          expectedJournalRevision,
+          expectedVersion: projectRewardVersion(head).version,
+        }),
+        record.id,
+      );
+    } catch (error) {
+      if (!refused(error)) throw error;
+      throw new UnprocessableEntityException(
+        'The books would not hold the coins without that record; change the entries that depend on it first',
+      );
+    }
   }
 
   /**
@@ -700,7 +818,71 @@ export class ChainClassificationService {
    */
   async transferProposals(ownerId: string) {
     const owner = parseUuid(ownerId);
-    const rows: ProposalRow[] = await this.source.query(
+    const rows = await this.openLegs(this.source.manager, owner);
+    return {
+      windowHours: PAIR_WINDOW_HOURS,
+      feePercent: Number(PAIR_FEE_PERCENT),
+      proposals: proposeTransferPairs(rows).map((proposal) => ({
+        ...pairAmounts(proposal),
+        outgoing: placed(proposal.outgoing),
+        incoming: placed(proposal.incoming),
+      })),
+    };
+  }
+
+  /**
+   * CLS-DUPLICATE: a record the owner added by hand or from CSV and a transaction of a wallet in
+   * the same account that look like the same movement. Nothing is changed here; accepting one
+   * answers the transaction as the record said and voids the record (the same classify call as
+   * any other answer, naming what it replaces).
+   */
+  async duplicateProposals(ownerId: string) {
+    const owner = parseUuid(ownerId);
+    const open = await this.openLegs(this.source.manager, owner);
+    const legs = open.flatMap((row) => {
+      const move = legMovement({ ...row, blockTime: row.blockTime.toISOString() });
+      return row.accountId === null || move.quantity === '0'
+        ? []
+        : [
+            {
+              ...row,
+              accountId: row.accountId,
+              coin: chainCoin(row).symbol.toUpperCase(),
+              inbound: move.inbound,
+              atoms: canonicalDecimalToAtoms(move.quantity),
+              at: row.blockTime,
+              quantity: move.quantity,
+            },
+          ];
+    });
+    const records = await readOwnRecords(this.source.manager, owner, [
+      ...new Set(legs.map((leg) => leg.accountId)),
+    ]);
+    return {
+      windowHours: DUPLICATE_WINDOW_HOURS,
+      amountPercent: Number(DUPLICATE_AMOUNT_PERCENT),
+      proposals: proposeDuplicates(legs, records).map(({ leg, record }) => ({
+        coin: leg.coin,
+        direction: leg.inbound ? ('in' as const) : ('out' as const),
+        transaction: { ...placed(leg), quantity: leg.quantity },
+        record: {
+          kind: record.kind,
+          id: record.id,
+          version: record.version,
+          type: record.answer.type,
+          quantity: record.quantity,
+          valueUsd: record.valueUsd,
+          occurredAt: record.at.toISOString(),
+        },
+        classification: record.answer,
+        comment: record.comment,
+      })),
+    };
+  }
+
+  /** The synced legs of the owner's wallets in accounts that nobody has answered yet. */
+  private async openLegs(manager: EntityManager, owner: string): Promise<ProposalRow[]> {
+    return manager.query(
       `SELECT t.txid, t."addressId", w.network, w.address, w.label, t.asset, w."accountId",
           a.name AS "accountName", t."blockTime", t."receivedUnits"::text AS "receivedUnits",
           t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits", v.status,
@@ -717,26 +899,6 @@ export class ChainClassificationService {
           AND coalesce(t.raw->>'kind', '') NOT IN ('trade', 'earn-flexible', 'earn-onchain')`,
       [owner],
     );
-    return {
-      windowHours: PAIR_WINDOW_HOURS,
-      feePercent: Number(PAIR_FEE_PERCENT),
-      proposals: proposeTransferPairs(rows).map((proposal) => {
-        const place = (row: ProposalRow) => ({
-          addressId: row.addressId,
-          txid: row.txid,
-          version: row.version,
-          accountId: row.accountId,
-          accountName: row.accountName,
-          wallet: { network: row.network, address: row.address, label: row.label },
-          occurredAt: row.blockTime.toISOString(),
-        });
-        return {
-          ...pairAmounts(proposal),
-          outgoing: place(proposal.outgoing),
-          incoming: place(proposal.incoming),
-        };
-      }),
-    };
   }
 
   /**

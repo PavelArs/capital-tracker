@@ -159,6 +159,15 @@ export interface ClassificationInput {
   /** Null: back to "Needs classification". Kept while hidden, so unhiding restores it. */
   classification: Classification | null;
   comment?: string;
+  /** CLS-DUPLICATE: the record the owner added that this answer replaces. */
+  replaces?: ReplacedRecord;
+}
+
+/** CLS-DUPLICATE: a trade or reward the owner added, at the version the owner saw. */
+export interface ReplacedRecord {
+  kind: 'trade' | 'reward';
+  id: string;
+  version: number;
 }
 
 const bad = (): never => {
@@ -268,7 +277,14 @@ function classification(raw: unknown): Classification | null {
 }
 
 export function parseClassification(raw: unknown): ClassificationInput {
-  const row = object(raw, ['requestId', 'expectedVersion', 'hidden', 'classification', 'comment']);
+  const row = object(raw, [
+    'requestId',
+    'expectedVersion',
+    'hidden',
+    'classification',
+    'comment',
+    'replaces',
+  ]);
   const version = row.expectedVersion;
   if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 0) return bad();
   if (version > 10000 || typeof row.hidden !== 'boolean') return bad();
@@ -279,7 +295,18 @@ export function parseClassification(raw: unknown): ClassificationInput {
     hidden: row.hidden,
     classification: classification(row.classification),
     ...parseComment(row.comment),
+    ...replaced(row.replaces),
   };
+}
+
+function replaced(raw: unknown): { replaces?: ReplacedRecord } {
+  if (raw === undefined) return {};
+  const row = object(raw, ['kind', 'id', 'version']);
+  if (row.kind !== 'trade' && row.kind !== 'reward') return bad();
+  const version = row.version;
+  if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) return bad();
+  if (version > 10000) return bad();
+  return { replaces: { kind: row.kind, id: parseUuid(row.id), version } };
 }
 
 /** The records the app created itself when the owner counted a Bybit balance difference. */
@@ -313,6 +340,7 @@ export function classificationPayload(
     hidden: input.hidden,
     classification: input.classification,
     ...(input.comment === undefined ? {} : { comment: input.comment }),
+    ...(input.replaces === undefined ? {} : { replaces: input.replaces }),
   });
 }
 

@@ -3,6 +3,7 @@ import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
 import {
   CLASSIFICATION_CHANGED,
+  type DuplicateProposals,
   type OperationList,
   operationsApi,
   type TransferProposals,
@@ -54,6 +55,10 @@ export const cachedReads = {
   transferProposals: cachedRead(
     'transfer-proposals',
     (): Promise<TransferProposals> => operationsApi.transferProposals(),
+  ),
+  duplicateProposals: cachedRead(
+    'duplicate-proposals',
+    (): Promise<DuplicateProposals> => operationsApi.duplicateProposals(),
   ),
   toClassify: cachedRead('to-classify', (): Promise<number> => operationsApi.needsClassification()),
   sources: cachedRead('sources', (): Promise<SyncSource[]> => syncStatusApi.get()),
