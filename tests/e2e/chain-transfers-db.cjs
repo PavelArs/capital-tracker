@@ -411,6 +411,117 @@ async function refused(db, s) {
   console.log('PASS XFER-REFUSED');
 }
 
+
+// XFER-PROPOSED: a withdrawal and a receipt that name different transactions are proposed, not
+// linked; accepting answers the withdrawal as a transfer naming the receipt, and the fee is
+// what went missing between them.
+async function proposed(db, s) {
+  stage = 'XFER-PROPOSED synthetic third owner: a sender, a receiver, a send and a receipt';
+  const [third] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('proposed-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = third.id;
+  const sender = await account(s, owner, 'Exchange');
+  const receiver = await account(s, owner, 'Hardware');
+  const other = await account(s, owner, 'Savings');
+  const a = await wallet(db, owner, sender, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  const b = await wallet(db, owner, receiver, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+  const c = await wallet(db, owner, other, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  // 41: 0.6 BTC arrive in A. 42: A sends 0.5001 BTC at 10:00. 43: B gets 0.4999 BTC at 10:12
+  // under another transaction, so 0.0002 BTC went missing between them.
+  await raw(db, owner, a, 41, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 42, 'out', '0', '50010000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 43, 'in', '49990000', '0', '10000', '2026-10-01T10:12:00.000Z');
+  await classify(s, owner, a, 41, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const before = await rawFingerprint(db, owner);
+  assert.deepEqual(await s.classifications.linkOwnTransfers(owner), { linked: 0 });
+  assert.equal(await count(s, owner), 2, 'The app does not link legs of two transactions itself');
+
+  stage = 'XFER-PROPOSED the pair is proposed with the fee between them';
+  const seen = await s.classifications.transferProposals(owner);
+  assert.deepEqual([seen.windowHours, seen.feePercent], [24, 2]);
+  assert.equal(seen.proposals.length, 1);
+  const [proposal] = seen.proposals;
+  assert.deepEqual([proposal.coin, proposal.sent, proposal.arrived, proposal.fee], [
+    'BTC',
+    '0.5001',
+    '0.4999',
+    '0.0002',
+  ]);
+  assert.deepEqual(
+    [proposal.outgoing.addressId, proposal.outgoing.txid, proposal.outgoing.accountName],
+    [a, txid(42), 'Exchange'],
+  );
+  assert.deepEqual(
+    [proposal.incoming.addressId, proposal.incoming.txid, proposal.incoming.accountId],
+    [b, txid(43), receiver],
+  );
+
+  stage = 'XFER-PROPOSED an unrelated or unfitting leg is refused as the other side';
+  const accept = (partner, accountId = receiver, version = 0) =>
+    classify(s, owner, a, 42, {
+      expectedVersion: version,
+      classification: { type: 'transfer', accountId, partner },
+    });
+  await rejected(() => accept({ addressId: c, txid: txid(43) }, other), 422);
+  await rejected(() => accept({ addressId: b, txid: txid(99) }), 422);
+  await rejected(() => accept({ addressId: a, txid: txid(41) }), 422);
+  await raw(db, owner, c, 44, 'in', '49990000', '0', '10000', '2026-10-03T10:12:00.000Z');
+  await rejected(() => accept({ addressId: c, txid: txid(44) }, other), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-PROPOSED two equally good receipts leave the choice to the owner';
+  await raw(db, owner, c, 45, 'in', '49990000', '0', '10000', '2026-10-01T10:12:00.000Z');
+  assert.deepEqual((await s.classifications.transferProposals(owner)).proposals, []);
+  await db.query(`DELETE FROM wallet_address_transactions WHERE txid IN ($1,$2)`, [txid(44), txid(45)]);
+  assert.equal((await s.classifications.transferProposals(owner)).proposals.length, 1);
+
+  stage = 'XFER-PROPOSED accepting joins the two legs as one transfer with the missing part as fee';
+  const joined = await accept({ addressId: b, txid: txid(43) });
+  assert.equal(joined.value.operation.kind, 'transfer');
+  assert.equal(joined.value.linkedAddressId, null, 'The link column is for legs of one hash');
+  assert.equal(joined.value.automatic, false);
+  assert.equal(await count(s, owner), 0);
+  const legs = (await db.query(
+    `SELECT "addressId", txid, version, status, "transferId", "linkedAddressId"
+      FROM chain_transaction_classification_versions
+      WHERE txid IN ($1,$2) AND status='classified' ORDER BY "addressId"`,
+    [txid(42), txid(43)],
+  ));
+  assert.equal(legs.length, 2);
+  assert.equal(legs[0].transferId, legs[1].transferId);
+  assert.deepEqual(legs.map((leg) => leg.linkedAddressId), [null, null]);
+  assert.deepEqual(legs.map((leg) => leg.addressId).sort(), [a, b].sort());
+  const mine = (await s.operations.read(owner, {}, now)).operations.filter(
+    (operation) => operation.chain?.txid === txid(42) || operation.chain?.txid === txid(43),
+  );
+  assert.equal(mine.length, 1, 'The pair is listed once, on the sending leg');
+  assert.deepEqual(
+    [mine[0].type, mine[0].wallet.id, mine[0].counterWallet.id, mine[0].counterAccount.id],
+    ['transfer', a, b, receiver],
+  );
+  same(mine[0].quantity, '0.4999', 'The receiver got 0.4999 BTC');
+  same(
+    (await journal(s, owner, receiver)).summary.remainingCostUsd,
+    '24995',
+    "B's 0.4999 BTC keeps A's 50000 per BTC",
+  );
+  same((await journal(s, owner, sender)).transferSummary.feeConsumedBasisUsd, '10');
+  assert.deepEqual((await s.classifications.transferProposals(owner)).proposals, []);
+
+  stage = 'XFER-PROPOSED answering the send differently frees the receipt and proposes again';
+  await classify(s, owner, a, 42, {
+    expectedVersion: 1,
+    classification: { type: 'sell', currency: 'USD', amount: '30000' },
+  });
+  assert.equal(await count(s, owner), 1);
+  assert.equal((await s.classifications.transferProposals(owner)).proposals.length, 0, 'sold');
+  assert.equal(await rawFingerprint(db, owner), before, 'Raw chain rows are never edited');
+  console.log('PASS XFER-PROPOSED');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -459,6 +570,7 @@ async function main() {
     await reclassify(db, s, owner.id, f, transferId);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
     await refused(db, s);
+    await proposed(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

@@ -95,6 +95,11 @@ export interface RewardClassification {
 export interface TransferClassification {
   type: 'transfer';
   accountId: string;
+  /**
+   * XFER-PROPOSED: the owner's raw transaction on the other side when it has another identity
+   * than this one (a withdrawal and a receipt that name different hashes).
+   */
+  partner?: { addressId: string; txid: string };
 }
 /** Nothing more is known: received coins count without a purchase price, sent ones without a sale price. */
 export interface OtherClassification {
@@ -193,8 +198,15 @@ function classification(raw: unknown): Classification | null {
     };
   }
   if (type === 'transfer') {
-    const row = object(raw, ['type', 'accountId']);
-    return { type, accountId: parseUuid(row.accountId) };
+    const row = object(raw, ['type', 'accountId', 'partner']);
+    if (row.partner === undefined) return { type, accountId: parseUuid(row.accountId) };
+    const other = object(row.partner, ['addressId', 'txid']);
+    if (typeof other.txid !== 'string' || !chainTxid.test(other.txid)) return bad();
+    return {
+      type,
+      accountId: parseUuid(row.accountId),
+      partner: { addressId: parseUuid(other.addressId), txid: other.txid },
+    };
   }
   if (type === 'income' || type === 'expense' || type === 'gift') {
     const row = object(raw, ['type', 'valueUsd']);

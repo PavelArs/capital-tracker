@@ -768,3 +768,62 @@
   padding-left: 10px;
   background: var(--raised);
 }
+
+/* XFER-PROPOSED: pairs of a withdrawal and a receipt the owner can join in one tap. */
+.transactions-proposals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.transactions-proposals h2,
+.transactions-proposals p {
+  margin: 0;
+}
+
+.transactions-proposals__lead {
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
+.transactions-proposals__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.transactions-proposal {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+
+.transactions-proposal__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.transactions-proposal__error {
+  color: var(--neg);
+  font-size: var(--fs-sm);
+}
+
+.transactions-proposals .shell-link {
+  align-self: flex-start;
+}
+
+@media (max-width: 640px) {
+  .transactions-proposal {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

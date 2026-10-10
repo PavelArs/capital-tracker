@@ -37,7 +37,9 @@ deposit (POOL-DEPOSIT) produces no entry; a pool withdrawal that returned more t
 links to the `reward:<uuid>` of that pool income, and its `classification_details` name the
 deposit. A transaction already recorded by hand or from CSV (CLS-RECORDED) produces no entry
 either; its `classification_details` name that `trade` or `swap`. USDT or USDC that paid for such
-a purchase in another account (CLS-PAID) links to the `transfer:<uuid>` that carried it. Values
+a purchase in another account (CLS-PAID) links to the `transfer:<uuid>` that carried it. The two transactions of a transfer joined by
+hand across two hashes (XFER-PROPOSED) both link to the one `transfer:<uuid>` in `operation_id`;
+`linked_wallet_id` stays empty for them. Values
 are in USD as recorded; a trade paid in RUB or EUR also carries `paid_currency`,
 `paid_amount`, `paid_fee` and the rate.
 

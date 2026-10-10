@@ -647,7 +647,12 @@ function chainOperation(
       fee: gas ? fee : produced.fee,
       account: produced.account,
       counterAccount: produced.counterAccount,
-      counterWallet: answer.linkedAddressId ? (other?.wallet ?? null) : null,
+      // A manual link to an untracked account names no wallet; a pair of legs does.
+      counterWallet:
+        answer.linkedAddressId ||
+        (other && other.classification?.produced?.id === answer.produced?.id)
+          ? (other?.wallet ?? null)
+          : null,
       orderWithinTimestamp: produced.orderWithinTimestamp,
     };
   // A recorded answer produces a transfer or nothing (CLS-PAID): the branch above returned it.
@@ -915,6 +920,18 @@ export function projectOperations(
     ];
   };
   const byLeg = new Map(sources.chain.map((row) => [`${row.wallet.id}:${row.txid}`, row]));
+  // XFER-PROPOSED: the two legs of a transfer joined by hand can name different hashes; the
+  // transfer both name finds the other one.
+  const byTransfer = new Map<string, ChainOperationInput[]>();
+  for (const row of sources.chain) {
+    const ref = row.classification?.produced;
+    if (ref?.kind === 'transfer') byTransfer.set(ref.id, [...(byTransfer.get(ref.id) ?? []), row]);
+  }
+  const joined = (row: ChainOperationInput) => {
+    const ref = row.classification?.produced;
+    if (ref?.kind !== 'transfer') return null;
+    return (byTransfer.get(ref.id) ?? []).find((leg) => leg !== row) ?? null;
+  };
   // SWAP-ONE-TX: every leg of one blockchain transaction, across the owner's addresses.
   const byHash = new Map<string, ChainOperationInput[]>();
   for (const row of sources.chain)
@@ -976,13 +993,14 @@ export function projectOperations(
     const pair = paired ? (byLeg.get(`${paired.addressId}:${paired.txid}`) ?? null) : null;
     // CLS-SWAP: a swap is listed once, on the row of the coins it bought.
     if (entry?.kind === 'swap' && pair && netUnits(row) < 0n) continue;
-    const other = paired ? pair : counterpart(row, legsOf(row));
+    const sibling = joined(row);
+    const other = paired ? pair : (counterpart(row, legsOf(row)) ?? sibling);
     // XFER-AUTO: a transfer between two of the owner's addresses is listed once, on the
     // sending leg; the receiving leg is part of it.
     if (
       entry?.kind === 'transfer' &&
       other &&
-      row.classification?.linkedAddressId &&
+      (row.classification?.linkedAddressId || sibling) &&
       netUnits(row) > 0n
     )
       continue;

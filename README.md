@@ -227,7 +227,7 @@ Swagger/documentation endpoint is mounted, including in development.
 | Group       | Endpoints                                                                                                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
-| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, CSV imports, manual prices, portfolio value and history    |
+| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions and proposed transfers, CSV imports, manual prices, portfolio value and history |
 | Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |

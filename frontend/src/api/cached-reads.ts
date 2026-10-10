@@ -1,7 +1,12 @@
 import { type AssetHistory, assetHistoryApi } from './asset-history.api';
 import { type AuditHistory, auditHistoryApi } from './audit-history.api';
 import { type FxRatesReport, fxRatesApi } from './fx-rates.api';
-import { CLASSIFICATION_CHANGED, type OperationList, operationsApi } from './operations.api';
+import {
+  CLASSIFICATION_CHANGED,
+  type OperationList,
+  operationsApi,
+  type TransferProposals,
+} from './operations.api';
 import { type OwnerSettings, ownerSettingsApi } from './owner-settings.api';
 import { type PortfolioHistory, portfolioHistoryApi } from './portfolio-history.api';
 import { portfolioValuationApi } from './portfolio-valuation.api';
@@ -45,6 +50,10 @@ export const cachedReads = {
     'operations',
     (...args: Parameters<typeof operationsApi.list>): Promise<OperationList> =>
       operationsApi.list(...args),
+  ),
+  transferProposals: cachedRead(
+    'transfer-proposals',
+    (): Promise<TransferProposals> => operationsApi.transferProposals(),
   ),
   toClassify: cachedRead('to-classify', (): Promise<number> => operationsApi.needsClassification()),
   sources: cachedRead('sources', (): Promise<SyncSource[]> => syncStatusApi.get()),
