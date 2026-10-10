@@ -25,6 +25,7 @@ const networks = [
   { key: 'solana', symbol: 'SOL', name: 'Solana', detail: 'One address. SOL and every token' },
   { key: 'tron', symbol: 'TRX', name: 'Tron', detail: 'One address. TRX, USDT, USDC and staking' },
   { key: 'stellar', symbol: 'XLM', name: 'Stellar', detail: 'One address. XLM' },
+  { key: 'zcash', symbol: 'ZEC', name: 'Zcash', detail: 'One transparent address. ZEC' },
   {
     key: 'bybit',
     symbol: null,
@@ -398,6 +399,12 @@ export default function AddWalletDialog({
                     Paste the account address that starts with G. The app tracks XLM on the Stellar
                     public network; issued assets such as USDC on Stellar are not read. An exchange
                     deposit address with a memo is not your wallet.
+                  </p>
+                ) : network === 'zcash' ? (
+                  <p className="wallets-note">
+                    Paste a transparent address that starts with t1 or t3. Shielded balances are
+                    private, so the app cannot read them: ZEC moved to a shielded address shows as
+                    sent, and ZEC from one shows as received.
                   </p>
                 ) : network === 'tron' ? (
                   <p className="wallets-note">

@@ -46,6 +46,7 @@ const networkNames: Record<NonNullable<Operation['wallet']>['network'], string> 
   solana: 'Solana',
   tron: 'Tron',
   stellar: 'Stellar',
+  zcash: 'Zcash',
   bybit: 'Bybit',
 };
 
@@ -120,7 +121,7 @@ export function networkName(wallet: NonNullable<Operation['wallet']>): string {
 
 /**
  * The transaction hash as the network's explorers show it: Ethereum's with 0x, Solana's
- * signature, Tron's and Stellar's hashes as is. A token transfer's record adds its leg number to the hash
+ * signature, Tron's, Stellar's and Zcash's hashes as is. A token transfer's record adds its leg number to the hash
  * (M14, M15), which is not part of it.
  */
 export function transactionHash(operation: Operation): string | null {
@@ -173,6 +174,7 @@ const explorers: Partial<Record<string, (hash: string) => string>> = {
   solana: (hash) => `https://solscan.io/tx/${hash}`,
   tron: (hash) => `https://tronscan.org/#/transaction/${hash}`,
   stellar: (hash) => `https://stellar.expert/explorer/public/tx/${hash}`,
+  zcash: (hash) => `https://blockchair.com/zcash/transaction/${hash}`,
 };
 
 /** The transaction's page on its network's block explorer, or null when there is none. */

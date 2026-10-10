@@ -71,6 +71,7 @@ const CHECKS = [
   { name: 'tron-wallets-db', shard: 'probes-2' },
   { name: 'audit-history-db', shard: 'probes-2' },
   { name: 'stellar-wallets-db', shard: 'probes-1' },
+  { name: 'zcash-wallets-db', shard: 'probes-2' },
   { name: 'owner-cli', shard: 'probes-1' }, // 25
   { name: 'sessions-db', shard: 'probes-1' }, // 34
   { name: 'mfa-db', shard: 'probes-2' }, // 42

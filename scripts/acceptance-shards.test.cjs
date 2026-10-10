@@ -69,6 +69,7 @@ const legacyChecks = [
   'tron-wallets-db',
   'audit-history-db',
   'stellar-wallets-db',
+  'zcash-wallets-db',
   'owner-cli',
   'sessions-db',
   'mfa-db',

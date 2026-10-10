@@ -198,7 +198,7 @@ if (command === 'down') {
         '-subj',
         '/CN=capital-tracker-provider-fixture.invalid',
         '-addext',
-        'subjectAltName=DNS:blockstream.info,DNS:api.etherscan.io,DNS:api.mainnet-beta.solana.com,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com,DNS:api.kraken.com,DNS:www.cbr.ru,DNS:smtp.yandex.ru,DNS:api.bybit.com,DNS:api.trongrid.io,DNS:apilist.tronscanapi.com,DNS:horizon.stellar.org',
+        'subjectAltName=DNS:blockstream.info,DNS:api.etherscan.io,DNS:api.mainnet-beta.solana.com,DNS:api.coingecko.com,DNS:api.exchangerate-api.com,DNS:open.er-api.com,DNS:api.kraken.com,DNS:www.cbr.ru,DNS:smtp.yandex.ru,DNS:api.bybit.com,DNS:api.trongrid.io,DNS:apilist.tronscanapi.com,DNS:horizon.stellar.org,DNS:zec1.trezor.io,DNS:zec5.trezor.io',
       ]);
       const chown = (source, target) =>
         run('docker', [

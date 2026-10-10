@@ -217,6 +217,7 @@ export function checkAddress(network: WalletAddress['network'], raw: string): Ad
   if (network === 'solana') return checkSolanaAddress(raw);
   if (network === 'tron') return checkTronAddress(raw);
   if (network === 'stellar') return checkStellarAddress(raw);
+  if (network === 'zcash') return checkZcashAddress(raw);
   return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
 }
 
@@ -226,6 +227,10 @@ const looksTron = (value: string) =>
 
 /** A Stellar account ID: "G…", 56 characters of base32. */
 const looksStellar = (value: string) => /^G[A-Z2-7]{55}$/.test(value);
+
+/** A transparent Zcash address: "t1…" or "t3…", 26 bytes in base58check. */
+const looksZcash = (value: string) =>
+  /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/.test(value) && base58Length(value) === 26;
 
 const otherNetwork = (network: string, other: string) =>
   `This is not a ${network} address: it looks like a${other === 'Ethereum' ? 'n' : ''} ${other} address. Go back and pick ${other} to track it.`;
@@ -246,6 +251,7 @@ export function checkTronAddress(raw: string): AddressCheck {
   if (/^0x[0-9a-f]{40}$/i.test(value))
     return { ok: false, message: otherNetwork('Tron', 'Ethereum') };
   if (looksStellar(value)) return { ok: false, message: otherNetwork('Tron', 'Stellar') };
+  if (looksZcash(value)) return { ok: false, message: otherNetwork('Tron', 'Zcash') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
     return { ok: false, message: otherNetwork('Tron', 'Bitcoin') };
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value) && base58Length(value) === 32)
@@ -253,6 +259,44 @@ export function checkTronAddress(raw: string): AddressCheck {
   return {
     ok: false,
     message: 'This is not a valid Tron address. Check that it was copied in full.',
+  };
+}
+
+/** ZCASH-ADD: the server verifies the checksum; a shielded address cannot be read. */
+export function checkZcashAddress(raw: string): AddressCheck {
+  const value = raw.trim();
+  if (!value) return { ok: false, message: 'Paste the wallet address.' };
+  const secret = secretCheck(value);
+  if (secret) return secret;
+  if (looksZcash(value))
+    return {
+      ok: true,
+      address: value,
+      kind: value.startsWith('t3') ? 'Transparent script address' : 'Transparent address',
+    };
+  if (/^(zs1|zc|u1|ztestsapling|utest)/i.test(value))
+    return {
+      ok: false,
+      message:
+        'This is a shielded address: its balance is private and cannot be read. Paste a transparent address that starts with t1 or t3.',
+    };
+  if (/^tex1/i.test(value))
+    return {
+      ok: false,
+      message:
+        'This is an exchange (TEX) address, not your wallet. Paste a transparent address that starts with t1 or t3.',
+    };
+  if (/^tm[1-9A-HJ-NP-Za-km-z]{33}$/.test(value))
+    return { ok: false, message: 'Testnet addresses are not tracked. Paste a mainnet address.' };
+  if (looksTron(value)) return { ok: false, message: otherNetwork('Zcash', 'Tron') };
+  if (/^0x[0-9a-f]{40}$/i.test(value))
+    return { ok: false, message: otherNetwork('Zcash', 'Ethereum') };
+  if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
+    return { ok: false, message: otherNetwork('Zcash', 'Bitcoin') };
+  if (looksStellar(value)) return { ok: false, message: otherNetwork('Zcash', 'Stellar') };
+  return {
+    ok: false,
+    message: 'This is not a valid Zcash address. Check that it was copied in full.',
   };
 }
 
@@ -270,6 +314,7 @@ export function checkStellarAddress(raw: string): AddressCheck {
         'This is a muxed address, used by exchanges for one customer. Paste the account address that starts with G.',
     };
   if (looksTron(value)) return { ok: false, message: otherNetwork('Stellar', 'Tron') };
+  if (looksZcash(value)) return { ok: false, message: otherNetwork('Stellar', 'Zcash') };
   if (/^0x[0-9a-f]{40}$/i.test(value))
     return { ok: false, message: otherNetwork('Stellar', 'Ethereum') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
@@ -298,6 +343,7 @@ export function checkSolanaAddress(raw: string): AddressCheck {
     };
   if (looksTron(value)) return { ok: false, message: otherNetwork('Solana', 'Tron') };
   if (looksStellar(value)) return { ok: false, message: otherNetwork('Solana', 'Stellar') };
+  if (looksZcash(value)) return { ok: false, message: otherNetwork('Solana', 'Zcash') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
     return {
       ok: false,
@@ -320,6 +366,7 @@ export function checkEthereumAddress(raw: string): AddressCheck {
     return { ok: true, address: value.toLowerCase(), kind: 'Ethereum address' };
   if (looksTron(value)) return { ok: false, message: otherNetwork('Ethereum', 'Tron') };
   if (looksStellar(value)) return { ok: false, message: otherNetwork('Ethereum', 'Stellar') };
+  if (looksZcash(value)) return { ok: false, message: otherNetwork('Ethereum', 'Zcash') };
   if (/^bc1[02-9ac-hj-np-z]{8,87}$/i.test(value) || /^[13][1-9A-HJ-NP-Za-km-z]{25,34}$/.test(value))
     return {
       ok: false,
@@ -382,6 +429,12 @@ export function checkBitcoinAddress(raw: string): AddressCheck {
     return {
       ok: false,
       message: 'This looks like a Stellar address. Go back and pick Stellar to track it.',
+    };
+  }
+  if (looksZcash(value)) {
+    return {
+      ok: false,
+      message: 'This looks like a Zcash address. Go back and pick Zcash to track it.',
     };
   }
   if (/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value)) {

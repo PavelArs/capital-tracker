@@ -7,7 +7,7 @@ const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
 const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io', 'apilist.tronscanapi.com',
-  'horizon.stellar.org']);
+  'horizon.stellar.org', 'zec1.trezor.io', 'zec5.trezor.io']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
   cert: readFileSync('/tests/tls/fullchain.pem'),
@@ -103,6 +103,13 @@ let tron = initialTron();
 const initialStellar = () => ({ transactions: new Map(), payments: new Map(), effects: new Map(),
   accounts: new Map(), pageSize: 200, fault: null, requests: 0 });
 let stellar = initialStellar();
+// Synthetic Zcash Blockbook (track-zcash-wallets) on both of Trezor's instance names: the indexed
+// tip and the transactions exactly as the probe posts them. An address's history is every
+// transaction whose inputs or outputs name it within the asked block range, newest first, in
+// pages of the asked size; a page past the end answers the last one like Blockbook. `fault`
+// answers the n-th request to one host with an HTTP status.
+const initialZcash = () => ({ tip: 3000100, inSync: true, transactions: new Map(), fault: null, requests: 0 });
+let zcash = initialZcash();
 // Synthetic Yandex SMTP (reset-password-by-email): implicit TLS as smtp.yandex.ru, AUTH PLAIN
 // with the synthetic credentials of the acceptance environment, every accepted message kept
 // raw for the probe to read. Nothing is relayed anywhere.
@@ -535,6 +542,7 @@ function provider(request, response, url) {
   if (url.hostname === 'api.trongrid.io') return tronRequest(request, response, url);
   if (url.hostname === 'apilist.tronscanapi.com') return tronscanRequest(request, response, url);
   if (url.hostname === 'horizon.stellar.org') return stellarRequest(response, url);
+  if (url.hostname === 'zec1.trezor.io' || url.hostname === 'zec5.trezor.io') return zcashRequest(response, url);
   if (url.hostname === 'api.coingecko.com' && url.pathname === '/api/v3/simple/price'
     && marketPrices?.coingecko && url.searchParams.get('include_last_updated_at') === 'true') {
     const { status = 200, prices = {}, updatedAt } = marketPrices.coingecko;
@@ -617,6 +625,38 @@ function stellarRequest(response, url) {
     .filter((item) => cursor === null || BigInt(item.paging_token) > BigInt(cursor))
     .sort((left, right) => (BigInt(left.paging_token) < BigInt(right.paging_token) ? -1 : 1));
   return records(items.slice(0, Math.min(Number(query.get('limit')), stellar.pageSize)));
+}
+
+function zcashRequest(response, url) {
+  zcash.requests++;
+  const fault = zcash.fault;
+  if (fault && fault.host === url.hostname && fault.onRequest === zcash.requests) {
+    zcash.fault = null;
+    return respond(response, fault.status, { error: 'Synthetic fault' });
+  }
+  if (url.pathname === '/api') {
+    return respond(response, 200, { blockbook: { coin: 'Zcash', bestHeight: zcash.tip, inSync: zcash.inSync },
+      backend: { chain: 'main', blocks: zcash.tip } });
+  }
+  const path = /^\/api\/v2\/address\/(t[13][1-9A-HJ-NP-Za-km-z]{33})$/.exec(url.pathname);
+  if (!path) return respond(response, 400, { error: 'Invalid synthetic Blockbook request' });
+  const query = url.searchParams;
+  const number = (name) => (/^(0|[1-9][0-9]{0,9})$/.test(query.get(name) ?? '') ? Number(query.get(name)) : null);
+  const [from, to, page, pageSize] = ['from', 'to', 'page', 'pageSize'].map(number);
+  if (query.get('details') !== 'txs' || pageSize !== 10 || from === null || to === null || !page) {
+    return respond(response, 400, { error: 'Invalid synthetic Blockbook request' });
+  }
+  const id = path[1];
+  const names = (item) => [...item.vin, ...item.vout].flatMap((part) => part.addresses ?? []);
+  const items = [...zcash.transactions.values()]
+    .filter((item) => item.blockHeight >= from && item.blockHeight <= to && names(item).includes(id))
+    .sort((left, right) => right.blockHeight - left.blockHeight);
+  const totalPages = Math.ceil(items.length / pageSize);
+  const shown = Math.min(page, Math.max(totalPages, 1));
+  const body = { page: shown, totalPages, itemsOnPage: pageSize, address: id, balance: '0',
+    totalReceived: '0', totalSent: '0', unconfirmedBalance: '0', unconfirmedTxs: 0, txs: items.length };
+  const slice = items.slice((shown - 1) * pageSize, shown * pageSize);
+  return respond(response, 200, slice.length ? { ...body, transactions: slice } : body);
 }
 
 // The hex form ("41…") of a base58check Tron address, restated from the format.
@@ -739,6 +779,7 @@ const server = http.createServer(async (request, response) => {
       bybit = initialBybit();
       tron = initialTron();
       stellar = initialStellar();
+      zcash = initialZcash();
       mail = [];
       return respond(response, 200, { ok: true });
     }
@@ -962,6 +1003,27 @@ const server = http.createServer(async (request, response) => {
       stellar = { ...stellar, pageSize: data.pageSize ?? stellar.pageSize,
         fault: fault ? { onRequest: fault.onRequest, status: fault.status } : null, requests: 0 };
       return respond(response, 200, { ok: true, transactions: stellar.transactions.size });
+    }
+    if (request.method === 'POST' && request.url === '/__control/zcash') {
+      const data = await readJson(request);
+      const object = (value) => value && typeof value === 'object' && !Array.isArray(value);
+      const height = (value) => Number.isSafeInteger(value) && value >= 0 && value < 2 ** 31;
+      const fault = data.fault;
+      if ((data.transactions !== undefined && !(Array.isArray(data.transactions) && data.transactions.length <= 20
+          && data.transactions.every((item) => object(item) && typeof item.txid === 'string' && /^[0-9a-f]{64}$/.test(item.txid)
+            && height(item.blockHeight) && Array.isArray(item.vin) && Array.isArray(item.vout))))
+        || (data.tip !== undefined && !height(data.tip))
+        || (data.inSync !== undefined && typeof data.inSync !== 'boolean')
+        || (fault !== undefined && fault !== null && (!object(fault) || !['zec1.trezor.io', 'zec5.trezor.io'].includes(fault.host)
+          || !Number.isSafeInteger(fault.onRequest) || fault.onRequest < 1
+          || !Number.isInteger(fault.status) || fault.status < 300 || fault.status > 599))) {
+        return respond(response, 400, { error: 'Invalid synthetic Zcash fixture' });
+      }
+      for (const item of data.transactions ?? []) zcash.transactions.set(item.txid, item);
+      if (zcash.transactions.size > 200) return respond(response, 400, { error: 'Synthetic history is bounded' });
+      zcash = { ...zcash, tip: data.tip ?? zcash.tip, inSync: data.inSync ?? zcash.inSync,
+        fault: fault ? { host: fault.host, onRequest: fault.onRequest, status: fault.status } : null, requests: 0 };
+      return respond(response, 200, { ok: true, transactions: zcash.transactions.size });
     }
     if (request.method === 'POST' && request.url === '/__control/bitcoin-history') {
       const data = await readJson(request);

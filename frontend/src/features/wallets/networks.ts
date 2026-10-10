@@ -1,6 +1,6 @@
 import type { WalletAddress } from '@api/wallet-addresses.api';
 
-// The tracked networks as the Wallets screens present them (M10, M14, M15, Tron, M23): the coin, the tokens a
+// The tracked networks as the Wallets screens present them (M10, M14, M15, Tron, M23, M24): the coin, the tokens a
 // wallet on it can hold (USDT and USDC, Q7; every token on Ethereum and Solana, M25) and where its
 // history comes from.
 export interface NetworkInfo {
@@ -66,6 +66,15 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     placeholder: 'G…, 56 characters',
     defaultWallet: 'Stellar wallet',
     labelExample: 'Main XLM',
+  },
+  zcash: {
+    name: 'Zcash',
+    symbol: 'ZEC',
+    assets: ['ZEC'],
+    source: 'Trezor Blockbook',
+    placeholder: 't1… or t3…, 35 characters',
+    defaultWallet: 'Zcash wallet',
+    labelExample: 'Main ZEC',
   },
   bybit: {
     name: 'Bybit',

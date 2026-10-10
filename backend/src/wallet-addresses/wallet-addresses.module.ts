@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AccountingModule } from '../accounting/accounting.module';
 import { BitcoinSyncAdapter } from './bitcoin-sync.adapter';
+import { BlockbookClient } from './blockbook-client';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
 import { BybitSyncAdapter } from './bybit-sync.adapter';
@@ -19,6 +20,7 @@ import { TronGridClient } from './trongrid-client';
 import { WalletAddressController } from './wallet-address.controller';
 import { WalletAddressService } from './wallet-address.service';
 import { WalletSyncService } from './wallet-sync.service';
+import { ZcashSyncAdapter } from './zcash-sync.adapter';
 
 @Module({
   imports: [AccountingModule],
@@ -33,6 +35,7 @@ import { WalletSyncService } from './wallet-sync.service';
     BybitSyncAdapter,
     TronSyncAdapter,
     StellarSyncAdapter,
+    ZcashSyncAdapter,
     { provide: EsploraClient, useFactory: () => new EsploraClient() },
     // The free Etherscan key (Q6) comes from the server's environment, never from the code.
     {
@@ -53,6 +56,8 @@ import { WalletSyncService } from './wallet-sync.service';
     },
     // Stellar's public Horizon needs no key (STELLAR-SYNC).
     { provide: HorizonClient, useFactory: () => new HorizonClient() },
+    // Trezor's public Zcash Blockbook needs no key (ZCASH-SYNC).
+    { provide: BlockbookClient, useFactory: () => new BlockbookClient() },
     // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
     { provide: BybitClient, useFactory: () => new BybitClient() },
     {
@@ -70,6 +75,7 @@ import { WalletSyncService } from './wallet-sync.service';
         BybitSyncAdapter,
         TronSyncAdapter,
         StellarSyncAdapter,
+        ZcashSyncAdapter,
       ],
       useFactory: (
         bitcoin: BitcoinSyncAdapter,
@@ -78,7 +84,8 @@ import { WalletSyncService } from './wallet-sync.service';
         bybit: BybitSyncAdapter,
         tron: TronSyncAdapter,
         stellar: StellarSyncAdapter,
-      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron, stellar],
+        zcash: ZcashSyncAdapter,
+      ): ChainSyncAdapter[] => [bitcoin, ethereum, solana, bybit, tron, stellar, zcash],
     },
   ],
 })
