@@ -22,6 +22,7 @@ function collector(rows: { sources: unknown[]; wallets: unknown[] } | Error, red
   const source = {
     query: jest.fn(async (sql: string) => {
       if (rows instanceof Error) throw rows;
+      if (sql.includes('pg_database_size')) return [{ bytes: '123456' }];
       return sql.includes('FROM wallet_addresses') ? rows.wallets : rows.sources;
     }),
     driver: { master: { totalCount: 4, idleCount: 3, waitingCount: 1 } },
@@ -45,6 +46,7 @@ describe('OBS-COLLECTOR', () => {
     expect(await value('ct_source_state', { source: 'fx:cbr', state: 'failed' })).toBe(1);
     expect(await value('ct_source_state', { source: 'fx:cbr', state: 'synced' })).toBe(0);
     expect(await value('ct_dependency_up', { dependency: 'postgres' })).toBe(1);
+    expect(await value('ct_database_size_bytes', {})).toBe(123456);
   });
 
   it('OBS-SRC-2 counts wallets per network and state with explicit zeros, never per address', async () => {
