@@ -37,7 +37,7 @@
   },
   {
     "file": "tests/e2e/operation-list.spec.ts",
-    "title": "OPS-UI: manual, CSV and blockchain operations in one Transactions list with filters and details"
+    "title": "OPS-UI: manual and blockchain operations in one Transactions list with filters and details"
   },
   {
     "file": "tests/e2e/capital-flows.spec.ts",
