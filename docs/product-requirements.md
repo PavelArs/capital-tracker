@@ -628,11 +628,22 @@ take back out, and the rewards it pays.
   deposit or classifies it otherwise **then** this is refused until the withdrawal is
   changed; **when** the withdrawal is classified otherwise or hidden **then** its pool
   income is voided and the deposit is in the pool again.
+- POOL-PARTIAL: **Given** the 1 ETH deposit **when** the pool pays back 0.4 ETH and the owner
+  classifies it as Pool withdrawal with "Part of the deposit" ticked **then** no income and
+  no loss is recorded, the 0.6 ETH still in the pool stay in holdings with their purchase
+  price and under "Liquidity pools" on the address card (its balance still matches the
+  books), and the list shows what is left in the pool. **When** a later receipt of 0.7 ETH is
+  classified the same way **then** 0.6 ETH close the deposit and the 0.1 ETH above it are pool
+  income (cost basis as in POOL-WITHDRAW). **When** a receipt of 0.35 ETH is classified
+  without the tick **then** it closes the deposit and the 0.25 ETH it left in the pool are
+  impermanent loss. The withdrawals of one deposit count in the order they happened: one
+  cannot be added before, changed or hidden under a later one until that one changes (a note
+  alone may change), and undoing the last part puts what it returned back in the pool.
 - POOL-INVALID: a withdrawal naming a leg that is not a Pool deposit, another coin, a
-  deposit made after it, one in another wallet, or one another withdrawal already names is
-  refused with a reason, and so is a Pool deposit or withdrawal on an exchange account;
-  nothing is saved. One withdrawal returns one deposit of each coin; partial withdrawals
-  are not covered yet.
+  deposit made after it, one in another wallet, or one that a withdrawal without the tick
+  closed or the parts returned in full is refused with a reason, and so is a Pool deposit or
+  withdrawal on an exchange account, parts that come back on another network than their
+  deposit, and a withdrawal added before a later one of the same deposit; nothing is saved.
 
 ### E5 Valuation and P&L
 
@@ -849,6 +860,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M24 | `track-zcash-wallets` | ZEC history and balance of a transparent Zcash address from Trezor's public Blockbook; shielded balances cannot be read (after D4, section 10) | M11, M12, M13 | — |
 | M27 | `show-audit-history` | History screen (Settings → Change history): every stored version of trades, transfers, swaps, rewards, deposits and withdrawals, manual prices and blockchain answers, newest first, each compared with the version before it (created, changed, deleted; who made it: you, a CSV import or the app); filters by change, type, source and date; side drawer with the values before and after; phone list per the mobile-tables rule; read only on the existing version tables, no migration | M12, M13 | — |
 | M28 | `hide-spam-tokens` | other tokens of Ethereum and Solana addresses that cannot be real (a negative balance from forged transfers, a copy of USDT or ETH from another contract) are left out of the address's balances, value and balance check by themselves; the owner hides or restores any other token per address, and an address lists two coins with the rest behind "Show N more" | M25 | — |
+| M29 | `withdraw-pool-in-parts` | a liquidity pool pays a deposit back in several withdrawals: "Part of the deposit" on Pool withdrawal leaves the rest in the pool (balance and "Liquidity pools" follow), a shortfall is a loss only on the withdrawal that closes the deposit, withdrawals of one deposit count in the order they happened; no migration (the flag is stored in the saved answer) | M13 | — |
 
 ```mermaid
 flowchart LR
@@ -887,6 +899,7 @@ flowchart LR
   M12 --> M24
   M13 --> M24
   M25 --> M28
+  M13 --> M29
 ```
 
 After M1 four lanes can run in parallel: valuation (M2–M7), operations (M8–M9),

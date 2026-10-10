@@ -100,10 +100,12 @@ export interface Operation {
     swapWith?: { addressId: string; txid: string };
   } | null;
   /**
-   * A pool withdrawal: what its deposit put in, and what came back above it (positive, pool
-   * income) or below it (negative, impermanent loss). Null or absent for every other row.
+   * A pool withdrawal: what its deposit put in, and what came back above what was still in the
+   * pool (positive, pool income) or below it (negative, impermanent loss). `partial`: only a
+   * part of the deposit came back, and `remaining` is what is still in the pool afterwards
+   * (POOL-PARTIAL). Null or absent for every other row.
    */
-  pool?: { deposited: string; difference: string } | null;
+  pool?: { deposited: string; difference: string; partial?: boolean; remaining?: string } | null;
   /**
    * Hidden: a blockchain transaction left out of every calculation (M12). Dust: an unanswered
    * receipt worth less than the dust threshold; it counts but does not ask to be classified.
@@ -172,12 +174,14 @@ export type ChainClassification =
   | { type: 'pool-deposit' }
   /**
    * Coins a liquidity pool returned: the deposit of the same coin they return; the value of a
-   * gain above it is optional (POOL-WITHDRAW).
+   * gain above it is optional (POOL-WITHDRAW). `partial`: only a part of the deposit came back
+   * and the rest is still in the pool (POOL-PARTIAL).
    */
   | {
       type: 'pool-withdrawal';
       deposit: { addressId: string; txid: string };
       valueUsd: string | null;
+      partial?: true;
     }
   /**
    * Already added by hand or from CSV as this trade or swap of the same wallet (CLS-RECORDED):

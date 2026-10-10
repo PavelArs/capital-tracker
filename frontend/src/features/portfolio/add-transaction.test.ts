@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ambiguousComma, decimal, numberProblem } from './add-transaction';
+import { ambiguousComma, decimal, numberProblem, rateDate } from './add-transaction';
 
 describe('NUM-COMMA a comma is a decimal point unless it could be a thousands separator', () => {
   it('reads a comma followed by one, two or four digits as a decimal point', () => {
@@ -34,5 +34,27 @@ describe('NUM-COMMA a comma is a decimal point unless it could be a thousands se
     expect(numberProblem('abc', 'Enter an amount greater than 0')).toBe(
       'Enter an amount greater than 0',
     );
+  });
+});
+
+describe('RATE-DATE the pre-filled Bank of Russia rate follows the Moscow date', () => {
+  const entry = (date: string, time: string) => ({ date, time });
+  const now = new Date('2026-10-09T22:30:00.000Z');
+
+  it('moves to the next Moscow day from 21:00 UTC', () => {
+    expect(rateDate(entry('2026-10-09', '21:00'), now, true)).toBe('2026-10-10');
+    expect(rateDate(entry('2026-10-09', '20:59'), now, true)).toBe('2026-10-09');
+  });
+
+  it('keeps the typed date for an entry without a time on an earlier day', () => {
+    expect(rateDate(entry('2026-10-01', ''), now)).toBe('2026-10-01');
+  });
+
+  it('uses the current minute for a new entry dated today (UTC) without a time', () => {
+    expect(rateDate(entry('2026-10-09', ''), now)).toBe('2026-10-10');
+  });
+
+  it('keeps the recorded instant of an edited entry', () => {
+    expect(rateDate(entry('2026-10-09', ''), now, true)).toBe('2026-10-09');
   });
 });

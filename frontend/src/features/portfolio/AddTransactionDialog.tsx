@@ -33,6 +33,7 @@ import {
   priceFigure,
   problems,
   purposeTradeFromEntry,
+  rateDate,
   rewardFromEntry,
   spends,
   subtractDecimal,
@@ -286,7 +287,9 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   }, []);
 
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
-  const rateKey = needsRate(entry.currency) ? `${entry.currency}:${entry.date}` : null;
+  const rateKey = needsRate(entry.currency)
+    ? `${entry.currency}:${rateDate(entry, new Date(), Boolean(editing))}`
+    : null;
   useEffect(() => {
     if (!rateKey) return;
     const [currency, date] = rateKey.split(':') as ['EUR' | 'RUB', string];

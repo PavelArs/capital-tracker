@@ -12,7 +12,9 @@ import { canonicalDecimalToAtoms, formatAtoms } from './money';
 // the like) stay theirs, with their purchase price, until the pool returns them. A withdrawal
 // names the deposit of the same coin it returns: what came back above the deposit is pool
 // income at the time, what came back below it left without a sale price (impermanent loss).
-// The raw rows stay as synced; only the owner's answers say what they were.
+// A withdrawal marked as a part of the deposit (POOL-PARTIAL) leaves the rest in the pool; the
+// withdrawals of one deposit are settled in the order they happened, and one that is not a part
+// closes it. The raw rows stay as synced; only the owner's answers say what they were.
 
 /** One synced leg of a pool deposit or withdrawal, on one of the owner's addresses. */
 export interface PoolLeg {
@@ -58,27 +60,83 @@ export interface PlannedPoolWithdrawal {
   accountId: string;
   /** When the coins came back. */
   occurredAt: string;
+  /** What the whole deposit put into the pool. */
   deposited: string;
   returned: string;
-  /** Coins returned above the deposit: pool income; "0" when none. */
+  /** Coins returned above what was still in the pool: pool income; "0" when none. */
   gain: string;
-  /** Coins returned below the deposit: they left without a sale price; "0" when none. */
+  /** Coins the pool kept for good, below what was still in it: left without a sale price. */
   loss: string;
+  /** Whether more of the deposit is expected back, so a shortfall is no loss yet. */
+  partial: boolean;
+  /** What is still in the pool after this withdrawal; "0" once the deposit is closed. */
+  remaining: string;
+}
+
+/** A withdrawal of one deposit, in the coin's accounting atoms. */
+export interface PoolStep {
+  returnedAtoms: bigint;
+  partial: boolean;
+}
+
+/** What one withdrawal did to its deposit, in accounting atoms. */
+export interface PoolSettlement {
+  /** The part of the deposit that came back. */
+  principal: bigint;
+  /** What came back beyond what was still in the pool. */
+  gain: bigint;
+  /** What the pool kept: only the withdrawal that closes the deposit can lose. */
+  loss: bigint;
+  /** What is still in the pool afterwards. */
+  remaining: bigint;
 }
 
 /**
- * POOL-WITHDRAW, POOL-INVALID: the receipt returns the deposit of the same coin made earlier from
- * an address of the same account; the difference is the pool's gain or loss. Whether the
- * deposit is answered as one, and not already returned, the caller checks.
+ * POOL-PARTIAL: settles the withdrawals of one deposit, oldest first. Each returns the deposit
+ * up to what is still in the pool and the rest is gain; one that is not a part closes the
+ * deposit, so what it left is a loss.
  */
-export function planPoolWithdrawal(withdrawal: PoolLeg, deposit: PoolLeg): PlannedPoolWithdrawal {
+export function settlePool(depositedAtoms: bigint, steps: readonly PoolStep[]): PoolSettlement[] {
+  let remaining = depositedAtoms;
+  return steps.map(({ returnedAtoms, partial }) => {
+    const principal = returnedAtoms < remaining ? returnedAtoms : remaining;
+    const loss = partial ? 0n : remaining - principal;
+    remaining = partial ? remaining - principal : 0n;
+    return { principal, gain: returnedAtoms - principal, loss, remaining };
+  });
+}
+
+/** What the leg returned, in accounting atoms. */
+export function poolReturnAtoms(leg: Units): bigint {
+  return unitsToAtoms(poolReturnUnits(leg), chainAsset(leg.network, leg.asset));
+}
+
+/** What the deposit leg put into the pool, in accounting atoms. */
+export function poolDepositAtoms(leg: Units): bigint {
+  return unitsToAtoms(poolDepositUnits(leg), chainAsset(leg.network, leg.asset));
+}
+
+/** The order the withdrawals of one deposit happened in: time, then transaction id. */
+export function byPoolOrder(
+  left: { blockTime: string | Date; txid: string },
+  right: { blockTime: string | Date; txid: string },
+): number {
+  const [a, b] = [new Date(left.blockTime).getTime(), new Date(right.blockTime).getTime()];
+  if (a !== b) return a - b;
+  return left.txid < right.txid ? -1 : left.txid > right.txid ? 1 : 0;
+}
+
+/**
+ * POOL-WITHDRAW, POOL-INVALID: whether the receipt can return the deposit of the same coin made
+ * earlier from an address of the same account. Whether the deposit is answered as one, and not
+ * already returned, the caller checks.
+ */
+export function checkPoolWithdrawal(withdrawal: PoolLeg, deposit: PoolLeg): void {
   if (isExchange(withdrawal.network)) throw unfit();
   if (withdrawal.addressId === deposit.addressId && withdrawal.txid === deposit.txid)
     throw new UnprocessableEntityException('Choose a pool deposit');
-  const returned = poolReturnUnits(withdrawal);
-  if (returned <= 0n) throw unfit();
-  const deposited = poolDepositUnits(deposit);
-  if (isExchange(deposit.network) || deposited <= 0n)
+  if (poolReturnUnits(withdrawal) <= 0n) throw unfit();
+  if (isExchange(deposit.network) || poolDepositUnits(deposit) <= 0n)
     throw new UnprocessableEntityException('Choose a pool deposit');
   const coin = (leg: PoolLeg) => chainAsset(leg.network, leg.asset).symbol;
   if (coin(withdrawal) !== coin(deposit))
@@ -89,18 +147,57 @@ export function planPoolWithdrawal(withdrawal: PoolLeg, deposit: PoolLeg): Plann
     throw new UnprocessableEntityException('Choose a pool deposit of this wallet');
   if (deposit.blockTime > withdrawal.blockTime)
     throw new UnprocessableEntityException('Choose a pool deposit made before this withdrawal');
-  // Both legs move one coin; a token's units match across networks, so each side counts in
-  // its own decimals.
-  const depositedAtoms = canonicalDecimalToAtoms(poolCoins(deposited, deposit));
-  const returnedAtoms = canonicalDecimalToAtoms(poolCoins(returned, withdrawal));
-  const difference = returnedAtoms - depositedAtoms;
+}
+
+/** A withdrawal of one deposit, as the caller found it. */
+export interface PoolWithdrawalOf {
+  leg: PoolLeg;
+  partial: boolean;
+}
+
+/**
+ * POOL-WITHDRAW, POOL-PARTIAL, POOL-INVALID: what the receipt records against its deposit; the
+ * difference is the pool's gain or loss. `earlier` are the withdrawals of the same deposit
+ * made before it, oldest first.
+ */
+export function planPoolWithdrawal(
+  withdrawal: PoolLeg,
+  deposit: PoolLeg,
+  options: { partial?: boolean; earlier?: readonly PoolWithdrawalOf[] } = {},
+): PlannedPoolWithdrawal {
+  checkPoolWithdrawal(withdrawal, deposit);
+  const partial = options.partial === true;
+  const earlier = options.earlier ?? [];
+  // Parts of one deposit are added up in base units, so they come back on its own network.
+  const together = (leg: PoolLeg) => leg.network === deposit.network && leg.asset === deposit.asset;
+  if (
+    (partial || earlier.length > 0) &&
+    ![withdrawal, ...earlier.map((e) => e.leg)].every(together)
+  )
+    throw new UnprocessableEntityException(
+      'Withdrawals of one deposit come back on the network of the deposit',
+    );
+  const deposited = poolDepositAtoms(deposit);
+  const settled = settlePool(deposited, [
+    ...earlier.map((item) => ({
+      returnedAtoms: poolReturnAtoms(item.leg),
+      partial: item.partial,
+    })),
+    { returnedAtoms: poolReturnAtoms(withdrawal), partial },
+  ]);
+  const before = earlier.length > 0 ? settled[earlier.length - 1].remaining : deposited;
+  if (before === 0n)
+    throw new UnprocessableEntityException('That pool deposit was already returned in full');
+  const mine = settled[earlier.length];
   return {
-    accountId: withdrawal.accountId,
+    accountId: withdrawal.accountId as string,
     occurredAt: withdrawal.blockTime,
-    deposited: formatAtoms(depositedAtoms),
-    returned: formatAtoms(returnedAtoms),
-    gain: formatAtoms(difference > 0n ? difference : 0n),
-    loss: formatAtoms(difference < 0n ? -difference : 0n),
+    deposited: formatAtoms(deposited),
+    returned: formatAtoms(poolReturnAtoms(withdrawal)),
+    gain: formatAtoms(mine.gain),
+    loss: formatAtoms(mine.loss),
+    partial,
+    remaining: formatAtoms(mine.remaining),
   };
 }
 
@@ -141,13 +238,15 @@ export function storedValueUsd(
 
 /**
  * D1 for a pool leg: how its answer moves the account's holdings, in the leg's base units. A
- * deposit and a withdrawal spend only their own network fee; a withdrawal that returned less
- * than its deposit also takes the shortfall, without a sale price. A gain is pool income, an
- * entry of its own.
+ * deposit and a withdrawal spend only their own network fee; a withdrawal that closed its
+ * deposit with less than was in the pool also takes the shortfall (`loss`, in the leg's base
+ * units), without a sale price. A gain is pool income, an entry of its own.
  */
-export function poolMoveUnits(leg: Units, deposit: Units | null): bigint {
-  const fee = -ownFeeUnits(leg);
-  if (deposit === null) return fee;
-  const short = poolReturnUnits(leg) - poolDepositUnits(deposit);
-  return short < 0n ? fee + short : fee;
+export function poolMoveUnits(leg: Units, loss = 0n): bigint {
+  return -ownFeeUnits(leg) - loss;
+}
+
+/** Accounting atoms as base units of the leg's asset, rounded down. */
+export function poolAtomsToUnits(atoms: bigint, leg: Pick<PoolLeg, 'network' | 'asset'>): bigint {
+  return atoms / unitsToAtoms(1n, chainAsset(leg.network, leg.asset));
 }

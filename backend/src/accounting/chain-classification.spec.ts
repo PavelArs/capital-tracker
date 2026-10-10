@@ -254,6 +254,32 @@ describe('classify-chain-transactions input and plan', () => {
       deposit: { addressId, txid },
       valueUsd: null,
     });
+    // POOL-PARTIAL: a part of the deposit says so; "not a part" is simply left out.
+    expect(
+      parse({
+        classification: {
+          type: 'pool-withdrawal',
+          deposit: { addressId, txid },
+          valueUsd: null,
+          partial: true,
+        },
+      }).classification,
+    ).toEqual({
+      type: 'pool-withdrawal',
+      deposit: { addressId, txid },
+      partial: true,
+      valueUsd: null,
+    });
+    expect(
+      parse({
+        classification: {
+          type: 'pool-withdrawal',
+          deposit: { addressId, txid },
+          valueUsd: null,
+          partial: false,
+        },
+      }).classification,
+    ).toEqual(withdrawal);
     expect(fitsDirection(receipt, 'pool-withdrawal')).toBe(true);
     expect(fitsDirection(payment, 'pool-withdrawal')).toBe(false);
     expect(() => planOperation(receipt, withdrawal, undefined)).toThrow(
@@ -269,6 +295,13 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'pool-withdrawal', deposit: { addressId }, valueUsd: null });
     refused({ type: 'pool-withdrawal', deposit: { addressId, txid: 'x' }, valueUsd: null });
     refused({ type: 'pool-withdrawal', deposit: { addressId, txid }, valueUsd: '0' });
+    refused({
+      type: 'pool-withdrawal',
+      deposit: { addressId, txid },
+      valueUsd: null,
+      partial: 'yes',
+    });
+    refused({ type: 'pool-deposit', partial: true });
   });
 
   it('CLS-RECORDED: a movement added by hand names its trade or swap and records nothing', () => {

@@ -14,7 +14,14 @@ import { leftOutTokens } from '../wallet-addresses/token-left-out';
 import { tokenKey } from '../wallet-addresses/token-visibility';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
-import { poolMoveUnits } from './chain-pool';
+import {
+  byPoolOrder,
+  poolAtomsToUnits,
+  poolDepositAtoms,
+  poolMoveUnits,
+  poolReturnAtoms,
+  settlePool,
+} from './chain-pool';
 import { recordGone } from './chain-recorded';
 import {
   type ConnectedLedger,
@@ -194,14 +201,20 @@ export async function readChainMoves(
     );
   for (const { units, ...row } of stake) rows.push({ ...row, ...signedLeg(BigInt(units)) });
   // POOL-DEPOSIT, POOL-WITHDRAW: coins in a liquidity pool stay held; a deposit and a withdrawal
-  // spend their network fee, and a withdrawal that returned less than its deposit the rest.
+  // spend their network fee, and the withdrawal that closes its deposit the rest of it
+  // (POOL-PARTIAL: the parts before it only return their share).
   const pools: (Omit<ChainMoveRow, 'stakeUnits'> & {
+    txid: string;
     feeUnits: string;
+    partial: boolean;
+    depositKey: string | null;
     deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
   })[] = await manager.query(
-    `SELECT w."accountId", w.id AS "addressId", w.network, t.asset, t."blockTime",
+    `SELECT w."accountId", w.id AS "addressId", w.network, t.asset, t."blockTime", t.txid,
         t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
         t."feeUnits"::text AS "feeUnits",
+        coalesce((v.details->>'partial')::boolean, false) AS partial,
+        CASE WHEN p.txid IS NULL THEN NULL ELSE p."addressId" || ':' || p.txid END AS "depositKey",
         CASE WHEN p.txid IS NULL THEN NULL ELSE json_build_object(
           'receivedUnits', p."receivedUnits"::text, 'sentUnits', p."sentUnits"::text,
           'feeUnits', p."feeUnits"::text) END AS deposit
@@ -213,12 +226,24 @@ export async function readChainMoves(
       LEFT JOIN wallet_address_transactions p ON v.type='pool-withdrawal'
         AND p."addressId"=v."pairedAddressId" AND p.txid=v."pairedTxid"
       WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL AND v.status='classified'
-        AND v.type IN ('pool-deposit', 'pool-withdrawal')
-      ORDER BY t."blockTime", t.txid, w.id`,
+        AND v.type IN ('pool-deposit', 'pool-withdrawal')`,
     [owner],
   );
-  for (const { deposit, feeUnits, ...row } of pools) {
-    const units = poolMoveUnits({ ...row, feeUnits }, deposit && { ...row, ...deposit });
+  // The parts of one deposit are settled in the order they happened.
+  pools.sort(byPoolOrder);
+  const left = new Map<string, bigint>();
+  for (const { deposit, depositKey, partial, feeUnits, ...row } of pools) {
+    let loss = 0n;
+    if (deposit && depositKey) {
+      const withdrawal = { ...row, feeUnits };
+      const before = left.get(depositKey) ?? poolDepositAtoms({ ...row, ...deposit });
+      const [settled] = settlePool(before, [
+        { returnedAtoms: poolReturnAtoms(withdrawal), partial },
+      ]);
+      left.set(depositKey, settled.remaining);
+      loss = poolAtomsToUnits(settled.loss, withdrawal);
+    }
+    const units = poolMoveUnits({ ...row, feeUnits }, loss);
     rows.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
   }
   // TOKEN-HIDE: a token the address leaves out (spam, no price anywhere, hidden by the owner)
