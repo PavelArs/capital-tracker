@@ -13,6 +13,7 @@ import { age, DASH, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
 import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
+import SyncJournal from './SyncJournal';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
 import TokensSection from './TokensSection';
 import {
@@ -464,6 +465,7 @@ export default function AddressDrawer({
               </Link>
             )}
           </section>
+          <SyncJournal address={address} run={run} />
         </div>
         <div className="transactions-drawer__foot">
           <span className="transactions-grow" />

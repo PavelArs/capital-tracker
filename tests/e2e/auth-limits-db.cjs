@@ -75,6 +75,7 @@ const expectedMigrationNames = [
   'HideChainTokens1795200000000',
   'TrackZcashWallets1795300000000',
   'TrackEvmChains1796000000000',
+  'JournalWalletSyncs1796100000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';

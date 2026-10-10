@@ -130,7 +130,7 @@ function assertStored(stored, address, total, count = total) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 54/);
+  assert.match(migrate(database), /Migrations applied: 55/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
@@ -298,6 +298,16 @@ async function main() {
     }
     console.log('PASS ADDR-SYNC-RESUME 429 keeps 25 committed rows; next sync resumes to 60 without gaps; 5xx reported unavailable');
 
+    // SYNC-JOURNAL: every pass that ended is listed, newest first, with what the provider said.
+    const journal = (await service.syncRuns(owner, resume)).items;
+    assert.deepEqual(journal.map((item) => [item.state, item.errorCode, item.imported]), [
+      ['failed', 'unavailable', 0], ['failed', 'unavailable', 0], ['synced', null, 35], ['delayed', 'rate_limited', 25],
+    ]);
+    assert.equal(journal[3].message, 'The Bitcoin data source is busy. The app tries again in a few minutes.');
+    assert.equal(journal[2].message, null);
+    assert.ok(journal.every((item, index) => index === 0 || item.at <= journal[index - 1].at), 'Newest first');
+    console.log('PASS SYNC-JOURNAL four passes of the resumed wallet are listed newest first with their results');
+
     // ADDR-SYNC-INVALID
     const invalid = (await service.register(owner, { address: addresses.invalid })).value.id;
     await post('bitcoin-history', { address: addresses.invalid, count: 30, fault: { onRequest: 1, invalid: true } });
@@ -393,6 +403,8 @@ async function main() {
     const denied = await newRequests(async () => {
       await refusal(() => service.sync(owner, foreign), 404);
       await refusal(() => service.transactions(owner, foreign, {}), 404);
+      await refusal(() => service.syncRuns(owner, foreign), 404);
+      await refusal(() => service.syncRuns(owner, 'not-a-uuid'), 400);
       await refusal(() => service.sync(owner, 'not-a-uuid'), 400);
       await refusal(() => service.transactions(owner, pages, { limit: '101' }), 400);
       await refusal(() => service.transactions(owner, pages, { limit: '10', extra: '1' }), 400);

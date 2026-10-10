@@ -14,6 +14,7 @@ import {
   type StepResult,
   walletSourceKey,
 } from './chain-sync';
+import { journalSync } from './sync-journal';
 
 export type WalletTickResult =
   | { outcome: 'ran'; wallets: { id: string; state: SourceOutcome['state'] | 'busy' }[] }
@@ -126,6 +127,7 @@ export class WalletSyncService {
     if (!adapter) {
       const outcome = outcomeOf(name, { failure: 'unsupported' }, now);
       await this.record(key, outcome, now);
+      await this.journal(wallet, outcome, null, now);
       return { ...outcome, step: null };
     }
     // Leased while it runs: the scheduler leaves it alone until the pass ends or dies.
@@ -147,10 +149,12 @@ export class WalletSyncService {
       this.logger.warn(`${name} wallet sync stopped unexpectedly`);
       const outcome = outcomeOf(name, { failure: 'error' }, now);
       await this.record(key, outcome, now);
+      await this.journal(wallet, outcome, null, now);
       return { ...outcome, step: null };
     }
     const outcome = outcomeOf(name, step, now);
     await this.record(key, outcome, now);
+    await this.journal(wallet, outcome, step, now);
     // D7, XFER-AUTO: what this pass stored may complete a transfer between own wallets.
     if (step.outcome !== 'provider_error') await this.linkOwnTransfers(wallet.ownerId);
     return { ...outcome, step };
@@ -163,5 +167,19 @@ export class WalletSyncService {
 
   private record(key: string, outcome: SourceOutcome, now: Date): Promise<void> {
     return recordSource(this.source, key, outcome, now);
+  }
+
+  /** SYNC-JOURNAL: a failed write never fails the sync it describes. */
+  private async journal(
+    wallet: DueWallet,
+    outcome: SourceOutcome,
+    step: StepResult | null,
+    now: Date,
+  ): Promise<void> {
+    try {
+      await journalSync(this.source, wallet, outcome, step, now);
+    } catch {
+      this.logger.warn('The sync journal could not be written');
+    }
   }
 }

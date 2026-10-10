@@ -232,6 +232,18 @@ export interface TransactionPage {
   items: AddressTransaction[];
 }
 
+/** SYNC-JOURNAL: how one pass of a wallet's sync ended. */
+export interface SyncRunEntry {
+  at: string;
+  /** "partial": stored a page of history, more waits for the next pass. */
+  state: 'synced' | 'partial' | 'delayed' | 'failed';
+  errorCode: string | null;
+  /** What the provider or the app said about a pass that did not finish. */
+  message: string | null;
+  /** Transactions this pass stored. */
+  imported: number;
+}
+
 const path = '/wallet-addresses';
 
 export const walletAddressesApi = {
@@ -266,6 +278,10 @@ export const walletAddressesApi = {
   countGap: async (id: string, gap: BalanceGap): Promise<WalletAddress> =>
     (await apiClient.post<WalletAddress>(`${path}/${encodeURIComponent(id)}/balance-gap`, gap))
       .data,
+  /** The newest passes of the address's sync, newest first. */
+  syncRuns: async (id: string): Promise<SyncRunEntry[]> =>
+    (await apiClient.get<{ items: SyncRunEntry[] }>(`${path}/${encodeURIComponent(id)}/sync-runs`))
+      .data.items,
   transactions: async (id: string, offset = 0): Promise<TransactionPage> =>
     (
       await apiClient.get<TransactionPage>(`${path}/${encodeURIComponent(id)}/transactions`, {

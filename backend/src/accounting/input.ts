@@ -125,7 +125,7 @@ function member<T extends string>(value: unknown, allowed: readonly T[]): T {
 }
 export function parseInstrument(input: unknown): InstrumentInput {
   const row = object(input, ['requestId', 'name', 'symbol', 'assetType', 'valuationCurrency']);
-  const has = (key: string) => Object.prototype.hasOwnProperty.call(row, key);
+  const has = (key: string) => Object.hasOwn(row, key);
   return {
     requestId: parseUuid(row.requestId),
     name: label(row.name, 120),

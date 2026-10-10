@@ -194,7 +194,7 @@ IDs are stable; each names its BR section and MVP item (BR 17 numbering).
 | PR-HIS-1 | An hourly portfolio snapshot is stored; backdated operation changes rebuild later snapshots. | 3.2, 12 | 7, 24 |
 | PR-HIS-2 | Chart periods 24H, 7D, 1M, 3M, 1Y, ALL (default 1M), with absolute and percentage change for the period. | 3.1, 3.2 | 7 |
 | PR-HIS-3 | For any period, the change splits into market effect and net deposits/withdrawals. | 10 | 7 |
-| PR-SYN-1 | Each background source (prices, FX, each wallet) has its own state: last success, last attempt, state (synced, syncing, delayed, failed) and a readable error. One failing source never blocks another. | 12 | 24, 25 |
+| PR-SYN-1 | Each background source (prices, FX, each wallet) has its own state: last success, last attempt, state (synced, syncing, delayed, failed) and a readable error. One failing source never blocks another. A wallet also keeps a journal of its latest 50 passes (time, result, the reason it stopped, transactions stored); the address panel lists them. | 12 | 24, 25 |
 | PR-EXP-1 | Export CSV (assets, accounts and wallets, operations with classifications) and a JSON backup. | 15 | 23 |
 | PR-OWN-1 | With every provider down, history, operations, last prices and allocation stay available. | 16 | — |
 
