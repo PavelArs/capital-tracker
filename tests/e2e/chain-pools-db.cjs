@@ -120,10 +120,11 @@ const classify = (s, owner, addressId, txid, body) =>
     ...body,
   });
 const deposit = { type: 'pool-deposit' };
-const withdrawalOf = (addressId, txid, valueUsd = null) => ({
+const withdrawalOf = (addressId, txid, valueUsd = null, partial = false) => ({
   type: 'pool-withdrawal',
   deposit: { addressId, txid },
   valueUsd,
+  ...(partial ? { partial: true } : {}),
 });
 const count = async (s, owner) => (await s.classifications.needsClassificationCount(owner)).count;
 const listed = async (s, owner) => (await s.operations.read(owner, {}, now)).operations;
@@ -455,6 +456,198 @@ async function invalid(db, s, owner, f) {
   console.log('PASS POOL-INVALID');
 }
 
+// POOL-PARTIAL: one wallet of an owner of its own, so the counts above stay as they are.
+const parts = {
+  in: hash(20),
+  depositA: hash(21),
+  early: hash(22),
+  partOne: hash(23),
+  partTwo: hash(24),
+  extra: hash(25),
+  depositB: hash(26),
+  partB: hash(27),
+  finalB: hash(28),
+  lateB: hash(29),
+};
+
+async function partial(db, s) {
+  stage = 'POOL-PARTIAL synthetic wallet: 2 ETH bought, a 1 ETH deposit and a 0.5 ETH deposit';
+  const [owner] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('pool-parts-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const ownerId = owner.id;
+  const ledger = await account(s, ownerId, 'Ledger');
+  const eth = await wallet(db, ownerId, ledger, 'ethereum', `0x${'12'.repeat(20)}`);
+  const at = (day, time) => `2026-${day}T${time}:00.000Z`;
+  const out = (txid, height, when, sent, fee = '0') =>
+    raw(db, ownerId, eth, { txid, height, at: when, received: '0', sent, fee, direction: 'out' });
+  const into = (txid, height, when, received) =>
+    raw(db, ownerId, eth, { txid, height, at: when, received, sent: '0', fee: '0', direction: 'in' });
+  await into(parts.in, 21, at('08-01', '09:00'), '2000000000000000000');
+  await out(parts.depositA, 22, at('08-10', '10:00'), '1001000000000000000', '1000000000000000');
+  await into(parts.early, 23, at('09-03', '10:00'), '50000000000000000');
+  await into(parts.partOne, 24, at('09-05', '10:00'), '400000000000000000');
+  await into(parts.partTwo, 25, at('09-10', '12:00'), '700000000000000000');
+  await into(parts.extra, 26, at('09-12', '10:00'), '10000000000000000');
+  await out(parts.depositB, 27, at('09-15', '10:00'), '500000000000000000');
+  await into(parts.partB, 28, at('09-20', '10:00'), '200000000000000000');
+  await into(parts.finalB, 29, at('09-25', '10:00'), '100000000000000000');
+  await into(parts.lateB, 30, at('09-26', '10:00'), '10000000000000000');
+  const before = await rawFingerprint(db, ownerId);
+  await classify(s, ownerId, eth, parts.in, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '6000' },
+  });
+  await classify(s, ownerId, eth, parts.depositA, { expectedVersion: 0, classification: deposit });
+  await classify(s, ownerId, eth, parts.depositB, { expectedVersion: 0, classification: deposit });
+  const pools = async () =>
+    ((await card(s, ownerId, eth)).pools ?? []).map((item) => [item.symbol, scaled(item.quantity)]);
+  // The address card and the books count the same coins, at every step.
+  const matches = async (message) =>
+    assert.equal(balance(await card(s, ownerId, eth), 'ETH'), await held(s, ownerId, 'ETH', ledger), message);
+  const income = async () =>
+    (await journal(s, ownerId, ledger)).rewardSummary?.knownIncomeSubtotalUsd ?? '0';
+  await matches('Both deposits stay held');
+  assert.deepEqual(await pools(), [['ETH', coins('1.5')]]);
+
+  stage = 'POOL-PARTIAL a part returns 0.4 ETH of the deposit: no income, no loss, 0.6 ETH stay in the pool';
+  const one = await classify(s, ownerId, eth, parts.partOne, {
+    expectedVersion: 0,
+    classification: withdrawalOf(eth, parts.depositA, null, true),
+  });
+  assert.equal(one.value.operation, null, 'A part records no income');
+  assert.equal(one.value.classification.partial, true);
+  assert.deepEqual((await answer(db, eth, parts.partOne)).details.partial, true);
+  assert.deepEqual(await pools(), [['ETH', coins('1.1')]], '0.6 ETH of deposit A and 0.5 ETH of B');
+  await matches('The 0.6 ETH in the pool are still held');
+  same(await income(), '0', 'Nothing is income yet');
+  const first = await row(s, ownerId, parts.partOne);
+  assert.deepEqual([first.type, first.status], ['pool-withdrawal', 'recorded']);
+  assert.deepEqual([first.pool.partial, scaled(first.pool.remaining), scaled(first.pool.difference)], [true, coins('0.6'), 0n]);
+  same(first.pool.deposited, '1');
+
+  stage = 'POOL-PARTIAL a withdrawal cannot be added before one that comes after it';
+  const later = 'A later withdrawal already returns part of this deposit; change it first';
+  await rejected(
+    () => classify(s, ownerId, eth, parts.early, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    422,
+    later,
+  );
+
+  stage = 'POOL-PARTIAL the next part returns more than was left: 0.1 ETH are pool income';
+  const two = await classify(s, ownerId, eth, parts.partTwo, {
+    expectedVersion: 0,
+    classification: withdrawalOf(eth, parts.depositA, null, true),
+  });
+  assert.equal(two.value.operation.kind, 'reward', 'The excess is recorded as income');
+  same(await income(), '300', '0.1 ETH × 3000 USD');
+  assert.deepEqual(await pools(), [['ETH', coins('0.5')]], 'Deposit A is back in full');
+  await matches('Chain 0.7 ETH came back for 0.6 ETH of principal and 0.1 ETH of income');
+  const second = await row(s, ownerId, parts.partTwo);
+  assert.deepEqual([second.pool.partial, scaled(second.pool.remaining)], [true, 0n]);
+  same(second.pool.difference, '0.1');
+  same(second.valueUsd, '300');
+
+  stage = 'POOL-PARTIAL a deposit returned in full takes no further withdrawal';
+  await rejected(
+    () => classify(s, ownerId, eth, parts.extra, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    422,
+    'That pool deposit was already returned in full',
+  );
+  await rejected(
+    () => classify(s, ownerId, eth, parts.extra, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositA) }),
+    422,
+    'That pool deposit was already returned in full',
+  );
+
+  stage = 'POOL-PARTIAL an earlier part cannot change or be hidden under a later one';
+  await rejected(
+    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, hidden: true, classification: withdrawalOf(eth, parts.depositA, null, true) }),
+    422,
+    later,
+  );
+  await rejected(
+    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, classification: withdrawalOf(eth, parts.depositA) }),
+    422,
+    later,
+  );
+  await rejected(
+    () => classify(s, ownerId, eth, parts.partOne, { expectedVersion: 1, classification: { type: 'other' } }),
+    422,
+    later,
+  );
+  // A note on the same answer changes nothing the later part settles against.
+  await classify(s, ownerId, eth, parts.partOne, {
+    expectedVersion: 1,
+    classification: withdrawalOf(eth, parts.depositA, null, true),
+    comment: 'first part',
+  });
+  same(await income(), '300');
+  // The deposit stays put while parts name it (POOL-UNDO).
+  await rejected(
+    () => classify(s, ownerId, eth, parts.depositA, { expectedVersion: 1, hidden: true, classification: deposit }),
+    422,
+    'A pool withdrawal names this deposit; change the withdrawal first',
+  );
+
+  stage = 'POOL-PARTIAL the withdrawal that is not a part closes the deposit and takes its shortfall';
+  await classify(s, ownerId, eth, parts.partB, {
+    expectedVersion: 0,
+    classification: withdrawalOf(eth, parts.depositB, null, true),
+  });
+  assert.deepEqual(await pools(), [['ETH', coins('0.3')]]);
+  await matches('0.3 ETH of deposit B are still in the pool');
+  const closing = await classify(s, ownerId, eth, parts.finalB, {
+    expectedVersion: 0,
+    classification: withdrawalOf(eth, parts.depositB),
+  });
+  assert.equal(closing.value.operation, null, 'A loss records no income');
+  assert.equal(await pools().then((items) => items.length), 0, 'Deposit B is closed');
+  await matches('The 0.2 ETH the pool kept left the books without a sale price');
+  same(await income(), '300', 'A loss is not negative income');
+  const last = await row(s, ownerId, parts.finalB);
+  assert.deepEqual([last.pool.partial, scaled(last.pool.remaining)], [false, 0n]);
+  same(last.pool.difference, '-0.2');
+  const middle = await row(s, ownerId, parts.partB);
+  same(middle.pool.remaining, '0.3');
+  await rejected(
+    () => classify(s, ownerId, eth, parts.lateB, { expectedVersion: 0, classification: withdrawalOf(eth, parts.depositB, null, true) }),
+    422,
+    'That pool deposit was already withdrawn',
+  );
+  await rejected(
+    () => classify(s, ownerId, eth, parts.partB, { expectedVersion: 1, hidden: true, classification: withdrawalOf(eth, parts.depositB, null, true) }),
+    422,
+    later,
+  );
+
+  stage = 'POOL-PARTIAL undoing the last part first puts what it returned back in the pool';
+  await classify(s, ownerId, eth, parts.partTwo, {
+    expectedVersion: 1,
+    hidden: true,
+    classification: withdrawalOf(eth, parts.depositA, null, true),
+  });
+  same(await income(), '0', 'The income of the part is voided');
+  assert.deepEqual(await pools(), [['ETH', coins('0.6')]]);
+  assert.equal(
+    await held(s, ownerId, 'ETH', ledger),
+    balance(await card(s, ownerId, eth), 'ETH') - coins('0.7'),
+    'The hidden receipt of 0.7 ETH is out of the books; the 0.6 ETH in the pool are held again',
+  );
+  await classify(s, ownerId, eth, parts.partOne, {
+    expectedVersion: 2,
+    hidden: true,
+    classification: withdrawalOf(eth, parts.depositA, null, true),
+  });
+  assert.deepEqual(await pools(), [['ETH', coins('1')]]);
+  assert.equal(
+    await held(s, ownerId, 'ETH', ledger),
+    balance(await card(s, ownerId, eth), 'ETH') - coins('1.1'),
+    'Both hidden receipts are out of the books; the whole deposit is held again',
+  );
+  assert.equal(await rawFingerprint(db, ownerId), before, 'Raw chain rows are never edited');
+  console.log('PASS POOL-PARTIAL');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -501,6 +694,7 @@ async function main() {
     const rewardId = await withdrawals(db, s, owner.id, f);
     await undo(db, s, owner.id, f, rewardId);
     await invalid(db, s, owner.id, f);
+    await partial(db, s);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
   } finally {
     if (db.isInitialized) await db.destroy();

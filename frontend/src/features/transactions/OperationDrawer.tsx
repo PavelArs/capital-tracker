@@ -277,6 +277,8 @@ function facts(
         ['Deposited', amount(operation.pool.deposited, operation.asset)],
         [difference.label, difference.text],
       );
+    if (operation.pool?.partial && operation.pool.remaining !== undefined)
+      rows.push(['Left in the pool', amount(operation.pool.remaining, operation.asset)]);
     if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
       rows.push([
         'Deposit transaction',
@@ -647,8 +649,13 @@ export default function OperationDrawer({
       )}
       {operation.status === 'recorded' && operation.type === 'pool-withdrawal' && (
         <p className="transactions-notice" role="note">
-          Returned from a liquidity pool: the deposit comes back as your own coins, not income and
-          not a deposit.
+          Returned from a liquidity pool:{' '}
+          {operation.pool?.partial ? 'a part of the deposit' : 'the deposit'} comes back as your own
+          coins, not income and not a deposit.
+          {operation.pool?.partial &&
+            (Number(operation.pool.remaining ?? 0) > 0
+              ? ` The ${amount(operation.pool.remaining!, operation.asset)} left in the pool stay yours, with their purchase price.`
+              : ' Nothing is left in the pool.')}
           {operation.pool &&
             (operation.pool.difference.startsWith('-')
               ? ` The ${amount(operation.pool.difference.slice(1), operation.asset)} below it left without a sale price (impermanent loss).`

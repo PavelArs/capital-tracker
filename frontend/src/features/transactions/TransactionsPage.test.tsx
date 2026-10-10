@@ -2313,6 +2313,96 @@ describe('liquidity-pool-chain-legs (POOL-*)', () => {
     expect(poolCandidates(other, [returned, deposited, other]).map(([key]) => key)).toEqual([]);
   });
 
+  // POOL-PARTIAL: the pool paid 1,000 of the 3,000 back and keeps 2,000 for now.
+  const partTxid = `${'e'.repeat(64)}-3`;
+  const part = leg(partTxid, {
+    type: 'pool-withdrawal',
+    direction: 'internal',
+    occurredAt: '2026-08-20T10:00:00.000Z',
+    quantity: '1000',
+    status: 'recorded',
+    chain: {
+      txid: partTxid,
+      blockHeight: 20000001,
+      priceObservedAt: null,
+      direction: 'in',
+      pairedTxid: depositTxid,
+    },
+    pool: { deposited: '3000', difference: '0', partial: true, remaining: '2000' },
+    classification: {
+      version: 1,
+      hidden: false,
+      value: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+        partial: true,
+      },
+      comment: null,
+      automatic: false,
+    },
+  });
+
+  it('POOL-PARTIAL-UI: a withdrawal can be marked as a part of its deposit', async () => {
+    const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+    const { user, drawer } = await openRow([back, deposited], 0, 'Incoming transaction · USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Pool withdrawal' }));
+    expect(
+      within(drawer).getByText(/The last or only withdrawal of this deposit: what is missing/),
+    ).toBeInTheDocument();
+    await user.selectOptions(
+      within(drawer).getByLabelText('Returns the deposit'),
+      `${ethWallet.id}|${depositTxid}`,
+    );
+    await user.click(within(drawer).getByLabelText('Part of the deposit'));
+    expect(within(drawer).getByText(/The rest is still in the pool/)).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+    expect(classify.mock.calls[0][2]).toEqual({
+      requestId: expect.any(String),
+      expectedVersion: 0,
+      hidden: false,
+      classification: {
+        type: 'pool-withdrawal',
+        deposit: { addressId: ethWallet.id, txid: depositTxid },
+        valueUsd: null,
+        partial: true,
+      },
+    });
+  });
+
+  it('POOL-PARTIAL-UI: a part shows what is left in the pool and keeps the choice on edit', async () => {
+    const { user, drawer } = await openRow([part, deposited], 0, 'Pool withdrawal · USDC');
+    expect(
+      within(drawer).getByText(
+        'Returned from a liquidity pool: a part of the deposit comes back as your own coins, not income and not a deposit. The 2,000 USDC left in the pool stay yours, with their purchase price.',
+      ),
+    ).toBeInTheDocument();
+    const facts = within(drawer).getByRole('region', { name: 'Details' });
+    const fact = (label: string) =>
+      within(facts).getByText(label, { exact: true }).nextElementSibling?.textContent;
+    expect(fact('Deposited')).toBe('3,000 USDC');
+    expect(fact('Left in the pool')).toBe('2,000 USDC');
+    await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+    expect(within(drawer).getByLabelText('Part of the deposit')).toBeChecked();
+  });
+
+  it('POOL-PARTIAL-UI: a deposit stays a choice while parts leave coins in the pool', () => {
+    const other = leg(`${'b'.repeat(64)}-1`, { occurredAt: '2026-09-02T10:00:00.000Z' });
+    const keys = (operations: Operation[]) =>
+      poolCandidates(other, operations).map(([key, label]) => [key, label]);
+    expect(keys([part, deposited, other])).toEqual([
+      [
+        `${ethWallet.id}|${depositTxid}`,
+        'Aug 10, 2026, 10:00 · 3,000 USDC · Ethereum 0x0000…00bb · 2,000 USDC left in the pool',
+      ],
+    ]);
+    // Returned in full by the parts, or closed by a withdrawal that is not a part: no choice.
+    const empty = { ...part, pool: { ...part.pool!, remaining: '0' } };
+    expect(keys([empty, deposited, other])).toEqual([]);
+    expect(keys([part, returned, deposited, other])).toEqual([]);
+  });
+
   it('POOL-UNDO-UI: explains why a deposit a withdrawal returns cannot be hidden', async () => {
     vi.spyOn(operationsApi, 'classify').mockRejectedValue(
       new AxiosError('refused', '422', undefined, undefined, {

@@ -121,6 +121,8 @@ export interface PoolWithdrawalClassification {
   type: 'pool-withdrawal';
   deposit: { addressId: string; txid: string };
   valueUsd: string | null;
+  /** POOL-PARTIAL: only a part of the deposit came back; the rest is still in the pool. */
+  partial?: true;
 }
 /**
  * CLS-RECORDED: the owner already added this movement by hand or from CSV, as a trade or a swap
@@ -233,12 +235,14 @@ function classification(raw: unknown): Classification | null {
     return { type };
   }
   if (type === 'pool-withdrawal') {
-    const row = object(raw, ['type', 'deposit', 'valueUsd']);
+    const row = object(raw, ['type', 'deposit', 'valueUsd', 'partial']);
     const deposit = object(row.deposit, ['addressId', 'txid']);
     if (typeof deposit.txid !== 'string' || !chainTxid.test(deposit.txid)) return bad();
+    if (row.partial !== undefined && typeof row.partial !== 'boolean') return bad();
     return {
       type,
       deposit: { addressId: parseUuid(deposit.addressId), txid: deposit.txid },
+      ...(row.partial === true ? { partial: true as const } : {}),
       valueUsd: row.valueUsd === null ? null : parseDecimal(row.valueUsd, true),
     };
   }

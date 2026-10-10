@@ -9,7 +9,17 @@ import {
 } from '../wallet-addresses/chain-assets';
 import type { ChainType, Classification } from './chain-classification';
 import { isDust } from './chain-dust';
-import { poolCoins, poolDepositUnits, poolReturnUnits, storedValueUsd } from './chain-pool';
+import {
+  byPoolOrder,
+  type PoolSettlement,
+  poolCoins,
+  poolDepositAtoms,
+  poolDepositUnits,
+  poolReturnAtoms,
+  poolReturnUnits,
+  settlePool,
+  storedValueUsd,
+} from './chain-pool';
 import { coinOf, sameTransaction } from './chain-transfer';
 import { canonicalDecimalToAtoms, formatAtoms, formatProduct } from './money';
 import type { TradePayment } from './paid-currency';
@@ -262,10 +272,12 @@ export interface Operation {
     swapWith?: { addressId: string; txid: string };
   } | null;
   /**
-   * POOL-WITHDRAW: what the deposit put into the pool and what came back above it (positive,
-   * pool income) or below it (negative, impermanent loss); null for every other row.
+   * POOL-WITHDRAW: what the deposit put into the pool and what came back above what was still
+   * in it (positive, pool income) or below it (negative, impermanent loss); `partial` says only
+   * a part of the deposit came back, and `remaining` what is still in the pool afterwards
+   * (POOL-PARTIAL); null for every other row.
    */
-  pool: { deposited: string; difference: string } | null;
+  pool: { deposited: string; difference: string; partial: boolean; remaining: string } | null;
   /**
    * Hidden: a chain transaction the owner left out of every calculation (CLS-HIDE). Dust: an
    * unanswered receipt worth less than the dust threshold; it counts like any unanswered one
@@ -455,6 +467,7 @@ function chainOperation(
   dustThresholdUsd: string | null,
   gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
   records: ReadonlyMap<string, Projected> = new Map(),
+  settled: ReadonlyMap<ChainOperationInput, PoolSettlement> = new Map(),
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
@@ -558,6 +571,7 @@ function chainOperation(
     const ownFee = row.asset === null && !isExchange(network);
     const paired = deposit ? null : other;
     const deposited = paired && poolCoins(poolDepositUnits(units(paired)), units(paired));
+    const mine = settled.get(row);
     return {
       ...operation,
       type: answer.type,
@@ -574,8 +588,12 @@ function chainOperation(
         ? {
             deposited,
             difference: formatAtoms(
-              canonicalDecimalToAtoms(moved) - canonicalDecimalToAtoms(deposited),
+              mine
+                ? mine.gain - mine.loss
+                : canonicalDecimalToAtoms(moved) - canonicalDecimalToAtoms(deposited),
             ),
+            partial: answer.details?.type === 'pool-withdrawal' && answer.details.partial === true,
+            remaining: formatAtoms(mine?.remaining ?? 0n),
           }
         : null,
       orderWithinTimestamp: produced?.orderWithinTimestamp ?? 0,
@@ -915,6 +933,34 @@ export function projectOperations(
       .filter(({ operation }) => operation.kind === 'trade' || operation.kind === 'swap')
       .map(({ operation }) => [operation.id, operation] as const),
   );
+  // POOL-PARTIAL: the withdrawals of one deposit are settled in the order they happened.
+  const settled = new Map<ChainOperationInput, PoolSettlement>();
+  const withdrawals = new Map<string, ChainOperationInput[]>();
+  for (const row of sources.chain) {
+    const answer = row.classification;
+    if (answer?.status !== 'classified' || answer.type !== 'pool-withdrawal' || !answer.paired)
+      continue;
+    const key = `${answer.paired.addressId}:${answer.paired.txid}`;
+    withdrawals.set(key, [...(withdrawals.get(key) ?? []), row]);
+  }
+  for (const [key, rows] of withdrawals) {
+    const deposit = byLeg.get(key);
+    if (!deposit) continue;
+    const units = (leg: ChainOperationInput) => ({ ...leg, network: leg.wallet.network });
+    const ordered = [...rows].sort(byPoolOrder);
+    const steps = settlePool(
+      poolDepositAtoms(units(deposit)),
+      ordered.map((leg) => ({
+        returnedAtoms: poolReturnAtoms(units(leg)),
+        partial:
+          leg.classification?.details?.type === 'pool-withdrawal' &&
+          leg.classification.details.partial === true,
+      })),
+    );
+    ordered.forEach((leg, index) => {
+      settled.set(leg, steps[index]);
+    });
+  }
   for (const row of sources.chain) {
     if (folded.has(row)) continue;
     const ref = row.classification?.produced;
@@ -934,7 +980,16 @@ export function projectOperations(
     )
       continue;
     const operation = oneTransactionSwap(
-      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd, gasOf, records),
+      chainOperation(
+        row,
+        sources.marketPrices,
+        entry,
+        other,
+        dustThresholdUsd,
+        gasOf,
+        records,
+        settled,
+      ),
       row,
       byHash.get(hashKey(row)) ?? [],
     );
