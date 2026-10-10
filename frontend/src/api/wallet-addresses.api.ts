@@ -15,6 +15,21 @@ export type Network = 'bitcoin' | 'ethereum' | 'solana' | 'bybit' | 'tron' | 'st
 export interface ChainBalance {
   symbol: string;
   quantity: string;
+  /** TOKEN-ANY: set for a token beyond the tracked coins: the name its chain gives it. */
+  name?: string;
+  /** TOKEN-ANY: whether a price source lists the token; set only with `name`. */
+  listed?: boolean;
+}
+
+/** TOKEN-HIDE: why an address's balances leave a token out. */
+export type HiddenReason = 'negative' | 'lookalike' | 'dust' | 'owner';
+
+/** A token the address holds that its balances leave out; the coins are not counted. */
+export interface HiddenToken {
+  symbol: string;
+  name: string;
+  quantity: string;
+  reason: HiddenReason;
 }
 
 export type StakeState = 'activating' | 'active' | 'deactivating' | 'inactive' | 'closed';
@@ -107,6 +122,11 @@ export interface WalletAddress {
   /** Every asset the wallet holds (its coin first, then USDT, USDC and, on Ethereum and Solana,
    * any other token by its ticker); null until a sync completes. */
   balances: ChainBalance[] | null;
+  /**
+   * TOKEN-HIDE: the other tokens left out of `balances`, such as forged transfers of a scam token
+   * or one the owner hid; null on networks that read no other tokens or until a sync completes.
+   */
+  hiddenTokens?: HiddenToken[] | null;
   /** Solana stake accounts or Ethereum pools; null when there are none or until a sync completes. */
   staking?: Staking | null;
   /**
@@ -194,6 +214,18 @@ export const walletAddressesApi = {
   },
   update: async (id: string, changes: WalletAddressChanges): Promise<WalletAddress> =>
     (await apiClient.patch<WalletAddress>(`${path}/${encodeURIComponent(id)}`, changes)).data,
+  /** TOKEN-HIDE: leaves other tokens (by ticker) out of the address's balances, or brings them back. */
+  tokens: async (
+    id: string,
+    tickers: string[],
+    visibility: 'hidden' | 'shown',
+  ): Promise<WalletAddress> =>
+    (
+      await apiClient.patch<WalletAddress>(`${path}/${encodeURIComponent(id)}/tokens`, {
+        tickers,
+        visibility,
+      })
+    ).data,
   // A sync may read several provider pages; the backend stops itself after 25 s.
   sync: async (id: string): Promise<SyncResult> =>
     (

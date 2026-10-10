@@ -28,6 +28,11 @@ export class WalletAddressController {
     return this.addresses.update(owner.userId, id, input);
   }
 
+  @Patch(':id/tokens')
+  tokens(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string, @Body() input: unknown) {
+    return this.addresses.setTokenVisibility(owner.userId, id, input);
+  }
+
   @Post(':id/sync')
   @HttpCode(200)
   sync(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {

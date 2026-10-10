@@ -13,14 +13,17 @@ import { age, DASH, quantity } from '../portfolio/format';
 import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
+import TokensSection from './TokensSection';
 import {
   addressValue,
   ConvertNote,
-  chainAmounts,
+  chainPieces,
   EarnSection,
+  MoreCoins,
   PoolsSection,
   type Prices,
   ReportedBalanceNote,
+  SHOWN_COINS,
   StakingSection,
 } from './WalletParts';
 import { chainBalances, shortAddress } from './wallets';
@@ -86,6 +89,7 @@ export default function AddressDrawer({
   const [newName, setNewName] = useState('');
   const [label, setLabel] = useState(address.label ?? '');
   const [saving, setSaving] = useState(false);
+  const [allCoins, setAllCoins] = useState(false);
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   // undefined while loading, null when the read failed.
   const [recent, setRecent] = useState<AddressTransaction[] | null | undefined>(undefined);
@@ -137,6 +141,7 @@ export default function AddressDrawer({
   const network = networkOf(address);
   const balances = chainBalances(address);
   const value = addressValue(address, prices, currency);
+  const pieces = chainPieces(address);
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -212,7 +217,7 @@ export default function AddressDrawer({
                 ? exchange
                   ? DASH
                   : `${DASH} ${network.symbol}`
-                : chainAmounts(address)}
+                : (allCoins ? pieces : pieces.slice(0, SHOWN_COINS)).join(' · ')}
             </span>
             <span className="transactions-hero__value">
               {balances === null
@@ -221,6 +226,14 @@ export default function AddressDrawer({
                   ? 'No price yet'
                   : value}
             </span>
+            {balances !== null && (
+              <MoreCoins
+                total={pieces.length}
+                expanded={allCoins}
+                hidden={0}
+                onToggle={() => setAllCoins((current) => !current)}
+              />
+            )}
           </div>
           <dl className="transactions-facts" aria-label="Details">
             <div>
@@ -328,6 +341,7 @@ export default function AddressDrawer({
             </p>
           )}
           {address.network === 'tron' && <ReportedBalanceNote address={address} />}
+          <TokensSection address={address} onChange={(saved) => onSaved(saved, false)} />
           {address.staking && <StakingSection address={address} staking={address.staking} />}
           {address.pools && <PoolsSection pools={address.pools} />}
           {address.network === 'stellar' && address.reportedBalance && (
