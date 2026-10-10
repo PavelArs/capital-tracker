@@ -57,8 +57,17 @@ import { ZcashSyncAdapter } from './zcash-sync.adapter';
     },
     // Stellar's public Horizon needs no key (STELLAR-SYNC).
     { provide: HorizonClient, useFactory: () => new HorizonClient() },
-    // Trezor's public Zcash Blockbook needs no key (ZCASH-SYNC).
-    { provide: BlockbookClient, useFactory: () => new BlockbookClient() },
+    // Trezor's public Zcash Blockbook turns servers away, so a free NOWNodes key from the
+    // server's environment selects NOWNodes' Blockbook instead (ZCASH-SYNC).
+    {
+      provide: BlockbookClient,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =>
+        new BlockbookClient({
+          apiKey: config.get<string>('ZCASH_BLOCKBOOK_API_KEY') ?? null,
+          baseUrl: config.get<string>('ZCASH_BLOCKBOOK_URL') ?? null,
+        }),
+    },
     // Bybit (M22): the owner's read-only key is stored per account, sealed with the MFA key.
     { provide: BybitClient, useFactory: () => new BybitClient() },
     {

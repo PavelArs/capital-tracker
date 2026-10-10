@@ -1,9 +1,11 @@
 import { accountingApi, type WalletKind } from '@api/accounting.api';
+import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
 import {
   type AssetValuation,
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
+import { forgetReads } from '@api/read-cache';
 import { type SyncResult, type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -141,6 +143,14 @@ const account = (accountId: string, name: string, kind: WalletKind | null) => ({
   createdAt: '2026-10-01T00:00:00.000Z',
 });
 
+const noOperations: OperationList = {
+  at: '2026-10-05T12:00:00.000Z',
+  quoteCurrency: 'USD',
+  needsClassificationCount: 0,
+  dustThresholdUsd: null,
+  operations: [],
+};
+
 function setup(
   list: WalletAddress[],
   valuation = portfolio(),
@@ -164,6 +174,7 @@ function setup(
     missingUsdValueCount: 0,
     items: [],
   });
+  vi.spyOn(operationsApi, 'list').mockResolvedValue(noOperations);
   render(
     <MemoryRouter initialEntries={['/wallets']}>
       <WalletsPage />
@@ -181,6 +192,7 @@ const openAddWallet = async (user: ReturnType<typeof userEvent.setup>) => {
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  forgetReads();
 });
 afterEach(() => {
   cleanup();
@@ -2037,7 +2049,12 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
       ).toBeInTheDocument(),
     );
     expect(within(drawer).queryByRole('button', { name: 'Hide AAA' })).toBeNull();
+    // The hidden tokens stay folded away until asked for.
+    expect(within(drawer).queryByRole('button', { name: 'Restore AAA' })).toBeNull();
+    await user.click(within(drawer).getByRole('button', { name: 'Show more' }));
     expect(within(drawer).getByRole('button', { name: 'Restore AAA' })).toBeInTheDocument();
+    await user.click(within(drawer).getByRole('button', { name: 'Show less' }));
+    expect(within(drawer).queryByRole('button', { name: 'Restore AAA' })).toBeNull();
   });
 
   it('hides every token no price source lists at once, and not the listed one', async () => {
@@ -2070,6 +2087,8 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     const user = userEvent.setup();
     await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    expect(drawer).not.toHaveTextContent('Hidden by you');
+    await user.click(within(drawer).getByRole('button', { name: 'Show more' }));
     expect(drawer).toHaveTextContent('the history sends out more than it received');
     expect(drawer).toHaveTextContent('calls itself like a coin you track');
     expect(drawer).toHaveTextContent('Hidden by you');
@@ -2088,5 +2107,137 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     await user.click(within(drawer).getByRole('button', { name: 'Hide AAA' }));
     expect(await within(drawer).findByRole('alert')).toHaveTextContent('Nothing was changed');
     expect(within(drawer).getByRole('button', { name: 'Hide AAA' })).toBeEnabled();
+  });
+});
+
+describe('DRAWER-DUST: dust stays out of the blockchain transactions of an address', () => {
+  const ethAddress = `0x${'7a'.repeat(20)}`;
+  const holder = wallet(7, {
+    network: 'ethereum',
+    address: ethAddress,
+    label: 'Main ETH',
+    chainBalance: '1.500000000000000000',
+    balances: [{ symbol: 'ETH', quantity: '1.500000000000000000' }],
+    transactionCount: 4,
+  });
+  const row = (n: number, direction: 'in' | 'out', net: string, symbol = 'ETH') => ({
+    txid: `0x${String(n).repeat(64).slice(0, 64)}`,
+    blockHeight: 1000 - n,
+    blockTime: `2026-10-0${n}T10:00:00.000Z`,
+    direction,
+    symbol,
+    received: net,
+    sent: '0',
+    net,
+    fee: '0',
+    receivedBtc: net,
+    sentBtc: '0',
+    netBtc: net,
+    feeBtc: '0',
+    usdValue: null,
+    usdValueStatus: 'missing' as const,
+  });
+  const page = (items: ReturnType<typeof row>[], nextOffset: number | null = null) => ({
+    total: 4,
+    offset: 0,
+    limit: 50,
+    nextOffset,
+    missingUsdValueCount: 4,
+    items,
+  });
+  const listed = (item: ReturnType<typeof row>, status: Operation['status']): Operation =>
+    ({
+      id: `chain:${holder.id}:${item.txid}`,
+      kind: 'chain',
+      status,
+      wallet: { id: holder.id, network: 'ethereum', address: ethAddress, label: 'Main ETH' },
+      chain: { txid: item.txid, blockHeight: item.blockHeight, direction: item.direction },
+    }) as unknown as Operation;
+  const sent = row(4, 'out', '-0.5');
+  const received = row(3, 'in', '2');
+  const junk = row(2, 'in', '0.000001', 'SPAM');
+  const speck = row(1, 'in', '0.000002', 'SCAM');
+  const open = async (
+    pages: (offset: number) => ReturnType<typeof page>,
+    operations: Operation[],
+  ) => {
+    setup([holder], portfolio());
+    vi.spyOn(walletAddressesApi, 'transactions').mockImplementation(async (_id, offset = 0) =>
+      pages(offset),
+    );
+    vi.spyOn(operationsApi, 'list').mockResolvedValue({ ...noOperations, operations });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' });
+    return { user, drawer };
+  };
+
+  it('leaves dust out of the list and shows it on request', async () => {
+    const { user, drawer } = await open(
+      () => page([sent, received, junk, speck]),
+      [
+        listed(sent, 'recorded'),
+        listed(received, 'needs-classification'),
+        listed(junk, 'dust'),
+        listed(speck, 'dust'),
+      ],
+    );
+    const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
+    expect(section).not.toHaveTextContent('SPAM');
+    const show = within(section).getByRole('button', { name: 'Show 2 dust transactions' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    await user.click(show);
+    expect(within(section).getAllByRole('listitem')).toHaveLength(4);
+    expect(section).toHaveTextContent('SPAM');
+    expect(section).toHaveTextContent('dust');
+    await user.click(within(section).getByRole('button', { name: 'Hide dust' }));
+    expect(within(section).getAllByRole('listitem')).toHaveLength(2);
+  });
+
+  it('reads older pages while dust leaves the list short', async () => {
+    const seen: number[] = [];
+    const { drawer } = await open(
+      (offset) => {
+        seen.push(offset);
+        return offset === 0 ? page([junk, speck], 2) : page([sent, received]);
+      },
+      [
+        listed(sent, 'recorded'),
+        listed(received, 'recorded'),
+        listed(junk, 'dust'),
+        listed(speck, 'dust'),
+      ],
+    );
+    const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
+    expect(seen).toEqual([0, 2]);
+    expect(section).not.toHaveTextContent('SPAM');
+  });
+
+  it('opens a listed transaction in Transactions and shows the rest without a link', async () => {
+    const { drawer } = await open(() => page([sent, received]), [listed(sent, 'recorded')]);
+    const section = within(drawer).getByRole('region', { name: 'Blockchain transactions' });
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
+    const links = within(section).getAllByRole('link', { name: /Sent/ });
+    expect(links[0]).toHaveAttribute(
+      'href',
+      `/transactions?open=${encodeURIComponent(`chain:${holder.id}:${sent.txid}`)}`,
+    );
+    // A leg the list folds into a swap or a transfer has no row of its own.
+    expect(within(section).queryByRole('link', { name: /Received/ })).toBeNull();
+  });
+
+  it('shows every transaction when the list cannot be read', async () => {
+    setup([holder], portfolio());
+    vi.spyOn(walletAddressesApi, 'transactions').mockResolvedValue(page([sent, junk]));
+    vi.spyOn(operationsApi, 'list').mockRejectedValue(new Error('offline'));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: `Main ETH ${ethAddress}` }));
+    const section = within(
+      screen.getByRole('dialog', { name: 'Trust Wallet · Ethereum' }),
+    ).getByRole('region', { name: 'Blockchain transactions' });
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(2));
+    expect(within(section).queryByRole('link', { name: /Sent|Received/ })).toBeNull();
   });
 });

@@ -1,6 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { cachedReads } from '@api/cached-reads';
 import type { Operation, OperationList } from '@api/operations.api';
+import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { announceSyncChange } from '@api/sync-status.api';
 import type { WalletAddress } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
@@ -100,10 +101,12 @@ function LastSync({
 
 function WalletTransactions({
   accountId,
+  asked,
   operations,
   onRetry,
 }: {
   accountId: string;
+  asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetry: () => void;
 }) {
@@ -131,27 +134,32 @@ function WalletTransactions({
           <ul className="portfolio-holdings portfolio-operations">
             {own.slice(0, SHOWN_OPERATIONS).map((operation) => (
               <li key={operation.id}>
-                <span>
-                  {operation.status === 'needs-classification' ? (
-                    <span className="portfolio-pill">{statusLabels[operation.status]}</span>
-                  ) : (
-                    typeLabel(operation)
-                  )}
-                  <span className="portfolio-sub">
-                    {day(operation.occurredAt)}
-                    {operation.type === 'transfer' && operation.counterAccount
-                      ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
-                      : ''}
-                  </span>
-                </span>
-                <span className="portfolio-num">
-                  {signedAmount(operation)}
-                  {operation.value !== null && typeof operations === 'object' && (
+                <Link
+                  className="portfolio-operation"
+                  to={`/transactions?open=${encodeURIComponent(operation.id)}${asked ? `&currency=${asked}` : ''}`}
+                >
+                  <span>
+                    {operation.status === 'needs-classification' ? (
+                      <span className="portfolio-pill">{statusLabels[operation.status]}</span>
+                    ) : (
+                      typeLabel(operation)
+                    )}
                     <span className="portfolio-sub">
-                      {money(operation.value, operations.quoteCurrency)}
+                      {day(operation.occurredAt)}
+                      {operation.type === 'transfer' && operation.counterAccount
+                        ? ` · ${operation.account?.name ?? ''} → ${operation.counterAccount.name}`
+                        : ''}
                     </span>
-                  )}
-                </span>
+                  </span>
+                  <span className="portfolio-num">
+                    {signedAmount(operation)}
+                    {operation.value !== null && typeof operations === 'object' && (
+                      <span className="portfolio-sub">
+                        {money(operation.value, operations.quoteCurrency)}
+                      </span>
+                    )}
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -391,6 +399,7 @@ export default function WalletPage() {
             </section>
             <WalletTransactions
               accountId={accountId}
+              asked={asked}
               operations={operations}
               onRetry={() => void loadOperations()}
             />

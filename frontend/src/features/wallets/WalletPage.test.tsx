@@ -279,6 +279,19 @@ describe('WAL-PAGE: one wallet with its addresses, assets and transactions', () 
     ).toHaveAttribute('href', `/transactions?account=${trust}`);
   });
 
+  it('WAL-OPEN: each transaction row opens that transaction in Transactions', async () => {
+    setup();
+    const transactions = await screen.findByRole('region', { name: /^Transactions/ });
+    await waitFor(() => expect(within(transactions).getAllByRole('listitem')).toHaveLength(3));
+    const rows = within(transactions).getAllByRole('listitem');
+    const opens = (row: HTMLElement) => within(row).getByRole('link').getAttribute('href');
+    expect(opens(rows[0])).toBe(`/transactions?open=${encodeURIComponent(chainReceipt.id)}`);
+    expect(opens(rows[1])).toBe(`/transactions?open=${encodeURIComponent(transferIn.id)}`);
+    expect(opens(rows[2])).toBe(`/transactions?open=${encodeURIComponent(buy.id)}`);
+    // The row's text is the link's, so the whole row is the target.
+    expect(within(rows[2]).getByRole('link')).toHaveTextContent('Buy');
+  });
+
   it('renames the wallet and shows the new name', async () => {
     const user = userEvent.setup();
     setup();

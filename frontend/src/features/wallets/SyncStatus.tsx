@@ -21,6 +21,8 @@ export function failureMessage(
     case 'not_configured':
       if (address?.network === 'tron')
         return 'TronGrid refused the requests. A free TronGrid API key on the server lets the app read Tron wallets.';
+      if (address?.network === 'zcash')
+        return 'The Zcash data sources refused the requests. A free NOWNodes API key on the server lets the app read Zcash wallets.';
       return address?.network === 'bybit'
         ? 'The stored Bybit API key cannot be read on this server. Add the account again with its read-only key.'
         : `${network} sync needs a valid Etherscan API key on the server.`;
