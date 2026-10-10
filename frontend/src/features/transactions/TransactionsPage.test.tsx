@@ -1282,6 +1282,49 @@ describe('link-own-transfers (M13)', () => {
     );
   });
 
+  it('BYBIT-CHAIN-FACTS: a withdrawal names its blockchain, address and hash, opened on that chain', async () => {
+    const hash = `0x${'d'.repeat(64)}`;
+    const sent = chainOperation(8, {
+      type: null,
+      direction: 'out',
+      occurredAt: '2025-06-24T08:00:00.000Z',
+      quantity: '1.5',
+      estimatedValueUsd: null,
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: 'bybit-withdrawal-9000001',
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'out',
+        exchange: {
+          kind: 'withdrawal',
+          chain: 'ARBI',
+          network: 'arbitrum',
+          address: `0x${'ab'.repeat(20)}`,
+          fromAddress: null,
+          hash: hash.slice(2),
+        },
+      },
+      status: 'needs-classification',
+      classification: null,
+    });
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent]));
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).getByText('Blockchain')).toBeInTheDocument();
+    expect(within(drawer).getByText('Arbitrum One')).toBeInTheDocument();
+    expect(within(drawer).getByText('Withdrawal address')).toBeInTheDocument();
+    expect(within(drawer).getByText('Transaction')).toBeInTheDocument();
+    expect(within(drawer).getByRole('link', { name: 'View in explorer' })).toHaveAttribute(
+      'href',
+      `https://arbiscan.io/tx/${hash}`,
+    );
+  });
+
   it('BYBIT-GAP-DELETE: a counted difference can be deleted, after asking', async () => {
     const counted = chainOperation(7, {
       type: null,

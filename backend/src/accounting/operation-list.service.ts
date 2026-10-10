@@ -8,6 +8,7 @@ import {
 import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
 import { storedPricesAt } from '../prices/market-price.store';
+import { chainFacts } from '../wallet-addresses/bybit-records';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { evmNetworks } from '../wallet-addresses/evm-chains';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
@@ -119,6 +120,8 @@ interface ChainRow {
   /** SWAP-ONE-TX: the owner's Ethereum transaction called a contract; its decoded method. */
   contractCall: boolean | null;
   callMethod: string | null;
+  /** BYBIT-CHAIN-FACTS: the on-chain parts of a Bybit deposit or withdrawal record. */
+  bybitRecord: unknown;
   classificationVersion: number | null;
   classificationStatus: 'unclassified' | 'classified' | 'hidden' | null;
   classificationType: ChainType | null;
@@ -303,6 +306,12 @@ export class OperationListService {
               AS "contractCall",
             nullif(split_part(t.raw->'transaction'->>'functionName', '(', 1), '')
               AS "callMethod",
+            CASE WHEN w.network='bybit' AND t.raw->>'kind' IN ('deposit', 'withdrawal')
+              AND t.raw->>'internal' IS DISTINCT FROM 'true'
+              THEN json_build_object('kind', t.raw->'kind', 'chain', t.raw->'record'->'chain',
+                'toAddress', t.raw->'record'->'toAddress',
+                'fromAddress', t.raw->'record'->'fromAddress', 'txID', t.raw->'record'->'txID')
+            END AS "bybitRecord",
             c.version AS "classificationVersion", c.status AS "classificationStatus",
             c.type AS "classificationType", c.details AS "classificationDetails",
             c.comment AS "classificationComment", c."tradeId" AS "producedTradeId",
@@ -440,6 +449,7 @@ export class OperationListService {
             feeUnits: row.feeUnits,
             stakeUnits: row.stakeUnits,
             call: row.contractCall ? { method: row.callMethod } : null,
+            exchange: chainFacts(row.bybitRecord),
             classification:
               row.classificationVersion === null || row.classificationStatus === null
                 ? null

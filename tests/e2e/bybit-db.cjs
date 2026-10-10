@@ -713,6 +713,29 @@ async function main() {
       ['buy', 'recorded', 'BTC', '0.00999', exchange, true],
     );
     assert.equal(buy.settlement?.asset?.symbol ?? buy.settlement?.currency, 'USDT');
+    // BYBIT-CHAIN-FACTS: a deposit or withdrawal on a chain keeps the chain, address and hash Bybit
+    // recorded; an internal deposit and a trade have none.
+    const facts = new Map(
+      (await listOf())
+        .filter((item) => item.chain?.exchange)
+        .map((item) => [item.chain.txid, item.chain.exchange]),
+    );
+    assert.equal(facts.size, 3);
+    assert.deepEqual(facts.get('bybit-withdrawal-7000001'), {
+      kind: 'withdrawal',
+      chain: 'TRX',
+      network: 'tron',
+      address: 'synthetic-trx-address',
+      fromAddress: null,
+      hash: 'c'.repeat(64),
+    });
+    assert.deepEqual(
+      [...facts.values()]
+        .filter((item) => item.kind === 'deposit')
+        .map((item) => item.chain)
+        .sort(),
+      ['BTC', 'ETH'],
+    );
     // 649.35 for 0.00999 BTC is 65,000 USDT each; the fee 0.00001 BTC is 0.65 USDT.
     assert.equal(buy.valueUsd, '649.35');
     assert.equal(buy.feeUsd, '0.65');

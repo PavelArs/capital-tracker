@@ -16,6 +16,7 @@ import MiddleEllipsis from './MiddleEllipsis';
 import {
   amount,
   day,
+  exchangeChain,
   exchangeRecord,
   explorerUrl,
   hashOf,
@@ -214,7 +215,9 @@ function facts(
         ? { from: operation.account, to: operation.counterAccount }
         : null;
     const exchange = wallet.network === 'bybit';
+    const onChain = exchangeChain(operation);
     rows.push(['Network', networkName(wallet)]);
+    if (onChain) rows.push(['Blockchain', onChain.chainName]);
     if (moved) rows.push(['From', walletLink(moved.from)], ['To', walletLink(moved.to)]);
     else
       rows.push([
@@ -237,13 +240,22 @@ function facts(
           {moved ? <MiddleEllipsis text={other.address} /> : shortAddress(other.address)}
         </span>,
       ]);
+    // BYBIT-CHAIN-FACTS: the address a Bybit withdrawal went to, or its deposit came to.
+    if (onChain?.address || onChain?.fromAddress)
+      rows.push([
+        onChain.address ? onChain.addressLabel : 'Sending address',
+        <span key="onchain" className="transactions-mono transactions-line">
+          <MiddleEllipsis text={onChain.address ?? onChain.fromAddress ?? ''} />
+        </span>,
+      ]);
     // A Bybit record has no block; its id stands in for a hash it does not have (M22).
+    const chainHash = onChain?.hash ?? transactionHash(operation);
     rows.push([
-      exchange && !transactionHash(operation) ? 'Bybit record' : 'Transaction',
+      exchange && !chainHash ? 'Bybit record' : 'Transaction',
       <TxHash
         key="txid"
-        hash={transactionHash(operation) ?? exchangeRecord(operation) ?? chain.txid}
-        network={wallet.network}
+        hash={chainHash ?? exchangeRecord(operation) ?? chain.txid}
+        network={onChain?.hash ? (onChain.network ?? undefined) : wallet.network}
       />,
     ]);
     if (chain.call) rows.push(callFact(chain.call));

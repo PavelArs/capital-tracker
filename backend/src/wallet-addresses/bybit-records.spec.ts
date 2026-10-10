@@ -7,6 +7,7 @@ import type {
   BybitWithdrawal,
 } from './bybit-client';
 import {
+  chainFacts,
   chainTxid,
   completedTradeLeg,
   convertLeg,
@@ -400,5 +401,35 @@ describe('BYBIT-COUNT-GAP: a difference the owner counts as a record', () => {
       0n,
     ]);
     expect(chainTxidPattern.test(leg.txid)).toBe(true);
+  });
+});
+
+describe('BYBIT-CHAIN-FACTS: the chain, address and hash Bybit recorded', () => {
+  const record = {
+    kind: 'withdrawal',
+    chain: 'ARBI',
+    toAddress: '0xSyntheticAddress000000000000000000000001',
+    txID: `0x${'c'.repeat(64)}`,
+  };
+
+  it('names the chain Bybit gives and the network the app opens it on', () => {
+    expect(chainFacts(record)).toEqual({
+      kind: 'withdrawal',
+      chain: 'ARBI',
+      network: 'arbitrum',
+      address: '0xSyntheticAddress000000000000000000000001',
+      fromAddress: null,
+      hash: `0x${'c'.repeat(64)}`,
+    });
+    expect(chainFacts({ ...record, chain: 'ETH' })?.network).toBe('ethereum');
+    expect(chainFacts({ ...record, chain: 'XRP' })).toMatchObject({ chain: 'XRP', network: null });
+  });
+
+  it('has no hash until a withdrawal is sent, and shows nothing that does not look right', () => {
+    expect(chainFacts({ ...record, txID: '' })?.hash).toBeNull();
+    expect(chainFacts({ ...record, toAddress: '<script>' })?.address).toBeNull();
+    expect(chainFacts({ ...record, chain: '' })).toBeNull();
+    expect(chainFacts({ ...record, kind: 'trade' })).toBeNull();
+    expect(chainFacts(null)).toBeNull();
   });
 });
