@@ -7,7 +7,8 @@
 // A Bybit account (M22, D8) is synced like a wallet: its records name the coin they move in
 // `asset` (it has no coin of its own) and keep 18 decimals, enough for any amount Bybit shows.
 // BYBIT-ANY-COIN: it holds any coin Bybit lists, not only the ones below.
-// EVM-MULTICHAIN: Base, Arbitrum and OP Mainnet are read like Ethereum (evm-chains.ts).
+// EVM-MULTICHAIN: Base, Arbitrum, OP Mainnet, Polygon, BNB Smart Chain and Avalanche are read
+// like Ethereum (evm-chains.ts); each has its own coin (ETH, ETH, ETH, POL, BNB, AVAX).
 
 import { type EvmChain, evmChains, evmNetworks } from './evm-chains';
 
@@ -17,6 +18,9 @@ export const networks = [
   'base',
   'arbitrum',
   'optimism',
+  'polygon',
+  'bnb',
+  'avalanche',
   'solana',
   'bybit',
   'tron',
@@ -52,6 +56,9 @@ export const networkNames: Record<Network, string> = {
   base: 'Base',
   arbitrum: 'Arbitrum One',
   optimism: 'OP Mainnet',
+  polygon: 'Polygon',
+  bnb: 'BNB Smart Chain',
+  avalanche: 'Avalanche C-Chain',
   solana: 'Solana',
   bybit: 'Bybit',
   tron: 'Tron',
@@ -63,22 +70,22 @@ const evmChainAssets = (chain: EvmChain): ChainAsset[] => [
   {
     network: chain.network,
     token: null,
-    symbol: 'ETH',
-    name: 'Ethereum',
+    symbol: chain.native.symbol,
+    name: chain.native.name,
     decimals: 18,
     contract: null,
   },
   ...(['USDT', 'USDC'] as const).flatMap((token) => {
-    const contract = chain.stablecoins[token];
-    return contract
+    const coin = chain.stablecoins[token];
+    return coin
       ? [
           {
             network: chain.network,
             token,
             symbol: token,
             name: token === 'USDT' ? 'Tether' : 'USD Coin',
-            decimals: 6,
-            contract,
+            decimals: coin.decimals,
+            contract: coin.contract,
           },
         ]
       : [];

@@ -1,7 +1,7 @@
 'use strict';
 
-// Real PostgreSQL acceptance for EVM-MULTICHAIN: the same 0x address read on Base, Arbitrum One and
-// OP Mainnet through the one Etherscan V2 key. Only Etherscan is synthetic: requests leave through
+// Real PostgreSQL acceptance for EVM-MULTICHAIN: the same 0x address read on Base, Arbitrum One,
+// OP Mainnet, Polygon, BNB Smart Chain and Avalanche through the one Etherscan V2 key. Only Etherscan is synthetic: requests leave through
 // HTTPS_PROXY to the providers.cjs stub, which answers the raw list items this probe posts per
 // chain id. Every address, hash and amount is synthetic.
 const assert = require('node:assert/strict');
@@ -35,10 +35,11 @@ const outside = address('outside');
 const baseUsdc = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913';
 const arbitrumUsdt = '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9';
 const mainnetUsdc = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48';
+const bnbUsdt = '0x55d398326f99059ff775485246999027b3197955';
+const polygonUsdc = '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359';
 const memeToken = address('meme-token');
 const ether = (value) => BigInt(Math.round(value * 1e6)) * 10n ** 12n;
 const time = (block) => 1720000000 + (block - 20000000) * 2;
-const chainIds = { base: '8453', arbitrum: '42161', optimism: '10' };
 
 const normal = (n, block, from, to, value, gasUsed, gasPrice) => ({
   blockNumber: String(block), timeStamp: String(time(block)), hash: hash(n), blockHash: blockHash(block),
@@ -113,20 +114,20 @@ async function main() {
     const [owner] = (await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('evm-owner@example.invalid','synthetic-not-a-login-hash',true) RETURNING id`)).map(({ id }) => id);
     const s = services(db);
-    assert.deepEqual(s.adapters.map((adapter) => adapter.network), ['ethereum', 'base', 'arbitrum', 'optimism']);
+    assert.deepEqual(s.adapters.map((adapter) => adapter.network), ['ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bnb', 'avalanche']);
     const account = (await s.accounting.createAccount(owner, { requestId: randomUUID(), name: 'Main' })).value.id;
 
     // EVM-ADD: the same address is one wallet per chain, each with its own id and chain.
     const ids = {};
-    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism']) {
+    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bnb', 'avalanche']) {
       const added = await s.addresses.register(owner, { network, address: wallet.toUpperCase().replace('0X', '0x'), accountId: account, label: `${network} wallet` });
       assert.deepEqual([added.created, added.value.network, added.value.address, added.value.sync.state], [true, network, wallet, 'never']);
       ids[network] = added.value.id;
     }
-    assert.equal(new Set(Object.values(ids)).size, 4);
+    assert.equal(new Set(Object.values(ids)).size, 7);
     const again = await s.addresses.register(owner, { network: 'base', address: wallet });
     assert.deepEqual([again.created, again.value.id], [false, ids.base]);
-    for (const input of [{ network: 'base', address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' }, { network: 'base', address: wallet.slice(0, 41) }, { network: 'polygon', address: wallet }]) {
+    for (const input of [{ network: 'base', address: 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq' }, { network: 'base', address: wallet.slice(0, 41) }, { network: 'zksync', address: wallet }]) {
       await assert.rejects(async () => s.addresses.register(owner, input), (error) => error?.getStatus?.() === 400);
     }
     console.log('PASS EVM-ADD the same 0x address is one wallet per chain; adding it again returns the same one; a Bitcoin address, a short one and a chain not read are refused');
@@ -144,6 +145,15 @@ async function main() {
       normal: [normal(5, 20000010, wallet, outside, ether(0.1), 21000, 10 ** 8)],
       tokens: [token(6, 20000011, arbitrumUsdt, 'USDT', 6, outside, wallet, 300000000n, 3)] });
     await post('evm', { chainid: 10, tip: 20000100 });
+    await post('evm', { chainid: 137, tip: 20000100,
+      normal: [normal(7, 20000020, outside, wallet, ether(12), 21000, 10 ** 8)],
+      tokens: [token(8, 20000021, polygonUsdc, 'USDC', 6, outside, wallet, 50000000n, 1)] });
+    // BNB Smart Chain: Binance-Peg USDT has 18 decimals, so 7 USDT is 7 * 10^18 base units.
+    await post('evm', { chainid: 56, tip: 20000100,
+      normal: [normal(9, 20000030, outside, wallet, ether(1.5), 21000, 10 ** 8)],
+      tokens: [token(10, 20000031, bnbUsdt, 'USDT', 18, outside, wallet, 7n * 10n ** 18n, 1)] });
+    await post('evm', { chainid: 43114, tip: 20000100,
+      normal: [normal(11, 20000035, outside, wallet, ether(2), 21000, 10 ** 8)] });
     const base = await newRequests(() => s.addresses.sync(owner, ids.base));
     assert.deepEqual([base.result.outcome, base.result.reason, base.result.imported], ['complete', null, 4]);
     assert.deepEqual(base.urls.map(call), [
@@ -160,6 +170,11 @@ async function main() {
     assert.ok(arbitrum.urls.every((url) => url.searchParams.get('chainid') === '42161'));
     const optimism = await newRequests(() => s.addresses.sync(owner, ids.optimism));
     assert.deepEqual([optimism.result.outcome, optimism.result.imported, optimism.result.address.balances.map((item) => item.symbol)], ['complete', 0, ['ETH', 'USDT', 'USDC']]);
+    for (const [network, chainid, imported] of [['polygon', '137', 2], ['bnb', '56', 2], ['avalanche', '43114', 1]]) {
+      const synced = await newRequests(() => s.addresses.sync(owner, ids[network]));
+      assert.deepEqual([synced.result.outcome, synced.result.imported], ['complete', imported], network);
+      assert.ok(synced.urls.every((url) => url.searchParams.get('chainid') === chainid), network);
+    }
     const mainnet = await newRequests(() => s.addresses.sync(owner, ids.ethereum));
     assert.deepEqual([mainnet.result.outcome, mainnet.result.imported], ['complete', 0]);
     assert.ok(mainnet.urls.every((url) => url.searchParams.get('chainid') === '1'));
@@ -174,12 +189,16 @@ async function main() {
       ['MEME', '5.000000000000000000', 'dust'], ['USDCA0B8', '9.000000', 'lookalike'],
     ]);
     assert.deepEqual((await balances(ids.arbitrum)).slice(0, 2), [{ symbol: 'ETH', quantity: '-0.100002100000000000' }, { symbol: 'USDT', quantity: '300.000000' }]);
+    // Each chain holds its own coin, and BNB Smart Chain’s 18-decimal USDT is counted as 7, not 7 million million.
+    assert.deepEqual((await balances(ids.polygon)).map((item) => [item.symbol, item.quantity]), [['POL', '12.000000000000000000'], ['USDT', '0.000000'], ['USDC', '50.000000']]);
+    assert.deepEqual((await balances(ids.bnb)).map((item) => [item.symbol, item.quantity]), [['BNB', '1.500000000000000000'], ['USDT', '7.000000000000000000'], ['USDC', '0.000000000000000000']]);
+    assert.deepEqual((await balances(ids.avalanche)).slice(0, 1), [{ symbol: 'AVAX', quantity: '2.000000000000000000' }]);
     const tokens = await db.query('SELECT network, contract FROM chain_tokens ORDER BY network, contract');
     assert.deepEqual(tokens.map((row) => row.network), ['base', 'base']);
     console.log('PASS EVM-BALANCES the same address shows each chain’s own holdings; tokens are remembered per chain');
 
     // EVM-DB: the checks name every chain the app reads and keep the 0x format.
-    for (const network of ['polygon', 'bnb', 'avalanche', 'zksync', 'linea', 'scroll', 'base']) {
+    for (const network of ['zksync', 'linea', 'scroll', 'base']) {
       await db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,$2,$3)`, [owner, network, address(`check-${network}`)]);
     }
     await assert.rejects(() => db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,'base',$2)`, [owner, wallet.toUpperCase()]), /wallet_addresses_address_check/);

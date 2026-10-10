@@ -1857,6 +1857,15 @@ describe('EVM-MULTICHAIN: the same 0x address on another chain', () => {
     expect(base).toHaveTextContent('The same 0x address. ETH and every token');
     expect(within(dialog).getByRole('button', { name: /^Arbitrum One/ })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: /^OP Mainnet/ })).toBeInTheDocument();
+    for (const [name, coin] of [
+      ['Polygon', 'POL'],
+      ['BNB Smart Chain', 'BNB'],
+      ['Avalanche C-Chain', 'AVAX'],
+    ]) {
+      expect(
+        within(dialog).getByRole('button', { name: new RegExp(`^${name}`) }),
+      ).toHaveTextContent(`The same 0x address. ${coin} and every token`);
+    }
     await user.click(base);
     await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
     const field = within(dialog).getByLabelText('Base wallet address');
@@ -1883,6 +1892,22 @@ describe('EVM-MULTICHAIN: the same 0x address on another chain', () => {
     await user.click(row);
     const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Base' });
     expect(drawer).toHaveTextContent('Etherscan');
+  });
+
+  it('shows a chain with its own coin by that coin, not as ETH', async () => {
+    setup([
+      baseWallet({
+        network: 'bnb',
+        label: 'Chain BNB',
+        chainBalance: '1.500000000000000000',
+        balances: [
+          { symbol: 'BNB', quantity: '1.500000000000000000' },
+          { symbol: 'USDT', quantity: '12.000000000000000000' },
+        ],
+      }),
+    ]);
+    const row = await screen.findByRole('button', { name: `Chain BNB ${address}` });
+    expect(row).toHaveTextContent('1.5 BNB · 12 USDT');
   });
 });
 
