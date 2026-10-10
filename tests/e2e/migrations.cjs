@@ -751,6 +751,11 @@ function mfaStreakAddition(kind, row) {
 function sessionDeviceAddition(kind, row) {
   return kind === 'columns' && row.table_name === 'auth_sessions' && row.column_name === 'device';
 }
+// KindOfWallet1795900000000 adds one nullable column and its check to manual_accounts.
+function walletKindAddition(kind, row) {
+  if (kind === 'columns') return row.table_name === 'manual_accounts' && row.column_name === 'kind';
+  return kind === 'constraints' && row.relname === 'manual_accounts' && row.conname === 'manual_accounts_kind_check';
+}
 function replacedOriginCheck(kind, row) {
   return kind === 'constraints' && row.relname === 'account_trade_journals'
     && row.conname === 'account_trade_journals_originKind_check';
@@ -1115,6 +1120,14 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           const ordered = (values) => values.sort((a, b) => a.id.localeCompare(b.id));
           assert.deepEqual(ordered(parsed), ordered(rows.map(({ row }) => JSON.parse(row))),
             'Every old instrument column/value remains identical');
+        } else if (table === 'manual_accounts') {
+          const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
+          for (const row of parsed) {
+            assert.equal(row.kind, null, 'Prior accounts have no wallet kind');
+            delete row.kind;
+          }
+          assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
+            'Every old account column/value remains identical');
         } else if (table === 'owner_mfa') {
           const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
           for (const row of parsed) {
@@ -1151,7 +1164,7 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
       const prior = before[kind].filter(row => !(previousCount < 16 && replacedOriginCheck(kind,row)) && !replacedScopeCheck(kind, row));
       const retained = after[kind].filter(row => !addedTables.includes(row[tableKey]) && !(previousCount < 16 && carryInJournalAddition(kind,row))
         && !(previousCount >= 13 && classificationAddition(kind, row))
-        && !mfaStreakAddition(kind, row) && !sessionDeviceAddition(kind, row) && !replacedScopeCheck(kind, row));
+        && !mfaStreakAddition(kind, row) && !sessionDeviceAddition(kind, row) && !walletKindAddition(kind, row) && !replacedScopeCheck(kind, row));
       assert.deepEqual(retained, prior, `Every previous ${kind} entry (only pre16 permits the reviewed carry-in schema change) remains unchanged`);
     }
     assert.deepEqual(after.enums, before.enums);
