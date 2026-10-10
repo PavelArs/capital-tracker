@@ -72,7 +72,9 @@ describe('OBS-LOKI the Loki and Alloy stack', () => {
       expect(service.image).toMatch(/:[\w.-]+@sha256:[0-9a-f]{64}$/);
     }
     expect(compose.services.alloy).not.toHaveProperty('ports');
-    expect(compose.services.loki.ports).toEqual(['127.0.0.1:3100:3100']);
+    const ports = compose.services.loki.ports as string[];
+    expect(ports).toHaveLength(1);
+    expect(ports[0]).toMatch(/^127\.0\.0\.1:\$\{LOKI_HOST_PORT:-3110\}:3100$/);
     expect(Object.keys(compose.services).sort()).toEqual(['alloy', 'loki']);
   });
 
