@@ -62,7 +62,7 @@ describe('GlobalExceptionFilter', () => {
       new ConflictException({
         statusCode: 409,
         error: 'Conflict',
-        message: 'The records of an account start after this transfer',
+        message: 'The records of an account start after this entry',
         coverage: { ...coverage, private: 'marker' },
       }),
     );

@@ -33,6 +33,7 @@ import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  notCovered,
   projectConnectedLedger,
   readConnectedLedger,
   rethrowAccountingHistory,
@@ -174,6 +175,8 @@ export class AssetSwapService {
     const ledger = await readConnectedLedger(manager, owner, [accountId], { lock: true });
     const account = ledger.accounts.get(accountId)!;
     if (account.journal.currentRevision !== input.expectedJournalRevision) throw conflict();
+    if (kind !== 'void' && requested.occurredAt < account.coverageFrom)
+      throw notCovered(accountId, account.coverageFrom);
     assertRevisionCapacity(ledger);
     const swapId = target ?? randomUUID();
     const others = (account.swaps ?? []).filter((swap) => swap.swapId !== swapId);
