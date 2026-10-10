@@ -2136,6 +2136,189 @@ describe('swap-chain-coins (CLS-SWAP)', () => {
       expect(within(drawer).getByLabelText('Received in exchange')).toHaveValue(`trade:${id(60)}`);
     });
   });
+
+  describe('CLS-SWAP-RECORD-UI', () => {
+    // The 1000 USDT sent paid for 10 ZEC bought by hand in the same wallet, dated before the
+    // transaction (an import without a time).
+    const zec = { instrumentId: id(3), symbol: 'ZEC', name: 'Zcash' };
+    const zecBuy = operation({
+      id: `trade:${id(70)}`,
+      occurredAt: '2026-09-01T00:00:00.000Z',
+      quantity: '10',
+      asset: zec,
+      account: trust,
+      valueUsd: '1000',
+      feeUsd: '0',
+      version: 4,
+    });
+    const group = 'Added by you, to be replaced by this swap';
+    const refusal = (status: number, message: string) =>
+      new AxiosError('refused', String(status), undefined, undefined, {
+        status,
+        statusText: 'Refused',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: { message },
+      });
+
+    it('an outgoing transaction can be replaced by a plain purchase of another coin', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      // Not choices: another wallet's, with a fee, paid in RUB, a sale, a purpose, the same coin,
+      // a month away, and one that already names this very transaction's record.
+      const rub = {
+        currency: 'RUB' as const,
+        gross: '80000',
+        fee: '0',
+        rateDate: '2026-09-01',
+        perUsd: '80',
+        rateSource: 'bank-of-russia' as const,
+      };
+      const others = [
+        operation({ ...zecBuy, id: `trade:${id(71)}`, account: cold }),
+        operation({ ...zecBuy, id: `trade:${id(72)}`, feeUsd: '2' }),
+        operation({ ...zecBuy, id: `trade:${id(73)}`, paid: rub }),
+        operation({ ...zecBuy, id: `trade:${id(74)}`, type: 'sell', direction: 'out' }),
+        operation({ ...zecBuy, id: `trade:${id(75)}`, type: 'income' }),
+        operation({ ...zecBuy, id: `trade:${id(76)}`, asset: usdt }),
+        operation({ ...zecBuy, id: `trade:${id(77)}`, occurredAt: '2026-08-01T00:00:00.000Z' }),
+      ];
+      const { user, drawer } = await openRow(
+        [paid, zecBuy, ...others],
+        0,
+        'Outgoing transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, No time · Buy 10 ZEC · Added by you']);
+      await user.selectOptions(select, `replace:${id(70)}:4`);
+      expect(
+        within(drawer).getByText(
+          'The purchase you added is deleted and one swap takes its place, at the time and with the exact amount of this transaction.',
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(drawer).getByText('Empty: the value of the record you added.'),
+      ).toBeInTheDocument();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'swap',
+          record: { kind: 'trade', id: id(70), version: 4 },
+          valueUsd: null,
+        },
+      });
+    });
+
+    it('the value the owner enters goes with the answer', async () => {
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow([paid, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.type(within(drawer).getByLabelText('Value at the time (optional)'), '990');
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2].classification).toEqual({
+        type: 'swap',
+        record: { kind: 'trade', id: id(70), version: 4 },
+        valueUsd: '990',
+      });
+    });
+
+    it('an incoming transaction can be replaced by a sale, never by a purchase', async () => {
+      const zecSale = operation({
+        ...zecBuy,
+        id: `trade:${id(78)}`,
+        type: 'sell',
+        direction: 'out',
+      });
+      const { user, drawer } = await openRow(
+        [{ ...paid, direction: 'in', chain: { ...paid.chain!, direction: 'in' } }, zecBuy, zecSale],
+        0,
+        'Incoming transaction · USDT',
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      const select = within(drawer).getByLabelText('Paid with');
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['Sep 1, 2026, No time · Sell 10 ZEC · Added by you']);
+      await user.selectOptions(select, `replace:${id(78)}:4`);
+      expect(within(drawer).getByText(/The sale you added is deleted/)).toBeInTheDocument();
+    });
+
+    it("a purchase paid in the very coin that left stays the transaction's own record", async () => {
+      const spent = operation({ ...zecBuy, settlement: { asset: usdt, quantity: '1000' } });
+      const { user, drawer } = await openRow([paid, spent], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      expect(within(drawer).queryByRole('group', { name: group })).toBeNull();
+      expect(
+        within(within(drawer).getByLabelText('Received in exchange')).getByRole('group', {
+          name: 'Added by you or from CSV',
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it('a saved swap opens on the record it replaced', async () => {
+      const swapped = operation({
+        ...paid,
+        type: 'swap',
+        direction: 'internal',
+        status: 'recorded',
+        counterAsset: zec,
+        counterQuantity: '10',
+        classification: {
+          version: 1,
+          hidden: false,
+          value: {
+            type: 'swap',
+            record: { kind: 'trade', id: id(70), version: 4 },
+            valueUsd: null,
+          },
+          comment: null,
+          automatic: false,
+        },
+      });
+      const { user, drawer } = await openRow([swapped], 0, 'Swap · USDT → ZEC');
+      await user.click(within(drawer).getByRole('button', { name: 'Change classification' }));
+      const select = within(drawer).getByLabelText('Received in exchange');
+      expect(select).toHaveValue(`replace:${id(70)}:4`);
+      expect(
+        within(within(select).getByRole('group', { name: group }))
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual(['The record this swap replaced']);
+    });
+
+    it('says why a record was refused', async () => {
+      vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+        refusal(422, 'That record is too far from this transaction'),
+      );
+      const { user, drawer } = await openRow([paid, zecBuy], 0, 'Outgoing transaction · USDT');
+      await user.click(within(drawer).getByRole('button', { name: 'Swap' }));
+      await user.selectOptions(
+        within(drawer).getByLabelText('Received in exchange'),
+        `replace:${id(70)}:4`,
+      );
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      expect(
+        await within(drawer).findByText(
+          'That record is more than a week from this transaction. Choose another one.',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
 });
 
 describe('token blockchain (TOKEN-CHAIN)', () => {

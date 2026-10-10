@@ -1,5 +1,5 @@
 import { UnprocessableEntityException } from '@nestjs/common';
-import { planSwap, type SwapSide, swapValueUsd } from './chain-swap';
+import { planRecordSwap, planSwap, type SwapSide, swapValueUsd } from './chain-swap';
 
 // Synthetic ids and amounts only (swap-chain-coins, CLS-SWAP-*).
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -141,5 +141,44 @@ describe('swap-chain-coins value', () => {
   it('CLS-SWAP-VALUE: otherwise the stored price of the paid coin, in cents; unknown without one', () => {
     expect(swapValueUsd(null, eth(), '3456.789')).toBe('1728.39');
     expect(swapValueUsd(null, eth(), null)).toBeNull();
+  });
+});
+
+describe('CLS-SWAP-RECORD the swap of one transaction against a record added by hand', () => {
+  it('coins that left are paid, at the transaction time and without a fee in the other coin', () => {
+    expect(planRecordSwap(usdtOut)).toEqual({
+      accountId: trust,
+      occurredAt: '2026-09-01T10:00:00.000Z',
+      paying: true,
+      quantity: '1000',
+      feeQuantity: '0',
+    });
+  });
+
+  it("a coin's own network fee is not part of what was paid and is the swap's fee", () => {
+    expect(planRecordSwap(ethOut)).toMatchObject({
+      paying: true,
+      quantity: '0.5',
+      feeQuantity: '0.002',
+    });
+  });
+
+  it('coins that arrived are received, whatever the fee of the sender', () => {
+    expect(planRecordSwap(btcIn)).toMatchObject({
+      paying: false,
+      quantity: '0.0125',
+      feeQuantity: '0',
+    });
+  });
+
+  it('needs the account of the wallet and a movement', () => {
+    unprocessable(
+      () => planRecordSwap({ ...usdtOut, accountId: null }),
+      'Choose the account of this wallet first',
+    );
+    unprocessable(
+      () => planRecordSwap({ ...btcIn, receivedUnits: '0' }),
+      'This type does not fit the direction of the transaction',
+    );
   });
 });

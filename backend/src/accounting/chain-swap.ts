@@ -122,3 +122,41 @@ export function swapValueUsd(
   const cents = (product + unit / 2n) / unit;
   return formatAtoms(cents * 10n ** 28n);
 }
+
+/** CLS-SWAP-RECORD: how far apart a transaction and the record it replaces can be. */
+export const SWAP_RECORD_WINDOW_MS = 7 * 24 * 3_600_000;
+
+/** What a swap of one transaction against a record the owner added by hand records. */
+export interface PlannedRecordSwap {
+  /** The wallet's account; it holds the swap. */
+  accountId: string;
+  /** When the transaction happened: the swap takes its time, not the record's. */
+  occurredAt: string;
+  /** The transaction's coins left the wallet (the record is a purchase) or arrived (a sale). */
+  paying: boolean;
+  /** The transaction's coins, its network fee not included. */
+  quantity: string;
+  /** The network fee, when the transaction paid it in the coin it moved. */
+  feeQuantity: string;
+}
+
+/**
+ * CLS-SWAP-RECORD: the swap that answering `leg` as a swap against a purchase or sale added by
+ * hand records. The record stands for the other side, so only this transaction is read.
+ */
+export function planRecordSwap(leg: SwapSide): PlannedRecordSwap {
+  const own = placed(leg, 'Choose the account of this wallet first');
+  const moved = net(own);
+  if (moved === 0n) throw unfit();
+  const paying = moved < 0n;
+  const fee = paying && own.asset === null ? BigInt(own.feeUnits) : 0n;
+  const quantity = paying ? -moved - fee : moved;
+  if (quantity <= 0n) throw unfit();
+  return {
+    accountId: own.accountId,
+    occurredAt: own.blockTime,
+    paying,
+    quantity: coins(quantity, own),
+    feeQuantity: coins(fee, own),
+  };
+}
