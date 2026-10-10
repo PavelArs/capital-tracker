@@ -484,6 +484,14 @@ I know where its value comes from.
 - BYBIT-DEPOSIT: **Given** a Bybit deposit whose transaction hash matches a withdrawal
   from the owner's BTC wallet **when** both are synced **then** they form one transfer
   automatically (D7).
+- BYBIT-LINK-HASH: **Given** Bybit's withdrawal of 0.02212814 ETH to Arbitrum One (fee 0.00004
+  ETH) whose record names the chain's transaction hash, and the owner's Arbitrum wallet
+  received 0.02208814 ETH in the transaction of that hash **when** both are synced **then** they
+  are the two sides of one transaction like a Bitcoin or Ethereum withdrawal: the app links them
+  as one transfer automatically (XFER-AUTO), with Bybit's fee as the transfer's fee, and
+  Transactions lists them once. This holds for every Ethereum-like chain Bybit names (Arbitrum
+  One, Base, OP Mainnet, Polygon, BNB Smart Chain, Avalanche C-Chain); a withdrawal that names
+  no hash, another hash or another amount is left to classify (or to XFER-PROPOSED).
 - BYBIT-GAPS: **Given** an operation the API does not return (for example a P2P RUB
   purchase) **then** the owner enters it by hand, and the balance check against
   Bybit's reported balance shows any remaining difference.
@@ -629,6 +637,14 @@ network-specific identity:
   before the withdrawal or one a day later, or more arriving than left offers nothing and the
   owner classifies as before. **Given** the owner answers the withdrawal differently **then**
   the transfer is voided and the receipt asks for a classification again.
+- XFER-REJOIN: **Given** the owner answered one side of a transfer alone, as a transfer with the
+  account of the other side (the receipt of 0.02208814 ETH as a transfer from Bybit, before
+  Bybit's withdrawal of it was synced), **when** the other side turns up and is certainly the
+  same transaction (XFER-AUTO, BYBIT-LINK-HASH) and nothing else was answered **then** the app
+  joins them without asking: the transfer that stood for one side is replaced by one that both
+  sides name, the owner's note on it stays, and the coins leave the sending account once, not
+  twice. An answer of another kind, a transfer with a third account, or a hidden transaction is
+  never changed.
 - CLS-DUPLICATE: **Given** the owner added "Buy 0.4 ETH for 1200 USD" by hand or from CSV in an
   account, and a wallet of that account received 0.4 ETH within 48 hours of it, so the same
   coins count twice **when** no one has answered the transaction **then** Transactions shows
@@ -928,6 +944,7 @@ currency), #35 (calendar dates), #36 (complete BTC receipts).
 | M38 | `swap-with-record` | an outgoing or incoming blockchain transaction can be answered as a swap against a purchase or sale the owner added by hand or from CSV in the same wallet: the record is replaced by one swap at the transaction's time, with its exact amount and the record's value (CLS-SWAP-RECORD); no migration | M37 | — |
 | M39 | `track-evm-chains` | the same 0x address is read on Base, Arbitrum One and OP Mainnet like on Ethereum, through Etherscan's V2 API and the one existing key: ETH as the chain's own coin, USDT and USDC by each chain's own contract, every other token named from the chain; each chain is a wallet of its own, with its own sync, balances and explorer link; first of the slices that grow into a multichain portfolio (more chains, a keyless fallback source, automatic discovery of the chains an address has been used on); migration widens the wallet checks | M14, M25 | — |
 | M40 | `more-evm-chains` | Polygon (POL), BNB Smart Chain (BNB) and Avalanche C-Chain (AVAX) join Base, Arbitrum One and OP Mainnet: each chain has its own coin, which the portfolio prices from Bybit's spot market like the other coins outside the price catalog, and its own USDT and USDC contracts (18 decimals on BNB Smart Chain); a token calling itself POL, BNB or AVAX from another contract is a lookalike like one calling itself ETH; no migration (M39 already names the chains) | M39 | — |
+| M41 | `link-bybit-by-hash` | a Bybit deposit or withdrawal on an Ethereum-like chain other than Ethereum meets the wallet's leg of the hash its record names, so the two are linked as one transfer by the app (BYBIT-LINK-HASH); a transfer answered on one side alone is joined once the other side is certain (XFER-REJOIN); the link column stays for legs of one identity, the pair is found by the transfer both name; no migration | M22, M36, M39 | — |
 
 ```mermaid
 flowchart LR

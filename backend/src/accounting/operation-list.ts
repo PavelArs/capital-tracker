@@ -1,6 +1,6 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { priceAt } from '../prices/market-price.store';
-import type { ExchangeChainFacts } from '../wallet-addresses/bybit-records';
+import { type ExchangeChainFacts, factsLinkHash } from '../wallet-addresses/bybit-records';
 import {
   chainAsset,
   isExchange,
@@ -898,14 +898,21 @@ export function projectOperations(
   const byTxid = new Map<string, ChainOperationInput[]>();
   const add = (key: string, row: ChainOperationInput) =>
     byTxid.set(key, [...(byTxid.get(key) ?? []), row]);
+  // BYBIT-LINK-HASH: a Bybit record stored under an identity of its own is also found by the
+  // hash it names.
+  const hashOf = (row: ChainOperationInput) =>
+    isExchange(row.wallet.network) ? factsLinkHash(row.exchange) : null;
   for (const row of sources.chain) {
     add(row.txid, row);
     if (!isExchange(row.wallet.network) && row.txid.includes('-')) add(row.txid.split('-')[0], row);
+    const hash = hashOf(row);
+    if (hash && hash !== row.txid) add(hash, row);
   }
   const legsOf = (row: ChainOperationInput) => {
     const exchange = isExchange(row.wallet.network);
+    const hash = hashOf(row);
     const loose = exchange
-      ? (byTxid.get(row.txid) ?? [])
+      ? [...(byTxid.get(row.txid) ?? []), ...(hash ? (byTxid.get(hash) ?? []) : [])]
       : (byTxid.get(row.txid.split('-')[0]) ?? []);
     return [
       ...new Set([
@@ -916,8 +923,8 @@ export function projectOperations(
           (leg) =>
             isExchange(leg.wallet.network) !== exchange &&
             sameTransaction(
-              { network: row.wallet.network, txid: row.txid },
-              { network: leg.wallet.network, txid: leg.txid },
+              { network: row.wallet.network, txid: row.txid, hash: hashOf(row) },
+              { network: leg.wallet.network, txid: leg.txid, hash: hashOf(leg) },
             ) &&
             coinOf({ network: leg.wallet.network, asset: leg.asset }) ===
               coinOf({ network: row.wallet.network, asset: row.asset }),

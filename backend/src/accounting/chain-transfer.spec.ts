@@ -244,6 +244,84 @@ describe('BYBIT-DEPOSIT: a Bybit account and an own wallet in one transaction (M
   });
 });
 
+describe('BYBIT-LINK-HASH: a Bybit withdrawal stored under its own identity (L2 chains)', () => {
+  const E18 = 10n ** 18n;
+  // Bybit's own id for the withdrawal, and the hash it names; Arbitrum's wallet leg carries the hash.
+  const ownId = 'bybit-withdrawal-7000001';
+  const withdrawal = (overrides: Partial<MatchableLeg> = {}): MatchableLeg => ({
+    addressId: id(20),
+    accountId: bybit,
+    network: 'bybit',
+    asset: 'ETH',
+    // 0.02208814 arrives, 0.00004 is Bybit's fee.
+    receivedUnits: '0',
+    sentUnits: ((2212814n * E18) / 100000000n).toString(),
+    feeUnits: ((4n * E18) / 100000n).toString(),
+    txid: ownId,
+    hash: txid(1),
+    status: null,
+    ...overrides,
+  });
+  const arrival = (overrides: Partial<MatchableLeg> = {}): MatchableLeg => ({
+    addressId: walletB,
+    accountId: accountB,
+    network: 'arbitrum',
+    asset: null,
+    receivedUnits: ((2208814n * E18) / 100000000n).toString(),
+    sentUnits: '0',
+    feeUnits: '0',
+    txid: txid(1),
+    status: null,
+    ...overrides,
+  });
+
+  it('meets the wallet leg by the hash the record names, not by its own identity', () => {
+    const wallet = { network: 'arbitrum' as const, txid: txid(1) };
+    const record = { network: 'bybit' as const, txid: ownId };
+    expect(sameTransaction(record, wallet)).toBe(false);
+    expect(sameTransaction({ ...record, hash: txid(1) }, wallet)).toBe(true);
+    expect(sameTransaction(wallet, { ...record, hash: txid(1) })).toBe(true);
+    expect(sameTransaction({ ...record, hash: txid(1) }, { ...wallet, txid: `${txid(1)}-4` })).toBe(
+      true,
+    );
+    expect(sameTransaction({ ...record, hash: txid(2) }, wallet)).toBe(false);
+    expect(sameTransaction({ ...record, hash: null }, wallet)).toBe(false);
+  });
+
+  it('XFER-AUTO: the withdrawal and the receipt are a pair, the fee being Bybit’s', () => {
+    const outgoing = withdrawal();
+    const incoming = arrival();
+    expect(ownTransferPairs([incoming, outgoing])).toEqual([{ outgoing, incoming }]);
+    expect(ownTransferPairs([incoming, withdrawal({ hash: null })])).toEqual([]);
+  });
+
+  it('XFER-REJOIN: one side answered alone as a transfer with the other account is still a pair', () => {
+    const outgoing = withdrawal();
+    const answered = arrival({ status: 'classified', loneTo: bybit });
+    expect(ownTransferPairs([answered, outgoing])).toEqual([{ outgoing, incoming: answered }]);
+    const sender = withdrawal({ status: 'classified', loneTo: accountB });
+    const open = arrival();
+    expect(ownTransferPairs([open, sender])).toEqual([{ outgoing: sender, incoming: open }]);
+  });
+
+  it('XFER-REJOIN: any other answer, or a transfer with a third account, is left alone', () => {
+    const outgoing = withdrawal();
+    for (const answer of [
+      arrival({ status: 'classified', loneTo: null }),
+      arrival({ status: 'classified', loneTo: id(99) }),
+      arrival({ status: 'hidden', loneTo: bybit }),
+    ])
+      expect(ownTransferPairs([answer, outgoing])).toEqual([]);
+    // Both sides answered: nothing left to join.
+    expect(
+      ownTransferPairs([
+        arrival({ status: 'classified', loneTo: bybit }),
+        withdrawal({ status: 'classified', loneTo: accountB }),
+      ]),
+    ).toEqual([]);
+  });
+});
+
 describe('XFER-PROPOSED: a withdrawal and a receipt that name different transactions', () => {
   // A withdraws 100.5 USDT from Bybit-like account A; 100 USDT reaches B ten minutes later.
   const usdt = { network: 'ethereum' as const, asset: 'USDT', feeUnits: '0' };

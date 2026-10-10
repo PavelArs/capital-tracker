@@ -14,6 +14,8 @@ import {
   depositLeg,
   earnLeg,
   gapLeg,
+  linkHash,
+  linkHashSql,
   splitSymbol,
   toUnits,
   tradeLeg,
@@ -431,5 +433,40 @@ describe('BYBIT-CHAIN-FACTS: the chain, address and hash Bybit recorded', () => 
     expect(chainFacts({ ...record, chain: '' })).toBeNull();
     expect(chainFacts({ ...record, kind: 'trade' })).toBeNull();
     expect(chainFacts(null)).toBeNull();
+  });
+});
+
+describe('BYBIT-LINK-HASH: the hash an Ethereum-like chain wallet leg is found by', () => {
+  const record = {
+    kind: 'withdrawal',
+    chain: 'ARBI',
+    toAddress: '0xSyntheticAddress000000000000000000000001',
+    txID: `0x${'C'.repeat(64)}`,
+  };
+
+  it('is the lower-case hex without 0x, for every Ethereum-like chain Bybit names', () => {
+    for (const chain of ['ETH', 'ARBI', 'BASE', 'OP', 'MATIC', 'BSC', 'AVAXC'])
+      expect(linkHash({ ...record, chain })).toBe('c'.repeat(64));
+    expect(linkHash({ ...record, txID: 'c'.repeat(64) })).toBe('c'.repeat(64));
+    expect(linkHash({ ...record, kind: 'deposit', chain: 'base' })).toBe('c'.repeat(64));
+  });
+
+  it('is null for a chain the wallets do not carry by hash, or a hash that is not one', () => {
+    expect(linkHash({ ...record, chain: 'TRX' })).toBeNull();
+    expect(linkHash({ ...record, chain: 'BTC' })).toBeNull();
+    expect(linkHash({ ...record, chain: 'XRP' })).toBeNull();
+    expect(linkHash({ ...record, txID: '' })).toBeNull();
+    expect(linkHash({ ...record, txID: `0x${'z'.repeat(64)}` })).toBeNull();
+    expect(linkHash({ ...record, txID: `0x${'c'.repeat(63)}` })).toBeNull();
+    expect(linkHash(null)).toBeNull();
+  });
+
+  it('is read by PostgreSQL the same way, for the chains named here and no others', () => {
+    const sql = linkHashSql('t', 'w');
+    for (const chain of ['ETH', 'ARBI', 'BASE', 'OP', 'MATIC', 'BSC', 'AVAXC'])
+      expect(sql).toContain(`'${chain}'`);
+    expect(sql).not.toContain("'TRX'");
+    expect(sql).toContain("w.network='bybit'");
+    expect(sql).toContain("t.raw->'record'->>'txID'");
   });
 });
