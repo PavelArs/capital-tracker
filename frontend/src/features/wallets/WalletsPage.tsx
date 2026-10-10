@@ -5,6 +5,7 @@ import { withCurrency } from '../portfolio/currency';
 import { money } from '../portfolio/format';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
 import AddressDrawer from './AddressDrawer';
 import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
@@ -97,9 +98,7 @@ export default function WalletsPage() {
           </button>
         </section>
       ) : portfolio === null || addresses === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading wallets…
-        </section>
+        <PageSkeleton label="Loading wallets" show={['cards']} />
       ) : cards.length === 0 && list.length === 0 ? (
         <section className="shell-card shell-empty" aria-labelledby="wallets-empty">
           <span className="shell-empty__ill" aria-hidden="true">

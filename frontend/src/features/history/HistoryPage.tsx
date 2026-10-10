@@ -7,10 +7,12 @@ import {
   type AuditQuery,
   auditHistoryApi,
 } from '@api/audit-history.api';
+import { cachedReads } from '@api/cached-reads';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
 import { dayHeading, time } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
 import { useNarrowScreen } from '../transactions/useNarrowScreen';
@@ -139,8 +141,13 @@ export default function HistoryPage() {
     }),
     [entity, change, actor, from, to],
   );
-  const [history, setHistory] = useState<AuditHistory | null>(null);
-  const [events, setEvents] = useState<AuditEvent[]>([]);
+  // Coming back shows the newest page last seen for this filter while a fresh one loads.
+  const [history, setHistory] = useState<AuditHistory | null>(
+    () => cachedReads.audit.last(query) ?? null,
+  );
+  const [events, setEvents] = useState<AuditEvent[]>(
+    () => cachedReads.audit.last(query)?.events ?? [],
+  );
   const [failed, setFailed] = useState<'load' | 'more' | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -154,7 +161,7 @@ export default function HistoryPage() {
     setFailed(null);
     setLoadingMore(false);
     try {
-      const page = await auditHistoryApi.list(query);
+      const page = await cachedReads.audit.load(query);
       if (request !== latest.current) return;
       setHistory(page);
       setEvents(page.events);
@@ -230,9 +237,7 @@ export default function HistoryPage() {
           </button>
         </section>
       ) : history === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading the change history…
-        </section>
+        <PageSkeleton label="Loading the change history" show={['rows']} rows={8} />
       ) : events.length === 0 && !filtered ? (
         <section className="shell-card shell-empty" aria-labelledby="history-empty">
           <h2 id="history-empty">Nothing has changed yet</h2>

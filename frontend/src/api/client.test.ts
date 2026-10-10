@@ -372,6 +372,46 @@ describe('cookie session API client', () => {
     expect(sent[4].headers.get('X-CSRF-Token')).toBe('anonymous-2');
   });
 
+  it('drops every kept read after a successful write but not after a read', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) =>
+      config.url === '/auth/csrf' ? response(config, { csrfToken: 'csrf' }) : response(config, {});
+    cache.remember('page', { total: 1 }, cache.generationNow());
+
+    await apiClient.get('/accounting/portfolio');
+    expect(cache.recall('page')).toEqual({ total: 1 });
+
+    await apiClient.post('/accounting/trades', {});
+    expect(cache.recall('page')).toBeUndefined();
+  });
+
+  it('keeps the reads after a write the server refused', async () => {
+    const cache = await import('./read-cache');
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/auth/csrf') return response(config, { csrfToken: 'csrf' });
+      throw rejected(config, 422);
+    };
+    setErrorHandler(() => undefined);
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.post('/accounting/trades', {})).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBe(1);
+  });
+
+  it('drops every kept read when the session ends with a protected 401', async () => {
+    const cache = await import('./read-cache');
+    setUnauthorizedHandler(() => undefined);
+    apiClient.defaults.adapter = async (config) => {
+      throw rejected(config, 401);
+    };
+    cache.remember('page', 1, cache.generationNow());
+
+    await expect(apiClient.get('/accounting/portfolio')).rejects.toBeInstanceOf(AxiosError);
+
+    expect(cache.recall('page')).toBeUndefined();
+  });
+
   it('notifies React on a protected 401 without changing the document URL or retrying its write', async () => {
     window.history.replaceState({}, '', '/manual-accounts/retained-command');
     const onUnauthorized = vi.fn();

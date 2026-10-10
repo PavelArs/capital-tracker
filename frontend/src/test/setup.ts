@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest';
+import { forgetReads } from '@api/read-cache';
 import { beforeEach, vi } from 'vitest';
 
 // Mock localStorage
@@ -18,4 +19,6 @@ vi.stubGlobal('import.meta.env', {
 // Reset mocks between tests
 beforeEach(() => {
   vi.clearAllMocks();
+  // Every test starts as a fresh visit: nothing kept from an earlier one.
+  forgetReads();
 });

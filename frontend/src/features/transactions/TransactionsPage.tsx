@@ -1,4 +1,5 @@
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList } from '@api/operations.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -7,6 +8,7 @@ import { useAskedCurrency } from '../portfolio/currency';
 import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
+import { PageSkeleton } from '../shell/Skeleton';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
@@ -339,15 +341,6 @@ function OperationItem({
   );
 }
 
-// OPS-RETURN: the list last shown, so coming back from another page shows it at once while
-// a fresh one loads, instead of a loading card that makes the page jump.
-let lastList: { asked: AccountingCurrency | undefined; list: OperationList } | null = null;
-
-/** Tests start from an empty page. */
-export function forgetLastList() {
-  lastList = null;
-}
-
 /** Brings a row into view unless it is already on screen; the drawer covers only its right. */
 function reveal(row: Element) {
   const box = row.getBoundingClientRect();
@@ -360,8 +353,10 @@ function reveal(row: Element) {
 export default function TransactionsPage() {
   // No currency in the address means the owner's main currency (Settings).
   const [asked] = useAskedCurrency();
-  const [list, setList] = useState<OperationList | null>(() =>
-    lastList && lastList.asked === asked ? lastList.list : null,
+  // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
+  // loads, instead of a loading card that makes the page jump.
+  const [list, setList] = useState<OperationList | null>(
+    () => cachedReads.operations.last(asked) ?? null,
   );
   const [failed, setFailed] = useState(false);
   const [search, setSearch] = useState('');
@@ -381,11 +376,10 @@ export default function TransactionsPage() {
   const load = useCallback(async (currency: AccountingCurrency | undefined, fresh: boolean) => {
     const request = ++latest.current;
     setFailed(false);
-    if (fresh) setList(null);
+    if (fresh) setList(cachedReads.operations.last(currency) ?? null);
     try {
-      const next = await operationsApi.list(currency);
+      const next = await cachedReads.operations.load(currency);
       if (request !== latest.current) return null;
-      lastList = { asked: currency, list: next };
       setList(next);
       return next;
     } catch {
@@ -562,9 +556,7 @@ export default function TransactionsPage() {
           </button>
         </section>
       ) : list === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading transactions…
-        </section>
+        <PageSkeleton label="Loading transactions" show={['rows']} rows={10} />
       ) : operations.length === 0 ? (
         <section className="shell-card shell-empty" aria-labelledby="transactions-empty">
           <h2 id="transactions-empty">No transactions yet</h2>

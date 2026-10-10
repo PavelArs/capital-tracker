@@ -1,17 +1,18 @@
-import { type AssetHistory, assetHistoryApi } from '@api/asset-history.api';
-import { type Operation, type OperationList, operationsApi } from '@api/operations.api';
+import type { AssetHistory } from '@api/asset-history.api';
+import { cachedReads } from '@api/cached-reads';
+import type { Operation, OperationList } from '@api/operations.api';
 import { type HistoryPeriod, historyPeriods } from '@api/portfolio-history.api';
-import {
-  type AccountingCurrency,
-  type AssetValuation,
-  type PortfolioValuation,
-  portfolioValuationApi,
+import type {
+  AccountingCurrency,
+  AssetValuation,
+  PortfolioValuation,
 } from '@api/portfolio-valuation.api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
+import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
 import {
   assetKey,
@@ -123,20 +124,23 @@ function ValueChart({
   operations: OperationsState;
 }) {
   const [period, setPeriod] = useState<HistoryPeriod>('1M');
-  const [history, setHistory] = useState<AssetHistory | null>(null);
-  const [failed, setFailed] = useState(false);
   const instrumentId = asset.instrumentId;
+  const [history, setHistory] = useState<AssetHistory | null>(
+    () => cachedReads.assetHistory.last(instrumentId, '1M', asked) ?? null,
+  );
+  const [failed, setFailed] = useState(false);
   // Only the latest request may fill the chart: an earlier period's answer can arrive later.
   const latest = useRef(0);
   const load = useCallback(async () => {
     const request = ++latest.current;
     setFailed(false);
-    setHistory(null);
+    const kept = cachedReads.assetHistory.last(instrumentId, period, asked);
+    setHistory(kept ?? null);
     try {
-      const loaded = await assetHistoryApi.get(instrumentId, period, asked);
+      const loaded = await cachedReads.assetHistory.load(instrumentId, period, asked);
       if (request === latest.current) setHistory(loaded);
     } catch {
-      if (request === latest.current) setFailed(true);
+      if (request === latest.current && !kept) setFailed(true);
     }
   }, [instrumentId, period, asked]);
   useEffect(() => {
@@ -193,9 +197,7 @@ function ValueChart({
           </button>
         </div>
       ) : history === null ? (
-        <p className="dashboard-chart__empty" role="status">
-          Loading the chart…
-        </p>
+        <InlineSkeleton label="Loading the chart" chart />
       ) : (
         <AssetChart
           key={`${history.period}:${history.currency}:${history.at}`}
@@ -250,9 +252,7 @@ function AssetTransactions({
           </button>
         </div>
       ) : operations === 'loading' ? (
-        <p className="portfolio-none" role="status">
-          Loading transactions…
-        </p>
+        <InlineSkeleton label="Loading transactions" />
       ) : own.length === 0 ? (
         <p className="portfolio-none">No transactions yet.</p>
       ) : (
@@ -429,17 +429,21 @@ function AssetDetails({
 // One asset across every account (portfolio-valuation PV-5).
 export default function AssetPage() {
   const { assetId } = useParams();
-  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
-  const [failed, setFailed] = useState(false);
   const [asked] = useAskedCurrency();
+  // Coming back shows the last answers at once; the loads below replace them.
+  const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(
+    () => cachedReads.portfolio.last(asked) ?? null,
+  );
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     setFailed(false);
-    setPortfolio(null);
+    const kept = cachedReads.portfolio.last(asked);
+    setPortfolio(kept ?? null);
     try {
-      setPortfolio(await portfolioValuationApi.get(asked));
+      setPortfolio(await cachedReads.portfolio.load(asked));
     } catch {
-      setFailed(true);
+      if (!kept) setFailed(true);
     }
   }, [asked]);
   useEffect(() => {
@@ -447,17 +451,20 @@ export default function AssetPage() {
   }, [load]);
 
   // The asset's operations feed both the chart's purchases and its transactions card.
-  const [operations, setOperations] = useState<OperationsState>('loading');
+  const [operations, setOperations] = useState<OperationsState>(
+    () => cachedReads.operations.last(asked) ?? 'loading',
+  );
   const latestOperations = useRef(0);
   const loadOperations = useCallback(async () => {
     const request = ++latestOperations.current;
-    setOperations('loading');
+    const kept = cachedReads.operations.last(asked);
+    setOperations(kept ?? 'loading');
     try {
       // The same currency as the page, so the values match its other amounts.
-      const list = await operationsApi.list(asked);
+      const list = await cachedReads.operations.load(asked);
       if (request === latestOperations.current) setOperations(list);
     } catch {
-      if (request === latestOperations.current) setOperations('failed');
+      if (request === latestOperations.current && !kept) setOperations('failed');
     }
   }, [asked]);
   useEffect(() => {
@@ -488,9 +495,7 @@ export default function AssetPage() {
           </button>
         </section>
       ) : portfolio === null ? (
-        <section className="shell-card portfolio-state" role="status">
-          Loading asset…
-        </section>
+        <PageSkeleton label="Loading asset" show={['stats', 'chart', 'rows']} />
       ) : asset ? (
         <AssetDetails
           asset={asset}
