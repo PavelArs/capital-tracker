@@ -62,4 +62,70 @@ describe('read cache', () => {
     announceSyncChange();
     expect(cachedReads.toClassify.last()).toBeUndefined();
   });
+
+  it('sends one request for identical loads asked while one is on its way', async () => {
+    let answer: (value: number) => void = () => {};
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const first = cachedReads.toClassify.load();
+    const second = cachedReads.toClassify.load();
+    answer(4);
+    await expect(Promise.all([first, second])).resolves.toEqual([4, 4]);
+    expect(count).toHaveBeenCalledTimes(1);
+    // Once answered, the next load asks the server again: the page always loads.
+    count.mockResolvedValue(5);
+    await expect(cachedReads.toClassify.load()).resolves.toBe(5);
+    expect(count).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a missing trailing argument like undefined and keeps other arguments apart', async () => {
+    const get = vi
+      .spyOn(portfolioValuationApi, 'get')
+      .mockImplementation(async (currency) => ({ currency }) as never);
+    await Promise.all([
+      cachedReads.portfolio.load(),
+      cachedReads.portfolio.load(undefined),
+      cachedReads.portfolio.load('EUR'),
+    ]);
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(cachedReads.portfolio.last(undefined)).toBe(cachedReads.portfolio.last());
+    expect(cachedReads.portfolio.last()).toMatchObject({});
+  });
+
+  it('does not share an answer asked for before a change with a load asked after it', async () => {
+    const answers: Array<(value: number) => void> = [];
+    const count = vi.spyOn(operationsApi, 'needsClassification').mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          answers.push(resolve);
+        }),
+    );
+    const before = cachedReads.toClassify.load();
+    announceSyncChange();
+    const after = cachedReads.toClassify.load();
+    expect(count).toHaveBeenCalledTimes(2);
+    answers[1](7);
+    answers[0](3);
+    await expect(Promise.all([before, after])).resolves.toEqual([3, 7]);
+    // Only the answer given after the change is kept.
+    expect(cachedReads.toClassify.last()).toBe(7);
+  });
+
+  it('shares a failure with everyone waiting and then asks again', async () => {
+    const count = vi
+      .spyOn(operationsApi, 'needsClassification')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(2);
+    const both = await Promise.allSettled([
+      cachedReads.toClassify.load(),
+      cachedReads.toClassify.load(),
+    ]);
+    expect(both.map((result) => result.status)).toEqual(['rejected', 'rejected']);
+    expect(count).toHaveBeenCalledTimes(1);
+    await expect(cachedReads.toClassify.load()).resolves.toBe(2);
+  });
 });

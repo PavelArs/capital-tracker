@@ -1,4 +1,5 @@
-import { CLASSIFICATION_CHANGED, operationsApi } from '@api/operations.api';
+import { cachedReads } from '@api/cached-reads';
+import { CLASSIFICATION_CHANGED } from '@api/operations.api';
 import { SYNC_CHANGED } from '@api/sync-status.api';
 import { useEffect, useState } from 'react';
 
@@ -11,8 +12,8 @@ export function useNeedsClassification(): number | null {
   useEffect(() => {
     let live = true;
     const load = () =>
-      operationsApi
-        .needsClassification()
+      cachedReads.toClassify
+        .load()
         .then((next) => live && setCount(next))
         .catch(() => undefined);
     void load();

@@ -1,4 +1,4 @@
-import { ownerSettingsApi } from '@api/owner-settings.api';
+import { cachedReads } from '@api/cached-reads';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 
@@ -19,8 +19,8 @@ export function MainCurrencyProvider({ children }: { children: ReactNode }) {
   const [main, setMain] = useState<AccountingCurrency>();
   useEffect(() => {
     let active = true;
-    ownerSettingsApi
-      .get()
+    cachedReads.settings
+      .load()
       .then((settings) => {
         // A choice saved meanwhile in Settings is newer than this answer.
         if (active) setMain((current) => current ?? settings.mainCurrency);
