@@ -29,6 +29,9 @@
   /* One colour per asset everywhere (asset-identity.ts); unknown tickers are "other". */
   --c-btc: #d95926;
   --c-eth: #3987e5;
+  --c-base: #3b6cff;
+  --c-arb: #2d9bd8;
+  --c-op: #e8394a;
   --c-sol: #d55181;
   --c-zec: #199e70;
   --c-trx: #dd3442;
@@ -80,6 +83,9 @@
   --shadow-lg: 0 16px 48px rgba(18, 23, 38, 0.16);
   --c-btc: #eb6834;
   --c-eth: #2a78d6;
+  --c-base: #1f4fe0;
+  --c-arb: #1b86c4;
+  --c-op: #d62839;
   --c-sol: #e87ba4;
   --c-zec: #1baf7a;
   --c-trx: #e5404d;

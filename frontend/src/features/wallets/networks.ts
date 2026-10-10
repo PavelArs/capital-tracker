@@ -7,6 +7,8 @@ export interface NetworkInfo {
   name: string;
   /** The network's own coin. */
   symbol: string;
+  /** The icon of a chain that holds another chain's coin (Base holds ETH), keyed like a ticker. */
+  icon?: string;
   /** Every asset a wallet on the network holds, its own coin first. */
   assets: readonly string[];
   source: string;
@@ -38,6 +40,41 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
     placeholder: '0x…',
     defaultWallet: 'Ethereum wallet',
     labelExample: 'Main ETH',
+  },
+  // EVM-MULTICHAIN: the same 0x address on another chain is another wallet here, read through the
+  // same Etherscan key, holding ETH as its own coin.
+  base: {
+    name: 'Base',
+    symbol: 'ETH',
+    icon: 'BASE',
+    assets: ['ETH', 'USDC'],
+    anyToken: true,
+    source: 'Etherscan',
+    placeholder: '0x…',
+    defaultWallet: 'Base wallet',
+    labelExample: 'Base ETH',
+  },
+  arbitrum: {
+    name: 'Arbitrum One',
+    symbol: 'ETH',
+    icon: 'ARB',
+    assets: ['ETH', 'USDT', 'USDC'],
+    anyToken: true,
+    source: 'Etherscan',
+    placeholder: '0x…',
+    defaultWallet: 'Arbitrum wallet',
+    labelExample: 'Arbitrum ETH',
+  },
+  optimism: {
+    name: 'OP Mainnet',
+    symbol: 'ETH',
+    icon: 'OP',
+    assets: ['ETH', 'USDT', 'USDC'],
+    anyToken: true,
+    source: 'Etherscan',
+    placeholder: '0x…',
+    defaultWallet: 'OP Mainnet wallet',
+    labelExample: 'Optimism ETH',
   },
   solana: {
     name: 'Solana',
@@ -92,7 +129,7 @@ export const networks: Record<WalletAddress['network'], NetworkInfo> = {
 export const networkIcon = (network: NetworkInfo) =>
   network.exchange
     ? { symbol: null, name: network.name, assetType: 'manual' as const }
-    : { symbol: network.symbol, name: network.name, assetType: 'crypto' as const };
+    : { symbol: network.icon ?? network.symbol, name: network.name, assetType: 'crypto' as const };
 
 export const networkOf = (address: Pick<WalletAddress, 'network'>): NetworkInfo =>
   networks[address.network];

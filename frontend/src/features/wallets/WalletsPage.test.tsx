@@ -1736,6 +1736,64 @@ describe('Zcash wallets (M24)', () => {
   });
 });
 
+describe('EVM-MULTICHAIN: the same 0x address on another chain', () => {
+  const address = `0x${'5e'.repeat(20)}`;
+  const baseWallet = (changes: Partial<WalletAddress> = {}) =>
+    wallet(8, {
+      network: 'base',
+      address,
+      label: 'Base ETH',
+      chainBalance: '0.250000000000000000',
+      balances: [
+        { symbol: 'ETH', quantity: '0.250000000000000000' },
+        { symbol: 'USDC', quantity: '40.000000' },
+      ],
+      ...changes,
+    });
+
+  it('adds the address as a wallet of the chosen chain, checked like an Ethereum address', async () => {
+    setup([]);
+    const added = baseWallet({ transactionCount: 0, chainBalance: null, balances: null });
+    const add = vi
+      .spyOn(walletAddressesApi, 'add')
+      .mockResolvedValue({ created: true, address: added });
+    vi.spyOn(walletAddressesApi, 'sync').mockResolvedValue(synced(added));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    const base = within(dialog).getByRole('button', { name: /^Base/ });
+    expect(base).toHaveTextContent('The same 0x address. ETH and every token');
+    expect(within(dialog).getByRole('button', { name: /^Arbitrum One/ })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /^OP Mainnet/ })).toBeInTheDocument();
+    await user.click(base);
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    const field = within(dialog).getByLabelText('Base wallet address');
+    expect(dialog).toHaveTextContent('Paste the same 0x address you use on Ethereum');
+    await user.type(field, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+    await user.tab();
+    expect(within(dialog).getByText(/This is not an Ethereum address/)).toBeInTheDocument();
+    await user.click(field);
+    await user.clear(field);
+    await user.type(field, address);
+    expect(within(dialog).getByText('Ethereum address')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Continue' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Trust Wallet' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Add wallet' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(add).toHaveBeenCalledWith({ network: 'base', address, accountId: trust });
+  });
+
+  it('shows the chain’s balances and that Etherscan is its source', async () => {
+    setup([baseWallet()]);
+    const user = userEvent.setup();
+    const row = await screen.findByRole('button', { name: `Base ETH ${address}` });
+    expect(row).toHaveTextContent('0.25 ETH · 40 USDC');
+    await user.click(row);
+    const drawer = screen.getByRole('dialog', { name: 'Trust Wallet · Base' });
+    expect(drawer).toHaveTextContent('Etherscan');
+  });
+});
+
 describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', () => {
   const ethAddress = `0x${'5e'.repeat(20)}`;
   const spam = (symbol: string, listed = false) => ({

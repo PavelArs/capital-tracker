@@ -7,6 +7,7 @@ import {
   type NormalTransaction,
   type TokenTransfer,
 } from './etherscan-client';
+import { type EvmNetwork, evmNetworks } from './evm-chains';
 
 // track-ethereum-wallets (M14, ETH-IDENTITY): what one block range of an address's history
 // stores. Each transaction hash has at most one leg in ether (the transaction itself, the
@@ -29,29 +30,39 @@ export interface EthereumLeg {
   raw: Record<string, unknown>;
 }
 
-const tokensByContract = new Map(
-  chainAssets
-    .filter((asset) => asset.network === 'ethereum' && asset.contract)
-    .map((asset) => [asset.contract as string, asset.token as string]),
+// EVM-MULTICHAIN: USDT and USDC are different contracts on each chain.
+const tokensByContract = new Map<EvmNetwork, Map<string, string>>(
+  evmNetworks.map((network) => [
+    network,
+    new Map(
+      chainAssets
+        .filter((asset) => asset.network === network && asset.contract)
+        .map((asset) => [asset.contract as string, asset.token as string]),
+    ),
+  ]),
 );
 
 const bare = (hash: string) => hash.slice(2);
 
 /** What a leg names its token by: USDT and USDC by ticker, any other token by its contract. */
-export const tokenAsset = (contract: string): string => tokensByContract.get(contract) ?? contract;
+export const tokenAsset = (contract: string, network: EvmNetwork = 'ethereum'): string =>
+  tokensByContract.get(network)?.get(contract) ?? contract;
 
 /**
  * TOKEN-ANY: what Etherscan's transfers say about each token other than USDT and USDC, from the
  * first transfer of each contract. A transfer without readable decimals gives NaN, which leaves
  * the token out.
  */
-export function ethereumTokenFacts(tokens: readonly TokenTransfer[]): TokenFacts[] {
+export function ethereumTokenFacts(
+  tokens: readonly TokenTransfer[],
+  network: EvmNetwork = 'ethereum',
+): TokenFacts[] {
   const facts = new Map<string, TokenFacts>();
   for (const item of tokens) {
-    if (tokensByContract.has(item.contract) || facts.has(item.contract)) continue;
+    if (tokensByContract.get(network)?.has(item.contract) || facts.has(item.contract)) continue;
     const decimals = item.raw.tokenDecimal;
     facts.set(item.contract, {
-      network: 'ethereum',
+      network,
       contract: item.contract,
       symbol: typeof item.raw.tokenSymbol === 'string' ? item.raw.tokenSymbol : null,
       name: typeof item.raw.tokenName === 'string' ? item.raw.tokenName : null,
@@ -89,6 +100,7 @@ export function ethereumLegs(
   normal: readonly NormalTransaction[],
   internal: readonly InternalTransfer[],
   tokens: readonly TokenTransfer[],
+  network: EvmNetwork = 'ethereum',
 ): EthereumLeg[] {
   const legs: EthereumLeg[] = [];
   const hashes = new Map<
@@ -167,7 +179,7 @@ export function ethereumLegs(
       const sent = item.from === address ? item.value : 0n;
       legs.push({
         txid,
-        asset: tokenAsset(item.contract),
+        asset: tokenAsset(item.contract, network),
         blockHeight: item.blockNumber,
         blockHash: bare(item.blockHash),
         blockTime: at(item.timeStamp),

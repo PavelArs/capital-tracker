@@ -325,6 +325,19 @@ describe('PRC-PARSE market price clients against a local HTTP server', () => {
       expect(requests[0].headers['x-cg-demo-api-key']).toBe('demo');
     });
 
+    it('EVM-MULTICHAIN asks the chain’s own CoinGecko platform and matches its contracts without regard to case', async () => {
+      handler = () => ({
+        status: 200,
+        body: { [mixed.toLowerCase()]: { usd: 4, last_updated_at: updated } },
+      });
+      const answer = await new CoinGeckoClient({ baseUrl }).tokens('arbitrum-one', [mixed], now);
+      expect(answer).toEqual({
+        ok: true,
+        prices: new Map([[mixed, { price: '4', observedAt: '2026-10-04T15:04:30.000Z' }]]),
+      });
+      expect(requests[0].url.pathname).toBe('/api/v3/simple/token_price/arbitrum-one');
+    });
+
     it('matches a Solana mint exactly, so a mint differing in case is another token', async () => {
       handler = () => ({
         status: 200,
