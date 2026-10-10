@@ -9,6 +9,7 @@ import { readFxRates } from '../fx-rates/fx-rates.service';
 import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-settings.service';
 import { storedPricesAt } from '../prices/market-price.store';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
+import { evmNetworks } from '../wallet-addresses/evm-chains';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
 import { leftOutTokens } from '../wallet-addresses/token-left-out';
 import type { ChainType, Classification } from './chain-classification';
@@ -142,6 +143,8 @@ const feeColumns = `v."feeInstrumentId", fi.name AS "feeName", fi.symbol AS "fee
   v."feeQuantity"::text AS "feeQuantity"`;
 const feeJoin = `LEFT JOIN accounting_instruments fi ON fi."ownerId"=v."ownerId" AND fi.id=v."feeInstrumentId"`;
 
+// The networks read like Ethereum (EVM-MULTICHAIN): a transaction there may call a contract.
+const evmNetworkList = evmNetworks.map((network) => `'${network}'`).join(', ');
 const decimal = (value: string) => parseDecimal(value, false);
 const optional = (value: string | null) => (value === null ? null : decimal(value));
 const place = (row: Named): OperationPlace => ({ id: row.accountId, name: row.accountName });
@@ -294,7 +297,7 @@ export class OperationListService {
             t."sentUnits"::text AS "sentUnits", t."feeUnits"::text AS "feeUnits",
             coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
               AND m."addressId"=t."addressId" AND m.txid=t.txid), 0)::text AS "stakeUnits",
-            (w.network='ethereum' AND t.asset IS NULL
+            (w.network IN (${evmNetworkList}) AND t.asset IS NULL
               AND lower(t.raw->'transaction'->>'from')=lower(w.address)
               AND coalesce(t.raw->'transaction'->>'input', '0x') NOT IN ('', '0x'))
               AS "contractCall",

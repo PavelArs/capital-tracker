@@ -3,7 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { trackJob } from '../observability/metrics';
+import { type AnyTokenNetwork, anyTokenNetworks } from '../wallet-addresses/chain-assets';
 import { loadChainTokens } from '../wallet-addresses/chain-tokens';
+import { evmChain, isEvmNetwork } from '../wallet-addresses/evm-chains';
 import { BybitMarketClient, type BybitMarketMiss } from './bybit-market';
 import { extraMarketCodes } from './market-codes';
 import { latestMarketPrices } from './market-price.store';
@@ -209,10 +211,10 @@ export class PricesService {
    * and never the whole run.
    */
   private async collectTokens(now: Date): Promise<number> {
-    const due: { network: 'ethereum' | 'solana'; contract: string; ticker: string }[] =
+    const due: { network: AnyTokenNetwork; contract: string; ticker: string }[] =
       await this.source.query(
         `SELECT t.network, t.contract, t.ticker FROM chain_tokens t
-          WHERE t.network IN ('ethereum', 'solana')
+          WHERE t.network = ANY($3::text[])
             AND (t."coingeckoId" IS NOT NULL OR t."priceCheckedAt" IS NULL
                  OR t."priceCheckedAt" <= $1)
             AND EXISTS (
@@ -226,19 +228,19 @@ export class PricesService {
               HAVING sum(x."receivedUnits") - sum(x."sentUnits") > 0)
           ORDER BY t."priceCheckedAt" NULLS FIRST, t.network, t.contract
           LIMIT $2`,
-        [new Date(now.getTime() - UNLISTED_RECHECK_MS), MAX_TOKENS],
+        [new Date(now.getTime() - UNLISTED_RECHECK_MS), MAX_TOKENS, [...anyTokenNetworks]],
       );
     if (due.length === 0) return 0;
     const quotes: Quote[] = [];
     const priced: { network: string; contract: string }[] = [];
     const asked: { network: string; contract: string }[] = [];
     let failure: PriceFailure | null = null;
-    for (const network of ['ethereum', 'solana'] as const) {
+    for (const network of anyTokenNetworks) {
       const own = due.filter((token) => token.network === network);
       for (let start = 0; start < own.length && !failure; start += TOKENS_PER_REQUEST) {
         const batch = own.slice(start, start + TOKENS_PER_REQUEST);
         const answer = await this.coingecko.tokens(
-          network,
+          isEvmNetwork(network) ? evmChain(network).coingeckoPlatform : network,
           batch.map(({ contract }) => contract),
           now,
         );

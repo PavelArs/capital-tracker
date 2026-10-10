@@ -74,6 +74,7 @@ const expectedMigrationNames = [
   'TrackStellarWallets1795000000000',
   'HideChainTokens1795200000000',
   'TrackZcashWallets1795300000000',
+  'TrackEvmChains1796000000000',
 ];
 const children = new Set();
 let stage = 'isolated setup';

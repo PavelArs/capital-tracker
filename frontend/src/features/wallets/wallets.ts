@@ -1,5 +1,6 @@
 import type { PortfolioValuation } from '@api/portfolio-valuation.api';
 import type { ChainBalance, WalletAddress } from '@api/wallet-addresses.api';
+import { isEvm } from '../shell/evm-networks';
 import { addressAssets, networkOf } from './networks';
 
 // Exact decimal arithmetic for comparing balances; display rounding happens in format.ts.
@@ -226,7 +227,7 @@ export function checkAddress(network: WalletAddress['network'], raw: string): Ad
   if (network === 'tron') return checkTronAddress(raw);
   if (network === 'stellar') return checkStellarAddress(raw);
   if (network === 'zcash') return checkZcashAddress(raw);
-  return network === 'ethereum' ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
+  return isEvm(network) ? checkEthereumAddress(raw) : checkBitcoinAddress(raw);
 }
 
 /** A Tron address as wallet apps show it: "T…", 25 bytes in base58check. */

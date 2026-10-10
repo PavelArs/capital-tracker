@@ -287,11 +287,11 @@ export class CoinGeckoClient implements PriceProvider {
 
   /**
    * TOKEN-ANY-PRICE: the USD price of tokens by contract on one of CoinGecko's platforms. A
-   * token CoinGecko does not know is absent from the answer. An Ethereum contract is matched
+   * token CoinGecko does not know is absent from the answer. An EVM chain's contract is matched
    * without regard to case, a Solana mint exactly.
    */
   async tokens(
-    platform: 'ethereum' | 'solana',
+    platform: string,
     contracts: readonly string[],
     now: Date,
   ): Promise<{ ok: true; prices: Map<string, TokenQuote> } | { ok: false; reason: PriceFailure }> {
@@ -312,13 +312,13 @@ export class CoinGeckoClient implements PriceProvider {
       const body = record(fetched.body);
       const answered = new Map(
         Object.entries(body).map(([key, value]) => [
-          platform === 'ethereum' ? key.toLowerCase() : key,
+          platform === 'solana' ? key : key.toLowerCase(),
           value,
         ]),
       );
       const prices = new Map<string, TokenQuote>();
       for (const contract of contracts) {
-        const value = answered.get(platform === 'ethereum' ? contract.toLowerCase() : contract);
+        const value = answered.get(platform === 'solana' ? contract : contract.toLowerCase());
         if (value === undefined) continue;
         const entry = record(value);
         prices.set(contract, {

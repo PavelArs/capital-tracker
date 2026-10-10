@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   exchangeRecord,
   explorerUrl,
+  hashOf,
   sourceLabel,
   statusLabel,
   transactionHash,
@@ -104,6 +105,16 @@ describe('the explorer page of a transaction', () => {
     expect(explorerUrl(hex, 'tron')).toBe(`https://tronscan.org/#/transaction/${hex}`);
     expect(explorerUrl(hex, 'stellar')).toBe(`https://stellar.expert/explorer/public/tx/${hex}`);
     expect(explorerUrl(hex, 'zcash')).toBe(`https://blockchair.com/zcash/transaction/${hex}`);
+  });
+
+  it('EVM-MULTICHAIN links the Ethereum-like chains to their own explorers and writes their hashes with 0x', () => {
+    expect(explorerUrl(`0x${hex}`, 'base')).toBe(`https://basescan.org/tx/0x${hex}`);
+    expect(explorerUrl(`0x${hex}`, 'arbitrum')).toBe(`https://arbiscan.io/tx/0x${hex}`);
+    expect(explorerUrl(`0x${hex}`, 'optimism')).toBe(`https://optimistic.etherscan.io/tx/0x${hex}`);
+    for (const network of ['ethereum', 'base', 'arbitrum', 'optimism'] as const) {
+      expect(hashOf(`${hex}-3`, network)).toBe(`0x${hex}`);
+    }
+    expect(hashOf(hex, 'tron')).toBe(hex);
   });
 
   it('has none for an exchange account or a record id that is not a hash', () => {

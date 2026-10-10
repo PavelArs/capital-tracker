@@ -17,7 +17,8 @@ const { WalletSyncService } = require(`${dist}/wallet-addresses/wallet-sync.serv
 const { EsploraClient } = require(`${dist}/wallet-addresses/esplora-client.js`);
 const { BitcoinSyncAdapter } = require(`${dist}/wallet-addresses/bitcoin-sync.adapter.js`);
 const { EtherscanClient } = require(`${dist}/wallet-addresses/etherscan-client.js`);
-const { EthereumSyncAdapter } = require(`${dist}/wallet-addresses/ethereum-sync.adapter.js`);
+const { EvmSyncAdapter } = require(`${dist}/wallet-addresses/evm-sync.adapter.js`);
+const { evmChain } = require(`${dist}/wallet-addresses/evm-chains.js`);
 const { TrackEthereumWallets1792000000000 } = require(`${dist}/migrations/1792000000000-TrackEthereumWallets.js`);
 
 const settings = { DB_HOST: 'postgres', DB_PORT: '5432', DB_USERNAME: 'capital_e2e', DB_PASSWORD: 'capital_e2e', DB_NAME: 'capital_tracker_e2e' };
@@ -164,7 +165,7 @@ function services(db, apiKey = etherscanKey) {
   const classifications = make('chain-classification.service', 'ChainClassificationService', trades,
     make('asset-reward.service', 'AssetRewardService'), make('owned-transfer.service', 'OwnedTransferService'));
   const bitcoin = new BitcoinSyncAdapter(db, new EsploraClient());
-  const ethereum = new EthereumSyncAdapter(db, new EtherscanClient({ apiKey, pauseMs: 0 }));
+  const ethereum = new EvmSyncAdapter(db, new EtherscanClient({ apiKey, pauseMs: 0 }), evmChain('ethereum'));
   const scheduler = (enabled) => new WalletSyncService(db, new ConfigService({ PRICE_COLLECTION_ENABLED: String(enabled) }),
     [bitcoin, ethereum], classifications);
   return {
@@ -179,7 +180,7 @@ function services(db, apiKey = etherscanKey) {
 async function main() {
   for (const [key, value] of Object.entries(settings)) assert.equal(process.env[key], value, 'Exact synthetic environment required');
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 53/);
+  assert.match(migrate(database), /Migrations applied: 54/);
   assert.match(migrate(database), /Migrations applied: 0/);
   const db = sourceFor(database);
   await db.initialize();
