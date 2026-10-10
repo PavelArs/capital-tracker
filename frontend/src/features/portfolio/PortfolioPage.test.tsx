@@ -320,6 +320,11 @@ describe('PV-UI Portfolio values every asset', () => {
     );
 
     const allocation = screen.getByRole('region', { name: 'Allocation' });
+    // The assets table comes first; how they are split follows it (review item P1).
+    const assetsCard = screen.getByRole('region', { name: 'Assets' });
+    expect(
+      assetsCard.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const grouping = within(allocation).getByRole('radiogroup', { name: 'Group allocation by' });
     const slices = () =>
       within(allocation)

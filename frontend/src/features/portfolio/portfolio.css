@@ -914,11 +914,6 @@ a.portfolio-asset__name:hover {
     flex: none;
     padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   }
-
-  /* Portfolio: the assets come before how they are split. */
-  .portfolio-allocation-slot {
-    order: 1;
-  }
 }
 
 /* Asset page on phones: the page title already names the asset, the price sits under the icon
