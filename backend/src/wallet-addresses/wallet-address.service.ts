@@ -12,8 +12,6 @@ import { DataSource, EntityManager } from 'typeorm';
 import { lockAccountingOwner } from '../accounting/accounting-lock';
 import { parseUuid } from '../accounting/input';
 import { ensureChainCoins } from '../accounting/portfolio-valuation.service';
-import { readDustThreshold } from '../owner-settings/owner-settings.service';
-import { latestMarketPrices } from '../prices/market-price.store';
 import { presentSource, type SourceRow } from '../sync-status/sync-source';
 import { BybitClient } from './bybit-client';
 import { BybitKeyBox } from './bybit-key-box';
@@ -34,7 +32,7 @@ import { walletSourceKey } from './chain-sync';
 import { openPoolDeposits } from './pool-tables';
 import type { StakeState } from './solana-stake';
 import { stakeMoves, stakeRewards } from './stake-tables';
-import { type HiddenReason, hiddenReason, isWorthless } from './token-visibility';
+import { balancesLateral, leftOut, withDust } from './token-left-out';
 import { TRON_REWARD_CONTRACT } from './tron-legs';
 import {
   type ExchangeRegistration,
@@ -177,15 +175,7 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
   FROM wallet_addresses a
   CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount"
     FROM wallet_address_transactions x WHERE x."addressId" = a.id) t
-  CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
-      'units', y.units::text)), '[]'::json) AS balances
-    FROM (SELECT z.asset, sum(z.units) AS units FROM (
-        SELECT x.asset, x."receivedUnits" - x."sentUnits" AS units
-          FROM wallet_address_transactions x WHERE x."addressId" = a.id
-        UNION ALL SELECT NULL, m.units FROM ${stakeMoves} m WHERE m."addressId" = a.id
-        UNION ALL SELECT NULL, r.units FROM ${stakeRewards} r WHERE r."addressId" = a.id
-        UNION ALL SELECT o.asset, o.units FROM ${openPoolDeposits} o WHERE o."addressId" = a.id
-      ) z GROUP BY z.asset) y) b
+  ${balancesLateral('a')}
   CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
       'units', y.units::text)), '[]'::json) AS pools
     FROM (SELECT o.asset, sum(o.units) AS units FROM ${openPoolDeposits} o
@@ -281,27 +271,6 @@ function balancesOf(row: AddressRow) {
     return { symbol: asset.symbol, quantity: formatUnits(BigInt(units), asset) };
   });
   return [...tracked, ...otherTokens(row, row.balances)];
-}
-
-/**
- * TOKEN-HIDE: the other tokens the address holds that its balances leave out, by contract, and
- * why. Empty while the stored history is still read again for tokens (TOKEN-BACKFILL).
- */
-function leftOut(row: AddressRow): Map<string, HiddenReason> {
-  const found = new Map<string, HiddenReason>();
-  if (row.tokenBackfillTo !== null) return found;
-  for (const item of row.balances) {
-    if (!isOtherToken(row.network, item.asset) || BigInt(item.units) === 0n) continue;
-    const reason = hiddenReason(
-      chainAsset(row.network, item.asset),
-      BigInt(item.units),
-      row.hiddenTokens,
-      row.shownTokens,
-      row.dustTokens?.has(item.asset as string) ?? false,
-    );
-    if (reason) found.set(item.asset as string, reason);
-  }
-  return found;
 }
 
 /**
@@ -489,52 +458,6 @@ function poolsOf(row: AddressRow) {
       .map(({ symbol, quantity }) => ({ symbol, quantity })),
   );
   return pools.length === 0 ? null : pools;
-}
-
-/**
- * TOKEN-DUST: marks the other tokens each address holds that are worth nothing, by the owner's
- * dust threshold and the latest stored prices. Without a threshold nothing is dust.
- */
-async function withDust(
-  manager: EntityManager,
-  owner: string,
-  rows: AddressRow[],
-): Promise<AddressRow[]> {
-  const candidates = rows.filter((row) => movesAnyToken(row.network));
-  const threshold = candidates.length > 0 ? await readDustThreshold(manager, owner) : null;
-  if (threshold === null) return rows;
-  const held = (row: AddressRow) =>
-    row.balances.filter((item) => isOtherToken(row.network, item.asset) && BigInt(item.units) > 0n);
-  const tickers = [
-    ...new Set(
-      candidates.flatMap((row) =>
-        held(row).map((item) => chainAsset(row.network, item.asset).symbol),
-      ),
-    ),
-  ];
-  const prices = new Map(
-    (await latestMarketPrices(manager, tickers, new Date())).map((item) => [
-      item.asset,
-      item.price,
-    ]),
-  );
-  for (const row of candidates) {
-    const dust = new Set<string>();
-    for (const item of held(row)) {
-      const asset = chainAsset(row.network, item.asset);
-      if (
-        isWorthless(
-          asset,
-          formatUnits(BigInt(item.units), asset),
-          threshold,
-          prices.get(asset.symbol),
-        )
-      )
-        dust.add(item.asset as string);
-    }
-    row.dustTokens = dust;
-  }
-  return rows;
 }
 
 function summary(row: AddressRow, now = new Date()) {
@@ -825,6 +748,8 @@ export class WalletAddressService {
           WHERE "ownerId" = $1 AND id = $2`,
         [owner, addressId, hide, contracts],
       );
+      // A token brought back is a coin of the portfolio again (D1).
+      if (!hide) await ensureChainCoins(manager, owner);
       return summary(await this.address(manager, owner, addressId));
     });
   }

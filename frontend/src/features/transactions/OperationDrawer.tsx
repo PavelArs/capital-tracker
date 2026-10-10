@@ -672,8 +672,8 @@ export default function OperationDrawer({
       )}
       {dust && (
         <p className="transactions-notice" role="note">
-          Worth less than your dust threshold, so it doesn't ask to be classified. It still counts
-          in your balance. Classify it if it matters, or hide it.
+          Worth less than your dust threshold, or a token no price source lists, so it doesn't ask
+          to be classified. It still counts in your balance. Classify it if it matters, or hide it.
         </p>
       )}
       {operation.classification?.automatic &&

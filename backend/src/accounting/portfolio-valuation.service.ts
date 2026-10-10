@@ -10,6 +10,8 @@ import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { latestMarketPrices } from '../prices/market-price.store';
 import type { Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves, stakeRewards } from '../wallet-addresses/stake-tables';
+import { leftOutTokens } from '../wallet-addresses/token-left-out';
+import { tokenKey } from '../wallet-addresses/token-visibility';
 import type { PriceSource } from './asset-classification';
 import { chainCoin, legMovement } from './chain-classification';
 import {
@@ -111,6 +113,8 @@ export interface ValuationInputs {
 
 interface ChainMoveRow {
   accountId: string;
+  /** Set for a leg of a wallet address, so a token the address leaves out can be skipped. */
+  addressId?: string;
   network: Network;
   asset: string | null;
   blockTime: Date;
@@ -140,7 +144,7 @@ export async function readChainMoves(
   owner: string,
 ): Promise<Map<string, ChainMove[]>> {
   const rows: ChainMoveRow[] = await manager.query(
-    `SELECT w."accountId", w.network, t.asset, t."blockTime",
+    `SELECT w."accountId", w.id AS "addressId", w.network, t.asset, t."blockTime",
         t."receivedUnits"::text AS "receivedUnits",
         t."sentUnits"::text AS "sentUnits",
         coalesce((SELECT sum(m.units) FROM ${stakeMoves} m WHERE t.asset IS NULL
@@ -206,7 +210,7 @@ export async function readChainMoves(
     depositKey: string | null;
     deposit: { receivedUnits: string; sentUnits: string; feeUnits: string } | null;
   })[] = await manager.query(
-    `SELECT w."accountId", w.network, t.asset, t."blockTime", t.txid,
+    `SELECT w."accountId", w.id AS "addressId", w.network, t.asset, t."blockTime", t.txid,
         t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits",
         t."feeUnits"::text AS "feeUnits",
         coalesce((v.details->>'partial')::boolean, false) AS partial,
@@ -242,9 +246,13 @@ export async function readChainMoves(
     const units = poolMoveUnits({ ...row, feeUnits }, loss);
     rows.push({ ...row, ...signedLeg(units), stakeUnits: '0' });
   }
+  // TOKEN-HIDE: a token the address leaves out (spam, no price anywhere, hidden by the owner)
+  // never counts, so no asset, total or list shows it.
+  const hidden = await leftOutTokens(manager, owner);
   const coins = new Map<string, string | null>();
   const moves = new Map<string, ChainMove[]>();
   for (const row of rows) {
+    if (row.addressId && hidden.has(tokenKey(row.addressId, row.asset))) continue;
     const key = `${row.network}:${row.asset ?? ''}`;
     if (!coins.has(key))
       coins.set(
@@ -269,17 +277,25 @@ export async function readChainMoves(
  */
 export async function ensureChainCoins(manager: EntityManager, owner: string): Promise<void> {
   // A Bybit trade (M22) also moves its quote coin.
-  const rows: { network: Network; asset: string | null }[] = await manager.query(
-    `SELECT DISTINCT w.network, x.asset
+  const rows: { id: string; network: Network; asset: string | null }[] = await manager.query(
+    `SELECT DISTINCT w.id, w.network, x.asset
       FROM wallet_addresses w
       JOIN wallet_address_transactions t ON t."ownerId"=w."ownerId" AND t."addressId"=w.id
       CROSS JOIN LATERAL (SELECT t.asset UNION ALL
         SELECT t.raw->>'quoteAsset' WHERE w.network='bybit' AND t.raw ? 'quoteAsset') x
       WHERE w."ownerId"=$1 AND w."accountId" IS NOT NULL
-      ORDER BY w.network, x.asset`,
+      ORDER BY w.network, x.asset, w.id`,
     [owner],
   );
-  for (const row of rows) await findOrCreateInstrument(manager, owner, chainCoin(row), true);
+  // TOKEN-HIDE: a token every address leaves out gets no asset.
+  const hidden = await leftOutTokens(manager, owner);
+  const made = new Set<string>();
+  for (const row of rows) {
+    const key = `${row.network}:${row.asset ?? ''}`;
+    if (made.has(key) || hidden.has(tokenKey(row.id, row.asset))) continue;
+    made.add(key);
+    await findOrCreateInstrument(manager, owner, chainCoin(row), true);
+  }
 }
 
 /**

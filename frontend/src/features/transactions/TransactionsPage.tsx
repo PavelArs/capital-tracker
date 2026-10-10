@@ -644,7 +644,7 @@ export default function TransactionsPage() {
           {view === 'dust' && (
             <p className="transactions-info transactions-dust-note">
               {list.dustThresholdUsd === null
-                ? 'No dust threshold is set, so every incoming wallet transaction asks to be classified.'
+                ? 'No dust threshold is set, so incoming wallet transactions ask to be classified, except those of tokens no price source lists or that you hid.'
                 : `Incoming wallet transactions worth less than ${money(list.dustThresholdUsd, 'USD')} at the latest price. They count in your balances but don't ask to be classified; open one to classify or hide it.`}{' '}
               <Link to="/preferences">Change the threshold in Settings</Link>
             </p>

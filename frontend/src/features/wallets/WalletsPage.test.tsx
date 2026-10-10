@@ -1782,6 +1782,32 @@ describe('TOKEN-HIDE and TOKEN-SHOW-MORE: spam tokens in an Ethereum wallet', ()
     expect(row).not.toHaveTextContent('USDC');
   });
 
+  it('does not list a hidden token again as a coin tracked by hand, nor count it', async () => {
+    const base = valuation();
+    const withSpam = {
+      ...base,
+      assets: [
+        ...base.assets,
+        asset({
+          instrumentId: id(5),
+          name: 'Tether',
+          symbol: 'USDT1A2B',
+          price: null,
+          quantity: '40',
+          value: null,
+          holdings: [
+            { accountId: trust, accountName: 'Trust Wallet', quantity: '40', value: null },
+          ],
+        }),
+      ],
+    };
+    setup([holder()], withSpam);
+    const trustCard = await screen.findByRole('region', { name: 'Trust Wallet' });
+    expect(trustCard).toHaveTextContent('BTC tracked by hand');
+    expect(trustCard).not.toHaveTextContent('USDT1A2B');
+    expect(within(trustCard).getByText('2 assets')).toBeInTheDocument();
+  });
+
   it('shows no toggle for two coins or fewer', async () => {
     setup(
       [holder({ balances: [{ symbol: 'ETH', quantity: '1.5' }, spam('AAA')], hiddenTokens: [] })],

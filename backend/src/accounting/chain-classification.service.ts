@@ -11,8 +11,10 @@ import {
 import { DataSource, type EntityManager } from 'typeorm';
 import { readDustThreshold } from '../owner-settings/owner-settings.service';
 import { marketPricesAt, priceAt, storedPricesAt } from '../prices/market-price.store';
-import { isExchange, isUnlistedToken } from '../wallet-addresses/chain-assets';
+import { isExchange } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
+import { leftOutTokens } from '../wallet-addresses/token-left-out';
+import { tokenKey } from '../wallet-addresses/token-visibility';
 import { TRON_REWARD_CONTRACT } from '../wallet-addresses/tron-legs';
 import { lockAccountingOwner } from './accounting-lock';
 import { AssetRewardService } from './asset-reward.service';
@@ -608,8 +610,9 @@ export class ChainClassificationService {
     const owner = parseUuid(ownerId);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
-      const rows: (ChainLeg & { direction: 'in' | 'out' | 'self' })[] = await manager.query(
-        `SELECT w.network, t.asset, t.direction, t."blockTime"::text AS "blockTime",
+      const all: (ChainLeg & { addressId: string; direction: 'in' | 'out' | 'self' })[] =
+        await manager.query(
+          `SELECT t."addressId", w.network, t.asset, t.direction, t."blockTime"::text AS "blockTime",
             t."receivedUnits"::text AS "receivedUnits", t."sentUnits"::text AS "sentUnits"
           FROM wallet_address_transactions t
           JOIN wallet_addresses w ON w."ownerId"=t."ownerId" AND w.id=t."addressId"
@@ -621,10 +624,14 @@ export class ChainClassificationService {
             AND NOT EXISTS (SELECT 1 FROM ${stakeMoves} m WHERE t.asset IS NULL
               AND m."addressId"=t."addressId" AND m.txid=t.txid)
             AND NOT (${tokenSendGas})`,
-        [owner],
-      );
+          [owner],
+        );
+      // TOKEN-HIDE: a leg of a token its address leaves out never asks to be classified.
+      const hidden = await leftOutTokens(manager, owner);
+      const rows = all.filter((row) => !hidden.has(tokenKey(row.addressId, row.asset)));
+      if (rows.length === 0) return { count: 0 };
       const threshold = await readDustThreshold(manager, owner);
-      if (threshold === null || rows.length === 0) return { count: rows.length };
+      if (threshold === null) return { count: rows.length };
       const prices = await storedPricesAt(
         manager,
         rows.map((row) => ({ asset: chainCoin(row).symbol, at: row.blockTime })),
@@ -637,7 +644,6 @@ export class ChainClassificationService {
             priceAt(prices.get(chainCoin(row).symbol), row.blockTime),
           ),
           threshold,
-          isUnlistedToken(row.network, row.asset),
         ),
       );
       return { count: rows.length - dust.length };

@@ -10,6 +10,7 @@ import { readDustThreshold, readMainCurrency } from '../owner-settings/owner-set
 import { storedPricesAt } from '../prices/market-price.store';
 import { chainAsset, type Network } from '../wallet-addresses/chain-assets';
 import { stakeMoves } from '../wallet-addresses/stake-tables';
+import { leftOutTokens } from '../wallet-addresses/token-left-out';
 import type { ChainType, Classification } from './chain-classification';
 import { deriveCarryInAmounts } from './fifo';
 import { parseDecimal, parseUuid } from './input';
@@ -465,6 +466,7 @@ export class OperationListService {
           })),
           marketPrices,
           dustThresholdUsd: await readDustThreshold(manager, owner),
+          leftOutTokens: await leftOutTokens(manager, owner),
         },
         fx,
       );

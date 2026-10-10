@@ -724,6 +724,21 @@ export function subtitle(addresses: WalletAddress[]): string {
     : `${names} · ${addresses.length} addresses`;
 }
 
+/**
+ * TOKEN-HIDE: holdings of tokens an address leaves out (spam, dust or hidden by the owner) are
+ * not listed again as coins tracked by hand: they are not the owner's own entries.
+ */
+export function withoutHiddenTokens(holdings: Holding[], addresses: WalletAddress[]): Holding[] {
+  const hidden = new Set(
+    addresses.flatMap((address) => (address.hiddenTokens ?? []).map((token) => token.symbol)),
+  );
+  if (hidden.size === 0) return holdings;
+  return holdings.filter(
+    ({ asset }) =>
+      asset.assetType !== 'crypto' || !asset.symbol || !hidden.has(asset.symbol.toUpperCase()),
+  );
+}
+
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
   return new Set(addresses.flatMap(addressAssets));

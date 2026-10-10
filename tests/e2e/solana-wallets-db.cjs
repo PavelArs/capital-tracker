@@ -491,11 +491,13 @@ async function main() {
         { symbol: 'SOL', quantity: '0.999995000' },
         { symbol: 'USDT', quantity: '0.000000' },
         { symbol: 'USDC', quantity: '0.000000' },
-        { symbol: 'SYN', quantity: '40.000000000', name: 'Synthetic Token', listed: false },
-        { symbol: 'TT', quantity: '7.00', name: 'Twenty Two', listed: false },
       ]);
-      // TOKEN-HIDE: the copy of USDT is left out of the balances.
-      assert.deepEqual(synced.result.address.hiddenTokens, [{ symbol: fakeTicker, name: 'Tether USD', quantity: '5.000000', reason: 'lookalike' }]);
+      // TOKEN-HIDE: the copy of USDT is left out of the balances; TOKEN-DUST: so are the tokens no price source lists.
+      assert.deepEqual(synced.result.address.hiddenTokens, [
+        { symbol: 'SYN', name: 'Synthetic Token', quantity: '40.000000000', reason: 'dust' },
+        { symbol: 'TT', name: 'Twenty Two', quantity: '7.00', reason: 'dust' },
+        { symbol: fakeTicker, name: 'Tether USD', quantity: '5.000000', reason: 'lookalike' },
+      ].sort((left, right) => left.symbol.localeCompare(right.symbol)));
       const rows = async () => {
         const list = (await s.operations.read(owner, {}, now)).operations;
         return [leg(41, synMint), leg(42, fakeMint), leg(43, twentyTwo), leg(44, synMint)].map((txid) => {
@@ -504,20 +506,24 @@ async function main() {
             row.fee?.asset.symbol ?? null, row.fee?.quantity ?? null];
         });
       };
-      // TOKEN-FEE: the SYN send shows its SOL fee in one row.
+      // TOKEN-DUST: every leg of a token the address leaves out is dust, sent or received; none asks.
+      assert.deepEqual((await rows()).map((row) => row[4]), ['dust', 'dust', 'dust', 'dust']);
+      const hiddenCount = (await s.classifications.needsClassificationCount(owner)).count;
+      // The owner brings SYN and TT back: their legs ask again, and the SYN send shows its SOL fee (TOKEN-FEE).
+      await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN', 'TT'], visibility: 'shown' });
       assert.deepEqual(await rows(), [
         ['SYN', 'Synthetic Token', 'solana', '42', 'needs-classification', null, null],
-        [fakeTicker, 'Tether USD', 'solana', '5', 'needs-classification', null, null],
+        [fakeTicker, 'Tether USD', 'solana', '5', 'dust', null, null],
         ['TT', 'Twenty Two', 'solana', '7', 'needs-classification', null, null],
         ['SYN', 'Synthetic Token', 'solana', '2', 'needs-classification', 'SOL', '0.000005'],
       ]);
-      const before = (await s.classifications.needsClassificationCount(owner)).count;
+      assert.equal((await s.classifications.needsClassificationCount(owner)).count, hiddenCount + 3);
+      // With a dust threshold set, a restored token with no price is still not dust: its value is not known.
       await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: '1' });
-      assert.deepEqual((await rows()).map((row) => row[4]), ['dust', 'dust', 'dust', 'needs-classification']);
-      assert.equal((await s.classifications.needsClassificationCount(owner)).count, before - 3);
+      assert.deepEqual((await rows()).map((row) => row[4]), ['needs-classification', 'dust', 'needs-classification', 'needs-classification']);
       await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: null });
       console.log('PASS TOKEN-ANY any SPL or Token-2022 token is read, named from its Metaplex metadata or its mint, with the mint\'s decimals; a USDT copycat gets its own ticker; balances list each token');
-      console.log('PASS TOKEN-DUST unpriced receipts of tokens no source lists are dust once a threshold is set; the token send still asks, with its SOL fee');
+      console.log('PASS TOKEN-DUST a token no price source lists is left out of the balances, the transactions to classify and the list at once, sent or received; the owner brings it back and its legs ask again, with the SOL fee');
 
       // TOKEN-BACKFILL: an address synced before every token was read: its stored transactions
       // are read again without a request, then the token accounts' transactions it lacks.

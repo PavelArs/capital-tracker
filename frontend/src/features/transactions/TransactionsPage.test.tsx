@@ -1146,7 +1146,7 @@ describe('chain dust threshold (CLS-DUST)', () => {
     await user.click(within(bodyRows()[0]).getByRole('button', { name: 'Incoming' }));
     const drawer = screen.getByRole('dialog');
     expect(within(drawer).getByRole('note')).toHaveTextContent(
-      "Worth less than your dust threshold, so it doesn't ask to be classified. It still counts in your balance.",
+      "Worth less than your dust threshold, or a token no price source lists, so it doesn't ask to be classified. It still counts in your balance.",
     );
     expect(within(drawer).getByRole('button', { name: 'Classify' })).toBeInTheDocument();
     expect(
