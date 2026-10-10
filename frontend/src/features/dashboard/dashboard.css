@@ -472,3 +472,13 @@
 .dashboard-assets__state .shell-button {
   margin-top: 0;
 }
+
+/* D1: the coins that have no purchase price. */
+.dashboard-unknown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: var(--sp-2) 0 0;
+  color: var(--ink-3);
+  font-size: var(--fs-sm);
+}

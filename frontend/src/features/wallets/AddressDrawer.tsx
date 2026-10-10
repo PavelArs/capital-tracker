@@ -10,6 +10,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import { age, DASH, quantity } from '../portfolio/format';
+import CloseButton from '../shell/CloseButton';
 import type { WalletAccount } from './AddWalletDialog';
 import { networkOf } from './networks';
 import { SyncBadge, type SyncRun, syncAge, syncProblem } from './SyncStatus';
@@ -201,14 +202,7 @@ export default function AddressDrawer({
               ? `${wallet.name} · ${network.name}`
               : `${network.name} ${exchange ? 'account' : 'address'}`}
           </h2>
-          <button
-            ref={closeButton}
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
         <div className="transactions-drawer__body">
           <div className="transactions-hero">

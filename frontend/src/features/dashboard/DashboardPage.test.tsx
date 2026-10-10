@@ -644,6 +644,32 @@ describe('show-dashboard-top-assets', () => {
     expect(document.body.textContent).not.toMatch(/blockchain transactions need classification/);
   });
 
+  it('DASH-UNKNOWN-COST names the coins without a purchase price under the net worth', async () => {
+    valued.mockImplementation(async (currency?: AccountingCurrency) =>
+      valuation({
+        currency: currency ?? 'USD',
+        assets: [
+          asset(1, 'Bitcoin', 'BTC', '4200', { unknownCostQuantity: '0.0087' }),
+          asset(2, 'Ethereum', 'ETH', '2000', { unknownCostQuantity: '1.5' }),
+          asset(3, 'Solana', 'SOL', '900', { unknownCostQuantity: '3' }),
+          asset(4, 'Zcash', 'ZEC', '600'),
+        ],
+      }),
+    );
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    expect(await within(hero).findByRole('note')).toHaveTextContent(
+      '0.0087 BTC, 1.5 ETH and 1 more without purchase price, so cost basis and profit are incomplete.',
+    );
+  });
+
+  it('DASH-UNKNOWN-COST stays quiet when every coin has a purchase price', async () => {
+    renderPage();
+    const hero = await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('region', { name: 'Top assets' });
+    expect(within(hero).queryByRole('note')).not.toBeInTheDocument();
+  });
+
   it('says when the assets cannot be loaded and keeps the net worth', async () => {
     const user = userEvent.setup();
     valued.mockRejectedValueOnce(new Error('offline'));

@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency } from '../portfolio/currency';
-import { money, percent, tone } from '../portfolio/format';
+import { money, percent, quantity, tone } from '../portfolio/format';
 import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
@@ -58,6 +58,28 @@ function ChangeSplit({ history }: { history: PortfolioHistory }) {
   );
 }
 
+// Coins with no purchase price leave cost basis, net invested and profit incomplete
+// (prototype: "0.0087 BTC without purchase price" beside Market and Net deposits).
+export function UnknownCost({ portfolio }: { portfolio: PortfolioValuation | null }) {
+  const coins = (portfolio?.assets ?? []).filter((asset) => Number(asset.unknownCostQuantity) > 0);
+  if (coins.length === 0) return null;
+  const shown = coins.slice(0, 2).map((asset) => {
+    const unit = asset.symbol ?? asset.name;
+    return `${quantity(asset.unknownCostQuantity)} ${unit}`;
+  });
+  const more = coins.length - shown.length;
+  return (
+    <p className="dashboard-unknown" role="note">
+      <Icon name="info" className="shell-icon shell-icon--sm" />
+      <span>
+        {shown.join(', ')}
+        {more > 0 && ` and ${more} more`} without purchase price, so cost basis and profit are
+        incomplete.
+      </span>
+    </p>
+  );
+}
+
 // The prototype dims the cents of the big number: $42,738.84 with .84 muted.
 function Amount({ text }: { text: string }) {
   const point = text.lastIndexOf('.');
@@ -72,7 +94,13 @@ function Amount({ text }: { text: string }) {
 
 // Under the net worth: profit or loss to date against all the money put in, whatever the
 // period; the period itself only drives the chart and the split below.
-function NetWorth({ history }: { history: PortfolioHistory }) {
+function NetWorth({
+  history,
+  portfolio,
+}: {
+  history: PortfolioHistory;
+  portfolio: PortfolioValuation | null;
+}) {
   const { currency, profit } = history;
   const direction = tone(profit);
   return (
@@ -97,6 +125,7 @@ function NetWorth({ history }: { history: PortfolioHistory }) {
         )}
       </div>
       <ChangeSplit history={history} />
+      <UnknownCost portfolio={portfolio} />
       {!history.complete && (
         <p className="portfolio-warn" role="note">
           Incomplete: some assets had no price or rate in this period, so their value is not
@@ -277,7 +306,7 @@ export default function DashboardPage() {
         <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
-          <NetWorth history={shown} />
+          <NetWorth history={shown} portfolio={portfolioFailed ? null : portfolio} />
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"
