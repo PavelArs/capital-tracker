@@ -1,0 +1,43 @@
+// Add to your existing Grafana Alloy configuration. It ships the Capital Tracker containers'
+// logs to Loki. Alloy needs read access to the Docker socket (mount /var/run/docker.sock).
+// Replace `loki.write.default` with the name of your own loki.write component.
+//
+// Labels stay low-cardinality: container and level only. The request id is a field of the
+// JSON line, not a label; filter it in Grafana with `| json | req_id="<id>"`.
+discovery.docker "capital_tracker" {
+  host = "unix:///var/run/docker.sock"
+  filter {
+    name   = "label"
+    values = ["com.docker.compose.project=capital-tracker"]
+  }
+}
+
+discovery.relabel "capital_tracker" {
+  targets = discovery.docker.capital_tracker.targets
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "capital_tracker" {
+  host       = "unix:///var/run/docker.sock"
+  targets    = discovery.relabel.capital_tracker.output
+  labels     = { app = "capital-tracker" }
+  forward_to = [loki.process.capital_tracker.receiver]
+}
+
+loki.process "capital_tracker" {
+  // Only the backend writes JSON; the other containers keep plain lines.
+  stage.match {
+    selector = "{container=\"capital_tracker_backend\"}"
+    stage.json {
+      expressions = { level = "level" }
+    }
+    stage.labels {
+      values = { level = "" }
+    }
+  }
+  forward_to = [loki.write.default.receiver]
+}
