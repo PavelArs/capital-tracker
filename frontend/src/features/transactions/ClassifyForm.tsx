@@ -540,7 +540,11 @@ export default function ClassifyForm({
     setError(null);
   };
   const found = problems(draft);
-  const shows = (problem: Problem) => tried && found.has(problem);
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [blurred, setBlurred] = useState<ReadonlySet<Problem>>(new Set());
+  const leave = (problem: Problem) => () =>
+    setBlurred((current) => (current.has(problem) ? current : new Set(current).add(problem)));
+  const shows = (problem: Problem) => (tried || blurred.has(problem)) && found.has(problem);
   const invalid = (problem: Problem) =>
     shows(problem) ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` } : {};
   const fieldError = (problem: Problem, text: string) =>
@@ -629,6 +633,7 @@ export default function ClassifyForm({
         placeholder="Optional"
         value={draft.comment}
         onChange={(event) => change({ comment: event.target.value })}
+        onBlur={leave('comment')}
         {...invalid('comment')}
       />
       {fieldError('comment', `At most ${MAX_COMMENT_LENGTH} characters`)}
@@ -677,6 +682,7 @@ export default function ClassifyForm({
                     placeholder="0.00"
                     value={draft.amount}
                     onChange={(event) => change({ amount: event.target.value })}
+                    onBlur={leave('amount')}
                     {...invalid('amount')}
                   />
                   <span className="portfolio-affix__suffix">{draft.currency}</span>
@@ -721,6 +727,7 @@ export default function ClassifyForm({
                     placeholder="Bank of Russia rate"
                     value={draft.rate}
                     onChange={(event) => change({ rate: event.target.value })}
+                    onBlur={leave('rate')}
                     {...invalid('rate')}
                   />
                   <span className="portfolio-affix__suffix">{draft.currency} per 1 USD</span>
@@ -751,6 +758,7 @@ export default function ClassifyForm({
                 className="portfolio-input"
                 value={draft.account}
                 onChange={(event) => change({ account: event.target.value })}
+                onBlur={leave('account')}
                 {...invalid('account')}
               >
                 <option value="">{accounts ? 'Choose your wallet' : 'Loading wallets…'}</option>
@@ -787,6 +795,7 @@ export default function ClassifyForm({
                 className="portfolio-input"
                 value={draft.pair}
                 onChange={(event) => change({ pair: event.target.value })}
+                onBlur={leave('pair')}
                 {...invalid('pair')}
               >
                 <option value="">Choose the transaction</option>
@@ -830,6 +839,7 @@ export default function ClassifyForm({
                 className="portfolio-input"
                 value={draft.deposit}
                 onChange={(event) => change({ deposit: event.target.value })}
+                onBlur={leave('deposit')}
                 {...invalid('deposit')}
               >
                 <option value="">Choose the pool deposit</option>
@@ -886,6 +896,7 @@ export default function ClassifyForm({
                   placeholder="0.00"
                   value={draft.value}
                   onChange={(event) => change({ value: event.target.value })}
+                  onBlur={leave('value')}
                   {...invalid('value')}
                 />
                 <span className="portfolio-affix__suffix">USD</span>

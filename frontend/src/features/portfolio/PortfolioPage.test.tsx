@@ -508,6 +508,20 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     return dialog;
   };
 
+  it('shows a field problem when the field loses focus and clears it once fixed', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockImplementation(async () => portfolio([bitcoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    const name = within(dialog).getByLabelText(/^Name/);
+    await user.click(name);
+    expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
+    await user.tab();
+    expect(within(dialog).getByText('Enter a name')).toBeInTheDocument();
+    await user.type(name, 'Gold');
+    expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
+  });
+
   it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
     vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
     const user = userEvent.setup();
