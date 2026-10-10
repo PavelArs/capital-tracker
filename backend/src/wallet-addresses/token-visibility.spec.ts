@@ -43,13 +43,13 @@ describe('TOKEN-DUST: tokens worth nothing', () => {
     expect(hiddenReason({ token: contract }, 5n, [], [], false)).toBeNull();
   });
 
-  it('is off without a threshold', () => {
-    expect(isWorthless({ listed: false }, '5', null, undefined)).toBe(false);
+  it('compares the value with a threshold only when one is set', () => {
     expect(isWorthless({ listed: true }, '5', null, '0.0001')).toBe(false);
   });
 
-  it('counts a token no source lists as worth nothing', () => {
+  it('counts a token no source lists as worth nothing, with or without a threshold', () => {
     expect(isWorthless({ listed: false }, '5', '1', undefined)).toBe(true);
+    expect(isWorthless({ listed: false }, '5', null, undefined)).toBe(true);
   });
 
   it('does not call a listed token without a price yet dust', () => {

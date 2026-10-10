@@ -9,18 +9,20 @@ function scale60(value: string): bigint {
 }
 
 /**
- * Whether a chain leg nobody has answered is dust: incoming, priced, and worth less than the
- * threshold at the price stored for its time (EST-AT-TIME). Without a threshold nothing is
- * dust, and what the owner sent always asks, however small. Without a price a receipt is dust
- * only when it is a token no price source lists (TOKEN-ANY): the airdrops scam tokens send.
+ * Whether a chain leg nobody has answered is dust. A leg of a token the address leaves out
+ * (TOKEN-HIDE) is, whichever way it went; that covers the tokens no price source lists and the
+ * ones the owner hid, and a token the owner brought back asks again. Otherwise it is incoming
+ * and worth less than the threshold at the price stored for its time (EST-AT-TIME). Without a
+ * threshold, or a price, a leg is never dust, and what the owner sent always asks, however small.
  */
 export function isDust(
   direction: 'in' | 'out' | 'self',
   estimatedValueUsd: string | null,
   thresholdUsd: string | null,
-  unlistedToken = false,
+  hiddenToken = false,
 ): boolean {
-  if (thresholdUsd === null || direction !== 'in') return false;
-  if (estimatedValueUsd === null) return unlistedToken;
+  if (hiddenToken) return true;
+  if (direction !== 'in') return false;
+  if (estimatedValueUsd === null || thresholdUsd === null) return false;
   return scale60(estimatedValueUsd) < scale60(thresholdUsd);
 }

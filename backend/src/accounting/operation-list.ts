@@ -3,10 +3,10 @@ import { priceAt } from '../prices/market-price.store';
 import {
   chainAsset,
   isExchange,
-  isUnlistedToken,
   type Network,
   unitsToAtoms,
 } from '../wallet-addresses/chain-assets';
+import { tokenKey } from '../wallet-addresses/token-visibility';
 import type { ChainType, Classification } from './chain-classification';
 import { isDust } from './chain-dust';
 import { poolCoins, poolDepositUnits, poolReturnUnits, storedValueUsd } from './chain-pool';
@@ -191,6 +191,8 @@ export interface OperationSources {
   marketPrices: ReadonlyMap<string, readonly StoredMarketPrice[]>;
   /** CLS-DUST: the owner's dust threshold in USD; absent or null: off. */
   dustThresholdUsd?: string | null;
+  /** TOKEN-HIDE: `tokenKey(address, contract)` of every token an address leaves out. */
+  leftOutTokens?: ReadonlySet<string>;
 }
 
 export type OperationType =
@@ -455,6 +457,7 @@ function chainOperation(
   dustThresholdUsd: string | null,
   gasOf: (leg: ChainOperationInput) => ChainOperationInput | undefined,
   records: ReadonlyMap<string, Projected> = new Map(),
+  hiddenToken = false,
 ): Projected {
   const { network } = row.wallet;
   const asset = legAsset(network, row.asset);
@@ -530,12 +533,7 @@ function chainOperation(
   // CLS-DUST: nobody has answered it and it is worth too little to ask about.
   if (
     (answer === null || answer.status === 'unclassified' || recordGone) &&
-    isDust(
-      row.direction,
-      operation.estimatedValueUsd,
-      dustThresholdUsd,
-      isUnlistedToken(network, row.asset),
-    )
+    isDust(row.direction, operation.estimatedValueUsd, dustThresholdUsd, hiddenToken)
   )
     return { ...operation, status: 'dust' };
   if (named && record && !recordGone)
@@ -934,7 +932,17 @@ export function projectOperations(
     )
       continue;
     const operation = oneTransactionSwap(
-      chainOperation(row, sources.marketPrices, entry, other, dustThresholdUsd, gasOf, records),
+      chainOperation(
+        row,
+        sources.marketPrices,
+        entry,
+        other,
+        dustThresholdUsd,
+        gasOf,
+        records,
+        // TOKEN-HIDE: a leg of a token its address leaves out never asks to be classified.
+        sources.leftOutTokens?.has(tokenKey(row.wallet.id, row.asset)) ?? false,
+      ),
       row,
       byHash.get(hashKey(row)) ?? [],
     );

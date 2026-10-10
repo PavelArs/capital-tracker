@@ -6,14 +6,18 @@ import type { ChainAsset } from './chain-assets';
 // left out of the wallet's balances. The owner can hide any other token, and bring either kind
 // back; the raw legs stay as stored.
 
+/** The key of one token of one address in the set of tokens that are left out. */
+export const tokenKey = (addressId: string, contract: string | null) =>
+  `${addressId}:${contract ?? ''}`;
+
 /** Why a token is left out: the app's own rules, or the owner's choice. */
 export type HiddenReason = 'negative' | 'lookalike' | 'dust' | 'owner';
 
 /**
- * Whether the coins of a token are worth nothing to the owner (TOKEN-DUST): the dust threshold is
- * set and they are worth less than it at the latest price, or no price source lists the token at
- * all, so its value will stay unknown. A listed token without a price yet is not dust: its value
- * is only not known yet.
+ * Whether the coins of a token are worth nothing to the owner (TOKEN-DUST): no price source lists
+ * the token at all, so its value will stay unknown, or the dust threshold is set and they are
+ * worth less than it at the latest price. A listed token without a price yet is not dust: its
+ * value is only not known yet.
  */
 export function isWorthless(
   token: Pick<ChainAsset, 'listed'>,
@@ -21,8 +25,8 @@ export function isWorthless(
   thresholdUsd: string | null,
   price: string | undefined,
 ): boolean {
-  if (thresholdUsd === null) return false;
   if (price === undefined) return token.listed === false;
+  if (thresholdUsd === null) return false;
   return Math.abs(Number(quantity)) * Number(price) < Number(thresholdUsd);
 }
 

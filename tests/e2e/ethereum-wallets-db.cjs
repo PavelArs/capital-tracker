@@ -495,7 +495,8 @@ async function main() {
 
     // TOKEN-ANY: any ERC-20 token the wallet moves is read with what Etherscan says about it.
     // A token copying USDT's symbol gets a ticker of its own; one without readable decimals is
-    // left out. Unpriced receipts of tokens no source lists are dust once a threshold is set.
+    // left out. A token no price source lists is left out of the balances, the portfolio and the
+    // transaction list on its own (TOKEN-DUST), and the owner can bring it back.
     {
       const holder = address('token-holder');
       const syn = address('syn-token');
@@ -538,16 +539,20 @@ async function main() {
         { symbol: 'ETH', quantity: '0.999950000000000000' },
         { symbol: 'USDT', quantity: '0.000000' },
         { symbol: 'USDC', quantity: '0.000000' },
-        { symbol: 'SYN', quantity: '40.000000000000000000', name: 'Synthetic Token', listed: false },
       ]);
-      // TOKEN-HIDE: the copy of USDT is left out of the balances, and listed apart with its reason.
-      assert.deepEqual(synced.result.address.hiddenTokens, [{ symbol: fakeTicker, name: 'USDT', quantity: '5.000000', reason: 'lookalike' }]);
+      // TOKEN-HIDE: the copy of USDT is left out of the balances, and listed apart with its reason;
+      // TOKEN-DUST: so is SYN, which no price source lists, with no dust threshold set.
+      assert.deepEqual(synced.result.address.hiddenTokens, [
+        { symbol: 'SYN', name: 'Synthetic Token', quantity: '40.000000000000000000', reason: 'dust' },
+        { symbol: fakeTicker, name: 'USDT', quantity: '5.000000', reason: 'lookalike' },
+      ].sort((left, right) => left.symbol.localeCompare(right.symbol)));
       // D1: each token is one market-priced asset, created once however often the sync runs.
       assert.deepEqual((await s.addresses.sync(owner, holderId)).imported, 0);
       const instruments = async () => (await db.query(`SELECT symbol, "priceSource", count(*)::int AS n
         FROM accounting_instruments WHERE "ownerId"=$1 AND symbol = ANY($2) GROUP BY 1, 2 ORDER BY 1`, [owner, ['SYN', fakeTicker]]))
         .map((row) => Object.values(row));
-      assert.deepEqual(await instruments(), [['SYN', 'market', 1], [fakeTicker, 'market', 1]]);
+      // A token the address leaves out is no coin of the portfolio: it gets no asset until it is brought back.
+      assert.deepEqual(await instruments(), []);
       const rows = async () => {
         const list = (await s.operations.read(owner, {}, now)).operations;
         return [`${bare(31)}-1`, `${bare(32)}-1`, `${bare(34)}-3`].map((txid) => {
@@ -556,20 +561,27 @@ async function main() {
             row.fee?.asset.symbol ?? null, row.fee?.quantity ?? null];
         });
       };
-      // TOKEN-FEE: the SYN send shows its ETH gas as its fee, in one row.
+      // TOKEN-DUST: every leg of a token the address leaves out is dust, sent or received; none asks.
+      assert.deepEqual((await rows()).map((row) => row[5]), ['dust', 'dust', 'dust']);
+      const hiddenCount = (await s.classifications.needsClassificationCount(owner)).count;
+      // The owner brings SYN back: its legs ask again, and the SYN send shows its ETH gas as its fee (TOKEN-FEE).
+      const restored = await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN'], visibility: 'shown' });
+      assert.deepEqual(restored.balances.at(-1), { symbol: 'SYN', quantity: '40.000000000000000000', name: 'Synthetic Token', listed: false });
+      assert.deepEqual(await instruments(), [['SYN', 'market', 1]]);
       assert.deepEqual(await rows(), [
         ['SYN', 'Synthetic Token', 'ethereum', '42', null, 'needs-classification', null, null],
-        [fakeTicker, 'USDT', 'ethereum', '5', null, 'needs-classification', null, null],
+        [fakeTicker, 'USDT', 'ethereum', '5', null, 'dust', null, null],
         ['SYN', 'Synthetic Token', 'ethereum', '2', null, 'needs-classification', 'ETH', '0.00005'],
       ]);
-      const before = (await s.classifications.needsClassificationCount(owner)).count;
+      assert.equal((await s.classifications.needsClassificationCount(owner)).count, hiddenCount + 2);
+      // With a dust threshold set, a restored token with no price is still not dust: its value is not known.
       const { OwnerSettingsService } = require(`${dist}/owner-settings/owner-settings.service.js`);
       await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: '1' });
-      assert.deepEqual((await rows()).map((row) => row[5]), ['dust', 'dust', 'needs-classification']);
-      assert.equal((await s.classifications.needsClassificationCount(owner)).count, before - 2);
+      assert.deepEqual((await rows()).map((row) => row[5]), ['needs-classification', 'dust', 'needs-classification']);
+      assert.equal((await s.classifications.needsClassificationCount(owner)).count, hiddenCount + 2);
       await new OwnerSettingsService(db).update(owner, { dustThresholdUsd: null });
       console.log('PASS TOKEN-ANY any ERC-20 token is read with its symbol, name and decimals; a USDT copycat gets its own ticker; a token without decimals is left out; balances list each token; one market asset per token');
-      console.log('PASS TOKEN-DUST unpriced receipts of tokens no source lists are dust once a threshold is set; the token send still asks, with its ETH gas as the fee');
+      console.log('PASS TOKEN-DUST a token no price source lists is left out of the balances, the transactions to classify and the list at once, sent or received; the owner brings it back and its legs ask again, with the ETH gas as the fee');
 
       // TOKEN-BACKFILL: an address synced before every token was read gets its stored history
       // read again for them, once, before anything new; ether legs stay as they are.
@@ -685,22 +697,40 @@ async function main() {
         const frg = await tickerOf(forged);
         const symbols = (items) => items.map((item) => item.symbol);
         let seen = await view();
-        assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC', 'WANTED']);
-        assert.deepEqual(seen.balances[3], { symbol: 'WANTED', quantity: '7.000000', name: 'Wanted Token', listed: false });
+        assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC']);
         assert.deepEqual(seen.hiddenTokens, [
           { symbol: copyTicker, name: 'Ether', quantity: '40.000000', reason: 'lookalike' },
           { symbol: frg, name: 'Forged Token', quantity: '-3000.000000', reason: 'negative' },
+          { symbol: 'WANTED', name: 'Wanted Token', quantity: '7.000000', reason: 'dust' },
         ].sort((left, right) => left.symbol.localeCompare(right.symbol)));
         assert.equal(seen.chainBalance, '1.000000000000000000', 'ETH is not a token: it always counts');
 
-        // TOKEN-DUST: with the dust threshold set, a token worth less than it, or one no source lists, is left out too.
+        // TOKEN-DUST: a token left out is no coin of the portfolio, asks nothing in Transactions
+        // and does not count in what needs classifying; the raw legs stay.
+        const { readValuationInputs, accountsAt } = require(`${dist}/accounting/portfolio-valuation.service.js`);
+        const portfolioSymbols = async () => {
+          const inputs = await db.transaction((manager) => readValuationInputs(manager, owner));
+          const names = new Map(inputs.instruments.map((item) => [item.id, item.symbol]));
+          const held = accountsAt(inputs, new Date().toISOString()).find((item) => item.accountId === tokenAccount);
+          return { instruments: new Set(names.values()), held: new Set((held?.lots ?? []).map((lot) => names.get(lot.instrumentId))) };
+        };
+        const statusOf = async (n) => (await s.operations.read(owner, {}, now)).operations.find((item) => item.chain?.txid === `${bare(n)}-1`).status;
+        const leftOutTxs = [71, 72, 73];
+        const spamNeeds = (await s.classifications.needsClassificationCount(owner)).count;
+        {
+          const { instruments, held } = await portfolioSymbols();
+          for (const name of ['WANTED', frg, copyTicker]) assert.equal(instruments.has(name) || held.has(name), false, `${name} is no coin of the portfolio`);
+          assert.deepEqual(await Promise.all(leftOutTxs.map(statusOf)), ['dust', 'dust', 'dust']);
+        }
+
+        // TOKEN-DUST: a token no source lists is left out on its own; once it is listed, one worth less than the dust threshold is.
         {
           const { OwnerSettingsService } = require(`${dist}/owner-settings/owner-settings.service.js`);
           const settings = new OwnerSettingsService(db);
           const hiddenOf = async () => Object.fromEntries((await view()).hiddenTokens.map((item) => [item.symbol, item.reason]));
-          assert.equal((await hiddenOf()).WANTED, undefined, 'No threshold, no dust');
+          assert.equal((await hiddenOf()).WANTED, 'dust', 'Unlisted: worth nothing, with or without a threshold');
           await settings.update(owner, { dustThresholdUsd: '1' });
-          assert.equal((await hiddenOf()).WANTED, 'dust', 'Unpriced and unlisted: worth nothing');
+          assert.equal((await hiddenOf()).WANTED, 'dust');
           const reload = async () => { forgetTokens(); await loadChainTokens(db.manager); };
           const { forgetTokens } = require(`${dist}/wallet-addresses/chain-assets.js`);
           const { loadChainTokens } = require(`${dist}/wallet-addresses/chain-tokens.js`);
@@ -715,9 +745,11 @@ async function main() {
           assert.equal((await hiddenOf()).WANTED, 'dust');
           await price('1', 5);
           assert.equal((await hiddenOf()).WANTED, undefined);
+          // Without a threshold a token with a price is never dust, listed or not: the price decides.
+          await settings.update(owner, { dustThresholdUsd: null });
+          assert.equal((await hiddenOf()).WANTED, undefined);
           await db.query('UPDATE chain_tokens SET "coingeckoId"=NULL WHERE contract=$1', [wanted]);
           await reload();
-          await settings.update(owner, { dustThresholdUsd: null });
           assert.equal((await hiddenOf()).WANTED, undefined);
         }
         const choose = (tickers, visibility, id = spamId, who = owner) => s.addresses.setTokenVisibility(who, id, { tickers, visibility });
@@ -744,6 +776,13 @@ async function main() {
         seen = await choose(['WANTED', frg, copyTicker], 'shown');
         assert.deepEqual(symbols(seen.balances), ['ETH', 'USDT', 'USDC', ...[copyTicker, 'WANTED', frg].sort((left, right) => left.localeCompare(right))]);
         assert.deepEqual(seen.hiddenTokens, []);
+        // Brought back, the three are coins of the portfolio again and their legs ask to be classified.
+        {
+          const { held } = await portfolioSymbols();
+          for (const name of ['WANTED', copyTicker]) assert.equal(held.has(name), true, `${name} is held again`);
+          assert.deepEqual(await Promise.all(leftOutTxs.map(statusOf)), ['needs-classification', 'needs-classification', 'needs-classification']);
+          assert.equal((await s.classifications.needsClassificationCount(owner)).count, spamNeeds + 3);
+        }
 
         // Only tokens this address holds can be chosen; a wallet of another network and another owner are refused.
         await refusal(() => choose(['NOSUCH'], 'hidden'), 400);
@@ -758,7 +797,7 @@ async function main() {
         // A balance is not partial while the history is read again for tokens: nothing is hidden or shown then.
         await db.query('UPDATE wallet_addresses SET "tokenBackfillTo"="scannedBlock" WHERE id=$1', [spamId]);
         assert.deepEqual([symbols((await view()).balances), (await view()).hiddenTokens], [['ETH', 'USDT', 'USDC'], []]);
-        console.log('PASS TOKEN-HIDE a negative balance and a copy of ETH are left out of the balances with their reason; the owner hides, brings back and hides tokens, the last word wins, the choice survives a sync and the legs stay; unknown tokens, other owners and bad bodies are refused');
+        console.log('PASS TOKEN-HIDE a negative balance, a copy of ETH and a token no source lists are left out of the balances, the portfolio, the list and the count to classify with their reason; the owner hides, brings back and hides tokens, the last word wins, the choice survives a sync and the legs stay; unknown tokens, other owners and bad bodies are refused');
       }
     }
 
