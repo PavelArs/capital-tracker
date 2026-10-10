@@ -1128,7 +1128,9 @@ async function verifyPopulatedAuthUpgrade(previousCount) {
           const parsed = after.rows[table].map(({ row }) => JSON.parse(row));
           for (const row of parsed) {
             assert.equal(row.kind, null, 'Prior accounts have no wallet kind');
+            assert.equal(row.removedAt, null, 'Prior accounts are still tracked');
             delete row.kind;
+            delete row.removedAt;
           }
           assert.deepEqual(parsed, rows.map(({ row }) => JSON.parse(row)),
             'Every old account column/value remains identical');
