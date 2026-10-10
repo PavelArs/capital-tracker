@@ -492,7 +492,10 @@ export default function PortfolioPage() {
             )}
             <p className="shell-note portfolio-note">
               {ratesNote(portfolio)} Holdings come from your{' '}
-              <Link to="/manual-accounts">manual accounts</Link>.
+              <Link className="shell-link" to="/manual-accounts">
+                manual accounts
+              </Link>
+              .
             </p>
           </section>
         </>
