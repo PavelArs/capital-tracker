@@ -1,6 +1,7 @@
 import { useAuth } from '@contexts/AuthContext';
 import { useError } from '@contexts/ErrorContext';
 import { useAskedCurrency, withCurrency } from '@features/portfolio/currency';
+import { AttentionProvider } from '@features/shell/attention-context';
 import { BrandMark, Icon } from '@features/shell/icons';
 import { MainCurrencyProvider } from '@features/shell/main-currency';
 import { isLegacyPath, legacyLinks, shellSections } from '@features/shell/navigation';
@@ -146,7 +147,9 @@ export default function Layout() {
       </nav>
       <main id="main-content" ref={mainRef} className="shell-main" tabIndex={-1}>
         <MainCurrencyProvider>
-          <Outlet />
+          <AttentionProvider>
+            <Outlet />
+          </AttentionProvider>
         </MainCurrencyProvider>
       </main>
     </div>

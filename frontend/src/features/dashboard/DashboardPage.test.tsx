@@ -1,4 +1,4 @@
-import { announceClassificationChange, operationsApi } from '@api/operations.api';
+import { operationsApi } from '@api/operations.api';
 import {
   type HistoryPeriod,
   type PortfolioHistory,
@@ -10,12 +10,13 @@ import {
   type PortfolioValuation,
   portfolioValuationApi,
 } from '@api/portfolio-valuation.api';
-import { announceSyncChange, type SyncSource, syncStatusApi } from '@api/sync-status.api';
-import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
+import { type SyncSource, syncStatusApi } from '@api/sync-status.api';
+import { walletAddressesApi } from '@api/wallet-addresses.api';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { AttentionProvider } from '../shell/attention-context';
 import DashboardPage from './DashboardPage';
 
 // The window has its own tests; here it only has to open and report a saved trade.
@@ -87,7 +88,9 @@ const nothing = (changes: Partial<PortfolioHistory> = {}) =>
 function renderPage(path = '/dashboard') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <DashboardPage />
+      <AttentionProvider>
+        <DashboardPage />
+      </AttentionProvider>
     </MemoryRouter>,
   );
 }
@@ -219,27 +222,6 @@ const pricesSource = (changes: Partial<SyncSource> = {}): SyncSource => ({
   errorMessage: null,
   ...changes,
 });
-
-const ethereumWallet: WalletAddress = {
-  id: id(22),
-  network: 'ethereum',
-  address: `0x${'ab'.repeat(20)}`,
-  accountId: cold,
-  label: 'Cold ETH',
-  createdAt: '2026-10-01T00:00:00.000Z',
-  transactionCount: 0,
-  chainBalance: null,
-  balances: null,
-  sync: {
-    state: 'never',
-    completedAt: null,
-    status: 'failed',
-    lastAttemptAt: ago(5),
-    lastSuccessAt: null,
-    nextRunAt: null,
-    errorMessage: 'Ethereum sync needs a valid Etherscan API key on the server.',
-  },
-};
 
 const toClassify = vi.spyOn(operationsApi, 'needsClassification');
 const valued = vi.spyOn(portfolioValuationApi, 'get');
@@ -582,26 +564,7 @@ describe('record-portfolio-snapshots dashboard', () => {
   });
 });
 
-describe('classify-chain-transactions dashboard notice', () => {
-  it('CLS-COUNT says how many blockchain transactions wait and links to them', async () => {
-    toClassify.mockResolvedValueOnce(3).mockResolvedValue(0);
-    renderPage();
-    const notice = await screen.findByRole('region', { name: 'Needs attention' });
-    await waitFor(() =>
-      expect(notice).toHaveTextContent('3 blockchain transactions need classification'),
-    );
-    expect(within(notice).getByRole('link', { name: 'Review' })).toHaveAttribute(
-      'href',
-      '/transactions?status=needs-classification',
-    );
-    // An answer saved anywhere refreshes the count; none left, nothing to review.
-    announceClassificationChange();
-    await waitFor(() => expect(notice).not.toHaveTextContent(/need classification/));
-    expect(within(notice).queryByRole('link', { name: 'Review' })).toBeNull();
-  });
-});
-
-describe('show-dashboard-attention', () => {
+describe('show-dashboard-top-assets', () => {
   it('DASH-MAIN shows the top five assets with price, 24h change, value and share', async () => {
     renderPage();
     const top = await screen.findByRole('region', { name: 'Top assets' });
@@ -672,61 +635,13 @@ describe('show-dashboard-attention', () => {
     }
   });
 
-  it('DASH-ATTENTION lists unclassified transactions, a failed Ethereum sync and old prices', async () => {
+  it('ATTN-BELL keeps what needs the owner off the page; the header bell holds it', async () => {
     toClassify.mockResolvedValue(3);
-    sources.mockResolvedValue([
-      pricesSource({ state: 'failed', lastSuccessAt: ago(125), errorMessage: null }),
-    ]);
-    wallets.mockResolvedValue([ethereumWallet]);
-    renderPage('/dashboard?currency=EUR');
-    const attention = await screen.findByRole('region', { name: 'Needs attention' });
-    await waitFor(() => expect(within(attention).getAllByRole('listitem')).toHaveLength(3));
-    expect(
-      within(attention)
-        .getAllByRole('listitem')
-        .map((item) => item.textContent),
-    ).toEqual([
-      'Prices are 2 hours oldMarket data is temporarily unavailable. Values use the last stored prices.',
-      '3 blockchain transactions need classificationFound by wallet syncReview',
-      'Ethereum wallet sync failedCold ETH · Ethereum sync needs a valid Etherscan API key on the server. Never synced.Open',
-    ]);
-    expect(within(attention).getByRole('link', { name: 'Review' })).toHaveAttribute(
-      'href',
-      '/transactions?status=needs-classification&currency=EUR',
-    );
-    expect(within(attention).getByRole('link', { name: 'Open' })).toHaveAttribute(
-      'href',
-      `/wallets/${cold}?currency=EUR`,
-    );
-    expect(attention).not.toHaveTextContent('Everything is up to date');
-  });
-
-  it('DASH-ATTENTION collapses to one quiet line when nothing needs the owner', async () => {
     renderPage();
-    const attention = await screen.findByRole('region', { name: 'Needs attention' });
-    await waitFor(() =>
-      expect(attention).toHaveTextContent('Everything is up to date. Prices updated 8 min ago.'),
-    );
-    expect(within(attention).queryByRole('listitem')).toBeNull();
-  });
-
-  it('does not say everything is fine when the status cannot be read', async () => {
-    sources.mockRejectedValue(new Error('offline'));
-    renderPage();
-    const attention = await screen.findByRole('region', { name: 'Needs attention' });
-    await waitFor(() =>
-      expect(attention).toHaveTextContent('Could not check the sync status. Try again later.'),
-    );
-    expect(attention).not.toHaveTextContent('Everything is up to date');
-  });
-
-  it('reads the status again when a wallet sync or a classification changes it', async () => {
-    renderPage();
-    const attention = await screen.findByRole('region', { name: 'Needs attention' });
-    await waitFor(() => expect(attention).toHaveTextContent('Everything is up to date'));
-    wallets.mockResolvedValue([ethereumWallet]);
-    announceSyncChange();
-    await waitFor(() => expect(attention).toHaveTextContent('Ethereum wallet sync failed'));
+    await screen.findByRole('region', { name: 'Net worth' });
+    await screen.findByRole('button', { name: 'Notifications, 1 need attention' });
+    expect(screen.queryByRole('region', { name: 'Needs attention' })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/blockchain transactions need classification/);
   });
 
   it('says when the assets cannot be loaded and keeps the net worth', async () => {

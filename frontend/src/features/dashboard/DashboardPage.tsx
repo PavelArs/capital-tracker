@@ -11,14 +11,12 @@ import AddTransactionDialog from '../portfolio/AddTransactionDialog';
 import Allocation from '../portfolio/Allocation';
 import { useAskedCurrency } from '../portfolio/currency';
 import { money, percent, tone } from '../portfolio/format';
+import { useAttention } from '../shell/attention-context';
 import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { tokenChains } from '../shell/token-chains';
-import AttentionCard from './AttentionCard';
-import { collectAttention } from './attention';
 import HistoryChart from './HistoryChart';
 import TopAssets from './TopAssets';
-import { useAttentionSources } from './useAttentionSources';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './dashboard.css';
@@ -206,8 +204,8 @@ function AboutChart() {
 }
 
 // Net worth, change for the period and the capital chart from portfolio snapshots
-// (record-portfolio-snapshots); what needs the owner, top assets and allocation from the
-// current valuation and sync status (show-dashboard-attention).
+// (record-portfolio-snapshots); top assets and allocation from the current valuation. What
+// needs the owner lives in the header bell (ATTN-BELL).
 export default function DashboardPage() {
   const [history, setHistory] = useState<PortfolioHistory | null>(null);
   const [failed, setFailed] = useState(false);
@@ -218,7 +216,7 @@ export default function DashboardPage() {
   const [portfolio, setPortfolio] = useState<PortfolioValuation | null>(null);
   const [portfolioFailed, setPortfolioFailed] = useState(false);
   const latestPortfolio = useRef(0);
-  const status = useAttentionSources();
+  const wallets = useAttention()?.wallets ?? null;
 
   // Only the newest request may change the page; switching keeps the last chart visible.
   const load = useCallback(async () => {
@@ -255,22 +253,6 @@ export default function DashboardPage() {
     void loadPortfolio();
   };
 
-  const attention = collectAttention({
-    toClassify: status.toClassify,
-    sources: status.sources,
-    wallets: status.wallets,
-    portfolio: portfolioFailed ? null : portfolio,
-    now: status.now,
-  });
-  const attentionCard = (
-    <AttentionCard
-      attention={attention}
-      loaded={status.loaded && (portfolio !== null || portfolioFailed)}
-      asked={asked}
-      now={status.now}
-    />
-  );
-
   const shown = history;
   const chartLabel = shown
     ? `Portfolio value, ${periodLabels[shown.period]}, from ${money(
@@ -282,10 +264,6 @@ export default function DashboardPage() {
   return (
     <div className="shell-page">
       <PageHeader title="Dashboard" currency={shown?.currency} onTransactionSaved={reload} />
-      {/* Off the main layout, the block appears only when something needs the owner. */}
-      {(failed || shown === null || isEmptyPortfolio(shown)) &&
-        attention.items.length > 0 &&
-        attentionCard}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">
           <p>Could not load your capital history. Your data is safe; try again.</p>
@@ -299,10 +277,7 @@ export default function DashboardPage() {
         <Empty onAdd={() => setAdding(true)} />
       ) : (
         <>
-          <div className="dashboard-top">
-            <NetWorth history={shown} />
-            {attentionCard}
-          </div>
+          <NetWorth history={shown} />
           <section
             className="shell-card dashboard-chart-card"
             aria-label="Portfolio value over time"
@@ -355,7 +330,7 @@ export default function DashboardPage() {
           </section>
           <div className="dashboard-bottom">
             <TopAssets
-              chains={tokenChains(status.wallets)}
+              chains={tokenChains(wallets)}
               portfolio={portfolio}
               failed={portfolioFailed}
               onRetry={() => void loadPortfolio()}
