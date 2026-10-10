@@ -123,7 +123,15 @@ export function reconcile(
         .map((balance) => balance.quantity),
     );
     const recorded = recordedCoin(portfolio, accountId, symbol);
-    const difference = decimal(units(chain) - units(recorded));
+    // BYBIT-HIDDEN: what the owner hid from the calculations is held at the exchange on purpose.
+    const hidden = sum(
+      own.flatMap((address) =>
+        (address.exchange?.hidden ?? [])
+          .filter((item) => item.symbol === symbol)
+          .map((item) => item.quantity),
+      ),
+    );
+    const difference = decimal(units(chain) - units(recorded) - units(hidden));
     const exchange = own.every((address) => networkOf(address).exchange === true);
     return difference === '0' ? [] : [{ symbol, chain, recorded, difference, exchange }];
   });

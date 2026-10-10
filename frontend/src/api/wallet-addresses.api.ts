@@ -99,6 +99,11 @@ export interface ExchangeAccount {
   earn?: EarnHolding[] | null;
   /** BYBIT-CONVERT: the key may read convert history, as Bybit last said; null until asked. */
   convertAllowed?: boolean | null;
+  /**
+   * BYBIT-HIDDEN: what the records the owner hid from the calculations hold per coin (negative:
+   * they took coins out). Bybit still holds it, so it is no difference to explain.
+   */
+  hidden?: ChainBalance[];
 }
 
 /** Coins in one of Bybit's Earn products: Flexible Savings, On-chain Earn or fixed-term. */
