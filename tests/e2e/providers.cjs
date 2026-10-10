@@ -6,7 +6,7 @@ const { readFileSync } = require('node:fs');
 const { createHash, createHmac, timingSafeEqual } = require('node:crypto');
 
 const solanaHost = 'api.mainnet-beta.solana.com';
-const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io', 'apilist.tronscanapi.com',
+const allowedHosts = new Set(['blockstream.info', 'api.etherscan.io', 'base.blockscout.com', 'optimism.blockscout.com', solanaHost, 'api.coingecko.com', 'api.exchangerate-api.com', 'open.er-api.com', 'api.kraken.com', 'www.cbr.ru', 'api.bybit.com', 'api.trongrid.io', 'apilist.tronscanapi.com',
   'horizon.stellar.org', 'zec1.trezor.io', 'zec5.trezor.io']);
 const credentials = {
   key: readFileSync('/tests/tls/privkey.pem'),
@@ -160,13 +160,25 @@ function cbrDynamic(response, url) {
   response.end(`<?xml version="1.0" encoding="windows-1251"?><ValCurs ID="${code}" DateRange1="${date(from)}" DateRange2="${date(to)}" name="Foreign Currency Market Dynamic">${records}</ValCurs>`);
 }
 
+// BLOCKSCOUT: the chains whose keyless Blockscout explorer the probes may read when Etherscan turns the chain away.
+const blockscoutChains = { 'base.blockscout.com': '8453', 'optimism.blockscout.com': '10' };
+const noPlan = 'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage. https://etherscan.io/apis';
+
 function etherscan(response, url) {
   const query = url.searchParams;
   const refuse = (result) => respond(response, 200, { status: '0', message: 'NOTOK', result });
+  // A Blockscout explorer is one chain, asks for no key and names an internal transfer's transaction `transactionHash`.
+  const scout = blockscoutChains[url.hostname];
   // EVM-MULTICHAIN: chain 1 is Ethereum; the other chains the probes post (/__control/evm) answer their own lists.
-  const chain = query.get('chainid') === '1' ? ethereum : evmChains.get(query.get('chainid') ?? '');
-  if (url.pathname !== '/v2/api' || !chain) return refuse('Missing or unsupported chainid parameter');
-  if (query.get('apikey') !== etherscanKey) return refuse('Invalid API Key (#err2)|synthetic');
+  const chainid = scout ?? query.get('chainid');
+  const chain = chainid === '1' ? ethereum : evmChains.get(chainid ?? '');
+  if (url.pathname !== (scout ? '/api' : '/v2/api') || !chain) return refuse('Missing or unsupported chainid parameter');
+  if (!scout && query.get('apikey') !== etherscanKey) return refuse('Invalid API Key (#err2)|synthetic');
+  if (!scout && chain.planRequired) {
+    chain.planRequests = (chain.planRequests ?? 0) + 1;
+    return refuse(noPlan);
+  }
+  if (scout) chain.scoutRequests = (chain.scoutRequests ?? 0) + 1;
   chain.requests++;
   const fault = chain.fault;
   if (fault && fault.onRequest === chain.requests) {
@@ -175,7 +187,7 @@ function etherscan(response, url) {
     return respond(response, fault.status, { error: 'Synthetic provider fault' });
   }
   const action = query.get('action');
-  if (query.get('module') === 'proxy' && action === 'eth_blockNumber') {
+  if ((scout ? query.get('module') === 'block' && action === 'eth_block_number' : query.get('module') === 'proxy' && action === 'eth_blockNumber')) {
     return respond(response, 200, { jsonrpc: '2.0', id: 83, result: `0x${chain.tip.toString(16)}` });
   }
   if (query.get('module') === 'proxy' && action === 'eth_call') {
@@ -211,6 +223,7 @@ function etherscan(response, url) {
     return refuse('Error! Invalid parameters');
   }
   const items = chain[list]
+    .map((item) => (scout && list === 'internal' ? Object.fromEntries(Object.entries(item).map(([key, value]) => [key === 'hash' ? 'transactionHash' : key, value])) : item))
     .filter((item) => [item.from, item.to].includes(address) && Number(item.blockNumber) >= from && Number(item.blockNumber) <= to)
     .sort((left, right) => Number(left.blockNumber) - Number(right.blockNumber))
     .slice(0, offset);
@@ -542,7 +555,7 @@ function provider(request, response, url) {
   }
   if (url.hostname === 'api.kraken.com' && url.pathname === '/0/public/OHLC') return krakenOhlc(response, url);
   if (url.hostname === 'www.cbr.ru' && url.pathname === '/scripts/XML_dynamic.asp') return cbrDynamic(response, url);
-  if (url.hostname === 'api.etherscan.io') return etherscan(response, url);
+  if (url.hostname === 'api.etherscan.io' || blockscoutChains[url.hostname]) return etherscan(response, url);
   if (url.hostname === 'api.bybit.com') return bybitRequest(request, response, url);
   if (url.hostname === 'api.trongrid.io') return tronRequest(request, response, url);
   if (url.hostname === 'apilist.tronscanapi.com') return tronscanRequest(request, response, url);
@@ -889,12 +902,14 @@ const server = http.createServer(async (request, response) => {
           && Object.entries(item).every(([key, field]) => /^[A-Za-z_]{1,24}$/.test(key)
             && typeof field === 'string' && field.length <= 100)));
       if (!evmChainIds.has(String(data.chainid)) || (data.tip !== undefined && (!Number.isSafeInteger(data.tip) || data.tip < 0 || data.tip >= 2 ** 31))
-        || !items(data.normal) || !items(data.internal) || !items(data.tokens)) {
+        || !items(data.normal) || !items(data.internal) || !items(data.tokens)
+        || (data.planRequired !== undefined && typeof data.planRequired !== 'boolean')) {
         return respond(response, 400, { error: 'Invalid synthetic EVM chain fixture' });
       }
       const previous = evmChains.get(String(data.chainid)) ?? initialEthereum();
       evmChains.set(String(data.chainid), { tip: data.tip ?? previous.tip, normal: data.normal ?? previous.normal,
-        internal: data.internal ?? previous.internal, tokens: data.tokens ?? previous.tokens, pools: {}, fault: null, requests: 0 });
+        internal: data.internal ?? previous.internal, tokens: data.tokens ?? previous.tokens, pools: {}, fault: null, requests: 0,
+        planRequired: data.planRequired ?? previous.planRequired ?? false });
       return respond(response, 200, { ok: true });
     }
     if (request.method === 'POST' && request.url === '/__control/ethereum') {

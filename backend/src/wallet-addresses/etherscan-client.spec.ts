@@ -195,6 +195,33 @@ describe('ETH-SYNC Etherscan client', () => {
     expect(tokens.ok && tokens.items[0].logIndex).toBeNull();
   });
 
+  it('BLOCKSCOUT asks another explorer without a key or chain id, and reads its internal transfers', async () => {
+    const inner = {
+      blockNumber: '20000003',
+      timeStamp: '1720000024',
+      transactionHash: hash('3'),
+      from: other,
+      to: owned,
+      value: '10',
+      type: 'call',
+      isError: '0',
+      errCode: '',
+    };
+    replies.push(ok([inner]), json({ jsonrpc: '2.0', id: 1, result: '0x1312d00' }), ok([normal]));
+    const scout = client(null).blockscout(baseUrl);
+    expect(scout.configured).toBe(true);
+    const internal = await scout.internal(owned, 1, 2);
+    expect(internal.ok && internal.items[0]).toMatchObject({ hash: hash('3'), value: 10n });
+    await expect(scout.blockNumber()).resolves.toEqual({ ok: true, block: 20_000_000 });
+    await expect(scout.normal(owned, 1, 2)).resolves.toMatchObject({ ok: true });
+    for (const url of requests) {
+      expect(url.searchParams.has('apikey')).toBe(false);
+      expect(url.searchParams.has('chainid')).toBe(false);
+    }
+    expect(requests[1].searchParams.get('module')).toBe('block');
+    expect(requests[1].searchParams.get('action')).toBe('eth_block_number');
+  });
+
   it('reads an empty range', async () => {
     replies.push(json({ status: '0', message: 'No transactions found', result: [] }));
     await expect(client().normal(owned, 1, 2)).resolves.toEqual({ ok: true, items: [] });
@@ -222,6 +249,16 @@ describe('ETH-SYNC Etherscan client', () => {
       'a missing key',
       { status: '0', message: 'NOTOK', result: 'Missing/Invalid API Key' },
       'not_configured',
+    ],
+    [
+      'a chain outside the free plan',
+      {
+        status: '0',
+        message: 'NOTOK',
+        result:
+          'Free API access is not supported for this chain. Please upgrade your api plan for full chain coverage.',
+      },
+      'plan_required',
     ],
     [
       'another refusal',
