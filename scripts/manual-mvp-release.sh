@@ -311,4 +311,17 @@ mv "$root/docker-compose.yml.next" "$root/docker-compose.yml"
 if [[ $installation != existing ]]; then mv "$root/.release-managed-env.next" "$root/.release-managed-env"; fi
 mv "$state/receipt.next" "$state/receipt"
 success=true
+# Best effort after a verified release: the running pair and the pair it replaced stay for
+# recovery, every older application image goes. Docker refuses images a container uses (no -f).
+prune_old_release_images() {
+  local current_backend current_frontend
+  current_backend=$(docker inspect capital_tracker_backend --format '{{.Image}}') || return 0
+  current_frontend=$(docker inspect capital_tracker_frontend --format '{{.Image}}') || return 0
+  [[ $current_backend =~ ^sha256:[a-f0-9]{64}$ && $current_frontend =~ ^sha256:[a-f0-9]{64}$ ]] || return 0
+  docker images -a --no-trunc --format '{{.ID}} {{.Repository}}' \
+    | awk -v b="${backend%@*}" -v f="${frontend%@*}" '$2 == b || $2 == f { print $1 }' | sort -u \
+    | grep -vxF -e "$current_backend" -e "$current_frontend" -e "$previous_backend" -e "$previous_frontend" \
+    | xargs -r docker rmi >/dev/null 2>&1 || true
+}
+prune_old_release_images || true
 echo 'Release verified; private server receipt records images, schema and encrypted backup'
