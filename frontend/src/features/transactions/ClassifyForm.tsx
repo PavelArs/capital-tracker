@@ -86,6 +86,8 @@ interface Draft {
   value: string;
   /** Transfer only: the owner's other wallet. */
   account: string;
+  /** Transfer only: the address of that wallet that took part in this very transaction. */
+  partner: string;
   /**
    * Swap only: the transaction on the other side, as "address id|txid", or the trade or swap
    * already added by hand or from CSV, as its list id "trade:id" or "swap:id".
@@ -126,6 +128,8 @@ function draftOf(operation: Operation): Draft {
     rate: priced?.perUsd ?? '',
     value: valued?.valueUsd ?? '',
     account: moved?.accountId ?? operation.counterAccount?.id ?? '',
+    partner:
+      moved?.partner && moved.partner.txid === operation.chain?.txid ? moved.partner.addressId : '',
     pair: swapped
       ? `${swapped.with.addressId}|${swapped.with.txid}`
       : recorded
@@ -228,6 +232,32 @@ export function swapCandidates(
     ]);
   }
   return found;
+}
+
+/**
+ * XFER-ADDRESS: the addresses of the chosen wallet that took part in this very transaction on
+ * the other side, moving the same coin the other way. One needs no choice; several do.
+ */
+export function transferLegs(
+  operation: Operation,
+  operations: Operation[],
+  accountId: string,
+): Operation[] {
+  if (!operation.chain || !accountId) return [];
+  const leg = legDirection(operation);
+  const coin = assetKey(legAsset(operation));
+  return operations.filter(
+    (item) =>
+      item.kind === 'chain' &&
+      item.id !== operation.id &&
+      item.wallet !== null &&
+      item.wallet.id !== operation.wallet?.id &&
+      item.chain?.txid === operation.chain?.txid &&
+      item.account?.id === accountId &&
+      legDirection(item) === (leg === 'in' ? 'out' : 'in') &&
+      Number(item.quantity) !== 0 &&
+      assetKey(legAsset(item)) === coin,
+  );
 }
 
 /** CLS-RECORDED: the coins a manual or CSV record received and spent, by asset key. */
@@ -378,12 +408,13 @@ export function poolCandidates(operation: Operation, operations: Operation[]): [
   return found;
 }
 
-type Problem = 'amount' | 'rate' | 'value' | 'account' | 'pair' | 'deposit' | 'comment';
+type Problem = 'amount' | 'rate' | 'value' | 'account' | 'partner' | 'pair' | 'deposit' | 'comment';
 
-function problems(draft: Draft): Set<Problem> {
+function problems(draft: Draft, choosesAddress = false): Set<Problem> {
   const found = new Set<Problem>();
   if (draft.type === 'transfer') {
     if (!draft.account) found.add('account');
+    else if (choosesAddress && !draft.partner) found.add('partner');
   } else if (draft.type === 'swap') {
     if (!draft.pair) found.add('pair');
     if (!recordKey.test(draft.pair) && draft.value.trim() && !positive(draft.value))
@@ -410,12 +441,16 @@ function problems(draft: Draft): Set<Problem> {
   return found;
 }
 
-function answer(draft: Draft): ChainClassification | null {
+function answer(draft: Draft, txid: string): ChainClassification | null {
   switch (draft.type) {
     case null:
       return null;
     case 'transfer':
-      return { type: 'transfer', accountId: draft.account };
+      return {
+        type: 'transfer',
+        accountId: draft.account,
+        ...(draft.partner ? { partner: { addressId: draft.partner, txid } } : {}),
+      };
     case 'swap': {
       const record = recordKey.exec(draft.pair);
       if (record)
@@ -545,7 +580,9 @@ function failure(
     status === 422 &&
     message === 'Several addresses of that account took part in this transaction'
   )
-    return 'Several addresses of that wallet took part in this transaction, so it cannot be linked automatically. Choose another type.';
+    return 'Several addresses of that wallet took part in this transaction. Choose the address that took the coins; if it is not offered, reload the page.';
+  if (status === 422 && message?.toString().startsWith('That transaction is not the other side'))
+    return 'That address did not take part in this transfer: it must have moved the same coin the other way, less the network fee. Choose another address or another type.';
   if (status === 422 && message === 'No stored price for this coin at that time')
     return 'There is no stored price for this coin at that time. Enter the value in USD.';
   if (status === 422) return 'This type does not fit the direction of the transaction.';
@@ -594,7 +631,9 @@ export default function ClassifyForm({
     setRequestId(newRequestId());
     setError(null);
   };
-  const found = problems(draft);
+  const legs = draft.type === 'transfer' ? transferLegs(operation, operations, draft.account) : [];
+  const choosesAddress = legs.length > 1;
+  const found = problems(draft, choosesAddress);
   // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
   const [blurred, setBlurred] = useState<ReadonlySet<Problem>>(new Set());
   const leave = (problem: Problem) => () =>
@@ -646,7 +685,7 @@ export default function ClassifyForm({
         requestId,
         expectedVersion: operation.classification?.version ?? 0,
         hidden: draft.hidden,
-        classification: answer(draft),
+        classification: answer(draft, operation.chain.txid),
         ...(comment ? { comment } : {}),
       });
       announceClassificationChange();
@@ -818,7 +857,7 @@ export default function ClassifyForm({
                 id={`${id}-account`}
                 className="portfolio-input"
                 value={draft.account}
-                onChange={(event) => change({ account: event.target.value })}
+                onChange={(event) => change({ account: event.target.value, partner: '' })}
                 onBlur={leave('account')}
                 {...invalid('account')}
               >
@@ -838,6 +877,33 @@ export default function ClassifyForm({
                   </span>
                 ))}
             </div>
+            {choosesAddress && (
+              <div className="portfolio-field">
+                <label className="portfolio-field__label" htmlFor={`${id}-partner`}>
+                  {legDirection(operation) === 'out' ? 'Received at' : 'Sent from'}
+                </label>
+                <select
+                  id={`${id}-partner`}
+                  className="portfolio-input"
+                  value={draft.partner}
+                  onChange={(event) => change({ partner: event.target.value })}
+                  onBlur={leave('partner')}
+                  {...invalid('partner')}
+                >
+                  <option value="">Choose the address</option>
+                  {legs.map((leg) => (
+                    <option key={leg.wallet?.id} value={leg.wallet?.id}>
+                      {[leg.wallet && addressText(leg.wallet), signedAmount(leg)].join(' · ')}
+                    </option>
+                  ))}
+                </select>
+                {fieldError('partner', 'Choose the address of that wallet')}
+                <span className="portfolio-field__hint">
+                  Several addresses of that wallet took part in this transaction. Choose the one
+                  that {legDirection(operation) === 'out' ? 'received' : 'sent'} these coins.
+                </span>
+              </div>
+            )}
             <span className="portfolio-field__hint">
               Transfers between your wallets don't change your capital. Only the network fee
               {operation.fee ? ` of ${amount(operation.fee.quantity, operation.fee.asset)}` : ''} is
