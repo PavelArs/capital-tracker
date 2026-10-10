@@ -26,9 +26,10 @@ the release-managed `docker-compose.yml`, so deploys are unaffected.
 3. **Logs.** Either merge `alloy-logs.alloy` into your own Alloy config (point `forward_to` at your
    `loki.write` component), or, if you run no Loki, start the stack in `loki/`:
    `docker compose -f deploy/observability/loki/docker-compose.yml up -d`. It is a separate
-   Compose project with pinned images, 30 days of retention and nothing published to the host;
-   Loki joins the network your Grafana is on (`MONITORING_NETWORK`, default `monitoring_default`).
-   Then add a Loki data source in Grafana with URL `http://loki:3100`.
+   Compose project with pinned images and 30 days of retention. Loki is published on the
+   server's loopback only (`127.0.0.1:3100`), so add a Loki data source in Grafana with URL
+   `http://127.0.0.1:3100`. That URL fits a Grafana in host network mode; a Grafana on a Docker
+   network cannot reach the host's loopback, so give it the stack's network instead.
 4. **Dashboard.** Import `grafana/capital-tracker-dashboard.json` and pick your Prometheus and
    Loki data sources when asked. Routing the alerts (mail, Telegram) is done in your
    Alertmanager or Grafana contact points.
