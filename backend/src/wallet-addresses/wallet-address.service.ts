@@ -175,6 +175,11 @@ const hiddenLegJoin = `JOIN chain_transaction_classifications h ON h."addressId"
             JOIN chain_transaction_classification_versions v ON v."addressId" = h."addressId"
               AND v.txid = h.txid AND v.version = h."currentVersion"
             WHERE t."addressId" = a.id AND v.status = 'hidden'`;
+// BYBIT-GAP-DELETE: a counted difference the owner deleted is no record of the address.
+const notDeleted = (leg: string) => `NOT EXISTS (SELECT 1 FROM chain_transaction_classifications dh
+    JOIN chain_transaction_classification_versions dv ON dv."addressId" = dh."addressId"
+      AND dv.txid = dh.txid AND dv.version = dh."currentVersion"
+    WHERE dh."addressId" = ${leg}."addressId" AND dh.txid = ${leg}.txid AND dv.status = 'deleted')`;
 const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.pools, d.derived,
     bx.exchange, tr.tron, sx.stellar,
     CASE WHEN s.key IS NULL THEN NULL ELSE json_build_object('state', s.state,
@@ -183,7 +188,7 @@ const selectAddress = `SELECT a.*, t."transactionCount", b.balances, k.stake, q.
     END AS source
   FROM wallet_addresses a
   CROSS JOIN LATERAL (SELECT count(*)::int AS "transactionCount"
-    FROM wallet_address_transactions x WHERE x."addressId" = a.id) t
+    FROM wallet_address_transactions x WHERE x."addressId" = a.id AND ${notDeleted('x')}) t
   ${balancesLateral('a')}
   CROSS JOIN LATERAL (SELECT coalesce(json_agg(json_build_object('asset', y.asset,
       'units', y.units::text)), '[]'::json) AS pools
@@ -875,7 +880,7 @@ export class WalletAddressService {
         `SELECT txid, $4::text AS network, asset, "blockHeight", "blockTime", direction,
           "receivedUnits"::text AS "receivedUnits", "sentUnits"::text AS "sentUnits",
           "feeUnits"::text AS "feeUnits"
-          FROM wallet_address_transactions WHERE "addressId" = $1
+          FROM wallet_address_transactions x WHERE "addressId" = $1 AND ${notDeleted('x')}
           ORDER BY "blockHeight" DESC, "blockTime" DESC, txid LIMIT $2 OFFSET $3`,
         [addressId, limit, offset, address.network],
       );

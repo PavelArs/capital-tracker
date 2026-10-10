@@ -358,6 +358,7 @@ function services(db) {
     operations: make('operation-list.service', 'OperationListService'),
     trades,
     classifications,
+    history: make('audit-history.service', 'AuditHistoryService'),
     addresses: new WalletAddressService(db, scheduler, client, box),
   };
 }
@@ -1709,6 +1710,37 @@ async function main() {
       (await s.addresses.list(owner)).find((item) => item.id === wallet).exchange.hidden,
       [],
     );
+    // BYBIT-GAP-DELETE: the owner deletes a counted difference. An answered record is changed
+    // first; a record Bybit made, an unknown one and a stale version are refused.
+    const dotLeg = `bybit-deposit-gap-${dotGap.requestId}`;
+    const answerDot = (expectedVersion, classification) =>
+      s.classifications.classify(owner, wallet, dotLeg, {
+        requestId: randomUUID(), hidden: false, expectedVersion, classification });
+    const removal = (txid, expectedVersion, requestId = randomUUID(), id = wallet) =>
+      s.classifications.removeCounted(owner, id, txid, { requestId, expectedVersion });
+    await answerDot(2, { type: 'other' });
+    await refusal(() => removal(dotLeg, 3), 422, /Needs classification/);
+    await answerDot(3, null);
+    await refusal(() => removal(dotLeg, 3), 409);
+    await refusal(() => removal('bybit-trade-2100000000000000001', 0), 404);
+    await refusal(() => removal(dotLeg, 4, randomUUID(), randomUUID()), 404);
+    const countBefore = (await s.addresses.list(owner)).find((item) => item.id === wallet).transactionCount;
+    const removed = randomUUID();
+    const receipt = await removal(dotLeg, 4, removed);
+    assert.equal(receipt.status, 'deleted');
+    assert.deepEqual(await removal(dotLeg, 4, removed), receipt, 'The same request returns the same receipt');
+    await refusal(() => removal(dotLeg, 5), 404);
+    await refusal(() => answerDot(5, { type: 'other' }), 404);
+    assert.equal((await s.addresses.list(owner)).find((item) => item.id === wallet).transactionCount, countBefore - 1);
+    assert.equal((await legsOf(db, wallet)).filter((row) => row.txid === dotLeg).length, 1, 'The raw record stays');
+    assert.equal((await held(db, owner, exchange)).DOT, undefined);
+    assert.equal((await s.operations.read(owner, {}, new Date())).operations
+      .some((item) => item.chain?.txid === dotLeg), false, 'The deleted record leaves the list');
+    const trail = (await s.history.read(owner, { entity: 'classification' }, new Date())).events
+      .filter((item) => item.entityId.endsWith(dotLeg));
+    assert.deepEqual(trail.map((item) => item.change).sort(), ['changed', 'changed', 'changed', 'created', 'deleted']);
+    const cleared = (await s.addresses.list(owner)).find((item) => item.id === wallet);
+    assert.deepEqual(cleared.exchange.hidden, []);
     // A balance Bybit no longer reports, a larger difference than the balance, another owner's
     // or a missing address, and malformed input store nothing.
     const refusedGap = (input, id = wallet) => s.addresses.countGap(owner, id, input);

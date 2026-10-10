@@ -111,6 +111,7 @@ const statusNames: Record<string, string> = {
   unclassified: 'Needs classification',
   classified: 'Classified',
   hidden: 'Hidden',
+  deleted: 'Deleted',
 };
 const directionNames: Record<string, string> = {
   in: 'Incoming',

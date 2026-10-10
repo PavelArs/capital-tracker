@@ -1256,6 +1256,80 @@ describe('link-own-transfers (M13)', () => {
     );
   });
 
+  it('BYBIT-GAP-DELETE: a counted difference can be deleted, after asking', async () => {
+    const counted = chainOperation(7, {
+      type: null,
+      occurredAt: '2025-06-24T08:00:00.000Z',
+      quantity: '3',
+      estimatedValueUsd: null,
+      account: bybit,
+      wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+      chain: {
+        txid: `bybit-deposit-gap-${id(70)}`,
+        blockHeight: 0,
+        priceObservedAt: null,
+        direction: 'in',
+      },
+      status: 'needs-classification',
+      classification: null,
+    });
+    vi.spyOn(operationsApi, 'list')
+      .mockResolvedValueOnce(list([counted]))
+      .mockResolvedValue(list([]));
+    const remove = vi.spyOn(operationsApi, 'removeCounted').mockResolvedValue();
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    expect(remove).not.toHaveBeenCalled();
+    expect(within(drawer).getByText(/the difference shows again/)).toBeInTheDocument();
+    await user.click(within(drawer).getByText('Keep'));
+    expect(within(drawer).getByText('Delete', { selector: 'button' })).toBeInTheDocument();
+    await user.click(within(drawer).getByText('Delete', { selector: 'button' }));
+    await user.click(within(drawer).getByText('Delete record'));
+    await waitFor(() => expect(remove).toHaveBeenCalledTimes(1));
+    expect(remove.mock.calls[0][1]).toBe(`bybit-deposit-gap-${id(70)}`);
+    expect(remove.mock.calls[0][2]).toEqual({ requestId: expect.any(String), expectedVersion: 0 });
+    expect(await screen.findByText(/Record deleted/)).toBeInTheDocument();
+  });
+
+  it('a Bybit record the exchange made cannot be deleted', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(
+      list([
+        chainOperation(8, {
+          type: 'staking-reward',
+          occurredAt: '2025-06-24T00:30:00.000Z',
+          quantity: '0.0001',
+          account: bybit,
+          wallet: { id: id(22), network: 'bybit', address: '123456789', label: 'Bybit' },
+          chain: {
+            txid: 'bybit-earn-flexible-1002096',
+            blockHeight: 0,
+            priceObservedAt: null,
+            direction: 'in',
+          },
+          status: 'recorded',
+          classification: {
+            version: 1,
+            hidden: false,
+            value: { type: 'staking-reward', valueUsd: '6.00' },
+            comment: null,
+            automatic: true,
+          },
+        }),
+      ]),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() => expect(bodyRows()).toHaveLength(1));
+    await user.click(within(bodyRows()[0]).getByRole('button'));
+    const drawer = screen.getByRole('dialog');
+    expect(within(drawer).queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+    expect(within(drawer).getByText(/can't be deleted/)).toBeInTheDocument();
+  });
+
   it('BYBIT-CONVERT: a convert into USDT is a sale recognised from the convert history', async () => {
     const converted = chainOperation(6, {
       type: 'sell',

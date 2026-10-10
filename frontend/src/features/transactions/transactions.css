@@ -293,6 +293,7 @@
 
 .transactions-drawer__foot {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 14px 20px;
   border-top: 1px solid var(--line);
@@ -407,6 +408,24 @@
 
 .transactions-delete {
   color: var(--neg);
+}
+
+/* BYBIT-GAP-DELETE: the question and its two answers take the whole footer. */
+.transactions-remove {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.transactions-remove__text {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
 }
 
 .transactions-section {
