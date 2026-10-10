@@ -20,6 +20,7 @@ import {
   recoveryPattern,
 } from './mfa-crypto';
 import { recordFailure, streakLocked } from './mfa-failures';
+import { hashPassword, validPasswordInput, verifyPassword } from './password';
 import { SessionService } from './session.service';
 
 interface FactorRow {
@@ -527,6 +528,67 @@ export class MfaService implements OnModuleInit {
       throw new UnprocessableEntityException('Invalid code');
     }
     return outcome.recoveryCodes;
+  }
+
+  // SEC-PASSWORD: the signed-in owner changes the password with the current one and a fresh
+  // TOTP. The factor is checked first, so a stolen session cannot test passwords without it.
+  // Every other session ends; this browser moves to the new credential revision.
+  async changePassword(
+    userId: string,
+    currentHash: string,
+    input: { currentPassword: unknown; newPassword: unknown; code: unknown },
+  ): Promise<void> {
+    const { currentPassword, newPassword, code } = input;
+    if (typeof code !== 'string' || !/^[0-9]{6}$/.test(code) || typeof currentPassword !== 'string')
+      throw new BadRequestException();
+    if (!validPasswordInput(newPassword)) {
+      throw new BadRequestException('Password must have 15 to 128 characters and no line breaks');
+    }
+    const outcome = await this.source.transaction(async (manager) => {
+      const factor = await this.activeFactor(manager, userId);
+      await this.sessions.creationLock(manager);
+      const [{ now }] = await manager.query('SELECT clock_timestamp() AS now');
+      const proof = await this.proveFactor(manager, factor, { kind: 'totp', code }, now);
+      if (proof !== 'accepted') return { status: proof } as const;
+      const [user]: { password: string }[] = await manager.query(
+        'SELECT password FROM users WHERE id = $1 FOR UPDATE',
+        [userId],
+      );
+      if (!user || !(await verifyPassword(user.password, currentPassword)))
+        return { status: 'password' } as const;
+      if (currentPassword === newPassword) return { status: 'same' } as const;
+      await manager.query(
+        'UPDATE users SET password = $1, "resetPasswordToken" = NULL, "resetPasswordExpires" = NULL, "updatedAt" = now() WHERE id = $2',
+        [await hashPassword(newPassword), userId],
+      );
+      const version = randomUUID();
+      await manager.query('UPDATE owner_auth SET "credentialVersion" = $1 WHERE id = 1', [version]);
+      await manager.query('DELETE FROM auth_sessions WHERE "userId" = $1 AND "tokenHash" <> $2', [
+        userId,
+        currentHash,
+      ]);
+      await manager.query(
+        'UPDATE auth_sessions SET "credentialVersion" = $1 WHERE "tokenHash" = $2',
+        [version, currentHash],
+      );
+      // A reset link sent before the change must not set the old choice again.
+      await manager.query(
+        `UPDATE password_reset_tokens SET "revokedAt" = clock_timestamp()
+        WHERE "userId" = $1 AND "usedAt" IS NULL AND "revokedAt" IS NULL`,
+        [userId],
+      );
+      return { status: 'changed' } as const;
+    });
+    if (outcome.status === 'changed') return;
+    if (outcome.status === 'password' || outcome.status === 'same')
+      throw new UnprocessableEntityException({
+        message:
+          outcome.status === 'password'
+            ? 'The current password is not correct'
+            : 'The new password must differ from the current one',
+        error: outcome.status,
+      });
+    throw this.proofFailure(outcome.status);
   }
 
   private proofFailure(status: 422 | 429): HttpException {

@@ -300,6 +300,7 @@ its `/api` prefix.
 | `POST /auth/security/authenticator` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ kind: 'totp' \| 'recovery', code }` (a fresh factor). Answers `{ uri, secret, candidateId, expiresAt }` for a new authenticator that waits ten minutes for its first code; see [Security settings](#security-settings). |
 | `POST /auth/security/authenticator/confirm` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ candidateId, code }` (the new app's first code). Activates it and answers `{ recoveryCodes }` once; 422 for a wrong code, 410 once the setup expired or had five wrong codes. |
 | `DELETE /auth/security/sessions/:id` | Full session, Origin and CSRF. Logs out one other signed-in browser (204); this browser or an unknown id answers 404. |
+| `POST /auth/security/password` | Full session, Origin, CSRF and the `mfa-ip` budget, plus `{ currentPassword, newPassword, code }` (the current password and a fresh TOTP). Answers 204; 422 with `error: 'password'` for a wrong current password or `error: 'same'` for an unchanged one, plain 422 for a wrong code; see [Security settings](#security-settings). |
 | `POST /auth/security/logout-everywhere` | Full session, Origin and CSRF. Deletes every pending and full owner session, this one included, clears the cookie and answers 204. |
 
 The English sign-in screens (prototype "Sign-in" tab) separate password and factor steps and
@@ -398,6 +399,16 @@ ten new recovery codes replace every old one, the credential revision rotates an
 pending or full session of the owner ends, while this browser's session moves to the new revision.
 Five wrong confirmation codes or expiry retire the candidate (410). Two-factor authentication
 itself cannot be turned off, and the first enrollment of a new installation stays with the CLI.
+
+Changing the password (S1) needs the current password and a fresh TOTP, checked like the
+recovery-code factor above (a wrong or replayed code answers 422 and counts toward the same
+owner limits; the code is checked first, so a wrong code never reveals whether the password
+was right). The new password follows the sign-in rules (15 to 128 characters, no line breaks)
+and must differ from the current one. Success, in one transaction under the owner row lock,
+stores the new Argon2id hash, rotates the credential revision, ends every other pending or
+full session of the owner, moves this browser's session to the new revision and revokes any
+outstanding reset links. The TOTP secret and recovery codes stay as they are. Settings →
+Profile shows the sign-in email read-only.
 
 The session list names each browser by a fixed label such as "Safari on iPhone", derived from
 the User-Agent when the factor completes and stored in `auth_sessions.device` (migration

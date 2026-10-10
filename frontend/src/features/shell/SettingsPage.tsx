@@ -2,6 +2,7 @@ import { type FxRatesReport, fxRatesApi } from '@api/fx-rates.api';
 import { announceClassificationChange } from '@api/operations.api';
 import { ownerSettingsApi } from '@api/owner-settings.api';
 import { type AccountingCurrency, accountingCurrencies } from '@api/portfolio-valuation.api';
+import { useAuth } from '@contexts/AuthContext';
 import { useTheme } from '@contexts/ThemeContext';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -250,12 +251,30 @@ function DustThreshold() {
   );
 }
 
+/** Prototype Settings → Profile: the address the owner signs in with. */
+function Profile() {
+  const { user } = useAuth();
+  return (
+    <section className="shell-card" aria-labelledby="settings-profile">
+      <h2 id="settings-profile">Profile</h2>
+      <div className="shell-setting">
+        <div className="shell-setting__text">
+          <span className="shell-setting__label">Email</span>
+          <p className="shell-setting__hint">Used to sign in and for password reset links.</p>
+        </div>
+        <span className="shell-setting__value">{user?.email ?? '—'}</span>
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const { theme, resolvedTheme, setTheme } = useTheme();
   return (
     <div className="shell-page">
       <PageHeader title="Settings" />
       <div className="shell-settings">
+        <Profile />
         <SecuritySettings />
         <section className="shell-card" aria-labelledby="settings-display">
           <h2 id="settings-display">Display</h2>
