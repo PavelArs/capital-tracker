@@ -170,9 +170,14 @@ export function assertCommitted(receipt: CsvReceipt): void {
   ]);
 }
 export async function navigateToAccount(page: Page, account: string): Promise<void> {
+  // G1: the older screens are reached from Settings, not from the sidebar.
   await page
     .getByRole('navigation')
-    .getByRole('link', { name: 'Ручные счета', exact: true })
+    .getByRole('link', { name: 'Settings', exact: true })
+    .click();
+  await page
+    .getByRole('region', { name: 'Older screens' })
+    .getByRole('link', { name: 'Open manual accounts', exact: true })
     .click();
   const link = page.locator(`a[href="/manual-accounts/${uuid(account)}"]`);
   const more = page.getByRole('button', { name: 'Показать еще счета', exact: true });

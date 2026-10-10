@@ -39,7 +39,7 @@ using synthetic owner data and provider fixtures.
 | VAL-UI | Account totals remain exact and refresh/late replies preserve the trade draft. |
 | VCH-UI | Empty and zero chart history render correctly; late period replies do not lose drafts or show stale data. |
 | MPV-UI | Selected portfolio totals and missing-price gaps are accurate; stale replies are ignored. |
-| SHELL-UI | Owner MFA login/logout, responsive keyboard access, only the uncovered legacy screens under Legacy and retired bookmarks opening their replacement. |
+| SHELL-UI | Owner MFA login/logout, responsive keyboard access, no Legacy group, the uncovered older screens reached from Settings and retired bookmarks opening their replacement. |
 | CSV-006-B | A committed CSV confirm survives session expiry, 401, MFA reauthentication and SPA return without duplicate posting. |
 | ADDR-API / ADDR-PRIVATE | Bitcoin address history imports through the Esplora fixture in three pages; anonymous, missing-CSRF and foreign requests are denied; every one of the 60 stored transactions has its USD value missing, never zero, across a reload. |
 | PORTFOLIO-UI | Whole-portfolio value, average buy price, cost basis, unrealized and realized P&L and allocation come from real accounts and a stored price; anonymous and query-carrying reads are refused. |

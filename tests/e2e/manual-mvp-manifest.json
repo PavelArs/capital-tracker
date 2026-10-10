@@ -57,7 +57,7 @@
   },
   {
     "file": "tests/e2e/application-shell.spec.ts",
-    "title": "SHELL-UI: real owner login, responsive keyboard navigation, honest legacy entry and logout"
+    "title": "SHELL-UI: real owner login, responsive keyboard navigation, older screens reached from Settings and logout"
   },
   {
     "file": "tests/e2e/wallet-addresses.spec.ts",
