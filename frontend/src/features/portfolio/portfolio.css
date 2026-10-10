@@ -131,14 +131,23 @@
   overflow-x: auto;
 }
 
+/* The prototype table sits on the card: no fill, no header band, no underlines of the old
+   global table rules (index.css). */
 .portfolio-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  background: transparent;
+}
+
+.portfolio-table tr:hover {
+  background: transparent;
 }
 
 .portfolio-table th {
   padding: 8px 12px;
+  background: transparent;
+  border-bottom: 0;
   color: var(--ink-3);
   font-weight: 500;
   font-size: var(--fs-xs);
@@ -149,6 +158,7 @@
 .portfolio-table td {
   padding: 11px 12px;
   border-top: 1px solid var(--line);
+  border-bottom: 0;
   white-space: nowrap;
 }
 
@@ -498,10 +508,6 @@ a.portfolio-asset__name:hover {
 
 .portfolio-holdings li:first-child {
   border-top: 0;
-}
-
-.portfolio-holdings a {
-  color: var(--ink);
 }
 
 .portfolio-holdings .portfolio-num {
@@ -917,5 +923,35 @@ a.portfolio-asset__name:hover {
   /* Portfolio: the assets come before how they are split. */
   .portfolio-allocation-slot {
     order: 1;
+  }
+}
+
+/* Asset page on phones: the page title already names the asset, the price sits under the icon
+   row and the position figures go two to a row. */
+@media (max-width: 639.98px) {
+  .portfolio-head {
+    gap: 8px 12px;
+  }
+
+  .portfolio-head__title {
+    min-width: 0;
+  }
+
+  .portfolio-head__title h2 {
+    display: none;
+  }
+
+  .portfolio-head__price {
+    flex-basis: 100%;
+    text-align: left;
+  }
+
+  .portfolio-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .portfolio-stat dd {
+    font-size: var(--fs-lg);
   }
 }
