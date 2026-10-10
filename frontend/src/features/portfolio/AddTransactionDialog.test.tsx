@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import AddTransactionDialog from './AddTransactionDialog';
+import AddTransactionDialog, { splitAssets } from './AddTransactionDialog';
 import {
   addDecimal,
   bankRate,
@@ -295,6 +295,28 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       requestId: expect.any(String),
       expectedJournalRevision: 7,
     });
+  });
+
+  it('ASSET-CHIPS keeps six chips and puts the rest behind More assets', async () => {
+    const coins = [
+      bitcoin,
+      ether,
+      tether,
+      ...[5, 6, 7, 8].map((n) => asset(n, `Coin ${n}`, `C${n}`, 'crypto')),
+    ];
+    vi.spyOn(portfolioAssetsApi, 'listAll').mockResolvedValue([...coins, dollars]);
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const chips = () =>
+      within(view.getByRole('group', { name: 'Asset' }))
+        .getAllByRole('button')
+        .map((button) => button.textContent);
+    expect(chips()).toEqual(['BTC', 'ETH', 'USDT', 'C5', 'C6', 'C7', '+ Other asset']);
+    await user.selectOptions(view.getByLabelText('More assets'), 'C8 · Coin 8');
+    expect(chips()).toEqual(['BTC', 'ETH', 'USDT', 'C5', 'C6', 'C8', '+ Other asset']);
+    expect(view.getByRole('button', { name: 'C8' })).toHaveAttribute('aria-pressed', 'true');
+    expect(view.getByLabelText('More assets')).toHaveDisplayValue('More assets…');
   });
 
   it('sends the rate the owner typed, and asks for one when none is stored', async () => {
@@ -850,5 +872,29 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
+  });
+});
+
+describe('ASSET-CHIPS which assets become chips', () => {
+  const many = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => asset(n, `Coin ${n}`, `C${n}`, 'crypto'));
+
+  it('shows every asset while there are few', () => {
+    expect(splitAssets(many.slice(0, 6), many[0].id, new Map())).toEqual({
+      shown: many.slice(0, 6),
+      more: [],
+    });
+  });
+
+  it('puts assets with a market price first and the unpriced ones behind the list', () => {
+    const priced = new Map([[many[7].id, '1']]);
+    const { shown, more } = splitAssets(many, many[7].id, priced);
+    expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C1', 'C2', 'C3', 'C4', 'C5']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C7']);
+  });
+
+  it('always shows the chosen asset', () => {
+    const { shown, more } = splitAssets(many, many[6].id, new Map());
+    expect(shown.map((item) => item.symbol)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C7']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C8']);
   });
 });

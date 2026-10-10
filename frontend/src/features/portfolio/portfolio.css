@@ -706,6 +706,17 @@ a.portfolio-asset__name:hover {
   padding-left: 4px;
 }
 
+.portfolio-input.portfolio-chip-select {
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  height: 32px;
+  padding: 0 28px 0 12px;
+  border-radius: 999px;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+
 .portfolio-more summary {
   color: var(--ink-2);
   font-weight: 500;
