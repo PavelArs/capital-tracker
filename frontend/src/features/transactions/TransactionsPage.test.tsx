@@ -868,6 +868,28 @@ describe('classify-chain-transactions (M12)', () => {
     return { user, drawer: screen.getByRole('dialog', { name }) };
   };
 
+  it('XFER-REFUSED: an airdrop dated before the records of the account begin names the account', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The records of an account start after this entry',
+          coverage: { accountId: cold.id, coverageFrom: '2026-01-01T00:00:00.000Z' },
+        },
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Airdrop' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      /The records of Cold storage start on Jan 1, 2026, after this transaction on Jun 20, 2025\. Hide the transaction/,
+    );
+  });
+
   it('CLS-BUY: classifies a receipt as a buy and opens the next one to classify', async () => {
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(list([toClassify, nextOne]))
@@ -1490,6 +1512,93 @@ describe('link-own-transfers (M13)', () => {
     });
   });
 
+  describe('XFER-ADDRESS: a wallet with several addresses in one transaction', () => {
+    // Cold storage sends 0.2001 BTC; two addresses of Bybit took part, one received the transfer
+    // and the other got a payment of its own in the same transaction.
+    const second = {
+      ...other,
+      id: id(23),
+      address: 'bc1qsyntheticsecondaddress000000000y7m5',
+    };
+    const receivedAt = (to: typeof other, n: number, quantity: string) =>
+      chainOperation(4, {
+        id: `chain:${to.id}:${txid(4)}`,
+        direction: 'in',
+        occurredAt: '2025-06-23T08:00:00.000Z',
+        quantity,
+        account: bybit,
+        wallet: to,
+        chain: { txid: txid(4), blockHeight: 800004 + n, priceObservedAt: null, direction: 'in' },
+      });
+    const legA = receivedAt(other, 0, '0.2');
+    const legB = receivedAt(second, 1, '0.05');
+
+    it('asks which address and sends it as the other side of the transfer', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA, legB]));
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      // One wallet at a time: nothing to choose before the wallet is.
+      expect(within(drawer).queryByLabelText('Received at')).toBeNull();
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      const picker = within(drawer).getByLabelText('Received at');
+      expect(
+        within(picker)
+          .getAllByRole('option')
+          .map((option) => option.textContent),
+      ).toEqual([
+        'Choose the address',
+        expect.stringContaining('+0.2 BTC'),
+        expect.stringContaining('+0.05 BTC'),
+      ]);
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      expect(within(drawer).getByText('Choose the address of that wallet')).toBeInTheDocument();
+      expect(classify).not.toHaveBeenCalled();
+      await user.selectOptions(picker, other.id);
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toEqual({
+        requestId: expect.any(String),
+        expectedVersion: 0,
+        hidden: false,
+        classification: {
+          type: 'transfer',
+          accountId: bybit.id,
+          partner: { addressId: other.id, txid: txid(4) },
+        },
+      });
+    });
+
+    it('offers nothing when one address of the wallet took part', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA]));
+      const classify = vi.spyOn(operationsApi, 'classify').mockResolvedValue();
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      expect(within(drawer).queryByLabelText('Received at')).toBeNull();
+      await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+      await waitFor(() => expect(classify).toHaveBeenCalledTimes(1));
+      expect(classify.mock.calls[0][2]).toMatchObject({
+        classification: { type: 'transfer', accountId: bybit.id },
+      });
+      expect(classify.mock.calls[0][2].classification).not.toHaveProperty('partner');
+    });
+
+    it('asks again when the other wallet changes', async () => {
+      vi.spyOn(operationsApi, 'list').mockResolvedValue(list([sent, legA, legB]));
+      const { user, drawer } = await openRow(0, 'Outgoing transaction · BTC');
+      await user.click(within(drawer).getByRole('button', { name: 'Transfer between my wallets' }));
+      await within(drawer).findByRole('option', { name: 'Bybit' });
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      await user.selectOptions(within(drawer).getByLabelText('Received at'), other.id);
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), '');
+      await user.selectOptions(within(drawer).getByLabelText('Sent to'), bybit.id);
+      expect(within(drawer).getByLabelText('Received at')).toHaveValue('');
+    });
+  });
+
   it('XFER-AUTO: an unanswered leg with an own address on the other side suggests the transfer', async () => {
     const suggested = { ...sent, counterAccount: bybit, counterWallet: other };
     vi.spyOn(operationsApi, 'list').mockResolvedValue(list([suggested]));
@@ -1541,10 +1650,10 @@ describe('link-own-transfers (M13)', () => {
     [
       'names the account whose records start after the transaction',
       {
-        message: 'The records of an account start after this transfer',
+        message: 'The records of an account start after this entry',
         coverage: { accountId: bybit.id, coverageFrom: '2025-07-01T00:00:00.000Z' },
       },
-      /The records of Bybit start on Jul 1, 2025, after this transfer on Jun 23, 2025\. Hide the transaction/,
+      /The records of Bybit start on Jul 1, 2025, after this transaction on Jun 23, 2025\. Hide the transaction/,
     ],
     [
       'names the account opened with balances whose records have not started',

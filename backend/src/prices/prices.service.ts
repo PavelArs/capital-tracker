@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
+import { trackJob } from '../observability/metrics';
 import { loadChainTokens } from '../wallet-addresses/chain-tokens';
 import { BybitMarketClient, type BybitMarketMiss } from './bybit-market';
 import { extraMarketCodes } from './market-codes';
@@ -77,7 +78,7 @@ export class PricesService {
   @Interval(5 * 60_000)
   async scheduledTick(): Promise<void> {
     try {
-      await this.tick();
+      await trackJob('prices', () => this.tick());
     } catch {
       this.logger.warn('Hourly price collection could not finish');
     }

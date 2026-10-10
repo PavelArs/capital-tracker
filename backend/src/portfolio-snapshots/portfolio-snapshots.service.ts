@@ -24,6 +24,7 @@ import {
   moscowDate,
 } from '../fx-rates/fx-conversion';
 import { readFxRates } from '../fx-rates/fx-rates.service';
+import { trackJob } from '../observability/metrics';
 import { readMainCurrency } from '../owner-settings/owner-settings.service';
 import { QUOTE_CURRENCY } from '../prices/price-catalog';
 import { capitalFlows, investedAt, profitToDate, splitChange, stateFlows } from './capital-flows';
@@ -274,7 +275,7 @@ export class PortfolioSnapshotsService {
   @Interval(5 * 60_000)
   async scheduledTick(): Promise<void> {
     try {
-      await this.tick();
+      await trackJob('snapshots', () => this.tick());
     } catch {
       this.logger.warn('Portfolio snapshots could not be refreshed');
     }

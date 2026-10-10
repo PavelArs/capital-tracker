@@ -998,20 +998,22 @@ export class ChainClassificationService {
       : value && value.type !== 'transfer'
         ? planOperation(leg(row), await this.priced(manager, row, value), input.comment)
         : null;
+    // XFER-PROPOSED: the link column names a leg of the same hash; a pair joined across two
+    // hashes is found by the transfer both name instead.
+    const crossHash = transfer?.partner !== undefined && partner !== null && partner.txid !== txid;
     const movement =
       transfer && accountId
         ? planTransfer(
             { ...own(address, row), accountId },
             transfer.accountId,
             partner && own(partner.address, partner.row),
-            transfer.partner !== undefined,
+            // XFER-ADDRESS: a leg of this very transaction fits exactly, the fee being the
+            // sender's own; only a pair of two hashes has the missing part as its fee.
+            crossHash,
           )
         : pays && accountId
           ? planTransfer({ ...own(address, row), accountId }, pays.accountId, null)
           : null;
-    // XFER-PROPOSED: the link column names a leg of the same hash; a pair joined across two
-    // hashes is found by the transfer both name instead.
-    const crossHash = transfer?.partner !== undefined && partner !== null && partner.txid !== txid;
     const linked = partner && !crossHash ? partner.address : null;
     const keep =
       live !== null &&

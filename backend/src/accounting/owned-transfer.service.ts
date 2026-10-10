@@ -6,6 +6,7 @@ import { firstShortfall, type Shortfall } from './available-quantity';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
+  notCovered,
   projectConnectedLedger,
   readConnectedLedger,
   rethrowAccountingHistory,
@@ -52,14 +53,6 @@ const dependent = (shortfall: Shortfall, own: boolean) =>
       ? 'An account does not hold enough for this transfer'
       : 'A later operation depends on this transfer',
     dependent: shortfall,
-  });
-/** The transfer is dated before the records of one of its accounts begin. */
-const notCovered = (accountId: string, coverageFrom: string) =>
-  new ConflictException({
-    statusCode: 409,
-    error: 'Conflict',
-    message: 'The records of an account start after this transfer',
-    coverage: { accountId, coverageFrom },
   });
 function movement(value: RequestedMovement): RequestedMovement {
   return {

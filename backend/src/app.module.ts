@@ -14,6 +14,8 @@ import { validateEnvironment } from './config/env.validation';
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { FxRatesModule } from './fx-rates/fx-rates.module';
 import { HealthModule } from './health/health.module';
+import { pinoHttpOptions } from './observability/logging';
+import { ObservabilityModule } from './observability/observability.module';
 import { OwnerExportModule } from './owner-export/owner-export.module';
 import { OwnerSettingsModule } from './owner-settings/owner-settings.module';
 import { PortfolioSnapshotsModule } from './portfolio-snapshots/portfolio-snapshots.module';
@@ -35,48 +37,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
       useFactory: (config: ConfigService) => {
         const isProduction = config.get('NODE_ENV') === 'production';
         return {
-          pinoHttp: {
-            transport: isProduction
-              ? undefined
-              : {
-                  target: 'pino-pretty',
-                  options: {
-                    singleLine: true,
-                    colorize: true,
-                  },
-                },
-            level: isProduction ? 'info' : 'debug',
-            serializers: {
-              // Never serialize query parameters or arbitrary request headers.
-              req: (req: {
-                id?: string;
-                method?: string;
-                url?: string;
-                remoteAddress?: string;
-              }) => ({
-                id: req.id,
-                method: req.method,
-                url: req.url?.split('?')[0],
-                remoteAddress: req.remoteAddress,
-              }),
-            },
-            autoLogging: {
-              ignore: (req: { url?: string }) => req.url === '/health',
-            },
-            redact: {
-              paths: [
-                'req.headers.authorization',
-                'req.headers.cookie',
-                'res.headers["set-cookie"]',
-                'req.headers["x-csrf-token"]',
-                'req.body.password',
-                'req.body.newPassword',
-                'req.body.apiKey',
-                'req.body.apiSecret',
-              ],
-              censor: '[REDACTED]',
-            },
-          },
+          pinoHttp: pinoHttpOptions(isProduction),
         };
       },
     }),
@@ -92,6 +53,7 @@ import { WalletAddressesModule } from './wallet-addresses/wallet-addresses.modul
     OwnerExportModule,
     OwnerSettingsModule,
     HealthModule,
+    ObservabilityModule,
     PortfolioSnapshotsModule,
     PricesModule,
     SyncStatusModule,

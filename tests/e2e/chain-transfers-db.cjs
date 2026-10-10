@@ -404,7 +404,7 @@ async function refused(db, s) {
     classification: { type: 'buy', currency: 'USD', amount: '30000' },
   });
   const late = await refusal();
-  assert.equal(late.message, 'The records of an account start after this transfer');
+  assert.equal(late.message, 'The records of an account start after this entry');
   assert.deepEqual(late.coverage, { accountId: receiver, coverageFrom: '2026-10-05T00:00:00.000Z' });
   assert.equal(late.dependent, undefined);
   assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
@@ -435,6 +435,25 @@ async function refused(db, s) {
     assert.equal(error.getStatus?.(), 409);
     assert.equal(error.getResponse().message, 'The records of an account have not started');
     assert.deepEqual(error.getResponse().coverage, { accountId: legacy, coverageFrom: null });
+  }
+
+  stage = 'XFER-REFUSED any answer that adds coins before the records of the account begin says so';
+  await raw(db, owner, b, 24, 'in', '1000000', '0', '0', '2026-10-02T10:00:00.000Z');
+  for (const classification of [
+    { type: 'airdrop', valueUsd: null },
+    { type: 'buy', currency: 'USD', amount: '500' },
+  ]) {
+    try {
+      await classify(s, owner, b, 24, { expectedVersion: 0, classification });
+      assert.fail(`${classification.type} must be refused`);
+    } catch (error) {
+      assert.equal(error.getStatus?.(), 409, classification.type);
+      assert.equal(error.getResponse().message, 'The records of an account start after this entry');
+      assert.deepEqual(error.getResponse().coverage, {
+        accountId: receiver,
+        coverageFrom: '2026-10-05T00:00:00.000Z',
+      });
+    }
   }
   console.log('PASS XFER-REFUSED');
 }
@@ -550,6 +569,89 @@ async function proposed(db, s) {
   console.log('PASS XFER-PROPOSED');
 }
 
+// XFER-ADDRESS: two addresses of the receiving account took part in the one transaction; the
+// owner names the address that received the transfer. The other address's payment of its own
+// stays unanswered, and a leg that does not fit is refused.
+async function addressChoice(db, s) {
+  stage = 'XFER-ADDRESS synthetic fourth owner: a send received at two addresses of one account';
+  const [fourth] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('address-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = fourth.id;
+  const sender = await account(s, owner, 'Spending');
+  const receiver = await account(s, owner, 'Hardware');
+  const a = await wallet(db, owner, sender, 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+  const b = await wallet(db, owner, receiver, 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq');
+  const c = await wallet(db, owner, receiver, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  // 61: 0.6 BTC arrive in A. 62: A sends 0.3001 BTC (fee 0.0001); B gets 0.3 BTC and C a payment
+  // of 0.05 BTC of its own in the same transaction.
+  await raw(db, owner, a, 61, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 62, 'out', '0', '30010000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 62, 'in', '30000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, c, 62, 'in', '5000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  await classify(s, owner, a, 61, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const before = await rawFingerprint(db, owner);
+  const send = (partner) =>
+    classify(s, owner, a, 62, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver, ...(partner ? { partner } : {}) },
+    });
+
+  stage = 'XFER-ADDRESS without a choice the two addresses leave the transfer unlinked';
+  await rejected(() => send(), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-ADDRESS the address whose amount does not fit is refused';
+  await rejected(() => send({ addressId: c, txid: txid(62) }), 422);
+  await rejected(() => send({ addressId: a, txid: txid(62) }), 422);
+  assert.equal(await count(s, owner), 3, 'Nothing was answered');
+
+  stage = 'XFER-ADDRESS the named address links as the other side with the sender fee';
+  const saved = await send({ addressId: b, txid: txid(62) });
+  assert.equal(saved.value.operation.kind, 'transfer');
+  assert.deepEqual([saved.value.linkedAddressId, saved.value.automatic], [b, false]);
+  assert.equal(await count(s, owner), 1, "C's payment still needs an answer");
+  const legs = await db.query(
+    `SELECT "addressId", "transferId", "linkedAddressId" FROM chain_transaction_classification_versions
+      WHERE txid=$1 AND status='classified' ORDER BY "addressId"`,
+    [txid(62)],
+  );
+  assert.equal(legs.length, 2);
+  assert.equal(legs[0].transferId, legs[1].transferId);
+  assert.deepEqual(legs.map((leg) => leg.addressId).sort(), [a, b].sort());
+  const mine = (await rows(s, owner, 62)).filter((operation) => operation.type === 'transfer');
+  assert.equal(mine.length, 1, 'The pair is listed once');
+  same(mine[0].quantity, '0.3', 'B received 0.3 BTC');
+  same(mine[0].fee.quantity, '0.0001', 'The fee is the sender\'s own');
+  same(
+    (await journal(s, owner, receiver)).summary.remainingCostUsd,
+    '15000',
+    "B's 0.3 BTC keeps A's 50000 per BTC",
+  );
+  assert.equal(await rawFingerprint(db, owner), before, 'Raw chain rows are never edited');
+
+  stage = 'XFER-ADDRESS a leg of the same transaction short of the amount is not taken as fee';
+  // 63: A sends 0.1001 BTC (fee 0.0001); B gets only 0.0995, so 0.0006 BTC are unexplained.
+  await raw(db, owner, a, 63, 'out', '0', '10010000', '10000', '2026-10-02T10:00:00.000Z');
+  await raw(db, owner, b, 63, 'in', '9950000', '0', '10000', '2026-10-02T10:00:00.000Z');
+  await rejected(
+    () =>
+      classify(s, owner, a, 63, {
+        expectedVersion: 0,
+        classification: {
+          type: 'transfer',
+          accountId: receiver,
+          partner: { addressId: b, txid: txid(63) },
+        },
+      }),
+    422,
+  );
+  assert.equal((await rows(s, owner, 63)).filter((operation) => operation.type === 'transfer').length, 0);
+  console.log('PASS XFER-ADDRESS');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -599,6 +701,7 @@ async function main() {
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
     await refused(db, s);
     await proposed(db, s);
+    await addressChoice(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

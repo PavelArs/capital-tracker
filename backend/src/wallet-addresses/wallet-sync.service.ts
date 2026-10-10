@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Interval } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { ChainClassificationService } from '../accounting/chain-classification.service';
+import { recordWalletSync, startTimer, trackJob } from '../observability/metrics';
 import { INTERRUPTED_AFTER_MS, recordSource } from '../sync-status/sync-source';
 import { isNetwork, networkNames } from './chain-assets';
 import {
@@ -53,7 +54,7 @@ export class WalletSyncService {
   @Interval(60_000)
   async scheduledTick(): Promise<void> {
     try {
-      await this.tick();
+      await trackJob('wallets', () => this.tick());
     } catch {
       this.logger.warn('Background wallet sync could not finish');
     }
@@ -107,6 +108,16 @@ export class WalletSyncService {
   async run(
     wallet: DueWallet,
     now = new Date(),
+  ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
+    const startedAt = startTimer();
+    const result = await this.runPass(wallet, now);
+    recordWalletSync(wallet.network, result === 'busy' ? 'busy' : result.state, startedAt);
+    return result;
+  }
+
+  private async runPass(
+    wallet: DueWallet,
+    now: Date,
   ): Promise<(SourceOutcome & { step: StepResult | null }) | 'busy'> {
     const key = walletSourceKey(wallet.id);
     const adapter = this.adapters.get(wallet.network);
