@@ -283,7 +283,7 @@ export class AccountingService {
    * WAL-RENAME, W1: a new name and/or kind for the owner's account; everything recorded in it is
    * unchanged.
    */
-  async updateAccount(ownerId: string, accountId: string, input: unknown): Promise<AccountSummary> {
+  async renameAccount(ownerId: string, accountId: string, input: unknown): Promise<AccountSummary> {
     const owner = parseUuid(ownerId);
     const id = parseUuid(accountId);
     const change = parseAccountChange(input);

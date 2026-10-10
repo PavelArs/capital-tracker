@@ -48,12 +48,12 @@ export class AccountingController {
     return this.accounting.listInstruments(owner.userId, parseListQuery(query));
   }
   @Patch('accounts/:id')
-  updateAccount(
+  renameAccount(
     @CurrentUser() owner: OwnerIdentity,
     @Param('id') id: string,
     @Body() input: unknown,
   ) {
-    return this.accounting.updateAccount(owner.userId, id, input);
+    return this.accounting.renameAccount(owner.userId, id, input);
   }
   @Get('accounts/:id')
   getAccount(@CurrentUser() owner: OwnerIdentity, @Param('id') id: string) {
