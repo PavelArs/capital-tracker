@@ -12,8 +12,8 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
-import { hiddenTokenSymbols } from '../wallets/WalletParts';
 import CloseButton from '../shell/CloseButton';
+import { hiddenTokenSymbols } from '../wallets/WalletParts';
 import { unitPrice } from './add-asset';
 import {
   addDecimal,
