@@ -1,6 +1,7 @@
 import type { AuditEvent } from '@api/audit-history.api';
 import { useEffect, useRef } from 'react';
 import AssetIcon from '../shell/AssetIcon';
+import CloseButton from '../shell/CloseButton';
 import { moment } from '../transactions/operation-format';
 import { Glyph } from '../transactions/TypeIcon';
 import { actorLabels, changeLabels, glyphOf, valueText } from './history-format';
@@ -58,14 +59,7 @@ export default function HistoryDrawer({
       >
         <div className="transactions-drawer__head">
           <h2 id="history-title">{event.title}</h2>
-          <button
-            ref={closeButton}
-            type="button"
-            className="shell-button shell-button--ghost"
-            onClick={onClose}
-          >
-            Close
-          </button>
+          <CloseButton buttonRef={closeButton} onClick={onClose} />
         </div>
         <div className="transactions-drawer__body">
           <div className="transactions-hero">
