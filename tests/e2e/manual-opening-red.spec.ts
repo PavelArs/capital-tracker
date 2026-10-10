@@ -20,7 +20,7 @@ type AccountSummary = {
 };
 
 function expectEmptySummary(account: AccountSummary, name: string): void {
-  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'name']);
+  expect(Object.keys(account).sort()).toEqual(['createdAt', 'currentRevision', 'id', 'kind', 'name']);
   expect(account.id).toMatch(uuidV4);
   expect(account.name).toBe(name);
   expect(account.currentRevision).toBe(0);

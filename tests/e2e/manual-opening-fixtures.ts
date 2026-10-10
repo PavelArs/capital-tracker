@@ -94,7 +94,7 @@ function decimal(value: unknown): string {
 
 export function readAccount(value: unknown): Account {
   const row = record(value);
-  keys(row, ['id', 'name', 'currentRevision', 'createdAt']);
+  keys(row, ['id', 'name', 'kind', 'currentRevision', 'createdAt']);
   return {
     id: uuid(row.id),
     name: text(row.name),
@@ -172,7 +172,7 @@ export function readOpening(value: unknown): Opening {
 
 export function readDetail(value: unknown): AccountDetail {
   const row = record(value);
-  keys(row, ['id', 'name', 'currentRevision', 'createdAt', 'currentOpening']);
+  keys(row, ['id', 'name', 'kind', 'currentRevision', 'createdAt', 'currentOpening']);
   const { currentOpening, ...summary } = row;
   return {
     ...readAccount(summary),
