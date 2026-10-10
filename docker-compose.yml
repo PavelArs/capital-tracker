@@ -71,6 +71,8 @@ services:
           create_host_path: false
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-3000}:3000"
+      # Prometheus metrics, loopback only so a host-network Prometheus can scrape 127.0.0.1:9464.
+      - "127.0.0.1:${METRICS_HOST_PORT:-9464}:9464"
     depends_on:
       postgres:
         condition: service_healthy
