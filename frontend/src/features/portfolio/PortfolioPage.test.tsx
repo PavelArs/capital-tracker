@@ -820,6 +820,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const createAccount = vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({
       id: id(150),
       name: 'Home safe',
+      kind: null,
       currentRevision: 0,
       createdAt: '2026-10-05T00:00:00Z',
     });
@@ -861,6 +862,7 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     const createAccount = vi.spyOn(accountingApi, 'createAccount').mockResolvedValue({
       id: id(151),
       name: 'Bank',
+      kind: null,
       currentRevision: 0,
       createdAt: '2026-10-05T00:00:00Z',
     });

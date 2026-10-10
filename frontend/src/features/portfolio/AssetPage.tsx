@@ -299,11 +299,8 @@ function AssetDetails({
   asked,
   operations,
   onRetryOperations,
-<<<<<<< HEAD
   kinds,
-=======
   onPriceSaved,
->>>>>>> claude/design-review-fixes-w3
   now,
 }: {
   asset: AssetValuation;
@@ -311,12 +308,9 @@ function AssetDetails({
   asked: AccountingCurrency | undefined;
   operations: OperationsState;
   onRetryOperations: () => void;
-<<<<<<< HEAD
   /** W1, A3: how each wallet is held, once known. */
   kinds: Record<string, WalletKind | null>;
-=======
   onPriceSaved: () => void;
->>>>>>> claude/design-review-fixes-w3
   now: Date;
 }) {
   const [pricing, setPricing] = useState(false);
@@ -559,11 +553,8 @@ export default function AssetPage() {
           asked={asked}
           operations={operations}
           onRetryOperations={() => void loadOperations()}
-<<<<<<< HEAD
           kinds={kinds}
-=======
           onPriceSaved={() => void load()}
->>>>>>> claude/design-review-fixes-w3
           now={new Date()}
         />
       ) : (
