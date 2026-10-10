@@ -224,6 +224,37 @@ export interface TransferProposals {
   proposals: TransferProposal[];
 }
 
+/**
+ * CLS-DUPLICATE: a record the owner added (or imported) that a wallet's transaction repeats.
+ * The transaction is the one to keep; the record only brings the price or purpose over.
+ */
+export interface DuplicateProposal {
+  coin: string;
+  direction: 'in' | 'out';
+  transaction: ProposedLeg & { quantity: string };
+  record: {
+    kind: 'trade' | 'reward';
+    id: string;
+    /** The version of the record now; the answer names it, so a later edit is noticed. */
+    version: number;
+    /** What the record says the movement was: buy, sell, income, staking-reward ... */
+    type: OperationType;
+    quantity: string;
+    valueUsd: string | null;
+    occurredAt: string;
+  };
+  /** The answer that says what the record said; sent back unchanged to replace it. */
+  classification: ChainClassification;
+  comment: string | null;
+}
+
+export interface DuplicateProposals {
+  /** How far apart in time and in amount (percent) a record and a transaction may be. */
+  windowHours: number;
+  amountPercent: number;
+  proposals: DuplicateProposal[];
+}
+
 export interface ClassificationCommand {
   requestId: string;
   /** The version shown; 0 before the first classification. */
@@ -231,6 +262,8 @@ export interface ClassificationCommand {
   hidden: boolean;
   classification: ChainClassification | null;
   comment?: string;
+  /** CLS-DUPLICATE: the record this answer replaces, at the version the owner saw. */
+  replaces?: { kind: 'trade' | 'reward'; id: string; version: number };
 }
 
 /** Fired after a classification changes, so counts elsewhere refresh. */
@@ -269,6 +302,13 @@ export const operationsApi = {
   transferProposals: async (): Promise<TransferProposals> => {
     const response = await apiClient.get<TransferProposals>(
       '/accounting/chain-transactions/transfer-proposals',
+    );
+    return response.data;
+  },
+  /** CLS-DUPLICATE: records the owner added that a wallet's transaction repeats. */
+  duplicateProposals: async (): Promise<DuplicateProposals> => {
+    const response = await apiClient.get<DuplicateProposals>(
+      '/accounting/chain-transactions/duplicate-proposals',
     );
     return response.data;
   },

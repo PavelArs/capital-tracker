@@ -9,6 +9,7 @@ import { DASH, money, quantity } from '../portfolio/format';
 import AssetIcon from '../shell/AssetIcon';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
+import DuplicateProposals from './DuplicateProposals';
 import OperationDrawer from './OperationDrawer';
 import {
   amount,
@@ -556,12 +557,20 @@ export default function TransactionsPage() {
         </p>
       )}
       {list !== null && !failed && (
-        <TransferProposals
-          onJoined={(message) => {
-            setNotice(message);
-            void load(asked, false);
-          }}
-        />
+        <>
+          <DuplicateProposals
+            onReplaced={(message) => {
+              setNotice(message);
+              void load(asked, false);
+            }}
+          />
+          <TransferProposals
+            onJoined={(message) => {
+              setNotice(message);
+              void load(asked, false);
+            }}
+          />
+        </>
       )}
       {failed ? (
         <section className="shell-card portfolio-state" role="alert">

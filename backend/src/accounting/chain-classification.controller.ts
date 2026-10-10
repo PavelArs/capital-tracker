@@ -18,6 +18,12 @@ export class ChainClassificationController {
     return this.classifications.transferProposals(owner.userId);
   }
 
+  // CLS-DUPLICATE: records the owner added that a wallet's transaction repeats.
+  @Get('duplicate-proposals')
+  duplicates(@CurrentUser() owner: OwnerIdentity) {
+    return this.classifications.duplicateProposals(owner.userId);
+  }
+
   @Post(':addressId/:txid/classifications')
   async classify(
     @CurrentUser() owner: OwnerIdentity,

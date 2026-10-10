@@ -248,6 +248,33 @@ describe('classify-chain-transactions input and plan', () => {
     refused({ type: 'transfer', accountId, partner: { addressId, txid, extra: 1 } });
   });
 
+  it('CLS-DUPLICATE: an answer may name the record of the owner it replaces', () => {
+    const id = '00000000-0000-4000-8000-000000000020';
+    const classification = { type: 'buy', currency: 'USD', amount: '100' };
+    const replaces = { kind: 'trade', id, version: 2 };
+    const parsed = parse({ classification, replaces });
+    expect(parsed.replaces).toEqual(replaces);
+    expect(classificationPayload('a', 'b', parsed)).toContain('"replaces"');
+    expect(parse({ classification }).replaces).toBeUndefined();
+    expect(
+      parse({ classification: { type: 'other' }, replaces: { ...replaces, kind: 'reward' } })
+        .replaces,
+    ).toMatchObject({
+      kind: 'reward',
+    });
+    for (const bad of [
+      { ...replaces, kind: 'swap' },
+      { ...replaces, id: 'x' },
+      { ...replaces, version: 0 },
+      { ...replaces, version: 1.5 },
+      { ...replaces, version: 10001 },
+      { kind: 'trade', id },
+      { ...replaces, extra: 1 },
+      null,
+    ])
+      expect(() => parse({ classification, replaces: bad })).toThrow(BadRequestException);
+  });
+
   it('POOL-*: a pool deposit records nothing, a pool reward is income, a withdrawal names its deposit', () => {
     const deposit = parse({ classification: { type: 'pool-deposit' } }).classification!;
     expect(deposit).toEqual({ type: 'pool-deposit' });
