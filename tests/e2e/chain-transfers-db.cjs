@@ -354,6 +354,63 @@ async function reclassify(db, s, owner, f, transferId) {
   console.log('PASS XFER-RECLASSIFY/XFER-HIDE');
 }
 
+// XFER-REFUSED: a transfer the books cannot take says why, in a body the browser can read: the
+// sender does not hold the coins (the shortfall is the transfer itself, not a later operation),
+// or an account's records start after the transaction.
+async function refused(db, s) {
+  stage = 'XFER-REFUSED synthetic second owner with a sender, a receiver and one send';
+  const [other] = await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
+    ('refused-owner@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+  const owner = other.id;
+  const sender = await account(s, owner, 'Sender');
+  const receiver = await account(s, owner, 'Receiver');
+  const a = await wallet(db, owner, sender, 'bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3');
+  const b = await wallet(db, owner, receiver, 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh');
+  await raw(db, owner, a, 21, 'in', '60000000', '0', '500', '2026-06-20T08:00:00.000Z');
+  await raw(db, owner, a, 22, 'out', '9990000', '60000000', '10000', '2026-10-01T10:00:00.000Z');
+  await raw(db, owner, b, 22, 'in', '50000000', '0', '10000', '2026-10-01T10:00:00.000Z');
+  const send = () =>
+    classify(s, owner, a, 22, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver },
+    });
+  const refusal = async () => {
+    try {
+      await send();
+    } catch (error) {
+      assert.equal(error.getStatus?.(), 409);
+      return error.getResponse();
+    }
+    assert.fail('The transfer must be refused');
+  };
+
+  stage = 'XFER-REFUSED the sender holds nothing: the body names the transfer as the shortfall';
+  const short = await refusal();
+  assert.equal(short.message, 'An account does not hold enough for this transfer');
+  assert.equal(short.dependent.accountId, sender);
+  assert.match(short.dependent.operationId, /^transfer:/);
+  assert.equal(short.dependent.occurredAt, '2026-10-01T10:00:00.000Z');
+
+  stage = 'XFER-REFUSED the receiver starts its records after the send: the body names it';
+  await s.trades.initialize(owner, receiver, {
+    requestId: randomUUID(),
+    coverageFrom: '2026-10-05T00:00:00.000Z',
+    assertEmpty: true,
+  });
+  // The receipt that funds the sender; the pair is not linked on its own, as the receiver's
+  // records start after it.
+  await classify(s, owner, a, 21, {
+    expectedVersion: 0,
+    classification: { type: 'buy', currency: 'USD', amount: '30000' },
+  });
+  const late = await refusal();
+  assert.equal(late.message, 'The records of an account start after this transfer');
+  assert.deepEqual(late.coverage, { accountId: receiver, coverageFrom: '2026-10-05T00:00:00.000Z' });
+  assert.equal(late.dependent, undefined);
+  assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
+  console.log('PASS XFER-REFUSED');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -401,6 +458,7 @@ async function main() {
     await manual(db, s, owner.id, f);
     await reclassify(db, s, owner.id, f, transferId);
     assert.equal(await rawFingerprint(db, owner.id), before, 'Raw chain rows are never edited');
+    await refused(db, s);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

@@ -543,6 +543,55 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it.each([
+    [
+      'XFER-REFUSED names the account a new transfer would leave short',
+      {
+        message: 'An account does not hold enough for this transfer',
+        dependent: {
+          operationId: `transfer:${id(41)}`,
+          accountId: id(11),
+          instrumentId: id(1),
+          occurredAt: '2025-07-01T00:00:00.000Z',
+        },
+      },
+      /Hardware wallet does not hold enough BTC on Jul 1, 2025 for this transfer/,
+    ],
+    [
+      'XFER-REFUSED names the account whose records start after the date',
+      {
+        message: 'The records of an account start after this transfer',
+        coverage: { accountId: id(13), coverageFrom: '2999-01-01T00:00:00.000Z' },
+      },
+      /The records of Exchange start on Jan 1, 2999, after this transfer on /,
+    ],
+  ])('%s', async (_name, data, expected) => {
+    const user = userEvent.setup();
+    vi.spyOn(ownedTransfersApi, 'create').mockRejectedValue(
+      new AxiosError('conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data,
+      }),
+    );
+    available.mockImplementation(async (accountId, query) => ({
+      accountId,
+      ...query,
+      journalRevision: 4,
+      quantity: '5',
+    }));
+    const { dialog, onSaved } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'Transfer' }));
+    await user.selectOptions(view.getByLabelText('To'), 'Exchange');
+    await user.type(view.getByLabelText('Amount'), '0.1');
+    await user.click(view.getByRole('button', { name: 'Save transaction' }));
+    expect(await view.findByRole('alert')).toHaveTextContent(expected);
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
   it('PR-OPS-2 saves an airdrop of unknown value as a reward without a cost', async () => {
     const user = userEvent.setup();
     const rewardCreate = vi.spyOn(assetRewardsApi, 'create').mockResolvedValue({} as RewardReceipt);

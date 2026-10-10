@@ -44,12 +44,22 @@ import { automaticOrder } from './trade-order';
 
 const conflict = () => new ConflictException('Transfer request conflicts with saved state');
 /** A change that would leave a later operation spending more than its account holds. */
-const dependent = (shortfall: Shortfall) =>
+const dependent = (shortfall: Shortfall, own: boolean) =>
   new ConflictException({
     statusCode: 409,
     error: 'Conflict',
-    message: 'A later operation depends on this transfer',
+    message: own
+      ? 'An account does not hold enough for this transfer'
+      : 'A later operation depends on this transfer',
     dependent: shortfall,
+  });
+/** The transfer is dated before the records of one of its accounts begin. */
+const notCovered = (accountId: string, coverageFrom: string) =>
+  new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: 'The records of an account start after this transfer',
+    coverage: { accountId, coverageFrom },
   });
 function movement(value: RequestedMovement): RequestedMovement {
   return {
@@ -162,6 +172,12 @@ export class OwnedTransferService {
       to.journal.currentRevision !== input.expectedToJournalRevision
     )
       throw conflict();
+    // Before an account's records begin nothing can be moved in or out of it (a journal opened
+    // on a date by an opening balance), whatever its balance then.
+    if (kind !== 'void')
+      for (const account of [from, to])
+        if (fields.occurredAt < account.coverageFrom)
+          throw notCovered(account.accountId, account.coverageFrom);
     // Without an order the transfer goes after every event of both accounts at its instant.
     const order =
       fields.orderWithinTimestamp ??
@@ -182,7 +198,7 @@ export class OwnedTransferService {
       const shortfall =
         error instanceof FifoHistoryError &&
         firstShortfall({ accounts: ledger.accounts, transfers });
-      if (shortfall) throw dependent(shortfall);
+      if (shortfall) throw dependent(shortfall, shortfall.operationId === `transfer:${transferId}`);
       throw error;
     }
     const receipt = await appendTransferVersion(manager, owner, {
