@@ -27,6 +27,11 @@ export interface EvmChain {
   name: string;
   /** The chain's own id, which Etherscan's V2 API takes as `chainid`. */
   chainId: number;
+  /**
+   * BLOCKSCOUT: the chain's keyless Blockscout API (Etherscan-compatible), read when Etherscan's
+   * free plan does not serve the chain. Absent where no Blockscout explorer is known.
+   */
+  blockscout?: string;
   /** CoinGecko's asset platform id, for the price of a token by contract. */
   coingeckoPlatform: string;
   /** The chain's own coin: ETH on the Ethereum family, POL, BNB, AVAX on the others. */
@@ -54,6 +59,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'base',
     name: 'Base',
     chainId: 8453,
+    blockscout: 'https://base.blockscout.com/api',
     coingeckoPlatform: 'base',
     native: eth,
     // Native USDC. Base has no Tether-issued USDT in this list: a USDT-named token there is read
@@ -76,6 +82,7 @@ export const evmChains: readonly EvmChain[] = [
     network: 'optimism',
     name: 'OP Mainnet',
     chainId: 10,
+    blockscout: 'https://optimism.blockscout.com/api',
     coingeckoPlatform: 'optimistic-ethereum',
     native: eth,
     stablecoins: {

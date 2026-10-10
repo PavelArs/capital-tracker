@@ -17,6 +17,7 @@ import {
 } from './ethereum-stake';
 import { EtherscanClient, parseInternal, parseNormal } from './etherscan-client';
 import { type EvmChain, type EvmNetwork } from './evm-chains';
+import { EvmReader } from './evm-reader';
 
 // Blocks this deep are final; a shallower one could still be replaced and its rows are
 // never rewritten, so they wait for the next pass.
@@ -62,7 +63,7 @@ function storedTransaction(raw: {
 export class EvmSyncAdapter implements ChainSyncAdapter {
   readonly network: EvmNetwork;
   readonly name: string;
-  private readonly etherscan: EtherscanClient;
+  private readonly etherscan: EvmReader;
   private readonly stake: boolean;
 
   constructor(
@@ -72,7 +73,10 @@ export class EvmSyncAdapter implements ChainSyncAdapter {
   ) {
     this.network = chain.network;
     this.name = chain.name;
-    this.etherscan = etherscan.forChain(chain.chainId);
+    this.etherscan = new EvmReader(
+      etherscan.forChain(chain.chainId),
+      chain.blockscout ? etherscan.blockscout(chain.blockscout) : null,
+    );
     this.stake = chain.network === 'ethereum';
   }
 

@@ -197,6 +197,41 @@ async function main() {
     assert.deepEqual(tokens.map((row) => row.network), ['base', 'base']);
     console.log('PASS EVM-BALANCES the same address shows each chain’s own holdings; tokens are remembered per chain');
 
+    // EVM-FALLBACK: when Etherscan's plan turns a chain away, that chain's Blockscout explorer is read without a key and the
+    // history continues from the stored block; a chain with no Blockscout says why it cannot be read.
+    const internalItem = (n, block, from, to, value) => ({ blockNumber: String(block), timeStamp: String(time(block)), hash: hash(n),
+      from, to, value: String(value), type: 'call', isError: '0', errCode: '' });
+    await post('evm', { chainid: 10, tip: 20000200, planRequired: true,
+      normal: [normal(12, 20000050, outside, wallet, ether(0.5), 21000, 10 ** 8)],
+      internal: [internalItem(13, 20000060, outside, wallet, ether(0.25))] });
+    const everyUrl = async () => (await (await fetch(`${control}/requests`)).json()).map(({ url }) => new URL(url));
+    const fallbackCalls = async (action) => {
+      const before = (await everyUrl()).length;
+      const result = await action();
+      return { result, urls: (await everyUrl()).slice(before) };
+    };
+    const scout = await fallbackCalls(() => s.addresses.sync(owner, ids.optimism));
+    assert.deepEqual([scout.result.outcome, scout.result.reason, scout.result.imported], ['complete', null, 2]);
+    assert.deepEqual(scout.urls.map((url) => [url.hostname, url.searchParams.get('chainid'), url.searchParams.get('action'), url.searchParams.get('apikey')]), [
+      ['api.etherscan.io', '10', 'eth_blockNumber', 'acceptance-etherscan-key'],
+      ['optimism.blockscout.com', null, 'eth_block_number', null],
+      ['optimism.blockscout.com', null, 'txlist', null],
+      ['optimism.blockscout.com', null, 'txlistinternal', null],
+      ['optimism.blockscout.com', null, 'tokentx', null],
+    ]);
+    assert.deepEqual((await stored(db, ids.optimism)).map((row) => [row.txid, row.asset, row.received, row.direction]), [
+      [bare(13), null, String(ether(0.25)), 'in'], [bare(12), null, String(ether(0.5)), 'in'],
+    ]);
+    // The next pass goes straight to Blockscout instead of asking the refusing plan again.
+    const again2 = await fallbackCalls(() => s.addresses.sync(owner, ids.optimism));
+    assert.equal(again2.result.outcome, 'complete');
+    assert.ok(again2.urls.every((url) => url.hostname === 'optimism.blockscout.com'));
+    await post('evm', { chainid: 43114, planRequired: true });
+    const refused = await s.addresses.sync(owner, ids.avalanche);
+    assert.deepEqual([refused.outcome, refused.reason], ['provider_error', 'plan_required']);
+    assert.match(require(`${dist}/wallet-addresses/chain-sync.js`).failureMessage('Avalanche C-Chain', 'plan_required'), /free Etherscan plan does not cover Avalanche C-Chain/);
+    console.log('PASS EVM-FALLBACK a chain Etherscan\'s plan refuses is read from its Blockscout explorer without a key and continues from the stored block; a chain without one reports the plan');
+
     // EVM-DB: the checks name every chain the app reads and keep the 0x format.
     for (const network of ['zksync', 'linea', 'scroll', 'base']) {
       await db.query(`INSERT INTO wallet_addresses(id,"ownerId",network,address) VALUES (gen_random_uuid(),$1,$2,$3)`, [owner, network, address(`check-${network}`)]);
