@@ -30,7 +30,7 @@ export default function PageHeader({
   return (
     <header className="shell-page__head">
       <h1>{title}</h1>
-      {actions}
+      {actions ? <div className="shell-page__actions">{actions}</div> : null}
       {shown && <CurrencySwitch value={shown} onChange={setAsked} />}
       <button
         type="button"

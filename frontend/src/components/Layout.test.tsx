@@ -51,13 +51,14 @@ describe('SHELL-002 navigation presentation', () => {
     expect(target?.getAttribute('tabindex')).toBe('-1');
   });
 
-  it('keeps the compact menu button contract and an English logout', async () => {
+  it('always shows the sections (no menu button) and keeps an English logout', async () => {
     const document = await markup();
     const buttons = [...document.querySelectorAll('nav button')];
-    const toggle = buttons.find((button) => button.textContent === 'Menu');
-    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
-    expect(toggle?.getAttribute('aria-controls')).toBe('application-menu');
-    expect(document.getElementById('application-menu')).not.toBeNull();
+    expect(buttons.some((button) => button.textContent === 'Menu')).toBe(false);
+    expect(document.querySelector('[aria-expanded]')).toBeNull();
+    expect(
+      document.getElementById('application-menu')?.querySelectorAll('a').length,
+    ).toBeGreaterThan(4);
     expect(buttons.some((button) => button.getAttribute('aria-label') === 'Log out')).toBe(true);
   });
 });

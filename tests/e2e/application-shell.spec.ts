@@ -89,7 +89,8 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(200);
 
   const nav = page.getByRole('navigation', { name: 'Main navigation' });
-  const toggle = page.getByRole('button', { name: 'Menu', exact: true });
+  // The sections are always on screen; there is no menu button on any width (M31).
+  const menuButton = page.getByRole('button', { name: 'Menu', exact: true });
   const apiRequests: string[] = [];
   page.on('request', (request) => {
     const { pathname } = new URL(request.url());
@@ -97,7 +98,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   });
 
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(toggle).toBeHidden();
+  await expect(menuButton).toHaveCount(0);
   const sections = [
     ['Dashboard', '/dashboard'],
     ['Portfolio', '/portfolio'],
@@ -239,29 +240,28 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
 
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await expect(toggle).toHaveAttribute('aria-controls', 'application-menu');
-    await expect(nav.getByText(owner.email, { exact: true })).toBeVisible();
-    await toggle.focus();
-    await page.keyboard.press('Enter');
-    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(menuButton).toHaveCount(0);
+    await expect(nav.getByRole('button', { name: 'Log out', exact: true })).toBeVisible();
     const accountLink = nav.getByRole('link', { name: 'Ручные счета', exact: true });
     await expect(accountLink).toHaveAttribute('aria-current', 'page');
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
-    await accountLink.focus();
-    await page.keyboard.press('Escape');
-    await expect(toggle).toBeFocused();
-    await expect(accountLink).toBeHidden();
-    await page.keyboard.press('Tab');
-    await expect(nav.locator('#application-menu :focus')).toHaveCount(0);
-    await toggle.click();
+    // The strip scrolls the current section into view instead of hiding it behind a menu.
+    const strip = await nav.locator('#application-menu').boundingBox();
+    await expect
+      .poll(async () => {
+        const link = await accountLink.boundingBox();
+        return (
+          !!strip &&
+          !!link &&
+          link.x >= strip.x - 1 &&
+          link.x + link.width <= strip.x + strip.width + 1
+        );
+      })
+      .toBe(true);
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
     await nav.getByRole('link', { name: 'Ручные цены', exact: true }).click();
     await expect(page).toHaveURL(`${origin}/manual-prices`);
-    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await toggle.click();
     await nav.getByRole('link', { name: 'Ручные счета', exact: true }).click();
     await expect(page).toHaveURL(`${origin}/manual-accounts`);
     await fitsViewport(page);
@@ -269,7 +269,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
 
   for (const width of [1280, 1440]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(toggle).toBeHidden();
+    await expect(menuButton).toHaveCount(0);
     await expect(nav.getByRole('link', { name: 'Dashboard', exact: true })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Ручные счета', exact: true })).toBeVisible();
     await fitsViewport(page);
@@ -291,9 +291,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, honest legacy 
   ] as const) {
     await page.goto(retired);
     await expect(page).toHaveURL(`${origin}${replacement}`);
-    await expect(
-      page.getByRole('heading', { level: 1, name: heading, exact: true }),
-    ).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
   }
 
   // SHELL-006-A: with no stored choice System follows a dark device, then a light one.

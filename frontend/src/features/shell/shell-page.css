@@ -223,8 +223,28 @@
   color: var(--accent);
 }
 
+/* Page-specific actions: inline with the title row on wide screens. */
+.shell-page__actions {
+  display: contents;
+}
+
+/* Phones: the title, then the currency and "Add transaction" on one row, then the page's own
+   actions on a row of their own. */
 @media (max-width: 560px) {
   .shell-page__head h1 {
+    width: 100%;
+  }
+
+  .shell-page__head > .shell-button--primary {
+    flex: 1;
+    min-height: 40px;
+  }
+
+  .shell-page__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    order: 1;
     width: 100%;
   }
 }

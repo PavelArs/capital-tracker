@@ -23,18 +23,31 @@ export default function Layout() {
   // The header's display currency follows the owner from page to page.
   const [asked] = useAskedCurrency();
   const { t } = useTranslation();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   // CLS-COUNT: blockchain transactions waiting for an answer, next to Transactions.
   const toClassify = useNeedsClassification();
   // Open by default: the owner still works in these screens until they are replaced.
   const [legacyOpen, setLegacyOpen] = useState(true);
-  const menuToggleRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
-    setMobileMenuOpen(false);
     if (isLegacyPath(pathname)) setLegacyOpen(true);
+  }, [pathname]);
+
+  // Phones show the sections as a swipeable strip: keep the current one in view, also after a
+  // turn of the device.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the path decides which link is current.
+  useEffect(() => {
+    const center = () => {
+      const strip = menuRef.current;
+      const current = strip?.querySelector<HTMLElement>('a[aria-current="page"]');
+      if (!strip || !current || strip.scrollWidth <= strip.clientWidth) return;
+      strip.scrollLeft = current.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
+    };
+    center();
+    window.addEventListener('resize', center);
+    return () => window.removeEventListener('resize', center);
   }, [pathname]);
 
   const handleLogout = useCallback(async () => {
@@ -54,7 +67,6 @@ export default function Layout() {
   }, [logout, navigate, showError, t]);
 
   function followLink() {
-    setMobileMenuOpen(false);
     mainRef.current?.focus();
   }
 
@@ -65,34 +77,14 @@ export default function Layout() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <nav
-        className="shell-nav"
-        aria-label="Main navigation"
-        onKeyDown={(event) => {
-          if (event.key === 'Escape' && mobileMenuOpen) {
-            event.preventDefault();
-            setMobileMenuOpen(false);
-            menuToggleRef.current?.focus();
-          }
-        }}
-      >
+      <nav className="shell-nav" aria-label="Main navigation">
         <div className="shell-nav__header">
           <div className="shell-brand">
             <BrandMark />
             Capital
           </div>
-          <button
-            ref={menuToggleRef}
-            type="button"
-            className="shell-nav__toggle"
-            onClick={() => setMobileMenuOpen((open) => !open)}
-            aria-expanded={mobileMenuOpen}
-            aria-controls="application-menu"
-          >
-            Menu
-          </button>
         </div>
-        <div id="application-menu" className={`shell-nav__menu${mobileMenuOpen ? ' is-open' : ''}`}>
+        <div id="application-menu" ref={menuRef} className="shell-nav__menu">
           <ul className="shell-nav__sections" data-nav-group="sections">
             {shellSections.map((section) => (
               <li key={section.path}>
@@ -131,7 +123,7 @@ export default function Layout() {
           <SyncIndicator onFollow={followLink} />
         </div>
         <div className="shell-owner">
-          <span className="shell-owner__avatar" aria-hidden="true">
+          <span className="shell-owner__avatar" aria-hidden="true" title={email}>
             {email.charAt(0).toUpperCase()}
           </span>
           <span className="shell-owner__who">
