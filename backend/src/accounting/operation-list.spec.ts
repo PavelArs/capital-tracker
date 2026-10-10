@@ -1766,6 +1766,37 @@ describe('list-all-operations projection', () => {
     });
   });
 
+  describe('BYBIT-CHAIN-FACTS', () => {
+    const facts = {
+      kind: 'withdrawal' as const,
+      chain: 'ARBI',
+      network: 'arbitrum' as const,
+      address: `0x${'ab'.repeat(20)}`,
+      fromAddress: null,
+      hash: `0x${'d'.repeat(64)}`,
+    };
+
+    it('a Bybit withdrawal row carries the chain, address and hash Bybit recorded', () => {
+      const row = chain(15, {
+        wallet: { id: id(27), network: 'bybit', address: '1000001', label: null },
+        account: trust,
+        txid: 'bybit-withdrawal-9000001',
+        asset: 'ETH',
+        direction: 'out',
+        receivedUnits: '0',
+        sentUnits: '1000000000000000000',
+        exchange: facts,
+      });
+      const [operation] = projectOperations(now, sources({ chain: [row] })).operations;
+      expect(operation.chain?.exchange).toEqual(facts);
+    });
+
+    it('any other row has none', () => {
+      const [operation] = projectOperations(now, sources({ chain: [chain(15)] })).operations;
+      expect(operation.chain).not.toHaveProperty('exchange');
+    });
+  });
+
   describe('SWAP-ONE-TX', () => {
     // A DEX swap: the owner's transaction calls a contract that takes one coin and returns
     // another in the same transaction, so its two legs are the two sides of one swap.

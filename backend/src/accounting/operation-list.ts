@@ -1,5 +1,6 @@
 import { type AccountingCurrency, FxConverter, moscowDate } from '../fx-rates/fx-conversion';
 import { priceAt } from '../prices/market-price.store';
+import type { ExchangeChainFacts } from '../wallet-addresses/bybit-records';
 import {
   chainAsset,
   isExchange,
@@ -180,6 +181,8 @@ export interface ChainOperationInput {
   stakeUnits?: string;
   /** SWAP-ONE-TX: the owner's own transaction called a contract (Ethereum), on its ether leg. */
   call?: ContractCall | null;
+  /** BYBIT-CHAIN-FACTS: a Bybit deposit or withdrawal on a blockchain, as Bybit recorded it. */
+  exchange?: ExchangeChainFacts | null;
   classification?: ChainClassificationInput | null;
 }
 /** SWAP-ONE-TX: a contract call, named by its method as the explorer decodes it, or null. */
@@ -267,6 +270,8 @@ export interface Operation {
     pairedTxid: string | null;
     /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
     call?: ContractCall;
+    /** BYBIT-CHAIN-FACTS: the chain, address and hash of a Bybit deposit or withdrawal. */
+    exchange?: ExchangeChainFacts;
     /**
      * SWAP-ONE-TX-SUGGEST: the one leg of the same transaction that moved another coin the
      * other way, as the suggested other side of a swap; only while both are unanswered.
@@ -504,6 +509,7 @@ function chainOperation(
       priceObservedAt: price?.observedAt ?? null,
       direction: leg,
       pairedTxid: null,
+      ...(row.exchange ? { exchange: row.exchange } : {}),
     },
     status: 'needs-classification',
     source: 'chain',

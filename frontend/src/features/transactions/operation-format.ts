@@ -149,6 +149,27 @@ export function hashOf(
   return network && isEvm(network) ? `0x${hash}` : hash;
 }
 
+/**
+ * BYBIT-CHAIN-FACTS: what Bybit recorded of a deposit or withdrawal on a blockchain: the chain by
+ * name, the address, and the chain hash (written as its network writes it) with the network that
+ * can open it. Null for any other row.
+ */
+export function exchangeChain(operation: Operation) {
+  const facts = operation.chain?.exchange;
+  if (!facts) return null;
+  const { network } = facts;
+  const hash =
+    facts.hash && network && isEvm(network) && !/^0x/i.test(facts.hash)
+      ? `0x${facts.hash}`
+      : facts.hash;
+  return {
+    ...facts,
+    hash,
+    chainName: network ? networkNames[network] : facts.chain,
+    addressLabel: facts.kind === 'withdrawal' ? 'Withdrawal address' : 'Deposit address',
+  };
+}
+
 /** "Trade 2100000000000000001": a Bybit record that has no blockchain hash. */
 export function exchangeRecord(operation: Operation): string | null {
   return recordName(operation.chain?.txid ?? '');

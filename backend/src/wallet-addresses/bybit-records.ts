@@ -7,7 +7,7 @@ import type {
   BybitExecution,
   BybitWithdrawal,
 } from './bybit-client';
-import { isBybitCoin, networkAssets } from './chain-assets';
+import { isBybitCoin, type Network, networkAssets } from './chain-assets';
 
 // sync-bybit-account (M22): Bybit's records as raw legs of the account, never edited later
 // (except once, BYBIT-ANY-COIN: see completedTradeLeg). A leg moves one coin the app tracks;
@@ -260,6 +260,61 @@ export function chainTxid(chain: string, txID: string): string | null {
   if (!pattern) return null;
   const hash = chain === 'SOL' ? txID : txID.toLowerCase().replace(/^0x/, '');
   return pattern.test(hash) ? hash : null;
+}
+
+// Bybit's chain names for the networks the app can open on an explorer; any other chain is shown
+// by the name Bybit gives it.
+const chainNetworks: Record<string, Network> = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  ARBI: 'arbitrum',
+  BASE: 'base',
+  OP: 'optimism',
+  MATIC: 'polygon',
+  BSC: 'bnb',
+  AVAXC: 'avalanche',
+  SOL: 'solana',
+  TRX: 'tron',
+  XLM: 'stellar',
+  ZEC: 'zcash',
+};
+
+/** BYBIT-CHAIN-FACTS: where a deposit or withdrawal went on its blockchain, as Bybit recorded it. */
+export interface ExchangeChainFacts {
+  kind: 'deposit' | 'withdrawal';
+  /** Bybit's name of the chain: "ARBI" is Arbitrum One. */
+  chain: string;
+  /** The app's network for that chain, or null when it has none. */
+  network: Network | null;
+  /** The withdrawal address, or the address Bybit gave to deposit to. */
+  address: string | null;
+  /** A deposit's sending address, when Bybit says it. */
+  fromAddress: string | null;
+  /** The chain transaction's hash as Bybit sends it, null until a withdrawal is sent. */
+  hash: string | null;
+}
+
+const plain = (value: unknown, pattern: RegExp): string | null =>
+  typeof value === 'string' && pattern.test(value) ? value : null;
+
+/**
+ * BYBIT-CHAIN-FACTS: the chain, addresses and hash Bybit's deposit or withdrawal record carries.
+ * Nothing from the record is shown unless it looks like what it should be.
+ */
+export function chainFacts(record: unknown): ExchangeChainFacts | null {
+  if (typeof record !== 'object' || record === null) return null;
+  const item = record as Record<string, unknown>;
+  const chain = plain(item.chain, /^[0-9A-Za-z_-]{1,32}$/);
+  if (!chain || (item.kind !== 'deposit' && item.kind !== 'withdrawal')) return null;
+  const address = /^[0-9A-Za-z:_.-]{6,128}$/;
+  return {
+    kind: item.kind,
+    chain,
+    network: chainNetworks[chain.toUpperCase()] ?? null,
+    address: plain(item.toAddress, address),
+    fromAddress: plain(item.fromAddress, address),
+    hash: plain(item.txID, /^[0-9A-Za-z_:-]{16,128}$/),
+  };
 }
 
 const digest = (parts: string[]) =>

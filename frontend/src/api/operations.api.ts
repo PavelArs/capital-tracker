@@ -109,6 +109,15 @@ export interface Operation {
     pairedTxid?: string | null;
     /** SWAP-ONE-TX: the owner's transaction called a contract; its method when it is named. */
     call?: { method: string | null };
+    /** BYBIT-CHAIN-FACTS: where a Bybit deposit or withdrawal went on its blockchain. */
+    exchange?: {
+      kind: 'deposit' | 'withdrawal';
+      chain: string;
+      network: Exclude<OperationWallet['network'], 'bybit'> | null;
+      address: string | null;
+      fromAddress: string | null;
+      hash: string | null;
+    };
     /** SWAP-ONE-TX-SUGGEST: the other leg of the same transaction, as the other side of a swap. */
     swapWith?: { addressId: string; txid: string };
   } | null;
