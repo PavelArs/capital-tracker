@@ -443,10 +443,25 @@ a.portfolio-asset__name:hover {
   margin: 0;
 }
 
-.portfolio-operations li > span:first-child {
+.portfolio-operations li > span:first-child,
+.portfolio-operations li > .portfolio-operation > span:first-child {
   display: grid;
   justify-items: start;
   gap: 2px;
+}
+
+/* A transaction of the wallet page: the whole row opens it in Transactions. */
+.portfolio-operations li > .portfolio-operation {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.portfolio-operations li > .portfolio-operation:hover {
+  color: var(--accent);
 }
 
 .portfolio-operations__all {
