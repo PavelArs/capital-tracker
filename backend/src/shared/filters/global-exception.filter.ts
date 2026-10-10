@@ -41,6 +41,17 @@ function conflictDependent(status: number, value: unknown) {
   return value as Record<string, unknown>;
 }
 
+// Frames only: the first stack line repeats the error message, which may quote submitted
+// values or database parameters.
+function stackFrames(exception: unknown): string | undefined {
+  if (!(exception instanceof Error) || !exception.stack) return undefined;
+  return exception.stack
+    .split('\n')
+    .filter((line) => line.trimStart().startsWith('at '))
+    .slice(0, 12)
+    .join('\n');
+}
+
 @Injectable()
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -148,6 +159,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       method: request.method,
       url: request.url.split('?')[0],
       ip: request.ip,
+      requestId: (request as Request & { id?: unknown }).id,
     };
 
     if (status >= 500) {
@@ -155,6 +167,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         {
           ...logContext,
           errorType: exception instanceof Error ? exception.name : 'UnknownError',
+          stack: stackFrames(exception),
         },
         'Server error occurred',
       );

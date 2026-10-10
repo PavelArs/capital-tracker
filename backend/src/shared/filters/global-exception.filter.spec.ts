@@ -78,4 +78,24 @@ describe('GlobalExceptionFilter', () => {
       expect.objectContaining({ coverage: unstarted }),
     );
   });
+  it('OBS-ERR-1 logs a server error with its request id and stack frames but not its message', () => {
+    const logger = { setContext: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const response = { status: jest.fn(), json: jest.fn(), setHeader: jest.fn() };
+    response.status.mockReturnValue(response);
+    const request = { url: '/accounting/operations?x=1', method: 'GET', ip: '', id: 'req-1' };
+    const host = {
+      switchToHttp: () => ({ getResponse: () => response, getRequest: () => request }),
+    } as unknown as ArgumentsHost;
+    const failure = new Error('duplicate key value (owner=private-marker)');
+
+    new GlobalExceptionFilter(logger as unknown as PinoLogger).catch(failure, host);
+
+    expect(response.status).toHaveBeenCalledWith(500);
+    const [fields] = logger.error.mock.calls[0];
+    expect(fields).toEqual(
+      expect.objectContaining({ requestId: 'req-1', url: '/accounting/operations' }),
+    );
+    expect(fields.stack).toContain('global-exception.filter.spec');
+    expect(JSON.stringify(fields)).not.toContain('private-marker');
+  });
 });
