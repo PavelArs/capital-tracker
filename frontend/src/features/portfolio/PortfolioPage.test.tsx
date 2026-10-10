@@ -320,6 +320,11 @@ describe('PV-UI Portfolio values every asset', () => {
     );
 
     const allocation = screen.getByRole('region', { name: 'Allocation' });
+    // The assets table comes first; how they are split follows it (review item P1).
+    const assetsCard = screen.getByRole('region', { name: 'Assets' });
+    expect(
+      assetsCard.compareDocumentPosition(allocation) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     const grouping = within(allocation).getByRole('radiogroup', { name: 'Group allocation by' });
     const slices = () =>
       within(allocation)
@@ -515,6 +520,15 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(within(dialog).getByText('Enter a name')).toBeInTheDocument();
     await user.type(name, 'Gold');
     expect(within(dialog).queryByText('Enter a name')).not.toBeInTheDocument();
+  });
+
+  it('DIALOG-CLOSE closes Add asset from the ✕ at the right of the title', async () => {
+    vi.spyOn(portfolioValuationApi, 'get').mockResolvedValue(portfolio([bitcoin]));
+    const user = userEvent.setup();
+    renderAt('/portfolio');
+    const dialog = await openDialog(user);
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('ADD-ASSET-BALANCE adds a ruble deposit with its value as a deposit and filters by type', async () => {
@@ -752,7 +766,9 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     await user.type(within(dialog).getByLabelText('Amount'), '100');
     await user.click(within(dialog).getByRole('button', { name: 'Add asset' }));
     await within(dialog).findByRole('alert');
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await user.click(
+      within(dialog).getAllByRole('button', { name: 'Close' }).at(-1) as HTMLElement,
+    );
     expect(await screen.findByRole('row', { name: /^Deposit/ })).toBeInTheDocument();
 
     vi.mocked(accountingApi.listAccounts).mockResolvedValue({ items: [], nextCursor: null });

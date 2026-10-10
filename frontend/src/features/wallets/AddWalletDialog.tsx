@@ -4,6 +4,7 @@ import { isAxiosError } from 'axios';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
+import CloseButton from '../shell/CloseButton';
 import { networkIcon, networks as tracked } from './networks';
 import { accountNamed, checkAddress, checkApiKey } from './wallets';
 
@@ -233,6 +234,7 @@ export default function AddWalletDialog({
         <form onSubmit={next} noValidate>
           <div className="portfolio-dialog__head">
             <h2 id="add-wallet">Add wallet</h2>
+            <CloseButton onClick={onClose} disabled={saving} />
           </div>
           <div className="wallets-steps" aria-label={`Step ${step} of 3`}>
             {[1, 2, 3].map((item) => (

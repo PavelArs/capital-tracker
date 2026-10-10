@@ -11,7 +11,7 @@ import userEvent from '@testing-library/user-event';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import AddTransactionDialog from './AddTransactionDialog';
+import AddTransactionDialog, { splitAssets } from './AddTransactionDialog';
 import {
   addDecimal,
   bankRate,
@@ -258,6 +258,19 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await within(dialog).findByRole('group', { name: 'Asset' });
     return { dialog, onSaved };
   };
+
+  it('DIALOG-CLOSE closes from the ✕ at the right of the title', async () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <AddTransactionDialog onClose={onClose} onSaved={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Add transaction' });
+    await within(dialog).findByRole('group', { name: 'Asset' });
+    await userEvent.setup().click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 
   it('fills the Bank of Russia rate of the date and saves rubles as paid', async () => {
     const user = userEvent.setup();
@@ -901,5 +914,29 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('button', { name: 'Save transaction' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
     expect(create.mock.calls[0][1]).toMatchObject({ settlementCurrency: 'USDT' });
+  });
+});
+
+describe('ASSET-CHIPS which assets become chips', () => {
+  const many = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => asset(n, `Coin ${n}`, `C${n}`, 'crypto'));
+
+  it('shows every asset while there are few', () => {
+    expect(splitAssets(many.slice(0, 6), many[0].id, new Map())).toEqual({
+      shown: many.slice(0, 6),
+      more: [],
+    });
+  });
+
+  it('puts assets with a market price first and the unpriced ones behind the list', () => {
+    const priced = new Map([[many[7].id, '1']]);
+    const { shown, more } = splitAssets(many, many[7].id, priced);
+    expect(shown.map((item) => item.symbol)).toEqual(['C8', 'C1', 'C2', 'C3', 'C4', 'C5']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C7']);
+  });
+
+  it('always shows the chosen asset', () => {
+    const { shown, more } = splitAssets(many, many[6].id, new Map());
+    expect(shown.map((item) => item.symbol)).toEqual(['C1', 'C2', 'C3', 'C4', 'C5', 'C7']);
+    expect(more.map((item) => item.symbol)).toEqual(['C6', 'C8']);
   });
 });
