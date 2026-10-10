@@ -164,7 +164,12 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
 
   const update = (changes: Partial<AssetEntry>) =>
     setEntry((current) => ({ ...current, ...changes }));
-  const found = tried ? assetProblems(entry, accounts?.length ?? 0) : new Set<AssetProblem>();
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [left, setLeft] = useState<ReadonlySet<AssetProblem>>(new Set());
+  const leave = (problem: AssetProblem) => () =>
+    setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
+  const all = assetProblems(entry, accounts?.length ?? 0);
+  const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
   const fieldError = (problem: AssetProblem, text = problemText[problem]) =>
     found.has(problem) && (
       <span className="portfolio-field__error" id={`${id}-${problem}-error`}>
@@ -328,6 +333,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   value={entry.name}
                   disabled={locked}
                   onChange={(event) => update({ name: event.target.value })}
+                  onBlur={leave('name')}
                   {...invalid('name')}
                 />
                 {fieldError('name')}
@@ -345,6 +351,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                     value={entry.ticker}
                     disabled={locked}
                     onChange={(event) => update({ ticker: event.target.value })}
+                    onBlur={leave('ticker')}
                     {...invalid('ticker')}
                   />
                   {fieldError('ticker')}
@@ -364,6 +371,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   value={entry.amount}
                   disabled={balanceUnsure}
                   onChange={(event) => update({ amount: event.target.value })}
+                  onBlur={leave('amount')}
                   {...invalid('amount')}
                 />
                 {fieldError('amount')}
@@ -382,6 +390,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                       value={entry.value}
                       disabled={balanceUnsure}
                       onChange={(event) => update({ value: event.target.value })}
+                      onBlur={leave('value')}
                       {...invalid('value')}
                     />
                     <span className="portfolio-affix__suffix">{entry.currency}</span>
@@ -446,6 +455,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                   value={entry.accountId}
                   disabled={balanceUnsure}
                   onChange={(event) => update({ accountId: event.target.value })}
+                  onBlur={leave('account')}
                   {...invalid('account')}
                 >
                   {accounts.map((account) => (
@@ -467,6 +477,7 @@ export default function AddAssetDialog({ onClose, onAdded }: Props) {
                 value={entry.notes}
                 disabled={balanceUnsure}
                 onChange={(event) => update({ notes: event.target.value })}
+                onBlur={leave('notes')}
                 {...invalid('notes')}
               />
               {fieldError('notes')}

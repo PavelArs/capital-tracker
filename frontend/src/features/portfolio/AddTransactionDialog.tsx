@@ -213,6 +213,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const driver = useRef<'unit' | 'total'>(editing ? 'total' : 'unit');
   const [bank, setBank] = useState<{ key: string; rate: string | null } | null>(null);
   const [tried, setTried] = useState(false);
+  // Fields the owner has left: their problems show on blur and clear as soon as the value is fixed.
+  const [left, setLeft] = useState<ReadonlySet<EntryProblem>>(new Set());
+  // The date and time the rate and balance lookups follow: they move when the owner leaves the
+  // field, not on every keystroke of a half-typed date.
+  const [settled, setSettled] = useState(() => ({ date: initial.date, time: initial.time }));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const attempt = useRef<{ body: string; requestId: string } | null>(null);
@@ -287,8 +292,9 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   }, []);
 
   // The Bank of Russia rate of the chosen date fills the rate field until the owner edits it.
+  const settledEntry = { ...entry, ...settled };
   const rateKey = needsRate(entry.currency)
-    ? `${entry.currency}:${rateDate(entry, new Date(), Boolean(editing))}`
+    ? `${entry.currency}:${rateDate(settledEntry, new Date(), Boolean(editing))}`
     : null;
   useEffect(() => {
     if (!rateKey) return;
@@ -303,8 +309,10 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       live = false;
     };
   }, [rateKey]);
-  const prefill = bank && bank.key === rateKey ? bank.rate : null;
-  const rateLoading = rateKey !== null && bank?.key !== rateKey;
+  // While the date or time is still being typed the stored rate belongs to the old moment.
+  const pending = settled.date !== entry.date || settled.time !== entry.time;
+  const prefill = !pending && bank && bank.key === rateKey ? bank.rate : null;
+  const rateLoading = rateKey !== null && (pending || bank?.key !== rateKey);
   // An edit keeps its recorded instant; a new entry for today without a time is now.
   const timed = editing ? entry : withDefaultTime(entry, new Date());
   const shown: TransactionEntry = entry.rateEdited ? timed : { ...timed, rate: prefill ?? '' };
@@ -314,13 +322,13 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const sell = spends(kind);
   const buy = kind === 'buy';
   const transfer = kind === 'transfer';
-  const at = occurredAt(shown);
+  const at = occurredAt(editing ? settledEntry : withDefaultTime(settledEntry, new Date()));
   const availableKey =
     sell &&
     accountId &&
     entry.instrumentId &&
-    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
-    (!entry.time || /^\d{2}:\d{2}$/.test(entry.time))
+    /^\d{4}-\d{2}-\d{2}$/.test(settled.date) &&
+    (!settled.time || /^\d{2}:\d{2}$/.test(settled.time))
       ? `${accountId}|${entry.instrumentId}|${at}`
       : null;
   useEffect(() => {
@@ -352,8 +360,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
     other?.ticker.trim().toUpperCase() !== entry.currency &&
     cashAsset &&
     accountId &&
-    /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
-    (!entry.time || /^\d{2}:\d{2}$/.test(entry.time))
+    /^\d{4}-\d{2}-\d{2}$/.test(settled.date) &&
+    (!settled.time || /^\d{2}:\d{2}$/.test(settled.time))
       ? `${accountId}|${cashAsset.id}|${at}`
       : null;
   useEffect(() => {
@@ -390,7 +398,17 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
   const checked: TransactionEntry = other
     ? { ...shown, instrumentId: otherValid ? 'other' : '' }
     : shown;
-  const found = tried ? problems(checked, today(), kind) : new Set<EntryProblem>();
+  const all = problems(checked, today(), kind);
+  const overshown = overspent && (tried || left.has('amount'));
+  const found = tried ? all : new Set([...all].filter((problem) => left.has(problem)));
+  /** Marks a field as left, so its problem, if any, shows from now on. */
+  const leave = (problem: EntryProblem) => () =>
+    setLeft((current) => (current.has(problem) ? current : new Set(current).add(problem)));
+  /** Date and time settle when focus leaves them, and the lookups follow. */
+  const settle = (problem: 'date' | 'time') => () => {
+    leave(problem)();
+    setSettled({ date: entry.date, time: entry.time });
+  };
   const priced = kind === 'buy' || kind === 'sell';
   const usd = priced ? usdTotal(shown) : null;
   const accountName = accounts?.find((item) => item.id === accountId)?.name ?? 'This account';
@@ -484,6 +502,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    // Enter inside the date or time: settle it first, the rate and balance for it load, then save.
+    if (pending) {
+      setSettled({ date: entry.date, time: entry.time });
+      return;
+    }
     setTried(true);
     const account = accounts?.find((item) => item.id === accountId);
     const receiver = accounts?.find((item) => item.id === toAccountId);
@@ -741,6 +764,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         autoComplete="off"
                         value={other.ticker}
                         onChange={(event) => setOther({ ...other, ticker: event.target.value })}
+                        onBlur={leave('instrument')}
                         {...invalid('instrument')}
                       />
                       {fieldError('instrument', 'Enter the ticker: letters and digits, up to 32')}
@@ -774,7 +798,8 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         placeholder="0.00"
                         value={entry.amount}
                         onChange={(event) => setAmount(event.target.value)}
-                        {...(overspent
+                        onBlur={leave('amount')}
+                        {...(overshown
                           ? { 'aria-invalid': true, 'aria-describedby': `${id}-available` }
                           : invalid('amount'))}
                       />
@@ -789,7 +814,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                           date={at}
                           available={available}
                           loading={availableKey !== null && availability?.key !== availableKey}
-                          over={overspent}
+                          over={overshown}
                           onUseAll={useAll}
                         />
                       ))}
@@ -805,6 +830,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       max={today()}
                       value={entry.date}
                       onChange={(event) => update({ date: event.target.value })}
+                      onBlur={settle('date')}
                       {...invalid('date')}
                     />
                     {fieldError('date')}
@@ -857,6 +883,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             placeholder="0.00"
                             value={entry.total}
                             onChange={(event) => setTotal(event.target.value)}
+                            onBlur={leave('total')}
                             {...invalid('total')}
                           />
                           <span className="portfolio-affix__suffix">{entry.currency}</span>
@@ -927,6 +954,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                               update({ rate: event.target.value, rateEdited: true })
                             }
                             aria-describedby={`${id}-rate-hint`}
+                            onBlur={leave('rate')}
                             {...invalid('rate')}
                           />
                           <span className="portfolio-affix__suffix">
@@ -971,6 +999,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         value={entry.total}
                         onChange={(event) => update({ total: event.target.value })}
                         aria-describedby={`${id}-value-hint`}
+                        onBlur={leave('total')}
                         {...invalid('total')}
                       />
                       <span className="portfolio-affix__suffix">USD</span>
@@ -1096,6 +1125,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         type="time"
                         value={entry.time}
                         onChange={(event) => update({ time: event.target.value })}
+                        onBlur={settle('time')}
                         {...invalid('time')}
                       />
                       {fieldError('time')}
@@ -1113,6 +1143,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                             placeholder="0.00"
                             value={entry.fee}
                             onChange={(event) => update({ fee: event.target.value })}
+                            onBlur={leave('fee')}
                             {...invalid('fee')}
                           />
                           <span className="portfolio-affix__suffix">
@@ -1133,6 +1164,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                       placeholder="Optional"
                       value={entry.comment}
                       onChange={(event) => update({ comment: event.target.value })}
+                      onBlur={leave('comment')}
                       {...invalid('comment')}
                     />
                     {fieldError('comment')}

@@ -1260,7 +1260,11 @@ describe('M21: Bitcoin wallets by account public key', () => {
     const field = within(dialog).getByLabelText('Bitcoin wallet address');
     await user.click(field);
     await user.paste(`tpub${zpub.slice(4)}`);
+    // The refusal waits for the owner to leave the field.
+    expect(within(dialog).queryByText(/Testnet keys are not tracked/)).not.toBeInTheDocument();
+    await user.tab();
     expect(within(dialog).getByText(/Testnet keys are not tracked/)).toBeInTheDocument();
+    await user.click(field);
     await user.clear(field);
     await user.paste(`zprv${zpub.slice(4)}`);
     expect(field).toHaveValue('');
@@ -1697,7 +1701,9 @@ describe('Zcash wallets (M24)', () => {
     const field = within(dialog).getByLabelText('Zcash wallet address');
     expect(dialog).toHaveTextContent('Shielded balances are private, so the app cannot read them');
     await user.type(field, `zs1${'q'.repeat(75)}`);
+    await user.tab();
     expect(within(dialog).getByText(/This is a shielded address/)).toBeInTheDocument();
+    await user.click(field);
     await user.clear(field);
     await user.type(field, zcashAddress);
     expect(within(dialog).getByText('Transparent address')).toBeInTheDocument();

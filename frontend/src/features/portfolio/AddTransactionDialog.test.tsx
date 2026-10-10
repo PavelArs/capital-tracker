@@ -297,6 +297,52 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     });
   });
 
+  it('asks for the rate of a typed date only when the date field loses focus', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    await user.click(view.getByRole('radio', { name: 'RUB' }));
+    await waitFor(() => expect(rates).toHaveBeenCalled());
+    rates.mockClear();
+    await user.clear(view.getByLabelText('Date'));
+    await user.type(view.getByLabelText('Date'), '2025-06-08');
+    expect(rates).not.toHaveBeenCalled();
+    await user.tab();
+    await waitFor(() => expect(rates).toHaveBeenCalledWith('2025-06-08'));
+    expect(await view.findByDisplayValue('78.5')).toBe(view.getByLabelText('Exchange rate'));
+  });
+
+  it('shows a field problem when the field loses focus and clears it once fixed', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const amount = view.getByLabelText('Amount');
+    await user.click(amount);
+    await user.type(amount, 'abc');
+    expect(view.queryByText('Enter an amount greater than 0')).not.toBeInTheDocument();
+    await user.tab();
+    expect(view.getByText('Enter an amount greater than 0')).toBeInTheDocument();
+    await user.click(amount);
+    await user.clear(amount);
+    await user.type(amount, '2');
+    expect(view.queryByText('Enter an amount greater than 0')).not.toBeInTheDocument();
+  });
+
+  it('checks a typed date when the date field loses focus and clears the problem once fixed', async () => {
+    const user = userEvent.setup();
+    const { dialog } = await open();
+    const view = within(dialog);
+    const date = view.getByLabelText('Date');
+    await user.clear(date);
+    await user.type(date, '2999-01-01');
+    expect(view.queryByText('Choose a date, today or earlier')).not.toBeInTheDocument();
+    await user.tab();
+    expect(view.getByText('Choose a date, today or earlier')).toBeInTheDocument();
+    await user.clear(date);
+    await user.type(date, '2025-06-08');
+    expect(view.queryByText('Choose a date, today or earlier')).not.toBeInTheDocument();
+  });
+
   it('sends the rate the owner typed, and asks for one when none is stored', async () => {
     const user = userEvent.setup();
     const { dialog } = await open();
@@ -420,6 +466,9 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(view.queryByRole('button', { name: '+ Other asset' })).not.toBeInTheDocument();
     expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
     await user.type(view.getByLabelText('Amount'), '0.3');
+    // The warning waits for the owner to leave the amount.
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
+    await user.tab();
     expect(view.getByRole('alert')).toHaveTextContent(/Only 0\.2 BTC is available/);
     await user.clear(view.getByLabelText('Amount'));
     await user.type(view.getByLabelText('Amount'), '0.1');
@@ -518,12 +567,14 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     await user.click(view.getByRole('radio', { name: 'Sell' }));
     await user.clear(view.getByLabelText('Date'));
     await user.type(view.getByLabelText('Date'), '2026-04-01');
+    await user.tab();
     expect(await view.findByText(/Available in Hardware wallet: 0\.2 BTC/)).toBeInTheDocument();
     expect(available).toHaveBeenLastCalledWith(id(11), {
       instrumentId: id(1),
       at: '2026-04-01T00:00:00.000Z',
     });
     await user.type(view.getByLabelText('Amount'), '0.3');
+    await user.tab();
     expect(view.getByRole('alert')).toHaveTextContent(
       'Only 0.2 BTC is available in Hardware wallet on Apr 1, 2026 · Use all',
     );
