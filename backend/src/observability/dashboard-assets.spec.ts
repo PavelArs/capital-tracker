@@ -67,11 +67,12 @@ describe('OBS-LOKI the Loki and Alloy stack', () => {
     services: Record<string, { image: string; ports?: unknown }>;
   };
 
-  it('OBS-LOKI-1 pins both images by tag and digest and publishes no port', () => {
+  it('OBS-LOKI-1 pins both images by tag and digest and publishes only Loki on the loopback', () => {
     for (const service of Object.values(compose.services)) {
       expect(service.image).toMatch(/:[\w.-]+@sha256:[0-9a-f]{64}$/);
-      expect(service).not.toHaveProperty('ports');
     }
+    expect(compose.services.alloy).not.toHaveProperty('ports');
+    expect(compose.services.loki.ports).toEqual(['127.0.0.1:3100:3100']);
     expect(Object.keys(compose.services).sort()).toEqual(['alloy', 'loki']);
   });
 
