@@ -80,7 +80,7 @@ export interface Opening {
 const accountView = (row: AccountRow): AccountSummary => ({
   id: row.id,
   name: row.name,
-  kind: row.kind,
+  kind: row.kind ?? null,
   currentRevision: row.currentRevision ?? 0,
   createdAt: row.createdAt.toISOString(),
 });
@@ -118,11 +118,21 @@ export class AccountingService {
       name: value.name,
       ...(value.kind ? { kind: value.kind } : {}),
     });
+    // The kind column is named only when a kind is sent, so the database checks that build an
+    // account on a schema from before the column still work.
     const rows: AccountRow[] = await this.source.query(
       `INSERT INTO manual_accounts
-      (id,"ownerId","requestId","canonicalPayload",name,kind) VALUES ($1,$2,$3,$4,$5,$6)
+      (id,"ownerId","requestId","canonicalPayload",name${value.kind ? ',kind' : ''})
+      VALUES ($1,$2,$3,$4,$5${value.kind ? ',$6' : ''})
       ON CONFLICT ("ownerId","requestId") DO NOTHING RETURNING *`,
-      [randomUUID(), owner, value.requestId, payload, value.name, value.kind ?? null],
+      [
+        randomUUID(),
+        owner,
+        value.requestId,
+        payload,
+        value.name,
+        ...(value.kind ? [value.kind] : []),
+      ],
     );
     const row =
       rows[0] ??
