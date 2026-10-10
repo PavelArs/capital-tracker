@@ -38,8 +38,47 @@ describe('OBS-ASSETS Grafana and Prometheus files', () => {
   });
 
   it('OBS-ASSET-3 name no server, address or credential', () => {
-    for (const file of [...files, 'README.md', 'alloy-logs.alloy']) {
-      expect(read(file)).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b|pavelars\.ru|api[_-]?key|secret/i);
+    for (const file of [
+      ...files,
+      'README.md',
+      'alloy-logs.alloy',
+      'loki/docker-compose.yml',
+      'loki/loki.yml',
+      'loki/config.alloy',
+    ]) {
+      // Loopback and wildcard listen addresses are not servers.
+      const text = read(file).replace(/\b(127\.0\.0\.1|0\.0\.0\.0)\b/g, '');
+      expect(text).not.toMatch(/\b\d{1,3}(\.\d{1,3}){3}\b|pavelars\.ru|api[_-]?key|secret/i);
     }
+  });
+});
+
+describe('OBS-LOKI the Loki and Alloy stack', () => {
+  const compose = parse(read('loki/docker-compose.yml')) as {
+    services: Record<string, { image: string; ports?: unknown }>;
+  };
+
+  it('OBS-LOKI-1 pins both images by tag and digest and publishes no port', () => {
+    for (const service of Object.values(compose.services)) {
+      expect(service.image).toMatch(/:[\w.-]+@sha256:[0-9a-f]{64}$/);
+      expect(service).not.toHaveProperty('ports');
+    }
+    expect(Object.keys(compose.services).sort()).toEqual(['alloy', 'loki']);
+  });
+
+  it('OBS-LOKI-2 keeps its Alloy pipeline equal to the snippet and adds only the Loki write', () => {
+    const lines = (file: string) =>
+      read(file)
+        .split('\n')
+        .filter((line) => line.trim() !== '' && !line.trimStart().startsWith('//'));
+    const snippet = lines('alloy-logs.alloy');
+    const stack = lines('loki/config.alloy');
+    expect(stack.slice(0, snippet.length)).toEqual(snippet);
+    expect(stack.slice(snippet.length).join('\n')).toContain('http://loki:3100/loki/api/v1/push');
+  });
+
+  it('OBS-LOKI-3 parses the Loki configuration and keeps 30 days', () => {
+    const loki = parse(read('loki/loki.yml')) as { limits_config: { retention_period: string } };
+    expect(loki.limits_config.retention_period).toBe('720h');
   });
 });
