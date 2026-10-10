@@ -16,6 +16,7 @@ import {
   ReconcileNote,
   subtitle,
   trackedSymbols,
+  withoutHiddenTokens,
 } from './WalletParts';
 import { gapAddress, isCoin, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
@@ -134,7 +135,8 @@ export default function WalletsPage() {
               <ul className="wallets-sources">{rows(unassigned)}</ul>
             </section>
           )}
-          {cards.map(({ account, addresses: own, holdings }) => {
+          {cards.map(({ account, addresses: own, holdings: all }) => {
+            const holdings = withoutHiddenTokens(all, own);
             const tracked = trackedSymbols(own);
             const manual = holdings.filter(
               (holding) => ![...tracked].some((symbol) => isCoin(holding.asset, symbol)),

@@ -15,7 +15,13 @@ import AddWalletDialog, { type WalletAccount } from './AddWalletDialog';
 import RenameWalletDialog from './RenameWalletDialog';
 import { SyncBadge, type SyncRun, syncAge } from './SyncStatus';
 import { useWallets } from './useWallets';
-import { AddressRow, holdingsOf, ReconcileNote, subtitle } from './WalletParts';
+import {
+  AddressRow,
+  holdingsOf,
+  ReconcileNote,
+  subtitle,
+  withoutHiddenTokens,
+} from './WalletParts';
 import { gapAddress, pricesOf, reconcile } from './wallets';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
@@ -190,7 +196,7 @@ export default function WalletPage() {
   const own = list.filter((address) => address.accountId === accountId);
   const currency = portfolio?.currency ?? 'USD';
   const prices = pricesOf(portfolio);
-  const holdings = portfolio ? holdingsOf(portfolio, accountId) : [];
+  const holdings = portfolio ? withoutHiddenTokens(holdingsOf(portfolio, accountId), own) : [];
   const chains = tokenChains(addresses, accountId);
   const total = account?.pricedValue ?? null;
   const open = list.find((address) => address.id === openId);
