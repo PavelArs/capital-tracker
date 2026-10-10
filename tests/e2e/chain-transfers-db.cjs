@@ -408,6 +408,34 @@ async function refused(db, s) {
   assert.deepEqual(late.coverage, { accountId: receiver, coverageFrom: '2026-10-05T00:00:00.000Z' });
   assert.equal(late.dependent, undefined);
   assert.equal(await count(s, owner), 2, 'Neither leg of the refused send was answered');
+
+  stage = 'XFER-REFUSED an account opened with balances has no records to move coins in or out of';
+  const legacy = await account(s, owner, 'Opened with balances');
+  const { value: ether } = await s.accounting.createInstrument(owner, {
+    requestId: randomUUID(),
+    name: 'Synthetic coin',
+    symbol: 'SYN',
+    assetType: 'crypto',
+  });
+  await s.accounting.saveOpening(owner, legacy, {
+    requestId: randomUUID(),
+    expectedRevision: 0,
+    asOf: '2026-01-01T00:00:00.000Z',
+    positions: [{ instrumentId: ether.id, quantity: '5', costStatus: 'known', totalCostUsd: '9000' }],
+  });
+  const c = await wallet(db, owner, legacy, 'bc1q9h6yz4cl2y7p8v6kgsz3vurmk4vqq9a63k6ctw');
+  await raw(db, owner, c, 23, 'out', '0', '1010000', '10000', '2026-10-02T10:00:00.000Z');
+  try {
+    await classify(s, owner, c, 23, {
+      expectedVersion: 0,
+      classification: { type: 'transfer', accountId: receiver },
+    });
+    assert.fail('The transfer must be refused');
+  } catch (error) {
+    assert.equal(error.getStatus?.(), 409);
+    assert.equal(error.getResponse().message, 'The records of an account have not started');
+    assert.deepEqual(error.getResponse().coverage, { accountId: legacy, coverageFrom: null });
+  }
   console.log('PASS XFER-REFUSED');
 }
 

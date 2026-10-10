@@ -107,19 +107,26 @@ export function shortOf(error: unknown): DependentOperation | null {
 }
 
 /** An account whose records start after the date of the change, when the server named it. */
-export function coverageOf(error: unknown): { accountId: string; coverageFrom: string } | null {
+export function coverageOf(
+  error: unknown,
+): { accountId: string; coverageFrom: string | null } | null {
   const data = isAxiosError(error) ? error.response?.data : undefined;
   return isAxiosError(error) && error.response?.status === 409 && data?.coverage
-    ? (data.coverage as { accountId: string; coverageFrom: string })
+    ? (data.coverage as { accountId: string; coverageFrom: string | null })
     : null;
 }
 
 /** "Wallet A does not hold enough ETH on Mar 1, 2026 to move it." */
 export const shortText = (account: string, coin: string, date: string) =>
   `${account} does not hold enough ${coin} on ${dateText(date)} for this transfer.`;
-/** The account's records start later than the transaction, so nothing can move in or out. */
-export const coverageText = (account: string, from: string, date: string) =>
-  `The records of ${account} start on ${dateText(from)}, after this transfer on ${dateText(date)}.`;
+/**
+ * The account's records start later than the transaction, so nothing can move in or out; with no
+ * start date its records have not started: it was opened with balances.
+ */
+export const coverageText = (account: string, from: string | null, date: string) =>
+  from === null
+    ? `The records of ${account} have not started: it was opened with balances, so start them on Manual accounts first.`
+    : `The records of ${account} start on ${dateText(from)}, after this transfer on ${dateText(date)}.`;
 
 function failure(
   error: unknown,
@@ -140,7 +147,9 @@ function failure(
   if (short)
     return `${shortText(name(short.accountId), coin, short.occurredAt)} Add the receipts that bring it there first.`;
   if (coverage)
-    return `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
+    return coverage.coverageFrom === null
+      ? coverageText(name(coverage.accountId), null, date)
+      : `${coverageText(name(coverage.accountId), coverage.coverageFrom, date)} Choose a later date.`;
   if (dependent)
     return `A later transaction on ${dateText(dependent.occurredAt)} spends these coins, so the account would not hold enough. Change that transaction first.`;
   if (status === 409 || status === 422)

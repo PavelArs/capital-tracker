@@ -52,6 +52,17 @@ export interface ConnectedLedger {
 export type ConnectedLedgerCache = Map<string, ConnectedLedger>;
 
 const conflict = () => new ConflictException('Accounting history conflicts with saved state');
+/**
+ * An account opened with balances on the older screens has no journal to add to until it is
+ * started there; saying which account lets the owner act, where a bare conflict cannot.
+ */
+export const journalNotStarted = (accountId: string) =>
+  new ConflictException({
+    statusCode: 409,
+    error: 'Conflict',
+    message: 'The records of an account have not started',
+    coverage: { accountId, coverageFrom: null },
+  });
 export const emptyTransferSummary = (): TransferSummary => ({
   receivedBasisUsd: '0',
   sentBasisUsd: '0',
@@ -123,7 +134,11 @@ export async function readConnectedLedger(
     'SELECT * FROM account_trade_journals WHERE "ownerId"=$1 AND "accountId"=ANY($2::uuid[]) ORDER BY "accountId"',
     [owner, ids],
   );
-  if (journals.length !== ids.length) throw conflict();
+  if (journals.length !== ids.length) {
+    const started = new Set(journals.map((journal) => journal.accountId));
+    const missing = ids.find((id) => !started.has(id));
+    throw missing ? journalNotStarted(missing) : conflict();
+  }
   // Count first: do not materialize a corrupt/oversized component and then truncate it.
   const counts: { accountId: string; count: number }[] = await manager.query(
     `SELECT t."accountId",count(*)::int AS count FROM account_trades t

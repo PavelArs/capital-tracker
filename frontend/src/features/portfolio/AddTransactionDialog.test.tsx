@@ -565,6 +565,14 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       },
       /The records of Exchange start on Jan 1, 2999, after this transfer on /,
     ],
+    [
+      'XFER-REFUSED names the account opened with balances whose records have not started',
+      {
+        message: 'The records of an account have not started',
+        coverage: { accountId: id(13), coverageFrom: null },
+      },
+      /The records of Exchange have not started: it was opened with balances, so start them on Manual accounts first/,
+    ],
   ])('%s', async (_name, data, expected) => {
     const user = userEvent.setup();
     vi.spyOn(ownedTransfersApi, 'create').mockRejectedValue(

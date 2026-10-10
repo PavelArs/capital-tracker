@@ -488,7 +488,9 @@ function failure(
     return `${shortText(name(short.accountId), operation.asset.symbol ?? operation.asset.name, short.occurredAt)} Classify the receipts that brought the coins there first, or choose another type.`;
   const coverage = coverageOf(error);
   if (coverage)
-    return `${coverageText(name(coverage.accountId), coverage.coverageFrom, operation.occurredAt)} Hide the transaction if its coins are already in that opening balance, or choose another type.`;
+    return coverage.coverageFrom === null
+      ? `${coverageText(name(coverage.accountId), null, operation.occurredAt)} Until then this transaction can only be hidden.`
+      : `${coverageText(name(coverage.accountId), coverage.coverageFrom, operation.occurredAt)} Hide the transaction if its coins are already in that opening balance, or choose another type.`;
   if (dependentOf(error))
     return 'A later transaction spends these coins, so this answer cannot change now. Change that transaction first.';
   if (!isAxiosError(error) || error.response === undefined)
