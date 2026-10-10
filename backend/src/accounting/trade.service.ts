@@ -27,6 +27,7 @@ import {
   assertRevisionCapacity,
   connectedResult,
   journalNotStarted,
+  notCovered,
   projectConnectedLedger,
   readConnectedLedger,
   readTradeVersionCount,
@@ -424,7 +425,8 @@ export class TradeService {
       journal.currentRevision >= 10000
     )
       throw conflict();
-    if (nextExecution.occurredAt < journal.coverageFrom.toISOString()) throw conflict();
+    if (nextExecution.occurredAt < journal.coverageFrom.toISOString())
+      throw notCovered(id, journal.coverageFrom.toISOString());
     if (input?.settlementCurrency) {
       const others = target === undefined ? ledger : withoutTrade(ledger, id, target);
       const settlement = await this.settle(

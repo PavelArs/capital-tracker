@@ -868,6 +868,28 @@ describe('classify-chain-transactions (M12)', () => {
     return { user, drawer: screen.getByRole('dialog', { name }) };
   };
 
+  it('XFER-REFUSED: an airdrop dated before the records of the account begin names the account', async () => {
+    vi.spyOn(operationsApi, 'list').mockResolvedValue(list([toClassify]));
+    vi.spyOn(operationsApi, 'classify').mockRejectedValue(
+      new AxiosError('refused', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+        data: {
+          message: 'The records of an account start after this entry',
+          coverage: { accountId: cold.id, coverageFrom: '2026-01-01T00:00:00.000Z' },
+        },
+      }),
+    );
+    const { user, drawer } = await openRow(0, 'Incoming transaction · BTC');
+    await user.click(within(drawer).getByRole('button', { name: 'Airdrop' }));
+    await user.click(within(drawer).getByRole('button', { name: 'Save' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent(
+      /The records of Cold storage start on Jan 1, 2026, after this transaction on Jun 20, 2025\. Hide the transaction/,
+    );
+  });
+
   it('CLS-BUY: classifies a receipt as a buy and opens the next one to classify', async () => {
     vi.spyOn(operationsApi, 'list')
       .mockResolvedValueOnce(list([toClassify, nextOne]))
@@ -1628,10 +1650,10 @@ describe('link-own-transfers (M13)', () => {
     [
       'names the account whose records start after the transaction',
       {
-        message: 'The records of an account start after this transfer',
+        message: 'The records of an account start after this entry',
         coverage: { accountId: bybit.id, coverageFrom: '2025-07-01T00:00:00.000Z' },
       },
-      /The records of Bybit start on Jul 1, 2025, after this transfer on Jun 23, 2025\. Hide the transaction/,
+      /The records of Bybit start on Jul 1, 2025, after this transaction on Jun 23, 2025\. Hide the transaction/,
     ],
     [
       'names the account opened with balances whose records have not started',
