@@ -6,6 +6,14 @@ import { currencySymbols, money, tone } from '../portfolio/format';
 const HEIGHT = 290;
 const PAD = { left: 4, right: 64, top: 12, bottom: 28 };
 
+/** Under this width (a phone) the value labels take less room and fewer dates are written. */
+const NARROW = 520;
+
+export const chartRightPad = (width: number) => (width < NARROW ? 46 : PAD.right);
+
+export const chartDateTicks = (width: number, points: number) =>
+  Math.min(width < NARROW ? 3 : 5, points);
+
 interface Plotted {
   index: number;
   point: HistoryPoint;
@@ -134,7 +142,7 @@ export default function HistoryChart({
       </p>
     );
 
-  const innerWidth = Math.max(1, width - PAD.left - PAD.right);
+  const innerWidth = Math.max(1, width - PAD.left - chartRightPad(width));
   const innerHeight = HEIGHT - PAD.top - PAD.bottom;
   const first = plotted[0];
   const last = plotted[plotted.length - 1];
@@ -213,7 +221,7 @@ export default function HistoryChart({
       ? [{ index, cx: x(timeOf[index]), cy: y(invested[index]!) }]
       : [];
   });
-  const tickCount = Math.min(5, plotted.length);
+  const tickCount = chartDateTicks(width, plotted.length);
   const xTicks = [
     ...new Set(
       Array.from({ length: tickCount }, (_, index) =>
