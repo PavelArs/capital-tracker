@@ -899,8 +899,8 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
     expect(assets.getByText('ETH')).toBeInTheDocument();
   });
 
-  const chips = (group: ReturnType<typeof within>) =>
-    group
+  const chips = (group: HTMLElement) =>
+    within(group)
       .getAllByRole('button')
       .map((item) => item.textContent)
       .filter((text) => text !== '+ Other asset');
@@ -930,16 +930,19 @@ describe('CUR-PAID-RUB the Add transaction window', () => {
       ],
     } as PortfolioValuation);
     const { dialog } = await open();
-    const group = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    const group = within(dialog).getByRole('group', { name: 'Asset' });
     expect(chips(group)).toEqual(['ETH', 'BTC', 'USDT']);
-    expect(group.getByRole('button', { name: 'ETH' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(group).getByRole('button', { name: 'ETH' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
   });
 
   it('ASSET-ORDER keeps the order given while the valuation cannot be read', async () => {
     vi.mocked(portfolioAssetsApi.listAll).mockResolvedValue([bitcoin, ether, tether]);
     vi.spyOn(portfolioValuationApi, 'get').mockRejectedValue(new Error('offline'));
     const { dialog } = await open();
-    const group = within(within(dialog).getByRole('group', { name: 'Asset' }));
+    const group = within(dialog).getByRole('group', { name: 'Asset' });
     expect(chips(group)).toEqual(['BTC', 'ETH', 'USDT']);
   });
 
