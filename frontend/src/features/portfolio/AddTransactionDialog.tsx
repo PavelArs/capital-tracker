@@ -183,6 +183,28 @@ type Availability = { key: string; quantity: string | null };
 type OtherAsset = { ticker: string; name: string };
 const tickerPattern = /^[A-Za-z0-9.-]{1,32}$/;
 
+const ASSET_CHIPS = 6;
+
+/**
+ * The asset chips are for the few coins in daily use: with more than six assets the ones with a
+ * market price come first, the rest sit behind "More assets", and the chosen one is always a chip.
+ */
+export function splitAssets(
+  assets: readonly PortfolioAsset[],
+  chosen: string,
+  market: ReadonlyMap<string, string>,
+): { shown: PortfolioAsset[]; more: PortfolioAsset[] } {
+  if (assets.length <= ASSET_CHIPS) return { shown: [...assets], more: [] };
+  const ranked = [
+    ...assets.filter((item) => market.has(item.id)),
+    ...assets.filter((item) => !market.has(item.id)),
+  ];
+  const shown = ranked.slice(0, ASSET_CHIPS);
+  const pick = assets.find((item) => item.id === chosen);
+  if (pick && !shown.includes(pick)) shown[ASSET_CHIPS - 1] = pick;
+  return { shown, more: ranked.filter((item) => !shown.includes(item)) };
+}
+
 // "Add transaction" from the accepted prototype: buy or sell, paid in USD, USDT, USDC, EUR or RUB.
 export default function AddTransactionDialog({ onClose, onSaved, editing }: Props) {
   const [initial] = useState(() => (editing ? entryFromOperation(editing) : blankEntry()));
@@ -578,6 +600,11 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
       ? { 'aria-invalid': true, 'aria-describedby': `${id}-${problem}-error` }
       : {};
   const ready = assets !== null && accounts !== null;
+  const { shown: shownAssets, more: moreAssets } = splitAssets(
+    assets ?? [],
+    entry.instrumentId,
+    market,
+  );
 
   return (
     <div className="portfolio-scrim">
@@ -695,7 +722,7 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                     Asset
                   </span>
                   <div className="portfolio-chips" role="group" aria-labelledby={`${id}-asset`}>
-                    {assets.map((item) => (
+                    {shownAssets.map((item) => (
                       <button
                         key={item.id}
                         type="button"
@@ -715,6 +742,24 @@ export default function AddTransactionDialog({ onClose, onSaved, editing }: Prop
                         {item.symbol ?? item.name}
                       </button>
                     ))}
+                    {moreAssets.length > 0 && (
+                      <select
+                        className="portfolio-input portfolio-chip-select"
+                        aria-label="More assets"
+                        value=""
+                        onChange={(event) => {
+                          setOther(null);
+                          update({ instrumentId: event.target.value });
+                        }}
+                      >
+                        <option value="">More assets…</option>
+                        {moreAssets.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.symbol ? `${item.symbol} · ${item.name}` : item.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                     {!sell && !editing && (
                       <button
                         type="button"
