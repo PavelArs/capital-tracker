@@ -972,3 +972,40 @@ a.portfolio-asset__name:hover {
     font-size: var(--fs-lg);
   }
 }
+
+/* Phones: the five types and More share one row instead of More wrapping alone. */
+@media (max-width: 639.98px) {
+  .portfolio-types {
+    flex-wrap: nowrap;
+    gap: 4px;
+  }
+
+  .portfolio-types .shell-seg {
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
+
+  .portfolio-types .shell-seg label {
+    padding: 6px 7px;
+    font-size: var(--fs-sm);
+  }
+
+  .portfolio-types__more {
+    flex: none;
+    padding: 9px 10px;
+    font-size: var(--fs-sm);
+  }
+}
+
+@media (max-width: 380px) {
+  .portfolio-types .shell-seg label {
+    padding: 6px 5px;
+    font-size: var(--fs-xs);
+  }
+
+  .portfolio-types__more {
+    padding: 9px 8px;
+    font-size: var(--fs-xs);
+  }
+}
