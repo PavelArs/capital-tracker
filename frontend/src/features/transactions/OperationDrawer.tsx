@@ -376,6 +376,8 @@ function facts(
   return rows;
 }
 
+const essential = new Set(['Date', 'Network', 'Wallet', 'From', 'To']);
+
 const focusable = 'a[href], button:not([disabled])';
 
 const versionLabels: Record<TradeVersion['kind'], string> = {
@@ -610,6 +612,10 @@ export default function OperationDrawer({
   // SOL-STAKE-MOVE, ETH-STAKE-MOVE: a move into the wallet's own stake account or staking pool
   // or back has nothing to classify.
   const stakeMove = operation.type === 'stake' || operation.type === 'unstake';
+  // CLS-COMPACT: while a blockchain transaction waits for its answer, only what identifies it
+  // stays above the question; the technical facts fold into "Details".
+  const compact = Boolean(chain && classifying);
+  const rows = facts(operation, currency, record);
   const summary = (
     <>
       {notice && (
@@ -712,13 +718,30 @@ export default function OperationDrawer({
         )}
       <section aria-label="Details">
         <dl className="transactions-facts">
-          {facts(operation, currency, record).map(([label, content]) => (
-            <div key={label}>
-              <dt>{label}</dt>
-              <dd>{content}</dd>
-            </div>
-          ))}
+          {(compact ? rows.filter(([label]) => essential.has(label)) : rows).map(
+            ([label, content]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{content}</dd>
+              </div>
+            ),
+          )}
         </dl>
+        {compact && rows.some(([label]) => !essential.has(label)) && (
+          <details className="transactions-more transactions-more--facts">
+            <summary>Details</summary>
+            <dl className="transactions-facts">
+              {rows
+                .filter(([label]) => !essential.has(label))
+                .map(([label, content]) => (
+                  <div key={label}>
+                    <dt>{label}</dt>
+                    <dd>{content}</dd>
+                  </div>
+                ))}
+            </dl>
+          </details>
+        )}
       </section>
     </>
   );

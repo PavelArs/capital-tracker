@@ -63,7 +63,7 @@ describe('SHELL-002 navigation presentation', () => {
   });
 });
 
-describe('SHELL-001 sections first, current screens under Legacy', () => {
+describe('SHELL-001 the five sections, no Legacy group', () => {
   it('lists the five new sections in order', async () => {
     const document = await markup();
     expect(linksOf(document.querySelector('[data-nav-group="sections"]'))).toEqual([
@@ -75,17 +75,16 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
     ]);
   });
 
-  it('keeps only the screens no new section covers yet in an open Legacy group (M20)', async () => {
+  it('has no Legacy group: the older screens are reached from Settings (G1)', async () => {
     const document = await markup();
-    const group = [...document.querySelectorAll('details')].find(
-      (node) => node.querySelector('summary')?.textContent === 'Legacy',
-    );
-    expect(group).toBeDefined();
-    expect(group?.hasAttribute('open')).toBe(true);
-    expect(linksOf(group)).toEqual([
-      ['Ручные счета', '/manual-accounts'],
-      ['Ручные цены', '/manual-prices'],
-    ]);
+    expect(
+      [...document.querySelectorAll('details')].some(
+        (node) => node.querySelector('summary')?.textContent === 'Legacy',
+      ),
+    ).toBe(false);
+    expect(document.body.textContent).not.toMatch(/[А-Яа-я]/);
+    for (const older of ['/manual-accounts', '/manual-prices'])
+      expect(document.querySelector(`nav a[href^="${older}"]`)).toBeNull();
     for (const retired of [
       '/owned-transfers',
       '/capital-flows',
@@ -100,11 +99,12 @@ describe('SHELL-001 sections first, current screens under Legacy', () => {
       expect(document.querySelector(`nav a[href^="${retired}"]`)).toBeNull();
   });
 
-  it('marks exactly one current destination for new and nested legacy routes', async () => {
+  it('marks exactly one current destination; Settings is current on the older screens', async () => {
     for (const [path, current] of [
       ['/dashboard', '/dashboard'],
       ['/preferences', '/preferences'],
-      ['/manual-accounts/11111111-1111-4111-8111-111111111111', '/manual-accounts'],
+      ['/manual-accounts/11111111-1111-4111-8111-111111111111', '/preferences'],
+      ['/manual-prices', '/preferences'],
     ]) {
       const document = await markup(path);
       const marked = document.querySelectorAll('a[aria-current="page"]');
