@@ -92,6 +92,12 @@ export const dependencyUp = new Gauge({
   registers: [registry],
 });
 
+export const databaseSize = new Gauge({
+  name: 'ct_database_size_bytes',
+  help: 'Size of the application database on disk.',
+  registers: [registry],
+});
+
 export const dbPool = new Gauge({
   name: 'ct_db_pool_connections',
   help: 'PostgreSQL pool connections by state (total, idle, waiting).',
