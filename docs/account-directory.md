@@ -1,5 +1,11 @@
 # Manual-account directory
 
+> **Screen removed (G1, 2026-10-10).** The Russian browser screen this page describes was removed
+> from the application. Accounts are made in Add asset and Add wallet, trades are added in Add
+> transaction and the price of a hand-valued asset is changed on its asset page. The wording
+> about screens below is historical; the data and API rules still describe the stored records.
+
+
 Status: `redesign-account-directory` passed independent review and scoped verification
 and was archived on 2026-09-26. This is one part of the frontend redesign. The preserved local preview has not yet been updated.
 

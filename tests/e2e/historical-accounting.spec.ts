@@ -1,13 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect } from '@playwright/test';
-import {
-  browserCsrfAdmissions,
-  expectAdmissionDelta,
-  hostSubject,
-  ledger,
-  ledgerState,
-} from './admission-fixtures';
-import { selectAnalysis } from './analytics-workbench-fixtures';
+import { ledgerState } from './admission-fixtures';
 import {
   command as carryInCommand,
   fixture as carryInFixture,
@@ -15,7 +8,7 @@ import {
 } from './carry-in-fixtures';
 import { providerRequests } from './manual-opening-fixtures';
 import { fingerprint, test } from './mfa-fixtures';
-import { trackBrowserRequests, tradeApi, tradeInput } from './usd-trades-fixtures';
+import { trackBrowserRequests, tradeInput } from './usd-trades-fixtures';
 
 const emptySummary = {
   grossBuysUsd: '0',
@@ -214,88 +207,6 @@ test('HIST-001-A / HIST-002-A: exact history timeline and carry-in boundary', as
     expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(retained);
     expect(ledgerState(), 'Read-only accounting adds no auth-admission hits').toBe(admissions);
     expect(providerRequests(), 'Accounting history makes no provider calls').toEqual(providers);
-    assertQuota();
-  }
-});
-
-test('HIST-004-A: UI snapshot shows exact quantity and cost', async ({ page }) => {
-  const api = await tradeApi(page);
-  const account = await api.account(`Historical UI ${randomUUID()}`);
-  const instrument = await api.instrument(
-    `<img src=x onerror="window.historyLabelExecuted=true"> ${randomUUID()}`,
-    'HIST',
-  );
-  await api.initialize(account.id);
-  await api.create(
-    account.id,
-    tradeInput(instrument.id, 0, {
-      occurredAt: '2025-01-02T00:00:00.000Z',
-      orderWithinTimestamp: 0,
-    }),
-  );
-
-  const retained = fingerprint(['auth_sessions', 'auth_request_limits']);
-  const admissions = ledger();
-  const csrfBefore = browserCsrfAdmissions();
-  const providers = providerRequests();
-  const assertQuota = trackBrowserRequests(page, api);
-
-  try {
-    await page.goto(`/manual-accounts/${account.id}`);
-    await page.getByRole('button', { name: 'Аналитика', exact: true }).click();
-    await selectAnalysis(page, 'accounting');
-    await expect(
-      page.getByRole('heading', { name: 'Учётный срез на дату', exact: true }),
-    ).toBeVisible();
-    const instant = page.getByLabel('Момент времени (ISO, с часовым поясом)', {
-      exact: true,
-    });
-    await instant.fill('2025-01-02T00:00:00Z');
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname ===
-          `/api/accounting/accounts/${account.id}/trade-journal/history` &&
-        response.request().method() === 'GET',
-    );
-    await page.getByRole('button', { name: 'Показать учётный срез', exact: true }).click();
-    const response = await responsePromise;
-    expect(response.status()).toBe(200);
-    expect(response.headers()['cache-control']).toMatch(/(?:^|[,\s])no-store(?:$|[,\s])/);
-    expect(await response.json()).toMatchObject({
-      accountId: account.id,
-      at: '2025-01-02T00:00:00.000Z',
-      coverageFrom,
-      journalRevision: 1,
-      basis: 'current-effective-history',
-      items: [
-        {
-          instrumentId: instrument.id,
-          instrumentName: instrument.name,
-          quantity: '1',
-          costUsd: '100',
-        },
-      ],
-    });
-    const section = page.getByRole('region', {
-      name: 'Учётный срез на дату',
-      exact: true,
-    });
-    await expect(section.getByRole('table')).toBeVisible();
-    const position = section.getByRole('row').filter({ hasText: instrument.name });
-    await expect(position.getByRole('cell', { name: '1', exact: true })).toBeVisible();
-    await expect(position.getByRole('cell', { name: '100', exact: true })).toBeVisible();
-    await expect(page.locator('img[src="x"]')).toHaveCount(0);
-    expect(await page.evaluate(() => Reflect.get(window, 'historyLabelExecuted'))).toBeUndefined();
-  } finally {
-    expect(fingerprint(['auth_sessions', 'auth_request_limits'])).toBe(retained);
-    expectAdmissionDelta(admissions, [
-      {
-        scope: 'csrf-ip',
-        subject: await hostSubject(),
-        hits: browserCsrfAdmissions() - csrfBefore,
-      },
-    ]);
-    expect(providerRequests(), 'Historical UI makes no provider calls').toEqual(providers);
     assertQuota();
   }
 });

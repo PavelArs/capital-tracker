@@ -120,18 +120,12 @@ describe('SHELL-006 theme setting', () => {
     expect(screen.getByRole('link', { name: 'Open history' })).toHaveAttribute('href', '/history');
   });
 
-  it('G1: Settings lists the older screens that left the sidebar, and says what they are', () => {
+  it('G1: Settings no longer lists older screens', () => {
     renderSettings();
-    expect(screen.getByRole('heading', { level: 2, name: 'Older screens' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open manual accounts' })).toHaveAttribute(
-      'href',
-      '/manual-accounts',
-    );
-    expect(screen.getByRole('link', { name: 'Open manual prices' })).toHaveAttribute(
-      'href',
-      '/manual-prices',
-    );
-    expect(screen.getByText(/still in Russian/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { level: 2, name: 'Older screens' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open manual accounts' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Open manual prices' })).toBeNull();
+    expect(screen.queryByText(/still in Russian/)).toBeNull();
   });
 
   it('no longer points to the retired legacy settings (M20)', () => {

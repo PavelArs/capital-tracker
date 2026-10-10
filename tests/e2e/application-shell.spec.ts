@@ -12,14 +12,14 @@ async function fitsViewport(page: Page) {
     .toBeLessThanOrEqual(1);
 }
 
-test('SHELL-UI: real owner login, responsive keyboard navigation, older screens reached from Settings and logout', async ({
+test('SHELL-UI: real owner login, responsive keyboard navigation and logout', async ({
   page,
 }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.setViewportSize({ width: 360, height: 800 });
   await page.emulateMedia({ reducedMotion: 'reduce', colorScheme: 'light' });
-  await page.goto('/manual-accounts');
+  await page.goto('/wallets');
   await expect(page).toHaveURL(`${origin}/login`);
   await expect(page.getByRole('navigation')).toHaveCount(0);
   expect((await page.request.get('/api/accounting/accounts')).status()).toBe(401);
@@ -60,7 +60,7 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, older screens 
   const factorResponse = await pendingFactor;
   expect(factorResponse.status()).toBe(200);
   expect((await factorResponse.json()).user.email).toBe(owner.email);
-  // Genuine predecessor RED: before add-app-shell a successful login opened /manual-accounts.
+  // Genuine predecessor RED: before add-app-shell a successful login opened the old accounts screen.
   await expect(page).toHaveURL(`${origin}/dashboard`);
   await expect(
     page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
@@ -205,52 +205,29 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, older screens 
   await fitsViewport(page);
   await page.screenshot({ path: testInfo.outputPath('portfolio-1440-light.png'), fullPage: true });
 
-  // G1: no Legacy group in the sidebar; the screens no new section covers yet are reached from
-  // Settings, which stays the current section while one of them is open.
-  await expect(nav.getByText('Legacy', { exact: true })).toHaveCount(0);
-  await expect(nav.locator('a[href^="/manual-"]')).toHaveCount(0);
-  const openOlder = async (name: string) => {
-    await nav.getByRole('link', { name: 'Settings', exact: true }).click();
-    await page
-      .getByRole('region', { name: 'Older screens' })
-      .getByRole('link', { name, exact: true })
-      .click();
-  };
-  await nav.getByRole('link', { name: 'Settings', exact: true }).click();
-  const older = page.getByRole('region', { name: 'Older screens' });
-  await expect(older.getByRole('link')).toHaveCount(2);
-  for (const [name, path] of [
-    ['Open manual accounts', '/manual-accounts'],
-    ['Open manual prices', '/manual-prices'],
-  ] as const) {
-    await expect(older.getByRole('link', { name, exact: true })).toHaveAttribute('href', path);
-  }
-  await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
-
-  await older.getByRole('link', { name: 'Open manual accounts', exact: true }).click();
-  await expect(page).toHaveURL(`${origin}/manual-accounts`);
-  await expect(nav.getByRole('link', { name: 'Settings', exact: true })).toHaveAttribute(
-    'aria-current',
-    'page',
-  );
-  await expect(page.getByRole('heading', { name: 'Ручные счета', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Новый счет', exact: true }).click();
-  await page.getByLabel('Название счета', { exact: true }).fill('Основной счет');
-  const accountCreated = page.waitForResponse(
+  // G1: a hand-valued asset gets its price from the asset page, not a separate screen.
+  await portfolio.getByRole('link', { name: depositName }).first().click();
+  await page.getByRole('button', { name: 'Update price', exact: true }).click();
+  const priceDialog = page.getByRole('dialog', { name: 'Update price' });
+  await priceDialog.getByLabel('Price of one unit, USD', { exact: true }).fill('12.5');
+  const priceSaved = page.waitForResponse(
     (response) =>
-      new URL(response.url()).pathname === '/api/accounting/accounts' &&
+      new URL(response.url()).pathname.endsWith('/usd-prices') &&
       response.request().method() === 'POST',
   );
-  await page.getByRole('button', { name: 'Создать счет', exact: true }).click();
-  const createdResponse = await accountCreated;
-  expect(createdResponse.status()).toBe(201);
-  const created = await createdResponse.json();
-  await page.goto('/');
-  await expect(page).toHaveURL(`${origin}/dashboard`);
-  await openOlder('Open manual accounts');
-  await expect(page.locator(`a[href="/manual-accounts/${created.id}"]`)).toContainText(
-    'Основной счет',
-  );
+  await priceDialog.getByRole('button', { name: 'Save price', exact: true }).click();
+  expect((await priceSaved).ok()).toBe(true);
+  await expect(priceDialog).toHaveCount(0);
+  await expect(page.getByText(/Manual price set for/)).toBeVisible();
+
+  // G1: no Legacy group and no Older screens: Settings carries the profile, security and data only.
+  await expect(nav.getByText('Legacy', { exact: true })).toHaveCount(0);
+  await expect(nav.locator('a[href^="/manual-"]')).toHaveCount(0);
+  await expect(nav.locator('a[href^="/liabilities"]')).toHaveCount(0);
+  await nav.getByRole('link', { name: 'Settings', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/preferences`);
+  await expect(page.getByRole('region', { name: 'Older screens' })).toHaveCount(0);
+  await expect(page.locator('a[href^="/manual-"]')).toHaveCount(0);
 
   for (const width of [360, 768]) {
     await page.setViewportSize({ width, height: 900 });
@@ -274,11 +251,6 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, older screens 
       .toBe(true);
     await fitsViewport(page);
     await page.screenshot({ path: testInfo.outputPath(`menu-${width}.png`), fullPage: true });
-    await openOlder('Open manual prices');
-    await expect(page).toHaveURL(`${origin}/manual-prices`);
-    await openOlder('Open manual accounts');
-    await expect(page).toHaveURL(`${origin}/manual-accounts`);
-    await fitsViewport(page);
   }
 
   for (const width of [1280, 1440]) {
@@ -301,6 +273,9 @@ test('SHELL-UI: real owner login, responsive keyboard navigation, older screens 
     ['/owned-transfers', '/transactions', 'Transactions'],
     ['/capital-flows', '/dashboard', 'Dashboard'],
     ['/period-profit', '/dashboard', 'Dashboard'],
+    ['/manual-accounts', '/wallets', 'Wallets'],
+    ['/manual-accounts/00000000-0000-4000-8000-000000000000', '/wallets', 'Wallets'],
+    ['/manual-prices', '/portfolio', 'Portfolio'],
     ['/settings', '/preferences', 'Settings'],
   ] as const) {
     await page.goto(retired);
