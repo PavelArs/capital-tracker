@@ -117,6 +117,20 @@ export async function withDust<Row extends TokenHolder>(
   return rows;
 }
 
+/** The owner's Ethereum and Solana addresses with what each holds, dust marked. */
+async function tokenHolders(
+  manager: EntityManager,
+  owner: string,
+): Promise<(TokenHolder & { id: string })[]> {
+  const rows: (TokenHolder & { id: string })[] = await manager.query(
+    `SELECT a.id, a.network, a."tokenBackfillTo", a."hiddenTokens", a."shownTokens", b.balances
+      FROM wallet_addresses a ${balancesLateral('a')}
+      WHERE a."ownerId" = $1 AND a.network IN ('ethereum', 'solana')`,
+    [owner],
+  );
+  return withDust(manager, owner, rows);
+}
+
 /**
  * Every token of every Ethereum or Solana address of the owner that is left out, as
  * `tokenKey(address, contract)`. The portfolio and the transaction lists skip the legs of these
@@ -126,14 +140,29 @@ export async function leftOutTokens(
   manager: EntityManager,
   owner: string,
 ): Promise<ReadonlySet<string>> {
-  const rows: (TokenHolder & { id: string })[] = await manager.query(
-    `SELECT a.id, a.network, a."tokenBackfillTo", a."hiddenTokens", a."shownTokens", b.balances
-      FROM wallet_addresses a ${balancesLateral('a')}
-      WHERE a."ownerId" = $1 AND a.network IN ('ethereum', 'solana')`,
-    [owner],
-  );
   const keys = new Set<string>();
-  for (const row of await withDust(manager, owner, rows))
+  for (const row of await tokenHolders(manager, owner))
     for (const contract of leftOut(row, true).keys()) keys.add(tokenKey(row.id, contract));
   return keys;
+}
+
+/**
+ * The symbols of the tokens that are left out and no address shows under the same symbol (a
+ * spam token that calls itself USDT must not hide the real one). The assets of these coins are
+ * not listed in the portfolio while nothing is held in them.
+ */
+export async function leftOutSymbols(
+  manager: EntityManager,
+  owner: string,
+): Promise<ReadonlySet<string>> {
+  const left = new Set<string>();
+  const shown = new Set<string>();
+  for (const row of await tokenHolders(manager, owner)) {
+    const hidden = leftOut(row, true);
+    for (const item of row.balances) {
+      const { symbol } = chainAsset(row.network, item.asset);
+      (hidden.has(item.asset as string) ? left : shown).add(symbol);
+    }
+  }
+  return new Set([...left].filter((symbol) => !shown.has(symbol)));
 }

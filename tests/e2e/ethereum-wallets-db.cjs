@@ -634,13 +634,42 @@ async function main() {
       assert.deepEqual(latest.map((row) => [row.asset, row.price, row.source]), [['SYN', '0.25', 'coingecko']]);
       assert.equal(isUnlistedToken('ethereum', syn), false, 'The app now knows CoinGecko lists SYN');
       assert.equal(isUnlistedToken('ethereum', fakeUsdt), true);
-      // Listed tokens are asked every run; the one CoinGecko does not know, once a day.
+      // Listed tokens are asked every run; the one CoinGecko does not know, once: it is spam, and
+      // spam is not priced again until the owner brings it back.
       const again = await requestsOf(() => prices.collect(new Date()));
       assert.deepEqual(geckoCalls(again.urls), [['ethereum', syn]]);
       await db.query(`UPDATE chain_tokens SET "priceCheckedAt" = now() - interval '25 hours' WHERE contract = $1`, [fakeUsdt]);
+      const later = await requestsOf(() => prices.collect(new Date()));
+      assert.deepEqual(geckoCalls(later.urls), [['ethereum', syn]], 'An unlisted token is not asked about again by itself');
+      // The owner hides SYN: a hidden token is not priced either.
+      await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN'], visibility: 'hidden' });
+      const hiddenRun = await requestsOf(() => prices.collect(new Date()));
+      assert.deepEqual(geckoCalls(hiddenRun.urls), []);
+      // The owner brings both back: they are asked about at once, the one checked longest ago first.
+      await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN', fakeTicker], visibility: 'shown' });
       const recheck = await requestsOf(() => prices.collect(new Date()));
-      // The token checked longest ago comes first.
       assert.deepEqual(geckoCalls(recheck.urls), [['ethereum', `${fakeUsdt},${syn}`]]);
+      // A restored unlisted token is asked about once a day again, as long as it stays restored.
+      await db.query(`UPDATE chain_tokens SET "priceCheckedAt" = now() - interval '25 hours' WHERE contract = $1`, [fakeUsdt]);
+      const daily = await requestsOf(() => prices.collect(new Date()));
+      assert.deepEqual(geckoCalls(daily.urls), [['ethereum', `${fakeUsdt},${syn}`]]);
+      // Back to the copycat being left out by the app's own rule, as the stages below expect.
+      await db.query(`UPDATE wallet_addresses SET "shownTokens" = array_remove("shownTokens", $2) WHERE id = $1`, [holderId, fakeUsdt]);
+      await db.query(`DELETE FROM accounting_instruments WHERE "ownerId" = $1 AND symbol = $2`, [owner, fakeTicker]);
+      // TOKEN-HIDE: the asset of a coin the wallets leave out is not listed in the portfolio, and
+      // is again when the owner brings the token back.
+      {
+        const { PortfolioValuationService } = require(`${dist}/accounting/portfolio-valuation.service.js`);
+        const listed = async (ticker) => (await new PortfolioValuationService(db).read(owner, {}, new Date()))
+          .assets.filter((item) => item.symbol === ticker).length;
+        assert.equal(await listed('SYN'), 1, 'A token the wallets show is an asset of the portfolio');
+        await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN'], visibility: 'hidden' });
+        assert.equal(await listed('SYN'), 0, 'A coin the wallets leave out is not listed');
+        assert.deepEqual(await instruments(), [['SYN', 'market', 1]], 'Its asset stays; only the table skips it');
+        await s.addresses.setTokenVisibility(owner, holderId, { tickers: ['SYN'], visibility: 'shown' });
+        assert.equal(await listed('SYN'), 1);
+        await prices.collect(new Date());
+      }
       // A token no wallet holds any more is not asked about.
       await db.query(`DELETE FROM wallet_address_transactions WHERE "addressId"=$1 AND asset = $2`, [holderId, syn]);
       const sold = await requestsOf(() => prices.collect(new Date()));

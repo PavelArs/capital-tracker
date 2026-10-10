@@ -776,8 +776,16 @@ export class WalletAddressService {
           WHERE "ownerId" = $1 AND id = $2`,
         [owner, addressId, hide, contracts],
       );
-      // A token brought back is a coin of the portfolio again (D1).
-      if (!hide) await ensureChainCoins(manager, owner);
+      if (!hide) {
+        // A token brought back is priced again: the next hourly run asks about it at once.
+        await manager.query(
+          `UPDATE chain_tokens SET "priceCheckedAt" = NULL
+            WHERE network = $1 AND contract = ANY($2::text[]) AND "coingeckoId" IS NULL`,
+          [row.network, contracts],
+        );
+        // A token brought back is a coin of the portfolio again (D1).
+        await ensureChainCoins(manager, owner);
+      }
       return summary(await this.address(manager, owner, addressId));
     });
   }

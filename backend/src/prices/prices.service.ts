@@ -201,9 +201,11 @@ export class PricesService {
   /**
    * TOKEN-ANY-PRICE: the tokens of Ethereum and Solana wallets that wallets hold now (a balance
    * above zero) are priced by contract from CoinGecko, hourly. A token CoinGecko does not list
-   * gets no price and is asked about once a day; its value stays unknown. At most MAX_TOKENS are
-   * asked per run, those checked longest ago first, so hundreds of unknown tokens cost a few
-   * requests and never the whole run.
+   * gets no price: it is asked about once, when it first shows up, and its value stays unknown.
+   * Such a token is spam (TOKEN-HIDE), so it is not asked about again unless the owner brings it
+   * back, and the tokens the owner hid are not asked about at all. At most MAX_TOKENS are asked
+   * per run, those checked longest ago first, so hundreds of unknown tokens cost a few requests
+   * and never the whole run.
    */
   private async collectTokens(now: Date): Promise<number> {
     const due: { network: 'ethereum' | 'solana'; contract: string; ticker: string }[] =
@@ -216,6 +218,9 @@ export class PricesService {
               SELECT 1 FROM wallet_address_transactions x
                 JOIN wallet_addresses a ON a.id = x."addressId"
                WHERE a.network = t.network AND x.asset = t.contract
+                 AND t.contract <> ALL(a."hiddenTokens")
+                 AND (t."coingeckoId" IS NOT NULL OR t."priceCheckedAt" IS NULL
+                      OR t.contract = ANY(a."shownTokens"))
                GROUP BY a.id
               HAVING sum(x."receivedUnits") - sum(x."sentUnits") > 0)
           ORDER BY t."priceCheckedAt" NULLS FIRST, t.network, t.contract
