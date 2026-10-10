@@ -8,7 +8,8 @@ export type ProviderFailure =
   | 'unavailable'
   | 'invalid_response'
   | 'not_configured'
-  | 'key_rejected';
+  | 'key_rejected'
+  | 'plan_required';
 export type Network =
   | 'bitcoin'
   | 'ethereum'

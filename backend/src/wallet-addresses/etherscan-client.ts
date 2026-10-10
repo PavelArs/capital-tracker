@@ -122,7 +122,8 @@ export function parseNormal(value: unknown): NormalTransaction {
 export function parseInternal(value: unknown): InternalTransfer {
   const item = record(value);
   return {
-    hash: hash(item.hash),
+    // Blockscout names the transaction an internal transfer belongs to `transactionHash`.
+    hash: hash(item.hash ?? item.transactionHash),
     blockNumber: block(item.blockNumber),
     timeStamp: time(item.timeStamp),
     from: address(item.from),
@@ -172,6 +173,9 @@ export function parseList<T>(body: unknown, parse: (item: unknown) => T): T[] {
 
 function refusal(result: unknown): Refused | InvalidResponse {
   if (typeof result !== 'string') return new InvalidResponse();
+  // Etherscan's own words for a chain outside the free plan (docs.etherscan.io, common errors).
+  if (/free api access is not supported|upgrade your api plan/i.test(result))
+    return new Refused('plan_required');
   if (/rate limit/i.test(result)) return new Refused('rate_limited');
   if (/api ?key/i.test(result)) return new Refused('not_configured');
   return new Refused('unavailable');
@@ -217,6 +221,8 @@ interface ClientOptions {
   timeoutMs?: number;
   pauseMs?: number;
   chainId?: number;
+  /** BLOCKSCOUT: another explorer answering Etherscan's calls: no key, no `chainid`. */
+  keyless?: boolean;
 }
 
 export class EtherscanClient {
@@ -225,6 +231,7 @@ export class EtherscanClient {
   private readonly timeoutMs: number;
   private readonly pauseMs: number;
   private readonly chainId: number;
+  private readonly keyless: boolean;
   // The key's rate limit is shared by every chain, so the views of one client share the pause.
   private readonly pace: { lastRequestAt: number };
 
@@ -235,7 +242,21 @@ export class EtherscanClient {
     // The free plan allows three calls a second (docs/provider-feasibility.md).
     this.pauseMs = options.pauseMs ?? 400;
     this.chainId = options.chainId ?? MAINNET;
+    this.keyless = options.keyless ?? false;
     this.pace = pace;
+  }
+
+  /**
+   * BLOCKSCOUT: the same questions put to a chain's Blockscout explorer (`baseUrl` ends in /api),
+   * which needs no key. It paces itself: its limit is its own.
+   */
+  blockscout(baseUrl: string): EtherscanClient {
+    return new EtherscanClient({
+      baseUrl,
+      keyless: true,
+      timeoutMs: this.timeoutMs,
+      pauseMs: this.pauseMs,
+    });
   }
 
   /** EVM-MULTICHAIN: the same key and pacing, reading another chain of Etherscan's V2 API. */
@@ -254,11 +275,14 @@ export class EtherscanClient {
 
   /** Without a key nothing is requested: the wallet reports what the server misses. */
   get configured(): boolean {
-    return this.apiKey !== null;
+    return this.keyless || this.apiKey !== null;
   }
 
   blockNumber(): Promise<BlockResult> {
-    return this.get({ module: 'proxy', action: 'eth_blockNumber' }, (body) => ({
+    const params = this.keyless
+      ? { module: 'block', action: 'eth_block_number' }
+      : { module: 'proxy', action: 'eth_blockNumber' };
+    return this.get(params, (body) => ({
       ok: true,
       block: parseBlockNumber(body),
     }));
@@ -310,13 +334,15 @@ export class EtherscanClient {
     params: Record<string, string>,
     parse: (body: unknown) => T,
   ): Promise<T | { ok: false; reason: StepFailure }> {
-    if (!this.apiKey) return { ok: false, reason: 'not_configured' };
+    if (!this.configured) return { ok: false, reason: 'not_configured' };
     const wait = this.pace.lastRequestAt + this.pauseMs - Date.now();
     if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
     let response: { status: number; data: string };
     try {
       response = await axios.get<string>(this.baseUrl, {
-        params: { chainid: String(this.chainId), ...params, apikey: this.apiKey },
+        params: this.keyless
+          ? params
+          : { chainid: String(this.chainId), ...params, apikey: this.apiKey },
         // axios' timeout is an idle timeout; the signal bounds the whole response.
         timeout: this.timeoutMs,
         signal: AbortSignal.timeout(this.timeoutMs),

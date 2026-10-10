@@ -4,9 +4,10 @@ import type { ProviderFailure } from './esplora-client';
 export type StepOutcome = 'complete' | 'partial' | 'provider_error';
 /**
  * Why a provider gave no history: its own failure, no API key on this server, or (Bybit, M22)
- * an account key the exchange no longer accepts.
+ * an account key the exchange no longer accepts, or (Etherscan) a chain its free plan no longer
+ * serves.
  */
-export type StepFailure = ProviderFailure | 'not_configured' | 'key_rejected';
+export type StepFailure = ProviderFailure | 'not_configured' | 'key_rejected' | 'plan_required';
 
 /** One bounded pass over a wallet's history; the next pass continues from its cursor. */
 export interface StepResult {
@@ -63,6 +64,8 @@ export function failureMessage(network: string, reason: SyncFailure): string {
       return `${network} sync needs a valid Etherscan API key on the server (ETHERSCAN_API_KEY).`;
     case 'key_rejected':
       return `${network} did not accept the API key: it may have expired or been deleted. Add the account again with a new read-only key.`;
+    case 'plan_required':
+      return `The free Etherscan plan does not cover ${network}, and no other free source is set up for it yet.`;
     case 'unsupported':
       return `Syncing ${network} wallets is not supported yet.`;
     case 'error':
