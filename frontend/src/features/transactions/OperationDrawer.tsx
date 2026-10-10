@@ -12,6 +12,7 @@ import { entryKind } from '../portfolio/add-transaction';
 import { DASH, money, price, quantity } from '../portfolio/format';
 import CloseButton from '../shell/CloseButton';
 import ClassifyForm, { POOL_DEPOSIT_NAMED, recordText } from './ClassifyForm';
+import MiddleEllipsis from './MiddleEllipsis';
 import {
   amount,
   day,
@@ -116,7 +117,7 @@ function TxHash({ hash, network }: { hash: string; network: string | undefined }
   }, [copied]);
   return (
     <span className="transactions-hash">
-      <span className="transactions-mono">{hash}</span>
+      <MiddleEllipsis text={hash} />
       <span className="transactions-hash__actions">
         <button
           type="button"
@@ -142,9 +143,9 @@ function TxHash({ hash, network }: { hash: string; network: string | undefined }
 }
 
 const addressLine = (wallet: NonNullable<Operation['wallet']>) => (
-  <span className="transactions-mono">
+  <span className="transactions-mono transactions-line">
     {networkName(wallet)} · {wallet.label ? `${wallet.label} · ` : ''}
-    {wallet.address}
+    <MiddleEllipsis text={wallet.address} />
   </span>
 );
 
@@ -232,18 +233,18 @@ function facts(
       ]);
     rows.push([
       exchange ? 'Account' : 'Address',
-      <span key="wallet" className="transactions-mono">
+      <span key="wallet" className="transactions-mono transactions-line">
         {wallet.label ? `${wallet.label} · ` : ''}
-        {exchange ? `UID ${wallet.address}` : wallet.address}
+        {exchange ? `UID ${wallet.address}` : <MiddleEllipsis text={wallet.address} />}
       </span>,
     ]);
     const other = operation.counterWallet;
     if (other)
       rows.push([
         moved ? 'Other address' : 'Your other address',
-        <span key="other" className="transactions-mono">
+        <span key="other" className="transactions-mono transactions-line">
           {other.label ? `${other.label} · ` : ''}
-          {moved ? other.address : shortAddress(other.address)}
+          {moved ? <MiddleEllipsis text={other.address} /> : shortAddress(other.address)}
         </span>,
       ]);
     // A Bybit record has no block; its id stands in for a hash it does not have (M22).
@@ -283,9 +284,7 @@ function facts(
     if (operation.type === 'pool-withdrawal' && chain.pairedTxid)
       rows.push([
         'Deposit transaction',
-        <span key="deposit" className="transactions-mono">
-          {hashOf(chain.pairedTxid, wallet.network)}
-        </span>,
+        <MiddleEllipsis key="deposit" text={hashOf(chain.pairedTxid, wallet.network)} />,
       ]);
     // CLS-BUY: what the owner answered, as the entry it produced reads; a transfer has no
     // value of its own, only the network fee (XFER-CAPITAL).

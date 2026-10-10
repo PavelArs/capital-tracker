@@ -329,6 +329,15 @@ describe('WAL-ADD: add a Bitcoin address to a wallet', () => {
     expect(row).toHaveTextContent('0.005 BTC');
   });
 
+  it('DIALOG-CLOSE closes Add wallet from the ✕ at the right of the title', async () => {
+    setup([]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Add wallet' }));
+    const dialog = screen.getByRole('dialog', { name: 'Add wallet' });
+    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('dialog', { name: 'Add wallet' })).toBeNull();
+  });
+
   it('creates a new wallet once for the typed name', async () => {
     setup([]);
     const create = vi
@@ -1260,7 +1269,11 @@ describe('M21: Bitcoin wallets by account public key', () => {
     const field = within(dialog).getByLabelText('Bitcoin wallet address');
     await user.click(field);
     await user.paste(`tpub${zpub.slice(4)}`);
+    // The refusal waits for the owner to leave the field.
+    expect(within(dialog).queryByText(/Testnet keys are not tracked/)).not.toBeInTheDocument();
+    await user.tab();
     expect(within(dialog).getByText(/Testnet keys are not tracked/)).toBeInTheDocument();
+    await user.click(field);
     await user.clear(field);
     await user.paste(`zprv${zpub.slice(4)}`);
     expect(field).toHaveValue('');
@@ -1697,7 +1710,9 @@ describe('Zcash wallets (M24)', () => {
     const field = within(dialog).getByLabelText('Zcash wallet address');
     expect(dialog).toHaveTextContent('Shielded balances are private, so the app cannot read them');
     await user.type(field, `zs1${'q'.repeat(75)}`);
+    await user.tab();
     expect(within(dialog).getByText(/This is a shielded address/)).toBeInTheDocument();
+    await user.click(field);
     await user.clear(field);
     await user.type(field, zcashAddress);
     expect(within(dialog).getByText('Transparent address')).toBeInTheDocument();

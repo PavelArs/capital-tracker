@@ -425,9 +425,6 @@ export default function PortfolioPage() {
             </p>
           )}
           <Summary portfolio={portfolio} />
-          <div className="portfolio-allocation-slot">
-            <Allocation portfolio={portfolio} />
-          </div>
           <section className="shell-card" aria-labelledby="portfolio-assets">
             <div className="portfolio-toolbar">
               <h2 id="portfolio-assets">Assets</h2>
@@ -504,6 +501,7 @@ export default function PortfolioPage() {
               .
             </p>
           </section>
+          <Allocation portfolio={portfolio} />
         </>
       )}
       {adding && <AddAssetDialog onClose={() => setAdding(false)} onAdded={added} />}

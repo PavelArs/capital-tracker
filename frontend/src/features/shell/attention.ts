@@ -5,7 +5,7 @@ import { age, quantity } from '../portfolio/format';
 import { networkOf } from '../wallets/networks';
 import { reconcile } from '../wallets/wallets';
 
-/** What the dashboard knows; null where it could not be read. */
+/** What the shell knows; null where it could not be read. */
 export interface AttentionInput {
   toClassify: number | null;
   sources: SyncSource[] | null;
@@ -26,7 +26,7 @@ export interface AttentionItem {
 
 export interface Attention {
   items: AttentionItem[];
-  /** Every check could run; only then may the dashboard say all is well. */
+  /** Every check could run; only then may the bell say all is well. */
   checked: boolean;
   /** When prices last updated, while they are fresh. */
   pricesUpdatedAt: string | null;
@@ -155,9 +155,10 @@ function balanceItems(
 }
 
 /**
- * DASH-ATTENTION: everything that needs the owner, most urgent kind first (prototype "Needs
+ * ATTN-BELL: everything that needs the owner, most urgent kind first (prototype "Needs
  * your attention"): old prices and rates, transactions to classify, wallets that did not
- * sync and wallets whose balance differs. An empty list collapses to one quiet line.
+ * sync and wallets whose balance differs. It fills the header bell's panel; an empty list
+ * collapses to one quiet line.
  */
 export function collectAttention(input: AttentionInput): Attention {
   const { sources, wallets, portfolio, now } = input;

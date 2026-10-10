@@ -10,6 +10,7 @@ import type {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import AssetIcon from '../shell/AssetIcon';
+import { Icon } from '../shell/icons';
 import PageHeader from '../shell/PageHeader';
 import { InlineSkeleton, PageSkeleton } from '../shell/Skeleton';
 import { onlyChain, useTokenChains } from '../shell/token-chains';
@@ -22,7 +23,7 @@ import {
   statusLabels,
   typeLabel,
 } from '../transactions/operation-format';
-import AssetChart, { type Purchase } from './AssetChart';
+import AssetChart, { costUnknown, type Purchase } from './AssetChart';
 import { ratesNote, useAskedCurrency, withCurrency } from './currency';
 import { age, missingLabel, money, price, quantity, sourceLabels, sourceName } from './format';
 import { assetCaption, Change, Signed } from './PortfolioPage';
@@ -156,17 +157,23 @@ function ValueChart({
             <i className="dashboard-legend__line" aria-hidden="true" />
             Position value
           </span>
-          <span>
-            <i
-              className="dashboard-legend__line dashboard-legend__line--invested"
-              aria-hidden="true"
-            />
-            Cost basis
-          </span>
-          <span>
-            <i className="dashboard-legend__deposit" aria-hidden="true" />
-            Purchase
-          </span>
+          {history && costUnknown(history.points) ? (
+            <span>Cost basis unknown</span>
+          ) : (
+            <>
+              <span>
+                <i
+                  className="dashboard-legend__line dashboard-legend__line--invested"
+                  aria-hidden="true"
+                />
+                Cost basis
+              </span>
+              <span>
+                <i className="dashboard-legend__deposit" aria-hidden="true" />
+                Purchase
+              </span>
+            </>
+          )}
         </div>
         <div className="dashboard-periods" role="tablist" aria-label="Chart period">
           {historyPeriods.map((value) => (
@@ -354,9 +361,18 @@ function AssetDetails({
           </Stat>
         </dl>
         {unknown && (
-          <p className="portfolio-warn" role="note">
-            {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-            unrealized P&amp;L are unknown. Known cost: {amount(asset.knownCostSubtotal)}.
+          <p className="portfolio-warn portfolio-warn--action" role="note">
+            <Icon name="alert" className="shell-icon shell-icon--sm" />
+            <span>
+              {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
+              unrealized P&amp;L are unknown. Known cost: {amount(asset.knownCostSubtotal)}.
+            </span>
+            <Link
+              className="shell-button"
+              to={`/transactions?asset=${encodeURIComponent(keyOf(asset))}`}
+            >
+              Review transactions
+            </Link>
           </p>
         )}
         {missingRate && (
