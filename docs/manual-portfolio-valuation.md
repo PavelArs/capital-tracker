@@ -4,6 +4,8 @@
 > from the application. Accounts are made in Add asset and Add wallet, trades are added in Add
 > transaction and the price of a hand-valued asset is changed on its asset page. The wording
 > about screens below is historical; the data and API rules still describe the stored records.
+>
+> The `/accounting/manual-valuation-preview` endpoint was removed (G1 backend); Portfolio values everything the owner holds.
 
 
 “Оценка выбранных счетов” previews an explicitly selected set of one to ten

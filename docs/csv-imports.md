@@ -4,6 +4,8 @@
 > from the application. Accounts are made in Add asset and Add wallet, trades are added in Add
 > transaction and the price of a hand-valued asset is changed on its asset page. The wording
 > about screens below is historical; the data and API rules still describe the stored records.
+>
+> The upload, review, confirm and rollback endpoints were removed as well (G1 backend). The tables, the stored batches and the `csv` source of the trades they made stay: Transactions, Change history and the exports still show them. The service code is kept for the database checks and goes in a later slice.
 
 
 The verified CSV slice passed all 124 real HTTPS Chromium cases, including 101

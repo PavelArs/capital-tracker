@@ -35,7 +35,7 @@ function bitcoinHistory(body: Record<string, unknown>): void {
 }
 const cells = (row: Locator) => row.getByRole('cell');
 
-test('OPS-UI: manual, CSV and blockchain operations in one Transactions list with filters and details', async ({
+test('OPS-UI: manual and blockchain operations in one Transactions list with filters and details', async ({
   page,
   request,
 }, testInfo) => {
@@ -65,52 +65,8 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
       grossUsd: '1000',
     }),
   );
-  // ... a CSV-imported buy ...
-  const bytes = Buffer.from(
-    'instrument,side,time,order,quantity,gross,fee\nOPSBTC,buy,2025-06-14T10:30:00Z,0,0.01,1050.5,1.25\n',
-  );
-  const headers = { Origin: origin, 'X-CSRF-Token': api.csrfToken };
-  const uploaded = await api.request.post(`/api/accounting/accounts/${account.id}/csv-imports`, {
-    headers,
-    multipart: {
-      file: { name: 'upload.csv', mimeType: 'application/octet-stream', buffer: bytes },
-      displayNameBase64url: Buffer.from('ops-ui.csv').toString('base64url'),
-    },
-  });
-  expect(uploaded.status()).toBe(201);
-  const { batchId } = (await uploaded.json()) as { batchId: string };
-  const settings = {
-    format: { delimiter: ',', decimalSeparator: '.', timestampMode: 'offset' },
-    mapping: {
-      columns: {
-        instrument: 0,
-        side: 1,
-        occurredAt: 2,
-        order: 3,
-        quantity: 4,
-        grossUsd: 5,
-        feeUsd: 6,
-      },
-      instruments: [{ source: 'OPSBTC', instrumentId: coin.id }],
-      sides: [{ source: 'buy', side: 'buy' }],
-    },
-    assertUsd: true,
-  };
-  const batch = `/accounts/${account.id}/csv-imports/${batchId}`;
-  const preview = (await api.result('POST', `${batch}/preview`, 200, settings)) as {
-    canConfirm: boolean;
-    journalRevision: number;
-    previewHash: string;
-  };
-  expect(preview.canConfirm).toBe(true);
-  await api.result('POST', `${batch}/confirm`, 201, {
-    requestId: randomUUID(),
-    expectedJournalRevision: preview.journalRevision,
-    parserVersion: 'usd-csv-v1',
-    ...settings,
-    previewHash: preview.previewHash,
-  });
   // ... and a chain receipt from the Esplora fixture.
+  const headers = { Origin: origin, 'X-CSRF-Token': api.csrfToken };
   bitcoinHistory({ address, count: 1 });
   const registered = await api.request.post('/api/wallet-addresses', {
     data: { address },
@@ -137,7 +93,6 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
       operation.source,
     ]),
   ).toEqual([
-    ['buy', '0.01', '1050.5', 'recorded', 'csv'],
     ['buy', '0.00918359', '1000', 'recorded', 'manual'],
     [null, '0.001', null, 'needs-classification', 'chain'],
   ]);
@@ -164,23 +119,15 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
 
   const accountFilter = main.getByRole('combobox', { name: 'Account', exact: true });
   await accountFilter.selectOption({ label: accountName });
-  await expect(rows).toHaveCount(2);
-  await expect(table.getByRole('rowheader')).toHaveText(['Jun 14, 2025', 'Jun 13, 2025']);
+  await expect(rows).toHaveCount(1);
+  await expect(table.getByRole('rowheader')).toHaveText(['Jun 13, 2025']);
   // OPS-COUNTS: the chips count what they would show with the account filter as it is.
   const chips = main.getByRole('group', { name: 'Filter transactions' });
-  await expect(chips.getByRole('button', { name: /^All/ })).toHaveText('All 2');
+  await expect(chips.getByRole('button', { name: /^All/ })).toHaveText('All 1');
   await expect(chips.getByRole('button', { name: /^Needs classification/ })).toHaveText(
     'Needs classification 0',
   );
   await expect(cells(rows.nth(0))).toHaveText([
-    'Buy10:30',
-    'BTC',
-    '+0.01',
-    '$1,050.50',
-    accountName,
-    'RecordedCSV',
-  ]);
-  await expect(cells(rows.nth(1))).toHaveText([
     'BuyNo time',
     'BTC',
     '+0.00918359',
@@ -192,24 +139,18 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   await main.getByRole('radio', { name: 'RUB', exact: true }).check();
   await expect(page).toHaveURL(/currency=RUB/);
   await expect(page).toHaveURL(/account=/);
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(1);
   await expect(cells(rows.nth(0)).nth(3)).toHaveText(/^(₽[\d,]+\.\d{2}|—No rate)$/);
   await main.getByRole('radio', { name: 'USD', exact: true }).check();
-  await expect(cells(rows.nth(0)).nth(3)).toHaveText('$1,050.50');
+  await expect(cells(rows.nth(0)).nth(3)).toHaveText('$1,000.00');
   // OPS-PHONE: at 390 px two-line rows replace the table and nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 844 });
   const phoneList = main.getByRole('list', { name: 'Transactions', exact: true });
   await expect(phoneList).toBeVisible();
   await expect(table).toHaveCount(0);
-  await expect(phoneList.getByRole('heading', { level: 2 })).toHaveText([
-    'Jun 14, 2025',
-    'Jun 13, 2025',
-  ]);
+  await expect(phoneList.getByRole('heading', { level: 2 })).toHaveText(['Jun 13, 2025']);
   const items = phoneList.getByRole('button');
-  await expect(items).toHaveText([
-    `Buy BTC${accountName} · 10:30+0.01$1,050.50`,
-    `Buy BTC${accountName}+0.00918359$1,000.00`,
-  ]);
+  await expect(items).toHaveText([`Buy BTC${accountName}+0.00918359$1,000.00`]);
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -220,7 +161,7 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   await expect(page.getByRole('dialog', { name: 'Buy · BTC' })).toBeVisible();
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(rows).toHaveCount(2);
+  await expect(rows).toHaveCount(1);
   await accountFilter.selectOption({ label: walletLabel });
   await expect(rows).toHaveCount(1);
   const receipt = cells(rows.nth(0));
@@ -290,15 +231,15 @@ test('OPS-UI: manual, CSV and blockchain operations in one Transactions list wit
   const tradeDrawer = page.getByRole('dialog', { name: 'Buy · BTC' });
   await expect(
     tradeDrawer.getByText('Source', { exact: true }).locator('xpath=following-sibling::dd[1]'),
-  ).toHaveText('Imported from CSV');
+  ).toHaveText('Added by you');
   // Since M9 a buy or sell is edited and deleted right in the drawer.
   await expect(tradeDrawer.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
   await expect(tradeDrawer.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
   await expect(tradeDrawer.getByRole('link')).toHaveCount(0);
   await tradeDrawer.getByRole('button', { name: 'Edit', exact: true }).click();
   const edit = page.getByRole('dialog', { name: 'Edit transaction', exact: true });
-  await expect(edit.getByLabel('Amount')).toHaveValue('0.01');
-  await expect(edit.getByLabel('Total paid')).toHaveValue('1050.5');
+  await expect(edit.getByLabel('Amount')).toHaveValue('0.00918359');
+  await expect(edit.getByLabel('Total paid')).toHaveValue('1000');
   await edit.getByRole('button', { name: 'Cancel' }).click();
   await expect(edit).toHaveCount(0);
   expect(errors).toEqual([]);

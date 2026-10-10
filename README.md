@@ -30,7 +30,7 @@ The verified [manual accounting](docs/manual-accounting.md) slice passed real
 PostgreSQL checks and all 85 HTTPS Chromium cases, including 74 retained cases.
 The [USD trade journal](docs/usd-trade-journal.md) passed all 101 HTTPS Chromium
 cases (85 retained and 16 new), plus real PostgreSQL and migration checks.
-The [reviewed CSV import](docs/csv-imports.md) slice adds explicit mapping, whole-batch
+The [reviewed CSV import](docs/csv-imports.md) slice (its screen and endpoints were removed on 2026-10-10; stored batches stay readable) added explicit mapping, whole-batch
 preview/confirmation, retained source provenance and conditional rollback to the USD
 journal. All 124 HTTPS Chromium cases passed (101 retained and 23 new), together
 with real PostgreSQL and migration checks. Full release hardening and the remaining
@@ -228,7 +228,7 @@ Swagger/documentation endpoint is mounted, including in development.
 | Group       | Endpoints                                                                                                                           |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | Auth        | `GET /auth/csrf`, `POST /auth/login`, `POST /auth/mfa`, `GET /auth/me`, `POST /auth/logout`                                         |
-| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, CSV imports, manual prices, portfolio value and history |
+| Accounting  | `/accounting/...`: accounts, instruments, trades, operations, transfers, chain transactions, proposed transfers and duplicates, manual prices, portfolio value and history |
 | Wallets     | `GET/POST /wallet-addresses`, `PATCH /wallet-addresses/:id`, `POST /wallet-addresses/:id/sync`, `POST /wallet-addresses/:id/balance-gap`, `GET /wallet-addresses/:id/transactions` |
 | Market data | `GET /prices`, `GET /fx-rates`, `GET /sync-status`                                                                                  |
 | Settings    | `GET/PUT /owner-settings`, `GET /export/csv`, `GET /export/backup`                                                                  |
