@@ -29,6 +29,7 @@ import {
   swapPayload,
 } from './asset-swap-input';
 import { emptySwapSummary, type FifoSwap } from './asset-swap-types';
+import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
@@ -102,9 +103,10 @@ export class AssetSwapService {
     target?: string,
   ) {
     try {
-      return await this.source.transaction((manager) =>
-        this.mutateWithin(manager, owner, accountId, kind, input, target),
-      );
+      return await this.source.transaction(async (manager) => {
+        if (target !== undefined) await refuseProducedEntry(manager, owner, 'swapId', target);
+        return this.mutateWithin(manager, owner, accountId, kind, input, target);
+      });
     } catch (error) {
       return rethrowAccountingHistory(error);
     }

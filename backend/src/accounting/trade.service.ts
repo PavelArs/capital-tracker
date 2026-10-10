@@ -21,6 +21,7 @@ import {
   withoutTrade,
 } from './available-quantity';
 import { type CarryInOrigin, projectCarryInOrigin } from './carry-in-projections';
+import { refuseProducedEntry } from './chain-produced';
 import {
   advanceConnectedJournals,
   assertRevisionCapacity,
@@ -290,7 +291,10 @@ export class TradeService {
     value: TradeCreateInput | TradeVoidInput,
   ): Promise<{ created: boolean; value: TradeReceipt }> {
     return this.source
-      .transaction((manager) => this.mutateWithin(manager, owner, id, kind, target, value))
+      .transaction(async (manager) => {
+        if (target !== undefined) await refuseProducedEntry(manager, owner, 'tradeId', target);
+        return this.mutateWithin(manager, owner, id, kind, target, value);
+      })
       .catch(rethrowAccountingHistory);
   }
 
