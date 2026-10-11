@@ -198,6 +198,11 @@ not a required check; a red nightly run is a regression to fix. The nightly run 
 compares main's head with the head of the previous completed run of that workflow (cancelled
 runs excluded) and skips the suite when they match, writing "No new commits" to the run
 summary; manual and pull request runs always execute.
+The suite runs as four parallel jobs (`Acceptance shard 1`..`4`): each starts its own
+synthetic stack and runs one Playwright `--shard=i/4` slice of the browser files
+(`ACCEPTANCE_FULL_SHARD=i/4 pnpm test:e2e`); shard 1 also runs the containerized probe
+checks. The job named `Full acceptance` aggregates them and passes when the suite was
+skipped or every slice passed. Each slice uploads `full-acceptance-report-<i>`.
 The ninth required CI job runs `pnpm audit:production` after a frozen install.
 It fails on high/critical production advisories and registry errors; lower-severity
 findings remain visible in [the dependency security record](dependency-security.md).

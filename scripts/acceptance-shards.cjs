@@ -96,6 +96,21 @@ function parseShard(value) {
   return { name: value, kind: match[1], index: names.indexOf(value), count: names.length };
 }
 
+// The nightly full run splits its browser files over runners: "2/4" is the second of four.
+function parseFullShard(value) {
+  const match = /^([1-9][0-9]?)\/([1-9][0-9]?)$/.exec(typeof value === 'string' ? value : '');
+  const index = match ? Number(match[1]) : 0;
+  const count = match ? Number(match[2]) : 0;
+  if (!match || index > count) throw new Error(`Unknown full acceptance shard: ${value}`);
+  return { index, count, playwrightShard: `${index}/${count}` };
+}
+
+// Only the first runner of a split full run also runs the containerized probes; the others
+// would repeat them without testing anything new.
+function fullShardPlan(steps, fullShard) {
+  return fullShard.index === 1 ? steps : steps.filter((step) => !step.startsWith('check:'));
+}
+
 function probePlan(shard) {
   const parsed = parseShard(shard);
   if (parsed.kind !== 'probes') throw new Error(`Not a probe shard: ${shard}`);
@@ -345,6 +360,8 @@ module.exports = {
   BROWSER_SHARDS,
   CHECKS,
   parseShard,
+  parseFullShard,
+  fullShardPlan,
   probePlan,
   browserCases,
   plan,
