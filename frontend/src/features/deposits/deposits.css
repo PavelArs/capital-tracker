@@ -130,13 +130,6 @@
   font-size: var(--fs-sm);
 }
 
-.deposit-card__attention--page {
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md, 10px);
-  background: var(--surface);
-}
-
 .deposit-back {
   margin: 0;
   font-size: var(--fs-sm);
@@ -160,32 +153,6 @@
 .deposit-stat__value {
   font-size: var(--fs-lg);
   font-weight: 600;
-}
-
-.deposit-table {
-  width: 100%;
-  margin-top: var(--sp-3);
-  border-collapse: collapse;
-  font-size: var(--fs-sm);
-}
-
-.deposit-table th,
-.deposit-table td {
-  padding: 8px 10px 8px 0;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
-  vertical-align: middle;
-}
-
-.deposit-table th {
-  color: var(--ink-3);
-  font-weight: 500;
-}
-
-.deposit-table th.deposit-table__num,
-.deposit-table td.deposit-table__num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 .deposit-table__act {
@@ -227,10 +194,5 @@
 @media (max-width: 560px) {
   .deposit-list {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .deposit-table {
-    display: block;
-    overflow-x: auto;
   }
 }

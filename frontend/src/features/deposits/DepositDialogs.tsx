@@ -104,6 +104,7 @@ function FormDialog({
       titleId={`${id}-title`}
       size={wide ? 'wide' : 'narrow'}
       onEscape={saving ? undefined : onClose}
+      initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
     >
       <form onSubmit={save} noValidate>
         <div className="ui-modal__head">
