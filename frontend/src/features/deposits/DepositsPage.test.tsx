@@ -250,6 +250,22 @@ describe('DEP-DETAIL: one deposit', () => {
     expect(within(checks).getByText('+₽1.23')).toBeInTheDocument();
   });
 
+  it('shows a bank balance below the calculated one with a single minus', async () => {
+    const check = {
+      id: 'c2',
+      checkedOn: '2026-10-11',
+      bankBalance: '100327.54',
+      calculated: '100328.77',
+      difference: '-1.23',
+    };
+    vi.spyOn(depositsApi, 'get').mockResolvedValue(
+      detail(savings, { checks: [check], lastCheck: check }),
+    );
+    open(`/deposits/${savings.id}`);
+    expect((await screen.findAllByText('-₽1.23')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('--₽1.23')).not.toBeInTheDocument();
+  });
+
   it('asks before deleting and goes back to the list', async () => {
     const user = userEvent.setup();
     vi.spyOn(depositsApi, 'get').mockResolvedValue(detail(savings));

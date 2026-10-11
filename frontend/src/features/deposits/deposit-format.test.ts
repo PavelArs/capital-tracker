@@ -1,6 +1,6 @@
 import type { Deposit } from '@api/deposits.api';
-import { describe, expect, it } from 'vitest';
-import { attention, dateText, daysBetween, termText } from './deposit-format';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { attention, dateText, daysBetween, termText, today } from './deposit-format';
 
 const deposit = (change: Partial<Deposit> = {}): Deposit => ({
   id: 'd1',
@@ -58,5 +58,19 @@ describe('attention', () => {
       'Not checked against the bank yet',
     );
     expect(attention(deposit(), '2026-11-15')).toBe('Not checked against the bank for 45 days');
+  });
+});
+
+describe('today', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is the Moscow calendar day, which runs ahead of UTC for three hours', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-11T22:30:00Z'));
+    expect(today()).toBe('2026-10-12');
+    vi.setSystemTime(new Date('2026-10-11T20:59:00Z'));
+    expect(today()).toBe('2026-10-11');
   });
 });

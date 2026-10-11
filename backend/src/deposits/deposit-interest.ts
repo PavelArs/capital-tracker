@@ -202,6 +202,16 @@ export function projectDeposit(
     }
   }
 
+  // Interest posted at maturity or at closure can be paid out after the replay stopped.
+  for (; next < movements.length && movements[next].date <= asOf; next += 1) {
+    const movement = movements[next];
+    if (movement.kind !== 'interest-payout') continue;
+    const taken = canonicalDecimalToAtoms(movement.amount);
+    const paid = taken < due ? taken : due;
+    due -= paid;
+    paidOut += paid;
+  }
+
   const earned = roundToCents(accrued);
   return {
     asOf,
@@ -234,8 +244,8 @@ export function nextPayout(
 
 /**
  * The index of the first movement the deposit cannot have had, or -1: a withdrawal larger than
- * the money held, a payout larger than the interest due, or money moved after the whole deposit
- * was withdrawn. Movements are in date order.
+ * the money held, a payout larger than the interest due, or money moved on or after the day the
+ * whole deposit was withdrawn. Movements are in date order.
  */
 export function firstImpossibleMovement(
   terms: DepositTerms,
@@ -254,7 +264,7 @@ export function firstImpossibleMovement(
     const amount = canonicalDecimalToAtoms(movement.amount);
     if (movement.kind === 'interest-payout') {
       if (amount > canonicalDecimalToAtoms(before.due)) return index;
-    } else if (before.closedOn !== null && before.closedOn < movement.date) {
+    } else if (before.closedOn !== null) {
       return index;
     } else if (
       movement.kind === 'withdrawal' &&

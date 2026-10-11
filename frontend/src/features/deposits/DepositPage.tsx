@@ -173,9 +173,7 @@ export default function DepositPage() {
               <Stat
                 label="Last check"
                 value={
-                  Number(check.difference) === 0
-                    ? 'Matches'
-                    : `${Number(check.difference) > 0 ? '+' : '-'}${money(check.difference, own)}`
+                  Number(check.difference) === 0 ? 'Matches' : money(check.difference, own, true)
                 }
                 hint={`${dateText(check.checkedOn)}: bank ${money(check.bankBalance, own)}, app ${money(check.calculated, own)}`}
               />

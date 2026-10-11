@@ -1,6 +1,7 @@
 import {
   type DepositMovement,
   type DepositTerms,
+  firstImpossibleMovement,
   nextPayout,
   payoutDates,
   projectDeposit,
@@ -197,6 +198,53 @@ describe('projectDeposit', () => {
       '2027-01-01',
     );
     expect(result.balance).toBe('101019.18');
+  });
+});
+
+describe('interest paid out after the term or the closure', () => {
+  const atEnd = terms({ payout: 'at-end', endDate: '2026-02-01' });
+
+  it('takes a payout made after maturity off the interest due', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-03', kind: 'interest-payout', amount: '1019.18' },
+    ];
+    const result = projectDeposit(atEnd, movements, '2026-02-10');
+    expect(result.due).toBe('0.00');
+    expect(result.interestPaidOut).toBe('1019.18');
+    expect(projectDeposit(atEnd, movements, '2026-02-02').due).toBe('1019.18');
+    expect(firstImpossibleMovement(atEnd, movements)).toBe(-1);
+  });
+
+  it('takes a payout made after an early closure off the interest posted before it', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-11', kind: 'withdrawal', amount: '100000' },
+      { date: '2026-02-15', kind: 'interest-payout', amount: '1019.18' },
+    ];
+    const result = projectDeposit(terms(), movements, '2026-03-01');
+    expect(result.closedOn).toBe('2026-02-11');
+    expect(result.due).toBe('0.00');
+    expect(firstImpossibleMovement(terms(), movements)).toBe(-1);
+  });
+
+  it('refuses a payout larger than what is still due after an earlier one', () => {
+    const movements: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-02-03', kind: 'interest-payout', amount: '1000' },
+      { date: '2026-02-04', kind: 'interest-payout', amount: '100' },
+    ];
+    expect(firstImpossibleMovement(atEnd, movements)).toBe(2);
+  });
+
+  it('refuses money moved on the day the whole deposit was withdrawn', () => {
+    const closing: DepositMovement[] = [
+      topup('2026-01-01', '100000'),
+      { date: '2026-01-20', kind: 'withdrawal', amount: '100000' },
+    ];
+    expect(firstImpossibleMovement(terms(), closing)).toBe(-1);
+    expect(firstImpossibleMovement(terms(), [...closing, topup('2026-01-20', '500')])).toBe(2);
+    expect(firstImpossibleMovement(terms(), [...closing, topup('2026-01-21', '500')])).toBe(2);
   });
 });
 

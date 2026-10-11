@@ -16,7 +16,10 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
 }
 
-export const today = () => new Date().toISOString().slice(0, 10);
+const MOSCOW_OFFSET_MS = 3 * 3_600_000;
+
+/** Today's calendar date in Moscow, the day the server counts interest by. */
+export const today = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
 
 export const statusText: Record<DepositStatus, string> = {
   active: 'Active',
