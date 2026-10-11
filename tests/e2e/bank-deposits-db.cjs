@@ -216,6 +216,11 @@ async function checks(db, service, owner, ids) {
   assert.equal(checked.lastCheck.calculated, '5052.07');
   assert.equal(checked.lastCheck.difference, '0.03');
   assert.equal(checked.checks.length, 1);
+  assert.equal(
+    (await service.get(owner, ids.usd, '2026-10-02')).lastCheck,
+    null,
+    'A check made later says nothing about an earlier day',
+  );
   await rejected(
     () => service.addCheck(owner, ids.usd, { checkedOn: '2026-06-30', bankBalance: '1' }),
     422,

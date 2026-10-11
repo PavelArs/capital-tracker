@@ -242,7 +242,8 @@ export function nextPayout(
   movements: readonly DepositMovement[],
   asOf: string,
 ): { date: string; interest: string; treatment: 'capitalized' | 'payable' } | null {
-  const horizon = terms.endDate ?? addMonths(asOf, 3);
+  // Clamped dates can leave a quarter a day longer than three months.
+  const horizon = terms.endDate ?? addMonths(asOf, 4);
   const coming = payoutDates(terms, horizon).find((date) => date > asOf);
   if (!coming) return null;
   const then = projectDeposit(terms, movements, coming);

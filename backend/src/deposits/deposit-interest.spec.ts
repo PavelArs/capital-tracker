@@ -296,6 +296,18 @@ describe('nextPayout', () => {
     expect(next).toEqual({ date: '2026-03-01', interest: '920.55', treatment: 'payable' });
   });
 
+  it('finds the next quarterly date when a clamped one is followed by a longer quarter', () => {
+    const quarterly = terms({
+      startDate: '2026-01-31',
+      endDate: null,
+      payout: 'quarterly',
+      capitalized: true,
+    });
+    expect(payoutDates(quarterly, '2026-12-31').slice(0, 2)).toEqual(['2026-04-30', '2026-07-31']);
+    const next = nextPayout(quarterly, [topup('2026-01-31', '100000')], '2026-04-30');
+    expect(next?.date).toBe('2026-07-31');
+  });
+
   it('is null once the term is over', () => {
     expect(nextPayout(terms(), [topup('2026-01-01', '100000')], '2026-04-01')).toBeNull();
   });

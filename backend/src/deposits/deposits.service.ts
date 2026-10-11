@@ -394,7 +394,8 @@ export class DepositsService {
       terms.endDate !== null && now.closedOn === null
         ? projectDeposit(terms, movements, terms.endDate)
         : null;
-    const last = stored.checks[stored.checks.length - 1];
+    // Only checks made by the asked day: a later one says nothing about this day.
+    const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
     const lastCheck = last
       ? (() => {
           const calculated = projectDeposit(terms, movements, last.checkedOn).balance;
