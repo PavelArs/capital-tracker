@@ -12,10 +12,8 @@ import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import { quantity } from '../portfolio/format';
+import LoadMore, { useInfinite } from '../shell/InfiniteScroll';
 import { moment, shortAddress } from './operation-format';
-
-// XFER-PROPOSED: how many proposals are listed before "Show all".
-const SHOWN = 3;
 
 const place = (leg: ProposedLeg) =>
   leg.wallet.label ??
@@ -42,7 +40,6 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
   const [found, setFound] = useState<Proposals | null>(
     () => cachedReads.transferProposals.last() ?? null,
   );
-  const [all, setAll] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<{ key: string; text: string } | null>(null);
 
@@ -64,6 +61,8 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
   }, [load]);
 
   const proposals = found?.proposals ?? [];
+  // PAGES: twenty proposals a page.
+  const paged = useInfinite(proposals);
   if (proposals.length === 0) return null;
   const keyOf = (item: TransferProposal) => `${item.outgoing.addressId}:${item.outgoing.txid}`;
   const join = async (item: TransferProposal) => {
@@ -92,7 +91,6 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
     }
   };
 
-  const listed = all ? proposals : proposals.slice(0, SHOWN);
   return (
     <section className="shell-card transactions-proposals" aria-labelledby="transfer-proposals">
       <h2 id="transfer-proposals">
@@ -106,7 +104,7 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
         changes until you do.
       </p>
       <ul className="transactions-proposals__list">
-        {listed.map((item) => {
+        {paged.rows.map((item) => {
           const key = keyOf(item);
           const hasFee = Number(item.fee) > 0;
           return (
@@ -141,11 +139,7 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
           );
         })}
       </ul>
-      {proposals.length > SHOWN && (
-        <button type="button" className="shell-link" onClick={() => setAll((current) => !current)}>
-          {all ? 'Show fewer' : `Show all ${proposals.length}`}
-        </button>
-      )}
+      {paged.more && <LoadMore {...paged.more} label="proposals" />}
       <p className="shell-note">
         Offered when the same coin arrives within {found?.windowHours} hours of the withdrawal and
         at most {found?.feePercent}% less. Anything less certain stays to classify.

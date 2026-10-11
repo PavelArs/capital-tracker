@@ -22,6 +22,7 @@ import {
   type OperationFee,
   type OperationList,
   type OperationPlace,
+  type OperationRange,
   projectOperations,
   type RewardOperationInput,
 } from './operation-list';
@@ -179,16 +180,42 @@ function payment(row: TradeRow): TradePayment | null {
   };
 }
 
-/** Only `currency` (USD, EUR or RUB) may be asked; without it the main currency is used. */
-function parseQuery(query: unknown): AccountingCurrency | null {
+interface ListQuery {
+  currency: AccountingCurrency | null;
+  range: OperationRange;
+}
+
+const calendarDay = /^\d{4}-\d{2}-\d{2}$/;
+function parseDay(value: unknown): string {
+  if (typeof value !== 'string' || !calendarDay.test(value))
+    throw new BadRequestException('Invalid accounting input');
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value)
+    throw new BadRequestException('Invalid accounting input');
+  return value;
+}
+
+/**
+ * `currency` (USD, EUR or RUB; without it the main currency is used) and, OPS-PERIOD, `from`
+ * and `to`: UTC days (YYYY-MM-DD), both included, either may be left out.
+ */
+function parseQuery(query: unknown): ListQuery {
   if (!query || typeof query !== 'object' || Array.isArray(query))
     throw new BadRequestException('Invalid accounting input');
-  const keys = Object.keys(query);
-  if (keys.length === 0) return null;
-  const { currency } = query as Record<string, unknown>;
-  if (keys.length !== 1 || keys[0] !== 'currency' || !isAccountingCurrency(currency))
+  const given = query as Record<string, unknown>;
+  if (Object.keys(given).some((key) => key !== 'currency' && key !== 'from' && key !== 'to'))
     throw new BadRequestException('Invalid accounting input');
-  return currency;
+  if ('currency' in given && !isAccountingCurrency(given.currency))
+    throw new BadRequestException('Invalid accounting input');
+  const range: OperationRange = {};
+  if ('from' in given) range.from = parseDay(given.from);
+  if ('to' in given) range.to = parseDay(given.to);
+  if (range.from && range.to && range.from > range.to)
+    throw new BadRequestException('Invalid accounting input');
+  return {
+    currency: isAccountingCurrency(given.currency) ? given.currency : null,
+    range,
+  };
 }
 
 @Injectable()
@@ -197,7 +224,7 @@ export class OperationListService {
 
   async read(ownerId: string, rawQuery: unknown, now = new Date()): Promise<OperationList> {
     const owner = parseUuid(ownerId);
-    const asked = parseQuery(rawQuery);
+    const { currency: asked, range } = parseQuery(rawQuery);
     return this.source.transaction('REPEATABLE READ', async (manager) => {
       await manager.query('SET TRANSACTION READ ONLY');
       const trades: TradeRow[] = await manager.query(
@@ -485,6 +512,7 @@ export class OperationListService {
           leftOutTokens: await leftOutTokens(manager, owner),
         },
         fx,
+        range,
       );
     });
   }

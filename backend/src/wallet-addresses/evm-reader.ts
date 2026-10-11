@@ -1,8 +1,8 @@
-import type { StepFailure } from './chain-sync';
 import type {
   BlockResult,
   CallResult,
   EtherscanClient,
+  Failed,
   InternalTransfer,
   ListResult,
   NormalTransaction,
@@ -13,7 +13,7 @@ import type {
 // is asked again, in case the plan changed.
 export const FALLBACK_FOR_MS = 6 * 60 * 60_000;
 
-type Answer = { ok: true } | { ok: false; reason: StepFailure };
+type Answer = { ok: true } | Failed;
 
 /**
  * BLOCKSCOUT: reads one chain's history from Etherscan and, when Etherscan's free plan does not
@@ -22,6 +22,8 @@ type Answer = { ok: true } | { ok: false; reason: StepFailure };
  */
 export class EvmReader {
   private fallbackSince: number | null = null;
+  // SYNC-DETAIL: what the source last said when it refused, until a read succeeds.
+  private said: string | null = null;
 
   constructor(
     private readonly primary: EtherscanClient,
@@ -31,6 +33,11 @@ export class EvmReader {
 
   get configured(): boolean {
     return this.primary.configured;
+  }
+
+  /** What the source said about the last refusal, for the wallet's message; null if it said nothing. */
+  get detail(): string | null {
+    return this.said;
   }
 
   blockNumber(): Promise<BlockResult> {
@@ -54,6 +61,12 @@ export class EvmReader {
   }
 
   private async read<T extends Answer>(ask: (client: EtherscanClient) => Promise<T>): Promise<T> {
+    const answer = await this.route(ask);
+    this.said = answer.ok ? null : (answer.detail ?? null);
+    return answer;
+  }
+
+  private async route<T extends Answer>(ask: (client: EtherscanClient) => Promise<T>): Promise<T> {
     const fallback = this.fallback;
     if (fallback === null) return ask(this.primary);
     if (this.fallbackSince !== null && this.now() - this.fallbackSince < FALLBACK_FOR_MS) {

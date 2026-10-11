@@ -89,6 +89,11 @@ export function ticker(asset: OperationAsset): string {
   return asset.network ? `${name} (${networkNames[asset.network]})` : name;
 }
 
+/** The blockchain name a token's ticker carries ("Ethereum"), or null for a coin of its own. */
+export function assetNetwork(asset: OperationAsset): string | null {
+  return asset.network ? networkNames[asset.network] : null;
+}
+
 /** Filter key: tickers group chain and journal rows of one coin; nameless assets by id. */
 export function assetKey(asset: OperationAsset): string {
   return asset.symbol ? asset.symbol.toUpperCase() : `id:${asset.instrumentId ?? asset.name}`;
