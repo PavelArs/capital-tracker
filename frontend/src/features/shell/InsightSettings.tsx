@@ -48,21 +48,40 @@ function parseForm(
   };
 }
 
-// "BTC · Bitcoin"; where two assets still read the same, the accounts holding them tell them apart.
+// "BTC · Bitcoin"; where two assets still read the same, the accounts holding them tell them
+// apart, and where even those collide, the end of the asset's id does.
 function optionLabels(assets: AssetValuation[]): Map<string, string> {
-  const base = (asset: AssetValuation) =>
-    asset.symbol && asset.symbol !== asset.name ? `${asset.symbol} · ${asset.name}` : asset.name;
-  const counts = new Map<string, number>();
-  for (const asset of assets) counts.set(base(asset), (counts.get(base(asset)) ?? 0) + 1);
-  return new Map(
+  const count = (labels: Map<string, string>) => {
+    const counts = new Map<string, number>();
+    for (const text of labels.values()) counts.set(text, (counts.get(text) ?? 0) + 1);
+    return counts;
+  };
+  const named = new Map(
+    assets.map((asset) => [
+      asset.instrumentId,
+      asset.symbol && asset.symbol !== asset.name ? `${asset.symbol} · ${asset.name}` : asset.name,
+    ]),
+  );
+  const first = count(named);
+  const held = new Map(
     assets.map((asset) => {
-      const text = base(asset);
+      const text = named.get(asset.instrumentId) ?? asset.name;
       const accounts = [...new Set(asset.holdings.map((holding) => holding.accountName))];
       return [
         asset.instrumentId,
-        (counts.get(text) ?? 0) > 1 && accounts.length > 0
+        (first.get(text) ?? 0) > 1 && accounts.length > 0
           ? `${text} · ${accounts.join(', ')}`
           : text,
+      ];
+    }),
+  );
+  const second = count(held);
+  return new Map(
+    assets.map((asset) => {
+      const text = held.get(asset.instrumentId) ?? asset.name;
+      return [
+        asset.instrumentId,
+        (second.get(text) ?? 0) > 1 ? `${text} · #${asset.instrumentId.slice(-6)}` : text,
       ];
     }),
   );

@@ -73,10 +73,19 @@ export function collectInsights(
         : `${unchecked} targets are not checked: their assets are hidden or no longer held.`;
   }
 
+  let unpriced = 0;
   const review: { size: number; item: InsightItem }[] = [];
   for (const asset of portfolio.assets) {
-    if (Number(asset.knownCostQuantity) <= 0 || asset.knownUnrealizedReturnPercent === null)
+    if (Number(asset.knownCostQuantity) <= 0) continue;
+    // Known cost but no current price or rate: the return cannot be checked yet.
+    if (asset.knownUnrealizedReturnPercent === null) {
+      if (
+        Number(asset.quantity) !== 0 &&
+        (rules.gainReviewPercent !== null || rules.lossReviewPercent !== null)
+      )
+        unpriced += 1;
       continue;
+    }
     const change = Number(asset.knownUnrealizedReturnPercent);
     const gain = rules.gainReviewPercent;
     const loss = rules.lossReviewPercent;
@@ -102,6 +111,13 @@ export function collectInsights(
         },
       });
     }
+  }
+
+  if (unpriced > 0 && note === null) {
+    note =
+      unpriced === 1
+        ? '1 asset has no price yet, so its return on cost is not checked.'
+        : `${unpriced} assets have no price yet, so their returns on cost are not checked.`;
   }
 
   const widest = (a: { gap?: number; size?: number }, b: { gap?: number; size?: number }) =>

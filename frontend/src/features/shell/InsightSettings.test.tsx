@@ -145,4 +145,21 @@ describe('insight rules in Settings', () => {
       'USDT · Tether · Exchange',
     ]);
   });
+
+  it('INS-SETTINGS: falls back to the end of the id when labels still collide', async () => {
+    valued.mockResolvedValue({
+      assets: [
+        { instrumentId: btc, symbol: 'USDT', name: 'Tether', holdings: [] },
+        { instrumentId: eth, symbol: 'USDT', name: 'Tether', holdings: [] },
+      ],
+    } as unknown as PortfolioValuation);
+    render(<InsightSettings />);
+    await userEvent.setup().click(await screen.findByRole('button', { name: 'Add target' }));
+    const select = screen.getByLabelText('Target asset 1') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.text)).toEqual([
+      'Choose an asset',
+      `USDT · Tether · #${btc.slice(-6)}`,
+      `USDT · Tether · #${eth.slice(-6)}`,
+    ]);
+  });
 });

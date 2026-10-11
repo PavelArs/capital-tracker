@@ -154,4 +154,16 @@ describe('collectInsights', () => {
       collectInsights(portfolio([none, off]), rules({ lossReviewPercent: '10' })).items,
     ).toEqual([]);
   });
+
+  it('INS-REVIEW-UNPRICED: reports an asset with known cost but no return as not checked', () => {
+    const unpriced = asset(btc, 'BTC', { knownUnrealizedReturnPercent: null });
+    const sold = asset(eth, 'ETH', { quantity: '0', knownUnrealizedReturnPercent: null });
+    const withLevels = collectInsights(
+      portfolio([unpriced, sold]),
+      rules({ gainReviewPercent: '100' }),
+    );
+    expect(withLevels.items).toEqual([]);
+    expect(withLevels.note).toBe('1 asset has no price yet, so its return on cost is not checked.');
+    expect(collectInsights(portfolio([unpriced]), rules()).note).toBeNull();
+  });
 });
