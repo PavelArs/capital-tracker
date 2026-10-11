@@ -494,6 +494,11 @@ export function projectPortfolio(
   let missingRateCount = 0;
   let unrealized = 0n;
   let unrealizedComplete = true;
+  // The same result over the coins whose cost is known, for a portfolio that is only partly known.
+  let knownUnrealized = 0n;
+  let knownUnrealizedCost = 0n;
+  let knownUnrealizedComplete = true;
+  let knownUnrealizedAssets = 0;
   let knownRealized = 0n;
   let unknownRealizedCount = 0;
   const byType = new Map<string, { label: string; value: bigint }>();
@@ -512,6 +517,12 @@ export function projectPortfolio(
     const cost =
       total.unknownQuantity > 0n || total.missingRateQuantity > 0n ? null : total.knownCost;
     const result = held && value !== null && cost !== null ? value - cost * ATOM_SCALE : null;
+    // Value less cost over the quantity whose cost is known; the rest stays out, named as unknown.
+    const knownValue = valueAt(instrument.id, knownQuantity);
+    const knownResult =
+      held && knownQuantity > 0n && knownValue !== null
+        ? knownValue - total.knownCost * ATOM_SCALE
+        : null;
     const realization = realized.get(instrument.id) ?? { known: 0n, unknown: 0, missingRate: 0 };
     if (held) {
       if (value === null) missingPriceCount++;
@@ -525,6 +536,14 @@ export function projectPortfolio(
       if (total.unknownQuantity > 0n) unknownCostCount++;
       if (result === null) unrealizedComplete = false;
       else unrealized += result;
+      if (knownQuantity > 0n) {
+        if (knownResult === null) knownUnrealizedComplete = false;
+        else {
+          knownUnrealized += knownResult;
+          knownUnrealizedCost += total.knownCost;
+          knownUnrealizedAssets++;
+        }
+      }
     }
     if ((held && total.missingRateQuantity > 0n) || realization.missingRate > 0) missingRateCount++;
     knownRealized += realization.known;
@@ -548,12 +567,18 @@ export function projectPortfolio(
       knownCostSubtotal: formatAtoms(total.knownCost),
       unknownCostQuantity: formatAtoms(total.unknownQuantity),
       missingRateQuantity: formatAtoms(total.missingRateQuantity),
+      knownCostQuantity: formatAtoms(knownQuantity),
       averageBuyPrice: knownQuantity > 0n ? quotient(total.knownCost, knownQuantity) : null,
       unrealizedPnl: result === null ? null : formatSignedProduct(result),
       unrealizedReturnPercent:
         result === null || cost === null || cost === 0n
           ? null
           : formatPercent(result, cost * ATOM_SCALE),
+      knownUnrealizedPnl: knownResult === null ? null : formatSignedProduct(knownResult),
+      knownUnrealizedReturnPercent:
+        knownResult === null || total.knownCost === 0n
+          ? null
+          : formatPercent(knownResult, total.knownCost * ATOM_SCALE),
       realizedPnl: realization.unknown > 0 ? null : formatAtoms(realization.known),
       knownRealizedSubtotal: formatAtoms(realization.known),
       unknownRealizedCount: realization.unknown,
@@ -610,6 +635,17 @@ export function projectPortfolio(
     unrealizedReturnPercent:
       available && unrealizedComplete && costComplete && knownCost !== 0n
         ? formatPercent(unrealized, knownCost * ATOM_SCALE)
+        : null,
+    knownUnrealizedPnl:
+      available && knownUnrealizedComplete && knownUnrealizedAssets > 0
+        ? formatSignedProduct(knownUnrealized)
+        : null,
+    knownUnrealizedReturnPercent:
+      available &&
+      knownUnrealizedComplete &&
+      knownUnrealizedAssets > 0 &&
+      knownUnrealizedCost !== 0n
+        ? formatPercent(knownUnrealized, knownUnrealizedCost * ATOM_SCALE)
         : null,
     realizedPnl: available && unknownRealizedCount === 0 ? formatAtoms(knownRealized) : null,
     knownRealizedSubtotal: formatAtoms(knownRealized),
