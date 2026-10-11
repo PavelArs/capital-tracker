@@ -271,7 +271,7 @@ async function migrationPreservation() {
       ],
     );
     const before = await fingerprint(db, ['migrations'], true);
-    assert.match(migrate(predecessor), /Migrations applied: 37/);
+    assert.match(migrate(predecessor), /Migrations applied: 38/);
     assert.deepEqual(await db.query('SELECT "consecutiveFailures" FROM owner_mfa'), [
       { consecutiveFailures: 0 },
     ]);
@@ -314,6 +314,7 @@ async function migrationPreservation() {
           'wallet_stellar_accounts',
           'wallet_zcash_accounts',
           'wallet_sync_runs',
+          'hidden_assets',
         ],
         true,
       ),
@@ -950,7 +951,7 @@ async function main() {
     'Missing new module is a prerequisite failure, not RED',
   );
   await createDatabase(database);
-  assert.match(migrate(database), /Migrations applied: 57/);
+  assert.match(migrate(database), /Migrations applied: 58/);
   assert.match(migrate(database), /Migrations applied: 0/);
   await migrationPreservation();
   const db = source();

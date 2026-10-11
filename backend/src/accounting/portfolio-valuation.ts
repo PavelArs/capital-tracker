@@ -62,6 +62,21 @@ export interface PortfolioAccountInput {
   lots: readonly PortfolioLot[];
   realizations: readonly PortfolioRealization[];
 }
+/**
+ * ASSET-HIDE: the accounts without the lots and realizations of the assets the owner hid, so no
+ * asset, total or realized sum counts them. The books they were made in are not touched.
+ */
+export function withoutAssets(
+  accounts: readonly PortfolioAccountInput[],
+  hidden: ReadonlySet<string>,
+): PortfolioAccountInput[] {
+  if (hidden.size === 0) return [...accounts];
+  return accounts.map((account) => ({
+    ...account,
+    lots: account.lots.filter((lot) => !hidden.has(lot.instrumentId)),
+    realizations: account.realizations.filter((item) => !hidden.has(item.instrumentId)),
+  }));
+}
 /** A stored price before the asset's source decides how it is used. */
 export interface StoredPrice {
   priceUsd: string;

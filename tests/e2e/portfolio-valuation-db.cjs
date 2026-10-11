@@ -37,6 +37,7 @@ function services(db) {
     prices: make('manual-price.service', 'ManualPriceService'),
     transfers: make('owned-transfer.service', 'OwnedTransferService'),
     portfolio: make('portfolio-valuation.service', 'PortfolioValuationService'),
+    hidden: make('hidden-asset.service', 'HiddenAssetService'),
   };
 }
 async function fingerprint(db) {
@@ -372,6 +373,55 @@ async function gapsAndInvalidHistory(db, s, f) {
   console.log('PASS PV-NONE/PV-FIXED gaps and invalid history');
 }
 
+async function hiddenAssets(db, s, f) {
+  stage = 'ASSET-HIDE a hidden asset leaves the portfolio and comes back';
+  const { fourth, other } = f;
+  const first = await instrument(s, fourth, {
+    name: 'Hide A',
+    symbol: 'HIDA',
+    assetType: 'crypto',
+  });
+  const second = await instrument(s, fourth, {
+    name: 'Hide B',
+    symbol: 'HIDB',
+    assetType: 'crypto',
+  });
+  const exchange = await account(s, fourth, 'Exchange');
+  await trade(s, fourth, exchange, first, 'buy', '2025-01-02T00:00:00.000Z', '2', '150');
+  await trade(s, fourth, exchange, second, 'buy', '2025-01-02T01:00:00.000Z', '3', '24');
+  await observe(db, 'HIDA', '100', ago(30));
+  await observe(db, 'HIDB', '10', ago(30));
+  assert.equal((await read(s, fourth)).totalValue, '230');
+  assert.deepEqual(await s.hidden.list(fourth), { items: [] });
+
+  const hid = await s.hidden.hide(fourth, second);
+  assert.deepEqual([hid.instrumentId, hid.symbol, hid.name], [second, 'HIDB', 'Hide B']);
+  assert.equal(
+    (await s.hidden.hide(fourth, second)).hiddenAt,
+    hid.hiddenAt,
+    'Hiding twice keeps the first time',
+  );
+  const report = await read(s, fourth);
+  assert.equal(asset(report, second), undefined, 'A hidden asset is not listed');
+  assert.equal(report.totalValue, '200', 'A hidden asset is not in the total');
+  assert.equal(report.pricedSubtotal, '200');
+  assert.deepEqual(
+    (await s.hidden.list(fourth)).items.map((item) => item.instrumentId),
+    [second],
+  );
+  assert.equal((await s.hidden.list(other)).items.length, 0, 'Another owner sees none of it');
+  await rejected(() => s.hidden.hide(other, first), 404);
+  await rejected(() => s.hidden.show(other, second), 404);
+  await rejected(() => s.hidden.hide(fourth, 'not-an-id'), 400);
+
+  assert.deepEqual(await s.hidden.show(fourth, second), { instrumentId: second, hidden: false });
+  assert.deepEqual(await s.hidden.show(fourth, second), { instrumentId: second, hidden: false });
+  assert.equal((await read(s, fourth)).totalValue, '230', 'Showing the asset brings it back');
+  assert.equal(asset(await read(s, fourth), second).quantity, '3');
+  assert.deepEqual(await s.hidden.list(fourth), { items: [] });
+  console.log('PASS ASSET-HIDE hide, list, show and the portfolio without it');
+}
+
 async function main() {
   for (const [key, value] of Object.entries(settings))
     assert.equal(process.env[key], value, 'Exact isolated settings required');
@@ -407,15 +457,17 @@ async function main() {
   const db = source();
   try {
     await db.initialize();
-    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 57);
-    const [owner, other, third] =
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM migrations'))[0].n, 58);
+    const [owner, other, third, fourth] =
       await db.query(`INSERT INTO users(email,password,"emailVerified") VALUES
       ('portfolio-owner@example.invalid','synthetic-not-a-hash',true),
       ('portfolio-other@example.invalid','synthetic-not-a-hash',true),
-      ('portfolio-third@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
+      ('portfolio-third@example.invalid','synthetic-not-a-hash',true),
+      ('portfolio-fourth@example.invalid','synthetic-not-a-hash',true) RETURNING id`);
     const s = services(db);
-    const f = { owner: owner.id, other: other.id, third: third.id };
-    for (const check of [wholePortfolio, gapsAndInvalidHistory]) await check(db, s, f);
+    const f = { owner: owner.id, other: other.id, third: third.id, fourth: fourth.id };
+    for (const check of [wholePortfolio, gapsAndInvalidHistory, hiddenAssets])
+      await check(db, s, f);
   } finally {
     if (db.isInitialized) await db.destroy();
   }

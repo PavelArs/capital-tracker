@@ -792,6 +792,23 @@ export function hiddenTokenSymbols(addresses: WalletAddress[]): Set<string> {
   return hidden;
 }
 
+/**
+ * The tickers the asset filter leaves out: those of tokens the wallets leave out and of the
+ * assets the owner hid, in the case they were written and in capitals.
+ */
+export function leftOutSymbols(
+  addresses: WalletAddress[],
+  hiddenAssets: readonly { symbol: string | null }[],
+): Set<string> {
+  const left = hiddenTokenSymbols(addresses);
+  for (const asset of hiddenAssets)
+    if (asset.symbol) {
+      left.add(asset.symbol);
+      left.add(asset.symbol.toUpperCase());
+    }
+  return left;
+}
+
 /** Holdings the account's addresses already show from the chain are not listed again. */
 export function trackedSymbols(addresses: WalletAddress[]): Set<string> {
   return new Set(addresses.flatMap(addressAssets));

@@ -76,6 +76,8 @@ interface SeriesInputs {
 // Every owner table a snapshot value depends on. A future operation source joins this list.
 const INPUT_TABLES = [
   'accounting_instruments',
+  // ASSET-HIDE: a hidden asset leaves every value and its history.
+  'hidden_assets',
   'manual_accounts',
   'account_trade_journals',
   'account_trades',

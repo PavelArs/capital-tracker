@@ -42,6 +42,7 @@ import {
   portfolioAccount,
   projectPortfolio,
   type StoredPrice,
+  withoutAssets,
 } from './portfolio-valuation';
 import { applyChainMoves, type ChainMove } from './provisional-chain';
 import { findOrCreateInstrument } from './trade.service';
@@ -104,7 +105,10 @@ async function latestManualPrices(
 }
 
 export interface ValuationInputs {
+  /** The instruments the owner did not hide. */
   instruments: PortfolioInstrument[];
+  /** ASSET-HIDE: the instruments the owner hid; no account holds or realized any of them. */
+  hidden: ReadonlySet<string>;
   accounts: AccountRow[];
   ledgers: ConnectedLedgerCache;
   /** D1: each account's unanswered chain movements and outgoing "Other" answers. */
@@ -299,6 +303,18 @@ export async function ensureChainCoins(manager: EntityManager, owner: string): P
   }
 }
 
+/** ASSET-HIDE: the instruments the owner hid. */
+export async function readHiddenAssets(
+  manager: EntityManager,
+  owner: string,
+): Promise<Set<string>> {
+  const rows: { instrumentId: string }[] = await manager.query(
+    'SELECT "instrumentId" FROM hidden_assets WHERE "ownerId"=$1',
+    [owner],
+  );
+  return new Set(rows.map((row) => row.instrumentId));
+}
+
 /**
  * The owner's instruments, accounts and connected ledgers, read once. With `startedBy`,
  * only accounts whose journal had started by then are replayed.
@@ -308,11 +324,13 @@ export async function readValuationInputs(
   owner: string,
   startedBy?: string,
 ): Promise<ValuationInputs> {
-  const instruments: PortfolioInstrument[] = await manager.query(
+  const all: PortfolioInstrument[] = await manager.query(
     `SELECT id,name,symbol,"assetType","valuationCurrency","priceSource"
       FROM accounting_instruments WHERE "ownerId"=$1 ORDER BY id`,
     [owner],
   );
+  const hidden = await readHiddenAssets(manager, owner);
+  const instruments = all.filter((instrument) => !hidden.has(instrument.id));
   const accounts: AccountRow[] = await manager.query(
     `SELECT a.id AS "accountId",a.name,j."coverageFrom"
       FROM manual_accounts a LEFT JOIN account_trade_journals j
@@ -332,7 +350,13 @@ export async function readValuationInputs(
   } catch (error) {
     rethrowAccountingHistory(error);
   }
-  return { instruments, accounts, ledgers, chainMoves: await readChainMoves(manager, owner) };
+  return {
+    instruments,
+    hidden,
+    accounts,
+    ledgers,
+    chainMoves: await readChainMoves(manager, owner),
+  };
 }
 
 /**
@@ -341,6 +365,14 @@ export async function readValuationInputs(
  * account held nothing before its first operation.
  */
 export function accountsAt(
+  inputs: ValuationInputs,
+  at: string,
+  options: { emptyBeforeCoverage?: boolean } = {},
+): PortfolioAccountInput[] {
+  return withoutAssets(allAccountsAt(inputs, at, options), inputs.hidden);
+}
+
+function allAccountsAt(
   inputs: ValuationInputs,
   at: string,
   options: { emptyBeforeCoverage?: boolean } = {},

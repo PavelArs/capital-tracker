@@ -75,6 +75,7 @@ function inputs(
   } as unknown as ConnectedLedger;
   return {
     instruments: [],
+    hidden: new Set(),
     accounts: [],
     ledgers: new Map(accounts.map((account) => [account.id, ledger])),
     chainMoves: new Map(),

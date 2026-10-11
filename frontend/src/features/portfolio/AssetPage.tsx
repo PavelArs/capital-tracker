@@ -556,6 +556,7 @@ export default function AssetPage() {
         </Link>
         {asset && (
           <HideAsset
+            instrumentId={asset.instrumentId}
             symbol={asset.symbol}
             onHidden={() => navigate(withCurrency('/portfolio', asked))}
           />

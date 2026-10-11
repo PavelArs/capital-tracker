@@ -9,6 +9,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import DataExport from '../export/DataExport';
 import { money, rateText } from '../portfolio/format';
+import HiddenAssets from '../portfolio/HiddenAssets';
 import SecuritySettings from '../security/SecuritySettings';
 import { useMainCurrency } from './main-currency';
 import PageHeader from './PageHeader';
@@ -342,6 +343,7 @@ export default function SettingsPage() {
           <h2 id="settings-wallets">Wallets</h2>
           <DustThreshold />
         </section>
+        <HiddenAssets />
         <section className="shell-card" aria-labelledby="settings-history">
           <h2 id="settings-history">History</h2>
           <div className="shell-setting">
