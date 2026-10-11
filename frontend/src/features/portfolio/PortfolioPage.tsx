@@ -112,6 +112,14 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
   const unpriced = portfolio.missingPriceCount;
   const currency = portfolio.currency;
   const amount = (value: string | null) => money(value, currency);
+  // Coins without a purchase price or a stored rate stay out, named, instead of emptying the
+  // whole cost basis and profit: the known part is shown on its own.
+  const partialCost =
+    portfolio.costBasis === null &&
+    (portfolio.unknownCostCount > 0 || portfolio.missingRateCount > 0) &&
+    Number(portfolio.knownCostSubtotal) > 0;
+  const partialProfit =
+    portfolio.unrealizedPnl === null && partialCost && portfolio.knownUnrealizedPnl !== null;
   return (
     <section className="shell-card portfolio-summary" aria-label="Portfolio summary">
       <dl>
@@ -133,15 +141,25 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         <div>
           <dt>Cost basis</dt>
           <dd>
-            {amount(portfolio.costBasis)}
+            {partialCost ? amount(portfolio.knownCostSubtotal) : amount(portfolio.costBasis)}
             {portfolio.costBasis === null && (
               <span className="portfolio-sub">
-                {amount(portfolio.knownCostSubtotal)} known,{' '}
-                {portfolio.unknownCostCount > 0
-                  ? 'part has no purchase price'
-                  : portfolio.missingRateCount > 0
-                    ? 'part predates the stored rates'
-                    : 'an account history starts later'}
+                {partialCost ? (
+                  `known part only, the rest ${
+                    portfolio.unknownCostCount > 0
+                      ? 'has no purchase price'
+                      : 'predates the stored rates'
+                  }`
+                ) : (
+                  <>
+                    {amount(portfolio.knownCostSubtotal)} known,{' '}
+                    {portfolio.unknownCostCount > 0
+                      ? 'part has no purchase price'
+                      : portfolio.missingRateCount > 0
+                        ? 'part predates the stored rates'
+                        : 'an account history starts later'}
+                  </>
+                )}
               </span>
             )}
           </dd>
@@ -149,11 +167,22 @@ function Summary({ portfolio }: { portfolio: PortfolioValuation }) {
         <div>
           <dt>Unrealized P&amp;L</dt>
           <dd>
-            <Signed
-              value={portfolio.unrealizedPnl}
-              currency={currency}
-              ratio={portfolio.unrealizedReturnPercent}
-            />
+            {partialProfit ? (
+              <>
+                <Signed
+                  value={portfolio.knownUnrealizedPnl}
+                  currency={currency}
+                  ratio={portfolio.knownUnrealizedReturnPercent}
+                />
+                <span className="portfolio-sub">known part only</span>
+              </>
+            ) : (
+              <Signed
+                value={portfolio.unrealizedPnl}
+                currency={currency}
+                ratio={portfolio.unrealizedReturnPercent}
+              />
+            )}
           </dd>
         </div>
         <div>

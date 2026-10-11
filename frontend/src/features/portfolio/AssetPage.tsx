@@ -323,6 +323,9 @@ function AssetDetails({
   const amount = (value: string | null, signed = false) => money(value, currency, signed);
   const unknown = Number(asset.unknownCostQuantity) > 0;
   const missingRate = Number(asset.missingRateQuantity) > 0;
+  // Part of the coins has no cost: show the rest on its own, marked as the known part.
+  const partial =
+    asset.costBasis === null && Number(asset.knownCostQuantity) > 0 && (unknown || missingRate);
   return (
     <>
       <div className="portfolio-head">
@@ -380,13 +383,19 @@ function AssetDetails({
           <Stat label="Average buy price">
             {asset.averageBuyPrice === null ? '—' : price(asset.averageBuyPrice, currency)}
           </Stat>
-          <Stat label="Cost basis">{amount(asset.costBasis)}</Stat>
+          <Stat label="Cost basis">
+            {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
+            {partial && <span className="portfolio-sub">known part only</span>}
+          </Stat>
           <Stat label="Unrealized P&L">
             <Signed
-              value={asset.unrealizedPnl}
+              value={partial ? asset.knownUnrealizedPnl : asset.unrealizedPnl}
               currency={currency}
-              ratio={asset.unrealizedReturnPercent}
+              ratio={partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent}
             />
+            {partial && asset.knownUnrealizedPnl !== null && (
+              <span className="portfolio-sub">known part only</span>
+            )}
           </Stat>
           <Stat label="Realized P&L">
             <Signed value={asset.realizedPnl} currency={currency} />
@@ -397,7 +406,8 @@ function AssetDetails({
             <Icon name="alert" className="shell-icon shell-icon--sm" />
             <span>
               {quantity(asset.unknownCostQuantity)} {unit} has no purchase price, so cost basis and
-              unrealized P&amp;L are unknown. Known cost: {amount(asset.knownCostSubtotal)}.
+              unrealized P&amp;L {partial ? 'cover only the rest' : 'are unknown'}. Known cost:{' '}
+              {amount(asset.knownCostSubtotal)}.
             </span>
             <Link
               className="shell-button"
