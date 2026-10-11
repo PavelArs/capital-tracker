@@ -141,7 +141,7 @@ test('ISO-003-A: HTTPS login is public and direct private API requests are denie
 test('ISO-003-B: the browser authenticates using the real seeded password', async ({ page }) => {
   await loginThroughBrowser(page);
   await page.reload();
-  await expect(page.getByRole('navigation').getByText(owner.email, { exact: true })).toBeVisible();
+  await expect(page.getByRole('navigation').getByTitle(owner.email, { exact: true })).toBeVisible();
   await expect(
     page.getByRole('heading', { level: 1, name: 'Dashboard', exact: true }),
   ).toBeVisible();
