@@ -397,10 +397,15 @@ const lastList = (currency?: AccountingCurrency, range?: OperationRange) =>
 // there when it appears instead of pushing it down a moment later. An answer already kept is
 // painted at once and needs no wait, and a slow answer never holds the list back for long.
 const PROPOSALS_WAIT_MS = 1500;
+const proposalsKept = () =>
+  cachedReads.transferProposals.last() !== undefined &&
+  cachedReads.duplicateProposals.last() !== undefined;
+// A kept list is painted at once only with its cards: another page may have kept the list alone,
+// and the cards would then arrive above it.
+const shownList = (currency?: AccountingCurrency, range?: OperationRange) =>
+  proposalsKept() ? lastList(currency, range) : undefined;
 const proposalsArrived = (): Promise<unknown> => {
-  if (cachedReads.transferProposals.last() && cachedReads.duplicateProposals.last()) {
-    return Promise.resolve();
-  }
+  if (proposalsKept()) return Promise.resolve();
   const read = Promise.allSettled([
     cachedReads.transferProposals.load().then(() => handOver('transfer')),
     cachedReads.duplicateProposals.load().then(() => handOver('duplicate')),
@@ -422,7 +427,7 @@ export default function TransactionsPage() {
   const period = useMemo(() => periodOf(from, to), [from, to]);
   // OPS-RETURN: coming back from another page shows the last list at once while a fresh one
   // loads, instead of a loading card that makes the page jump.
-  const [list, setList] = useState<OperationList | null>(() => lastList(asked, period) ?? null);
+  const [list, setList] = useState<OperationList | null>(() => shownList(asked, period) ?? null);
   const [failed, setFailed] = useState(false);
   // TOKEN-HIDE: the tickers of tokens the wallets leave out, kept out of the asset filter.
   // ASSET-HIDE: so are the assets the owner hid from their own pages.
@@ -454,7 +459,7 @@ export default function TransactionsPage() {
       const request = ++latest.current;
       setFailed(false);
       if (fresh) {
-        const kept = lastList(currency, range);
+        const kept = shownList(currency, range);
         setList(kept ?? null);
         onScreen.current = kept !== undefined;
       }

@@ -54,7 +54,9 @@ export default function TransferProposals({ onJoined }: { onJoined: (message: st
   }, []);
   useEffect(() => {
     // The page read it together with the list a moment ago; asking again would only repeat it.
-    if (!takeHandover('transfer')) void load();
+    // Only an answer that was kept counts: one that landed after a drop was not remembered.
+    const handed = takeHandover('transfer') && cachedReads.transferProposals.last() !== undefined;
+    if (!handed) void load();
     window.addEventListener(CLASSIFICATION_CHANGED, load);
     window.addEventListener(SYNC_CHANGED, load);
     return () => {
