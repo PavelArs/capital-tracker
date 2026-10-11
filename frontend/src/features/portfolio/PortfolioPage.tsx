@@ -79,13 +79,46 @@ export function Change({ value }: { value: string | null }) {
   );
 }
 
-export type SortKey = 'value' | 'pnl' | 'change' | 'name';
-const sortKeys: [SortKey, string][] = [
+export type SortKey =
+  | 'name'
+  | 'amount'
+  | 'price'
+  | 'value'
+  | 'allocation'
+  | 'avgBuy'
+  | 'pnl'
+  | 'change';
+export type SortDirection = 'desc' | 'asc';
+/** The chosen order; null is the default one. */
+export type AssetSort = { key: SortKey; direction: SortDirection } | null;
+
+// The columns, left to right, in the table and in the phone's Sort by list.
+const sortColumns: [SortKey, string][] = [
+  ['name', 'Asset'],
+  ['amount', 'Amount'],
+  ['price', 'Price'],
   ['value', 'Value'],
+  ['allocation', 'Allocation'],
+  ['avgBuy', 'Avg buy price'],
   ['pnl', 'Unrealized P&L'],
-  ['change', '24h change'],
-  ['name', 'Name'],
+  ['change', '24h'],
 ];
+
+/** Names run A to Z first; every number column starts with the largest. */
+function firstDirection(key: SortKey): SortDirection {
+  return key === 'name' ? 'asc' : 'desc';
+}
+
+/**
+ * What a click on a column header does: a new column starts in its first direction, the same
+ * column goes to the other direction, and the other direction again clears the sort.
+ */
+export function nextSort(current: AssetSort, key: SortKey): AssetSort {
+  if (current?.key !== key) return { key, direction: firstDirection(key) };
+  return current.direction === firstDirection(key)
+    ? { key, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+    : null;
+}
 
 /**
  * The asset's unrealized P&L: over the coins whose purchase price is known when others have
@@ -97,21 +130,42 @@ export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio:
     : { pnl: asset.unrealizedPnl, ratio: asset.unrealizedReturnPercent };
 }
 
-/** Assets in the phone list's order: numbers largest first with unknowns last, names A to Z. */
-export function sortAssets(assets: readonly AssetValuation[], key: SortKey): AssetValuation[] {
-  if (key === 'name')
-    return [...assets].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
-  const field = (asset: AssetValuation) =>
-    key === 'value'
-      ? asset.value
-      : key === 'pnl'
-        ? shownProfit(asset).pnl
-        : asset.priceChange24hPercent;
-  const number = (asset: AssetValuation) => {
-    const value = field(asset);
-    return value === null ? Number.NEGATIVE_INFINITY : Number(value);
+/**
+ * Assets in the chosen order. Unknown figures (no price, no purchase price) go last in either
+ * direction; ties keep the names A to Z.
+ */
+export function sortAssets(assets: readonly AssetValuation[], sort: AssetSort): AssetValuation[] {
+  if (sort === null) return [...assets];
+  const byName = (a: AssetValuation, b: AssetValuation) =>
+    a.name.localeCompare(b.name, 'en', { sensitivity: 'base' });
+  const sign = sort.direction === 'asc' ? 1 : -1;
+  if (sort.key === 'name') return [...assets].sort((a, b) => sign * byName(a, b));
+  const field = (asset: AssetValuation): string | null => {
+    switch (sort.key) {
+      case 'amount':
+        return asset.quantity;
+      case 'price':
+        return asset.price?.value ?? null;
+      case 'value':
+        return asset.value;
+      case 'allocation':
+        return asset.allocationPercent;
+      case 'avgBuy':
+        return asset.averageBuyPrice;
+      case 'pnl':
+        return shownProfit(asset).pnl;
+      default:
+        return asset.priceChange24hPercent;
+    }
   };
-  return [...assets].sort((a, b) => number(b) - number(a) || a.name.localeCompare(b.name));
+  return [...assets].sort((a, b) => {
+    const left = field(a);
+    const right = field(b);
+    if (left === null || right === null) {
+      return left === right ? byName(a, b) : left === null ? 1 : -1;
+    }
+    return sign * (Number(left) - Number(right)) || byName(a, b);
+  });
 }
 
 /** Whether the asset's name or ticker contains the search text, ignoring case. */
@@ -242,40 +296,48 @@ function AssetsTable({
   asked,
   now,
   chains,
+  sort,
+  onSort,
 }: {
   assets: AssetValuation[];
   currency: AccountingCurrency;
   asked: AccountingCurrency | undefined;
   now: Date;
   chains: TokenChains;
+  sort: AssetSort;
+  onSort: (key: SortKey) => void;
 }) {
   return (
     <div className="portfolio-table-wrap">
       <table className="portfolio-table">
         <thead>
           <tr>
-            <th scope="col">Asset</th>
-            <th scope="col" className="portfolio-num">
-              Amount
-            </th>
-            <th scope="col" className="portfolio-num">
-              Price
-            </th>
-            <th scope="col" className="portfolio-num">
-              Value
-            </th>
-            <th scope="col" className="portfolio-num">
-              Allocation
-            </th>
-            <th scope="col" className="portfolio-num">
-              Avg buy price
-            </th>
-            <th scope="col" className="portfolio-num">
-              Unrealized P&amp;L
-            </th>
-            <th scope="col" className="portfolio-num">
-              24h
-            </th>
+            {sortColumns.map(([key, label]) => {
+              const active = sort?.key === key ? sort.direction : null;
+              return (
+                <th
+                  key={key}
+                  scope="col"
+                  className={key === 'name' ? undefined : 'portfolio-num'}
+                  aria-sort={
+                    active === null ? undefined : active === 'asc' ? 'ascending' : 'descending'
+                  }
+                >
+                  <button
+                    type="button"
+                    className="portfolio-th-sort"
+                    data-active={active !== null}
+                    onClick={() => onSort(key)}
+                  >
+                    <Icon
+                      name={active === 'asc' ? 'arrowUp' : 'arrowDown'}
+                      className="shell-icon shell-icon--sm portfolio-th-sort__arrow"
+                    />
+                    {label}
+                  </button>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -404,7 +466,7 @@ export default function PortfolioPage() {
   const [failed, setFailed] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
-  const [sortKey, setSortKey] = useState<SortKey>('value');
+  const [sort, setSort] = useState<AssetSort>(null);
   const phone = useNarrowScreen();
   const [adding, setAdding] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -439,10 +501,12 @@ export default function PortfolioPage() {
   const visible = assets.filter(
     (asset) => (filter === 'all' || asset.assetType === filter) && matchesSearch(asset, search),
   );
-  // PAGES: twenty assets a page; the phone list is sorted first, so its pages follow the order.
-  const ordered = phone ? sortAssets(visible, sortKey) : visible;
+  // PAGES: twenty assets a page; the list is sorted first, so its pages follow the order.
+  // The table and the phone list share one order: the server's (largest value first) until a
+  // column is chosen.
+  const ordered = sortAssets(visible, sort);
   const paged = useInfinite(ordered, {
-    resetKey: `${filter}|${search.trim()}|${sortKey}|${phone}`,
+    resetKey: `${filter}|${search.trim()}|${sort?.key}|${sort?.direction}|${phone}`,
   });
   const added = (asset: PortfolioAsset) => {
     // The new row must be visible, so a filter or search that would hide it is cleared.
@@ -531,20 +595,47 @@ export default function PortfolioPage() {
             </div>
             {phone ? (
               <>
-                <label className="portfolio-sort">
-                  <span>Sort by</span>
+                <div className="portfolio-sort">
+                  <label htmlFor="portfolio-sort-key">Sort by</label>
                   <select
+                    id="portfolio-sort-key"
                     className="portfolio-input"
-                    value={sortKey}
-                    onChange={(event) => setSortKey(event.target.value as SortKey)}
+                    value={sort?.key ?? ''}
+                    onChange={(event) =>
+                      setSort(
+                        event.target.value === ''
+                          ? null
+                          : {
+                              key: event.target.value as SortKey,
+                              direction: firstDirection(event.target.value as SortKey),
+                            },
+                      )
+                    }
                   >
-                    {sortKeys.map(([value, label]) => (
+                    <option value="">Default order</option>
+                    {sortColumns.map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>
                     ))}
                   </select>
-                </label>
+                  {sort && (
+                    <button
+                      type="button"
+                      className="shell-button portfolio-sort__direction"
+                      aria-label={sort.direction === 'asc' ? 'Ascending' : 'Descending'}
+                      title={sort.direction === 'asc' ? 'Ascending' : 'Descending'}
+                      onClick={() =>
+                        setSort({ ...sort, direction: sort.direction === 'asc' ? 'desc' : 'asc' })
+                      }
+                    >
+                      <Icon
+                        name={sort.direction === 'asc' ? 'arrowUp' : 'arrowDown'}
+                        className="shell-icon shell-icon--sm"
+                      />
+                    </button>
+                  )}
+                </div>
                 <AssetsList
                   assets={paged.rows}
                   currency={portfolio.currency}
@@ -559,6 +650,8 @@ export default function PortfolioPage() {
                 asked={asked}
                 now={now}
                 chains={chains}
+                sort={sort}
+                onSort={(key) => setSort((current) => nextSort(current, key))}
               />
             )}
             {paged.more && <LoadMore {...paged.more} label="assets" />}
