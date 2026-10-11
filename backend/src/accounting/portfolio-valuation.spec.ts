@@ -269,6 +269,68 @@ describe('PV-UNKNOWN-COST partly unknown cost', () => {
   });
 });
 
+describe('PV-KNOWN-PART profit over the coins whose cost is known', () => {
+  it('prices the known part on its own and leaves the unknown coins out', () => {
+    const result = projectPortfolio(
+      now,
+      [btc, eth],
+      [
+        holding(1, 'Trezor', [
+          position(btc, '1', '50000'),
+          position(btc, '0.5', null),
+          position(eth, '2', '4000'),
+        ]),
+      ],
+      prices({ BTC: ['60000', minutesAgo(5)], ETH: ['3000', minutesAgo(5)] }),
+    );
+    expect(assetOf(result, btc)).toMatchObject({
+      unrealizedPnl: null,
+      knownCostQuantity: '1',
+      knownUnrealizedPnl: '10000',
+      knownUnrealizedReturnPercent: '20.00',
+    });
+    expect(assetOf(result, eth)).toMatchObject({
+      unrealizedPnl: '2000',
+      knownCostQuantity: '2',
+      knownUnrealizedPnl: '2000',
+    });
+    // 60000 - 50000 + 6000 - 4000 over a known cost of 54000.
+    expect(result).toMatchObject({
+      costBasis: null,
+      unrealizedPnl: null,
+      knownCostSubtotal: '54000',
+      knownUnrealizedPnl: '12000',
+      knownUnrealizedReturnPercent: '22.22',
+    });
+  });
+
+  it('stays empty when a coin with a known cost has no price', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Trezor', [position(btc, '1', '50000'), position(btc, '0.5', null)])],
+      prices({}),
+    );
+    expect(assetOf(result, btc).knownUnrealizedPnl).toBeNull();
+    expect(result.knownUnrealizedPnl).toBeNull();
+  });
+
+  it('is empty when no coin has a known cost', () => {
+    const result = projectPortfolio(
+      now,
+      [btc],
+      [holding(1, 'Trezor', [position(btc, '0.5', null)])],
+      prices({ BTC: ['60000', minutesAgo(5)] }),
+    );
+    expect(assetOf(result, btc)).toMatchObject({
+      knownCostQuantity: '0',
+      knownUnrealizedPnl: null,
+    });
+    expect(result.knownUnrealizedPnl).toBeNull();
+    expect(result.knownUnrealizedReturnPercent).toBeNull();
+  });
+});
+
 describe('PV-NONE and PV-FIXED missing prices are not zero', () => {
   it('reports no price, no rate and fixed USD cash', () => {
     const result = projectPortfolio(
