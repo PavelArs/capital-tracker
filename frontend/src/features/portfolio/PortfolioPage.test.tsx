@@ -19,7 +19,7 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AssetPage from './AssetPage';
-import PortfolioPage, { nextSort, sortAssets } from './PortfolioPage';
+import PortfolioPage, { defaultSort, nextSort, sortAssets } from './PortfolioPage';
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
@@ -1059,7 +1059,8 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
     expect(header('Amount')).toHaveAttribute('aria-sort', 'descending');
     expect(header('Value')).not.toHaveAttribute('aria-sort');
     await click('Amount');
-    expect(order()).toEqual(['Toncoin', 'Bitcoin', 'US dollar']);
+    // Toncoin is no longer held, so it stays below the holdings either way.
+    expect(order()).toEqual(['Bitcoin', 'US dollar', 'Toncoin']);
     expect(header('Amount')).toHaveAttribute('aria-sort', 'ascending');
     await click('Amount');
     expect(order()).toEqual(['US dollar', 'Bitcoin', 'Toncoin']);
@@ -1104,6 +1105,19 @@ describe('AST-UI Portfolio lists assets with their classification', () => {
       key: 'value',
       direction: 'desc',
     });
+  });
+
+  it('SORT-HELD keeps a holding without a price ahead of assets no longer held, as the server ranks them', () => {
+    const priced = valued(1, 'Priced', null, crypto, { quantity: '1', value: '50' });
+    const unpriced = valued(2, 'Unpriced', null, crypto, { quantity: '3', value: null });
+    const unheld = valued(3, 'Unheld', null, crypto, { quantity: '0', value: '0' });
+    const names = (sort: Parameters<typeof sortAssets>[1]) =>
+      sortAssets([unheld, unpriced, priced], sort).map((asset) => asset.name);
+    expect(names(defaultSort)).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    expect(names({ key: 'value', direction: 'asc' })).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    expect(names({ key: 'amount', direction: 'asc' })).toEqual(['Priced', 'Unpriced', 'Unheld']);
+    // A name order is only names.
+    expect(names({ key: 'name', direction: 'asc' })).toEqual(['Priced', 'Unheld', 'Unpriced']);
   });
 
   it('PHONE-LIST shows two-line asset rows and a Sort by select instead of the table', async () => {

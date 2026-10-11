@@ -141,8 +141,9 @@ export function shownProfit(asset: AssetValuation): { pnl: string | null; ratio:
 }
 
 /**
- * Assets in the chosen order. Unknown figures (no price, no purchase price) go last in either
- * direction; ties keep the names A to Z.
+ * Assets in the chosen order. Assets no longer held go last, as the server ranks them, so a
+ * holding without a price stays above them; then unknown figures (no price, no purchase price)
+ * go last in either direction; ties keep the names A to Z. A name order is only names.
  */
 export function sortAssets(assets: readonly AssetValuation[], sort: AssetSort): AssetValuation[] {
   const byName = (a: AssetValuation, b: AssetValuation) =>
@@ -167,7 +168,9 @@ export function sortAssets(assets: readonly AssetValuation[], sort: AssetSort): 
         return asset.priceChange24hPercent;
     }
   };
+  const held = (asset: AssetValuation) => Number(asset.quantity) !== 0;
   return [...assets].sort((a, b) => {
+    if (held(a) !== held(b)) return held(a) ? -1 : 1;
     const left = field(a);
     const right = field(b);
     if (left === null || right === null) {
