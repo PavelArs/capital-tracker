@@ -65,6 +65,23 @@ describe('projectDeposit', () => {
     expect(result.balance).toBe('101019.18');
   });
 
+  it('keeps the interest earned since the last payout date out of what the bank has posted', () => {
+    const capitalized = projectDeposit(
+      terms({ capitalized: true }),
+      [topup('2026-01-01', '100000')],
+      '2026-02-11',
+    );
+    // 1 to 10 February earned and not yet posted: the bank still shows the January balance.
+    expect(capitalized.principal).toBe('101019.18');
+    expect(capitalized.accrued).not.toBe('0.00');
+    expect(capitalized.posted).toBe('101019.18');
+    expect(capitalized.balance).not.toBe(capitalized.posted);
+
+    const payable = projectDeposit(terms(), [topup('2026-01-01', '100000')], '2026-02-11');
+    expect(payable.posted).toBe('101019.18');
+    expect(payable.balance).not.toBe(payable.posted);
+  });
+
   it('does not earn the day it is asked about', () => {
     const result = projectDeposit(terms(), [topup('2026-01-01', '100000')], '2026-01-11');
     // Ten days: 1 to 10 January.

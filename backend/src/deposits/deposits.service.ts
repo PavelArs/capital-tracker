@@ -476,7 +476,7 @@ export class DepositsService {
     const last = [...stored.checks].reverse().find((check) => check.checkedOn <= asOf);
     const lastCheck = last
       ? (() => {
-          const calculated = projectDeposit(terms, movements, last.checkedOn).balance;
+          const calculated = projectDeposit(terms, movements, last.checkedOn).posted;
           return {
             checkedOn: last.checkedOn,
             bankBalance: last.bankBalance,
@@ -547,7 +547,7 @@ export class DepositsService {
       checks: stored.checks
         .filter((check) => check.checkedOn <= asOf)
         .map((check) => {
-          const calculated = projectDeposit(terms, movementsOf(stored), check.checkedOn).balance;
+          const calculated = projectDeposit(terms, movementsOf(stored), check.checkedOn).posted;
           return {
             id: check.id,
             checkedOn: check.checkedOn,

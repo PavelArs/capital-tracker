@@ -59,6 +59,12 @@ export interface DepositProjection {
   due: string;
   /** What the bank would show today: principal, posted interest still due and accrued. */
   balance: string;
+  /**
+   * What the bank has posted: principal and interest still due, without the interest earned
+   * since the last payout date. A bank adds that interest on the payout date, so its balance
+   * screen is compared with this, not with `balance`.
+   */
+  posted: string;
   interestPosted: string;
   interestPaidOut: string;
   interestForfeited: string;
@@ -231,6 +237,7 @@ export function projectDeposit(
     accrued: centsText(earned),
     due: centsText(due),
     balance: centsText(principal + due + earned),
+    posted: centsText(principal + due),
     interestPosted: centsText(posted),
     interestPaidOut: centsText(paidOut),
     interestForfeited: centsText(roundToCents(forfeited)),

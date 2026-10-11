@@ -488,7 +488,7 @@ export function CheckDialog({
   return (
     <FormDialog
       title="Check against the bank"
-      note="Open the deposit in the bank's app and enter the balance it shows. The app compares it with what it counted."
+      note="Open the deposit in the bank's app and enter the balance it shows. The app compares it with what the bank has posted, without the interest earned since the last interest date."
       submit="Save check"
       problem={() =>
         dateProblem(date, 'Date') ??
