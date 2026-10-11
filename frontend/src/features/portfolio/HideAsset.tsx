@@ -1,5 +1,6 @@
 import { cachedReads } from '@api/cached-reads';
 import { hiddenAssetsApi } from '@api/hidden-assets.api';
+import { announceSyncChange } from '@api/sync-status.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { useEffect, useId, useState } from 'react';
 
@@ -62,6 +63,8 @@ export default function HideAsset({
         for (const address of holders)
           await walletAddressesApi.tokens(address.id, [symbol], 'hidden');
       await hiddenAssetsApi.hide(instrumentId);
+      // The bell checks wallet balances against the portfolio again.
+      announceSyncChange();
       onHidden();
     } catch {
       setFailed(true);
