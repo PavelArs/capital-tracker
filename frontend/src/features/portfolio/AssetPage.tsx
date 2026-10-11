@@ -389,7 +389,6 @@ function AssetDetails({
           </Stat>
           <Stat label="Cost basis">
             {amount(partial ? asset.knownCostSubtotal : asset.costBasis)}
-            {partial && <span className="portfolio-sub">known part only</span>}
           </Stat>
           <Stat label="Unrealized P&L">
             <Signed
@@ -397,12 +396,16 @@ function AssetDetails({
               currency={currency}
               ratio={partial ? asset.knownUnrealizedReturnPercent : asset.unrealizedReturnPercent}
             />
-            {partial && asset.knownUnrealizedPnl !== null && (
-              <span className="portfolio-sub">known part only</span>
-            )}
           </Stat>
           <Stat label="Realized P&L">
-            <Signed value={asset.realizedPnl} currency={currency} />
+            <Signed
+              value={
+                asset.realizedPnl === null && Number(asset.knownRealizedSubtotal) !== 0
+                  ? asset.knownRealizedSubtotal
+                  : asset.realizedPnl
+              }
+              currency={currency}
+            />
           </Stat>
         </dl>
         {unknown && (
