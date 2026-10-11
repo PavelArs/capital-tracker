@@ -59,7 +59,10 @@
 .security-row__name {
   overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -233,4 +236,8 @@
 .security-recovery-input {
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
+.security-row__text .shell-bone + .shell-bone {
+  margin-top: 6px;
 }

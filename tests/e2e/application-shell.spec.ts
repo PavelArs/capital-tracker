@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { nextFactor, origin, owner, passwordStep, test } from './mfa-fixtures';
 
 async function fitsViewport(page: Page) {

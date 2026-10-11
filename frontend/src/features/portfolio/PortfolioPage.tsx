@@ -51,16 +51,21 @@ export function Signed({
   value,
   currency,
   ratio,
+  inline,
 }: {
   value: string | null;
   currency: AccountingCurrency;
   ratio?: string | null;
+  /** The percentage beside the amount, on one line, as in a table row. */
+  inline?: boolean;
 }) {
   return (
     <span className={tone(value) ? `portfolio-${tone(value)}` : undefined}>
       {money(value, currency, true)}
       {ratio !== undefined && value !== null && ratio !== null && (
-        <span className="portfolio-sub">{percent(ratio)}</span>
+        <span className={`portfolio-sub${inline ? ' portfolio-sub--inline' : ''}`}>
+          {percent(ratio)}
+        </span>
       )}
     </span>
   );
@@ -282,7 +287,18 @@ function AssetsTable({
                 <span className="portfolio-sub">{priceNote(asset, now)}</span>
               </td>
               <td className="portfolio-num portfolio-strong">{money(asset.value, currency)}</td>
-              <td className="portfolio-num">{percent(asset.allocationPercent, false)}</td>
+              <td className="portfolio-num">
+                <span className="portfolio-share">
+                  <span className="portfolio-share__bar" aria-hidden="true">
+                    <i
+                      style={{ width: `${Math.min(Number(asset.allocationPercent ?? 0), 100)}%` }}
+                    />
+                  </span>
+                  <span className="portfolio-share__text">
+                    {percent(asset.allocationPercent, false)}
+                  </span>
+                </span>
+              </td>
               <td className="portfolio-num">
                 {asset.averageBuyPrice === null ? DASH : price(asset.averageBuyPrice, currency)}
               </td>
@@ -291,6 +307,7 @@ function AssetsTable({
                   value={asset.unrealizedPnl}
                   currency={currency}
                   ratio={asset.unrealizedReturnPercent}
+                  inline
                 />
               </td>
               <td className="portfolio-num">
@@ -431,7 +448,6 @@ export default function PortfolioPage() {
       <PageHeader
         title="Portfolio"
         currency={portfolio?.currency}
-        actions={assets.length > 0 && addButton(false)}
         onTransactionSaved={() => void load(true)}
       />
       {failed ? (
@@ -482,14 +498,17 @@ export default function PortfolioPage() {
                   </button>
                 ))}
               </div>
-              <input
-                type="search"
-                className="portfolio-search"
-                placeholder="Search assets"
-                aria-label="Search assets"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
+              <div className="portfolio-tools">
+                <input
+                  type="search"
+                  className="portfolio-search"
+                  placeholder="Search assets"
+                  aria-label="Search assets"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+                {addButton(false)}
+              </div>
             </div>
             {phone ? (
               <>

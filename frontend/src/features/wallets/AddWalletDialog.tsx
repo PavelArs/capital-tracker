@@ -1,7 +1,7 @@
 import { accountingApi } from '@api/accounting.api';
 import { type WalletAddress, walletAddressesApi } from '@api/wallet-addresses.api';
 import { isAxiosError } from 'axios';
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, Fragment, useEffect, useRef, useState } from 'react';
 import { newRequestId } from '../accounting/feedback';
 import AssetIcon from '../shell/AssetIcon';
 import CloseButton from '../shell/CloseButton';
@@ -67,6 +67,12 @@ const networks = [
     detail: 'Read-only API key. Every coin: trades, deposits and withdrawals',
   },
 ] as const;
+
+/** The tiles of step 1, blockchains first and the exchange on its own. */
+const networkGroups = [
+  { title: 'Blockchains', items: networks.filter((item) => item.key !== 'bybit') },
+  { title: 'Exchange', items: networks.filter((item) => item.key === 'bybit') },
+];
 const MAX_LABEL = 40;
 const isTracked = (key: string): key is Network => key in tracked;
 // Tab order inside the modal: every enabled control.
@@ -284,22 +290,27 @@ export default function AddWalletDialog({
             {step === 1 && (
               <>
                 <p className="wallets-soft">What do you want to connect?</p>
-                <div className="wallets-networks">
-                  {networks.map((item) => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      className="wallets-network"
-                      aria-pressed={network === item.key}
-                      disabled={!isTracked(item.key)}
-                      onClick={() => isTracked(item.key) && setNetwork(item.key)}
-                    >
-                      <AssetIcon {...networkIcon(tracked[item.key])} />
-                      <b>{item.name}</b>
-                      <small>{item.detail}</small>
-                    </button>
-                  ))}
-                </div>
+                {networkGroups.map((group) => (
+                  <Fragment key={group.title}>
+                    <h3 className="wallets-networks__title">{group.title}</h3>
+                    <div className="wallets-networks">
+                      {group.items.map((item) => (
+                        <button
+                          key={item.key}
+                          type="button"
+                          className="wallets-network"
+                          aria-pressed={network === item.key}
+                          disabled={!isTracked(item.key)}
+                          onClick={() => isTracked(item.key) && setNetwork(item.key)}
+                        >
+                          <AssetIcon {...networkIcon(tracked[item.key])} />
+                          <b>{item.name}</b>
+                          <small>{item.detail}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </Fragment>
+                ))}
                 <p className="wallets-note">
                   Read-only. The app never asks for a seed phrase, a private key or an exchange
                   password.

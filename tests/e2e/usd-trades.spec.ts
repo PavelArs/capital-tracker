@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { type Page, expect } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { ledgerState } from './admission-fixtures';
 import {
   accountRows,
@@ -14,8 +14,6 @@ import {
 } from './manual-opening-fixtures';
 import { completeFactor, fingerprint, passwordStep, test } from './mfa-fixtures';
 import {
-  TradeApi,
-  type TradeReceipt,
   coverageFrom,
   installTradeCommitFailure,
   noStore,
@@ -23,11 +21,14 @@ import {
   raceTradeReplicas,
   readReceipt,
   restartWithExactProviderWarmup,
+  TradeApi,
+  type TradeReceipt,
   tradeApi,
   tradeInput,
   tradeRows,
   tradeTables,
 } from './usd-trades-fixtures';
+
 async function rejectUnchanged(
   api: TradeApi,
   path: string,

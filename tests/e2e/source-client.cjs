@@ -15,49 +15,89 @@ async function main() {
   const jar = { ...initialJar };
   const responses = [];
   for (const command of requests) {
-    if (typeof command.path !== 'string' || !command.path.startsWith('/') || command.path.startsWith('//')) {
+    if (
+      typeof command.path !== 'string' ||
+      !command.path.startsWith('/') ||
+      command.path.startsWith('//')
+    ) {
       throw new Error('Expected an origin-relative path');
     }
     const body = command.body === undefined ? undefined : JSON.stringify(command.body);
     const headers = {
-      Host: '127.0.0.1:8443', Origin: 'https://127.0.0.1:8443',
-      ...(Object.keys(jar).length ? { Cookie: Object.entries(jar).map(([k, v]) => `${k}=${v}`).join('; ') } : {}),
-      ...(body === undefined ? {} : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }),
+      Host: '127.0.0.1:8443',
+      Origin: 'https://127.0.0.1:8443',
+      ...(Object.keys(jar).length
+        ? {
+            Cookie: Object.entries(jar)
+              .map(([k, v]) => `${k}=${v}`)
+              .join('; '),
+          }
+        : {}),
+      ...(body === undefined
+        ? {}
+        : { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }),
       ...command.headers,
     };
     const result = await new Promise((resolve, reject) => {
       const transport = directAddress ? http : https;
       let localAddress, remoteAddress;
-      const request = transport.request({
-        hostname: directAddress ?? 'proxy', port: directAddress ? 3000 : 443,
-        ...(directAddress ? {} : { servername: 'localhost', ca: readFileSync('/tests/public-ca.pem'), rejectUnauthorized: true }),
-        method: command.method, path: command.path, headers, timeout: 8000,
-      }, (response) => {
-        let text = '';
-        response.on('data', (chunk) => {
-          text += chunk;
-          if (Buffer.byteLength(text) > 262144) response.destroy(new Error('Bounded response exceeded'));
-        });
-        response.on('error', reject);
-        response.on('end', () => {
-          for (const cookie of response.headers['set-cookie'] ?? []) {
-            const first = cookie.split(';')[0];
-            const separator = first.indexOf('=');
-            if (separator < 1) continue;
-            const name = first.slice(0, separator), value = first.slice(separator + 1);
-            if (!value || /(?:^|;)\s*max-age=0(?:;|$)/i.test(cookie)) delete jar[name];
-            else jar[name] = value;
-          }
-          let payload = text;
-          try { payload = JSON.parse(text); } catch { /* Preserve empty/non-JSON responses. */ }
-          resolve({ status: response.statusCode, headers: response.headers, body: payload,
-            localAddress, remoteAddress });
-        });
-      });
+      const request = transport.request(
+        {
+          hostname: directAddress ?? 'proxy',
+          port: directAddress ? 3000 : 443,
+          ...(directAddress
+            ? {}
+            : {
+                servername: 'localhost',
+                ca: readFileSync('/tests/public-ca.pem'),
+                rejectUnauthorized: true,
+              }),
+          method: command.method,
+          path: command.path,
+          headers,
+          timeout: 8000,
+        },
+        (response) => {
+          let text = '';
+          response.on('data', (chunk) => {
+            text += chunk;
+            if (Buffer.byteLength(text) > 262144)
+              response.destroy(new Error('Bounded response exceeded'));
+          });
+          response.on('error', reject);
+          response.on('end', () => {
+            for (const cookie of response.headers['set-cookie'] ?? []) {
+              const first = cookie.split(';')[0];
+              const separator = first.indexOf('=');
+              if (separator < 1) continue;
+              const name = first.slice(0, separator),
+                value = first.slice(separator + 1);
+              if (!value || /(?:^|;)\s*max-age=0(?:;|$)/i.test(cookie)) delete jar[name];
+              else jar[name] = value;
+            }
+            let payload = text;
+            try {
+              payload = JSON.parse(text);
+            } catch {
+              /* Preserve empty/non-JSON responses. */
+            }
+            resolve({
+              status: response.statusCode,
+              headers: response.headers,
+              body: payload,
+              localAddress,
+              remoteAddress,
+            });
+          });
+        },
+      );
       request.once('socket', (socket) => {
         // Capture while connected: graceful Nginx reload can close a response's
         // socket before the body-end callback, clearing its remoteAddress field.
-        const capture = () => { localAddress = socket.localAddress; remoteAddress = socket.remoteAddress; };
+        const capture = () => {
+          localAddress = socket.localAddress;
+          remoteAddress = socket.remoteAddress;
+        };
         if (socket.connecting) socket.once('connect', capture);
         else capture();
       });
@@ -69,4 +109,7 @@ async function main() {
   }
   process.stdout.write(JSON.stringify({ responses, jar }));
 }
-main().catch((error) => { console.error(error.message); process.exitCode = 1; });
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});

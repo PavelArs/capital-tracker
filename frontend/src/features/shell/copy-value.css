@@ -1,0 +1,36 @@
+/* An address or hash with its copy button (prototype ".addr"). */
+.copy-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.copy-value__text {
+  white-space: nowrap;
+}
+
+.copy-value__button {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+
+.copy-value__button:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+
+.copy-value__button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}

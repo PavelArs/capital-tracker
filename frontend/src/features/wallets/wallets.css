@@ -225,7 +225,10 @@ button.wallets-source__open:focus-visible {
 .wallets-asset__name {
   overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 
@@ -334,6 +337,51 @@ button.wallets-source__open:focus-visible {
   background: var(--warn-soft);
 }
 
+/* W5: the difference on one line; the sums and what to do about it are behind Details. */
+.wallets-diff {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.wallets-diff summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.wallets-diff summary::-webkit-details-marker {
+  display: none;
+}
+
+.wallets-diff__line {
+  min-width: 0;
+}
+
+.wallets-diff__more {
+  flex: none;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.wallets-diff[open] .wallets-diff__more::after {
+  content: " ▴";
+}
+
+.wallets-diff:not([open]) .wallets-diff__more::after {
+  content: " ▾";
+}
+
+.wallets-diff > p {
+  margin: 8px 0 0;
+}
+
+.wallets-diff > .shell-button {
+  margin-top: 10px;
+}
+
 .wallets-message--error {
   background: color-mix(in srgb, var(--neg) 12%, transparent);
 }
@@ -394,6 +442,15 @@ button.wallets-source__open:focus-visible {
   margin-left: 6px;
 }
 
+.wallets-networks__title {
+  margin: 0 0 -4px;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .wallets-networks {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -402,6 +459,7 @@ button.wallets-source__open:focus-visible {
 
 .wallets-network {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 10px;
   padding: 16px;

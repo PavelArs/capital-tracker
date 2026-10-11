@@ -25,7 +25,8 @@ const sha256 = (value) => createHash('sha256').update(value).digest('hex');
 const txid = (n) => sha256(`ct-owner-export:${n}`);
 const walletAddress = 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4';
 const secret = (name) => sha256(`ct-owner-export-secret:${name}`);
-const csvUpload = 'instrument,side,time,order,quantity,gross,fee\nBTC,buy,2025-06-14T10:30:00Z,0,0.01,1050.5,1.25\n';
+const csvUpload =
+  'instrument,side,time,order,quantity,gross,fee\nBTC,buy,2025-06-14T10:30:00Z,0,0.01,1050.5,1.25\n';
 let stage = 'synthetic configuration';
 
 function source() {
@@ -228,10 +229,10 @@ async function chainHistory(db, owner, accountId) {
 // Sign-in secrets of the owner, each a distinct marker the backup must never contain.
 async function secrets(db, owner) {
   await db.query(`UPDATE users SET password=$2 WHERE id=$1`, [owner, secret('password')]);
-  await db.query(
-    `INSERT INTO owner_auth(id,"userId","credentialVersion") VALUES (1,$1,$2)`,
-    [owner, randomUUID()],
-  );
+  await db.query(`INSERT INTO owner_auth(id,"userId","credentialVersion") VALUES (1,$1,$2)`, [
+    owner,
+    randomUUID(),
+  ]);
   await db.query(
     `INSERT INTO owner_mfa(id,"userId","activeVersion","activeEnvelope","lastCounter")
       VALUES (1,$1,$2,$3,1)`,
@@ -428,9 +429,7 @@ async function seed(db, s, f) {
     hidden: true,
     classification: null,
   });
-  await db.query(`INSERT INTO owner_settings("ownerId","mainCurrency") VALUES ($1,'EUR')`, [
-    owner,
-  ]);
+  await db.query(`INSERT INTO owner_settings("ownerId","mainCurrency") VALUES ($1,'EUR')`, [owner]);
   // Another owner's records never mix in.
   const foreignBtc = await instrument(s, other, {
     name: 'Foreign bitcoin',
@@ -540,7 +539,10 @@ async function csvArchive(db, s, f, made) {
   assert.equal(fromChain.chain_txid, txid(1));
   // The Ledger account held no USDT, so none of its own cash settled the buy.
   assert.deepEqual([fromChain.settlement_asset, fromChain.settlement_quantity], ['USDT', '0']);
-  assert.ok(operations.every((row) => !row.account.startsWith('Foreign')), 'No foreign rows');
+  assert.ok(
+    operations.every((row) => !row.account.startsWith('Foreign')),
+    'No foreign rows',
+  );
 
   assert.deepEqual(
     table('chain-transactions.csv').map((row) => [
@@ -586,9 +588,11 @@ async function csvArchive(db, s, f, made) {
 
 async function jsonBackup(db, s, f, made) {
   stage = 'EXP-JSON the backup holds every owner table with a format version and no secret';
-  const { backupTables, legacyTables, notBackedUp } = require(
-    '/app/backend/dist/owner-export/backup-tables.js',
-  );
+  const {
+    backupTables,
+    legacyTables,
+    notBackedUp,
+  } = require('/app/backend/dist/owner-export/backup-tables.js');
   const schema = (
     await db.query("SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1")
   ).map((row) => row.tablename);
@@ -662,7 +666,11 @@ async function jsonBackup(db, s, f, made) {
     'The uploaded CSV file itself',
   );
   assert.deepEqual(backup.tables.owner_settings, [
-    { mainCurrency: 'EUR', updatedAt: backup.tables.owner_settings[0].updatedAt, dustThresholdUsd: null },
+    {
+      mainCurrency: 'EUR',
+      updatedAt: backup.tables.owner_settings[0].updatedAt,
+      dustThresholdUsd: null,
+    },
   ]);
   assert.equal(await fingerprint(db), before, 'Backup changes no row');
 
@@ -673,7 +681,10 @@ async function jsonBackup(db, s, f, made) {
   );
   assert.equal(JSON.stringify(foreign).includes(made.btc), false);
   assert.deepEqual(
-    [foreign.tables.assets.map((row) => row.name), foreign.tables.currencies.map((row) => row.code)],
+    [
+      foreign.tables.assets.map((row) => row.name),
+      foreign.tables.currencies.map((row) => row.code),
+    ],
     [['Foreign flat'], ['BTC']],
   );
   assert.deepEqual(foreign.tables.liabilities, []);

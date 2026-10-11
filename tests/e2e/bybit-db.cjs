@@ -1722,7 +1722,9 @@ async function main() {
     });
     assert.equal((await held(db, owner, exchange)).DOT, undefined);
     const hiddenView = (await s.addresses.list(owner)).find((item) => item.id === wallet);
-    assert.deepEqual(hiddenView.exchange.hidden, [{ symbol: 'DOT', quantity: '3.000000000000000000' }]);
+    assert.deepEqual(hiddenView.exchange.hidden, [
+      { symbol: 'DOT', quantity: '3.000000000000000000' },
+    ]);
     await s.classifications.classify(owner, wallet, `bybit-deposit-gap-${dotGap.requestId}`, {
       requestId: randomUUID(),
       hidden: false,
@@ -1738,7 +1740,11 @@ async function main() {
     const dotLeg = `bybit-deposit-gap-${dotGap.requestId}`;
     const answerDot = (expectedVersion, classification) =>
       s.classifications.classify(owner, wallet, dotLeg, {
-        requestId: randomUUID(), hidden: false, expectedVersion, classification });
+        requestId: randomUUID(),
+        hidden: false,
+        expectedVersion,
+        classification,
+      });
     const removal = (txid, expectedVersion, requestId = randomUUID(), id = wallet) =>
       s.classifications.removeCounted(owner, id, txid, { requestId, expectedVersion });
     await answerDot(2, { type: 'other' });
@@ -1747,21 +1753,46 @@ async function main() {
     await refusal(() => removal(dotLeg, 3), 409);
     await refusal(() => removal('bybit-trade-2100000000000000001', 0), 404);
     await refusal(() => removal(dotLeg, 4, randomUUID(), randomUUID()), 404);
-    const countBefore = (await s.addresses.list(owner)).find((item) => item.id === wallet).transactionCount;
+    const countBefore = (await s.addresses.list(owner)).find(
+      (item) => item.id === wallet,
+    ).transactionCount;
     const removed = randomUUID();
     const receipt = await removal(dotLeg, 4, removed);
     assert.equal(receipt.status, 'deleted');
-    assert.deepEqual(await removal(dotLeg, 4, removed), receipt, 'The same request returns the same receipt');
+    assert.deepEqual(
+      await removal(dotLeg, 4, removed),
+      receipt,
+      'The same request returns the same receipt',
+    );
     await refusal(() => removal(dotLeg, 5), 404);
     await refusal(() => answerDot(5, { type: 'other' }), 404);
-    assert.equal((await s.addresses.list(owner)).find((item) => item.id === wallet).transactionCount, countBefore - 1);
-    assert.equal((await legsOf(db, wallet)).filter((row) => row.txid === dotLeg).length, 1, 'The raw record stays');
+    assert.equal(
+      (await s.addresses.list(owner)).find((item) => item.id === wallet).transactionCount,
+      countBefore - 1,
+    );
+    assert.equal(
+      (await legsOf(db, wallet)).filter((row) => row.txid === dotLeg).length,
+      1,
+      'The raw record stays',
+    );
     assert.equal((await held(db, owner, exchange)).DOT, undefined);
-    assert.equal((await s.operations.read(owner, {}, new Date())).operations
-      .some((item) => item.chain?.txid === dotLeg), false, 'The deleted record leaves the list');
-    const trail = (await s.history.read(owner, { entity: 'classification' }, new Date())).events
-      .filter((item) => item.entityId.endsWith(dotLeg));
-    assert.deepEqual(trail.map((item) => item.change).sort(), ['changed', 'changed', 'changed', 'created', 'deleted']);
+    assert.equal(
+      (await s.operations.read(owner, {}, new Date())).operations.some(
+        (item) => item.chain?.txid === dotLeg,
+      ),
+      false,
+      'The deleted record leaves the list',
+    );
+    const trail = (
+      await s.history.read(owner, { entity: 'classification' }, new Date())
+    ).events.filter((item) => item.entityId.endsWith(dotLeg));
+    assert.deepEqual(trail.map((item) => item.change).sort(), [
+      'changed',
+      'changed',
+      'changed',
+      'created',
+      'deleted',
+    ]);
     const cleared = (await s.addresses.list(owner)).find((item) => item.id === wallet);
     assert.deepEqual(cleared.exchange.hidden, []);
     // A balance Bybit no longer reports, a larger difference than the balance, another owner's
