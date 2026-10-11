@@ -1,13 +1,15 @@
 import { type Deposit, type DepositList, depositsApi } from '@api/deposits.api';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import Badge from '@/ui/Badge';
+import EmptyState from '@/ui/EmptyState';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { AddDepositDialog } from './DepositDialogs';
-import { attention, dateText, money, statusText, termText } from './deposit-format';
+import { attention, dateText, money, statusText, statusTone, termText } from './deposit-format';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './deposits.css';
@@ -33,9 +35,7 @@ function Card({
             <span className="deposit-card__name">{deposit.name}</span>
             <span className="deposit-card__bank">{deposit.bank}</span>
           </div>
-          <span className={`deposit-chip deposit-chip--${deposit.status}`}>
-            {statusText[deposit.status]}
-          </span>
+          <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
         </div>
         <div className="deposit-card__value">
           <strong>{money(deposit.values[shown], shown)}</strong>
@@ -124,23 +124,23 @@ export default function DepositsPage() {
       ) : list === null ? (
         <PageSkeleton label="Loading deposits" show={['cards']} />
       ) : list.items.length === 0 ? (
-        <section className="shell-card shell-empty" aria-labelledby="deposits-empty">
-          <span className="shell-empty__ill" aria-hidden="true">
-            <Icon name="archive" />
-          </span>
-          <h2 id="deposits-empty">No deposits yet</h2>
-          <p>
-            Enter a bank deposit once, with its rate and term. The app counts the interest and what
-            the deposit is worth in USD, EUR and RUB.
-          </p>
-          <button
-            type="button"
-            className="shell-button shell-button--primary"
-            onClick={() => setAdding(true)}
-          >
-            Add deposit
-          </button>
-        </section>
+        <EmptyState
+          id="deposits-empty"
+          title="No deposits yet"
+          icon={<Icon name="archive" />}
+          actions={
+            <button
+              type="button"
+              className="shell-button shell-button--primary"
+              onClick={() => setAdding(true)}
+            >
+              Add deposit
+            </button>
+          }
+        >
+          Enter a bank deposit once, with its rate and term. The app counts the interest and what
+          the deposit is worth in USD, EUR and RUB.
+        </EmptyState>
       ) : (
         <>
           <section className="shell-card deposit-total" aria-label="Total in deposits">

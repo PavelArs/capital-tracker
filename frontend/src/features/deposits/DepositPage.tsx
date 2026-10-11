@@ -2,13 +2,22 @@ import { type DepositDetail, depositsApi } from '@api/deposits.api';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import Badge from '@/ui/Badge';
 import { useAskedCurrency, withCurrency } from '../portfolio/currency';
 import { Icon } from '../shell/icons';
 import { useMainCurrency } from '../shell/main-currency';
 import PageHeader from '../shell/PageHeader';
 import { PageSkeleton } from '../shell/Skeleton';
 import { CheckDialog, DeleteDepositDialog, MovementDialog, RateDialog } from './DepositDialogs';
-import { attention, dateText, money, movementText, statusText, termText } from './deposit-format';
+import {
+  attention,
+  dateText,
+  money,
+  movementText,
+  statusText,
+  statusTone,
+  termText,
+} from './deposit-format';
 import '../shell/shell-page.css';
 import '../portfolio/portfolio.css';
 import './deposits.css';
@@ -119,9 +128,7 @@ export default function DepositPage() {
         <>
           <section className="shell-card deposit-head">
             <div>
-              <span className={`deposit-chip deposit-chip--${deposit.status}`}>
-                {statusText[deposit.status]}
-              </span>
+              <Badge tone={statusTone[deposit.status]}>{statusText[deposit.status]}</Badge>
               <h2>{deposit.bank}</h2>
               <p className="deposit-card__terms">{termText(deposit)}</p>
               <p className="deposit-card__terms">
@@ -217,7 +224,7 @@ export default function DepositPage() {
           <section className="shell-card" aria-labelledby="deposit-movements">
             <h2 id="deposit-movements">Movements</h2>
             {removeFailed && (
-              <p className="portfolio-dialog__error" role="alert">
+              <p className="ui-banner ui-banner--neg" role="alert">
                 {removeFailed}
               </p>
             )}
