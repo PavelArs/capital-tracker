@@ -1,18 +1,13 @@
 import type { Deposit, DepositStatus, MovementKind } from '@api/deposits.api';
 import type { AccountingCurrency } from '@api/portfolio-valuation.api';
+import type { BadgeTone } from '@/ui/Badge';
+import { dayText } from '@/utils/dates';
 import { currencySymbols, DASH } from '../portfolio/format';
 
 const DAY_MS = 86_400_000;
 
-/** "1 Oct 2026" from a calendar date, whatever the browser's time zone. */
-export function dateText(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  });
-}
+/** "Oct 1, 2026" from a calendar date, the way the rest of the app writes dates. */
+export const dateText = (date: string): string => dayText(`${date}T00:00:00Z`);
 
 export function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
@@ -22,6 +17,13 @@ const MOSCOW_OFFSET_MS = 3 * 3_600_000;
 
 /** Today's calendar date in Moscow, the day the server counts interest by. */
 export const today = () => new Date(Date.now() + MOSCOW_OFFSET_MS).toISOString().slice(0, 10);
+
+/** The badge tone of each status. */
+export const statusTone: Record<DepositStatus, BadgeTone> = {
+  active: 'info',
+  matured: 'warn',
+  closed: 'muted',
+};
 
 export const statusText: Record<DepositStatus, string> = {
   active: 'Active',

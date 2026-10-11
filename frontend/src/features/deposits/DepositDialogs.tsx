@@ -8,8 +8,9 @@ import {
   type NewDeposit,
   type PayoutSchedule,
 } from '@api/deposits.api';
-import { isAxiosError } from 'axios';
-import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, type ReactNode, useId, useRef, useState } from 'react';
+import Modal from '@/ui/Modal';
+import { requestFailure } from '@/utils/request-failure';
 import { newRequestId } from '../accounting/feedback';
 import CloseButton from '../shell/CloseButton';
 import { movementText, today } from './deposit-format';
@@ -46,15 +47,17 @@ function useAttempt() {
 }
 
 /** The server's own words for a refusal it explained, else a general line. */
-function failure(error: unknown): string {
-  if (!isAxiosError(error) || !error.response)
-    return 'Could not reach the server. Nothing was saved; try again.';
-  const message = error.response.data?.message;
-  if ([409, 422].includes(error.response.status) && typeof message === 'string') return message;
-  if (error.response.status === 400) return 'Check the fields and try again.';
-  if (error.response.status === 404) return 'This deposit no longer exists. Reload the page.';
-  return 'Could not save. Try again.';
-}
+const failure = (error: unknown) =>
+  requestFailure(error, {
+    unreachable: 'Could not reach the server. Nothing was saved; try again.',
+    status: {
+      400: 'Check the fields and try again.',
+      404: 'This deposit no longer exists. Reload the page.',
+      409: (message) => message ?? 'Could not save. Try again.',
+      422: (message) => message ?? 'Could not save. Try again.',
+    },
+    fallback: 'Could not save. Try again.',
+  });
 
 /** One modal form: a title, fields, a refusal line and Cancel/Save. */
 function FormDialog({
@@ -80,24 +83,6 @@ function FormDialog({
   const [error, setError] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
   const [saving, setSaving] = useState(false);
-  const dialog = useRef<HTMLDivElement>(null);
-  const close = useRef(onClose);
-  close.current = onClose;
-  const busy = useRef(false);
-  busy.current = saving;
-
-  useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    dialog.current?.querySelector<HTMLElement>('input, select')?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && !busy.current) close.current();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      opener?.focus();
-    };
-  }, []);
 
   const hint = tried ? problem() : null;
   const save = async (event: FormEvent) => {
@@ -115,44 +100,41 @@ function FormDialog({
   };
 
   return (
-    <div className="portfolio-scrim">
-      <div
-        ref={dialog}
-        className={`portfolio-dialog${wide ? ' portfolio-dialog--wide' : ' portfolio-dialog--narrow'}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={`${id}-title`}
-      >
-        <form onSubmit={save} noValidate>
-          <div className="portfolio-dialog__head">
-            <h2 id={`${id}-title`}>{title}</h2>
-            <CloseButton onClick={onClose} disabled={saving} />
-            {note && <p className="shell-note">{note}</p>}
-          </div>
-          <div className="portfolio-dialog__body">
-            {children}
-            {(hint || error) && (
-              <p className="portfolio-dialog__error" role="alert">
-                {hint ?? error}
-              </p>
-            )}
-          </div>
-          <div className="portfolio-dialog__foot">
-            <button
-              type="button"
-              className="shell-button shell-button--ghost"
-              disabled={saving}
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
-              {saving ? 'Saving…' : submit}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      titleId={`${id}-title`}
+      size={wide ? 'wide' : 'narrow'}
+      onEscape={saving ? undefined : onClose}
+      initialFocus={(root) => root.querySelector<HTMLElement>('input, select')}
+    >
+      <form onSubmit={save} noValidate>
+        <div className="ui-modal__head">
+          <h2 id={`${id}-title`}>{title}</h2>
+          <CloseButton onClick={onClose} disabled={saving} />
+          {note && <p className="shell-note">{note}</p>}
+        </div>
+        <div className="ui-modal__body">
+          {children}
+          {(hint || error) && (
+            <p className="ui-banner ui-banner--neg" role="alert">
+              {hint ?? error}
+            </p>
+          )}
+        </div>
+        <div className="ui-modal__foot">
+          <button
+            type="button"
+            className="shell-button shell-button--ghost"
+            disabled={saving}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button type="submit" className="shell-button shell-button--primary" disabled={saving}>
+            {saving ? 'Saving…' : submit}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -167,12 +149,12 @@ function Field({
 }) {
   const id = useId();
   return (
-    <div className="portfolio-field">
-      <label className="portfolio-field__label" htmlFor={id}>
+    <div className="ui-field">
+      <label className="ui-field__label" htmlFor={id}>
         {label}
       </label>
       {children(id)}
-      {hint && <span className="portfolio-field__hint">{hint}</span>}
+      {hint && <span className="ui-field__hint">{hint}</span>}
     </div>
   );
 }
@@ -199,7 +181,7 @@ function Text({
       {(id) => (
         <input
           id={id}
-          className="portfolio-input"
+          className="ui-input"
           value={value}
           autoComplete="off"
           inputMode={numeric ? 'decimal' : undefined}
@@ -229,7 +211,7 @@ function DateField({
         <input
           id={id}
           type="date"
-          className="portfolio-input"
+          className="ui-input"
           value={value}
           onChange={(event) => onChange(event.target.value)}
         />
@@ -256,7 +238,7 @@ function Select<T extends string>({
       {(id) => (
         <select
           id={id}
-          className="portfolio-input"
+          className="ui-input"
           value={value}
           onChange={(event) => onChange(event.target.value as T)}
         >
@@ -337,7 +319,7 @@ export function AddDepositDialog({
         onSaved(await depositsApi.create(body));
       }}
     >
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <Text label="Name" value={name} onChange={setName} maxLength={120} placeholder="Savings" />
         <Text
           label="Bank"
@@ -347,7 +329,7 @@ export function AddDepositDialog({
           placeholder="Bank name"
         />
       </div>
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <Select
           label="Currency"
           value={currency}
@@ -366,7 +348,7 @@ export function AddDepositDialog({
           placeholder="0.00"
         />
       </div>
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <Text
           label="Rate, % a year"
           value={rate}
@@ -382,7 +364,7 @@ export function AddDepositDialog({
           hint="When the bank posts it."
         />
       </div>
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <DateField label="Start date" value={startDate} onChange={setStartDate} />
         <DateField
           label="End date (optional)"
@@ -401,7 +383,7 @@ export function AddDepositDialog({
       </label>
       <details className="deposit-more">
         <summary>More options</summary>
-        <div className="portfolio-row">
+        <div className="ui-field-row">
           <Select
             label="Days in a year"
             value={dayBasis}
@@ -473,7 +455,7 @@ export function MovementDialog({
       }}
     >
       <Select label="What happened" value={kind} options={movementOptions} onChange={setKind} />
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <DateField label="Date" value={date} onChange={setDate} />
         <Text
           label={`Amount, ${currency}`}
@@ -518,7 +500,7 @@ export function CheckDialog({
         onSaved(await depositsApi.addCheck(id, { requestId: attempt(entries), ...entries }));
       }}
     >
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <DateField label="Date" value={date} onChange={setDate} />
         <Text
           label={`Balance in the bank, ${currency}`}
@@ -555,7 +537,7 @@ export function RateDialog({
         onSaved(await depositsApi.addRate(id, { effectiveFrom: date, ratePercent: rate.trim() }))
       }
     >
-      <div className="portfolio-row">
+      <div className="ui-field-row">
         <DateField label="From" value={date} onChange={setDate} />
         <Text label="New rate, % a year" value={rate} onChange={setRate} numeric />
       </div>
