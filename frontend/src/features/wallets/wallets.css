@@ -225,7 +225,10 @@ button.wallets-source__open:focus-visible {
 .wallets-asset__name {
   overflow: hidden;
   font-weight: 500;
-  text-overflow: ellipsis;
+  /* Text that does not fit fades out at the end instead of ending in "…". */
+  mask-image: var(--fade-end);
+  animation: fade-end linear;
+  animation-timeline: scroll(self inline);
   white-space: nowrap;
 }
 

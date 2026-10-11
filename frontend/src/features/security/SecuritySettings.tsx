@@ -2,6 +2,7 @@ import { type SecurityOverview, type SecuritySession, securityApi } from '@api/s
 import { useAuth } from '@contexts/AuthContext';
 import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useState } from 'react';
+import { Bone } from '../shell/Skeleton';
 import AuthenticatorDialog from './AuthenticatorDialog';
 import ChangePasswordDialog from './ChangePasswordDialog';
 import ConfirmDialog from './ConfirmDialog';
@@ -161,6 +162,20 @@ export default function SecuritySettings() {
             >
               Log out everywhere
             </button>
+            {!overview && (
+              // At least this browser is listed, and most owners have one more.
+              <div className="security-list" aria-hidden="true">
+                {[0, 1].map((row) => (
+                  <div key={row} className="security-row">
+                    <span className="security-row__text">
+                      <Bone width={140} height={14} />
+                      <Bone width={200} height={11} />
+                    </span>
+                    <Bone width={90} height={22} />
+                  </div>
+                ))}
+              </div>
+            )}
             {overview && (
               <ul className="security-list" aria-labelledby="security-sessions">
                 {overview.sessions.map((session) => (
